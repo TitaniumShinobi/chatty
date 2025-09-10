@@ -1,36 +1,39 @@
 import { STR } from "./dict";
 
-export type Seg = number | { join: number[] } | { br: true };
+export type Seg = number | { join: number[] } | { br: true } | { text: string };
 
-export function R(packetOrArray: any): string {
-  // Handle packet objects from conversationAI
-  if (packetOrArray && typeof packetOrArray === 'object' && 'op' in packetOrArray) {
-    const op = packetOrArray.op;
-    const text = STR[op];
-    if (!text) {
-      return `[MISSING:${op}]`;
-    }
-    // Replace placeholders with payload values
-    return text.replace(/\{(\w+)\}/g, (_, key) => {
-      return String(packetOrArray.payload?.[key] ?? '');
-    });
-  }
-  
-  // Handle arrays of segments (original functionality)
-  const segs = Array.isArray(packetOrArray) ? packetOrArray : [packetOrArray];
-  const out: string[] = [];
-  for (const s of segs) {
-    if (typeof s === "number") {
-      const text = STR[s];
-      if (!text) {
-        // visible, non-prose fallback so you catch gaps
-        out.push(`[MISSING:${s}]`);
-      } else {
-        out.push(text);
-      }
-    }
-    else if ("join" in s) out.push(s.join.map(id => STR[id] ?? `⟂${id}`).join(" "));
-    else if ("br" in s) out.push("\n");
-  }
-  return out.join(" ");
+export function R(...segs: Seg[]): string {
+	const out: string[] = [];
+	for (const s of segs) {
+		if (typeof s === "number") {
+			out.push(STR[s] ?? `⟂${s}`);
+		} else if ("join" in s) {
+			out.push(s.join.map((id) => STR[id] ?? `⟂${id}`).join(" "));
+		} else if ("br" in s) {
+			out.push("\n");
+		} else if ("text" in s) {
+			out.push(s.text);
+		}
+	}
+	return out.join(" ");
+}
+
+// Helper functions for common patterns
+export function renderMessage(tokenId: number, ...args: (number | string)[]): string {
+	const parts = [tokenId];
+	for (const arg of args) {
+		if (typeof arg === "number") {
+			parts.push(arg);
+		} else {
+			parts.push({ text: arg });
+		}
+	}
+	return R({ join: parts });
+}
+
+export function renderWithBreak(tokenId: number, breakToken?: number): string {
+	if (breakToken) {
+		return R(tokenId, { br: true }, breakToken);
+	}
+	return R(tokenId, { br: true });
 }

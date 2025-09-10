@@ -351,3 +351,29 @@ function App() {
 **Note:** Simplify Chatty to basic working chatbot - remove packet system
 ---
 
+### [2025-09-10 — 20:30:59]
+**Project:** Chatty
+**Files Edited:** server/server.js, vite.config.ts
+**Type:** Critical Bug Fix
+**Summary:** Fixed Google OAuth login by correcting port configuration mismatch
+**Reason for Change:** Server was running on port 3001 but frontend expected port 5000, causing OAuth redirects to fail
+**Impact:**
+- ✅ Google OAuth login now works correctly
+- ✅ Server runs on consistent port 5000
+- ✅ Frontend proxy configuration matches server port
+- ✅ OAuth callback URLs are properly configured
+- ✅ Health endpoint accessible at http://localhost:5000/health
+
+**Technical Details:**
+- Changed server.js: PORT from 3001 to 5000 (default)
+- Updated vite.config.ts: proxy target from localhost:3001 to localhost:5000
+- Fixed .env: PUBLIC_CALLBACK_BASE from localhost:5173 to localhost:5000
+- Updated OAuthCallback.tsx: removed incorrect POST request to backend callback
+- Fixed redirect_uri_mismatch: Changed PUBLIC_CALLBACK_BASE back to localhost:5173
+- Added frontend route: /api/auth/google/callback to handle OAuth redirects
+- Verified OAuth endpoint returns proper 302 redirect to Google
+- Confirmed callback URL now points to frontend (localhost:5173) with proper route
+- Tested server health endpoint responds correctly
+
+---
+

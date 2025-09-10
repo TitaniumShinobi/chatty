@@ -1,34 +1,53 @@
 {
-  "tokens": {
-    "hello": 101,
-    "welcomeBack": 102,
-    "file": 201,
-    "uploaded": 202,
-    "askNext": 203,
-    "idlePing": 301,
-    "qaReady": 401,
-    "codeReady": 501,
-    "summaryReady": 601,
-    "authOk": 701,
-    "errGeneric": 900
-  },
-  "names": {
-    "devon": 10001,
-    "contractPdf": 10002
-  },
-  "types": {
-    "applicationPdf": 20001,
-    "imagePng": 20002
-  },
-  "langs": {
-    "typescript": 30001,
-    "python": 30002
-  },
-  "tasks": {
-    "writeFn": 40001,
-    "fixBug": 40002
-  },
-  "urls": {
-    "avatarDevon": 50001
-  }
+	"tokens": {
+		"hello": 101,
+		"welcomeBack": 102,
+		"file": 201,
+		"uploaded": 202,
+		"askNext": 203,
+		"idlePing": 301,
+		"qaReady": 401,
+		"codeReady": 501,
+		"summaryReady": 601,
+		"authOk": 701,
+		"errGeneric": 900,
+		"memoryCreated": 1001,
+		"memoryRetrieved": 1002,
+		"reasoningStarted": 1003,
+		"reasoningCompleted": 1004,
+		"fileProcessingStarted": 1005,
+		"fileProcessingCompleted": 1006,
+		"narrativeSynthesisStarted": 1007,
+		"narrativeSynthesisCompleted": 1008,
+		"largeFileAnalysisStarted": 1009,
+		"largeFileAnalysisCompleted": 1010
+	},
+	"names": {
+		"devon": 10001,
+		"contractPdf": 10002,
+		"batty": 10003,
+		"nova": 10004
+	},
+	"types": {
+		"applicationPdf": 20001,
+		"imagePng": 20002,
+		"textPlain": 20003,
+		"applicationJson": 20004
+	},
+	"langs": {
+		"typescript": 30001,
+		"python": 30002,
+		"javascript": 30003,
+		"markdown": 30004
+	},
+	"tasks": {
+		"writeFn": 40001,
+		"fixBug": 40002,
+		"analyzeData": 40003,
+		"generateReport": 40004
+	},
+	"urls": {
+		"avatarDevon": 50001,
+		"avatarBatty": 50002
+	}
 }

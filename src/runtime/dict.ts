@@ -1,76 +1,57 @@
-import { lexicon as lex } from "../data/lexicon";
+import lex from "../data/lexicon.json";
 
 type Dict = Record<number, string>;
 export const STR: Dict = {
-  [lex.tokens.hello]: "Hello",
-  [lex.tokens.welcomeBack]: "Welcome back",
-  [lex.tokens.file]: "File",
-  [lex.tokens.uploaded]: "uploaded",
-  [lex.tokens.askNext]: "What should I do next?",
-  [lex.tokens.idlePing]: "You went idle. Continue?",
-  [lex.tokens.qaReady]: "Ready for Q&A.",
-  [lex.tokens.codeReady]: "Code mode armed.",
-  [lex.tokens.summaryReady]: "Summary mode ready.",
-  [lex.tokens.authOk]: "Signed in.",
-  [lex.tokens.errGeneric]: "Something went wrong.",
-  
-  // New tokens for conversationAI - minimal lexicon
-  [lex.tokens.greeting]: "Welcome back.",
-  [lex.tokens.question]: "Ask your question.",
-  [lex.tokens.fileUpload]: "You uploaded {count} file(s).",
-  [lex.tokens.fileAnalysis]: "Analyzing: {names}.",
-  [lex.tokens.fileError]: "Error processing file: {error}.",
-  [lex.tokens.fileParsed]: "File parsed successfully: {name}.",
-  [lex.tokens.fileParseFailed]: "Failed to parse file: {name}.",
-  [lex.tokens.fileParseTimeout]: "File parsing timed out: {name}.",
-  [lex.tokens.createGpt]: "Custom model design ready.",
-  [lex.tokens.unknown]: "I didn't understand that.",
-  [lex.tokens.developer]: "Developer mode acknowledged.",
-  [lex.tokens.capabilities]: "Capabilities overview available.",
-  [lex.tokens.aiTechnology]: "AI technology explanation ready.",
-  [lex.tokens.personal]: "Acknowledged.",
-  [lex.tokens.statement]: "Acknowledged.",
-  [lex.tokens.request]: "I'm here to help.",
-  [lex.tokens.clarification]: "Clarification needed.",
-  [lex.tokens.general]: "Acknowledged.",
+	// Core tokens
+	[lex.tokens.hello]: "Hello",
+	[lex.tokens.welcomeBack]: "Welcome back",
+	[lex.tokens.file]: "File",
+	[lex.tokens.uploaded]: "uploaded",
+	[lex.tokens.askNext]: "What should I do next?",
+	[lex.tokens.idlePing]: "You went idle. Continue?",
+	[lex.tokens.qaReady]: "Ready for Q&A.",
+	[lex.tokens.codeReady]: "Code mode armed.",
+	[lex.tokens.summaryReady]: "Summary mode ready.",
+	[lex.tokens.authOk]: "Signed in.",
+	[lex.tokens.errGeneric]: "Something went wrong.",
 
-  [lex.names.devon]: "Devon",
-  [lex.names.contractPdf]: "Contract.pdf",
+	// Batty-specific tokens
+	[lex.tokens.memoryCreated]: "Memory created",
+	[lex.tokens.memoryRetrieved]: "Memory retrieved",
+	[lex.tokens.reasoningStarted]: "Reasoning started",
+	[lex.tokens.reasoningCompleted]: "Reasoning completed",
+	[lex.tokens.fileProcessingStarted]: "File processing started",
+	[lex.tokens.fileProcessingCompleted]: "File processing completed",
+	[lex.tokens.narrativeSynthesisStarted]: "Narrative synthesis started",
+	[lex.tokens.narrativeSynthesisCompleted]: "Narrative synthesis completed",
+	[lex.tokens.largeFileAnalysisStarted]: "Large file analysis started",
+	[lex.tokens.largeFileAnalysisCompleted]: "Large file analysis completed",
 
-  [lex.types.applicationPdf]: "PDF",
-  [lex.types.imagePng]: "PNG",
+	// Names
+	[lex.names.devon]: "Devon",
+	[lex.names.contractPdf]: "Contract.pdf",
+	[lex.names.batty]: "Batty",
+	[lex.names.nova]: "Nova",
 
-  [lex.langs.typescript]: "TypeScript",
-  [lex.langs.python]: "Python",
+	// File types
+	[lex.types.applicationPdf]: "PDF",
+	[lex.types.imagePng]: "PNG",
+	[lex.types.textPlain]: "Text",
+	[lex.types.applicationJson]: "JSON",
 
-  [lex.tasks.writeFn]: "Write a function",
-  [lex.tasks.fixBug]: "Fix a bug",
+	// Languages
+	[lex.langs.typescript]: "TypeScript",
+	[lex.langs.python]: "Python",
+	[lex.langs.javascript]: "JavaScript",
+	[lex.langs.markdown]: "Markdown",
 
-  [lex.urls.avatarDevon]: "https://…/avatar/devon.png"
-};
+	// Tasks
+	[lex.tasks.writeFn]: "Write a function",
+	[lex.tasks.fixBug]: "Fix a bug",
+	[lex.tasks.analyzeData]: "Analyze data",
+	[lex.tasks.generateReport]: "Generate report",
 
-export const DICT: Record<string, string | string[]> = {
-  "greet.v1": [
-    "Hey {userName}, what are we building today?",
-    "Good to see you, {userName}. Where do you want to start?",
-    "Welcome back, {userName}."
-  ],
-  "ask.clarify.v1": [
-    "Got it. Do you want the short version on {topic}, or a deeper dive?",
-    "I can cover {topic} quickly or go in-depth—your call."
-  ],
-  "answer.v1": [
-    "{0}"
-  ],
-  "smalltalk.welcome.v1": [
-    "I'm ready when you are.",
-    "All set. Just say the word."
-  ],
-  "ack.file.v1": [
-    "I see {count} file{count|s} attached."
-  ],
-  "fallback.v1": [
-    "I didn’t catch that—can you rephrase?",
-    "Say more about that and I’ll follow."
-  ]
+	// URLs
+	[lex.urls.avatarDevon]: "https://…/avatar/devon.png",
+	[lex.urls.avatarBatty]: "https://…/avatar/batty.png",
 };

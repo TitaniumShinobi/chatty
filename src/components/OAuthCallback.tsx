@@ -23,34 +23,27 @@ const OAuthCallback: React.FC = () => {
       }
 
       if (code) {
+        // The backend callback should have already processed the code and set the cookie
+        // Now we need to check if the user is authenticated
         try {
-          // Exchange code for token
-          const response = await fetch('http://localhost:3001/api/auth/google/callback', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ code, state })
-          })
-
+          const response = await fetch('/api/me', { credentials: 'include' })
           const data = await response.json()
-
-          if (response.ok) {
+          
+          if (response.ok && data.ok) {
             // Success - send user data to parent window
             window.opener?.postMessage({
               type: 'oauth-callback',
               provider: 'google',
               success: true,
-              user: data.user,
-              token: data.token
+              user: data.user
             }, window.location.origin)
           } else {
-            // Error from server
+            // Error - authentication failed
             window.opener?.postMessage({
               type: 'oauth-callback',
               provider: 'google',
               success: false,
-              error: data.error || 'Authentication failed'
+              error: 'Authentication failed'
             }, window.location.origin)
           }
         } catch (error) {

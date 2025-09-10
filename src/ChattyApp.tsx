@@ -1,23 +1,14 @@
 // src/ChattyApp.tsx
 import { useEffect, useMemo, useState } from 'react'
 import type { User } from './lib/auth'
-import { AIService } from './lib/aiService'
-type UserMsg = {
+
+type Message = {
   id: string
-  role: 'user'
+  role: 'user' | 'assistant'
   text: string
   ts: number
   files?: { name: string; size: number }[]
 }
-
-type AssistantMsg = {
-  id: string
-  role: 'assistant'
-  text: string
-  ts: number
-}
-
-type Message = UserMsg | AssistantMsg
 type Thread = { id: string; title: string; messages: Message[] }
 
 export default function ChattyApp({
@@ -50,30 +41,26 @@ export default function ChattyApp({
 
   async function sendMessage(input: string, files: File[]) {
     if (!active) return
-    const userMsg: UserMsg = {
+    const userMsg: Message = {
       id: crypto.randomUUID(),
       role: 'user',
       text: input,
       ts: Date.now(),
-      files: files.map(f => ({ name:f.name, size:f.size })),
+      files: files.map(f => ({ name: f.name, size: f.size })),
     }
-  
-    // get simple string response from AI service
-    const response = await AIService.getInstance().processMessage(input, files)
-  
-    const aiMsg: AssistantMsg = {
+    const aiMsg: Message = {
       id: crypto.randomUUID(),
       role: 'assistant',
-      text: response,
-      ts: Date.now()+1,
+      text: 'Welcome back.',
+      ts: Date.now() + 1,
     }
-  
-    setThreads(ts => ts.map(t =>
-      t.id === active!.id ? { ...t, messages: [...t.messages, userMsg, aiMsg] } : t
-    ))
-  
-    if (active!.title === 'New conversation' && input.trim()) {
-      renameThread(active!.id, input.trim().slice(0, 40))
+    setThreads(ts =>
+      ts.map(t =>
+        t.id === active.id ? { ...t, messages: [...t.messages, userMsg, aiMsg] } : t
+      )
+    )
+    if (active.title === 'New conversation' && input.trim()) {
+      renameThread(active.id, input.trim().slice(0, 40))
     }
   }
 
@@ -165,23 +152,15 @@ function ChatView({
           <div key={m.id} style={{ ...s.msg, ...(m.role === 'assistant' ? s.msgAI : s.msgUser) }}>
             <div style={s.msgRole}>{m.role === 'assistant' ? 'AI' : 'U'}</div>
             <div>
-              {m.role === 'assistant' ? (
-                <div style={{ whiteSpace: 'pre-wrap' }}>
-                  {m.text || 'I apologize, but I couldn\'t generate a response.'}
-                </div>
-              ) : (
-                <>
-                  <div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>
-                  {!!m.files?.length && (
-                    <div style={s.fileList}>
-                      {m.files.map((f, i) => (
-                        <div key={i} style={s.fileItem}>
-                          {f.name} <span style={{ opacity: .6 }}>({Math.round(f.size / 1024)} KB)</span>
-                        </div>
-                      ))}
+              <div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>
+              {!!m.files?.length && (
+                <div style={s.fileList}>
+                  {m.files.map((f, i) => (
+                    <div key={i} style={s.fileItem}>
+                      {f.name} <span style={{ opacity: .6 }}>({Math.round(f.size / 1024)} KB)</span>
                     </div>
-                  )}
-                </>
+                  ))}
+                </div>
               )}
             </div>
           </div>

@@ -11,6 +11,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <Routes>
         <Route path="/" element={<App />} />
         <Route path="/auth/callback" element={<OAuthCallback />} />
+        <Route path="/api/auth/google/callback" element={<OAuthCallback />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>,
