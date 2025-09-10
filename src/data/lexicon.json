@@ -1,0 +1,34 @@
+{
+  "tokens": {
+    "hello": 101,
+    "welcomeBack": 102,
+    "file": 201,
+    "uploaded": 202,
+    "askNext": 203,
+    "idlePing": 301,
+    "qaReady": 401,
+    "codeReady": 501,
+    "summaryReady": 601,
+    "authOk": 701,
+    "errGeneric": 900
+  },
+  "names": {
+    "devon": 10001,
+    "contractPdf": 10002
+  },
+  "types": {
+    "applicationPdf": 20001,
+    "imagePng": 20002
+  },
+  "langs": {
+    "typescript": 30001,
+    "python": 30002
+  },
+  "tasks": {
+    "writeFn": 40001,
+    "fixBug": 40002
+  },
+  "urls": {
+    "avatarDevon": 50001
+  }
+}

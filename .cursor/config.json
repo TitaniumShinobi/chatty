@@ -1,0 +1,6 @@
+{
+    "persistentContext": {
+      "include": ["**/*"],
+      "exclude": ["node_modules/**", ".git/**"]
+    }
+  }
