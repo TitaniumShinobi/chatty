@@ -43,8 +43,8 @@ const Sidebar: React.FC<SidebarProps> = ({
       {/* Navigation */}
       <nav className="px-3 py-4 space-y-2 text-sm border-b border-app-gray-800">
         <Link to="/" className={linkCls('/')}>Chatty</Link>
-        <Link to="/gpts" className={linkCls('/gpts')}>GPTs</Link>
-        <Link to="/gpts/new" className={linkCls('/gpts/new')}>Create GPT</Link>
+        <Link to="/app/gpts" className={linkCls('/app/gpts')}>GPTs</Link>
+        <Link to="/app/gpts/new" className={linkCls('/app/gpts/new')}>Create GPT</Link>
       </nav>
 
       {/* GPTs Section - List Style */}
@@ -64,7 +64,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           {/* GPTs Header */}
           <div 
             className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-gray-800 cursor-pointer"
-            onClick={() => navigate('/gpts')}
+            onClick={() => navigate('/app/gpts')}
           >
             <div className="w-6 h-6 bg-app-gray-700 rounded flex items-center justify-center">
               <span className="text-white text-xs">□</span>
@@ -75,7 +75,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           {/* Create GPT Button */}
           <div 
             className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-gray-800 cursor-pointer"
-            onClick={() => navigate('/gpts/new')}
+            onClick={() => navigate('/app/gpts/new')}
           >
             <div className="w-6 h-6 bg-app-gray-600 rounded flex items-center justify-center">
               <Plus size={12} className="text-white" />

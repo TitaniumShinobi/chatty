@@ -4,8 +4,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import App from './App'
 import OAuthCallback from './components/OAuthCallback'
 import Layout from './components/Layout'
-import GPTListPage from './pages/GPTListPage'
-import NewGPTPage from './pages/NewGPTPage'
+import GPTsPage from './pages/GPTsPage'
 import Home from './pages/Home'
 import Chat from './pages/Chat'
 import './index.css'
@@ -20,8 +19,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <Route path="/app" element={<Layout />}>
           <Route index element={<Home />} />
           <Route path="chat/:threadId" element={<Chat />} />
-          <Route path="gpts" element={<GPTListPage />} />
-          <Route path="gpts/new" element={<NewGPTPage />} />
+          <Route path="gpts" element={<GPTsPage />} />
+          <Route path="gpts/new" element={<GPTsPage initialOpen />} />
         </Route>
       </Routes>
     </BrowserRouter>

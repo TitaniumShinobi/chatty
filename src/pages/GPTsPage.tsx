@@ -1,23 +1,50 @@
-import React, { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import React, { useState, useEffect, useMemo } from 'react'
+import { useLocation, useNavigate, Link } from 'react-router-dom'
 import { Plus, Bot, Settings, Trash2 } from 'lucide-react'
 import { GPTCreator } from '../lib/gptCreator'
+import GPTCreatorComponent from '../components/GPTCreator'
 import { cn } from '../lib/utils'
 
-export default function GPTListPage() {
-  const [gptCreator] = useState(() => GPTCreator.getInstance())
-  const [personalities, setPersonalities] = useState(gptCreator.getAllPersonalities())
+interface GPTsPageProps {
+  initialOpen?: boolean
+}
 
+export default function GPTsPage({ initialOpen = false }: GPTsPageProps) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const gptCreator = useMemo(() => GPTCreator.getInstance(), [])
+  const [isCreatorOpen, setCreatorOpen] = useState(initialOpen)
+  const [personalities, setPersonalities] = useState(() => gptCreator.getAllPersonalities())
+
+  // Route controls modal state
   useEffect(() => {
-    // Refresh personalities when component mounts
+    setCreatorOpen(location.pathname.endsWith('/new'))
+  }, [location.pathname])
+
+  // Refresh personalities when component mounts or creator changes
+  useEffect(() => {
     setPersonalities(gptCreator.getAllPersonalities())
   }, [gptCreator])
+
+  const refresh = () => {
+    setPersonalities(gptCreator.getAllPersonalities())
+  }
 
   const handleDelete = (id: string) => {
     if (id === 'default-chatty') return // Don't delete default
     if (gptCreator.deletePersonality(id)) {
-      setPersonalities(gptCreator.getAllPersonalities())
+      refresh()
     }
+  }
+
+  const handleClose = () => {
+    setCreatorOpen(false)
+    navigate('/app/gpts')
+    refresh()
+  }
+
+  const handlePersonalityChange = () => {
+    refresh()
   }
 
   const customGPTs = personalities.filter(p => p.id !== 'default-chatty')
@@ -31,13 +58,14 @@ export default function GPTListPage() {
             <h1 className="text-2xl font-semibold">Your GPTs</h1>
             <p className="text-app-gray-400 mt-1">Manage and create custom AI assistants</p>
           </div>
-          <Link
-            to="/gpts/new"
+          <button
+            type="button"
+            onClick={() => navigate('/app/gpts/new')}
             className="flex items-center gap-2 px-4 py-2 bg-app-green-600 hover:bg-app-green-700 rounded-lg text-white font-medium transition-colors"
           >
             <Plus size={16} />
             Create GPT
-          </Link>
+          </button>
         </div>
       </div>
 
@@ -50,13 +78,14 @@ export default function GPTListPage() {
             </div>
             <h3 className="text-lg font-medium mb-2">No GPTs yet</h3>
             <p className="text-app-gray-400 mb-6">Create your first custom AI assistant to get started.</p>
-            <Link
-              to="/gpts/new"
+            <button
+              type="button"
+              onClick={() => navigate('/app/gpts/new')}
               className="inline-flex items-center gap-2 px-4 py-2 bg-app-green-600 hover:bg-app-green-700 rounded-lg text-white font-medium transition-colors"
             >
               <Plus size={16} />
               Create GPT
-            </Link>
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -135,6 +164,13 @@ export default function GPTListPage() {
           </div>
         )}
       </div>
+
+      {/* GPT Creator Modal */}
+      <GPTCreatorComponent
+        isVisible={isCreatorOpen}
+        onClose={handleClose}
+        onPersonalityChange={handlePersonalityChange}
+      />
     </div>
   )
 }
