@@ -1,19 +1,15 @@
 // Enforce packet-only for assistant messages
 export type Op =
-  | "greet.v1"
-  | "ask.clarify.v1"
   | "answer.v1"
-  | "smalltalk.welcome.v1"
-  | "ack.file.v1"
-  | "fallback.v1";
+  | "file.summary.v1"
+  | "warn.v1"
+  | "error.v1";
 
 export type AssistantPacket =
-  | { op: "greet.v1"; payload: { userName?: string } }
-  | { op: "ask.clarify.v1"; payload: { topic?: string } }
-  | { op: "answer.v1"; payload: string[] | { contentKeys: string[] } }
-  | { op: "smalltalk.welcome.v1"; payload: {} }
-  | { op: "ack.file.v1"; payload: { count: number } }
-  | { op: "fallback.v1"; payload: { echo?: string } };
+  | { op: "answer.v1"; payload: { content: string } }
+  | { op: "file.summary.v1"; payload: { fileName: string; summary: string; fileCount: number } }
+  | { op: "warn.v1"; payload: { message: string; severity?: 'low' | 'medium' | 'high' } }
+  | { op: "error.v1"; payload: { message: string; code?: string } };
 
 // ------------------------------------------------------------------
 // legacy message shapes remain below (may be phased out later)
@@ -29,7 +25,7 @@ export type UserMsg = {
 export type AssistantMsg = { 
   id: string;
   role: 'assistant'; 
-  content: AssistantPacket; // Strictly packet only, no union with string
+  content: AssistantPacket[]; // Strictly packets only, no union with string
   timestamp: string;
   files?: File[];
 };

@@ -1,5 +1,6 @@
 // Simple AI Service for Chatty
 import { logger } from './utils/logger';
+import type { AssistantPacket } from '../types';
 
 export class AIService {
   private static instance: AIService;
@@ -17,7 +18,7 @@ export class AIService {
   }
 
   // Main entry point for processing messages
-  async processMessage(userMessage: string, files: File[] = []): Promise<string> {
+  async processMessage(userMessage: string, files: File[] = []): Promise<AssistantPacket[]> {
     logger.ai('Processing message', { userMessage, fileCount: files.length });
   
     try {
@@ -30,34 +31,62 @@ export class AIService {
       logger.ai('Intent analyzed', intent);
   
       // Get response from conversationAI
-      let response: string;
+      let packets: AssistantPacket[];
       try {
         const { ConversationAI } = await import('./conversationAI');
         const conversationAI = new ConversationAI();
   
         const timeoutMs = 5000; // 5 second timeout
-        response = await Promise.race([
+        packets = await Promise.race([
           conversationAI.processMessage(userMessage, files),
-          new Promise<string>((_, rej) => setTimeout(() => rej(new Error('timeout')), timeoutMs)),
+          new Promise<AssistantPacket[]>((_, rej) => setTimeout(() => rej(new Error('timeout')), timeoutMs)),
         ]);
       } catch (e: any) {
         logger.warning('conversationAI failed; using fallback', e?.message || String(e));
-        response = "I'm sorry, I encountered an error processing your message. Could you please try again?";
+        packets = [{ op: "error.v1", payload: { message: "I'm sorry, I encountered an error processing your message. Could you please try again?" } }];
       }
   
-      // Ensure we always return a valid response
-      if (!response || response.trim() === '') {
-        response = "I understand what you're saying. How can I help you with that?";
+      // Normalize packets
+      packets = this.normalizePackets(packets);
+  
+      // If files were attached and no file.summary.v1 exists, prepend one
+      if (files.length > 0 && !packets.some(p => p.op === "file.summary.v1")) {
+        const fileSummary: AssistantPacket = {
+          op: "file.summary.v1",
+          payload: {
+            fileName: files.length === 1 ? files[0].name : `${files.length} files`,
+            summary: `I see you've uploaded ${files.length} file(s). I'm ready to help you with them!`,
+            fileCount: files.length
+          }
+        };
+        packets = [fileSummary, ...packets];
       }
   
       // Log and return
-      logger.ai('Generated response', { response: response.substring(0, 100) + '...' });
-      return response;
+      logger.ai('Generated packets', { packetCount: packets.length });
+      return packets;
   
     } catch (error: any) {
       logger.error('processMessage failed', error);
-      return "I'm sorry, I encountered a system error. Please try again.";
+      return [{ op: "error.v1", payload: { message: "I'm sorry, I encountered a system error. Please try again." } }];
     }
+  }
+
+  // Normalize packets to ensure they're valid
+  private normalizePackets(packets: AssistantPacket[]): AssistantPacket[] {
+    return packets.filter(packet => {
+      // Ensure packet has required structure
+      if (!packet || !packet.op || !packet.payload) {
+        return false;
+      }
+      
+      // Convert legacy string responses to answer.v1 packets
+      if (typeof packet === 'string') {
+        return false; // Filter out any remaining strings
+      }
+      
+      return true;
+    });
   }
 
   // Simple intent analysis

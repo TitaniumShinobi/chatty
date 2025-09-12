@@ -1,11 +1,13 @@
 // src/ChattyApp.tsx
 import { useEffect, useMemo, useState } from 'react'
 import type { User } from './lib/auth'
+import { R } from './runtime/render'
 
 type Message = {
   id: string
   role: 'user' | 'assistant'
-  text: string
+  text?: string
+  packets?: import('./types').AssistantPacket[]
   ts: number
   files?: { name: string; size: number }[]
 }
@@ -31,6 +33,33 @@ export default function ChattyApp({
     localStorage.setItem('chatty:threads', JSON.stringify(threads))
   }, [threads])
 
+  // Migrate legacy messages to packet format
+  useEffect(() => {
+    setThreads(prev => {
+      let dirty = false;
+      const fixed = prev.map(t => ({
+        ...t,
+        messages: t.messages.map(m => {
+          if (m.role === 'assistant' && !Array.isArray((m as any).packets)) {
+            dirty = true;
+            const migratedMessage: Message = {
+              id: m.id,
+              role: 'assistant',
+              ts: (m as any).ts ?? Date.now(),
+              packets: [{ op: 'answer.v1' as const, payload: { content: (m as any).text ?? 'Legacy message' } }],
+            };
+            return migratedMessage;
+          }
+          return m;
+        })
+      }));
+      if (dirty) {
+        localStorage.setItem('chatty:threads', JSON.stringify(fixed));
+      }
+      return fixed;
+    });
+  }, [])
+
   function newThread() {
     const t: Thread = { id: crypto.randomUUID(), title: 'New conversation', messages: [] }
     setThreads([t, ...threads]); setActiveId(t.id)
@@ -48,12 +77,25 @@ export default function ChattyApp({
       ts: Date.now(),
       files: files.map(f => ({ name: f.name, size: f.size })),
     }
+    
+    // Get AI response as packets
+    const { AIService } = await import('./lib/aiService')
+    const aiService = AIService.getInstance()
+    const raw = await aiService.processMessage(input, files)
+    const packets = Array.isArray(raw) ? raw : [{ op: 'answer.v1' as const, payload: { content: String(raw ?? '') } }]
+    
     const aiMsg: Message = {
       id: crypto.randomUUID(),
       role: 'assistant',
-      text: 'Welcome back.',
+      packets: packets as import('./types').AssistantPacket[],
       ts: Date.now() + 1,
     }
+    
+    // Dev logging for AI packets
+    if (process.env.NODE_ENV === 'development') {
+      console.debug('AI packets', packets);
+    }
+    
     setThreads(ts =>
       ts.map(t =>
         t.id === active.id ? { ...t, messages: [...t.messages, userMsg, aiMsg] } : t
@@ -152,7 +194,22 @@ function ChatView({
           <div key={m.id} style={{ ...s.msg, ...(m.role === 'assistant' ? s.msgAI : s.msgUser) }}>
             <div style={s.msgRole}>{m.role === 'assistant' ? 'AI' : 'U'}</div>
             <div>
+            {m.role === 'assistant' ? (
+              <div style={{ whiteSpace: 'normal' }}>
+                <R
+                  packets={
+                    Array.isArray((m as any).packets)
+                      ? (m as any).packets
+                      : [
+                          // fallback for legacy/invalid assistant messages
+                          { op: 'answer.v1', payload: { content: (m as any).text ?? 'Legacy message' } }
+                        ]
+                  }
+                />
+              </div>
+            ) : (
               <div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>
+            )}
               {!!m.files?.length && (
                 <div style={s.fileList}>
                   {m.files.map((f, i) => (
@@ -194,7 +251,7 @@ function ChatView({
 }
 
 const s: Record<string, React.CSSProperties> = {
-  app: { display: 'flex', minHeight: '100vh', background: '#202123', color: '#fff' },
+  app: { display: 'flex', height: '100vh', background: '#202123', color: '#fff', overflow: 'hidden' },
   sidebar: { width: 260, background: '#17181A', borderRight: '1px solid #2a2b32', display: 'flex', flexDirection: 'column' },
   brand: { padding: '14px 14px 10px', fontWeight: 700 },
   newBtn: { margin: '0 12px 8px', padding: '10px', borderRadius: 8, border: '1px solid #3a3b42', background: '#2a2b32', color: '#fff', cursor: 'pointer' },
@@ -208,13 +265,13 @@ const s: Record<string, React.CSSProperties> = {
   avatar: { width: 28, height: 28, borderRadius: 6, background: '#2a2b32', display: 'grid', placeItems: 'center', fontWeight: 700 },
   logout: { padding: '8px', borderRadius: 8, border: '1px solid #3a3b42', background: '#2a2b32', color: '#fff', cursor: 'pointer' },
 
-  main: { flex: 1, display: 'flex', alignItems: 'stretch', justifyContent: 'stretch' },
+  main: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   welcome: { margin: 'auto', textAlign: 'center' },
   cards: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(220px, 1fr))', gap: 12, marginTop: 18 },
   card: { padding: '14px', borderRadius: 10, border: '1px solid #2f3036', background: '#23242a', color: '#fff', cursor: 'pointer', textAlign: 'left' },
 
-  chatWrap: { display: 'flex', flexDirection: 'column', width: '100%' },
-  history: { flex: 1, overflow: 'auto', padding: '18px 18px 0' },
+  chatWrap: { display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' },
+  history: { flex: 1, overflow: 'auto', padding: '18px 18px 0', minHeight: 0 },
   attachRow: { marginBottom: 10 },
   attachPill: { display: 'inline-block', padding: '8px 10px', borderRadius: 8, background: '#2a2b32', border: '1px solid #3a3b42', fontSize: 12, opacity: .9 },
   msg: { display: 'grid', gridTemplateColumns: '28px 1fr', gap: 10, padding: '12px', borderRadius: 10, border: '1px solid #2f3036', marginBottom: 12, background: '#23242a' },
@@ -224,10 +281,10 @@ const s: Record<string, React.CSSProperties> = {
   fileList: { marginTop: 8, display: 'grid', gap: 6 },
   fileItem: { fontSize: 12, opacity: .85 },
 
-  composer: { display: 'grid', gridTemplateColumns: '32px 1fr 80px', gap: 10, padding: 18, borderTop: '1px solid #2f3036' },
+  composer: { display: 'grid', gridTemplateColumns: '32px 1fr 80px', gap: 10, padding: 18, borderTop: '1px solid #2f3036', flexShrink: 0 },
   iconBtn: { display: 'grid', placeItems: 'center', width: 32, height: 38, borderRadius: 8, background: '#2a2b32', border: '1px solid #3a3b42', cursor: 'pointer' },
   input: { width: '100%', minHeight: 38, maxHeight: 160, resize: 'vertical', padding: '10px 12px', borderRadius: 8, background: '#1f2025', color: '#fff', border: '1px solid #3a3b42', outline: 'none' },
   send: { borderRadius: 8, border: '1px solid #3a3b42', background: '#2a2b32', color: '#fff', cursor: 'pointer' },
 
-  footerNote: { textAlign: 'center', opacity: .5, fontSize: 12, padding: '6px 0 14px' },
+  footerNote: { textAlign: 'center', opacity: .5, fontSize: 12, padding: '6px 0 14px', flexShrink: 0 },
 }

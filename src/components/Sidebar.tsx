@@ -1,17 +1,15 @@
 import React, { useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { 
   Plus, 
   MessageSquare, 
   Trash2, 
   Bot,
-  LogOut,
   Settings
 } from 'lucide-react'
 import { SidebarProps } from '../types'
 import { cn } from '../lib/utils'
 import { GPTCreator } from '../lib/gptCreator'
-
-
 
 const Sidebar: React.FC<SidebarProps> = ({
   conversations,
@@ -20,13 +18,20 @@ const Sidebar: React.FC<SidebarProps> = ({
   onNewConversation,
   onNewConversationWithGPT,
   onDeleteConversation,
-  onShowGPTCreator,
-  onShowGPTs,
   currentUser,
-  onLogout,
   onShowSettings
 }) => {
   const [gptCreator] = useState(() => GPTCreator.getInstance())
+  const location = useLocation()
+  const navigate = useNavigate()
+  
+  // Helper function for link styling
+  const linkCls = (path: string) => {
+    return `block rounded px-3 py-2 hover:bg-app-gray-800 ${
+      location.pathname === path
+        ? 'bg-app-gray-800 font-medium' : 'text-app-gray-300'
+    }`
+  }
   
   return (
     <div className="flex flex-col h-full bg-app-gray-950 border-r border-app-gray-800">
@@ -35,11 +40,21 @@ const Sidebar: React.FC<SidebarProps> = ({
         <h1 className="text-lg font-semibold text-white">Chatty</h1>
       </div>
 
+      {/* Navigation */}
+      <nav className="px-3 py-4 space-y-2 text-sm border-b border-app-gray-800">
+        <Link to="/" className={linkCls('/')}>Chatty</Link>
+        <Link to="/gpts" className={linkCls('/gpts')}>GPTs</Link>
+        <Link to="/gpts/new" className={linkCls('/gpts/new')}>Create GPT</Link>
+      </nav>
+
       {/* GPTs Section - List Style */}
       <div className="p-3 border-b border-app-gray-800">
         <div className="space-y-1">
           {/* Default Chatty */}
-          <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-gray-800 cursor-pointer">
+          <div 
+            className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-gray-800 cursor-pointer"
+            onClick={onNewConversation}
+          >
             <div className="w-6 h-6 bg-app-green-600 rounded flex items-center justify-center">
               <span className="text-white text-xs font-bold">C</span>
             </div>
@@ -49,7 +64,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           {/* GPTs Header */}
           <div 
             className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-gray-800 cursor-pointer"
-            onClick={onShowGPTs}
+            onClick={() => navigate('/gpts')}
           >
             <div className="w-6 h-6 bg-app-gray-700 rounded flex items-center justify-center">
               <span className="text-white text-xs">□</span>
@@ -60,7 +75,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           {/* Create GPT Button */}
           <div 
             className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-gray-800 cursor-pointer"
-            onClick={onShowGPTCreator}
+            onClick={() => navigate('/gpts/new')}
           >
             <div className="w-6 h-6 bg-app-gray-600 rounded flex items-center justify-center">
               <Plus size={12} className="text-white" />

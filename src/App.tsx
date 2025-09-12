@@ -54,15 +54,9 @@ export default function App() {
   }
 
   if (user) {
-    return (
-      <ChattyApp
-        user={user}
-        onLogout={async () => {
-          await logout()
-          setUser(null)
-        }}
-      />
-    )
+    // Redirect to the app when logged in
+    window.location.replace('/app')
+    return null
   }
 
   // Simple login screen

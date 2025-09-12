@@ -19,6 +19,7 @@ import { delay } from '../lib/utils/common'
 import { logger } from '../lib/utils/logger'
 import { TIMING } from '../lib/constants'
 import { cn } from '../lib/utils'
+import { R } from '../runtime/render'
 
 interface GPTCreatorProps {
   isVisible: boolean
@@ -47,13 +48,12 @@ const GPTCreatorComponent: React.FC<GPTCreatorProps> = ({
   const createInputRef = useRef<HTMLTextAreaElement>(null)
   const [createAI] = useState(() => {
     const ai = AIService.getInstance()
-    // Configure the AI specifically for GPT creation
-    ai.setGPTCreationMode(true)
+    // Note: setGPTCreationMode method doesn't exist, removed call
     return ai
   })
   
   // Preview functionality
-  const [previewMessages, setPreviewMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([])
+  const [previewMessages, setPreviewMessages] = useState<Array<{role: 'user' | 'assistant', content: string | import('../types').AssistantPacket[]}>>([])
   const [previewInput, setPreviewInput] = useState('')
   const [isPreviewGenerating, setIsPreviewGenerating] = useState(false)
   const [previewAI] = useState(() => AIService.getInstance())
@@ -232,9 +232,9 @@ const GPTCreatorComponent: React.FC<GPTCreatorProps> = ({
       logger.gpt('Response length', aiResponse?.length || 0)
       
       // Fallback if response is empty or undefined
-      if (!aiResponse || aiResponse.trim() === '') {
+      if (!aiResponse || aiResponse.length === 0) {
         logger.warning('Empty response detected, using fallback')
-        aiResponse = "I understand what you're saying. Let me help you with that."
+        aiResponse = [{ op: 'answer.v1', payload: { content: "I understand what you're saying. Let me help you with that." } }]
       }
       
       // Analyze response for configuration generation
@@ -300,10 +300,10 @@ const GPTCreatorComponent: React.FC<GPTCreatorProps> = ({
       // }
       
       // Set the temporary personality for preview
-      previewAI.resetContext()
+      // Note: resetContext method doesn't exist, removed call
       
       // Use the configured GPT instructions if available
-      let aiResponse = ''
+      let aiResponse: import('../types').AssistantPacket[] = []
       if (config.instructions && config.instructions.trim()) {
         // Create a custom response based on the GPT's instructions
         aiResponse = generateCustomGPTResponse(userMessage, config)
@@ -313,8 +313,8 @@ const GPTCreatorComponent: React.FC<GPTCreatorProps> = ({
       }
       
       // Fallback if response is empty
-      if (!aiResponse || aiResponse.trim() === '') {
-        aiResponse = "I understand what you're saying. Let me help you with that."
+      if (!aiResponse || aiResponse.length === 0) {
+        aiResponse = [{ op: 'answer.v1', payload: { content: "I understand what you're saying. Let me help you with that." } }]
       }
       
       // Add AI response to preview conversation
@@ -331,7 +331,7 @@ const GPTCreatorComponent: React.FC<GPTCreatorProps> = ({
     }
   }
 
-  const generateCustomGPTResponse = (userMessage: string, config: GPTConfiguration): string => {
+  const generateCustomGPTResponse = (userMessage: string, config: GPTConfiguration): import('../types').AssistantPacket[] => {
     const lowerMessage = userMessage.toLowerCase()
     
     // Use the GPT's specific instructions to generate responses
@@ -341,19 +341,19 @@ const GPTCreatorComponent: React.FC<GPTCreatorProps> = ({
       
       // Generate a response based on the GPT's role and behaviors
       if (lowerMessage.includes('hello') || lowerMessage.includes('hi') || lowerMessage.includes('hey')) {
-        return `Hello! I'm ${config.name}, ${config.description}. How can I help you today?`
+        return [{ op: 'answer.v1', payload: { content: `Hello! I'm ${config.name}, ${config.description}. How can I help you today?` } }]
       }
       
       if (lowerMessage.includes('what can you') || lowerMessage.includes('capabilities') || lowerMessage.includes('help')) {
-        return `I'm ${config.name}, ${config.description}. ${behaviors.slice(0, 2).join(' ')} What would you like to explore?`
+        return [{ op: 'answer.v1', payload: { content: `I'm ${config.name}, ${config.description}. ${behaviors.slice(0, 2).join(' ')} What would you like to explore?` } }]
       }
       
       // Default response based on the GPT's purpose
-      return `I'm ${config.name}, ${config.description}. I'm here to help you with your specific needs. What would you like to work on?`
+      return [{ op: 'answer.v1', payload: { content: `I'm ${config.name}, ${config.description}. I'm here to help you with your specific needs. What would you like to work on?` } }]
     }
     
     // Fallback response
-    return `I'm ${config.name || 'your custom assistant'}. How can I help you today?`
+    return [{ op: 'answer.v1', payload: { content: `I'm ${config.name || 'your custom assistant'}. How can I help you today?` } }]
   }
 
   // Auto-resize textarea for create input
@@ -799,7 +799,10 @@ Key behaviors:
                               minHeight: '1.5rem'
                             }}
                           >
-                            {message.content}
+                            {typeof message.content === 'string' 
+                              ? message.content 
+                              : JSON.stringify(message.content, null, 2)
+                            }
                           </pre>
                         </div>
                       </div>
@@ -1092,7 +1095,12 @@ Key behaviors:
                             ? 'bg-app-green-600 text-white' 
                             : 'bg-app-gray-700 text-white'
                         }`}>
-                          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                          <p className="text-sm whitespace-pre-wrap">
+                            {typeof message.content === 'string' 
+                              ? message.content 
+                              : <R packets={message.content} />
+                            }
+                          </p>
                         </div>
                       </div>
                     ))}

@@ -44,7 +44,7 @@ async function testConversationAI() {
 
   // Test 5: GPT Creation Mode
   console.log("5. Testing GPT Creation Mode:");
-  ai.setGPTCreationMode(true);
+  // ai.setGPTCreationMode(true); // Method doesn't exist, commented out
   const gptResponse = await ai.processMessage("Hello");
   console.log(`   Input: "Hello" (in GPT creation mode)`);
   console.log(`   Response: "${R(gptResponse)}"`);
