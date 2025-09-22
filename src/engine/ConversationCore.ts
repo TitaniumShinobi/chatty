@@ -319,3 +319,44 @@ export class ConversationCore {
 
 // Export a singleton instance for easy use
 export const conversationCore = new ConversationCore();
+
+// Enhanced version using IntelligentEntity
+import { intelligentEntity } from './IntelligentEntity';
+
+export class EnhancedConversationCore extends ConversationCore {
+  async processMessage(
+    message: string, 
+    options: ProcessingOptions = {}
+  ): Promise<AssistantPacket[]> {
+    // Use IntelligentEntity for advanced processing
+    const result = await intelligentEntity.interact(message);
+    
+    // Apply any additional processing from base class if needed
+    if (options.forcePersonality) {
+      intelligentEntity.setTone(options.forcePersonality);
+    }
+    
+    if (options.usePersona) {
+      intelligentEntity.activatePersona(options.usePersona);
+    }
+    
+    return result.response;
+  }
+  
+  // Override to use IntelligentEntity's capabilities
+  getState(): ConversationState {
+    const entityStatus = intelligentEntity.getStatus();
+    return {
+      ...super.getState(),
+      mood: {
+        user: { valence: 0, arousal: 0.5, dominance: 0.5 },
+        conversation: { valence: 0, arousal: 0.5, dominance: 0.5 }
+      },
+      emotion: {
+        primaryEmotion: entityStatus.state.emotionalState,
+        intensity: 0.5,
+        confidence: entityStatus.stats.confidence
+      }
+    };
+  }
+}

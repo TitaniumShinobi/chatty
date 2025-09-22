@@ -8,9 +8,11 @@ export class ConversationAI {
   public gptCreationMode = false;
   private conversationCore: ConversationCore;
   private personalityOverride?: string;
+  private useIntelligentEntity: boolean = false;
   
-  constructor() {
+  constructor(options?: { useIntelligentEntity?: boolean }) {
     this.conversationCore = new ConversationCore('laid_back');
+    this.useIntelligentEntity = options?.useIntelligentEntity || false;
   }
   
   async processMessage(text: string, _files: File[] = []): Promise<AssistantPacket[]> {
@@ -33,7 +35,14 @@ export class ConversationAI {
     };
 
     try {
-      // Use the enhanced conversation core
+      // Use IntelligentEntity if enabled
+      if (this.useIntelligentEntity) {
+        const { intelligentEntity } = await import('../engine/IntelligentEntity');
+        const result = await intelligentEntity.interact(msg);
+        return result.response;
+      }
+      
+      // Otherwise use the enhanced conversation core
       const response = await this.conversationCore.processMessage(msg, options);
       return response;
     } catch (error) {
@@ -106,5 +115,36 @@ export class ConversationAI {
   // Reset conversation state
   resetConversation(): void {
     this.conversationCore.resetConversation();
+  }
+
+  // IntelligentEntity specific methods
+  async provideFeedback(success: boolean, quality: number = 0.5): Promise<void> {
+    if (this.useIntelligentEntity) {
+      const { intelligentEntity } = await import('../engine/IntelligentEntity');
+      intelligentEntity.receiveFeedback(success, quality);
+    }
+  }
+
+  async getEntityStatus(): Promise<any> {
+    if (this.useIntelligentEntity) {
+      const { intelligentEntity } = await import('../engine/IntelligentEntity');
+      return intelligentEntity.getStatus();
+    }
+    return null;
+  }
+
+  async saveEntityState(): Promise<string | null> {
+    if (this.useIntelligentEntity) {
+      const { intelligentEntity } = await import('../engine/IntelligentEntity');
+      return intelligentEntity.saveState();
+    }
+    return null;
+  }
+
+  async loadEntityState(state: string): Promise<void> {
+    if (this.useIntelligentEntity) {
+      const { intelligentEntity } = await import('../engine/IntelligentEntity');
+      intelligentEntity.loadState(state);
+    }
   }
 }
