@@ -277,7 +277,7 @@ const s: Record<string, React.CSSProperties> = {
   footer: { borderTop: '1px solid #2a2b32', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 },
   userBox: { display: 'flex', gap: 10, alignItems: 'center' },
   avatar: { width: 28, height: 28, borderRadius: 6, background: '#2a2b32', display: 'grid', placeItems: 'center', fontWeight: 700 },
-  logout: { padding: '8px', borderRadius: 8, border: '1px solid #3a3b42', background: '#2a2b32', color: '#fff', cursor: 'pointer' },
+  logout: { padding: '8px', borderRadius: 8, border: '1px solid #d4b078', background: '#E1C28B', color: '#4c3d1e', cursor: 'pointer' },
 
   main: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   welcome: { margin: 'auto', textAlign: 'center' },

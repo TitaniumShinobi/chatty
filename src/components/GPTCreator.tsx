@@ -1012,26 +1012,26 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
         accept=".txt,.md,.pdf,.json,.csv,.doc,.docx,.mp4,.avi,.mov,.mkv,.webm,.flv,.wmv,.m4v,.3gp,.ogv,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.svg"
       />
       
-      <div className="bg-app-orange-950 border border-app-orange-800 rounded-lg w-full max-w-6xl h-[90vh] flex flex-col">
+      <div className="bg-app-pale-50 border border-app-yellow-300 rounded-lg w-full max-w-6xl h-[90vh] flex flex-col shadow-lg">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-app-orange-800">
+        <div className="flex items-center justify-between p-4 border-b border-app-yellow-300">
           <div className="flex items-center gap-3">
             <button
               onClick={onClose}
-              className="p-2 hover:bg-app-orange-800 rounded-lg text-white"
+              className="p-2 hover:bg-app-yellow-100 rounded-lg text-app-text-800"
             >
               <ArrowLeft size={20} />
             </button>
             <div>
-              <h1 className="text-xl font-semibold text-white">Create New GPT</h1>
-              <p className="text-sm text-app-orange-400">• Draft</p>
+              <h1 className="text-xl font-semibold text-app-text-900">Create New GPT</h1>
+              <p className="text-sm text-app-text-800">• Draft</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={handleSave}
               disabled={isLoading || !config.name?.trim()}
-              className="px-4 py-2 text-sm bg-app-green-600 text-white rounded-lg hover:bg-app-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              className="px-4 py-2 text-sm bg-app-button-500 text-app-text-900 rounded-lg hover:bg-app-button-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
             >
               <Save size={14} />
               {isLoading ? 'Creating...' : 'Create GPT'}
@@ -1049,16 +1049,16 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
         {/* Main Content */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left Panel - Configure */}
-          <div className="w-1/2 border-r border-app-orange-800 overflow-y-auto">
+          <div className="w-1/2 border-r border-app-yellow-300 overflow-y-auto">
             {/* Tabs */}
-            <div className="flex border-b border-app-orange-800">
+            <div className="flex border-b border-app-yellow-300">
               <button
                 onClick={() => setActiveTab('create')}
                 className={cn(
                   "px-4 py-2 text-sm font-medium",
                   activeTab === 'create' 
                     ? "border-b-2 border-app-green-500 text-app-green-400" 
-                    : "text-app-orange-400 hover:text-app-orange-300"
+                    : "text-app-text-800 hover:text-app-text-900"
                 )}
               >
                 Create
@@ -1069,7 +1069,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                   "px-4 py-2 text-sm font-medium",
                   activeTab === 'configure' 
                     ? "border-b-2 border-app-green-500 text-app-green-400" 
-                    : "text-app-orange-400 hover:text-app-orange-300"
+                    : "text-app-text-800 hover:text-app-text-900"
                 )}
               >
                 Configure
@@ -1082,11 +1082,11 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                 <div className="flex flex-col h-full">
                   <div className="flex-1 p-4 overflow-y-auto">
                     <div className="text-center mb-6">
-                      <div className="w-16 h-16 bg-app-orange-800 rounded-lg flex items-center justify-center mx-auto mb-4">
-                        <Bot size={24} className="text-app-orange-400" />
+                      <div className="w-16 h-16 bg-app-yellow-200 rounded-lg flex items-center justify-center mx-auto mb-4">
+                        <Bot size={24} className="text-app-text-800" />
                       </div>
-                      <h3 className="text-lg font-medium text-white mb-2">Let's create your GPT together</h3>
-                      <p className="text-app-orange-400 text-sm">
+                      <h3 className="text-lg font-medium text-app-text-900 mb-2">Let's create your GPT together</h3>
+                      <p className="text-app-text-800 text-sm">
                         I'll help you build your custom AI assistant. Just tell me what you want it to do!
                       </p>
                     </div>
@@ -1097,7 +1097,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                         console.log('Create tab render: createMessages.length =', createMessages.length, 'messages:', createMessages)
                         return createMessages.length === 0 ? (
                           <div className="text-center py-8">
-                            <p className="text-app-orange-400 text-sm">
+                            <p className="text-app-text-800 text-sm">
                               Start by telling me what kind of GPT you'd like to create...
                             </p>
                           </div>
@@ -1110,8 +1110,8 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                             <div
                               className={`max-w-[80%] px-4 py-2 rounded-lg ${
                                 message.role === 'user'
-                                  ? 'bg-app-green-600 text-white'
-                                  : 'bg-app-orange-800 text-white'
+                                  ? 'bg-app-chat-50 text-app-text-900'
+                                  : 'bg-app-chat-50 text-app-text-900'
                               }`}
                             >
                               <p className="text-sm whitespace-pre-wrap">{message.content}</p>
@@ -1124,43 +1124,43 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                     {/* Uploaded Files Display */}
                     {files.length > 0 && (
-                      <div className="mb-4 p-3 bg-app-orange-800 rounded-lg">
+                      <div className="mb-4 p-3 bg-app-yellow-200 rounded-lg">
                         <div className="flex items-center gap-2 mb-2">
                           <Paperclip size={16} className="text-app-green-400" />
-                          <span className="text-sm font-medium text-white">Knowledge Files</span>
-                          <span className="text-xs text-app-orange-400">({files.length})</span>
+                          <span className="text-sm font-medium text-app-text-900">Knowledge Files</span>
+                          <span className="text-xs text-app-text-800">({files.length})</span>
                         </div>
                         <div className="space-y-1">
                           {currentFiles.map((file, index) => (
-                            <div key={index} className="flex items-center gap-2 text-xs text-app-orange-300">
+                            <div key={index} className="flex items-center gap-2 text-xs text-app-text-900">
                               <FileText size={12} />
                               <span>{file.originalName}</span>
-                              <span className="text-app-orange-500">({file.mimeType})</span>
+                              <span className="text-app-text-800">({file.mimeType})</span>
                             </div>
                           ))}
                           {totalFilePages > 1 && (
-                            <div className="flex items-center justify-between mt-2 pt-2 border-t border-app-orange-700">
+                            <div className="flex items-center justify-between mt-2 pt-2 border-t border-app-yellow-300">
                               <button
                                 onClick={() => goToFilePage(filePage - 1)}
                                 disabled={filePage === 1}
-                                className="text-xs text-app-orange-400 hover:text-white disabled:opacity-50"
+                                className="text-xs text-app-text-800 hover:text-app-text-900 disabled:opacity-50"
                               >
                                 ← Previous
                               </button>
-                              <span className="text-xs text-app-orange-400">
+                              <span className="text-xs text-app-text-800">
                                 Page {filePage} of {totalFilePages}
                               </span>
                               <button
                                 onClick={() => goToFilePage(filePage + 1)}
                                 disabled={filePage === totalFilePages}
-                                className="text-xs text-app-orange-400 hover:text-white disabled:opacity-50"
+                                className="text-xs text-app-text-800 hover:text-app-text-900 disabled:opacity-50"
                               >
                                 Next →
                               </button>
                             </div>
                           )}
                         </div>
-                        <p className="text-xs text-app-orange-400 mt-2">
+                        <p className="text-xs text-app-text-800 mt-2">
                           These files will be available to your GPT for reference and context.
                         </p>
                       </div>
@@ -1168,9 +1168,9 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                   </div>
 
                   {/* Input Area */}
-                  <div className="p-4 border-t border-app-orange-800">
+                  <div className="p-4 border-t border-app-button-300">
                     <form onSubmit={handleCreateSubmit} className="space-y-2">
-                      <div className="flex items-center gap-2 p-3 border border-app-orange-700 rounded-lg bg-app-orange-900">
+                      <div className="flex items-center gap-2 p-3 border border-app-yellow-300 rounded-lg bg-app-button-100">
                         <textarea
                           ref={createInputRef}
                           value={createInput}
@@ -1182,7 +1182,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                             }
                           }}
                           placeholder="Tell me what you want your GPT to do..."
-                          className="flex-1 outline-none text-sm bg-transparent text-white placeholder-app-orange-400 resize-none min-h-[20px] max-h-32"
+                          className="flex-1 outline-none text-sm bg-transparent text-app-text-900 placeholder-app-button-600 resize-none min-h-[20px] max-h-32"
                           rows={1}
                         />
                         <button
@@ -1191,7 +1191,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                             console.log('📎 Create tab paperclip clicked!')
                             fileInputRef.current?.click()
                           }}
-                          className="p-1 hover:bg-app-orange-700 rounded text-app-orange-400 hover:text-white"
+                          className="p-1 hover:bg-app-button-600 rounded text-app-text-800 hover:text-app-text-900"
                           title="Upload knowledge files"
                         >
                           <Paperclip size={16} />
@@ -1199,16 +1199,16 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                         <button
                           type="submit"
                           disabled={!createInput.trim() || isCreateGenerating}
-                          className="p-1 hover:bg-app-orange-700 rounded disabled:opacity-50"
+                          className="p-1 hover:bg-app-button-600 rounded disabled:opacity-50"
                         >
                           {isCreateGenerating ? (
-                            <div className="w-4 h-4 border-2 border-app-orange-400 border-t-transparent rounded-full animate-spin"></div>
+                            <div className="w-4 h-4 border-2 border-app-button-500 border-t-transparent rounded-full animate-spin"></div>
                           ) : (
-                            <Play size={16} className="text-app-orange-400" />
+                            <Play size={16} className="text-app-text-800" />
                           )}
                         </button>
                       </div>
-                      <p className="text-xs text-app-orange-400 text-center">
+                      <p className="text-xs text-app-text-800 text-center">
                         I'll help you define your GPT's purpose, personality, and capabilities through conversation.
                         {files.length > 0 && (
                           <span className="block mt-1 text-app-green-400">
@@ -1230,28 +1230,28 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                       title="Click to upload avatar image"
                     >
                       {isUploadingAvatar ? (
-                        <div className="animate-spin rounded-full h-6 w-6 border-2 border-app-orange-400 border-t-transparent"></div>
+                        <div className="animate-spin rounded-full h-6 w-6 border-2 border-app-button-500 border-t-transparent"></div>
                       ) : config.avatar ? (
                         <img src={config.avatar} alt="GPT Avatar" className="w-full h-full object-cover" />
                       ) : (
-                        <Plus size={24} className="text-app-orange-400" />
+                        <Plus size={24} className="text-app-text-800" />
                       )}
                     </div>
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-white">Avatar</p>
-                      <p className="text-xs text-app-orange-400 mb-2">Click the + to upload an image, or generate one automatically</p>
+                      <p className="text-sm font-medium text-app-text-900">Avatar</p>
+                      <p className="text-xs text-app-text-800 mb-2">Click the + to upload an image, or generate one automatically</p>
                       <div className="flex gap-2">
                         <button
                           onClick={generateAvatar}
                           disabled={isGeneratingAvatar || !config.name?.trim()}
-                          className="px-3 py-1 text-xs bg-app-orange-800 text-white rounded hover:bg-app-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="px-3 py-1 text-xs bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {isGeneratingAvatar ? 'Generating...' : 'Generate Avatar'}
                         </button>
                         {config.avatar && (
                           <button
                             onClick={() => setConfig(prev => ({ ...prev, avatar: undefined }))}
-                            className="px-3 py-1 text-xs bg-red-800 text-white rounded hover:bg-red-700"
+                            className="px-3 py-1 text-xs bg-red-800 text-app-text-900 rounded hover:bg-red-700"
                           >
                             Remove
                           </button>
@@ -1271,51 +1271,51 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                   {/* Name */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-white">Name</label>
+                    <label className="block text-sm font-medium mb-2 text-app-text-900">Name</label>
                     <input
                       type="text"
                       value={config.name || ''}
                       onChange={(e) => setConfig(prev => ({ ...prev, name: e.target.value }))}
                       placeholder="Name your GPT"
-                      className="w-full p-3 border border-app-orange-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-orange-900 text-white placeholder-app-orange-400"
+                      className="w-full p-3 border border-app-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900 placeholder-app-button-600"
                     />
                   </div>
 
                   {/* Description */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-white">Description</label>
+                    <label className="block text-sm font-medium mb-2 text-app-text-900">Description</label>
                     <input
                       type="text"
                       value={config.description || ''}
                       onChange={(e) => setConfig(prev => ({ ...prev, description: e.target.value }))}
                       placeholder="What does this GPT do?"
-                      className="w-full p-3 border border-app-orange-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-orange-900 text-white placeholder-app-orange-400"
+                      className="w-full p-3 border border-app-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900 placeholder-app-button-600"
                     />
                   </div>
 
                   {/* Instructions */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-white">Instructions</label>
+                    <label className="block text-sm font-medium mb-2 text-app-text-900">Instructions</label>
                     <textarea
                       value={config.instructions || ''}
                       onChange={(e) => setConfig(prev => ({ ...prev, instructions: e.target.value }))}
                       placeholder="How should this GPT behave? What should it do and avoid?"
                       rows={6}
-                      className="w-full p-3 border border-app-orange-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 resize-none bg-app-orange-900 text-white placeholder-app-orange-400"
+                      className="w-full p-3 border border-app-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 resize-none bg-app-button-100 text-app-text-900 placeholder-app-button-600"
                     />
                   </div>
 
                   {/* Model Selection */}
                   <div className="space-y-4">
-                    <h3 className="text-sm font-medium text-white">Model Selection</h3>
+                    <h3 className="text-sm font-medium text-app-text-900">Model Selection</h3>
                     
                     {/* Conversation Model */}
-                    <div>
-                      <label className="block text-sm font-medium mb-2 text-white">Conversation</label>
-                      <select 
+                  <div>
+                      <label className="block text-sm font-medium mb-2 text-app-text-900">Conversation</label>
+                    <select 
                         value={config.conversationModel || 'phi3:latest'}
                         onChange={(e) => setConfig(prev => ({ ...prev, conversationModel: e.target.value }))}
-                        className="w-full p-3 border border-app-orange-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-orange-900 text-white"
+                        className="w-full p-3 border border-app-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900"
                       >
                         <option value="aya:8b">Aya 8B</option>
                         <option value="aya:35b">Aya 35B</option>
@@ -1611,16 +1611,16 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                         <option value="yi-coder:9b">Yi Coder 9B</option>
                         <option value="zephyr:7b">Zephyr 7B</option>
                         <option value="zephyr:141b">Zephyr 141B</option>
-                      </select>
-                    </div>
+                    </select>
+                  </div>
 
                     {/* Creative Model */}
                     <div>
-                      <label className="block text-sm font-medium mb-2 text-white">Creative</label>
+                      <label className="block text-sm font-medium mb-2 text-app-text-900">Creative</label>
                       <select 
                         value={config.creativeModel || 'mistral:latest'}
                         onChange={(e) => setConfig(prev => ({ ...prev, creativeModel: e.target.value }))}
-                        className="w-full p-3 border border-app-orange-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-orange-900 text-white"
+                        className="w-full p-3 border border-app-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900"
                       >
                         <option value="aya:8b">Aya 8B</option>
                         <option value="aya:35b">Aya 35B</option>
@@ -1902,15 +1902,15 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                         <option value="zephyr:7b">Zephyr 7B</option>
                         <option value="zephyr:141b">Zephyr 141B</option>
                       </select>
-                    </div>
+                </div>
 
                     {/* Coding Model */}
                     <div>
-                      <label className="block text-sm font-medium mb-2 text-white">Coding</label>
+                      <label className="block text-sm font-medium mb-2 text-app-text-900">Coding</label>
                       <select 
                         value={config.codingModel || 'deepseek-coder:latest'}
                         onChange={(e) => setConfig(prev => ({ ...prev, codingModel: e.target.value }))}
-                        className="w-full p-3 border border-app-orange-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-orange-900 text-white"
+                        className="w-full p-3 border border-app-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900"
                       >
                         <option value="codebooga:34b">CodeBooga 34B</option>
                         <option value="codegemma:2b">CodeGemma 2B</option>
@@ -1958,7 +1958,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                   {/* Conversation Starters */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-white">Conversation Starters</label>
+                    <label className="block text-sm font-medium mb-2 text-app-text-900">Conversation Starters</label>
                     <div className="space-y-2">
                       {config.conversationStarters?.map((starter, index) => (
                         <div key={index} className="flex items-center gap-2">
@@ -1967,11 +1967,11 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                             value={starter}
                             onChange={(e) => updateConversationStarter(index, e.target.value)}
                             placeholder="Add a conversation starter"
-                            className="flex-1 p-2 border border-app-orange-700 rounded focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-orange-900 text-white placeholder-app-orange-400"
+                            className="flex-1 p-2 border border-app-yellow-300 rounded focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900 placeholder-app-button-600"
                           />
                           <button
                             onClick={() => removeConversationStarter(index)}
-                            className="p-1 hover:bg-app-orange-800 rounded text-app-orange-400 hover:text-white"
+                            className="p-1 hover:bg-app-button-400 rounded text-app-text-800 hover:text-app-text-900"
                           >
                             <X size={16} />
                           </button>
@@ -1988,14 +1988,14 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                   {/* File Upload */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-white">Knowledge Files</label>
-                    <p className="text-xs text-app-orange-400 mb-2">Upload files to give your GPT access to specific information</p>
+                    <label className="block text-sm font-medium mb-2 text-app-text-900">Knowledge Files</label>
+                    <p className="text-xs text-app-text-800 mb-2">Upload files to give your GPT access to specific information</p>
                     
                     
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isUploading}
-                      className="px-4 py-2 border border-app-orange-700 rounded-lg hover:bg-app-orange-800 flex items-center gap-2 text-white disabled:opacity-50"
+                      className="px-4 py-2 border border-app-yellow-300 rounded-lg hover:bg-app-button-400 flex items-center gap-2 text-app-text-900 disabled:opacity-50"
                     >
                       <Upload size={16} />
                       {isUploading ? 'Uploading...' : 'Upload Files'}
@@ -2005,26 +2005,26 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                     {files.length > 0 && (
                       <div className="mt-3 space-y-2">
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm text-app-orange-400">
+                          <span className="text-sm text-app-text-800">
                             {files.length} file{files.length !== 1 ? 's' : ''} uploaded
                           </span>
                           {totalFilePages > 1 && (
-                            <span className="text-xs text-app-orange-500">
+                            <span className="text-xs text-app-text-800">
                               Page {filePage} of {totalFilePages}
                             </span>
                           )}
                         </div>
                         
                         {currentFiles.map((file) => (
-                          <div key={file.id} className="flex items-center justify-between p-2 bg-app-orange-800 rounded">
+                          <div key={file.id} className="flex items-center justify-between p-2 bg-app-yellow-200 rounded">
                             <div className="flex items-center gap-2">
-                              <FileText size={16} className="text-app-orange-400" />
-                              <span className="text-sm text-white">{file.originalName}</span>
-                              <span className="text-xs text-app-orange-400">({gptService.formatFileSize(file.size)})</span>
+                              <FileText size={16} className="text-app-text-800" />
+                              <span className="text-sm text-app-text-900">{file.originalName}</span>
+                              <span className="text-xs text-app-text-800">({gptService.formatFileSize(file.size)})</span>
                             </div>
                             <button
                               onClick={() => handleRemoveFile(file.id)}
-                              className="p-1 hover:bg-app-orange-700 rounded text-app-orange-400 hover:text-white"
+                              className="p-1 hover:bg-app-button-600 rounded text-app-text-800 hover:text-app-text-900"
                             >
                               <X size={14} />
                             </button>
@@ -2032,18 +2032,18 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                         ))}
                         
                         {totalFilePages > 1 && (
-                          <div className="flex items-center justify-center gap-2 pt-2 border-t border-app-orange-700">
+                          <div className="flex items-center justify-center gap-2 pt-2 border-t border-app-yellow-300">
                             <button
                               onClick={() => goToFilePage(filePage - 1)}
                               disabled={filePage === 1}
-                              className="px-3 py-1 text-xs bg-app-orange-800 text-white rounded hover:bg-app-orange-700 disabled:opacity-50"
+                              className="px-3 py-1 text-xs bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600 disabled:opacity-50"
                             >
                               ← Previous
                             </button>
                             <button
                               onClick={() => goToFilePage(filePage + 1)}
                               disabled={filePage === totalFilePages}
-                              className="px-3 py-1 text-xs bg-app-orange-800 text-white rounded hover:bg-app-orange-700 disabled:opacity-50"
+                              className="px-3 py-1 text-xs bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600 disabled:opacity-50"
                             >
                               Next →
                             </button>
@@ -2055,9 +2055,9 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                   {/* Capabilities */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-white">Capabilities</label>
+                    <label className="block text-sm font-medium mb-2 text-app-text-900">Capabilities</label>
                     <div className="space-y-2">
-                      <label className="flex items-center gap-2 text-white">
+                      <label className="flex items-center gap-2 text-app-text-900">
                         <input
                           type="checkbox"
                           checked={config.capabilities?.webSearch || false}
@@ -2070,12 +2070,12 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                               codeInterpreter: prev.capabilities?.codeInterpreter || true
                             }
                           }))}
-                          className="rounded border-app-orange-600 bg-app-orange-900 text-app-green-500"
+                          className="rounded border-app-orange-600 bg-app-button-100 text-app-green-500"
                         />
-                        <Search size={16} className="text-app-orange-300" />
+                        <Search size={16} className="text-app-text-900" />
                         <span className="text-sm">Web Search</span>
                       </label>
-                      <label className="flex items-center gap-2 text-white">
+                      <label className="flex items-center gap-2 text-app-text-900">
                         <input
                           type="checkbox"
                           checked={config.capabilities?.canvas || false}
@@ -2088,12 +2088,12 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                               codeInterpreter: prev.capabilities?.codeInterpreter || true
                             }
                           }))}
-                          className="rounded border-app-orange-600 bg-app-orange-900 text-app-green-500"
+                          className="rounded border-app-orange-600 bg-app-button-100 text-app-green-500"
                         />
-                        <Palette size={16} className="text-app-orange-300" />
+                        <Palette size={16} className="text-app-text-900" />
                         <span className="text-sm">Canvas</span>
                       </label>
-                      <label className="flex items-center gap-2 text-white">
+                      <label className="flex items-center gap-2 text-app-text-900">
                         <input
                           type="checkbox"
                           checked={config.capabilities?.imageGeneration || false}
@@ -2106,12 +2106,12 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                               codeInterpreter: prev.capabilities?.codeInterpreter || true
                             }
                           }))}
-                          className="rounded border-app-orange-600 bg-app-orange-900 text-app-green-500"
+                          className="rounded border-app-orange-600 bg-app-button-100 text-app-green-500"
                         />
-                        <Image size={16} className="text-app-orange-300" />
+                        <Image size={16} className="text-app-text-900" />
                         <span className="text-sm">Image Generation</span>
                       </label>
-                      <label className="flex items-center gap-2 text-white">
+                      <label className="flex items-center gap-2 text-app-text-900">
                         <input
                           type="checkbox"
                           checked={config.capabilities?.codeInterpreter || false}
@@ -2124,9 +2124,9 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                               codeInterpreter: e.target.checked
                             }
                           }))}
-                          className="rounded border-app-orange-600 bg-app-orange-900 text-app-green-500"
+                          className="rounded border-app-orange-600 bg-app-button-100 text-app-green-500"
                         />
-                        <Code size={16} className="text-app-orange-300" />
+                        <Code size={16} className="text-app-text-900" />
                         <span className="text-sm">Code Interpreter</span>
                       </label>
                     </div>
@@ -2134,30 +2134,30 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                   {/* Actions */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-white">Actions</label>
-                    <p className="text-xs text-app-orange-400 mb-3">Add API endpoints your GPT can call</p>
+                    <label className="block text-sm font-medium mb-2 text-app-text-900">Actions</label>
+                    <p className="text-xs text-app-text-800 mb-3">Add API endpoints your GPT can call</p>
                     
-                    <button
+                      <button
                       onClick={() => setIsActionsEditorOpen(true)}
-                      className="w-full p-4 border-2 border-dashed border-app-orange-600 rounded-lg hover:border-app-orange-500 transition-colors flex items-center justify-center gap-2 text-app-orange-400 hover:text-white"
-                    >
+                      className="w-full p-4 border-2 border-dashed border-app-orange-600 rounded-lg hover:border-app-orange-500 transition-colors flex items-center justify-center gap-2 text-app-text-800 hover:text-app-text-900"
+                      >
                       <Plus size={20} />
                       <span>Open Actions Editor</span>
-                    </button>
+                      </button>
 
                     {/* Action List */}
                     {actions.length > 0 && (
                       <div className="mt-3 space-y-2">
                         {actions.map((action) => (
-                          <div key={action.id} className="flex items-center justify-between p-2 bg-app-orange-800 rounded">
+                          <div key={action.id} className="flex items-center justify-between p-2 bg-app-yellow-200 rounded">
                             <div className="flex items-center gap-2">
-                              <Link size={16} className="text-app-orange-400" />
-                              <span className="text-sm text-white">{action.name}</span>
-                              <span className="text-xs text-app-orange-400">({action.method})</span>
+                              <Link size={16} className="text-app-text-800" />
+                              <span className="text-sm text-app-text-900">{action.name}</span>
+                              <span className="text-xs text-app-text-800">({action.method})</span>
                             </div>
                             <button
                               onClick={() => removeAction(action.id)}
-                              className="p-1 hover:bg-app-orange-700 rounded text-app-orange-400 hover:text-white"
+                              className="p-1 hover:bg-app-button-600 rounded text-app-text-800 hover:text-app-text-900"
                             >
                               <X size={14} />
                             </button>
@@ -2173,33 +2173,33 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
           {/* Right Panel - Preview */}
           <div className="w-1/2 flex flex-col">
-            <div className="p-4 border-b border-app-orange-800">
+            <div className="p-4 border-b border-app-button-300">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-white">Preview</h2>
+                <h2 className="text-lg font-semibold text-app-text-900">Preview</h2>
                 <div className="flex items-center gap-3">
                   {/* Tone Mode Toggle */}
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-app-orange-400">Tone:</span>
+                    <span className="text-sm text-app-text-800">Tone:</span>
                     <button
                       onClick={() => setUseLinMode(!useLinMode)}
                       className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                         useLinMode
-                          ? 'bg-app-green-600 text-white'
-                          : 'bg-app-orange-700 text-app-orange-300 hover:bg-app-orange-600'
+                          ? 'bg-app-button-500 text-app-text-900'
+                          : 'bg-app-button-500 text-app-text-900 hover:bg-app-button-600'
                       }`}
-                      title={useLinMode ? 'Lin mode: Respects custom tone (no Chatty normalization)' : 'Chatty mode: Uses Chatty\'s friendly tone normalization'}
+                      title={useLinMode ? 'Lin mode: Respects custom tone (no Chatty normalization)' : 'Synth mode: Uses Chatty\'s friendly tone normalization'}
                     >
-                      {useLinMode ? 'Lin' : 'Chatty'}
+                      {useLinMode ? 'Lin' : 'Synth'}
                     </button>
                   </div>
-                  {previewMessages.length > 0 && (
-                    <button
-                      onClick={() => setPreviewMessages([])}
-                      className="text-xs text-app-orange-400 hover:text-white"
-                    >
-                      Clear
-                    </button>
-                  )}
+                {previewMessages.length > 0 && (
+                  <button
+                    onClick={() => setPreviewMessages([])}
+                      className="text-xs text-app-text-800 hover:text-app-text-900"
+                  >
+                    Clear
+                  </button>
+                )}
                 </div>
               </div>
             </div>
@@ -2209,17 +2209,17 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
               <div className="flex-1 p-4 overflow-y-auto min-h-0">
                 {previewMessages.length === 0 ? (
                   <div className="text-center">
-                    <div className="w-16 h-16 bg-app-orange-800 rounded-lg flex items-center justify-center mx-auto mb-4">
+                    <div className="w-16 h-16 bg-app-yellow-200 rounded-lg flex items-center justify-center mx-auto mb-4">
                       {config.avatar ? (
                         <img src={config.avatar} alt="GPT Avatar" className="w-full h-full object-cover" />
                       ) : (
-                        <div className="w-8 h-8 bg-app-orange-600 rounded"></div>
+                        <div className="w-8 h-8 bg-app-button-500 rounded"></div>
                       )}
                     </div>
-                    <p className="text-app-orange-400 text-sm">
+                    <p className="text-app-text-800 text-sm">
                       {config.name || 'Your GPT'}
                     </p>
-                    <p className="text-app-orange-500 text-xs mt-1">
+                    <p className="text-app-text-800 text-xs mt-1">
                       {config.description || 'Preview your GPT here'}
                     </p>
                   </div>
@@ -2229,8 +2229,8 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                       <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[80%] p-3 rounded-lg ${
                           message.role === 'user' 
-                            ? 'bg-app-green-600 text-white' 
-                            : 'bg-app-orange-700 text-white'
+                            ? 'bg-app-chat-50 text-app-text-900' 
+                            : 'bg-app-chat-50 text-app-text-900'
                         }`}>
                           <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                         </div>
@@ -2241,9 +2241,9 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
               </div>
 
               {/* Input Preview */}
-              <div className="p-4 border-t border-app-orange-800">
+              <div className="p-4 border-t border-app-button-300">
                 <form onSubmit={handlePreviewSubmit} className="space-y-2">
-                  <div className="flex items-center gap-2 p-3 border border-app-orange-700 rounded-lg bg-app-orange-900">
+                  <div className="flex items-center gap-2 p-3 border border-app-yellow-300 rounded-lg bg-app-button-100">
                     <textarea
                       ref={previewInputRef}
                       value={previewInput}
@@ -2255,7 +2255,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                         }
                       }}
                       placeholder="Ask anything"
-                      className="flex-1 outline-none text-sm bg-transparent text-white placeholder-app-orange-400 resize-none min-h-[20px] max-h-32"
+                      className="flex-1 outline-none text-sm bg-transparent text-app-text-900 placeholder-app-button-600 resize-none min-h-[20px] max-h-32"
                       rows={1}
                     />
                     <button
@@ -2264,7 +2264,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                         console.log('📎 Preview tab paperclip clicked!')
                         fileInputRef.current?.click()
                       }}
-                      className="p-1 hover:bg-app-orange-700 rounded text-app-orange-400 hover:text-white"
+                      className="p-1 hover:bg-app-button-600 rounded text-app-text-800 hover:text-app-text-900"
                       title="Upload knowledge files"
                     >
                       <Paperclip size={16} />
@@ -2272,23 +2272,23 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                     <button
                       type="submit"
                       disabled={!previewInput.trim() || isPreviewGenerating}
-                      className="p-1 hover:bg-app-orange-700 rounded disabled:opacity-50"
+                      className="p-1 hover:bg-app-button-600 rounded disabled:opacity-50"
                     >
                       {isPreviewGenerating ? (
-                        <div className="w-4 h-4 border-2 border-app-orange-400 border-t-transparent rounded-full animate-spin"></div>
+                        <div className="w-4 h-4 border-2 border-app-button-500 border-t-transparent rounded-full animate-spin"></div>
                       ) : (
-                        <Play size={16} className="text-app-orange-400" />
+                        <Play size={16} className="text-app-text-800" />
                       )}
                     </button>
                   </div>
-                  <div className="text-xs text-app-orange-400 text-center space-y-1">
+                  <div className="text-xs text-app-text-800 text-center space-y-1">
                     <p>This is a live preview using the configured models.</p>
                     <p>Your GPT will behave based on the current configuration above.</p>
                     {config.name && (
                       <p className="text-app-green-400">✓ Configured as: {config.name}</p>
                     )}
                     {(config.conversationModel || config.creativeModel || config.codingModel) && (
-                      <div className="text-xs text-app-orange-500 mt-2">
+                      <div className="text-xs text-app-text-800 mt-2">
                         <p>Models: {config.conversationModel || 'default'} | {config.creativeModel || 'default'} | {config.codingModel || 'default'}</p>
                       </div>
                     )}
@@ -2308,19 +2308,19 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
       {/* Actions Editor Modal */}
       {isActionsEditorOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-60 flex items-center justify-center p-4">
-          <div className="bg-app-orange-900 rounded-lg w-full max-w-4xl h-[80vh] flex flex-col">
+          <div className="bg-app-button-100 rounded-lg w-full max-w-4xl h-[80vh] flex flex-col">
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-app-orange-800">
+            <div className="flex items-center justify-between p-6 border-b border-app-button-300">
               <div>
-                <h2 className="text-xl font-semibold text-white">Edit Actions</h2>
-                <p className="text-sm text-app-orange-400 mt-1">
+                <h2 className="text-xl font-semibold text-app-text-900">Edit Actions</h2>
+                <p className="text-sm text-app-text-800 mt-1">
                   Let your GPT retrieve information or take actions outside of Chatty. 
                   <a href="#" className="text-app-green-400 hover:underline ml-1">Learn more</a>
                 </p>
               </div>
               <button
                 onClick={() => setIsActionsEditorOpen(false)}
-                className="p-2 hover:bg-app-orange-800 rounded-lg text-app-orange-400 hover:text-white"
+                className="p-2 hover:bg-app-button-400 rounded-lg text-app-text-800 hover:text-app-text-900"
               >
                 <X size={20} />
               </button>
@@ -2329,18 +2329,18 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
             {/* Content */}
             <div className="flex-1 flex overflow-hidden">
               {/* Left Panel - Schema Editor */}
-              <div className="flex-1 p-6 border-r border-app-orange-800">
+              <div className="flex-1 p-6 border-r border-app-button-300">
                 <div className="space-y-4">
                   {/* Authentication */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-white">Authentication</label>
+                    <label className="block text-sm font-medium mb-2 text-app-text-900">Authentication</label>
                     <div className="flex items-center gap-2">
-                      <select className="flex-1 p-2 border border-app-orange-700 rounded focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-orange-900 text-white">
+                      <select className="flex-1 p-2 border border-app-yellow-300 rounded focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900">
                         <option value="none">None</option>
                         <option value="api-key">API Key</option>
                         <option value="oauth">OAuth</option>
                       </select>
-                      <button className="p-2 hover:bg-app-orange-800 rounded text-app-orange-400 hover:text-white">
+                      <button className="p-2 hover:bg-app-button-400 rounded text-app-text-800 hover:text-app-text-900">
                         <Code size={16} />
                       </button>
                     </div>
@@ -2349,13 +2349,13 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                   {/* Schema */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <label className="block text-sm font-medium text-white">Schema</label>
+                      <label className="block text-sm font-medium text-app-text-900">Schema</label>
                       <div className="flex gap-2">
-                        <button className="px-3 py-1 text-xs bg-app-orange-800 text-white rounded hover:bg-app-orange-700">
+                        <button className="px-3 py-1 text-xs bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600">
                           Import from URL
                         </button>
                         <select 
-                          className="px-3 py-1 text-xs bg-app-orange-800 text-white rounded hover:bg-app-orange-700"
+                          className="px-3 py-1 text-xs bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600"
                           onChange={(e) => {
                             if (e.target.value === 'katana-chatty-bridge') {
                               setActionsSchema(`{
@@ -2478,11 +2478,11 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                     <textarea
                       value={actionsSchema}
                       onChange={(e) => setActionsSchema(e.target.value)}
-                      className="w-full h-96 p-3 border border-app-orange-700 rounded focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-orange-900 text-white font-mono text-sm resize-none"
+                      className="w-full h-96 p-3 border border-app-yellow-300 rounded focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900 font-mono text-sm resize-none"
                       placeholder="Enter your OpenAPI schema here..."
                     />
                     <div className="flex justify-end mt-2">
-                      <button className="px-3 py-1 text-xs bg-app-orange-800 text-white rounded hover:bg-app-orange-700">
+                      <button className="px-3 py-1 text-xs bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600">
                         Format
                       </button>
                     </div>
@@ -2493,31 +2493,31 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
               {/* Right Panel - Available Actions */}
               <div className="w-80 p-6">
                 <div className="space-y-4">
-                  <h3 className="text-lg font-medium text-white">Available actions</h3>
+                  <h3 className="text-lg font-medium text-app-text-900">Available actions</h3>
                   
                   {/* Actions List */}
                   <div className="space-y-2">
-                    <div className="p-3 border border-app-orange-700 rounded-lg">
+                    <div className="p-3 border border-app-yellow-300 rounded-lg">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-white">sendMessageToChatty</span>
-                        <button className="px-2 py-1 text-xs bg-app-green-600 text-white rounded hover:bg-app-green-700">
+                        <span className="text-sm font-medium text-app-text-900">sendMessageToChatty</span>
+                        <button className="px-2 py-1 text-xs bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600">
                           Test
                         </button>
                       </div>
-                      <div className="text-xs text-app-orange-400 space-y-1">
+                      <div className="text-xs text-app-text-800 space-y-1">
                         <div>POST /chatty</div>
                         <div>Queue a prompt in the Chatty CLI terminal</div>
                       </div>
                     </div>
 
-                    <div className="p-3 border border-app-orange-700 rounded-lg">
+                    <div className="p-3 border border-app-yellow-300 rounded-lg">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-white">receiveFromChatty</span>
-                        <button className="px-2 py-1 text-xs bg-app-green-600 text-white rounded hover:bg-app-green-700">
+                        <span className="text-sm font-medium text-app-text-900">receiveFromChatty</span>
+                        <button className="px-2 py-1 text-xs bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600">
                           Test
                         </button>
                       </div>
-                      <div className="text-xs text-app-orange-400 space-y-1">
+                      <div className="text-xs text-app-text-800 space-y-1">
                         <div>POST /katana-listen</div>
                         <div>Receive responses from Chatty CLI</div>
                       </div>
@@ -2526,11 +2526,11 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                   {/* Privacy Policy */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-white">Privacy policy</label>
+                    <label className="block text-sm font-medium mb-2 text-app-text-900">Privacy policy</label>
                     <input
                       type="url"
                       placeholder="https://app.example.com/privacy"
-                      className="w-full p-2 border border-app-orange-700 rounded focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-orange-900 text-white placeholder-app-orange-400"
+                      className="w-full p-2 border border-app-yellow-300 rounded focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900 placeholder-app-button-600"
                     />
                   </div>
                 </div>
@@ -2538,10 +2538,10 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-end gap-3 p-6 border-t border-app-orange-800">
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-app-button-300">
               <button
                 onClick={() => setIsActionsEditorOpen(false)}
-                className="px-4 py-2 text-sm text-app-orange-400 hover:text-white"
+                className="px-4 py-2 text-sm text-app-text-800 hover:text-app-text-900"
               >
                 Cancel
               </button>
@@ -2579,7 +2579,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                     setError('Invalid JSON schema')
                   }
                 }}
-                className="px-4 py-2 text-sm bg-app-green-600 text-white rounded hover:bg-app-green-700"
+                className="px-4 py-2 text-sm bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600"
               >
                 Save Actions
               </button>
@@ -2591,19 +2591,19 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
       {/* Crop Modal */}
       {showCropModal && imageToCrop && (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-app-orange-900 rounded-lg p-6 w-full max-w-2xl mx-4">
+          <div className="bg-app-button-100 rounded-lg p-6 w-full max-w-2xl mx-4">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">Crop Avatar</h3>
+              <h3 className="text-lg font-semibold text-app-text-900">Crop Avatar</h3>
               <button
                 onClick={handleCropCancel}
-                className="text-app-orange-400 hover:text-white"
+                className="text-app-text-800 hover:text-app-text-900"
               >
                 <X size={24} />
               </button>
             </div>
             
             <div className="mb-4">
-              <div className="relative w-full h-64 bg-app-orange-800 rounded-lg overflow-hidden">
+              <div className="relative w-full h-64 bg-app-yellow-200 rounded-lg overflow-hidden">
                 <Cropper
                   image={imageToCrop}
                   crop={crop}
@@ -2625,7 +2625,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
             </div>
 
             <div className="flex items-center gap-4 mb-4">
-              <label className="text-sm text-app-orange-400">Zoom:</label>
+              <label className="text-sm text-app-text-800">Zoom:</label>
               <input
                 type="range"
                 min={1}
@@ -2635,20 +2635,20 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                 onChange={(e) => setZoom(Number(e.target.value))}
                 className="flex-1"
               />
-              <span className="text-sm text-app-orange-400">{Math.round(zoom * 100)}%</span>
+              <span className="text-sm text-app-text-800">{Math.round(zoom * 100)}%</span>
             </div>
 
             <div className="flex gap-3 justify-end">
               <button
                 onClick={handleCropCancel}
-                className="px-4 py-2 text-sm bg-app-orange-700 text-white rounded hover:bg-app-orange-600"
+                className="px-4 py-2 text-sm bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-500"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCropComplete}
                 disabled={isUploadingAvatar}
-                className="px-4 py-2 text-sm bg-app-green-600 text-white rounded hover:bg-app-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="px-4 py-2 text-sm bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {isUploadingAvatar ? (
                   <>

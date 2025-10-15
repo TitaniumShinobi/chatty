@@ -14,9 +14,9 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
   // Handle typing indicator
   if ((message as any).typing) {
     return (
-      <div className="flex items-start gap-3 p-4 bg-app-orange-800 rounded-lg">
+      <div className="flex items-start gap-3 p-4 bg-app-chat-50 rounded-lg">
         <div className="w-8 h-8 rounded-full bg-app-green-600 flex items-center justify-center flex-shrink-0">
-          <span className="text-white text-sm font-bold">AI</span>
+          <span className="text-app-text-900 text-sm font-bold">AI</span>
         </div>
         <div className="flex-1">
           <div className="flex items-center gap-2">
@@ -25,7 +25,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
               <div className="typing-indicator"></div>
               <div className="typing-indicator"></div>
             </div>
-            <span className="text-app-orange-400 text-sm">
+            <span className="text-app-text-800 text-sm">
               {(message as any).text || 'AI is thinking...'}
             </span>
           </div>
@@ -45,9 +45,9 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
   if (message.role === 'assistant' && typeof message.content === 'string') {
     console.error('Assistant prose detected in production:', message.content.slice(0,100));
     return (
-      <div className={`flex items-start gap-3 p-4 ${message.role === 'assistant' ? 'bg-app-orange-800' : 'bg-app-orange-700'} rounded-lg`}>
+      <div className={`flex items-start gap-3 p-4 ${message.role === 'assistant' ? 'bg-app-chat-50' : 'bg-app-chat-50'} rounded-lg`}>
         <div className="w-8 h-8 rounded-full bg-app-green-600 flex items-center justify-center flex-shrink-0">
-          <span className="text-white text-sm font-bold">AI</span>
+          <span className="text-app-text-900 text-sm font-bold">AI</span>
         </div>
         <div className="flex-1">
           <i className="text-red-400">[invalid-assistant-message]</i>
@@ -58,13 +58,13 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
 
   const getFileIcon = (fileType: string) => {
     if (fileType.startsWith('image/')) {
-      return <FileImage size={16} className="text-app-orange-400" />
+      return <FileImage size={16} className="text-app-text-800" />
     } else if (fileType.includes('text') || fileType.includes('document')) {
-      return <FileText size={16} className="text-app-orange-400" />
+      return <FileText size={16} className="text-app-text-800" />
     } else if (fileType.includes('json') || fileType.includes('code')) {
-      return <FileCode size={16} className="text-app-orange-400" />
+      return <FileCode size={16} className="text-app-text-800" />
     } else {
-      return <Paperclip size={16} className="text-app-orange-400" />
+      return <Paperclip size={16} className="text-app-text-800" />
     }
   }
 
@@ -84,8 +84,8 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
     <div className={cn(
       "flex items-start gap-3 p-4 rounded-lg transition-colors",
       isUser 
-        ? "bg-app-orange-800" 
-        : "bg-app-orange-700"
+        ? "bg-app-chat-50" 
+        : "bg-app-chat-50"
     )}>
       {/* Avatar */}
       <div className={cn(
@@ -94,7 +94,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
           ? "bg-app-orange-600" 
           : "bg-app-green-600"
       )}>
-        <span className="text-white text-sm font-bold">
+        <span className="text-app-text-900 text-sm font-bold">
           {isUser ? 'U' : 'AI'}
         </span>
       </div>
@@ -105,15 +105,15 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
         {message.files && message.files.length > 0 && (
           <div className="mb-3 p-3 bg-app-orange-600 rounded-lg border border-app-orange-500">
             <div className="flex items-center gap-2 mb-2">
-              <Paperclip size={16} className="text-app-orange-400" />
-              <span className="text-sm text-white font-medium">Attached files ({message.files.length})</span>
+              <Paperclip size={16} className="text-app-text-800" />
+              <span className="text-sm text-app-text-900 font-medium">Attached files ({message.files.length})</span>
             </div>
             <div className="space-y-2">
               {message.files.map((file, index) => (
-                <div key={index} className="flex items-center gap-2 p-2 bg-app-orange-700 rounded">
+                <div key={index} className="flex items-center gap-2 p-2 bg-app-chat-50 rounded">
                   {getFileIcon(file.type)}
-                  <span className="text-sm text-white">{file.name}</span>
-                  <span className="text-xs text-app-orange-400">
+                  <span className="text-sm text-app-text-900">{file.name}</span>
+                  <span className="text-xs text-app-text-800">
                     ({(file.size / 1024).toFixed(1)} KB)
                   </span>
                 </div>
@@ -176,13 +176,13 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
                 
                 // Headers
                 h1: ({ children }) => (
-                  <h1 className="text-2xl font-bold mb-4 text-white">{children}</h1>
+                  <h1 className="text-2xl font-bold mb-4 text-app-text-900">{children}</h1>
                 ),
                 h2: ({ children }) => (
-                  <h2 className="text-xl font-bold mb-3 text-white">{children}</h2>
+                  <h2 className="text-xl font-bold mb-3 text-app-text-900">{children}</h2>
                 ),
                 h3: ({ children }) => (
-                  <h3 className="text-lg font-bold mb-2 text-white">{children}</h3>
+                  <h3 className="text-lg font-bold mb-2 text-app-text-900">{children}</h3>
                 ),
                 
                 // Lists
@@ -199,7 +199,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
                     href={href} 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    className="text-app-green-400 hover:text-app-green-300 underline"
+                    className="text-app-text-800 hover:text-app-text-700 underline"
                   >
                     {children}
                   </a>
@@ -207,7 +207,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
                 
                 // Blockquotes
                 blockquote: ({ children }) => (
-                  <blockquote className="border-l-4 border-app-orange-500 pl-4 italic text-app-orange-300 mb-4">
+                  <blockquote className="border-l-4 border-app-orange-500 pl-4 italic text-app-text-800 mb-4">
                     {children}
                   </blockquote>
                 ),
@@ -221,7 +221,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
                   </div>
                 ),
                 th: ({ children }) => (
-                  <th className="border border-app-orange-600 px-3 py-2 bg-app-orange-800 text-left font-semibold">
+                  <th className="border border-app-orange-600 px-3 py-2 bg-app-chat-50 text-left font-semibold">
                     {children}
                   </th>
                 ),
@@ -236,7 +236,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
                   <p className="mb-4 leading-relaxed">{children}</p>
                 ),
               }}
-              className="text-white"
+              className="text-app-text-900"
             >
               {message.content}
             </ReactMarkdown>
@@ -246,7 +246,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
         </div>
         
         {/* Timestamp */}
-        <div className="text-xs text-app-orange-400 mt-2">
+        <div className="text-xs text-app-text-800 mt-2">
           {formatDate(message.timestamp)}
         </div>
       </div>

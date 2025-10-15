@@ -1,6 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { fetchMe, logout, type User } from '../lib/auth'
+import { 
+  Plus, 
+  Search,
+  Library,
+  Clock,
+  FolderPlus,
+  PanelLeftClose,
+  MessageSquare,
+  Trash2
+} from 'lucide-react'
 
 type Message = {
   id: string
@@ -223,9 +233,6 @@ export default function Layout() {
     navigate(`/app/chat/${threadId}`)
   }
 
-  function handleHomeClick() {
-    navigate('/app')
-  }
 
   function handleGPTsClick() {
     navigate('/app/gpts')
@@ -237,8 +244,8 @@ export default function Layout() {
 
   if (isLoading) {
     return (
-      <div style={s.app}>
-        <div style={s.loading}>Loading…</div>
+      <div className="flex h-screen" style={{ backgroundColor: '#ffffeb' }}>
+        <div style={loadingStyles}>Loading…</div>
       </div>
     )
   }
@@ -248,187 +255,215 @@ export default function Layout() {
   }
 
   return (
-    <div style={s.app}>
-      <aside style={s.sidebar}>
-        <div style={s.brand}>Chatty</div>
-        
-        {/* Navigation */}
-        <nav style={s.nav}>
-          <button 
-            style={{ ...s.navItem, ...(location.pathname === '/app' ? s.navItemActive : {}) }}
-            onClick={handleHomeClick}
-          >
-            Chatty
+    <div className="flex h-screen" style={{ backgroundColor: '#ffffeb' }}>
+      {/* Sidebar */}
+      <aside className="w-64 border-r flex flex-col" style={{ backgroundColor: '#ffffeb', borderColor: '#fde047' }}>
+        {/* Top Section - Logo and Panel Toggle */}
+        <div className="flex items-center justify-between p-4">
+          {/* Logo */}
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+              <span className="text-white text-sm font-bold">C</span>
+            </div>
+            <span className="text-lg font-semibold" style={{ color: '#4c3d1e' }}>Chatty</span>
+          </div>
+          
+          {/* Panel Toggle Button */}
+          <button className="p-1 rounded transition-colors" style={{ color: '#4c3d1e' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fde047'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+            <PanelLeftClose size={16} />
           </button>
-          <button 
-            style={{ ...s.navItem, ...(location.pathname.startsWith('/app/gpts') ? s.navItemActive : {}) }}
-            onClick={handleGPTsClick}
-          >
-            GPTs
-          </button>
-          <button 
-            style={{ ...s.navItem, ...(location.pathname === '/app/gpts/new' ? s.navItemActive : {}) }}
-            onClick={handleCreateGPTClick}
-          >
-            Create GPT
-          </button>
-        </nav>
-
-        <button style={s.newBtn} onClick={newThread}>+ New chat</button>
-
-        <div style={s.sectionLabel}>Chats</div>
-        <div style={s.threadList}>
-          {threads.length === 0 && <div style={s.emptySide}>No conversations yet</div>}
-          {threads.map(t => (
-            <button
-              key={t.id}
-              onClick={() => handleThreadClick(t.id)}
-              style={{ ...s.threadItem, ...(t.id === activeId ? s.threadItemActive : {}) }}
-              title={t.title}
-            >
-              <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {t.title}
-              </div>
-            </button>
-          ))}
         </div>
 
-        <div style={s.footer}>
-          <div style={s.userBox}>
-            <div style={s.avatar}>{user.name?.[0] ?? '?'}</div>
-            <div>
-              <div style={{ fontSize: 13 }}>{user.name}</div>
-              <div style={{ opacity: .6, fontSize: 11 }}>{user.email}</div>
-            </div>
+        {/* Navigation Options - Flat List Style */}
+        <div className="px-4 pb-4">
+          <div className="space-y-1">
+            <button 
+              onClick={newThread}
+              className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm rounded-md transition-colors"
+              style={{ color: '#4c3d1e' }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fde047'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              <Plus size={16} />
+              New chat
+            </button>
+            
+            <button 
+              className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm rounded-md transition-colors"
+              style={{ color: '#4c3d1e' }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fde047'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              <Search size={16} />
+              Search chats
+            </button>
+            
+            <button 
+              className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm rounded-md transition-colors"
+              style={{ color: '#4c3d1e' }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fde047'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              <Library size={16} />
+              Library
+            </button>
+            
+            <button 
+              className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm rounded-md transition-colors"
+              style={{ color: '#4c3d1e' }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fde047'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              <Clock size={16} />
+              Codex
+            </button>
+            
+            <button 
+              className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm rounded-md transition-colors"
+              style={{ color: '#4c3d1e' }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fde047'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              <FolderPlus size={16} />
+              Projects
+            </button>
           </div>
-          <button style={s.logout} onClick={handleLogout}>Logout</button>
+        </div>
+
+        {/* GPTs Section */}
+        <div className="px-4 pb-4">
+          <h3 className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: '#4c3d1e', opacity: 0.6 }}>GPTs</h3>
+          <div className="space-y-1">
+            <button 
+              onClick={handleGPTsClick}
+              className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm rounded-md transition-colors"
+              style={{ color: '#4c3d1e' }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fde047'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              <div className="w-6 h-6 rounded flex items-center justify-center" style={{ backgroundColor: '#d4b078' }}>
+                <span className="text-xs" style={{ color: '#4c3d1e' }}>□</span>
+              </div>
+              Explore
+            </button>
+            
+            <button 
+              onClick={handleCreateGPTClick}
+              className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm rounded-md transition-colors"
+              style={{ color: '#4c3d1e' }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fde047'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ backgroundColor: '#4c3d1e' }}>
+                <span className="text-white text-xs font-bold">+</span>
+              </div>
+              Create GPT
+            </button>
+          </div>
+        </div>
+
+        {/* Chats Section */}
+        <div className="flex-1 px-4 pb-4 overflow-y-auto">
+          <h3 className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: '#4c3d1e', opacity: 0.6 }}>Chats</h3>
+          <div className="space-y-1">
+            {/* Existing Conversations - No borders, just hover highlights */}
+            {threads.map((thread) => (
+              <button
+                key={thread.id}
+                onClick={() => handleThreadClick(thread.id)}
+                className="flex items-center justify-between w-full px-3 py-2 text-left text-sm rounded-md transition-colors group"
+                style={{ 
+                  color: '#4c3d1e',
+                  backgroundColor: thread.id === activeId ? '#fde047' : 'transparent'
+                }}
+                onMouseEnter={(e) => {
+                  if (thread.id !== activeId) {
+                    e.currentTarget.style.backgroundColor = '#fde047'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (thread.id !== activeId) {
+                    e.currentTarget.style.backgroundColor = 'transparent'
+                  }
+                }}
+                title={thread.title}
+              >
+                <span className="truncate flex-1">
+                  {thread.title}
+                </span>
+                <button
+                  className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all ml-2"
+                  style={{ color: '#4c3d1e' }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#d4b078'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // Add delete functionality here if needed
+                  }}
+                >
+                  <Trash2 size={12} />
+                </button>
+              </button>
+            ))}
+            
+            {/* Empty state */}
+            {threads.length === 0 && (
+              <div className="text-center text-sm py-8" style={{ color: '#4c3d1e', opacity: 0.6 }}>
+                <MessageSquare size={20} className="mx-auto mb-2 opacity-50" />
+                <p>No conversations yet</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* User Profile Section - Anchored at Bottom */}
+        <div className="p-4 border-t" style={{ borderColor: '#d4b078' }}>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-3 w-full p-2 rounded-md transition-colors"
+            style={{ color: '#4c3d1e' }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fde047'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+          >
+            {user.picture ? (
+              <img 
+                src={user.picture} 
+                alt={user.name || 'User'}
+                className="w-8 h-8 rounded-full"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: '#d4b078' }}>
+                <span className="text-sm font-medium" style={{ color: '#4c3d1e' }}>
+                  {user.name?.charAt(0) || user.email?.charAt(0) || 'U'}
+                </span>
+              </div>
+            )}
+            <div className="flex flex-col text-left">
+              <span className="text-sm font-medium truncate" style={{ color: '#4c3d1e' }}>
+                {user.name || user.email || 'User'}
+              </span>
+              <span className="text-xs" style={{ color: '#4c3d1e', opacity: 0.6 }}>
+                Plus
+              </span>
+            </div>
+          </button>
         </div>
       </aside>
 
-      <main style={s.main}>
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col overflow-hidden">
         <Outlet context={{ threads, sendMessage, renameThread, newThread }} />
       </main>
     </div>
   )
 }
 
-const s: Record<string, React.CSSProperties> = {
-  app: { 
-    display: 'flex', 
-    height: '100vh', 
-    background: '#202123', 
-    color: '#fff', 
-    overflow: 'hidden' 
-  },
-  sidebar: { 
-    width: 260, 
-    background: '#17181A', 
-    borderRight: '1px solid #2a2b32', 
-    display: 'flex', 
-    flexDirection: 'column' 
-  },
-  brand: { 
-    padding: '14px 14px 10px', 
-    fontWeight: 700 
-  },
-  nav: {
-    padding: '0 14px 8px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px'
-  },
-  navItem: {
-    padding: '8px 12px',
-    borderRadius: '6px',
-    border: 'none',
-    background: 'transparent',
-    color: '#fff',
-    cursor: 'pointer',
-    textAlign: 'left',
-    fontSize: '14px',
-    transition: 'background-color 0.2s'
-  },
-  navItemActive: {
-    background: '#2a2b32'
-  },
-  newBtn: { 
-    margin: '0 12px 8px', 
-    padding: '10px', 
-    borderRadius: 8, 
-    border: '1px solid #3a3b42', 
-    background: '#2a2b32', 
-    color: '#fff', 
-    cursor: 'pointer' 
-  },
-  sectionLabel: { 
-    padding: '6px 14px', 
-    opacity: .6, 
-    fontSize: 12 
-  },
-  threadList: { 
-    flex: 1, 
-    overflow: 'auto', 
-    padding: 6 
-  },
-  threadItem: { 
-    width: '100%', 
-    textAlign: 'left', 
-    padding: '10px 12px', 
-    borderRadius: 8, 
-    border: '1px solid transparent', 
-    background: 'transparent', 
-    color: '#fff', 
-    cursor: 'pointer' 
-  },
-  threadItemActive: { 
-    background: '#2a2b32', 
-    borderColor: '#3a3b42' 
-  },
-  emptySide: { 
-    opacity: .6, 
-    padding: '10px 12px' 
-  },
-  footer: { 
-    borderTop: '1px solid #2a2b32', 
-    padding: 12, 
-    display: 'flex', 
-    flexDirection: 'column', 
-    gap: 8 
-  },
-  userBox: { 
-    display: 'flex', 
-    gap: 10, 
-    alignItems: 'center' 
-  },
-  avatar: { 
-    width: 28, 
-    height: 28, 
-    borderRadius: 6, 
-    background: '#2a2b32', 
-    display: 'grid', 
-    placeItems: 'center', 
-    fontWeight: 700 
-  },
-  logout: { 
-    padding: '8px', 
-    borderRadius: 8, 
-    border: '1px solid #3a3b42', 
-    background: '#2a2b32', 
-    color: '#fff', 
-    cursor: 'pointer' 
-  },
-  main: { 
-    flex: 1, 
-    display: 'flex', 
-    flexDirection: 'column', 
-    overflow: 'hidden' 
-  },
-  loading: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100vh',
-    fontSize: '1.2rem',
-    opacity: 0.7
-  }
+// Loading styles for the loading state
+const loadingStyles: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  height: '100vh',
+  fontSize: '1.2rem',
+  opacity: 0.7
 }

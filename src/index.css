@@ -4,7 +4,7 @@
 
 @layer base {
   * {
-    @apply border-app-orange-800;
+    @apply border-app-yellow-800;
   }
   
   html, body, #root {
@@ -12,7 +12,7 @@
   }
   
   body {
-    @apply bg-app-orange-900 text-white;
+    @apply bg-app-pale-50 text-app-text-900;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
@@ -28,7 +28,7 @@
   }
   
   .message-gradient {
-    background: linear-gradient(180deg, rgba(124, 45, 18, 0), rgba(124, 45, 18, 0.8) 58.85%);
+    background: linear-gradient(180deg, rgba(254, 255, 175, 0), rgba(254, 255, 175, 0.8) 58.85%);
   }
   
   .typing-indicator {
@@ -36,7 +36,7 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background-color: #fb923c;
+    background-color: #facc15;
     animation: typing 1.4s infinite ease-in-out;
   }
   

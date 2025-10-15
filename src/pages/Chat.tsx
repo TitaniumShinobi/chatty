@@ -69,12 +69,25 @@ export default function Chat() {
 
   if (!thread) {
     return (
-      <div style={styles.container}>
-        <div style={styles.notFound}>
-          <h2>Thread not found</h2>
-          <p>This conversation could not be found.</p>
+      <div className="flex flex-col h-full" style={{ backgroundColor: '#ffffeb' }}>
+        <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
+          <h2 className="text-xl font-semibold mb-2" style={{ color: '#4c3d1e' }}>Thread not found</h2>
+          <p className="mb-4" style={{ color: '#4c3d1e', opacity: 0.7 }}>This conversation could not be found.</p>
           <button 
-            style={styles.button}
+            className="px-4 py-2 rounded-lg transition-colors"
+            style={{ 
+              backgroundColor: '#E1C28B',
+              color: '#4c3d1e',
+              border: '1px solid #d4b078'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#d4b078'
+              e.currentTarget.style.borderColor = '#c79d65'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = '#E1C28B'
+              e.currentTarget.style.borderColor = '#d4b078'
+            }}
             onClick={() => navigate('/app')}
           >
             Go Home
@@ -92,6 +105,7 @@ export default function Chat() {
 
   function handleSend() {
     if (!text.trim() && files.length === 0) return
+    if (!thread) return
     onSendMessage(thread.id, text.trim(), files)
     setText('')
     setFiles([])
@@ -102,24 +116,24 @@ export default function Chat() {
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.history}>
-        <div style={styles.attachRow}>
+    <div className="flex flex-col h-full" style={{ backgroundColor: '#ffffeb' }}>
+      <div className="flex-1 overflow-auto p-4 min-h-0">
+        <div className="mb-2">
           {files.length > 0 && (
-            <div style={styles.attachPill}>
+            <div className="inline-block px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#E1C28B', border: '1px solid #d4b078', color: '#4c3d1e' }}>
               Attached files ({files.length})
             </div>
           )}
         </div>
 
         {thread.messages.map(m => (
-          <div key={m.id} style={{ ...styles.msg, ...(m.role === 'assistant' ? styles.msgAI : styles.msgUser) }}>
-            <div style={styles.msgRole}>
+          <div key={m.id} className="grid grid-cols-[28px_1fr] gap-3 p-3 mb-3 rounded-lg" style={{ backgroundColor: '#ffffeb', border: '1px solid #d4b078' }}>
+            <div className="w-7 h-7 rounded-md flex items-center justify-center text-xs font-semibold" style={{ backgroundColor: '#E1C28B', color: '#4c3d1e' }}>
               {m.role === 'assistant' ? 'AI' : 'U'}
             </div>
             <div>
               {m.role === 'assistant' ? (
-                <div style={{ whiteSpace: 'normal' }}>
+                <div className="whitespace-normal" style={{ color: '#4c3d1e' }}>
                   <R
                     packets={
                       Array.isArray((m as any).packets)
@@ -132,13 +146,13 @@ export default function Chat() {
                   />
                 </div>
               ) : (
-                <div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>
+                <div className="whitespace-pre-wrap" style={{ color: '#4c3d1e' }}>{m.text}</div>
               )}
               {!!m.files?.length && (
-                <div style={styles.fileList}>
+                <div className="mt-2 space-y-1">
                   {m.files.map((f, i) => (
-                    <div key={i} style={styles.fileItem}>
-                      {f.name} <span style={{ opacity: .6 }}>({Math.round(f.size / 1024)} KB)</span>
+                    <div key={i} className="text-xs" style={{ color: '#4c3d1e', opacity: 0.7 }}>
+                      {f.name} <span className="opacity-60">({Math.round(f.size / 1024)} KB)</span>
                     </div>
                   ))}
                 </div>
@@ -148,15 +162,22 @@ export default function Chat() {
         ))}
       </div>
 
-      <div style={styles.composer}>
+      <div className="grid grid-cols-[32px_1fr_80px] gap-3 p-4 border-t flex-shrink-0" style={{ borderColor: '#d4b078' }}>
         <input 
           type="file" 
           multiple 
           onChange={handleFiles} 
-          style={{ display: 'none' }} 
+          className="hidden" 
           id="filepick" 
         />
-        <label htmlFor="filepick" style={styles.iconBtn} title="Attach files">
+        <label 
+          htmlFor="filepick" 
+          className="w-8 h-10 rounded-lg flex items-center justify-center cursor-pointer transition-colors" 
+          style={{ backgroundColor: '#E1C28B', border: '1px solid #d4b078' }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#d4b078'}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#E1C28B'}
+          title="Attach files"
+        >
           📎
         </label>
         <textarea
@@ -167,14 +188,32 @@ export default function Chat() {
           onFocus={handleFocus}
           onBlur={handleBlur}
           placeholder="Message Chatty…"
-          style={{
-            ...styles.input,
-            ...(isFocused ? styles.inputFocused : {})
+          className="w-full min-h-10 max-h-96 resize-none p-3 rounded-lg outline-none text-base leading-relaxed font-inherit transition-all"
+          style={{ 
+            backgroundColor: '#ffffeb',
+            border: isFocused ? '1px solid #4a9eff' : '1px solid #d4b078',
+            color: '#4c3d1e',
+            boxShadow: isFocused ? '0 0 0 2px rgba(74, 158, 255, 0.2)' : 'none'
           }}
           rows={1}
         />
         <button
-          style={styles.send}
+          className="rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ 
+            backgroundColor: '#E1C28B',
+            border: '1px solid #d4b078',
+            color: '#4c3d1e'
+          }}
+          onMouseEnter={(e) => {
+            if (!e.currentTarget.disabled) {
+              e.currentTarget.style.backgroundColor = '#d4b078'
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!e.currentTarget.disabled) {
+              e.currentTarget.style.backgroundColor = '#E1C28B'
+            }
+          }}
           disabled={!text.trim() && files.length === 0}
           onClick={handleSend}
         >
@@ -182,143 +221,10 @@ export default function Chat() {
         </button>
       </div>
 
-      <div style={styles.footerNote}>
+      <div className="text-center text-xs py-2 px-4 flex-shrink-0" style={{ color: '#4c3d1e', opacity: 0.5 }}>
         Chatty can make mistakes. Consider checking important information.
       </div>
     </div>
   )
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    height: '100%',
-    overflow: 'hidden'
-  },
-  notFound: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    textAlign: 'center',
-    padding: '2rem'
-  },
-  button: {
-    padding: '0.5rem 1rem',
-    borderRadius: '0.5rem',
-    border: '1px solid #3a3b42',
-    background: '#2a2b32',
-    color: '#fff',
-    cursor: 'pointer',
-    marginTop: '1rem'
-  },
-  history: {
-    flex: 1,
-    overflow: 'auto',
-    padding: '18px 18px 0',
-    minHeight: 0
-  },
-  attachRow: {
-    marginBottom: 10
-  },
-  attachPill: {
-    display: 'inline-block',
-    padding: '8px 10px',
-    borderRadius: 8,
-    background: '#2a2b32',
-    border: '1px solid #3a3b42',
-    fontSize: 12,
-    opacity: .9
-  },
-  msg: {
-    display: 'grid',
-    gridTemplateColumns: '28px 1fr',
-    gap: 10,
-    padding: '12px',
-    borderRadius: 10,
-    border: '1px solid #2f3036',
-    marginBottom: 12,
-    background: '#23242a',
-    animation: 'fadeIn 0.3s ease-out',
-    opacity: 0,
-    animationFillMode: 'forwards'
-  },
-  msgAI: {},
-  msgUser: {
-    background: '#1e2026'
-  },
-  msgRole: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    background: '#2a2b32',
-    display: 'grid',
-    placeItems: 'center',
-    opacity: .8,
-    fontWeight: 700
-  },
-  fileList: {
-    marginTop: 8,
-    display: 'grid',
-    gap: 6
-  },
-  fileItem: {
-    fontSize: 12,
-    opacity: .85
-  },
-  composer: {
-    display: 'grid',
-    gridTemplateColumns: '32px 1fr 80px',
-    gap: 10,
-    padding: 18,
-    borderTop: '1px solid #2f3036',
-    flexShrink: 0
-  },
-  iconBtn: {
-    display: 'grid',
-    placeItems: 'center',
-    width: 32,
-    height: 38,
-    borderRadius: 8,
-    background: '#2a2b32',
-    border: '1px solid #3a3b42',
-    cursor: 'pointer'
-  },
-  input: {
-    width: '100%',
-    minHeight: 38,
-    maxHeight: 360, // 15 lines * 24px
-    resize: 'none',
-    padding: '10px 12px',
-    borderRadius: 8,
-    background: '#1f2025',
-    color: '#fff',
-    border: '1px solid #3a3b42',
-    outline: 'none',
-    fontSize: 16,
-    lineHeight: 1.5,
-    fontFamily: 'inherit',
-    transition: 'height 0.2s ease-out, border-color 0.2s ease-out',
-    overflow: 'auto'
-  },
-  inputFocused: {
-    borderColor: '#4a9eff',
-    boxShadow: '0 0 0 2px rgba(74, 158, 255, 0.2)'
-  },
-  send: {
-    borderRadius: 8,
-    border: '1px solid #3a3b42',
-    background: '#2a2b32',
-    color: '#fff',
-    cursor: 'pointer'
-  },
-  footerNote: {
-    textAlign: 'center',
-    opacity: .5,
-    fontSize: 12,
-    padding: '6px 0 14px',
-    flexShrink: 0
-  }
-}

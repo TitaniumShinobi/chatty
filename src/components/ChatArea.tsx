@@ -347,18 +347,18 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   }
 
   return (
-    <div className="flex flex-col h-full bg-app-orange-900">
+    <div className="flex flex-col h-full bg-app-butter-50">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-app-orange-800 bg-app-orange-900">
+      <div className="flex items-center justify-between p-4 border-b border-app-butter-300 bg-app-butter-50">
         <div className="flex items-center gap-3">
           <button
             onClick={onToggleSidebar}
-            className="p-2 hover:bg-app-orange-800 rounded-lg transition-colors md:hidden"
+            className="p-2 hover:bg-app-chat-50 rounded-lg transition-colors md:hidden"
           >
             <Menu size={20} />
           </button>
           <div className="flex flex-col">
-            <h2 className="text-lg font-semibold text-white">
+            <h2 className="text-lg font-semibold text-app-text-900">
               {conversation?.title || 'New conversation'}
             </h2>
             {activeGPTName && (
@@ -371,7 +371,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         
         <button
           onClick={onNewConversation}
-          className="p-2 hover:bg-app-orange-800 rounded-lg transition-colors"
+          className="p-2 hover:bg-app-chat-50 rounded-lg transition-colors"
           title="New conversation"
         >
           <Plus size={20} />
@@ -383,7 +383,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         {!conversation || conversation.messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
             <div className="max-w-md">
-              <h1 className="text-2xl font-bold text-white mb-4">
+              <h1 className="text-2xl font-bold text-app-text-900 mb-4">
                 Welcome to Chatty
               </h1>
               <p className="text-app-orange-400 mb-8">
@@ -411,7 +411,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                         onSendMessage(message)
                       }
                     }}
-                    className="p-3 text-left text-sm border border-app-orange-700 rounded-lg hover:bg-app-orange-800 transition-colors"
+                    className="p-3 text-left text-sm border border-app-butter-300 rounded-lg hover:bg-app-chat-50 transition-colors"
                   >
                     {prompt}
                   </button>
@@ -431,9 +431,9 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             
             {/* Typing indicator */}
             {isTyping && (
-              <div className="flex items-start gap-3 p-4 bg-app-orange-800 rounded-lg">
+              <div className="flex items-start gap-3 p-4 bg-app-chat-50 rounded-lg">
                 <div className="w-8 h-8 rounded-full bg-app-green-600 flex items-center justify-center flex-shrink-0">
-                  <span className="text-white text-sm font-bold">AI</span>
+                  <span className="text-app-text-900 text-sm font-bold">AI</span>
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-1">
@@ -451,17 +451,17 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       </div>
 
       {/* Input Area */}
-      <div className="border-t border-app-orange-800 p-4">
+      <div className="border-t border-app-butter-300 p-4">
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
 
 
           {/* Attached Files */}
           {attachedFiles.length > 0 && (
-            <div className="mb-3 p-3 bg-app-orange-800 rounded-lg border border-app-orange-700">
+            <div className="mb-3 p-3 bg-app-chat-50 rounded-lg border border-app-butter-300">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <Paperclip size={16} className="text-app-orange-400" />
-                  <span className="text-sm text-white">Attached files ({attachedFiles.length})</span>
+                  <span className="text-sm text-app-text-900">Attached files ({attachedFiles.length})</span>
                 </div>
                 {isParsing && (
                   <button
@@ -510,12 +510,12 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                   const progress = parsingProgress[file.name] || 0;
                   
                   return (
-                    <div key={index} className="flex items-center justify-between p-2 bg-app-orange-700 rounded">
+                    <div key={index} className="flex items-center justify-between p-2 bg-app-chat-50 rounded">
                       <div className="flex items-center gap-2 flex-1">
                         <Paperclip size={14} className="text-app-orange-400" />
-                        <span className="text-sm text-white">{file.name}</span>
+                        <span className="text-sm text-app-text-900">{file.name}</span>
                         {fileExtension && (
-                          <span className={`text-xs px-1 py-0.5 rounded ${getFileTypeColor(fileExtension)} bg-app-orange-600`}>
+                          <span className={`text-xs px-1 py-0.5 rounded ${getFileTypeColor(fileExtension)} bg-app-butter-300`}>
                             {fileExtension.toUpperCase()}
                           </span>
                         )}
@@ -524,7 +524,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                         </span>
                         {isParsing && progress > 0 && (
                           <div className="flex items-center gap-2 ml-2">
-                            <div className="w-16 bg-app-orange-600 rounded-full h-1.5">
+                            <div className="w-16 bg-app-butter-300 rounded-full h-1.5">
                               <div 
                                 className="bg-app-green-500 h-1.5 rounded-full transition-all duration-300"
                                 style={{ width: `${progress * 100}%` }}
@@ -539,7 +539,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                       <button
                         type="button"
                         onClick={() => removeFile(index)}
-                        className="p-1 hover:bg-app-orange-600 rounded"
+                        className="p-1 hover:bg-app-butter-300 rounded"
                       >
                         <X size={14} className="text-app-orange-400" />
                       </button>
@@ -557,7 +557,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Message Chatty..."
-              className="w-full p-4 pr-20 bg-app-orange-800 border border-app-orange-700 rounded-lg resize-none focus:outline-none focus:border-app-green-500 transition-colors min-h-[52px] max-h-32"
+              className="w-full p-4 pr-20 bg-app-chat-50 border border-app-butter-300 rounded-lg resize-none focus:outline-none focus:border-app-green-500 transition-colors min-h-[52px] max-h-32"
               rows={1}
               disabled={!conversation}
             />
@@ -577,8 +577,8 @@ const ChatArea: React.FC<ChatAreaProps> = ({
               className={cn(
                 "absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-colors",
                 (inputValue.trim() || attachedFiles.length > 0) && conversation
-                  ? "bg-app-green-600 hover:bg-app-green-700 text-white"
-                  : "bg-app-orange-700 text-app-orange-400 cursor-not-allowed"
+                  ? "bg-app-green-600 hover:bg-app-green-700 text-app-text-900"
+                  : "bg-app-chat-50 text-app-orange-400 cursor-not-allowed"
               )}
             >
               <Send size={16} />

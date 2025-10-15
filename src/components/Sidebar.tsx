@@ -5,7 +5,12 @@ import {
   MessageSquare, 
   Trash2, 
   Bot,
-  Settings
+  Settings,
+  Search,
+  Library,
+  Clock,
+  FolderPlus,
+  PanelLeftClose
 } from 'lucide-react'
 import { SidebarProps } from '../types'
 import { cn } from '../lib/utils'
@@ -27,192 +32,170 @@ const Sidebar: React.FC<SidebarProps> = ({
   
   // Helper function for link styling
   const linkCls = (path: string) => {
-    return `block rounded px-3 py-2 hover:bg-app-orange-800 ${
+    return `block rounded px-3 py-2 hover:bg-app-butter-100 ${
       location.pathname === path
-        ? 'bg-app-orange-800 font-medium' : 'text-app-orange-300'
+        ? 'bg-app-button-400 font-medium text-app-text-900' : 'text-app-text-900'
     }`
   }
   
   return (
-    <div className="flex flex-col h-full bg-app-orange-950 border-r border-app-orange-800">
-      {/* Brand Header */}
-      <div className="p-4 border-b border-app-orange-800">
-        <h1 className="text-lg font-semibold text-white">Chatty</h1>
+    <div className="flex flex-col h-full bg-white">
+      {/* Top Section - Logo and Panel Toggle */}
+      <div className="flex items-center justify-between p-4">
+        {/* Logo */}
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+            <span className="text-white text-sm font-bold">C</span>
+          </div>
+          <span className="text-lg font-semibold text-gray-900">Chatty</span>
+        </div>
+        
+        {/* Panel Toggle Button */}
+        <button className="p-1 hover:bg-gray-100 rounded transition-colors">
+          <PanelLeftClose size={16} className="text-gray-600" />
+        </button>
       </div>
 
-      {/* Navigation */}
-      <nav className="px-3 py-4 space-y-2 text-sm border-b border-app-orange-800">
-        <Link to="/" className={linkCls('/')}>Chatty</Link>
-        <Link to="/app/gpts" className={linkCls('/app/gpts')}>GPTs</Link>
-        <Link to="/app/gpts/new" className={linkCls('/app/gpts/new')}>Create GPT</Link>
-      </nav>
-
-      {/* GPTs Section - List Style */}
-      <div className="p-3 border-b border-app-orange-800">
+      {/* Navigation Options - Flat List Style */}
+      <div className="px-4 pb-4">
         <div className="space-y-1">
-          {/* Default Chatty */}
-          <div 
-            className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-orange-800 cursor-pointer"
+          <button 
             onClick={onNewConversation}
+            className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
           >
-            <div className="w-6 h-6 bg-app-green-600 rounded flex items-center justify-center">
-              <span className="text-white text-xs font-bold">C</span>
-            </div>
-            <span className="text-sm font-medium text-white">Chatty</span>
-          </div>
+            <Plus size={16} className="text-gray-600" />
+            New chat
+          </button>
           
-          {/* GPTs Header */}
-          <div 
-            className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-orange-800 cursor-pointer"
+          <button className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors">
+            <Search size={16} className="text-gray-600" />
+            Search chats
+          </button>
+          
+          <button className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors">
+            <Library size={16} className="text-gray-600" />
+            Library
+          </button>
+          
+          <button className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors">
+            <Clock size={16} className="text-gray-600" />
+            Codex
+          </button>
+          
+          <button className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors">
+            <FolderPlus size={16} className="text-gray-600" />
+            Projects
+          </button>
+        </div>
+      </div>
+
+      {/* GPTs Section */}
+      <div className="px-4 pb-4">
+        <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">GPTs</h3>
+        <div className="space-y-1">
+          <button 
             onClick={() => navigate('/app/gpts')}
+            className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
           >
-            <div className="w-6 h-6 bg-app-orange-700 rounded flex items-center justify-center">
-              <span className="text-white text-xs">□</span>
+            <div className="w-6 h-6 bg-gray-200 rounded flex items-center justify-center">
+              <span className="text-gray-600 text-xs">□</span>
             </div>
-            <span className="text-sm text-app-orange-300">GPTs</span>
-          </div>
-          
-          {/* Create GPT Button */}
-          <div 
-            className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-orange-800 cursor-pointer"
-            onClick={() => navigate('/app/gpts/new')}
-          >
-            <div className="w-6 h-6 bg-app-orange-600 rounded flex items-center justify-center">
-              <Plus size={12} className="text-white" />
-            </div>
-            <span className="text-sm text-app-orange-300">Create GPT</span>
-          </div>
+            Explore
+          </button>
           
           {/* Custom GPTs */}
-          {gptCreator.getAllPersonalities().filter(p => p.id !== 'default-chatty').slice(0, 3).map((personality) => (
-            <div
+          {gptCreator.getAllPersonalities().filter(p => p.id !== 'default-chatty').slice(0, 2).map((personality) => (
+            <button
               key={personality.id}
-              className={cn(
-                "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
-                personality.isActive 
-                  ? "bg-app-orange-700" 
-                  : "hover:bg-app-orange-800"
-              )}
               onClick={() => {
                 gptCreator.setActivePersonality(personality.id)
                 onNewConversationWithGPT(personality.id)
               }}
+              className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
             >
-              <div className="w-6 h-6 bg-app-orange-600 rounded flex items-center justify-center">
-                <Bot size={12} className="text-white" />
-              </div>
-              <span className="text-sm text-app-orange-300">{personality.name}</span>
-            </div>
-          ))}
-          
-          {/* Show more indicator if there are more GPTs */}
-          {gptCreator.getAllPersonalities().filter(p => p.id !== 'default-chatty').length > 3 && (
-            <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-orange-800 cursor-pointer">
-              <div className="w-6 h-6 bg-gradient-to-br from-orange-400 to-yellow-400 rounded flex items-center justify-center">
+              <div className="w-6 h-6 bg-gray-800 rounded-full flex items-center justify-center">
                 <span className="text-white text-xs font-bold">
-                  {gptCreator.getAllPersonalities().filter(p => p.id !== 'default-chatty').length - 3}
+                  {personality.name.charAt(0)}
                 </span>
               </div>
-              <span className="text-sm text-app-orange-300">
-                {gptCreator.getAllPersonalities().filter(p => p.id !== 'default-chatty').length - 3} more
-              </span>
-              <span className="ml-auto text-app-orange-400">▼</span>
-            </div>
-          )}
+              {personality.name}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Chats Section - List Style */}
-      <div className="flex-1 p-3 overflow-y-auto">
+      {/* Chats Section */}
+      <div className="flex-1 px-4 pb-4 overflow-y-auto">
+        <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Chats</h3>
         <div className="space-y-1">
-          {/* New Chat Button */}
-          <div 
-            className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-orange-800 cursor-pointer"
-            onClick={onNewConversation}
-          >
-            <div className="w-6 h-6 bg-app-orange-600 rounded flex items-center justify-center">
-              <Plus size={12} className="text-white" />
-            </div>
-            <span className="text-sm text-app-orange-300">New chat</span>
-          </div>
-          
-          {/* Existing Conversations */}
+          {/* Existing Conversations - No borders, just hover highlights */}
           {conversations.map((conversation) => (
-            <div
+            <button
               key={conversation.id}
-              className={cn(
-                "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors group",
-                conversation.id === currentConversationId
-                  ? "bg-app-orange-700" 
-                  : "hover:bg-app-orange-800"
-              )}
               onClick={() => onConversationSelect(conversation.id)}
+              className={cn(
+                "flex items-center justify-between w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors group",
+                conversation.id === currentConversationId && "bg-gray-100"
+              )}
             >
-              <div className="w-6 h-6 bg-app-orange-600 rounded flex items-center justify-center">
-                <MessageSquare size={12} className="text-white" />
-              </div>
-              <span className="text-sm text-app-orange-300 truncate flex-1">
+              <span className="truncate flex-1">
                 {conversation.title}
               </span>
               <button
-                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-app-orange-600 rounded transition-all"
+                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 rounded transition-all ml-2"
                 onClick={(e) => {
                   e.stopPropagation();
                   onDeleteConversation(conversation.id);
                 }}
               >
-                <Trash2 size={10} className="text-app-orange-400" />
+                <Trash2 size={12} className="text-gray-500" />
               </button>
-            </div>
+            </button>
           ))}
           
           {/* Empty state */}
           {conversations.length === 0 && (
-            <div className="text-center text-app-orange-400 text-sm py-8">
+            <div className="text-center text-gray-500 text-sm py-8">
               <MessageSquare size={20} className="mx-auto mb-2 opacity-50" />
               <p>No conversations yet</p>
-              <p className="text-xs mt-1">Start a new chat to begin</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* User Profile Section */}
-      <div className="p-3 border-t border-app-orange-800">
+      {/* User Profile Section - Anchored at Bottom */}
+      <div className="p-4 border-t border-gray-200">
         {currentUser ? (
-          <div className="flex items-center justify-between">
-            <button
-              onClick={onShowSettings}
-              className="flex items-center gap-3 flex-1 p-2 rounded-lg hover:bg-app-orange-800 transition-colors"
-            >
-              {currentUser.picture ? (
-                <img 
-                  src={currentUser.picture} 
-                  alt={currentUser.name}
-                  className="w-8 h-8 rounded-full"
-                />
-              ) : (
-                <div className="w-8 h-8 bg-app-orange-600 rounded-full flex items-center justify-center">
-                  <span className="text-app-orange-300 text-sm font-medium">
-                    {currentUser.name?.charAt(0) || currentUser.email?.charAt(0) || 'U'}
-                  </span>
-                </div>
-              )}
-              <div className="flex flex-col text-left">
-                <span className="text-sm font-medium text-app-orange-300 truncate">
-                  {currentUser.name || currentUser.email || 'User'}
-                </span>
-                <span className="text-xs text-app-orange-400">
-                  {currentUser.email}
+          <button
+            onClick={onShowSettings}
+            className="flex items-center gap-3 w-full p-2 hover:bg-gray-100 rounded-md transition-colors"
+          >
+            {currentUser.picture ? (
+              <img 
+                src={currentUser.picture} 
+                alt={currentUser.name}
+                className="w-8 h-8 rounded-full"
+              />
+            ) : (
+              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                <span className="text-white text-sm font-medium">
+                  {currentUser.name?.charAt(0) || currentUser.email?.charAt(0) || 'U'}
                 </span>
               </div>
-              <Settings size={16} className="text-app-orange-400 ml-auto" />
-            </button>
-          </div>
+            )}
+            <div className="flex flex-col text-left">
+              <span className="text-sm font-medium text-gray-900 truncate">
+                {currentUser.name || currentUser.email || 'User'}
+              </span>
+              <span className="text-xs text-gray-500">
+                Plus
+              </span>
+            </div>
+          </button>
         ) : (
           <button 
             onClick={() => window.location.href = "/api/auth/google"}
-            className="w-full rounded-xl p-2 bg-green-600 text-white text-sm font-medium hover:bg-green-700 transition-colors"
+            className="w-full rounded-md p-2 bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
           >
             Continue with Google
           </button>
