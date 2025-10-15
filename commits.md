@@ -5,6 +5,19 @@ Entries are always appended with full historical traceability.
 
 Ledger Entry Format:
 
+### [2024-12-19 — 15:30:00]
+**Project:** REVERT Google OAuth Profile Picture Implementation
+**Files Edited:** 14 files changed, 1111 insertions(+), 74 deletions(-)
+**Commit Hash:** 2b78b28
+**Description:** 
+- Reverted Layout.tsx to simple user.picture direct usage (removed proxy endpoint dependency)
+- Removed /api/profile-image proxy endpoint from server.js to simplify architecture
+- Cleaned up test files: test-profile-debug.html, test-profile-photo.html, test-profile.html, debug-profile-pic.js
+- Back to original simple avatar implementation with direct Google profile picture URLs
+- Maintained fallback to initials when user.picture is not available
+**Impact:** Simplified profile picture handling, removed unnecessary proxy complexity
+**Status:** ✅ REVERTED - Back to working simple implementation
+
 ### [2024-10-15 — 11:45:00]
 **Project:** Chatty Major Update - Orange Theme + GPT Creator + Bug Fixes
 **Files Edited:** 161 files changed, 27,250 insertions(+), 2,405 deletions(-)
