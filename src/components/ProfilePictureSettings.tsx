@@ -110,3 +110,4 @@ export const ProfilePictureSettings: React.FC<ProfilePictureSettingsProps> = ({
 };
 
 export default ProfilePictureSettings;
+
