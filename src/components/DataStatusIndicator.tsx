@@ -54,7 +54,7 @@ const DataStatusIndicator: React.FC<DataStatusIndicatorProps> = ({ isVisible }) 
       case 'migrating':
         return <Info size={16} className="text-blue-500" />
       default:
-        return <Info size={16} className="text-gray-500" />
+        return <Info size={16} className="text-orange-500" />
     }
   }
 
@@ -67,7 +67,7 @@ const DataStatusIndicator: React.FC<DataStatusIndicatorProps> = ({ isVisible }) 
       case 'migrating':
         return 'bg-blue-900/20 border-blue-700'
       default:
-        return 'bg-gray-900/20 border-gray-700'
+        return 'bg-orange-900/20 border-orange-700'
     }
   }
 

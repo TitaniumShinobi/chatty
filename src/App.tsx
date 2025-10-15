@@ -1,5 +1,5 @@
 // src/App.tsx
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   fetchMe,
   loginWithGoogle,
@@ -8,7 +8,7 @@ import {
   logout,
   type User,
 } from './lib/auth'
-import ChattyApp from './ChattyApp'
+// import ChattyApp from './ChattyApp' // Not used - Layout.tsx is the main app component
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
@@ -140,19 +140,19 @@ export default function App() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  shell: { background: '#202123', color: '#fff', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 },
+  shell: { background: '#7c2d12', color: '#fff', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 },
   center: { opacity: .7 },
-  card: { width: 420, maxWidth: '100%', background: '#2A2B32', border: '1px solid #3A3B42', borderRadius: 12, padding: 24, boxShadow: '0 10px 30px rgba(0,0,0,.35)' },
+  card: { width: 420, maxWidth: '100%', background: '#9a3412', border: '1px solid #c2410c', borderRadius: 12, padding: 24, boxShadow: '0 10px 30px rgba(0,0,0,.35)' },
   title: { margin: 0, fontSize: 28, fontWeight: 700 },
   sub: { margin: '6px 0 20px', opacity: .75 },
-  button: { width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #4B4D57', background: '#3A3B42', color: '#fff', cursor: 'pointer', fontWeight: 600 },
+  button: { width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #ea580c', background: '#c2410c', color: '#fff', cursor: 'pointer', fontWeight: 600 },
   google: { background: '#4285F4', borderColor: '#4285F4' },
   divider: { textAlign: 'center', margin: '14px 0', opacity: .6, fontSize: 12 },
   form: { marginTop: 8 },
   field: { marginBottom: 12 },
   label: { display: 'block', fontSize: 12, opacity: .7, marginBottom: 6 },
-  input: { width: '100%', padding: '10px 12px', background: '#202123', color: '#fff', borderRadius: 8, border: '1px solid #3A3B42', outline: 'none' },
+  input: { width: '100%', padding: '10px 12px', background: '#7c2d12', color: '#fff', borderRadius: 8, border: '1px solid #c2410c', outline: 'none' },
   error: { background: '#3b0f10', border: '1px solid #7f1d1d', color: '#fecaca', padding: '8px 10px', borderRadius: 8, marginBottom: 10, fontSize: 12 },
   switch: { marginTop: 14, textAlign: 'center', opacity: .85 },
-  link: { color: '#7ab7ff', textDecoration: 'none' },
+  link: { color: '#fdba74', textDecoration: 'none' },
 }

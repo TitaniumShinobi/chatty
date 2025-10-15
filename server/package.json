@@ -2,7 +2,9 @@
   "name": "api",
   "type": "module",
   "scripts": {
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "cli": "npx tsx cli-server.ts",
+    "start": "npx tsx cli-server.ts"
   },
   "dependencies": {
     "aws-sdk": "^2.1692.0",
@@ -30,5 +32,8 @@
     "socket.io": "^4.7.4",
     "twilio": "^5.8.0",
     "zod": "^4.1.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3"
   }
 }

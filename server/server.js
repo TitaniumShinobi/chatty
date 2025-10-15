@@ -9,6 +9,7 @@ import { connectDB } from "./config/database.js";
 import { Store } from "./store.js";
 import { requireAuth } from "./middleware/auth.js";
 import convRoutes from "./routes/conversations.js";
+import gptRoutes from "./routes/gpts.js";
 import { randomBytes } from "node:crypto";
 dotenv.config();
 
@@ -168,6 +169,9 @@ if (process.env.NODE_ENV !== 'production') {
 
 // Mount conversation routes with auth
 app.use("/api/conversations", requireAuth, convRoutes);
+
+// Mount GPT routes with auth
+app.use("/api/gpts", requireAuth, gptRoutes);
 
 function cryptoRandom() {
   return randomBytes(16).toString("hex");

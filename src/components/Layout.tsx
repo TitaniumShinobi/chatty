@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { fetchMe, logout, type User } from '../lib/auth'
-import { R } from '../runtime/render'
 
 type Message = {
   id: string
@@ -10,6 +9,7 @@ type Message = {
   packets?: import('../types').AssistantPacket[]
   ts: number
   files?: { name: string; size: number }[]
+  typing?: boolean  // For typing indicators
 }
 type Thread = { id: string; title: string; messages: Message[] }
 
@@ -27,11 +27,6 @@ export default function Layout() {
     const match = location.pathname.match(/^\/app\/chat\/(.+)$/)
     return match ? match[1] : null
   }, [location.pathname])
-
-  const active = useMemo(
-    () => threads.find(t => t.id === activeId) ?? null,
-    [threads, activeId]
-  )
 
   useEffect(() => {
     localStorage.setItem('chatty:threads', JSON.stringify(threads))
@@ -71,10 +66,10 @@ export default function Layout() {
             dirty = true;
             return {
               id: m.id,
-              role: 'assistant',
+              role: 'assistant' as const,
               ts: (m as any).ts ?? Date.now(),
-              packets: [{ op: 'answer.v1', payload: { content: (m as any).text ?? 'Legacy message' } }],
-            };
+              packets: [{ op: 'answer.v1', payload: { content: (m as any).text ?? 'Legacy message' } } as import('../types').AssistantPacket],
+            } as Message;
           }
           return m;
         })
@@ -100,6 +95,7 @@ export default function Layout() {
     const thread = threads.find(t => t.id === threadId)
     if (!thread) return
     
+    // 1. Show user message immediately
     const userMsg: Message = {
       id: crypto.randomUUID(),
       role: 'user',
@@ -108,29 +104,116 @@ export default function Layout() {
       files: files.map(f => ({ name: f.name, size: f.size })),
     }
     
-    // Get AI response as packets
-    const { AIService } = await import('../lib/aiService')
-    const aiService = AIService.getInstance()
-    const raw = await aiService.processMessage(input, files)
-    const packets = Array.isArray(raw) ? raw : [{ op: 'answer.v1', payload: { content: String(raw ?? '') } }]
-    
-    const aiMsg: Message = {
+    // 2. Add typing indicator message
+    const typingMsg: Message = {
       id: crypto.randomUUID(),
       role: 'assistant',
-      packets: packets,
+      typing: true,
       ts: Date.now() + 1,
     }
     
-    // Dev logging for AI packets
-    if (process.env.NODE_ENV === 'development') {
-      console.debug('AI packets', packets);
-    }
-    
+    // 3. Update UI immediately with user message and typing indicator
     setThreads(ts =>
       ts.map(t =>
-        t.id === threadId ? { ...t, messages: [...t.messages, userMsg, aiMsg] } : t
+        t.id === threadId ? { ...t, messages: [...t.messages, userMsg, typingMsg] } : t
       )
     )
+    
+    // 4. Generate AI response with callbacks
+    const { AIService } = await import('../lib/aiService')
+    const aiService = AIService.getInstance()
+    
+    try {
+      const raw = await aiService.processMessage(input, files, {
+        onPartialUpdate: (partialContent: string) => {
+          // Update typing message with partial content
+          setThreads(ts =>
+            ts.map(t =>
+              t.id === threadId 
+                ? { 
+                    ...t, 
+                    messages: t.messages.map(m => 
+                      m.id === typingMsg.id 
+                        ? { ...m, text: partialContent, typing: true }
+                        : m
+                    )
+                  } 
+                : t
+            )
+          )
+        },
+        onFinalUpdate: (finalPackets: import('../types').AssistantPacket[]) => {
+          // Replace typing message with final response
+          const aiMsg: Message = {
+            id: typingMsg.id, // Use same ID to replace
+            role: 'assistant',
+            packets: finalPackets,
+            ts: Date.now() + 2,
+          }
+          
+          setThreads(ts =>
+            ts.map(t =>
+              t.id === threadId 
+                ? { 
+                    ...t, 
+                    messages: t.messages.map(m => 
+                      m.id === typingMsg.id ? aiMsg : m
+                    )
+                  } 
+                : t
+            )
+          )
+        }
+      })
+      
+      // Fallback: if callbacks weren't used, handle the response normally
+      if (raw && !Array.isArray(raw)) {
+        const packets: import('../types').AssistantPacket[] = [{ op: 'answer.v1', payload: { content: String(raw ?? '') } }]
+        const aiMsg: Message = {
+          id: typingMsg.id,
+          role: 'assistant',
+          packets: packets,
+          ts: Date.now() + 2,
+        }
+        
+        setThreads(ts =>
+          ts.map(t =>
+            t.id === threadId 
+              ? { 
+                  ...t, 
+                  messages: t.messages.map(m => 
+                    m.id === typingMsg.id ? aiMsg : m
+                  )
+                } 
+              : t
+          )
+        )
+      }
+      
+    } catch (error) {
+      // Handle error by replacing typing message with error
+      const errorMsg: Message = {
+        id: typingMsg.id,
+        role: 'assistant',
+        packets: [{ op: 'error.v1', payload: { message: 'Sorry, I encountered an error. Please try again.' } }],
+        ts: Date.now() + 2,
+      }
+      
+      setThreads(ts =>
+        ts.map(t =>
+          t.id === threadId 
+            ? { 
+                ...t, 
+                messages: t.messages.map(m => 
+                  m.id === typingMsg.id ? errorMsg : m
+                )
+              } 
+            : t
+        )
+      )
+    }
+    
+    // Update thread title if needed
     if (thread.title === 'New conversation' && input.trim()) {
       renameThread(threadId, input.trim().slice(0, 40))
     }

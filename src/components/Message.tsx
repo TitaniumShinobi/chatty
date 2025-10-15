@@ -11,6 +11,29 @@ import { R } from '../runtime/render'
 const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
   const [copiedCode, setCopiedCode] = React.useState<string | null>(null)
 
+  // Handle typing indicator
+  if ((message as any).typing) {
+    return (
+      <div className="flex items-start gap-3 p-4 bg-app-orange-800 rounded-lg">
+        <div className="w-8 h-8 rounded-full bg-app-green-600 flex items-center justify-center flex-shrink-0">
+          <span className="text-white text-sm font-bold">AI</span>
+        </div>
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <div className="flex space-x-1">
+              <div className="typing-indicator"></div>
+              <div className="typing-indicator"></div>
+              <div className="typing-indicator"></div>
+            </div>
+            <span className="text-app-orange-400 text-sm">
+              {(message as any).text || 'AI is thinking...'}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Runtime guard to prevent assistant prose (dev only)
   if (process.env.NODE_ENV !== 'production') {
     if (message.role === 'assistant' && typeof message.content === 'string') {
@@ -22,7 +45,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
   if (message.role === 'assistant' && typeof message.content === 'string') {
     console.error('Assistant prose detected in production:', message.content.slice(0,100));
     return (
-      <div className={`flex items-start gap-3 p-4 ${message.role === 'assistant' ? 'bg-app-gray-800' : 'bg-app-gray-700'} rounded-lg`}>
+      <div className={`flex items-start gap-3 p-4 ${message.role === 'assistant' ? 'bg-app-orange-800' : 'bg-app-orange-700'} rounded-lg`}>
         <div className="w-8 h-8 rounded-full bg-app-green-600 flex items-center justify-center flex-shrink-0">
           <span className="text-white text-sm font-bold">AI</span>
         </div>
@@ -35,13 +58,13 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
 
   const getFileIcon = (fileType: string) => {
     if (fileType.startsWith('image/')) {
-      return <FileImage size={16} className="text-app-gray-400" />
+      return <FileImage size={16} className="text-app-orange-400" />
     } else if (fileType.includes('text') || fileType.includes('document')) {
-      return <FileText size={16} className="text-app-gray-400" />
+      return <FileText size={16} className="text-app-orange-400" />
     } else if (fileType.includes('json') || fileType.includes('code')) {
-      return <FileCode size={16} className="text-app-gray-400" />
+      return <FileCode size={16} className="text-app-orange-400" />
     } else {
-      return <Paperclip size={16} className="text-app-gray-400" />
+      return <Paperclip size={16} className="text-app-orange-400" />
     }
   }
 
@@ -61,14 +84,14 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
     <div className={cn(
       "flex items-start gap-3 p-4 rounded-lg transition-colors",
       isUser 
-        ? "bg-app-gray-800" 
-        : "bg-app-gray-700"
+        ? "bg-app-orange-800" 
+        : "bg-app-orange-700"
     )}>
       {/* Avatar */}
       <div className={cn(
         "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
         isUser 
-          ? "bg-app-gray-600" 
+          ? "bg-app-orange-600" 
           : "bg-app-green-600"
       )}>
         <span className="text-white text-sm font-bold">
@@ -80,17 +103,17 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
       <div className="flex-1 min-w-0">
         {/* File Attachments */}
         {message.files && message.files.length > 0 && (
-          <div className="mb-3 p-3 bg-app-gray-600 rounded-lg border border-app-gray-500">
+          <div className="mb-3 p-3 bg-app-orange-600 rounded-lg border border-app-orange-500">
             <div className="flex items-center gap-2 mb-2">
-              <Paperclip size={16} className="text-app-gray-400" />
+              <Paperclip size={16} className="text-app-orange-400" />
               <span className="text-sm text-white font-medium">Attached files ({message.files.length})</span>
             </div>
             <div className="space-y-2">
               {message.files.map((file, index) => (
-                <div key={index} className="flex items-center gap-2 p-2 bg-app-gray-700 rounded">
+                <div key={index} className="flex items-center gap-2 p-2 bg-app-orange-700 rounded">
                   {getFileIcon(file.type)}
                   <span className="text-sm text-white">{file.name}</span>
-                  <span className="text-xs text-app-gray-400">
+                  <span className="text-xs text-app-orange-400">
                     ({(file.size / 1024).toFixed(1)} KB)
                   </span>
                 </div>
@@ -115,7 +138,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
                         <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => copyToClipboard(code)}
-                            className="p-1 bg-app-gray-600 rounded hover:bg-app-gray-500 transition-colors"
+                            className="p-1 bg-app-orange-600 rounded hover:bg-app-orange-500 transition-colors"
                             title="Copy code"
                           >
                             {copiedCode === code ? (
@@ -126,7 +149,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
                           </button>
                         </div>
                         <SyntaxHighlighter
-                          style={oneDark}
+                          style={oneDark as any}
                           language={match[1]}
                           PreTag="div"
                           className="rounded-lg"
@@ -145,7 +168,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
                   
                   // Inline code
                   return (
-                    <code className="bg-app-gray-600 px-1 py-0.5 rounded text-sm font-mono">
+                    <code className="bg-app-orange-600 px-1 py-0.5 rounded text-sm font-mono">
                       {children}
                     </code>
                   )
@@ -184,7 +207,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
                 
                 // Blockquotes
                 blockquote: ({ children }) => (
-                  <blockquote className="border-l-4 border-app-gray-500 pl-4 italic text-app-gray-300 mb-4">
+                  <blockquote className="border-l-4 border-app-orange-500 pl-4 italic text-app-orange-300 mb-4">
                     {children}
                   </blockquote>
                 ),
@@ -192,18 +215,18 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
                 // Tables
                 table: ({ children }) => (
                   <div className="overflow-x-auto mb-4">
-                    <table className="min-w-full border-collapse border border-app-gray-600">
+                    <table className="min-w-full border-collapse border border-app-orange-600">
                       {children}
                     </table>
                   </div>
                 ),
                 th: ({ children }) => (
-                  <th className="border border-app-gray-600 px-3 py-2 bg-app-gray-800 text-left font-semibold">
+                  <th className="border border-app-orange-600 px-3 py-2 bg-app-orange-800 text-left font-semibold">
                     {children}
                   </th>
                 ),
                 td: ({ children }) => (
-                  <td className="border border-app-gray-600 px-3 py-2">
+                  <td className="border border-app-orange-600 px-3 py-2">
                     {children}
                   </td>
                 ),
@@ -218,15 +241,12 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
               {message.content}
             </ReactMarkdown>
           ) : (
-            // Handle packet content using the renderer
-            <div className="text-white">
-              {R(message.content)}
-            </div>
+            <R packets={message.content as any} />
           )}
         </div>
         
         {/* Timestamp */}
-        <div className="text-xs text-app-gray-400 mt-2">
+        <div className="text-xs text-app-orange-400 mt-2">
           {formatDate(message.timestamp)}
         </div>
       </div>

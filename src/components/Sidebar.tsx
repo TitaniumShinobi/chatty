@@ -27,32 +27,32 @@ const Sidebar: React.FC<SidebarProps> = ({
   
   // Helper function for link styling
   const linkCls = (path: string) => {
-    return `block rounded px-3 py-2 hover:bg-app-gray-800 ${
+    return `block rounded px-3 py-2 hover:bg-app-orange-800 ${
       location.pathname === path
-        ? 'bg-app-gray-800 font-medium' : 'text-app-gray-300'
+        ? 'bg-app-orange-800 font-medium' : 'text-app-orange-300'
     }`
   }
   
   return (
-    <div className="flex flex-col h-full bg-app-gray-950 border-r border-app-gray-800">
+    <div className="flex flex-col h-full bg-app-orange-950 border-r border-app-orange-800">
       {/* Brand Header */}
-      <div className="p-4 border-b border-app-gray-800">
+      <div className="p-4 border-b border-app-orange-800">
         <h1 className="text-lg font-semibold text-white">Chatty</h1>
       </div>
 
       {/* Navigation */}
-      <nav className="px-3 py-4 space-y-2 text-sm border-b border-app-gray-800">
+      <nav className="px-3 py-4 space-y-2 text-sm border-b border-app-orange-800">
         <Link to="/" className={linkCls('/')}>Chatty</Link>
         <Link to="/app/gpts" className={linkCls('/app/gpts')}>GPTs</Link>
         <Link to="/app/gpts/new" className={linkCls('/app/gpts/new')}>Create GPT</Link>
       </nav>
 
       {/* GPTs Section - List Style */}
-      <div className="p-3 border-b border-app-gray-800">
+      <div className="p-3 border-b border-app-orange-800">
         <div className="space-y-1">
           {/* Default Chatty */}
           <div 
-            className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-gray-800 cursor-pointer"
+            className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-orange-800 cursor-pointer"
             onClick={onNewConversation}
           >
             <div className="w-6 h-6 bg-app-green-600 rounded flex items-center justify-center">
@@ -63,24 +63,24 @@ const Sidebar: React.FC<SidebarProps> = ({
           
           {/* GPTs Header */}
           <div 
-            className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-gray-800 cursor-pointer"
+            className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-orange-800 cursor-pointer"
             onClick={() => navigate('/app/gpts')}
           >
-            <div className="w-6 h-6 bg-app-gray-700 rounded flex items-center justify-center">
+            <div className="w-6 h-6 bg-app-orange-700 rounded flex items-center justify-center">
               <span className="text-white text-xs">□</span>
             </div>
-            <span className="text-sm text-app-gray-300">GPTs</span>
+            <span className="text-sm text-app-orange-300">GPTs</span>
           </div>
           
           {/* Create GPT Button */}
           <div 
-            className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-gray-800 cursor-pointer"
+            className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-orange-800 cursor-pointer"
             onClick={() => navigate('/app/gpts/new')}
           >
-            <div className="w-6 h-6 bg-app-gray-600 rounded flex items-center justify-center">
+            <div className="w-6 h-6 bg-app-orange-600 rounded flex items-center justify-center">
               <Plus size={12} className="text-white" />
             </div>
-            <span className="text-sm text-app-gray-300">Create GPT</span>
+            <span className="text-sm text-app-orange-300">Create GPT</span>
           </div>
           
           {/* Custom GPTs */}
@@ -90,33 +90,33 @@ const Sidebar: React.FC<SidebarProps> = ({
               className={cn(
                 "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
                 personality.isActive 
-                  ? "bg-app-gray-700" 
-                  : "hover:bg-app-gray-800"
+                  ? "bg-app-orange-700" 
+                  : "hover:bg-app-orange-800"
               )}
               onClick={() => {
                 gptCreator.setActivePersonality(personality.id)
                 onNewConversationWithGPT(personality.id)
               }}
             >
-              <div className="w-6 h-6 bg-app-gray-600 rounded flex items-center justify-center">
+              <div className="w-6 h-6 bg-app-orange-600 rounded flex items-center justify-center">
                 <Bot size={12} className="text-white" />
               </div>
-              <span className="text-sm text-app-gray-300">{personality.name}</span>
+              <span className="text-sm text-app-orange-300">{personality.name}</span>
             </div>
           ))}
           
           {/* Show more indicator if there are more GPTs */}
           {gptCreator.getAllPersonalities().filter(p => p.id !== 'default-chatty').length > 3 && (
-            <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-gray-800 cursor-pointer">
+            <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-orange-800 cursor-pointer">
               <div className="w-6 h-6 bg-gradient-to-br from-orange-400 to-yellow-400 rounded flex items-center justify-center">
                 <span className="text-white text-xs font-bold">
                   {gptCreator.getAllPersonalities().filter(p => p.id !== 'default-chatty').length - 3}
                 </span>
               </div>
-              <span className="text-sm text-app-gray-300">
+              <span className="text-sm text-app-orange-300">
                 {gptCreator.getAllPersonalities().filter(p => p.id !== 'default-chatty').length - 3} more
               </span>
-              <span className="ml-auto text-app-gray-400">▼</span>
+              <span className="ml-auto text-app-orange-400">▼</span>
             </div>
           )}
         </div>
@@ -127,13 +127,13 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div className="space-y-1">
           {/* New Chat Button */}
           <div 
-            className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-gray-800 cursor-pointer"
+            className="flex items-center gap-3 p-2 rounded-lg hover:bg-app-orange-800 cursor-pointer"
             onClick={onNewConversation}
           >
-            <div className="w-6 h-6 bg-app-gray-600 rounded flex items-center justify-center">
+            <div className="w-6 h-6 bg-app-orange-600 rounded flex items-center justify-center">
               <Plus size={12} className="text-white" />
             </div>
-            <span className="text-sm text-app-gray-300">New chat</span>
+            <span className="text-sm text-app-orange-300">New chat</span>
           </div>
           
           {/* Existing Conversations */}
@@ -143,32 +143,32 @@ const Sidebar: React.FC<SidebarProps> = ({
               className={cn(
                 "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors group",
                 conversation.id === currentConversationId
-                  ? "bg-app-gray-700" 
-                  : "hover:bg-app-gray-800"
+                  ? "bg-app-orange-700" 
+                  : "hover:bg-app-orange-800"
               )}
               onClick={() => onConversationSelect(conversation.id)}
             >
-              <div className="w-6 h-6 bg-app-gray-600 rounded flex items-center justify-center">
+              <div className="w-6 h-6 bg-app-orange-600 rounded flex items-center justify-center">
                 <MessageSquare size={12} className="text-white" />
               </div>
-              <span className="text-sm text-app-gray-300 truncate flex-1">
+              <span className="text-sm text-app-orange-300 truncate flex-1">
                 {conversation.title}
               </span>
               <button
-                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-app-gray-600 rounded transition-all"
+                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-app-orange-600 rounded transition-all"
                 onClick={(e) => {
                   e.stopPropagation();
                   onDeleteConversation(conversation.id);
                 }}
               >
-                <Trash2 size={10} className="text-app-gray-400" />
+                <Trash2 size={10} className="text-app-orange-400" />
               </button>
             </div>
           ))}
           
           {/* Empty state */}
           {conversations.length === 0 && (
-            <div className="text-center text-app-gray-400 text-sm py-8">
+            <div className="text-center text-app-orange-400 text-sm py-8">
               <MessageSquare size={20} className="mx-auto mb-2 opacity-50" />
               <p>No conversations yet</p>
               <p className="text-xs mt-1">Start a new chat to begin</p>
@@ -178,12 +178,12 @@ const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* User Profile Section */}
-      <div className="p-3 border-t border-app-gray-800">
+      <div className="p-3 border-t border-app-orange-800">
         {currentUser ? (
           <div className="flex items-center justify-between">
             <button
               onClick={onShowSettings}
-              className="flex items-center gap-3 flex-1 p-2 rounded-lg hover:bg-app-gray-800 transition-colors"
+              className="flex items-center gap-3 flex-1 p-2 rounded-lg hover:bg-app-orange-800 transition-colors"
             >
               {currentUser.picture ? (
                 <img 
@@ -192,21 +192,21 @@ const Sidebar: React.FC<SidebarProps> = ({
                   className="w-8 h-8 rounded-full"
                 />
               ) : (
-                <div className="w-8 h-8 bg-app-gray-600 rounded-full flex items-center justify-center">
-                  <span className="text-app-gray-300 text-sm font-medium">
+                <div className="w-8 h-8 bg-app-orange-600 rounded-full flex items-center justify-center">
+                  <span className="text-app-orange-300 text-sm font-medium">
                     {currentUser.name?.charAt(0) || currentUser.email?.charAt(0) || 'U'}
                   </span>
                 </div>
               )}
               <div className="flex flex-col text-left">
-                <span className="text-sm font-medium text-app-gray-300 truncate">
+                <span className="text-sm font-medium text-app-orange-300 truncate">
                   {currentUser.name || currentUser.email || 'User'}
                 </span>
-                <span className="text-xs text-app-gray-400">
+                <span className="text-xs text-app-orange-400">
                   {currentUser.email}
                 </span>
               </div>
-              <Settings size={16} className="text-app-gray-400 ml-auto" />
+              <Settings size={16} className="text-app-orange-400 ml-auto" />
             </button>
           </div>
         ) : (

@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "noEmit": false,
+    "outDir": "./dist"
+  },
+  "include": ["*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

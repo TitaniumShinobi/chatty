@@ -1,7 +1,8 @@
-// src/ChattyApp.tsx
+ // src/ChattyApp.tsx
 import { useEffect, useMemo, useState } from 'react'
 import type { User } from './lib/auth'
 import { R } from './runtime/render'
+import { useSettings } from './hooks/useSettings'
 
 type Message = {
   id: string
@@ -20,6 +21,7 @@ export default function ChattyApp({
   user: User
   onLogout: () => void
 }) {
+  const { settings } = useSettings()
   const [threads, setThreads] = useState<Thread[]>(() => {
     try { return JSON.parse(localStorage.getItem('chatty:threads') || '[]') } catch { return [] }
   })
@@ -81,6 +83,10 @@ export default function ChattyApp({
     // Get AI response as packets
     const { AIService } = await import('./lib/aiService')
     const aiService = AIService.getInstance()
+    
+    // Enable synth mode based on settings
+    aiService.setSynthMode(settings.enableSynthMode)
+    
     const raw = await aiService.processMessage(input, files)
     const packets = Array.isArray(raw) ? raw : [{ op: 'answer.v1' as const, payload: { content: String(raw ?? '') } }]
     
@@ -230,6 +236,14 @@ function ChatView({
         <textarea
           value={text}
           onChange={e => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              onSend(text.trim(), files)
+              setText('')
+              setFiles([])
+            }
+          }}
           placeholder="Message Chatty…"
           style={s.input}
           rows={1}

@@ -14,6 +14,7 @@ export type AppSettings = {
   enableFileProcessing: boolean;
   enableNarrativeSynthesis: boolean;
   enableLargeFileIntelligence: boolean;
+  enableSynthMode: boolean;
   theme: 'dark' | 'light';
   maxHistory: number;
   autoSave: boolean;
@@ -42,6 +43,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   enableFileProcessing: true,
   enableNarrativeSynthesis: true,
   enableLargeFileIntelligence: true,
+  enableSynthMode: true,
   theme: 'dark',
   maxHistory: 100,
   autoSave: true,
@@ -116,7 +118,8 @@ export function useSettings() {
     settings.showAdvancedFeatures || 
     settings.enableMemory || 
     settings.enableReasoning || 
-    settings.enableFileProcessing
+    settings.enableFileProcessing ||
+    settings.enableSynthMode
   , [settings]);
 
   const isSimpleMode = useMemo(() => !isAdvancedMode, [isAdvancedMode]);

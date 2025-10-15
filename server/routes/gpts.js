@@ -1,173 +1,283 @@
+// GPT Creator API Routes
 import express from 'express';
-import { body, validationResult } from 'express-validator';
-import GPT from '../models/GPT.js';
-import User from '../models/User.js';
+import multer from 'multer';
+import { GPTManager } from '../lib/gptManager.js';
 
 const router = express.Router();
 
-// Get all GPTs for user
+// Initialize GPT Manager
+const gptManager = GPTManager.getInstance();
+
+// Configure multer for file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Allow text files, PDFs, images, videos, and common document formats
+    const allowedTypes = [
+      'text/plain',
+      'text/markdown',
+      'text/csv',
+      'application/pdf',
+      'application/json',
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'image/bmp',
+      'image/tiff',
+      'image/svg+xml',
+      'image/webp',
+      'video/mp4',
+      'video/avi',
+      'video/quicktime',
+      'video/x-matroska',
+      'video/webm',
+      'video/x-flv',
+      'video/x-ms-wmv',
+      'video/mp2t',
+      'video/3gpp',
+      'video/ogg',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ];
+    
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`File type ${file.mimetype} not allowed`), false);
+    }
+  }
+});
+
+// Get all GPTs for a user
 router.get('/', async (req, res) => {
   try {
-    const gpts = await GPT.find({ userId: req.user._id })
-      .sort({ createdAt: -1 });
-
-    res.json(gpts.map(gpt => gpt.getFullData()));
+    const userId = req.user?.id || 'anonymous';
+    const gpts = await gptManager.getAllGPTs(userId);
+    res.json({ success: true, gpts });
   } catch (error) {
-    console.error('Get GPTs error:', error);
-    res.status(500).json({ error: 'Failed to fetch GPTs' });
+    console.error('Error fetching GPTs:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Get single GPT
+// Get a specific GPT
 router.get('/:id', async (req, res) => {
   try {
-    const gpt = await GPT.findOne({
-      _id: req.params.id,
-      userId: req.user._id
-    });
-
+    const gpt = await gptManager.getGPT(req.params.id);
     if (!gpt) {
-      return res.status(404).json({ error: 'GPT not found' });
+      return res.status(404).json({ success: false, error: 'GPT not found' });
     }
-
-    res.json(gpt.getFullData());
+    res.json({ success: true, gpt });
   } catch (error) {
-    console.error('Get GPT error:', error);
-    res.status(500).json({ error: 'Failed to fetch GPT' });
+    console.error('Error fetching GPT:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Create new GPT
-router.post('/', [
-  body('name').trim().isLength({ min: 1, max: 100 }),
-  body('description').trim().isLength({ min: 1, max: 500 }),
-  body('instructions').trim().isLength({ min: 1 }),
-  body('conversationStarters').optional().isArray(),
-  body('capabilities').optional().isObject(),
-  body('modelId').optional().isString()
-], async (req, res) => {
+// Create a new GPT
+router.post('/', async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+    const userId = req.user?.id || 'anonymous';
+    const gptData = {
+      ...req.body,
+      userId,
+      isActive: false
+    };
 
-    const {
-      name,
-      description,
-      instructions,
-      conversationStarters = [],
-      capabilities = {
-        webSearch: false,
-        canvas: false,
-        imageGeneration: false,
-        codeInterpreter: true
-      },
-      modelId = 'chatty-core'
-    } = req.body;
-
-    const gpt = new GPT({
-      userId: req.user._id,
-      name,
-      description,
-      instructions,
-      conversationStarters,
-      capabilities,
-      modelId
-    });
-
-    await gpt.save();
-
-    // Update user usage stats
-    await User.findByIdAndUpdate(req.user._id, {
-      $inc: { 'usage.gptsCreated': 1 },
-      $set: { 'usage.lastActivity': new Date() }
-    });
-
-    res.status(201).json(gpt.getFullData());
+    const gpt = await gptManager.createGPT(gptData);
+    res.json({ success: true, gpt });
   } catch (error) {
-    console.error('Create GPT error:', error);
-    res.status(500).json({ error: 'Failed to create GPT' });
+    console.error('Error creating GPT:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Update GPT
-router.put('/:id', [
-  body('name').optional().trim().isLength({ min: 1, max: 100 }),
-  body('description').optional().trim().isLength({ min: 1, max: 500 }),
-  body('instructions').optional().trim().isLength({ min: 1 }),
-  body('conversationStarters').optional().isArray(),
-  body('capabilities').optional().isObject(),
-  body('modelId').optional().isString(),
-  body('isActive').optional().isBoolean(),
-  body('isPublic').optional().isBoolean()
-], async (req, res) => {
+// Update a GPT
+router.put('/:id', async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const gpt = await GPT.findOneAndUpdate(
-      { _id: req.params.id, userId: req.user._id },
-      req.body,
-      { new: true }
-    );
-
+    const gpt = await gptManager.updateGPT(req.params.id, req.body);
     if (!gpt) {
-      return res.status(404).json({ error: 'GPT not found' });
+      return res.status(404).json({ success: false, error: 'GPT not found' });
     }
-
-    res.json(gpt.getFullData());
+    res.json({ success: true, gpt });
   } catch (error) {
-    console.error('Update GPT error:', error);
-    res.status(500).json({ error: 'Failed to update GPT' });
+    console.error('Error updating GPT:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Delete GPT
+// Delete a GPT
 router.delete('/:id', async (req, res) => {
   try {
-    const gpt = await GPT.findOneAndDelete({
-      _id: req.params.id,
-      userId: req.user._id
-    });
-
-    if (!gpt) {
-      return res.status(404).json({ error: 'GPT not found' });
+    const success = await gptManager.deleteGPT(req.params.id);
+    if (!success) {
+      return res.status(404).json({ success: false, error: 'GPT not found' });
     }
-
-    res.json({ message: 'GPT deleted successfully' });
+    res.json({ success: true });
   } catch (error) {
-    console.error('Delete GPT error:', error);
-    res.status(500).json({ error: 'Failed to delete GPT' });
+    console.error('Error deleting GPT:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Set active GPT
-router.patch('/:id/activate', async (req, res) => {
+// Upload file to GPT
+router.post('/:id/files', upload.single('file'), async (req, res) => {
   try {
-    // Deactivate all other GPTs for this user
-    await GPT.updateMany(
-      { userId: req.user._id },
-      { isActive: false }
-    );
-
-    // Activate the selected GPT
-    const gpt = await GPT.findOneAndUpdate(
-      { _id: req.params.id, userId: req.user._id },
-      { isActive: true },
-      { new: true }
-    );
-
-    if (!gpt) {
-      return res.status(404).json({ error: 'GPT not found' });
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No file uploaded' });
     }
 
-    res.json(gpt.getFullData());
+    const fileData = {
+      name: req.file.originalname,
+      content: req.file.buffer.toString('base64'),
+      mimeType: req.file.mimetype,
+      size: req.file.size
+    };
+
+    const file = await gptManager.uploadFile(req.params.id, fileData);
+    res.json({ success: true, file });
   } catch (error) {
-    console.error('Activate GPT error:', error);
-    res.status(500).json({ error: 'Failed to activate GPT' });
+    console.error('Error uploading file:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get files for a GPT
+router.get('/:id/files', async (req, res) => {
+  try {
+    const files = await gptManager.getGPTFiles(req.params.id);
+    res.json({ success: true, files });
+  } catch (error) {
+    console.error('Error fetching files:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete a file
+router.delete('/files/:fileId', async (req, res) => {
+  try {
+    const success = await gptManager.deleteFile(req.params.fileId);
+    if (!success) {
+      return res.status(404).json({ success: false, error: 'File not found' });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting file:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Update file's GPT ID (for reassociating temp files)
+router.put('/files/:fileId/gpt', async (req, res) => {
+  try {
+    const { gptId } = req.body;
+    const success = await gptManager.updateFileGPTId(req.params.fileId, gptId);
+    if (!success) {
+      return res.status(404).json({ success: false, error: 'File not found' });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating file GPT ID:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Create an action for a GPT
+router.post('/:id/actions', async (req, res) => {
+  try {
+    const action = await gptManager.createAction(req.params.id, req.body);
+    res.json({ success: true, action });
+  } catch (error) {
+    console.error('Error creating action:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get actions for a GPT
+router.get('/:id/actions', async (req, res) => {
+  try {
+    const actions = await gptManager.getGPTActions(req.params.id);
+    res.json({ success: true, actions });
+  } catch (error) {
+    console.error('Error fetching actions:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete an action
+router.delete('/actions/:actionId', async (req, res) => {
+  try {
+    const success = await gptManager.deleteAction(req.params.actionId);
+    if (!success) {
+      return res.status(404).json({ success: false, error: 'Action not found' });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting action:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Execute an action
+router.post('/actions/:actionId/execute', async (req, res) => {
+  try {
+    const result = await gptManager.executeAction(req.params.actionId, req.body);
+    res.json({ success: true, result });
+  } catch (error) {
+    console.error('Error executing action:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Generate avatar for GPT
+router.post('/:id/avatar', async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    const avatar = gptManager.generateAvatar(name, description);
+    res.json({ success: true, avatar });
+  } catch (error) {
+    console.error('Error generating avatar:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get GPT context for runtime
+router.get('/:id/context', async (req, res) => {
+  try {
+    const context = await gptManager.getGPTContext(req.params.id);
+    res.json({ success: true, context });
+  } catch (error) {
+    console.error('Error fetching context:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Update GPT context
+router.put('/:id/context', async (req, res) => {
+  try {
+    const { context } = req.body;
+    await gptManager.updateGPTContext(req.params.id, context);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating context:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Load GPT for runtime
+router.post('/:id/load', async (req, res) => {
+  try {
+    const runtime = await gptManager.loadGPTForRuntime(req.params.id);
+    if (!runtime) {
+      return res.status(404).json({ success: false, error: 'GPT not found' });
+    }
+    res.json({ success: true, runtime });
+  } catch (error) {
+    console.error('Error loading GPT for runtime:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

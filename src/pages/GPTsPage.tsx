@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useLocation, useNavigate, Link } from 'react-router-dom'
-import { Plus, Bot, Settings, Trash2 } from 'lucide-react'
-import { GPTCreator } from '../lib/gptCreator'
-import GPTCreatorComponent from '../components/GPTCreator'
-import { cn } from '../lib/utils'
+import { Plus, Bot, Trash2 } from 'lucide-react'
+import GPTCreator from '../components/GPTCreator'
+import { GPTService, GPTConfig } from '../lib/gptService'
 
 interface GPTsPageProps {
   initialOpen?: boolean
@@ -12,51 +11,60 @@ interface GPTsPageProps {
 export default function GPTsPage({ initialOpen = false }: GPTsPageProps) {
   const navigate = useNavigate()
   const location = useLocation()
-  const gptCreator = useMemo(() => GPTCreator.getInstance(), [])
+  const gptService = GPTService.getInstance()
   const [isCreatorOpen, setCreatorOpen] = useState(initialOpen)
-  const [personalities, setPersonalities] = useState(() => gptCreator.getAllPersonalities())
+  const [gpts, setGpts] = useState<GPTConfig[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
   // Route controls modal state
   useEffect(() => {
     setCreatorOpen(location.pathname.endsWith('/new'))
   }, [location.pathname])
 
-  // Refresh personalities when component mounts or creator changes
+  // Load GPTs when component mounts
   useEffect(() => {
-    setPersonalities(gptCreator.getAllPersonalities())
-  }, [gptCreator])
+    loadGPTs()
+  }, [])
 
-  const refresh = () => {
-    setPersonalities(gptCreator.getAllPersonalities())
+  const loadGPTs = async () => {
+    try {
+      setIsLoading(true)
+      const allGpts = await gptService.getAllGPTs()
+      setGpts(allGpts)
+    } catch (error) {
+      console.error('Failed to load GPTs:', error)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleDelete = (id: string) => {
-    if (id === 'default-chatty') return // Don't delete default
-    if (gptCreator.deletePersonality(id)) {
-      refresh()
+  const handleDelete = async (id: string) => {
+    try {
+      await gptService.deleteGPT(id)
+      await loadGPTs() // Refresh the list
+    } catch (error) {
+      console.error('Failed to delete GPT:', error)
     }
   }
 
   const handleClose = () => {
     setCreatorOpen(false)
     navigate('/app/gpts')
-    refresh()
+    loadGPTs() // Refresh the list
   }
 
-  const handlePersonalityChange = () => {
-    refresh()
+  const handleGPTCreated = () => {
+    loadGPTs() // Refresh the list
   }
-
-  const customGPTs = personalities.filter(p => p.id !== 'default-chatty')
 
   return (
-    <div className="min-h-screen bg-app-gray-950 text-white">
+    <div className="min-h-screen bg-app-orange-950 text-white">
       {/* Header */}
-      <div className="border-b border-app-gray-800 p-6">
+      <div className="border-b border-app-orange-800 p-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold">Your GPTs</h1>
-            <p className="text-app-gray-400 mt-1">Manage and create custom AI assistants</p>
+            <p className="text-app-orange-400 mt-1">Manage and create custom AI assistants</p>
           </div>
           <button
             type="button"
@@ -71,13 +79,18 @@ export default function GPTsPage({ initialOpen = false }: GPTsPageProps) {
 
       {/* Content */}
       <div className="p-6">
-        {customGPTs.length === 0 ? (
+        {isLoading ? (
           <div className="text-center py-12">
-            <div className="w-16 h-16 bg-app-gray-800 rounded-lg flex items-center justify-center mx-auto mb-4">
-              <Bot size={24} className="text-app-gray-400" />
+            <div className="animate-spin rounded-full h-8 w-8 border-2 border-app-orange-400 border-t-transparent mx-auto mb-4"></div>
+            <p className="text-app-orange-400">Loading GPTs...</p>
+          </div>
+        ) : gpts.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 bg-app-orange-800 rounded-lg flex items-center justify-center mx-auto mb-4">
+              <Bot size={24} className="text-app-orange-400" />
             </div>
             <h3 className="text-lg font-medium mb-2">No GPTs yet</h3>
-            <p className="text-app-gray-400 mb-6">Create your first custom AI assistant to get started.</p>
+            <p className="text-app-orange-400 mb-6">Create your first custom AI assistant to get started.</p>
             <button
               type="button"
               onClick={() => navigate('/app/gpts/new')}
@@ -89,25 +102,29 @@ export default function GPTsPage({ initialOpen = false }: GPTsPageProps) {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {customGPTs.map((gpt) => (
+            {gpts.map((gpt) => (
               <div
                 key={gpt.id}
-                className="bg-app-gray-900 border border-app-gray-800 rounded-lg p-4 hover:bg-app-gray-800 transition-colors"
+                className="bg-app-orange-900 border border-app-orange-800 rounded-lg p-4 hover:bg-app-orange-800 transition-colors"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-app-gray-700 rounded-lg flex items-center justify-center">
-                      <Bot size={16} className="text-app-gray-300" />
+                    <div className="w-10 h-10 bg-app-orange-700 rounded-lg flex items-center justify-center overflow-hidden">
+                      {gpt.avatar ? (
+                        <img src={gpt.avatar} alt={gpt.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <Bot size={16} className="text-app-orange-300" />
+                      )}
                     </div>
                     <div>
                       <h3 className="font-medium text-white">{gpt.name}</h3>
-                      <p className="text-sm text-app-gray-400">{gpt.description}</p>
+                      <p className="text-sm text-app-orange-400">{gpt.description}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => handleDelete(gpt.id)}
-                      className="p-1 hover:bg-app-gray-700 rounded text-app-gray-400 hover:text-red-400 transition-colors"
+                      className="p-1 hover:bg-app-orange-700 rounded text-app-orange-400 hover:text-red-400 transition-colors"
                       title="Delete GPT"
                     >
                       <Trash2 size={14} />
@@ -117,26 +134,26 @@ export default function GPTsPage({ initialOpen = false }: GPTsPageProps) {
                 
                 <div className="space-y-2">
                   <div>
-                    <p className="text-xs text-app-gray-500 mb-1">Instructions</p>
-                    <p className="text-sm text-app-gray-300 line-clamp-2">
+                    <p className="text-xs text-app-orange-500 mb-1">Instructions</p>
+                    <p className="text-sm text-app-orange-300 line-clamp-2">
                       {gpt.instructions || 'No instructions provided'}
                     </p>
                   </div>
                   
-                  {gpt.conversationStarters.length > 0 && (
+                  {gpt.conversationStarters && gpt.conversationStarters.length > 0 && (
                     <div>
-                      <p className="text-xs text-app-gray-500 mb-1">Conversation Starters</p>
+                      <p className="text-xs text-app-orange-500 mb-1">Conversation Starters</p>
                       <div className="flex flex-wrap gap-1">
-                        {gpt.conversationStarters.slice(0, 2).map((starter, index) => (
+                        {gpt.conversationStarters.slice(0, 2).map((starter: string, index: number) => (
                           <span
                             key={index}
-                            className="text-xs bg-app-gray-800 text-app-gray-300 px-2 py-1 rounded"
+                            className="text-xs bg-app-orange-800 text-app-orange-300 px-2 py-1 rounded"
                           >
                             {starter}
                           </span>
                         ))}
                         {gpt.conversationStarters.length > 2 && (
-                          <span className="text-xs text-app-gray-500">
+                          <span className="text-xs text-app-orange-500">
                             +{gpt.conversationStarters.length - 2} more
                           </span>
                         )}
@@ -146,8 +163,8 @@ export default function GPTsPage({ initialOpen = false }: GPTsPageProps) {
                   
                   <div className="flex items-center justify-between pt-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-app-gray-500">Model:</span>
-                      <span className="text-xs bg-app-gray-800 text-app-gray-300 px-2 py-1 rounded">
+                      <span className="text-xs text-app-orange-500">Model:</span>
+                      <span className="text-xs bg-app-orange-800 text-app-orange-300 px-2 py-1 rounded">
                         {gpt.modelId}
                       </span>
                     </div>
@@ -166,10 +183,10 @@ export default function GPTsPage({ initialOpen = false }: GPTsPageProps) {
       </div>
 
       {/* GPT Creator Modal */}
-      <GPTCreatorComponent
+      <GPTCreator
         isVisible={isCreatorOpen}
         onClose={handleClose}
-        onPersonalityChange={handlePersonalityChange}
+        onGPTCreated={handleGPTCreated}
       />
     </div>
   )

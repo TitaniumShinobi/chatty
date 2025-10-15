@@ -3,10 +3,13 @@ import { Send, Menu, Plus, Paperclip, X } from 'lucide-react'
 import { ChatAreaProps } from '../types'
 import MessageComponent from './Message.tsx'
 import { cn } from '../lib/utils'
-import { uploadAndParse } from '../lib/aiService'
-import { parsePdfInWorker } from '../lib/fileWorkers'
+import ActionMenu from './ActionMenu'
+// Removed unused imports - now using UnifiedFileParser
 import { emitOpcode } from '../lib/emit'
 import { lexicon as lex } from '../data/lexicon'
+import type { AssistantPacket } from '../types'
+
+const pktFromString = (s: string): AssistantPacket => ({ op: 'answer.v1', payload: { content: s } })
 
 const ChatArea: React.FC<ChatAreaProps> = ({
   conversation,
@@ -86,6 +89,145 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     }
   }
 
+  const handleAction = async (action: string, files?: File[]) => {
+    if (!files || files.length === 0) {
+      // Handle non-file actions
+      switch (action) {
+        case 'web-search':
+          console.log('Web search mode activated');
+          break;
+        case 'deep-research':
+          console.log('Deep research mode activated');
+          break;
+        case 'create-image':
+          console.log('Image creation mode activated');
+          break;
+        default:
+          console.log(`Action: ${action}`);
+      }
+      return;
+    }
+
+    // Handle file-based actions
+    const validFiles: File[] = [];
+    for (const file of files) {
+      try {
+        const { UnifiedFileParser } = await import('../lib/unifiedFileParser');
+        if (!UnifiedFileParser.isSupportedType(file.type)) {
+          console.warn(`Unsupported file type: ${file.type} for file ${file.name}`);
+          continue;
+        }
+        if (file.size > UnifiedFileParser.DEFAULT_MAX_SIZE) {
+          console.warn(`File too large: ${file.name} (${UnifiedFileParser.formatFileSize(file.size)})`);
+          continue;
+        }
+        validFiles.push(file);
+      } catch (error) {
+        console.error(`Error validating file ${file.name}:`, error);
+      }
+    }
+
+    if (validFiles.length === 0) {
+      setIsParsing(false);
+      return;
+    }
+
+    setAttachedFiles(prev => [...prev, ...validFiles])
+    setIsParsing(true)
+
+    // Process each file based on action type
+    for (const file of validFiles) {
+      try {
+        abortControllerRef.current?.abort();
+        abortControllerRef.current = new AbortController();
+
+        let parsedContent;
+        let actionMessage = '';
+
+        switch (action) {
+          case 'mocr-video':
+            actionMessage = '🎬 MOCR Video Analysis';
+            const { default: mocrClient } = await import('../lib/mocrClient');
+            const isAvailable = await mocrClient.isAvailable();
+            if (isAvailable) {
+              const mocrResult = await mocrClient.analyzeVideo(file, {
+                maxFrames: 20,
+                frameInterval: 3,
+                ocrLanguage: 'eng',
+                asrLanguage: 'en'
+              });
+              parsedContent = {
+                extractedText: `MOCR Analysis Complete:\n${mocrResult.contentSummary.description}\n\nKey Topics: ${mocrResult.contentSummary.keyTopics.join(', ')}\n\nVisual Text: ${mocrResult.mocrAnalysis.textExtracted} characters\nAudio Text: ${mocrResult.asrAnalysis.wordsTranscribed} words`,
+                metadata: { action: 'mocr-video', processingTime: mocrResult.processingTime }
+              };
+            } else {
+              throw new Error('MOCR service not available');
+            }
+            break;
+
+          case 'ocr-image':
+            actionMessage = '👁️ OCR Image Analysis';
+            const { OCRService } = await import('../lib/ocrService');
+            const ocrResult = await OCRService.extractTextFromImage(file, {
+              language: 'eng',
+              timeout: 30000
+            });
+            parsedContent = {
+              extractedText: ocrResult.success ? ocrResult.text : 'No text detected in image',
+              metadata: { action: 'ocr-image', confidence: ocrResult.confidence }
+            };
+            break;
+
+          default:
+            actionMessage = '📄 File Analysis';
+            const { UnifiedFileParser } = await import('../lib/unifiedFileParser');
+            parsedContent = await UnifiedFileParser.parseFile(file, {
+              maxSize: 10 * 1024 * 1024,
+              extractText: true,
+              storeContent: false
+            });
+        }
+
+        const successMessage = {
+          id: Date.now().toString(),
+          role: 'assistant' as const,
+          content: [pktFromString(emitOpcode(lex.tokens.fileParsed, {
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            action: actionMessage,
+            extractedText: parsedContent.extractedText.substring(0, 500) + (parsedContent.extractedText.length > 500 ? '...' : ''),
+            metadata: parsedContent.metadata
+          }))],
+          timestamp: new Date().toISOString()
+        } as import('../types').AssistantMsg
+        onSendMessage(successMessage)
+
+        console.log(`✅ ${actionMessage} completed for ${file.name}`);
+        setParsingProgress(prev => ({ ...prev, [file.name]: 100 }));
+      } catch (error: any) {
+        console.error(`❌ Error processing file ${file.name}:`, error);
+        const errorMessage = {
+          id: Date.now().toString(),
+          role: 'assistant' as const,
+          content: [pktFromString(emitOpcode(lex.tokens.fileParseFailed, { name: file.name, error: error.message }))],
+          timestamp: new Date().toISOString()
+        } as import('../types').AssistantMsg
+        onSendMessage(errorMessage)
+      } finally {
+        setParsingProgress(prev => {
+          const newProgress = { ...prev };
+          delete newProgress[file.name];
+          return newProgress;
+        });
+        if (Object.keys(parsingProgress).length === 1 && parsingProgress[file.name] === 100) {
+          setIsParsing(false);
+        }
+      }
+    }
+    setIsParsing(false);
+  }
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
@@ -107,9 +249,9 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         const errorMessage = {
           id: Date.now().toString(),
           role: 'assistant' as const,
-          content: emitOpcode(lex.fileParseFailed, { name: file.name, reason: 'file_too_large' }),
+          content: [pktFromString(emitOpcode(lex.tokens.fileParseFailed, { name: file.name, reason: 'file_too_large' }))],
           timestamp: new Date().toISOString()
-        }
+        } as import('../types').AssistantMsg
         onSendMessage(errorMessage)
         return false;
       }
@@ -119,9 +261,9 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         const errorMessage = {
           id: Date.now().toString(),
           role: 'assistant' as const,
-          content: emitOpcode(lex.fileParseFailed, { name: file.name, reason: 'unsupported_type' }),
+          content: [pktFromString(emitOpcode(lex.tokens.fileParseFailed, { name: file.name, reason: 'unsupported_type' }))],
           timestamp: new Date().toISOString()
-        }
+        } as import('../types').AssistantMsg
         onSendMessage(errorMessage)
         return false;
       }
@@ -144,48 +286,34 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         abortControllerRef.current?.abort();
         abortControllerRef.current = new AbortController();
 
-        if (file.type === 'application/pdf') {
-          // Use worker for PDF parsing
-          const text = await parsePdfInWorker(
-            file, 
-            (progress) => setParsingProgress(prev => ({ ...prev, [file.name]: progress })),
-            abortControllerRef.current.signal
-          );
-          
-          // Emit success opcode
-          const successMessage = {
-            id: Date.now().toString(),
-            role: 'assistant' as const,
-            content: emitOpcode(lex.fileParsed, { name: file.name }),
-            timestamp: new Date().toISOString()
-          }
-          onSendMessage(successMessage)
-          
-          console.log(`✅ Parsed PDF ${file.name} (${text.length} characters)`);
-        } else {
-          // Use existing uploadAndParse for other file types
-          const { ok, fail } = await uploadAndParse([file]);
-          
-          if (ok.length > 0) {
-            const successMessage = {
-              id: Date.now().toString(),
-              role: 'assistant' as const,
-              content: emitOpcode(lex.fileParsed, { name: file.name }),
-              timestamp: new Date().toISOString()
-            }
-            onSendMessage(successMessage)
-            console.log(`✅ Parsed ${file.name}`);
-          } else {
-            const errorMessage = {
-              id: Date.now().toString(),
-              role: 'assistant' as const,
-              content: emitOpcode(lex.fileParseFailed, { name: file.name }),
-              timestamp: new Date().toISOString()
-            }
-            onSendMessage(errorMessage)
-            console.error(`❌ Failed to parse ${file.name}`);
-          }
-        }
+        // Use unified file parser for all file types
+        const { UnifiedFileParser } = await import('../lib/unifiedFileParser');
+        
+        const parsedContent = await UnifiedFileParser.parseFile(file, {
+          maxSize: 10 * 1024 * 1024, // 10MB
+          extractText: true,
+          storeContent: false // Don't store content in chat, just extract text
+        });
+        
+        // Emit success opcode
+        const successMessage = {
+          id: Date.now().toString(),
+          role: 'assistant' as const,
+          content: [pktFromString(emitOpcode(lex.tokens.fileParsed, { 
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            extractedText: parsedContent.extractedText.substring(0, 500) + (parsedContent.extractedText.length > 500 ? '...' : ''),
+            metadata: parsedContent.metadata
+          }))],
+          timestamp: new Date().toISOString()
+        } as import('../types').AssistantMsg
+        onSendMessage(successMessage)
+        
+        console.log(`✅ Parsed ${file.type} ${file.name} (${parsedContent.extractedText.length} characters)`);
+        
+        // Update progress
+        setParsingProgress(prev => ({ ...prev, [file.name]: 100 }));
       } catch (error: any) {
         console.error(`❌ Error processing file ${file.name}:`, error);
         
@@ -193,9 +321,9 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         const errorMessage = {
           id: Date.now().toString(),
           role: 'assistant' as const,
-          content: emitOpcode(lex.fileParseFailed, { name: file.name, reason: error.message }),
+          content: [pktFromString(emitOpcode(lex.tokens.fileParseFailed, { name: file.name, reason: error.message }))],
           timestamp: new Date().toISOString()
-        }
+        } as import('../types').AssistantMsg
         onSendMessage(errorMessage)
         
         // Remove failed file from attached files
@@ -219,13 +347,13 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   }
 
   return (
-    <div className="flex flex-col h-full bg-app-gray-900">
+    <div className="flex flex-col h-full bg-app-orange-900">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-app-gray-800 bg-app-gray-900">
+      <div className="flex items-center justify-between p-4 border-b border-app-orange-800 bg-app-orange-900">
         <div className="flex items-center gap-3">
           <button
             onClick={onToggleSidebar}
-            className="p-2 hover:bg-app-gray-800 rounded-lg transition-colors md:hidden"
+            className="p-2 hover:bg-app-orange-800 rounded-lg transition-colors md:hidden"
           >
             <Menu size={20} />
           </button>
@@ -234,7 +362,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
               {conversation?.title || 'New conversation'}
             </h2>
             {activeGPTName && (
-              <p className="text-sm text-app-gray-400">
+              <p className="text-sm text-app-orange-400">
                 Using: {activeGPTName}
               </p>
             )}
@@ -243,7 +371,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         
         <button
           onClick={onNewConversation}
-          className="p-2 hover:bg-app-gray-800 rounded-lg transition-colors"
+          className="p-2 hover:bg-app-orange-800 rounded-lg transition-colors"
           title="New conversation"
         >
           <Plus size={20} />
@@ -258,7 +386,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
               <h1 className="text-2xl font-bold text-white mb-4">
                 Welcome to Chatty
               </h1>
-              <p className="text-app-gray-400 mb-8">
+              <p className="text-app-orange-400 mb-8">
                 Your AI assistant is ready to help. Ask me anything!
               </p>
               
@@ -283,7 +411,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                         onSendMessage(message)
                       }
                     }}
-                    className="p-3 text-left text-sm border border-app-gray-700 rounded-lg hover:bg-app-gray-800 transition-colors"
+                    className="p-3 text-left text-sm border border-app-orange-700 rounded-lg hover:bg-app-orange-800 transition-colors"
                   >
                     {prompt}
                   </button>
@@ -303,7 +431,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             
             {/* Typing indicator */}
             {isTyping && (
-              <div className="flex items-start gap-3 p-4 bg-app-gray-800 rounded-lg">
+              <div className="flex items-start gap-3 p-4 bg-app-orange-800 rounded-lg">
                 <div className="w-8 h-8 rounded-full bg-app-green-600 flex items-center justify-center flex-shrink-0">
                   <span className="text-white text-sm font-bold">AI</span>
                 </div>
@@ -323,16 +451,16 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       </div>
 
       {/* Input Area */}
-      <div className="border-t border-app-gray-800 p-4">
+      <div className="border-t border-app-orange-800 p-4">
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
 
 
           {/* Attached Files */}
           {attachedFiles.length > 0 && (
-            <div className="mb-3 p-3 bg-app-gray-800 rounded-lg border border-app-gray-700">
+            <div className="mb-3 p-3 bg-app-orange-800 rounded-lg border border-app-orange-700">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <Paperclip size={16} className="text-app-gray-400" />
+                  <Paperclip size={16} className="text-app-orange-400" />
                   <span className="text-sm text-white">Attached files ({attachedFiles.length})</span>
                 </div>
                 {isParsing && (
@@ -359,50 +487,50 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                       'swift': 'text-orange-400', 'kt': 'text-purple-400', 'scala': 'text-red-400', 'clj': 'text-green-400',
                       'hs': 'text-purple-400', 'ml': 'text-orange-400', 'fs': 'text-blue-400', 'erl': 'text-red-400',
                       'ex': 'text-purple-400', 'lua': 'text-blue-400', 'pl': 'text-blue-400', 'sh': 'text-green-400',
-                      'bat': 'text-gray-400', 'ps1': 'text-blue-400',
+                      'bat': 'text-orange-400', 'ps1': 'text-blue-400',
                       // Config files
                       'json': 'text-yellow-400', 'yaml': 'text-green-400', 'yml': 'text-green-400', 'toml': 'text-blue-400',
-                      'ini': 'text-gray-400', 'conf': 'text-gray-400', 'env': 'text-green-400', 'gitignore': 'text-gray-400',
+                      'ini': 'text-orange-400', 'conf': 'text-orange-400', 'env': 'text-green-400', 'gitignore': 'text-orange-400',
                       'editorconfig': 'text-blue-400', 'eslintrc': 'text-purple-400', 'prettierrc': 'text-pink-400',
                       'babelrc': 'text-yellow-400', 'webpack': 'text-blue-400', 'rollup': 'text-red-400', 'vite': 'text-purple-400',
-                      'package': 'text-green-400', 'lock': 'text-gray-400',
+                      'package': 'text-green-400', 'lock': 'text-orange-400',
                       // Documentation
-                      'md': 'text-blue-400', 'markdown': 'text-blue-400', 'txt': 'text-gray-400', 'doc': 'text-blue-500',
-                      'docx': 'text-blue-500', 'rtf': 'text-gray-400', 'tex': 'text-gray-400', 'adoc': 'text-green-400',
-                      'rst': 'text-gray-400', 'readme': 'text-blue-400', 'license': 'text-green-400', 'changelog': 'text-yellow-400',
+                      'md': 'text-blue-400', 'markdown': 'text-blue-400', 'txt': 'text-orange-400', 'doc': 'text-blue-500',
+                      'docx': 'text-blue-500', 'rtf': 'text-orange-400', 'tex': 'text-orange-400', 'adoc': 'text-green-400',
+                      'rst': 'text-orange-400', 'readme': 'text-blue-400', 'license': 'text-green-400', 'changelog': 'text-yellow-400',
                       // Data files
                       'csv': 'text-green-400', 'tsv': 'text-green-400', 'sql': 'text-blue-400', 'xml': 'text-orange-400',
-                      'log': 'text-gray-400', 'diff': 'text-red-400', 'patch': 'text-red-400',
+                      'log': 'text-orange-400', 'diff': 'text-red-400', 'patch': 'text-red-400',
                       // Special files
                       'dockerfile': 'text-blue-400', 'makefile': 'text-yellow-400'
                     };
-                    return colors[ext] || 'text-gray-400';
+                    return colors[ext] || 'text-orange-400';
                   };
                   
                   const progress = parsingProgress[file.name] || 0;
                   
                   return (
-                    <div key={index} className="flex items-center justify-between p-2 bg-app-gray-700 rounded">
+                    <div key={index} className="flex items-center justify-between p-2 bg-app-orange-700 rounded">
                       <div className="flex items-center gap-2 flex-1">
-                        <Paperclip size={14} className="text-app-gray-400" />
+                        <Paperclip size={14} className="text-app-orange-400" />
                         <span className="text-sm text-white">{file.name}</span>
                         {fileExtension && (
-                          <span className={`text-xs px-1 py-0.5 rounded ${getFileTypeColor(fileExtension)} bg-app-gray-600`}>
+                          <span className={`text-xs px-1 py-0.5 rounded ${getFileTypeColor(fileExtension)} bg-app-orange-600`}>
                             {fileExtension.toUpperCase()}
                           </span>
                         )}
-                        <span className="text-xs text-app-gray-400">
+                        <span className="text-xs text-app-orange-400">
                           ({(file.size / 1024).toFixed(1)} KB)
                         </span>
                         {isParsing && progress > 0 && (
                           <div className="flex items-center gap-2 ml-2">
-                            <div className="w-16 bg-app-gray-600 rounded-full h-1.5">
+                            <div className="w-16 bg-app-orange-600 rounded-full h-1.5">
                               <div 
                                 className="bg-app-green-500 h-1.5 rounded-full transition-all duration-300"
                                 style={{ width: `${progress * 100}%` }}
                               />
                             </div>
-                            <span className="text-xs text-app-gray-400">
+                            <span className="text-xs text-app-orange-400">
                               {Math.round(progress * 100)}%
                             </span>
                           </div>
@@ -411,9 +539,9 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                       <button
                         type="button"
                         onClick={() => removeFile(index)}
-                        className="p-1 hover:bg-app-gray-600 rounded"
+                        className="p-1 hover:bg-app-orange-600 rounded"
                       >
-                        <X size={14} className="text-app-gray-400" />
+                        <X size={14} className="text-app-orange-400" />
                       </button>
                     </div>
                   );
@@ -429,19 +557,18 @@ const ChatArea: React.FC<ChatAreaProps> = ({
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Message Chatty..."
-              className="w-full p-4 pr-20 bg-app-gray-800 border border-app-gray-700 rounded-lg resize-none focus:outline-none focus:border-app-green-500 transition-colors min-h-[52px] max-h-32"
+              className="w-full p-4 pr-20 bg-app-orange-800 border border-app-orange-700 rounded-lg resize-none focus:outline-none focus:border-app-green-500 transition-colors min-h-[52px] max-h-32"
               rows={1}
               disabled={!conversation}
             />
             
-            {/* File Upload Button */}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="absolute right-12 top-1/2 -translate-y-1/2 p-2 text-app-gray-400 hover:text-white hover:bg-app-gray-700 rounded-lg transition-colors"
-            >
-              <Paperclip size={16} />
-            </button>
+            {/* Action Menu */}
+            <div className="absolute right-12 top-1/2 -translate-y-1/2">
+              <ActionMenu 
+                onAction={handleAction}
+                disabled={!conversation}
+              />
+            </div>
             
             {/* Send Button */}
             <button
@@ -451,7 +578,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                 "absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-colors",
                 (inputValue.trim() || attachedFiles.length > 0) && conversation
                   ? "bg-app-green-600 hover:bg-app-green-700 text-white"
-                  : "bg-app-gray-700 text-app-gray-400 cursor-not-allowed"
+                  : "bg-app-orange-700 text-app-orange-400 cursor-not-allowed"
               )}
             >
               <Send size={16} />
@@ -463,12 +590,12 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             ref={fileInputRef}
             type="file"
             multiple
-            accept=".pdf,.txt,.md,.csv,.html,.docx"
+            accept=".pdf,.txt,.md,.csv,.html,.docx,.mp4,.avi,.mov,.mkv,.webm,.flv,.wmv,.m4v,.3gp,.ogv,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.svg"
             onChange={handleFileSelect}
             className="hidden"
           />
           
-          <div className="text-xs text-app-gray-500 mt-2 text-center">
+          <div className="text-xs text-app-orange-500 mt-2 text-center">
             Chatty can make mistakes. Consider checking important information.
           </div>
         </form>

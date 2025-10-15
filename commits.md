@@ -5,6 +5,121 @@ Entries are always appended with full historical traceability.
 
 Ledger Entry Format:
 
+### [2024-12-19 — 16:25:00]
+**Project:** Chatty GPT Creator
+**Files Edited:** 
+- `src/components/GPTCreator.tsx` - Implemented three separate model dropdowns for Conversation, Creative, and Coding
+- `src/lib/gptService.ts` - Extended GPTConfig interface with new model fields
+
+**🧩 Description:** Replaced single model dropdown with three specialized dropdowns and categorized all Ollama models
+**🎯 Reference:** User requested three separate dropdowns for Conversation, Creative, and Coding models with full Ollama model list
+**🧠 Reason:** User wants to customize Synth's default 3 models (phi3, mistral, deepseek) with any Ollama models from the comprehensive list
+**🗂️ Commit:** GPTCreator: Implement three-model dropdown system with complete Ollama model categorization
+
+**Technical Details:**
+- Replaced single "Model" dropdown with three separate dropdowns: Conversation, Creative, Coding
+- Added comprehensive list of all Ollama models (300+ models) categorized by purpose
+- Updated GPTConfig interface to include conversationModel, creativeModel, codingModel fields
+- Set intelligent defaults: Llama 3.1 8B (Conversation), Mistral 7B (Creative), DeepSeek Coder 6.7B (Coding)
+- Updated preview system to display model configuration and clear preview when models change
+- Enhanced system prompt generation to show all three model configurations
+- Maintained backward compatibility with existing modelId field
+- All models properly formatted with size indicators (e.g., "llama3.1:8b", "deepseek-coder:6.7b")
+
+### [2024-12-19 — 16:20:00]
+**Project:** Chatty GPT Creator
+**Files Edited:** 
+- `src/components/GPTCreator.tsx` - Reorganized Configure tab layout
+
+**🧩 Description:** Moved Name, Description, Instructions, and Model fields under Avatar section and removed section subtitles
+**🎯 Reference:** UI/UX improvements for better field organization
+**🧠 Reason:** User requested cleaner layout with fields grouped under avatar and removal of "Basic Configuration" and "Advanced Settings" subtitles
+**🗂️ Commit:** GPTCreator: Reorganize Configure tab layout - move fields under Avatar, remove subtitles
+
+**Technical Details:**
+- Moved Name, Description, Instructions, and Model fields from top of Configure tab to directly under Avatar section
+- Removed "Basic Configuration" and "Advanced Settings" subtitle headers
+- Maintained all field functionality and styling
+- Improved visual flow with Avatar section leading into core configuration fields
+- Cleaner, more streamlined Configure tab layout
+
+### [2024-12-19 — 16:15:00]
+**Project:** Chatty GPT Creator
+**Files Edited:** 
+- `src/components/GPTCreator.tsx` - Implemented OpenAPI schema editor for Actions section
+
+**🧩 Description:** Replaced simple action form with comprehensive OpenAPI schema editor modal for connecting external APIs
+**🎯 Reference:** Functional Requirements - Actions section opens schema editor drawer/modal (OpenAPI)
+**🧠 Reason:** User requested to turn "Action Name" form into button that opens actions tab for Katana ↔ Chatty CLI connection
+**🗂️ Commit:** GPTCreator: Implement OpenAPI schema editor for Actions with Katana ↔ Chatty Bridge template
+
+**Technical Details:**
+- Replaced simple action form with "Open Actions Editor" button
+- Created full-screen modal with OpenAPI schema editor (left panel) and available actions preview (right panel)
+- Added authentication dropdown (None, API Key, OAuth) with settings gear icon
+- Implemented schema textarea with Import from URL and Examples dropdown
+- Added pre-configured "Katana ↔ Chatty Bridge" schema template with sendMessageToChatty and receiveFromChatty endpoints
+- Included Cloudflare tunnel URL and proper OpenAPI 3.1.0 specification
+- Added schema parsing logic to extract actions from OpenAPI specification
+- Implemented Save Actions functionality that parses JSON schema and populates actions list
+- Added privacy policy input field and test buttons for each action
+- Modal matches ChatGPT's "Edit actions" interface design and functionality
+
+### [2024-12-19 — 16:00:00]
+**Project:** Chatty GPT Creator
+**Files Edited:** 
+- `src/components/GPTCreator.tsx` - Restructured Create tab to match ChatGPT's conversational approach
+
+**🧩 Description:** Moved form fields to Configure tab and made Create tab an interactive LLM conversation for GPT building
+**🎯 Reference:** UI Behavior Parity with OpenAI - Create tab should have LLM waiting to speak with user
+**🧠 Reason:** User pointed out that Chatty's Create tab was asking for configuration details instead of having an LLM conversation like ChatGPT
+**🗂️ Commit:** GPTCreator: Restructure Create tab to match ChatGPT's conversational GPT building approach
+
+**Technical Details:**
+- Moved Name, Description, Instructions, and Model fields from Create tab to Configure tab
+- Created interactive LLM conversation in Create tab with chat interface
+- Added GPT creation assistant system prompt for helping users build GPTs through dialogue
+- Implemented automatic config extraction from conversation (name, description, instructions)
+- Added conversation-based GPT building flow that matches ChatGPT's approach
+- Create tab now has LLM waiting to help users define their GPT through natural conversation
+- Configure tab now contains all the form fields and advanced settings
+
+### [2024-12-19 — 15:45:00]
+**Project:** Chatty GPT Creator
+**Files Edited:** 
+- `src/components/GPTCreator.tsx` - Implemented LLM-powered chat preview in Create tab
+
+**🧩 Description:** Added real-time chat preview that uses actual AI models to test GPT configuration
+**🎯 Reference:** Functional Requirements - Chat preview reflects full instruction and config state
+**🧠 Reason:** Users need to test their GPT configuration before saving to ensure it works as expected
+**🗂️ Commit:** GPTCreator: Implement LLM-powered chat preview with live configuration testing
+
+**Technical Details:**
+- Replaced mock `generatePreviewResponse` with real AI model calls using `runSeat`
+- Added `buildPreviewSystemPrompt` to construct system prompts from current config
+- Implemented conversation context preservation in preview
+- Added auto-clear preview when significant config changes are made
+- Enhanced preview UI with model information and configuration status
+- Preview now reflects actual GPT behavior based on name, description, instructions, capabilities, and model selection
+
+### [2024-12-19 — 15:30:00]
+**Project:** Chatty GPT Creator
+**Files Edited:** 
+- `src/components/GPTCreator.tsx` - Fixed file upload flow to prevent FOREIGN KEY constraint errors
+- `src/lib/gptService.ts` - Extended GPTFile interface with temporary file reference
+- `rubrics/GPTCreator.rubric.md` - Created component standards and file creation policy
+
+**🧩 Description:** Fixed FOREIGN KEY constraint error in GPT creation by changing file upload flow
+**🎯 Reference:** Functional Requirements - File uploads must persist via GPTService
+**🧠 Reason:** Files were being uploaded with gptId='temp' before GPT creation, causing FK constraint violation
+**🗂️ Commit:** GPTCreator: Fix FOREIGN KEY constraint by uploading files after GPT creation
+
+**Technical Details:**
+- Changed `handleFileUpload` to store files in local state instead of immediate database upload
+- Modified `handleSave` to upload files after GPT creation with valid gptId
+- Added `_file?: File` property to GPTFile interface for temporary file storage
+- Established rubric to prevent future file proliferation issues
+
 ### [YYYY-MM-DD — HH:MM:SS]
 **Project:** 
 **Files Edited:** 
@@ -19,6 +134,204 @@ Ledger Entry Format:
 ---
 
 <!-- Add entries below this line -->
+
+### [2025-10-13 — 21:14:00]
+**Project:** Chatty - Major Development Sprint
+**Files Edited:** Multiple core files across web interface, CLI, and new MOCR service
+**Type:** Major Feature Development & Architecture Enhancement
+**Summary:** Comprehensive development sprint covering synth integration, UI improvements, memory architecture, GPT creator, and MOCR implementation
+**Reason for Change:** Systematic enhancement of Chatty's capabilities and user experience
+**Impact:**
+- ✅ Synth model fully integrated into web interface
+- ✅ ChatGPT-style message flow with typing indicators implemented
+- ✅ Model classification system added with /model command
+- ✅ Memory architecture enhanced with SQLite persistence
+- ✅ GPT Creator platform developed with file upload capabilities
+- ✅ MOCR (Motion Optical Character Recognition) service extracted as standalone microservice
+- ✅ ChatGPT-style "+" button interface implemented for native MOCR integration
+- ⚠️ /katana command handshake still pending (messages appear on user line instead of separate)
+- ❌ Actions panel for GPT Creator not yet implemented
+- ❌ Avatar upload functionality not yet implemented
+- ❌ File upload limited to PDFs, needs expansion for PNGs and other formats
+
+---
+
+### [2025-10-13 — Phase 1: Synth Integration]
+**Project:** Chatty Web Interface
+**Files Edited:** src/lib/aiService.ts, src/components/Layout.tsx, src/components/Message.tsx
+**Type:** Core Feature Integration
+**Summary:** Finalized Chatty "synth" model integration into web interface
+**Reason for Change:** Web interface was not using the same multi-model synthesis pipeline as CLI
+**Impact:**
+- ✅ Web interface now uses DeepSeek, Mistral, and Phi3 synthesis pipeline
+- ✅ runSeat() properly called in web flow
+- ✅ Synth replies properly rendered in UI
+- ✅ Legacy fallback logic bypassed when synthMode is active
+- ✅ Model tags from models.json correctly loaded and used
+
+---
+
+### [2025-10-13 — Phase 2: Message Flow Enhancement]
+**Project:** Chatty Web Interface
+**Files Edited:** src/components/Layout.tsx, src/components/Message.tsx, src/lib/aiService.ts
+**Type:** UI/UX Enhancement
+**Summary:** Updated prompt processing to show when AI is thinking with ChatGPT-style message flow
+**Reason for Change:** Improve user experience with immediate feedback and typing indicators
+**Impact:**
+- ✅ User messages show immediately when sent
+- ✅ Temporary assistant message with typing indicator while response generates
+- ✅ Typing message replaced with final AI response when ready
+- ✅ onPartialUpdate and onFinalUpdate callbacks implemented
+- ✅ Smooth fade-in effects with CSS transitions
+
+---
+
+### [2025-10-13 — Phase 3: Message Box UI]
+**Project:** Chatty Web Interface
+**Files Edited:** src/pages/Chat.tsx, src/components/ChatArea.tsx
+**Type:** UI Enhancement
+**Summary:** Enhanced message box interface for better user experience
+**Reason for Change:** Make message input more intuitive and user-friendly
+**Impact:**
+- ✅ Auto-expanding textarea up to 15 lines
+- ✅ Compact by default, maintains scroll behavior
+- ✅ Keyboard accessibility (Enter to send, Shift+Enter for newline)
+- ✅ Improved visual design and responsiveness
+
+---
+
+### [2025-10-13 — Phase 4: Model Classification System]
+**Project:** Chatty CLI & Web
+**Files Edited:** src/cli/chatty-cli.ts, src/lib/aiService.ts
+**Type:** Feature Addition
+**Summary:** Added model classification system to respond to /model command with actual LLMs running in Synth
+**Reason for Change:** Chatty did not distinguish itself or show what models were actually running
+**Impact:**
+- ✅ /model command shows current model configuration
+- ✅ /models command displays all configured models in synth pipeline
+- ✅ Synth prompt enhanced to include current model configuration
+- ✅ Chatty now transparent about its models when asked
+
+---
+
+### [2025-10-13 — Phase 5: Katana Integration (Pending)]
+**Project:** Chatty CLI
+**Files Edited:** src/cli/chatty-cli.ts, server/chatty-api.ts
+**Type:** External Integration
+**Summary:** Attempted to fix /katana command and handshake with external AI
+**Reason for Change:** Enable communication between Katana (ChatGPT) and Chatty
+**Impact:**
+- ⚠️ Katana can send to HTTP endpoint and appear in CLI
+- ⚠️ Messages always appear on user line instead of separate "katana>" line
+- ⚠️ Previously worked with separate lines but each prompt was fresh interaction
+- ❌ Group conversation functionality not yet implemented
+- ❌ Handshake protocol still pending
+
+---
+
+### [2025-10-13 — Phase 6: Memory Architecture Enhancement]
+**Project:** Chatty Core
+**Files Edited:** src/engine/memory/PersistentMemoryStore.ts, src/engine/memory/PersonaBrain.ts, src/cli/chatty-cli.ts
+**Type:** Architecture Enhancement
+**Summary:** Enhanced Chatty's memory both in same session and across sessions using SQLite
+**Reason for Change:** Need persistent memory across sessions and scalability for 1 million users
+**Impact:**
+- ✅ SQLite-backed persistent memory implemented
+- ✅ Cross-session memory continuity
+- ✅ PersonaBrain integration for consistent AI personality
+- ✅ MemoryStore with conversation history persistence
+- ⚠️ Scalability for 1 million users needs further analysis
+- ⚠️ Performance optimization required for large user base
+
+---
+
+### [2025-10-13 — Phase 7: CLI Completion Focus]
+**Project:** Chatty CLI
+**Files Edited:** Multiple CLI files including file operations, conversation management, settings
+**Type:** Feature Completion
+**Summary:** Decided to finish Chatty CLI to focus efforts on flawless memory in web interface
+**Reason for Change:** Complete CLI functionality before optimizing web interface memory
+**Impact:**
+- ✅ File operations commands implemented (/file cd, ls, cp, mv, etc.)
+- ✅ Conversation management system (/save, /load, /list, /delete, /export)
+- ✅ Settings management system (/settings, /set, /reset-settings)
+- ✅ Turn-taking system for conversation flow
+- ✅ Emotional watchdog for crisis detection
+- ✅ Containment protocol for user safety
+- ✅ Performance optimization with adaptive memory management
+
+---
+
+### [2025-10-13 — Phase 8: GPT Creator Development]
+**Project:** Chatty GPT Creator
+**Files Edited:** src/components/GPTCreatorNew.tsx, server/lib/gptManager.js, server/routes/gpts.js
+**Type:** Major Feature Development
+**Summary:** Developed actual GPT creator platform (currently in progress)
+**Reason for Change:** Transform Chatty into a true GPT Creator platform like ChatGPT
+**Impact:**
+- ✅ GPT configuration system with instructions, capabilities, model selection
+- ✅ File upload system for knowledge files
+- ✅ GPT runtime service for execution
+- ✅ RESTful API for GPT management
+- ✅ Frontend service integration
+- ⚠️ Actions panel not yet implemented
+- ⚠️ Avatar upload functionality not yet implemented
+- ❌ File upload limited to PDFs, needs expansion for PNGs and other formats
+
+---
+
+### [2025-10-13 — Phase 9: MOCR Service Extraction]
+**Project:** MOCR Service
+**Files Edited:** Created standalone MOCR service in /Users/devonwoodson/Documents/GitHub/MOCR-Service/
+**Type:** Service Architecture
+**Summary:** Extracted MOCR (Motion Optical Character Recognition) as standalone microservice
+**Reason for Change:** Professional video analysis service that can be used by multiple applications
+**Impact:**
+- ✅ Standalone MOCR service with professional architecture
+- ✅ RESTful API with comprehensive endpoints
+- ✅ Client SDK for easy integration
+- ✅ Docker containerization and deployment ready
+- ✅ Video frame extraction, OCR, ASR, and content synchronization
+- ✅ Enterprise-grade features (security, monitoring, caching)
+
+---
+
+### [2025-10-13 — Phase 10: Native MOCR Integration]
+**Project:** Chatty Web Interface
+**Files Edited:** src/components/ActionMenu.tsx, src/components/ChatArea.tsx, src/lib/mocrClient.ts
+**Type:** UI Integration
+**Summary:** Implemented ChatGPT-style "+" button interface with native MOCR integration
+**Reason for Change:** Make MOCR a prominent, discoverable feature with familiar interface
+**Impact:**
+- ✅ ChatGPT-style "+" button with popup menu
+- ✅ Dedicated "MOCR Video Analysis" action
+- ✅ Smart file type detection and routing
+- ✅ External MOCR service integration
+- ✅ Professional "Motion Optical Character Recognition" branding
+- ✅ Comprehensive video analysis with visual text + audio transcription
+- ✅ Real-time progress tracking and error handling
+
+---
+
+### [2025-10-13 — Current Status & Next Steps]
+**Project:** Chatty Overall
+**Files Edited:** N/A
+**Type:** Project Status
+**Summary:** Current development status and identified next steps
+**Reason for Change:** Track progress and plan future development
+**Impact:**
+- ✅ Major architecture improvements completed
+- ✅ MOCR service successfully extracted and integrated
+- ✅ GPT Creator platform foundation established
+- ⚠️ Pending: /katana command handshake fix
+- ⚠️ Pending: Actions panel for GPT Creator
+- ⚠️ Pending: Avatar upload functionality
+- ⚠️ Pending: File upload expansion beyond PDFs
+- ⚠️ Pending: Memory scalability analysis for 1M users
+- ❌ Need: Performance optimization for large user base
+- ❌ Need: Group conversation functionality for external AIs
+
+---
 ### [2025-09-06 — 00:05:31]
 **Project:** Chatty
 **Files Edited:** offline_test2.txt
@@ -538,6 +851,8 @@ function App() {
 - Graceful fallback for unknown opcodes and malformed payloads
 - Extensionless import now correctly resolves to render.tsx
 
+---
+
 ### [2025-09-10 — 19:45:00]
 **Project:** Chatty
 **Files Edited:** src/runtime/render.tsx, src/ChattyApp.tsx, commits.md
@@ -561,3 +876,118 @@ function App() {
 
 ---
 
+### [2025-09-12 — 11:00:00]
+**Project:** Chatty
+**Git Commit:** 92ab6c9
+**Files Edited:** src/components/GPTCreator.tsx, related styling assets
+**Type:** Feature Addition
+**Summary:** Introduced GPTCreator component and supporting UI so users can craft custom GPT personas directly inside Chatty.
+**Reason for Change:** User-requested ability to set name, system prompt, and avatar for custom GPTs.
+**Impact:**
+- ✅ New route `/gpts/new` renders GPTCreator wizard
+- ✅ Sidebar link added under “GPTs”
+- ⚠️ Requires follow-up validation on input length limits
+- ❌ No breaking changes observed
+
+---
+### [2025-09-12 — 10:45:00]
+**Project:** Chatty
+**Git Commit:** feb1ea2
+**Files Edited:** src/pages/Home.tsx, src/components/Layout.tsx, index.css
+**Type:** UX Polish
+**Summary:** Refined home screen copy, fixed dark-mode colour contrast, adjusted flex layout for narrower viewports.
+**Reason for Change:** Early user feedback noted hard-to-read text on OLED devices and awkward spacing below 1024 px width.
+**Impact:**
+- ✅ Better readability on dark backgrounds
+- ✅ Responsive layout now collapses sidebar correctly
+- ❌ No functionality changes
+
+---
+
+### [2025-10-02 — 09:15:00]
+**Project:** Chatty
+**Files Added/Edited:** 
+- src/engine/council/seatRunner.ts (new)
+- src/engine/council/arbiter.ts (new)
+- src/engine/VaultLogger.ts (new)
+- src/brain/reasoner.ts (update)
+- third_party_licenses/** (new)
+- commits.md (this entry)
+**Type:** Feature Addition & Compliance
+**Summary:** Introduced multi-model “council” architecture (coding / creative / small-talk seats) with arbiter blending, vault logging, and bundled licence texts.
+**Reason for Change:** Speed up development and improve answer quality by fusing specialised local models; add audit trail and legal compliance for distribution.
+**Impact:**
+- ✅ Parallel seat execution via seatRunner using Ollama API
+- ✅ Arbiter selects / blends seat outputs based on detected intents
+- ✅ Reasoner integrates council; falls back to built-in composers when seats offline
+- ✅ VaultLogger records prompts, persona, raw council packets, and final answer in JSONL
+- ✅ Added DeepSeek-Coder, Mistral, Phi-3 licence texts and NOTICE file for distribution compliance
+- ⚠️ Requires local Ollama server with models pulled (`deepseek-coder`, `mistral`, `phi3`)
+- ❌ No breaking changes expected; legacy flow retained as fallback
+
+---
+
+### [2025-10-05 — 11:05:00]
+**Project:** Chatty
+**Files Edited:** src/engine/council/seatRunner.ts, src/engine/council/arbiter.ts, src/brain/reasoner.ts, src/cli/chatty-cli.ts
+**Type:** Architectural Refactor
+**Summary:** Switched council to Phi-3‐primary voice with DeepSeek-Coder and Mistral as helper seats; aligned CLI with web engine.
+**Reason for Change:** Provide consistent, personable responses while leveraging specialist models only when needed; unify behaviour across interfaces.
+**Impact:**
+- ✅ seatRunner always queries Phi-3; conditional helper calls based on intent
+- ✅ Arbiter appends helper output under labelled sections, maintains single voice
+- ✅ Reasoner passes intents to seatRunner
+- ✅ CLI now uses ConversationCore → Reasoner pipeline (council aware)
+- ⚠️ Future: fine-tune helper blending for long responses
+- ❌ No breaking changes observed
+
+---
+
+### [2025-01-10 — 04:53:10]
+**Project:** Chatty
+**Files Edited:** server/chatty-api.ts, tsconfig.json, server/tsconfig.json
+**Type:** Critical Bug Fix
+**Summary:** Fixed Express import error preventing chatty-api.ts server from starting
+**Reason for Change:** TypeError: express is not a function due to incorrect namespace import syntax in ES modules
+**Impact:**
+- ✅ Fixed Express import from `import * as express` to `import express` for ES modules
+- ✅ Installed @types/express package for TypeScript support
+- ✅ Added allowSyntheticDefaultImports flag to both tsconfig files
+- ✅ Server now starts successfully and responds to API requests
+- ✅ No linting errors remain
+- ✅ API endpoint tested and working correctly
+
+**Technical Details:**
+- Changed server/chatty-api.ts: import syntax from namespace to default import
+- Installed @types/express in both root and server directories
+- Updated tsconfig.json: added allowSyntheticDefaultImports: true
+- Updated server/tsconfig.json: added allowSyntheticDefaultImports: true
+- Verified server starts on port 5060 and responds to POST /chatty requests
+
+---
+
+## 2025-10-07 – Phi-3 CLI Refactor
+- Chatty CLI now talks exclusively to **Phi-3** via Ollama.
+- Auto-startup helper: probes ports (8003 → 11434) and runs `ollama serve` if needed; cleans up on exit.
+- Reasoner builds endpoint from `OLLAMA_HOST/PORT` and defaults model tag to `phi3:latest`.
+- Added optional timestamps to every CLI reply (disable with `--no-timestamp`).
+- Conversation history trimmed & persona lines filtered to avoid stale role-playing.
+- Council / seatRunner code retained but stubbed; all calls removed.
+
+---
+
+### [2025-10-09 — 09:10:00]
+**Project:** Chatty
+**Files Edited:** models.json, src/engine/seatRunner.ts, src/cli/chatty-cli.ts, src/engine/VaultLogger.ts
+**Type:** Feature Addition & Architectural Refactor
+**Summary:** Introduced seat system and synthesizer mode enabling multi-model (phi3, deepseek, mistral) responses in Chatty CLI.
+**Reason for Change:** Empower users to leverage specialised models and blended answers via simple slash commands while keeping a single assistant voice.
+**Impact:**
+- ✅ Added `models.json` configurable mapping (smalltalk, coding, creative)
+- ✅ Implemented `seatRunner` for per-seat Ollama calls with env overrides
+- ✅ Upgraded CLI with `/model` commands and default synthesizer mode
+- ✅ `VaultLogger` now appends PSL entries directly to commits.md
+- ⚠️ Requires models pulled locally (`ollama pull deepseek-coder mistral phi3`)
+- ❌ No breaking changes to existing single-model flow
+
+---

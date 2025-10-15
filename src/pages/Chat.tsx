@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useOutletContext } from 'react-router-dom'
 import { R } from '../runtime/render'
 
@@ -9,6 +9,7 @@ type Message = {
   packets?: import('../types').AssistantPacket[]
   ts: number
   files?: { name: string; size: number }[]
+  typing?: boolean  // For typing indicators
 }
 
 type Thread = { id: string; title: string; messages: Message[] }
@@ -26,6 +27,8 @@ export default function Chat() {
   const navigate = useNavigate()
   const [text, setText] = useState('')
   const [files, setFiles] = useState<File[]>([])
+  const [isFocused, setIsFocused] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const thread = threads.find(t => t.id === threadId)
 
@@ -35,6 +38,34 @@ export default function Chat() {
       navigate('/app')
     }
   }, [thread, threadId, navigate])
+
+  // Auto-resize textarea
+  const adjustTextareaHeight = () => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+      const scrollHeight = textareaRef.current.scrollHeight
+      const maxHeight = 15 * 24 // 15 lines * 24px line height
+      textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
+    }
+  }
+
+  useEffect(() => {
+    adjustTextareaHeight()
+  }, [text])
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setText(e.target.value)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
+
+  const handleFocus = () => setIsFocused(true)
+  const handleBlur = () => setIsFocused(false)
 
   if (!thread) {
     return (
@@ -64,6 +95,10 @@ export default function Chat() {
     onSendMessage(thread.id, text.trim(), files)
     setText('')
     setFiles([])
+    // Reset textarea height
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+    }
   }
 
   return (
@@ -125,10 +160,17 @@ export default function Chat() {
           📎
         </label>
         <textarea
+          ref={textareaRef}
           value={text}
-          onChange={e => setText(e.target.value)}
+          onChange={handleTextChange}
+          onKeyDown={handleKeyDown}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
           placeholder="Message Chatty…"
-          style={styles.input}
+          style={{
+            ...styles.input,
+            ...(isFocused ? styles.inputFocused : {})
+          }}
           rows={1}
         />
         <button
@@ -198,7 +240,10 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 10,
     border: '1px solid #2f3036',
     marginBottom: 12,
-    background: '#23242a'
+    background: '#23242a',
+    animation: 'fadeIn 0.3s ease-out',
+    opacity: 0,
+    animationFillMode: 'forwards'
   },
   msgAI: {},
   msgUser: {
@@ -244,14 +289,23 @@ const styles: Record<string, React.CSSProperties> = {
   input: {
     width: '100%',
     minHeight: 38,
-    maxHeight: 160,
-    resize: 'vertical',
+    maxHeight: 360, // 15 lines * 24px
+    resize: 'none',
     padding: '10px 12px',
     borderRadius: 8,
     background: '#1f2025',
     color: '#fff',
     border: '1px solid #3a3b42',
-    outline: 'none'
+    outline: 'none',
+    fontSize: 16,
+    lineHeight: 1.5,
+    fontFamily: 'inherit',
+    transition: 'height 0.2s ease-out, border-color 0.2s ease-out',
+    overflow: 'auto'
+  },
+  inputFocused: {
+    borderColor: '#4a9eff',
+    boxShadow: '0 0 0 2px rgba(74, 158, 255, 0.2)'
   },
   send: {
     borderRadius: 8,

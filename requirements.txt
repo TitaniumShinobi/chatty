@@ -1,0 +1,2 @@
+# Chatty Python helper scripts use only Python standard library.
+# No external packages are required.

@@ -1,0 +1,22 @@
+{
+  "showTimestamps": true,
+  "showModelInfo": false,
+  "showPerformanceMetrics": false,
+  "colorScheme": "default",
+  "maxHistoryMessages": 50,
+  "maxContextLength": 8000,
+  "enableMemoryPruning": true,
+  "enableContextCompression": true,
+  "defaultTimeout": 45000,
+  "enableTimeoutFallback": true,
+  "enableFastSummary": true,
+  "defaultModel": "synth",
+  "autoSwitchModel": false,
+  "defaultFileOperationsPath": "/Users/devonwoodson/Documents/GitHub/Chatty",
+  "enableFileOperations": true,
+  "autoSaveConversations": false,
+  "conversationSavePath": "./chatty-conversations",
+  "enableDebugMode": false,
+  "logLevel": "info",
+  "enableExternalMessaging": true
+}

@@ -192,19 +192,19 @@ export function SimpleChatty({ onToggleAdvanced, onOpenSettings }: SimpleChattyP
   };
 
   return (
-    <div className="flex min-h-screen w-full bg-app-gray-900 text-white">
+    <div className="flex min-h-screen w-full bg-app-orange-900 text-white">
       {/* Sidebar */}
-      <aside className="hidden md:flex md:w-64 lg:w-72 xl:w-80 border-r border-app-gray-700 flex-col p-4 gap-4">
+      <aside className="hidden md:flex md:w-64 lg:w-72 xl:w-80 border-r border-app-orange-700 flex-col p-4 gap-4">
         <div className="flex items-center justify-between">
           <h1 className="text-base font-semibold">Batty</h1>
           <button
             onClick={() => setMessages([])}
-            className="rounded-md border border-app-gray-600 px-2 py-1 text-xs hover:bg-app-gray-800 transition-colors"
+            className="rounded-md border border-app-orange-600 px-2 py-1 text-xs hover:bg-app-orange-800 transition-colors"
           >
             New chat
           </button>
         </div>
-        <p className="text-xs text-app-gray-400">Conversations are stored locally in your browser.</p>
+        <p className="text-xs text-app-orange-400">Conversations are stored locally in your browser.</p>
         <button
           onClick={onOpenSettings}
           className="text-xs text-blue-400 hover:underline text-left"
@@ -220,7 +220,7 @@ export function SimpleChatty({ onToggleAdvanced, onOpenSettings }: SimpleChattyP
           </button>
         )}
         {isAdvancedMode && (
-          <div className="mt-4 p-3 bg-app-gray-800 rounded-lg">
+          <div className="mt-4 p-3 bg-app-orange-800 rounded-lg">
             <p className="text-sm text-blue-400">
               Advanced features are enabled: Memory, Reasoning, File Processing
             </p>
@@ -234,7 +234,7 @@ export function SimpleChatty({ onToggleAdvanced, onOpenSettings }: SimpleChattyP
         {/* Messages */}
         <div ref={messagesEndRef} className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8">
           {messages.length === 0 ? (
-            <div className="h-full w-full flex items-center justify-center text-app-gray-400">
+            <div className="h-full w-full flex items-center justify-center text-app-orange-400">
               <p className="text-sm">Start a conversation by typing a message below.</p>
             </div>
           ) : (
@@ -244,17 +244,17 @@ export function SimpleChatty({ onToggleAdvanced, onOpenSettings }: SimpleChattyP
                   key={message.id}
                   className={`rounded-lg border p-4 whitespace-pre-wrap leading-relaxed ${
                     message.role === "user"
-                      ? "bg-app-gray-950 border-app-gray-800"
+                      ? "bg-app-orange-950 border-app-orange-800"
                       : message.role === "system"
                       ? "bg-red-900 border-red-800 text-red-100"
-                      : "bg-app-gray-900 border-app-gray-800"
+                      : "bg-app-orange-900 border-app-orange-800"
                   }`}
                 >
                   {message.content}
                 </div>
               ))}
               {isLoading && (
-                <div className="rounded-lg border bg-app-gray-900 border-app-gray-800 p-4 text-app-gray-500">
+                <div className="rounded-lg border bg-app-orange-900 border-app-orange-800 p-4 text-app-orange-500">
                   Thinking...
                 </div>
               )}
@@ -268,12 +268,12 @@ export function SimpleChatty({ onToggleAdvanced, onOpenSettings }: SimpleChattyP
             e.preventDefault();
             handleSend();
           }}
-          className="border-t border-app-gray-700 p-3 sm:p-4"
+          className="border-t border-app-orange-700 p-3 sm:p-4"
         >
           <div className="mx-auto max-w-3xl">
             <div className="relative">
               <textarea
-                className="w-full resize-none rounded-md border border-app-gray-600 bg-app-gray-950 p-3 pr-24 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[48px] max-h-40 text-white placeholder-app-gray-400"
+                className="w-full resize-none rounded-md border border-app-orange-600 bg-app-orange-950 p-3 pr-24 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 min-h-[48px] max-h-40 text-white placeholder-app-orange-400"
                 rows={1}
                 placeholder="Message..."
                 value={input}
@@ -293,7 +293,7 @@ export function SimpleChatty({ onToggleAdvanced, onOpenSettings }: SimpleChattyP
             </div>
             
             {/* Status indicators */}
-            <div className="flex items-center gap-4 mt-2 text-xs text-app-gray-400">
+            <div className="flex items-center gap-4 mt-2 text-xs text-app-orange-400">
               {settings.enableMemory && (
                 <div className="flex items-center gap-1">
                   <Database size={12} />

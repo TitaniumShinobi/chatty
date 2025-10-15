@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCR Test - Chatty</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin: 20px 0;
+            background-color: #fafafa;
+        }
+        .upload-area.dragover {
+            border-color: #007bff;
+            background-color: #e3f2fd;
+        }
+        .results {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+        }
+        .error {
+            border-left-color: #dc3545;
+            background-color: #f8d7da;
+        }
+        .success {
+            border-left-color: #28a745;
+            background-color: #d4edda;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .file-info {
+            background-color: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .extracted-text {
+            background-color: white;
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+            margin: 10px 0;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 14px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 OCR Test - Chatty</h1>
+        <p>Test the OCR functionality by uploading an image file (PNG, JPEG, etc.)</p>
+        
+        <div class="upload-area" id="uploadArea">
+            <p>📁 Drag and drop an image file here, or click to select</p>
+            <input type="file" id="fileInput" accept="image/*" style="display: none;">
+            <button onclick="document.getElementById('fileInput').click()">Choose File</button>
+        </div>
+        
+        <div id="results"></div>
+    </div>
+
+    <script type="module">
+        import Tesseract from 'https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js';
+
+        class OCRService {
+            static async extractTextFromImage(file, options = {}) {
+                const startTime = Date.now();
+                const { language = 'eng', timeout = 30000 } = options;
+
+                try {
+                    console.log(`🔍 Starting OCR processing for: ${file.name} (${file.type})`);
+
+                    const { data } = await Tesseract.recognize(file, language, {
+                        logger: (m) => console.log(`OCR Progress: ${m.status || 'Processing...'}`),
+                        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,!?;:()[]{}"\'@#$%^&*+-=<>/\\|`~_',
+                        tessedit_pageseg_mode: Tesseract.PSM.AUTO,
+                        tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY
+                    });
+
+                    const processingTime = Date.now() - startTime;
+                    const extractedText = data.text.trim();
+                    const wordCount = extractedText.split(/\s+/).filter(word => word.length > 0).length;
+
+                    console.log(`✅ OCR completed: ${wordCount} words, ${data.confidence}% confidence, ${processingTime}ms`);
+
+                    return {
+                        text: extractedText,
+                        confidence: data.confidence,
+                        processingTime,
+                        wordCount,
+                        success: true
+                    };
+
+                } catch (error) {
+                    const processingTime = Date.now() - startTime;
+                    console.error(`❌ OCR failed:`, error);
+
+                    return {
+                        text: '',
+                        confidence: 0,
+                        processingTime,
+                        wordCount: 0,
+                        success: false,
+                        error: error.message
+                    };
+                }
+            }
+
+            static isImageFile(file) {
+                const supportedTypes = [
+                    'image/png', 'image/jpeg', 'image/jpg', 
+                    'image/gif', 'image/bmp', 'image/tiff', 'image/webp'
+                ];
+                return supportedTypes.includes(file.type.toLowerCase());
+            }
+
+            static isReliableResult(result) {
+                return result.success && result.confidence >= 30;
+            }
+
+            static formatResult(result, fileName) {
+                if (!result.success) {
+                    return `OCR failed for ${fileName}: ${result.error || 'Unknown error'}`;
+                }
+
+                if (result.text.length === 0) {
+                    return `No text detected in ${fileName} (${result.confidence}% confidence)`;
+                }
+
+                const reliability = this.isReliableResult(result) ? '✅ Reliable' : '⚠️ Low confidence';
+                
+                return `Text extracted from ${fileName} (${result.confidence}% confidence, ${result.wordCount} words, ${result.processingTime}ms)
+${reliability}
+
+Extracted Text:
+${result.text}`;
+            }
+        }
+
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const results = document.getElementById('results');
+
+        // Drag and drop functionality
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                processFile(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                processFile(e.target.files[0]);
+            }
+        });
+
+        async function processFile(file) {
+            if (!OCRService.isImageFile(file)) {
+                showResults(`❌ Unsupported file type: ${file.type}. Please upload an image file.`, 'error');
+                return;
+            }
+
+            if (file.size > 10 * 1024 * 1024) {
+                showResults(`❌ File too large: ${(file.size / 1024 / 1024).toFixed(2)}MB. Maximum size is 10MB.`, 'error');
+                return;
+            }
+
+            showLoading();
+            
+            try {
+                const ocrResult = await OCRService.extractTextFromImage(file, {
+                    language: 'eng',
+                    timeout: 60000
+                });
+
+                displayResults(file, ocrResult);
+            } catch (error) {
+                showResults(`❌ OCR processing failed: ${error.message}`, 'error');
+            }
+        }
+
+        function showLoading() {
+            results.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>🔍 Processing image with OCR...</p>
+                    <p><small>This may take 10-60 seconds depending on image size and complexity.</small></p>
+                </div>
+            `;
+        }
+
+        function showResults(message, type = 'results') {
+            results.innerHTML = `<div class="${type}">${message}</div>`;
+        }
+
+        function displayResults(file, ocrResult) {
+            const fileInfo = `
+                <div class="file-info">
+                    <strong>File:</strong> ${file.name}<br>
+                    <strong>Type:</strong> ${file.type}<br>
+                    <strong>Size:</strong> ${(file.size / 1024).toFixed(2)} KB<br>
+                    <strong>Last Modified:</strong> ${new Date(file.lastModified).toLocaleString()}
+                </div>
+            `;
+
+            const ocrInfo = `
+                <div class="file-info">
+                    <strong>OCR Results:</strong><br>
+                    <strong>Success:</strong> ${ocrResult.success ? '✅ Yes' : '❌ No'}<br>
+                    <strong>Confidence:</strong> ${ocrResult.confidence}%<br>
+                    <strong>Word Count:</strong> ${ocrResult.wordCount}<br>
+                    <strong>Processing Time:</strong> ${ocrResult.processingTime}ms<br>
+                    <strong>Reliability:</strong> ${OCRService.isReliableResult(ocrResult) ? '✅ Reliable' : '⚠️ Low confidence'}
+                </div>
+            `;
+
+            const extractedText = ocrResult.text ? `
+                <div class="extracted-text">${ocrResult.text}</div>
+            ` : `
+                <div class="extracted-text" style="color: #6c757d; font-style: italic;">
+                    No text was extracted from this image.
+                </div>
+            `;
+
+            const errorInfo = ocrResult.error ? `
+                <div class="file-info" style="background-color: #f8d7da; border-left: 4px solid #dc3545;">
+                    <strong>Error:</strong> ${ocrResult.error}
+                </div>
+            ` : '';
+
+            results.innerHTML = `
+                <div class="success">
+                    <h3>📊 OCR Processing Complete</h3>
+                    ${fileInfo}
+                    ${ocrInfo}
+                    ${errorInfo}
+                    <h4>📝 Extracted Text:</h4>
+                    ${extractedText}
+                </div>
+            `;
+        }
+
+        // Test with a sample image if available
+        console.log('🧪 OCR Test Page Loaded');
+        console.log('📋 Supported formats: PNG, JPEG, JPG, GIF, BMP, TIFF, WEBP');
+    </script>
+</body>
+</html>

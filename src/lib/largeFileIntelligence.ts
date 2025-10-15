@@ -94,8 +94,8 @@ export class LargeFileIntelligence {
     processing: {
       enableVectorStore: true,
       enableStreaming: true,
-      batchSize: 10,
-      maxConcurrentFiles: 5
+      batchSize: 25,
+      maxConcurrentFiles: 15
     },
     storage: {
       provider: 'local',

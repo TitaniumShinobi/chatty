@@ -1,5 +1,3 @@
-import React from 'react';
-import { R } from '../runtime/render';
 import lex from '../data/lexicon.json';
 
 interface LexiconMessageProps {
@@ -21,7 +19,8 @@ export function LexiconMessage({ message }: LexiconMessageProps) {
       return content.split(/(⟂\d+)/).map((part, index) => {
         if (part.startsWith('⟂')) {
           const tokenId = parseInt(part.slice(1));
-          return <span key={index} className="text-blue-400">{R(tokenId)}</span>;
+          const tokenText = (lex as any).tokensInverse?.[tokenId] ?? `⟂${tokenId}`;
+          return <span key={index} className="text-blue-400">{tokenText}</span>;
         }
         return part;
       });
@@ -32,11 +31,11 @@ export function LexiconMessage({ message }: LexiconMessageProps) {
   const getMessageStyle = () => {
     switch (message.role) {
       case 'user':
-        return "bg-app-gray-950 border-app-gray-800";
+        return "bg-app-orange-950 border-app-orange-800";
       case 'system':
         return "bg-red-900 border-red-800 text-red-100";
       default:
-        return "bg-app-gray-900 border-app-gray-800";
+        return "bg-app-orange-900 border-app-orange-800";
     }
   };
 

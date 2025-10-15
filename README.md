@@ -52,3 +52,36 @@ http://localhost:5173
 - **File Analysis**: AI can analyze and discuss uploaded file contents
 - **Multiple AI Models**: Support for different AI personalities
 - **Modern UI**: Clean, responsive interface built with React and Tailwind CSS
+
+## Model & Seat System
+
+Chatty CLI runs multiple local models (seats) under Ollama and blends them:
+
+| Seat       | Model Tag              | Role                                      |
+|------------|------------------------|-------------------------------------------|
+| smalltalk  | `phi3:latest`          | General chat + final synthesis voice      |
+| coding     | `deepseek-coder:latest`| Technical reasoning, code explanations    |
+| creative   | `mistral:latest`       | Imaginative language, storytelling        |
+
+`models.json` controls this mapping. You can override per seat with env vars e.g.
+`export OLLAMA_MODEL_CODING=my-coder`.
+
+### Slash Commands
+```
+/model             – show active model or "synth"
+/model list        – list installed Ollama models
+/model <tag>       – switch to single-model mode (e.g., deepseek)
+/model synth       – enable multi-model blending (default)
+```
+
+### How Synthesis Works
+1. User message is sent to the coding & creative seats in parallel.
+2. Their answers are fed into a synthesis prompt for the smalltalk seat (phi-3).
+3. Phi-3 returns a single cohesive reply — helper outputs are not shown to the user.
+
+Ensure all three models are loaded:
+```
+ollama run phi3
+ollama run deepseek-coder
+ollama run mistral
+```

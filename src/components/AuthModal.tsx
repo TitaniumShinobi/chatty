@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
 import { X, Mail, Lock, Eye, EyeOff, ArrowLeft } from 'lucide-react'
-import { cn } from '../lib/utils'
 import { loginWithGoogle } from '../lib/auth'
 
 interface AuthModalProps {
@@ -8,7 +7,6 @@ interface AuthModalProps {
   onClose: () => void
   onLogin: (email: string, password: string) => void
   onSignup: (email: string, password: string) => void
-  onGoogleAuth: () => void
   onMicrosoftAuth: () => void
   onAppleAuth: () => void
   onPhoneAuth: () => void
@@ -19,7 +17,6 @@ const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   onLogin,
   onSignup,
-  onGoogleAuth,
   onMicrosoftAuth,
   onAppleAuth,
   onPhoneAuth
@@ -66,17 +63,17 @@ const AuthModal: React.FC<AuthModalProps> = ({
           {mode !== 'welcome' && (
             <button
               onClick={() => setMode('welcome')}
-              className="p-2 hover:bg-gray-100 rounded-lg"
+              className="p-2 hover:bg-orange-100 rounded-lg"
             >
               <ArrowLeft size={20} />
             </button>
           )}
-          <h2 className="text-xl font-semibold text-gray-900">
+          <h2 className="text-xl font-semibold text-orange-900">
             {mode === 'welcome' ? 'Welcome back' : mode === 'login' ? 'Log in' : 'Sign up'}
           </h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg"
+            className="p-2 hover:bg-orange-100 rounded-lg"
           >
             <X size={20} />
           </button>
@@ -86,25 +83,25 @@ const AuthModal: React.FC<AuthModalProps> = ({
         <div className="p-6">
           {mode === 'welcome' ? (
             <>
-              <p className="text-gray-600 mb-6">
+              <p className="text-orange-600 mb-6">
                 Log in or sign up to get smarter responses, upload files and images, and more.
               </p>
               <div className="space-y-3">
                 <button
                   onClick={() => setMode('login')}
-                  className="w-full bg-black text-white py-3 px-4 rounded-lg hover:bg-gray-800 transition-colors"
+                  className="w-full bg-black text-white py-3 px-4 rounded-lg hover:bg-orange-800 transition-colors"
                 >
                   Log in
                 </button>
                 <button
                   onClick={() => setMode('signup')}
-                  className="w-full border border-gray-300 text-black py-3 px-4 rounded-lg hover:bg-gray-50 transition-colors"
+                  className="w-full border border-orange-300 text-black py-3 px-4 rounded-lg hover:bg-orange-50 transition-colors"
                 >
                   Sign up for free
                 </button>
                 <button
                   onClick={onClose}
-                  className="w-full text-gray-600 underline hover:text-gray-800"
+                  className="w-full text-orange-600 underline hover:text-orange-800"
                 >
                   Stay logged out
                 </button>
@@ -114,16 +111,16 @@ const AuthModal: React.FC<AuthModalProps> = ({
             <>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-orange-700 mb-1">
                     Email address
                   </label>
                   <div className="relative">
-                    <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-400" />
                     <input
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full pl-10 pr-3 py-2 border border-orange-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="Enter your email"
                       required
                     />
@@ -131,23 +128,23 @@ const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-orange-700 mb-1">
                     Password
                   </label>
                   <div className="relative">
-                    <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-400" />
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full pl-10 pr-10 py-2 border border-orange-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="Enter your password"
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-orange-400 hover:text-orange-600"
                     >
                       {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
@@ -156,7 +153,7 @@ const AuthModal: React.FC<AuthModalProps> = ({
 
                 <button
                   type="submit"
-                  className="w-full bg-black text-white py-3 px-4 rounded-lg hover:bg-gray-800 transition-colors"
+                  className="w-full bg-black text-white py-3 px-4 rounded-lg hover:bg-orange-800 transition-colors"
                 >
                   {mode === 'login' ? 'Log in' : 'Sign up'}
                 </button>
@@ -165,18 +162,18 @@ const AuthModal: React.FC<AuthModalProps> = ({
               <div className="my-6">
                 <div className="relative">
                   <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-300" />
+                    <div className="w-full border-t border-orange-300" />
                   </div>
                   <div className="relative flex justify-center text-sm">
-                    <span className="px-2 bg-white text-gray-500">OR</span>
+                    <span className="px-2 bg-white text-orange-500">OR</span>
                   </div>
                 </div>
               </div>
 
               <div className="space-y-3">
                 <button
-                  onClick={() => (window.location.href = "/api/auth/google")}
-                  className="w-full border border-gray-300 text-gray-700 py-3 px-4 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-3"
+                  onClick={handleGoogleAuth}
+                  className="w-full border border-orange-300 text-orange-700 py-3 px-4 rounded-lg hover:bg-orange-50 transition-colors flex items-center justify-center gap-3"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -189,7 +186,7 @@ const AuthModal: React.FC<AuthModalProps> = ({
 
                 <button
                   onClick={handleMicrosoftAuth}
-                  className="w-full border border-gray-300 text-gray-700 py-3 px-4 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-3"
+                  className="w-full border border-orange-300 text-orange-700 py-3 px-4 rounded-lg hover:bg-orange-50 transition-colors flex items-center justify-center gap-3"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24">
                     <path fill="#f25022" d="M1 1h10v10H1z"/>
@@ -202,7 +199,7 @@ const AuthModal: React.FC<AuthModalProps> = ({
 
                 <button
                   onClick={handleAppleAuth}
-                  className="w-full border border-gray-300 text-gray-700 py-3 px-4 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-3"
+                  className="w-full border border-orange-300 text-orange-700 py-3 px-4 rounded-lg hover:bg-orange-50 transition-colors flex items-center justify-center gap-3"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
@@ -212,7 +209,7 @@ const AuthModal: React.FC<AuthModalProps> = ({
 
                 <button
                   onClick={onPhoneAuth}
-                  className="w-full border border-gray-300 text-gray-700 py-3 px-4 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center gap-3"
+                  className="w-full border border-orange-300 text-orange-700 py-3 px-4 rounded-lg hover:bg-orange-50 transition-colors flex items-center justify-center gap-3"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
@@ -225,11 +222,11 @@ const AuthModal: React.FC<AuthModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t text-center text-sm text-gray-500">
+        <div className="px-6 py-4 border-t text-center text-sm text-orange-500">
           <div className="flex justify-center gap-4">
-            <a href="/terms" className="hover:text-gray-700">Terms of Use</a>
+            <a href="/terms" className="hover:text-orange-700">Terms of Use</a>
             <span>|</span>
-            <a href="/privacy" className="hover:text-gray-700">Privacy Policy</a>
+            <a href="/privacy" className="hover:text-orange-700">Privacy Policy</a>
           </div>
         </div>
       </div>

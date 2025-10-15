@@ -41,7 +41,7 @@ export function ModeToggle({ mode, onToggle, className = '' }: ModeToggleProps) 
       </button>
 
       {/* Mode Info */}
-      <div className="flex items-center gap-1 text-app-gray-400">
+      <div className="flex items-center gap-1 text-app-orange-400">
         <Info size={14} />
         <span className="text-sm">
           {mode === 'simple' ? 'Clean & Fast' : 'Full Features'}
@@ -71,6 +71,11 @@ export function ModeToggle({ mode, onToggle, className = '' }: ModeToggleProps) 
               Narrative
             </span>
           )}
+          {settings.enableSynthMode && (
+            <span className="px-2 py-1 bg-indigo-600 text-white rounded-full">
+              Synth
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -90,16 +95,16 @@ export function SettingsPanel({ isVisible, onClose }: SettingsPanelProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-app-gray-800 rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[80vh] overflow-y-auto">
+      <div className="bg-app-orange-800 rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[80vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-app-gray-700">
+        <div className="flex items-center justify-between p-6 border-b border-app-orange-700">
           <h2 className="text-xl font-semibold text-white flex items-center gap-2">
             <Settings size={20} />
             Settings
           </h2>
           <button
             onClick={onClose}
-            className="p-2 text-app-gray-400 hover:text-white hover:bg-app-gray-700 rounded-lg transition-colors"
+            className="p-2 text-app-orange-400 hover:text-white hover:bg-app-orange-700 rounded-lg transition-colors"
           >
             ×
           </button>
@@ -117,7 +122,7 @@ export function SettingsPanel({ isVisible, onClose }: SettingsPanelProps) {
                   type="password"
                   value={settings.openaiApiKey}
                   onChange={(e) => update({ openaiApiKey: e.target.value })}
-                  className="px-3 py-2 bg-app-gray-700 border border-app-gray-600 rounded-lg text-white"
+                  className="px-3 py-2 bg-app-orange-700 border border-app-orange-600 rounded-lg text-white"
                   placeholder="sk-..."
                 />
               </div>
@@ -127,7 +132,7 @@ export function SettingsPanel({ isVisible, onClose }: SettingsPanelProps) {
                 <select
                   value={settings.model}
                   onChange={(e) => update({ model: e.target.value })}
-                  className="px-3 py-2 bg-app-gray-700 border border-app-gray-600 rounded-lg text-white"
+                  className="px-3 py-2 bg-app-orange-700 border border-app-orange-600 rounded-lg text-white"
                 >
                   <option value="gpt-4o-mini">GPT-4o Mini</option>
                   <option value="gpt-4o">GPT-4o</option>
@@ -147,7 +152,7 @@ export function SettingsPanel({ isVisible, onClose }: SettingsPanelProps) {
                   type="checkbox"
                   checked={settings.enableMemory}
                   onChange={(e) => update({ enableMemory: e.target.checked })}
-                  className="w-4 h-4 text-blue-600 bg-app-gray-700 border-app-gray-600 rounded focus:ring-blue-500"
+                  className="w-4 h-4 text-blue-600 bg-app-orange-700 border-app-orange-600 rounded focus:ring-blue-500"
                 />
               </div>
               
@@ -157,7 +162,7 @@ export function SettingsPanel({ isVisible, onClose }: SettingsPanelProps) {
                   type="checkbox"
                   checked={settings.enableReasoning}
                   onChange={(e) => update({ enableReasoning: e.target.checked })}
-                  className="w-4 h-4 text-blue-600 bg-app-gray-700 border-app-gray-600 rounded focus:ring-blue-500"
+                  className="w-4 h-4 text-blue-600 bg-app-orange-700 border-app-orange-600 rounded focus:ring-blue-500"
                 />
               </div>
               
@@ -167,7 +172,7 @@ export function SettingsPanel({ isVisible, onClose }: SettingsPanelProps) {
                   type="checkbox"
                   checked={settings.enableFileProcessing}
                   onChange={(e) => update({ enableFileProcessing: e.target.checked })}
-                  className="w-4 h-4 text-blue-600 bg-app-gray-700 border-app-gray-600 rounded focus:ring-blue-500"
+                  className="w-4 h-4 text-blue-600 bg-app-orange-700 border-app-orange-600 rounded focus:ring-blue-500"
                 />
               </div>
               
@@ -177,7 +182,17 @@ export function SettingsPanel({ isVisible, onClose }: SettingsPanelProps) {
                   type="checkbox"
                   checked={settings.enableNarrativeSynthesis}
                   onChange={(e) => update({ enableNarrativeSynthesis: e.target.checked })}
-                  className="w-4 h-4 text-blue-600 bg-app-gray-700 border-app-gray-600 rounded focus:ring-blue-500"
+                  className="w-4 h-4 text-blue-600 bg-app-orange-700 border-app-orange-600 rounded focus:ring-blue-500"
+                />
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <label className="text-white">Enable Synth Mode</label>
+                <input
+                  type="checkbox"
+                  checked={settings.enableSynthMode}
+                  onChange={(e) => update({ enableSynthMode: e.target.checked })}
+                  className="w-4 h-4 text-blue-600 bg-app-orange-700 border-app-orange-600 rounded focus:ring-blue-500"
                 />
               </div>
             </div>
@@ -192,7 +207,7 @@ export function SettingsPanel({ isVisible, onClose }: SettingsPanelProps) {
                 <select
                   value={settings.theme}
                   onChange={(e) => update({ theme: e.target.value as 'dark' | 'light' })}
-                  className="px-3 py-2 bg-app-gray-700 border border-app-gray-600 rounded-lg text-white"
+                  className="px-3 py-2 bg-app-orange-700 border border-app-orange-600 rounded-lg text-white"
                 >
                   <option value="dark">Dark</option>
                   <option value="light">Light</option>
@@ -205,7 +220,7 @@ export function SettingsPanel({ isVisible, onClose }: SettingsPanelProps) {
                   type="checkbox"
                   checked={settings.showDebugPanel}
                   onChange={(e) => update({ showDebugPanel: e.target.checked })}
-                  className="w-4 h-4 text-blue-600 bg-app-gray-700 border-app-gray-600 rounded focus:ring-blue-500"
+                  className="w-4 h-4 text-blue-600 bg-app-orange-700 border-app-orange-600 rounded focus:ring-blue-500"
                 />
               </div>
               
@@ -215,7 +230,7 @@ export function SettingsPanel({ isVisible, onClose }: SettingsPanelProps) {
                   type="checkbox"
                   checked={settings.compactMode}
                   onChange={(e) => update({ compactMode: e.target.checked })}
-                  className="w-4 h-4 text-blue-600 bg-app-gray-700 border-app-gray-600 rounded focus:ring-blue-500"
+                  className="w-4 h-4 text-blue-600 bg-app-orange-700 border-app-orange-600 rounded focus:ring-blue-500"
                 />
               </div>
             </div>
