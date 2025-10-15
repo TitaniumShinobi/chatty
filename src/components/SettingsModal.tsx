@@ -1,5 +1,5 @@
 import React from 'react'
-import { X, User, Mail, Shield, Bell, Palette, Globe, Database } from 'lucide-react'
+import { X, Mail, Shield, Bell, Palette, Globe, Database } from 'lucide-react'
 import { User as UserType } from '../lib/auth'
 
 interface SettingsModalProps {
@@ -39,17 +39,37 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="space-y-3">
               {/* User Info */}
               <div className="flex items-center gap-3 p-3 bg-app-orange-700 rounded-lg">
-                {user?.picture ? (
-                  <img 
-                    src={user.picture} 
-                    alt={user.name}
-                    className="w-10 h-10 rounded-full"
-                  />
-                ) : (
-                  <div className="w-10 h-10 bg-app-orange-600 rounded-full flex items-center justify-center">
-                    <User size={20} className="text-app-orange-300" />
-                  </div>
-                )}
+{user?.picture ? (
+  <img 
+    src={`${user.picture}?cb=${Date.now()}`} // cache-busting
+    alt={user.name}
+    className="w-10 h-10 rounded-full object-cover border border-app-orange-500"
+    onError={(e) => {
+      console.warn('Failed to load profile image, showing fallback.');
+      e.currentTarget.style.display = 'none';
+      const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+      if (fallback) {
+        fallback.style.display = 'flex';
+      }
+    }}
+    onLoad={() => {
+      console.log('✅ Profile image loaded from:', user.picture);
+    }}
+    loading="lazy"
+    style={{ 
+      transition: 'opacity 0.2s ease-in-out',
+      opacity: 1
+    }}
+  />
+) : null}
+<div 
+  className="w-10 h-10 bg-app-orange-600 rounded-full flex items-center justify-center border border-app-orange-500"
+  style={{ display: user?.picture ? 'none' : 'flex' }}
+>
+  <span className="text-app-orange-300 font-medium text-lg">
+    {user?.name?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U'}
+  </span>
+</div>
                 <div className="flex-1">
                   <p className="text-white font-medium">{user?.name || 'User'}</p>
                   <p className="text-app-orange-400 text-sm">{user?.email}</p>
