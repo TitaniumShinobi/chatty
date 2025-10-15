@@ -1,11 +1,9 @@
 import React, { useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { 
   Plus, 
   MessageSquare, 
   Trash2, 
-  Bot,
-  Settings,
   Search,
   Library,
   Clock,
@@ -27,16 +25,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   onShowSettings
 }) => {
   const [gptCreator] = useState(() => GPTCreator.getInstance())
-  const location = useLocation()
   const navigate = useNavigate()
   
-  // Helper function for link styling
-  const linkCls = (path: string) => {
-    return `block rounded px-3 py-2 hover:bg-app-butter-100 ${
-      location.pathname === path
-        ? 'bg-app-button-400 font-medium text-app-text-900' : 'text-app-text-900'
-    }`
-  }
   
   return (
     <div className="flex flex-col h-full bg-white">
@@ -172,17 +162,27 @@ const Sidebar: React.FC<SidebarProps> = ({
           >
             {currentUser.picture ? (
               <img 
-                src={currentUser.picture} 
+                src={`/api/profile-image/${currentUser.sub}`}
                 alt={currentUser.name}
                 className="w-8 h-8 rounded-full"
+                onError={(e) => {
+                  console.log('Sidebar image failed to load, falling back to initial');
+                  e.currentTarget.style.display = 'none';
+                  const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                  if (fallback) {
+                    fallback.style.display = 'flex';
+                  }
+                }}
               />
-            ) : (
-              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                <span className="text-white text-sm font-medium">
-                  {currentUser.name?.charAt(0) || currentUser.email?.charAt(0) || 'U'}
-                </span>
-              </div>
-            )}
+            ) : null}
+            <div 
+              className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center"
+              style={{ display: currentUser.picture ? 'none' : 'flex' }}
+            >
+              <span className="text-white text-sm font-medium">
+                {currentUser.name?.charAt(0) || currentUser.email?.charAt(0) || 'U'}
+              </span>
+            </div>
             <div className="flex flex-col text-left">
               <span className="text-sm font-medium text-gray-900 truncate">
                 {currentUser.name || currentUser.email || 'User'}
@@ -206,3 +206,4 @@ const Sidebar: React.FC<SidebarProps> = ({
 }
 
 export default Sidebar
+

@@ -48,11 +48,14 @@ export default function Layout() {
       try {
         const me = await fetchMe()
         if (me) {
+          console.log('User data:', me);
+          console.log('User picture:', me.picture);
           setUser(me)
         } else {
           navigate('/')
         }
       } catch (error) {
+        console.error('Auth error:', error);
         navigate('/')
       } finally {
         setIsLoading(false)
@@ -427,17 +430,33 @@ export default function Layout() {
           >
             {user.picture ? (
               <img 
-                src={user.picture} 
+                src={`/api/profile-image/${user.sub}`}
                 alt={user.name || 'User'}
                 className="w-8 h-8 rounded-full"
+                onError={(e) => {
+                  console.log('Image failed to load, falling back to initial');
+                  e.currentTarget.style.display = 'none';
+                  const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                  if (fallback) {
+                    fallback.style.display = 'flex';
+                  }
+                }}
+                onLoad={() => {
+                  console.log('Profile image loaded successfully');
+                }}
               />
-            ) : (
-              <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: '#d4b078' }}>
-                <span className="text-sm font-medium" style={{ color: '#4c3d1e' }}>
-                  {user.name?.charAt(0) || user.email?.charAt(0) || 'U'}
-                </span>
-              </div>
-            )}
+            ) : null}
+            <div 
+              className="w-8 h-8 rounded-full flex items-center justify-center" 
+              style={{ 
+                backgroundColor: '#d4b078',
+                display: user.picture ? 'none' : 'flex'
+              }}
+            >
+              <span className="text-sm font-medium" style={{ color: '#4c3d1e' }}>
+                {user.name?.charAt(0) || user.email?.charAt(0) || 'U'}
+              </span>
+            </div>
             <div className="flex flex-col text-left">
               <span className="text-sm font-medium truncate" style={{ color: '#4c3d1e' }}>
                 {user.name || user.email || 'User'}

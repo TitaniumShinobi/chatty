@@ -144,6 +144,44 @@ app.get("/api/me", (req, res) => {
   }
 });
 
+// Proxy Google profile images to avoid CORS issues
+app.get("/api/profile-image/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // Get user from session to verify access
+    const raw = req.cookies?.[process.env.COOKIE_NAME || "sid"];
+    if (!raw) return res.status(401).json({ error: "Unauthorized" });
+    
+    const user = jwt.verify(raw, process.env.JWT_SECRET);
+    if (user.uid !== userId) return res.status(403).json({ error: "Forbidden" });
+    
+    // Fetch the image from Google
+    const imageResponse = await fetch(user.picture, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Chatty/1.0)'
+      }
+    });
+    
+    if (!imageResponse.ok) {
+      return res.status(404).json({ error: "Image not found" });
+    }
+    
+    // Set appropriate headers
+    res.set({
+      'Content-Type': imageResponse.headers.get('content-type') || 'image/jpeg',
+      'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
+      'Access-Control-Allow-Origin': '*'
+    });
+    
+    // Stream the image data
+    imageResponse.body.pipe(res);
+  } catch (error) {
+    console.error('Profile image proxy error:', error);
+    res.status(500).json({ error: "Failed to fetch image" });
+  }
+});
+
 // logout
 app.post("/api/logout", (req, res) => {
   res.clearCookie(process.env.COOKIE_NAME || "sid", { path: "/" });
