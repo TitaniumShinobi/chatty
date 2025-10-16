@@ -37,7 +37,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
             <span className="text-white text-sm font-bold">C</span>
           </div>
-          <span className="text-lg font-semibold text-gray-900">Chatty</span>
+          {/* Title removed - logo only */}
         </div>
         
         {/* Panel Toggle Button */}

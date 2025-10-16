@@ -14,9 +14,9 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
   // Handle typing indicator
   if ((message as any).typing) {
     return (
-      <div className="flex items-start gap-3 p-4 bg-app-chat-50 rounded-lg">
-        <div className="w-8 h-8 rounded-full bg-app-green-600 flex items-center justify-center flex-shrink-0">
-          <span className="text-app-text-900 text-sm font-bold">AI</span>
+      <div className="flex items-start gap-3 p-4 rounded-lg" style={{ backgroundColor: '#ffffd7' }}>
+        <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#4C3D1E' }}>
+          <span className="text-sm font-bold" style={{ color: '#ffffeb' }}>AI</span>
         </div>
         <div className="flex-1">
           <div className="flex items-center gap-2">
@@ -25,7 +25,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
               <div className="typing-indicator"></div>
               <div className="typing-indicator"></div>
             </div>
-            <span className="text-app-text-800 text-sm">
+            <span className="text-sm" style={{ color: '#4C3D1E', opacity: 0.7 }}>
               {(message as any).text || 'AI is thinking...'}
             </span>
           </div>
@@ -45,12 +45,12 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
   if (message.role === 'assistant' && typeof message.content === 'string') {
     console.error('Assistant prose detected in production:', message.content.slice(0,100));
     return (
-      <div className={`flex items-start gap-3 p-4 ${message.role === 'assistant' ? 'bg-app-chat-50' : 'bg-app-chat-50'} rounded-lg`}>
-        <div className="w-8 h-8 rounded-full bg-app-green-600 flex items-center justify-center flex-shrink-0">
-          <span className="text-app-text-900 text-sm font-bold">AI</span>
+      <div className="flex items-start gap-3 p-4 rounded-lg" style={{ backgroundColor: '#ffffd7' }}>
+        <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#4C3D1E' }}>
+          <span className="text-sm font-bold" style={{ color: '#ffffeb' }}>AI</span>
         </div>
         <div className="flex-1">
-          <i className="text-red-400">[invalid-assistant-message]</i>
+          <i style={{ color: '#dc2626' }}>[invalid-assistant-message]</i>
         </div>
       </div>
     );
@@ -58,43 +58,71 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
 
   const getFileIcon = (fileType: string) => {
     if (fileType.startsWith('image/')) {
-      return <FileImage size={16} className="text-app-text-800" />
+      return <FileImage size={16} style={{ color: '#4C3D1E', opacity: 0.7 }} />
     } else if (fileType.includes('text') || fileType.includes('document')) {
-      return <FileText size={16} className="text-app-text-800" />
+      return <FileText size={16} style={{ color: '#4C3D1E', opacity: 0.7 }} />
     } else if (fileType.includes('json') || fileType.includes('code')) {
-      return <FileCode size={16} className="text-app-text-800" />
+      return <FileCode size={16} style={{ color: '#4C3D1E', opacity: 0.7 }} />
     } else {
-      return <Paperclip size={16} className="text-app-text-800" />
+      return <Paperclip size={16} style={{ color: '#4C3D1E', opacity: 0.7 }} />
     }
   }
 
   const copyToClipboard = async (code: string) => {
+    console.log('Copy attempt:', { 
+      hasClipboard: !!navigator.clipboard, 
+      isSecureContext: window.isSecureContext,
+      protocol: window.location.protocol,
+      hostname: window.location.hostname
+    })
+    
     try {
-      await navigator.clipboard.writeText(code)
-      setCopiedCode(code)
-      setTimeout(() => setCopiedCode(null), 2000)
+      // Try modern clipboard API first (requires secure context)
+      if (navigator.clipboard && window.isSecureContext) {
+        console.log('Using modern clipboard API')
+        await navigator.clipboard.writeText(code)
+        setCopiedCode(code)
+        setTimeout(() => setCopiedCode(null), 2000)
+        return
+      }
+      
+      // Fallback for non-secure contexts (localhost HTTP)
+      console.log('Using fallback copy method')
+      const textArea = document.createElement('textarea')
+      textArea.value = code
+      textArea.style.position = 'fixed'
+      textArea.style.left = '-999999px'
+      textArea.style.top = '-999999px'
+      document.body.appendChild(textArea)
+      textArea.focus()
+      textArea.select()
+      
+      try {
+        const successful = document.execCommand('copy')
+        if (successful) {
+          console.log('Fallback copy successful')
+          setCopiedCode(code)
+          setTimeout(() => setCopiedCode(null), 2000)
+        } else {
+          throw new Error('execCommand copy failed')
+        }
+      } finally {
+        document.body.removeChild(textArea)
+      }
     } catch (err) {
       console.error('Failed to copy code:', err)
+      // Show user-friendly error message
+      alert(`Failed to copy to clipboard: ${err.message}. Please select and copy manually.`)
     }
   }
 
   const isUser = message.role === 'user'
 
   return (
-    <div className={cn(
-      "flex items-start gap-3 p-4 rounded-lg transition-colors",
-      isUser 
-        ? "bg-app-chat-50" 
-        : "bg-app-chat-50"
-    )}>
+    <div className="flex items-start gap-3 p-4 rounded-lg transition-colors" style={{ backgroundColor: '#ffffd7' }}>
       {/* Avatar */}
-      <div className={cn(
-        "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
-        isUser 
-          ? "bg-app-orange-600" 
-          : "bg-app-green-600"
-      )}>
-        <span className="text-app-text-900 text-sm font-bold">
+      <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: isUser ? '#E1C28B' : '#4C3D1E' }}>
+        <span className="text-sm font-bold" style={{ color: isUser ? '#4C3D1E' : '#ffffeb' }}>
           {isUser ? 'U' : 'AI'}
         </span>
       </div>
@@ -103,17 +131,17 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
       <div className="flex-1 min-w-0">
         {/* File Attachments */}
         {message.files && message.files.length > 0 && (
-          <div className="mb-3 p-3 bg-app-orange-600 rounded-lg border border-app-orange-500">
+          <div className="mb-3 p-3 rounded-lg border" style={{ backgroundColor: '#feffaf', borderColor: '#E1C28B' }}>
             <div className="flex items-center gap-2 mb-2">
-              <Paperclip size={16} className="text-app-text-800" />
-              <span className="text-sm text-app-text-900 font-medium">Attached files ({message.files.length})</span>
+              <Paperclip size={16} style={{ color: '#4C3D1E', opacity: 0.7 }} />
+              <span className="text-sm font-medium" style={{ color: '#4C3D1E' }}>Attached files ({message.files.length})</span>
             </div>
             <div className="space-y-2">
               {message.files.map((file, index) => (
-                <div key={index} className="flex items-center gap-2 p-2 bg-app-chat-50 rounded">
+                <div key={index} className="flex items-center gap-2 p-2 rounded" style={{ backgroundColor: '#ffffd7' }}>
                   {getFileIcon(file.type)}
-                  <span className="text-sm text-app-text-900">{file.name}</span>
-                  <span className="text-xs text-app-text-800">
+                  <span className="text-sm" style={{ color: '#4C3D1E' }}>{file.name}</span>
+                  <span className="text-xs" style={{ color: '#4C3D1E', opacity: 0.6 }}>
                     ({(file.size / 1024).toFixed(1)} KB)
                   </span>
                 </div>
@@ -138,11 +166,14 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
                         <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => copyToClipboard(code)}
-                            className="p-1 bg-app-orange-600 rounded hover:bg-app-orange-500 transition-colors"
+                            className="p-1 rounded transition-colors"
+                            style={{ backgroundColor: '#E1C28B', color: '#4C3D1E' }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#d4b078'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#E1C28B'}
                             title="Copy code"
                           >
                             {copiedCode === code ? (
-                              <Check size={14} className="text-green-400" />
+                              <Check size={14} style={{ color: '#4C3D1E' }} />
                             ) : (
                               <Copy size={14} />
                             )}
@@ -168,7 +199,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
                   
                   // Inline code
                   return (
-                    <code className="bg-app-orange-600 px-1 py-0.5 rounded text-sm font-mono">
+                    <code className="px-1 py-0.5 rounded text-sm font-mono" style={{ backgroundColor: '#feffaf', color: '#4C3D1E' }}>
                       {children}
                     </code>
                   )
@@ -176,13 +207,13 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
                 
                 // Headers
                 h1: ({ children }) => (
-                  <h1 className="text-2xl font-bold mb-4 text-app-text-900">{children}</h1>
+                  <h1 className="text-2xl font-bold mb-4" style={{ color: '#4C3D1E' }}>{children}</h1>
                 ),
                 h2: ({ children }) => (
-                  <h2 className="text-xl font-bold mb-3 text-app-text-900">{children}</h2>
+                  <h2 className="text-xl font-bold mb-3" style={{ color: '#4C3D1E' }}>{children}</h2>
                 ),
                 h3: ({ children }) => (
-                  <h3 className="text-lg font-bold mb-2 text-app-text-900">{children}</h3>
+                  <h3 className="text-lg font-bold mb-2" style={{ color: '#4C3D1E' }}>{children}</h3>
                 ),
                 
                 // Lists
@@ -199,7 +230,10 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
                     href={href} 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    className="text-app-text-800 hover:text-app-text-700 underline"
+                    className="underline"
+                    style={{ color: '#4C3D1E', opacity: 0.8 }}
+                    onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                    onMouseLeave={(e) => e.currentTarget.style.opacity = '0.8'}
                   >
                     {children}
                   </a>
@@ -207,7 +241,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
                 
                 // Blockquotes
                 blockquote: ({ children }) => (
-                  <blockquote className="border-l-4 border-app-orange-500 pl-4 italic text-app-text-800 mb-4">
+                  <blockquote className="border-l-4 pl-4 italic mb-4" style={{ borderColor: '#E1C28B', color: '#4C3D1E', opacity: 0.8 }}>
                     {children}
                   </blockquote>
                 ),
@@ -215,18 +249,18 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
                 // Tables
                 table: ({ children }) => (
                   <div className="overflow-x-auto mb-4">
-                    <table className="min-w-full border-collapse border border-app-orange-600">
+                    <table className="min-w-full border-collapse border" style={{ borderColor: '#E1C28B' }}>
                       {children}
                     </table>
                   </div>
                 ),
                 th: ({ children }) => (
-                  <th className="border border-app-orange-600 px-3 py-2 bg-app-chat-50 text-left font-semibold">
+                  <th className="border px-3 py-2 text-left font-semibold" style={{ borderColor: '#E1C28B', backgroundColor: '#ffffd7', color: '#4C3D1E' }}>
                     {children}
                   </th>
                 ),
                 td: ({ children }) => (
-                  <td className="border border-app-orange-600 px-3 py-2">
+                  <td className="border px-3 py-2" style={{ borderColor: '#E1C28B', color: '#4C3D1E' }}>
                     {children}
                   </td>
                 ),
@@ -236,7 +270,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
                   <p className="mb-4 leading-relaxed">{children}</p>
                 ),
               }}
-              className="text-app-text-900"
+              style={{ color: '#4C3D1E' }}
             >
               {message.content}
             </ReactMarkdown>
@@ -246,7 +280,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
         </div>
         
         {/* Timestamp */}
-        <div className="text-xs text-app-text-800 mt-2">
+        <div className="text-xs mt-2" style={{ color: '#4C3D1E', opacity: 0.6 }}>
           {formatDate(message.timestamp)}
         </div>
       </div>

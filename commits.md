@@ -401,6 +401,31 @@ Ledger Entry Format:
 - ❌ Need: Group conversation functionality for external AIs
 
 ---
+### [2025-10-16 — 13:52:00 EST]
+**Project:** Chatty - Storage & Session Hardening, Debug Backups
+**Files Edited:**
+- `src/lib/conversationManager.ts` (hardening: backend-first saves, cache limit, quota checks)
+- `src/components/StorageFailureFallback.tsx` (storage-failure UI)
+- `src/components/Layout.tsx` (startup storage health-check + hook registration)
+- `server/server.js` (telemetry endpoint, auth normalization, dev debug backup endpoints)
+- `server/store.js` (fixed in-memory conversation map and dev logging)
+- `tools/e2e/test_conversations.js` (added end-to-end validation for save/load flows)
+**Type:** Reliability, Security, and Devops
+**Summary:**
+- Removed runtime creation of large localStorage backups and made backend the source-of-truth for conversations.
+- Limited client-side cache to the 10 most recent threads and added size checks and StorageManager estimates to proactively avoid QuotaExceededError.
+- Added a user-visible storage-failure fallback UI and runtime detection hook to safely surface storage problems and offer emergency cleanup/download options.
+- Implemented dev-only `/api/debug/*` endpoints to save/list/load JSON backups for the current authenticated user (saved under `server/debug_backups/`) to aid manual recovery and testing.
+- Fixed server in-memory store initialization and normalized JWT payloads so `req.user.sub` is always available to prevent user-id related failures.
+- Added a minimal telemetry endpoint `/api/telemetry/storage` and client reporting for storage events.
+- Added an E2E test that registers/logs in a user, posts conversations, and verifies persistence to prevent regressions.
+**Impact:**
+- ✅ Prevents browser localStorage quota crashes caused by uncontrolled backup writes.
+- ✅ Ensures per-user data isolation via normalized auth flow and backend-first persistence.
+- ✅ Provides dev-friendly backup/save hooks allowing immediate manual preservation of conversations prior to reloads.
+- ✅ E2E coverage reduces regression risk for conversation persistence and auth normalization fixes.
+**Status:** ✅ COMPLETED - Verified locally: login/logout preserves user conversations; alternate account shows isolated data. Debug backup endpoint available for dev saves.
+
 ### [2025-09-06 — 00:05:31]
 **Project:** Chatty
 **Files Edited:** offline_test2.txt

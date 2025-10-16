@@ -58,18 +58,18 @@ export default function GPTsPage({ initialOpen = false }: GPTsPageProps) {
   }
 
   return (
-    <div className="min-h-screen bg-app-pale-50 text-app-text-900">
+    <div className="min-h-screen bg-[#ffffeb] text-[#4C3D1E]">
       {/* Header */}
-      <div className="border-b border-app-yellow-300 p-6">
+      <div className="border-b border-[#E1C28B] p-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold">Your GPTs</h1>
-            <p className="text-app-text-800 mt-1">Manage and create custom AI assistants</p>
+            <p className="mt-1 text-[#4C3D1E] opacity-70">Manage and create custom AI assistants</p>
           </div>
           <button
             type="button"
             onClick={() => navigate('/app/gpts/new')}
-            className="flex items-center gap-2 px-4 py-2 bg-app-button-500 hover:bg-app-button-600 rounded-lg text-app-text-900 font-medium transition-colors"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors bg-[#E1C28B] text-[#4C3D1E] hover:bg-[#feffaf]"
           >
             <Plus size={16} />
             Create GPT
@@ -81,20 +81,20 @@ export default function GPTsPage({ initialOpen = false }: GPTsPageProps) {
       <div className="p-6">
         {isLoading ? (
           <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-2 border-app-yellow-500 border-t-transparent mx-auto mb-4"></div>
-            <p className="text-app-text-800">Loading GPTs...</p>
+            <div className="animate-spin rounded-full h-8 w-8 border-2 border-t-transparent border-[#E1C28B] mx-auto mb-4"></div>
+            <p className="text-[#4C3D1E] opacity-70">Loading GPTs...</p>
           </div>
         ) : gpts.length === 0 ? (
           <div className="text-center py-12">
-            <div className="w-16 h-16 bg-app-yellow-200 rounded-lg flex items-center justify-center mx-auto mb-4">
-              <Bot size={24} className="text-app-text-800" />
+            <div className="w-16 h-16 rounded-lg flex items-center justify-center mx-auto mb-4 bg-[#feffaf]">
+              <Bot size={24} className="text-[#4C3D1E]" />
             </div>
             <h3 className="text-lg font-medium mb-2">No GPTs yet</h3>
-            <p className="text-app-text-800 mb-6">Create your first custom AI assistant to get started.</p>
+            <p className="mb-6 text-[#4C3D1E] opacity-70">Create your first custom AI assistant to get started.</p>
             <button
               type="button"
               onClick={() => navigate('/app/gpts/new')}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-app-button-500 hover:bg-app-button-600 rounded-lg text-app-text-900 font-medium transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors bg-[#E1C28B] text-[#4C3D1E] hover:bg-[#feffaf]"
             >
               <Plus size={16} />
               Create GPT
@@ -105,26 +105,26 @@ export default function GPTsPage({ initialOpen = false }: GPTsPageProps) {
             {gpts.map((gpt) => (
               <div
                 key={gpt.id}
-                className="bg-white border border-app-yellow-300 rounded-lg p-4 hover:bg-app-butter-50 transition-colors shadow-sm"
+                className="border border-[#E1C28B] rounded-lg p-4 transition-colors shadow-sm bg-[#feffaf] hover:bg-[#ffffd7]"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-app-yellow-200 rounded-lg flex items-center justify-center overflow-hidden">
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden bg-[#E1C28B]">
                       {gpt.avatar ? (
                         <img src={gpt.avatar} alt={gpt.name} className="w-full h-full object-cover" />
                       ) : (
-                        <Bot size={16} className="text-app-text-800" />
+                        <Bot size={16} className="text-[#4C3D1E]" />
                       )}
                     </div>
                     <div>
-                      <h3 className="font-medium text-app-text-900">{gpt.name}</h3>
-                      <p className="text-sm text-app-text-800">{gpt.description}</p>
+                      <h3 className="font-medium">{gpt.name}</h3>
+                      <p className="text-sm text-[#4C3D1E] opacity-70">{gpt.description}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => handleDelete(gpt.id)}
-                      className="p-1 hover:bg-app-yellow-200 rounded text-app-text-800 hover:text-red-500 transition-colors"
+                      className="p-1 rounded transition-colors text-[#4C3D1E] hover:bg-[#feffaf]"
                       title="Delete GPT"
                     >
                       <Trash2 size={14} />
@@ -134,26 +134,26 @@ export default function GPTsPage({ initialOpen = false }: GPTsPageProps) {
                 
                 <div className="space-y-2">
                   <div>
-                    <p className="text-xs text-app-orange-500 mb-1">Instructions</p>
-                    <p className="text-sm text-app-orange-300 line-clamp-2">
+                    <p className="text-xs mb-1 text-[#4C3D1E] opacity-60">Instructions</p>
+                    <p className="text-sm line-clamp-2 text-[#4C3D1E] opacity-80">
                       {gpt.instructions || 'No instructions provided'}
                     </p>
                   </div>
                   
                   {gpt.conversationStarters && gpt.conversationStarters.length > 0 && (
                     <div>
-                      <p className="text-xs text-app-text-800 mb-1">Conversation Starters</p>
+                      <p className="text-xs mb-1 text-[#4C3D1E] opacity-60">Conversation Starters</p>
                       <div className="flex flex-wrap gap-1">
                         {gpt.conversationStarters.slice(0, 2).map((starter: string, index: number) => (
                           <span
                             key={index}
-                            className="text-xs bg-app-yellow-200 text-app-text-900 px-2 py-1 rounded"
+                            className="text-xs px-2 py-1 rounded bg-[#feffaf] text-[#4C3D1E]"
                           >
                             {starter}
                           </span>
                         ))}
                         {gpt.conversationStarters.length > 2 && (
-                          <span className="text-xs text-app-orange-500">
+                          <span className="text-xs text-[#4C3D1E] opacity-60">
                             +{gpt.conversationStarters.length - 2} more
                           </span>
                         )}
@@ -163,14 +163,14 @@ export default function GPTsPage({ initialOpen = false }: GPTsPageProps) {
                   
                   <div className="flex items-center justify-between pt-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-app-text-800">Model:</span>
-                      <span className="text-xs bg-app-yellow-200 text-app-text-900 px-2 py-1 rounded">
+                      <span className="text-xs text-[#4C3D1E] opacity-60">Model:</span>
+                      <span className="text-xs px-2 py-1 rounded bg-[#feffaf] text-[#4C3D1E]">
                         {gpt.modelId}
                       </span>
                     </div>
                     <Link
                       to="/"
-                      className="text-xs text-app-green-400 hover:text-app-green-300 transition-colors"
+                      className="text-xs transition-colors text-[#4C3D1E] opacity-80 hover:opacity-100"
                     >
                       Use GPT →
                     </Link>

@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
-import { fetchMe, logout, type User } from '../lib/auth'
+import { fetchMe, logout, getUserId, type User } from '../lib/auth'
+import { conversationManager, type ConversationThread } from '../lib/conversationManager'
+import StorageFailureFallback from './StorageFailureFallback'
+import { runFullMigration } from '../lib/migration'
 import { 
   Plus, 
   Search,
@@ -11,6 +14,7 @@ import {
   MessageSquare,
   Trash2
 } from 'lucide-react'
+import SearchPopup from './SearchPopup'
 
 type Message = {
   id: string
@@ -29,18 +33,86 @@ export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
   
-  const [threads, setThreads] = useState<Thread[]>(() => {
-    try { return JSON.parse(localStorage.getItem('chatty:threads') || '[]') } catch { return [] }
-  })
+  const [threads, setThreads] = useState<Thread[]>([])
+  const [isRecovering, setIsRecovering] = useState(false)
+  const [storageFailureInfo, setStorageFailureInfo] = useState<{ reason: string; key?: string; sizeBytes?: number } | null>(null)
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
   
   const activeId = useMemo(() => {
     const match = location.pathname.match(/^\/app\/chat\/(.+)$/)
     return match ? match[1] : null
   }, [location.pathname])
 
+  // Professional conversation loading with automatic recovery
   useEffect(() => {
-    localStorage.setItem('chatty:threads', JSON.stringify(threads))
-  }, [threads])
+    // Register storage failure callback so we can show a friendly UI
+    conversationManager.storageFailureCallback = (info) => {
+      setStorageFailureInfo(info)
+    }
+
+    if (user && user.sub) {
+      setIsRecovering(true)
+      console.log('🔄 Loading conversations for user:', user.email, '(', user.sub, ')')
+      
+      // Run migration first (migration is now handled in App.tsx, but keep this as fallback)
+      runFullMigration(user)
+      
+      conversationManager.loadUserConversations(user)
+        .then((recoveredThreads) => {
+          console.log('📂 Loaded conversations:', recoveredThreads.length)
+          setThreads(recoveredThreads)
+          setIsRecovering(false)
+          
+          if (recoveredThreads.length > 0) {
+            console.log('✅ Conversations loaded successfully')
+          } else {
+            console.log('ℹ️ No conversations found - starting fresh')
+          }
+        })
+        .catch((error) => {
+          console.error('❌ Failed to load conversations:', error)
+          setThreads([])
+          setIsRecovering(false)
+        })
+    } else {
+      setThreads([])
+      setIsRecovering(false)
+    }
+  }, [user])
+
+  // Startup health check for storage quota (non-blocking)
+  useEffect(() => {
+    const nav: any = navigator
+    const check = async () => {
+      try {
+        if (nav.storage && typeof nav.storage.estimate === 'function') {
+          const est = await nav.storage.estimate()
+          const remaining = (est.quota || 0) - (est.usage || 0)
+          // If remaining is less than 200KB, warn the user
+          if (remaining < 200 * 1024) {
+            conversationManager.storageFailureCallback?.({ reason: 'low_quota', sizeBytes: remaining })
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    check()
+  }, [])
+
+  function closeStorageFailure() {
+    setStorageFailureInfo(null)
+  }
+
+  // Professional conversation saving with fail-safes
+  useEffect(() => {
+    if (user && user.sub && threads.length > 0) {
+      conversationManager.saveUserConversations(user, threads)
+        .catch((error) => {
+          console.error('❌ Failed to save conversations:', error)
+        })
+    }
+  }, [threads, user])
 
   // Handle authentication
   useEffect(() => {
@@ -50,6 +122,17 @@ export default function Layout() {
         if (me) {
           console.log('User data:', me);
           console.log('User picture:', me.picture);
+          
+          // Check if this is a different user than before
+          const currentUserId = getUserId(me);
+          const previousUserId = user ? getUserId(user) : null;
+          
+          if (previousUserId && previousUserId !== currentUserId) {
+            console.log('🔄 User switched, clearing previous user data');
+            conversationManager.clearUserData(previousUserId);
+            setThreads([]);
+          }
+          
           setUser(me)
         } else {
           navigate('/')
@@ -64,6 +147,11 @@ export default function Layout() {
   }, [navigate])
 
   async function handleLogout() {
+    if (user) {
+      const userId = getUserId(user);
+      // Clear user data but preserve backups
+      conversationManager.clearUserData(userId);
+    }
     await logout()
     navigate('/')
   }
@@ -71,10 +159,13 @@ export default function Layout() {
   // Migrate legacy messages to packet format
   useEffect(() => {
     setThreads(prev => {
+      if (!Array.isArray(prev)) {
+        return [];
+      }
       let dirty = false;
       const fixed = prev.map(t => ({
         ...t,
-        messages: t.messages.map(m => {
+        messages: (t.messages || []).map(m => {
           if (m.role === 'assistant' && !Array.isArray((m as any).packets)) {
             dirty = true;
             return {
@@ -87,12 +178,12 @@ export default function Layout() {
           return m;
         })
       }));
-      if (dirty) {
-        localStorage.setItem('chatty:threads', JSON.stringify(fixed));
+      if (dirty && user && user.sub) {
+        conversationManager.saveUserConversations(user, fixed);
       }
       return fixed;
     });
-  }, [])
+  }, [user])
 
   function newThread() {
     const t: Thread = { id: crypto.randomUUID(), title: 'New conversation', messages: [] }
@@ -245,6 +336,27 @@ export default function Layout() {
     navigate('/app/gpts/new')
   }
 
+  function handleSearchClick() {
+    setIsSearchOpen(true)
+  }
+
+  function handleLibraryClick() {
+    navigate('/app/library')
+  }
+
+  function handleCodexClick() {
+    navigate('/app/codex')
+  }
+
+  function handleExploreClick() {
+    navigate('/app/explore')
+  }
+
+  function handleSearchResultClick(threadId: string, messageId: string) {
+    navigate(`/app/chat/${threadId}`)
+    // TODO: Scroll to specific message
+  }
+
   if (isLoading) {
     return (
       <div className="flex h-screen" style={{ backgroundColor: '#ffffeb' }}>
@@ -260,19 +372,18 @@ export default function Layout() {
   return (
     <div className="flex h-screen" style={{ backgroundColor: '#ffffeb' }}>
       {/* Sidebar */}
-      <aside className="w-64 border-r flex flex-col" style={{ backgroundColor: '#ffffeb', borderColor: '#fde047' }}>
+      <aside className="w-64 border-r flex flex-col bg-[#ffffd7] border-[#E1C28B]" style={{ backgroundColor: '#ffffd7 !important' }}>
         {/* Top Section - Logo and Panel Toggle */}
         <div className="flex items-center justify-between p-4">
           {/* Logo */}
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-              <span className="text-white text-sm font-bold">C</span>
+            <div className="w-8 h-8 rounded-lg overflow-hidden">
+              <img src="/assets/chatty_star.png" alt="ChattyStar" className="h-full w-full object-cover" />
             </div>
-            <span className="text-lg font-semibold" style={{ color: '#4c3d1e' }}>Chatty</span>
           </div>
           
           {/* Panel Toggle Button */}
-          <button className="p-1 rounded transition-colors" style={{ color: '#4c3d1e' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fde047'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+          <button className="p-1 rounded transition-colors" style={{ color: '#4c3d1e' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
             <PanelLeftClose size={16} />
           </button>
         </div>
@@ -284,7 +395,7 @@ export default function Layout() {
               onClick={newThread}
               className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm rounded-md transition-colors"
               style={{ color: '#4c3d1e' }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fde047'}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             >
               <Plus size={16} />
@@ -292,9 +403,10 @@ export default function Layout() {
             </button>
             
             <button 
+              onClick={handleSearchClick}
               className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm rounded-md transition-colors"
               style={{ color: '#4c3d1e' }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fde047'}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             >
               <Search size={16} />
@@ -302,9 +414,10 @@ export default function Layout() {
             </button>
             
             <button 
+              onClick={handleLibraryClick}
               className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm rounded-md transition-colors"
               style={{ color: '#4c3d1e' }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fde047'}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             >
               <Library size={16} />
@@ -312,9 +425,10 @@ export default function Layout() {
             </button>
             
             <button 
+              onClick={handleCodexClick}
               className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm rounded-md transition-colors"
               style={{ color: '#4c3d1e' }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fde047'}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             >
               <Clock size={16} />
@@ -324,7 +438,7 @@ export default function Layout() {
             <button 
               className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm rounded-md transition-colors"
               style={{ color: '#4c3d1e' }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fde047'}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             >
               <FolderPlus size={16} />
@@ -338,13 +452,13 @@ export default function Layout() {
           <h3 className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: '#4c3d1e', opacity: 0.6 }}>GPTs</h3>
           <div className="space-y-1">
             <button 
-              onClick={handleGPTsClick}
+              onClick={handleExploreClick}
               className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm rounded-md transition-colors"
               style={{ color: '#4c3d1e' }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fde047'}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             >
-              <div className="w-6 h-6 rounded flex items-center justify-center" style={{ backgroundColor: '#d4b078' }}>
+              <div className="w-6 h-6 rounded flex items-center justify-center" style={{ backgroundColor: '#E1C28B' }}>
                 <span className="text-xs" style={{ color: '#4c3d1e' }}>□</span>
               </div>
               Explore
@@ -354,7 +468,7 @@ export default function Layout() {
               onClick={handleCreateGPTClick}
               className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm rounded-md transition-colors"
               style={{ color: '#4c3d1e' }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fde047'}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             >
               <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ backgroundColor: '#4c3d1e' }}>
@@ -377,11 +491,11 @@ export default function Layout() {
                 className="flex items-center justify-between w-full px-3 py-2 text-left text-sm rounded-md transition-colors group"
                 style={{ 
                   color: '#4c3d1e',
-                  backgroundColor: thread.id === activeId ? '#fde047' : 'transparent'
+                  backgroundColor: thread.id === activeId ? '#feffaf' : 'transparent'
                 }}
                 onMouseEnter={(e) => {
                   if (thread.id !== activeId) {
-                    e.currentTarget.style.backgroundColor = '#fde047'
+                    e.currentTarget.style.backgroundColor = '#feffaf'
                   }
                 }}
                 onMouseLeave={(e) => {
@@ -397,7 +511,7 @@ export default function Layout() {
                 <button
                   className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all ml-2"
                   style={{ color: '#4c3d1e' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#d4b078'}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E1C28B'}
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -409,8 +523,16 @@ export default function Layout() {
               </button>
             ))}
             
+            {/* Recovery state */}
+            {isRecovering && (
+              <div className="text-center text-sm py-8" style={{ color: '#4c3d1e', opacity: 0.6 }}>
+                <div className="animate-spin w-4 h-4 border-2 border-app-button-500 border-t-transparent rounded-full mx-auto mb-2"></div>
+                <p>Recovering conversations...</p>
+              </div>
+            )}
+            
             {/* Empty state */}
-            {threads.length === 0 && (
+            {!isRecovering && threads.length === 0 && (
               <div className="text-center text-sm py-8" style={{ color: '#4c3d1e', opacity: 0.6 }}>
                 <MessageSquare size={20} className="mx-auto mb-2 opacity-50" />
                 <p>No conversations yet</p>
@@ -420,12 +542,12 @@ export default function Layout() {
         </div>
 
         {/* User Profile Section - Anchored at Bottom */}
-        <div className="p-4 border-t" style={{ borderColor: '#d4b078' }}>
+        <div className="p-4 border-t" style={{ borderColor: '#E1C28B' }}>
           <button
             onClick={handleLogout}
             className="flex items-center gap-3 w-full p-2 rounded-md transition-colors"
             style={{ color: '#4c3d1e' }}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fde047'}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
           >
             {user.picture ? (
@@ -435,7 +557,7 @@ export default function Layout() {
                 className="w-8 h-8 rounded-full"
               />
             ) : (
-              <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: '#d4b078' }}>
+              <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: '#E1C28B' }}>
                 <span className="text-sm font-medium" style={{ color: '#4c3d1e' }}>
                   {user.name?.charAt(0) || user.email?.charAt(0) || 'U'}
                 </span>
@@ -457,6 +579,15 @@ export default function Layout() {
       <main className="flex-1 flex flex-col overflow-hidden">
         <Outlet context={{ threads, sendMessage, renameThread, newThread }} />
       </main>
+      <StorageFailureFallback info={storageFailureInfo} onClose={closeStorageFailure} />
+
+      {/* Search Popup */}
+      <SearchPopup
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        threads={threads}
+        onResultClick={handleSearchResultClick}
+      />
     </div>
   )
 }

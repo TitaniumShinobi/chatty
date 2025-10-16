@@ -234,7 +234,7 @@ export function SimpleChatty({ onToggleAdvanced, onOpenSettings }: SimpleChattyP
         {/* Messages */}
         <div ref={messagesEndRef} className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8">
           {messages.length === 0 ? (
-            <div className="h-full w-full flex items-center justify-center text-app-orange-400">
+            <div className="h-full w-full flex items-center justify-center" style={{ color: '#4C3D1E', opacity: 0.7 }}>
               <p className="text-sm">Start a conversation by typing a message below.</p>
             </div>
           ) : (
@@ -242,19 +242,18 @@ export function SimpleChatty({ onToggleAdvanced, onOpenSettings }: SimpleChattyP
               {messages.map((message) => (
                 <div
                   key={message.id}
-                  className={`rounded-lg border p-4 whitespace-pre-wrap leading-relaxed ${
-                    message.role === "user"
-                      ? "bg-app-orange-950 border-app-orange-800"
-                      : message.role === "system"
-                      ? "bg-red-900 border-red-800 text-red-100"
-                      : "bg-app-orange-900 border-app-orange-800"
-                  }`}
+                  className="rounded-lg border p-4 whitespace-pre-wrap leading-relaxed"
+                  style={{
+                    backgroundColor: message.role === "user" ? '#feffaf' : message.role === "system" ? '#fef2f2' : '#ffffd7',
+                    borderColor: message.role === "system" ? '#fecaca' : '#E1C28B',
+                    color: message.role === "system" ? '#dc2626' : '#4C3D1E'
+                  }}
                 >
                   {message.content}
                 </div>
               ))}
               {isLoading && (
-                <div className="rounded-lg border bg-app-orange-900 border-app-orange-800 p-4 text-app-orange-500">
+                <div className="rounded-lg border p-4" style={{ backgroundColor: '#ffffd7', borderColor: '#E1C28B', color: '#4C3D1E', opacity: 0.7 }}>
                   Thinking...
                 </div>
               )}

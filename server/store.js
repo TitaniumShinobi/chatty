@@ -4,7 +4,9 @@ import Conversation from "./models/Conversation.js";
 import Message from "./models/Message.js";
 
 let useMemory = !process.env.MONGODB_URI;
-const mem = { users: new Map(), convs: new Map(), msgs: new Map() };
+// In-memory maps used when no persistent DB is configured. Add a
+// per-user `conversations` Map so the memory-mode get/save functions work.
+const mem = { users: new Map(), convs: new Map(), msgs: new Map(), conversations: new Map() };
 
 export const Store = {
   async upsertUser(u) {
@@ -17,6 +19,44 @@ export const Store = {
       { name: u.name, email: u.email, picture: u.picture },
       { new: true, upsert: true }
     );
+  },
+
+  async findUserByEmail(email) {
+    if (useMemory) {
+      return Array.from(mem.users.values()).find(user => user.email === email) || null;
+    }
+    return await User.findOne({ email });
+  },
+
+  async getUserConversations(userId) {
+    if (useMemory) {
+      console.debug(`[Store][dev] getUserConversations userId=${userId} (memory-mode)`);
+      const data = mem.conversations.get(userId) || [];
+      console.debug(`[Store][dev] returning ${Array.isArray(data) ? data.length : 0} conversations for user=${userId}`);
+      return data;
+    } else {
+      const user = await User.findOne({ sub: userId });
+      return user ? (user.conversations || []) : [];
+    }
+  },
+
+  async saveUserConversations(userId, conversations) {
+    if (useMemory) {
+      try {
+        console.debug(`[Store][dev] saveUserConversations userId=${userId} conversations=${Array.isArray(conversations) ? conversations.length : 'unknown'}`);
+        mem.conversations.set(userId, conversations);
+        console.debug(`[Store][dev] saved conversations for user=${userId}`);
+      } catch (err) {
+        console.error('[Store][dev] error saving conversations', err);
+        throw err;
+      }
+    } else {
+      await User.findOneAndUpdate(
+        { sub: userId },
+        { conversations },
+        { upsert: true }
+      );
+    }
   },
 
   async createConversation(owner, data) {

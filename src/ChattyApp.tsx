@@ -1,6 +1,7 @@
  // src/ChattyApp.tsx
 import { useEffect, useMemo, useState } from 'react'
 import type { User } from './lib/auth'
+import { getUserId } from './lib/auth'
 import { R } from './runtime/render'
 import { useSettings } from './hooks/useSettings'
 
@@ -23,7 +24,8 @@ export default function ChattyApp({
 }) {
   const { settings } = useSettings()
   const [threads, setThreads] = useState<Thread[]>(() => {
-    try { return JSON.parse(localStorage.getItem('chatty:threads') || '[]') } catch { return [] }
+    // Don't load threads until we have a user
+    return []
   })
   const [activeId, setActiveId] = useState<string | null>(threads[0]?.id ?? null)
   const active = useMemo(
@@ -31,9 +33,57 @@ export default function ChattyApp({
     [threads, activeId]
   )
 
+  // Get user-specific storage key
+  const getStorageKey = (user: User) => `chatty:threads:${getUserId(user)}`
+  
+  // Load threads when user changes
   useEffect(() => {
-    localStorage.setItem('chatty:threads', JSON.stringify(threads))
-  }, [threads])
+    if (user) {
+      try {
+        // First, try to load user-specific threads
+        let userThreads = JSON.parse(localStorage.getItem(getStorageKey(user)) || '[]')
+        
+        // If no user-specific threads exist, check for old generic threads and migrate them
+        if (userThreads.length === 0) {
+          const oldThreads = localStorage.getItem('chatty:threads')
+          if (oldThreads) {
+            console.log('🔄 Found old conversations, migrating to user-specific storage...')
+            try {
+              userThreads = JSON.parse(oldThreads)
+              // Save to user-specific storage
+              // Only cache a small recent subset to avoid quota pressure
+              const limited = Array.isArray(userThreads) ? userThreads.slice(0, 10) : []
+              localStorage.setItem(getStorageKey(user), JSON.stringify(limited))
+              console.log('✅ Successfully migrated (cached subset)', limited.length, 'conversations to user-specific storage')
+            } catch (migrationError) {
+              console.error('Failed to migrate old conversations:', migrationError)
+            }
+          }
+        }
+        
+        setThreads(userThreads)
+      } catch (error) {
+        console.error('Failed to load user threads:', error)
+        setThreads([])
+      }
+    } else {
+      setThreads([])
+    }
+  }, [user])
+
+  // Save threads when they change (only if user is logged in)
+  useEffect(() => {
+    if (user && threads.length > 0) {
+      // Cache only the most recent 10 conversations locally to avoid
+      // filling user localStorage quota.
+      try {
+        const limited = threads.slice(0, 10)
+        localStorage.setItem(getStorageKey(user), JSON.stringify(limited))
+      } catch (e) {
+        console.warn('Failed to write local cache for threads:', e)
+      }
+    }
+  }, [threads, user])
 
   // Migrate legacy messages to packet format
   useEffect(() => {
@@ -55,12 +105,12 @@ export default function ChattyApp({
           return m;
         })
       }));
-      if (dirty) {
-        localStorage.setItem('chatty:threads', JSON.stringify(fixed));
+      if (dirty && user) {
+        localStorage.setItem(getStorageKey(user), JSON.stringify(fixed));
       }
       return fixed;
     });
-  }, [])
+  }, [user])
 
   function newThread() {
     const t: Thread = { id: crypto.randomUUID(), title: 'New conversation', messages: [] }
@@ -265,40 +315,40 @@ function ChatView({
 }
 
 const s: Record<string, React.CSSProperties> = {
-  app: { display: 'flex', height: '100vh', background: '#202123', color: '#fff', overflow: 'hidden' },
-  sidebar: { width: 260, background: '#17181A', borderRight: '1px solid #2a2b32', display: 'flex', flexDirection: 'column' },
+  app: { display: 'flex', height: '100vh', background: '#ffffeb', color: '#4C3D1E', overflow: 'hidden' },
+  sidebar: { width: 260, background: '#ffffd7', borderRight: '1px solid #E1C28B', display: 'flex', flexDirection: 'column' },
   brand: { padding: '14px 14px 10px', fontWeight: 700 },
-  newBtn: { margin: '0 12px 8px', padding: '10px', borderRadius: 8, border: '1px solid #3a3b42', background: '#2a2b32', color: '#fff', cursor: 'pointer' },
+  newBtn: { margin: '0 12px 8px', padding: '10px', borderRadius: 8, border: '1px solid #E1C28B', background: '#E1C28B', color: '#4C3D1E', cursor: 'pointer' },
   sectionLabel: { padding: '6px 14px', opacity: .6, fontSize: 12 },
   threadList: { flex: 1, overflow: 'auto', padding: 6 },
-  threadItem: { width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 8, border: '1px solid transparent', background: 'transparent', color: '#fff', cursor: 'pointer' },
-  threadItemActive: { background: '#2a2b32', borderColor: '#3a3b42' },
+  threadItem: { width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 8, border: '1px solid transparent', background: 'transparent', color: '#4C3D1E', cursor: 'pointer' },
+  threadItemActive: { background: '#feffaf', borderColor: '#E1C28B' },
   emptySide: { opacity: .6, padding: '10px 12px' },
-  footer: { borderTop: '1px solid #2a2b32', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 },
+  footer: { borderTop: '1px solid #E1C28B', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 },
   userBox: { display: 'flex', gap: 10, alignItems: 'center' },
-  avatar: { width: 28, height: 28, borderRadius: 6, background: '#2a2b32', display: 'grid', placeItems: 'center', fontWeight: 700 },
-  logout: { padding: '8px', borderRadius: 8, border: '1px solid #d4b078', background: '#E1C28B', color: '#4c3d1e', cursor: 'pointer' },
+  avatar: { width: 28, height: 28, borderRadius: 6, background: '#E1C28B', display: 'grid', placeItems: 'center', fontWeight: 700 },
+  logout: { padding: '8px', borderRadius: 8, border: '1px solid #E1C28B', background: '#E1C28B', color: '#4C3D1E', cursor: 'pointer' },
 
   main: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   welcome: { margin: 'auto', textAlign: 'center' },
   cards: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(220px, 1fr))', gap: 12, marginTop: 18 },
-  card: { padding: '14px', borderRadius: 10, border: '1px solid #2f3036', background: '#23242a', color: '#fff', cursor: 'pointer', textAlign: 'left' },
+  card: { padding: '14px', borderRadius: 10, border: '1px solid #E1C28B', background: '#ffffd7', color: '#4C3D1E', cursor: 'pointer', textAlign: 'left' },
 
   chatWrap: { display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' },
   history: { flex: 1, overflow: 'auto', padding: '18px 18px 0', minHeight: 0 },
   attachRow: { marginBottom: 10 },
-  attachPill: { display: 'inline-block', padding: '8px 10px', borderRadius: 8, background: '#2a2b32', border: '1px solid #3a3b42', fontSize: 12, opacity: .9 },
-  msg: { display: 'grid', gridTemplateColumns: '28px 1fr', gap: 10, padding: '12px', borderRadius: 10, border: '1px solid #2f3036', marginBottom: 12, background: '#23242a' },
+  attachPill: { display: 'inline-block', padding: '8px 10px', borderRadius: 8, background: '#feffaf', border: '1px solid #E1C28B', fontSize: 12, opacity: .9 },
+  msg: { display: 'grid', gridTemplateColumns: '28px 1fr', gap: 10, padding: '12px', borderRadius: 10, border: '1px solid #E1C28B', marginBottom: 12, background: '#ffffd7' },
   msgAI: {},
-  msgUser: { background: '#1e2026' },
-  msgRole: { width: 28, height: 28, borderRadius: 6, background: '#2a2b32', display: 'grid', placeItems: 'center', opacity: .8, fontWeight: 700 },
+  msgUser: { background: '#feffaf' },
+  msgRole: { width: 28, height: 28, borderRadius: 6, background: '#E1C28B', display: 'grid', placeItems: 'center', opacity: .8, fontWeight: 700 },
   fileList: { marginTop: 8, display: 'grid', gap: 6 },
   fileItem: { fontSize: 12, opacity: .85 },
 
-  composer: { display: 'grid', gridTemplateColumns: '32px 1fr 80px', gap: 10, padding: 18, borderTop: '1px solid #2f3036', flexShrink: 0 },
-  iconBtn: { display: 'grid', placeItems: 'center', width: 32, height: 38, borderRadius: 8, background: '#2a2b32', border: '1px solid #3a3b42', cursor: 'pointer' },
-  input: { width: '100%', minHeight: 38, maxHeight: 160, resize: 'vertical', padding: '10px 12px', borderRadius: 8, background: '#1f2025', color: '#fff', border: '1px solid #3a3b42', outline: 'none' },
-  send: { borderRadius: 8, border: '1px solid #3a3b42', background: '#2a2b32', color: '#fff', cursor: 'pointer' },
+  composer: { display: 'grid', gridTemplateColumns: '32px 1fr 80px', gap: 10, padding: 18, borderTop: '1px solid #E1C28B', flexShrink: 0 },
+  iconBtn: { display: 'grid', placeItems: 'center', width: 32, height: 38, borderRadius: 8, background: '#feffaf', border: '1px solid #E1C28B', cursor: 'pointer' },
+  input: { width: '100%', minHeight: 38, maxHeight: 160, resize: 'vertical', padding: '10px 12px', borderRadius: 8, background: '#ffffd7', color: '#4C3D1E', border: '1px solid #E1C28B', outline: 'none' },
+  send: { borderRadius: 8, border: '1px solid #E1C28B', background: '#E1C28B', color: '#4C3D1E', cursor: 'pointer' },
 
   footerNote: { textAlign: 'center', opacity: .5, fontSize: 12, padding: '6px 0 14px', flexShrink: 0 },
 }
