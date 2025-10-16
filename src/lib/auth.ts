@@ -1,10 +1,27 @@
 export type User = { sub: string; email: string; name: string; picture?: string };
 
+// Helper function to get user ID with fallbacks
+export function getUserId(user: User): string {
+  return user.sub || user.id || user.email || 'unknown';
+}
+
 export async function fetchMe() {
   const r = await fetch("/api/me", { credentials: "include" });
   if (!r.ok) return null;
   const j = await r.json();
-  return j.ok ? j.user : null;
+  if (j.ok && j.user) {
+    // Ensure user has a sub field (fallback to id or email)
+    const user = {
+      ...j.user,
+      sub: j.user.sub || j.user.id || j.user.email
+    };
+    
+    // Store session in localStorage for persistence
+    localStorage.setItem('auth:session', JSON.stringify({ user }));
+    
+    return user;
+  }
+  return null;
 }
 
 // Google Sign-In API implementation
@@ -84,7 +101,19 @@ export async function loginWithEmail(email: string, password: string): Promise<U
     }
 
     const data = await response.json();
-    return data.user || null;
+    if (data.user) {
+      // Ensure user has a sub field (fallback to id or email)
+      const user = {
+        ...data.user,
+        sub: data.user.sub || data.user.id || data.user.email
+      };
+      
+      // Store session in localStorage for persistence
+      localStorage.setItem('auth:session', JSON.stringify({ user }));
+      
+      return user;
+    }
+    return null;
   } catch (error) {
     console.error("Login error:", error);
     return null;
@@ -107,7 +136,19 @@ export async function signupWithEmail(email: string, password: string, name: str
     }
 
     const data = await response.json();
-    return data.user || null;
+    if (data.user) {
+      // Ensure user has a sub field (fallback to id or email)
+      const user = {
+        ...data.user,
+        sub: data.user.sub || data.user.id || data.user.email
+      };
+      
+      // Store session in localStorage for persistence
+      localStorage.setItem('auth:session', JSON.stringify({ user }));
+      
+      return user;
+    }
+    return null;
   } catch (error) {
     console.error("Signup error:", error);
     return null;
@@ -115,6 +156,9 @@ export async function signupWithEmail(email: string, password: string, name: str
 }
 
 export async function logout() {
+  // Clear auth session from localStorage
+  localStorage.removeItem('auth:session');
+  
   await fetch("/api/logout", { method: "POST", credentials: "include" });
   window.location.reload();
 }

@@ -116,3 +116,4 @@ export function getPixelSize(size: ProfilePictureProps['size'] = 'md'): number {
   return sizes[size];
 }
 
+

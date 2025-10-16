@@ -347,22 +347,25 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   }
 
   return (
-    <div className="flex flex-col h-full bg-app-butter-50">
+    <div className="flex flex-col h-full" style={{ backgroundColor: '#ffffeb' }}>
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-app-butter-300 bg-app-butter-50">
+      <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: '#E1C28B', backgroundColor: '#ffffd7' }}>
         <div className="flex items-center gap-3">
           <button
             onClick={onToggleSidebar}
-            className="p-2 hover:bg-app-chat-50 rounded-lg transition-colors md:hidden"
+            className="p-2 rounded-lg transition-colors md:hidden"
+            style={{ color: '#4C3D1E' }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
           >
             <Menu size={20} />
           </button>
           <div className="flex flex-col">
-            <h2 className="text-lg font-semibold text-app-text-900">
+            <h2 className="text-lg font-semibold" style={{ color: '#4C3D1E' }}>
               {conversation?.title || 'New conversation'}
             </h2>
             {activeGPTName && (
-              <p className="text-sm text-app-orange-400">
+              <p className="text-sm" style={{ color: '#4C3D1E', opacity: 0.7 }}>
                 Using: {activeGPTName}
               </p>
             )}
@@ -371,7 +374,10 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         
         <button
           onClick={onNewConversation}
-          className="p-2 hover:bg-app-chat-50 rounded-lg transition-colors"
+          className="p-2 rounded-lg transition-colors"
+          style={{ color: '#4C3D1E' }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
           title="New conversation"
         >
           <Plus size={20} />
@@ -383,10 +389,10 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         {!conversation || conversation.messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
             <div className="max-w-md">
-              <h1 className="text-2xl font-bold text-app-text-900 mb-4">
+              <h1 className="text-2xl font-bold mb-4" style={{ color: '#4C3D1E' }}>
                 Welcome to Chatty
               </h1>
-              <p className="text-app-orange-400 mb-8">
+              <p className="mb-8" style={{ color: '#4C3D1E', opacity: 0.7 }}>
                 Your AI assistant is ready to help. Ask me anything!
               </p>
               
@@ -411,7 +417,14 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                         onSendMessage(message)
                       }
                     }}
-                    className="p-3 text-left text-sm border border-app-butter-300 rounded-lg hover:bg-app-chat-50 transition-colors"
+                    className="p-3 text-left text-sm border rounded-lg transition-colors"
+                    style={{ 
+                      borderColor: '#E1C28B', 
+                      color: '#4C3D1E',
+                      backgroundColor: '#ffffd7'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ffffd7'}
                   >
                     {prompt}
                   </button>
@@ -431,9 +444,9 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             
             {/* Typing indicator */}
             {isTyping && (
-              <div className="flex items-start gap-3 p-4 bg-app-chat-50 rounded-lg">
-                <div className="w-8 h-8 rounded-full bg-app-green-600 flex items-center justify-center flex-shrink-0">
-                  <span className="text-app-text-900 text-sm font-bold">AI</span>
+              <div className="flex items-start gap-3 p-4 rounded-lg" style={{ backgroundColor: '#ffffd7' }}>
+                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#4C3D1E' }}>
+                  <span className="text-sm font-bold" style={{ color: '#ffffeb' }}>AI</span>
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-1">
@@ -451,17 +464,17 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       </div>
 
       {/* Input Area */}
-      <div className="border-t border-app-butter-300 p-4">
+      <div className="border-t p-4" style={{ borderColor: '#E1C28B' }}>
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
 
 
           {/* Attached Files */}
           {attachedFiles.length > 0 && (
-            <div className="mb-3 p-3 bg-app-chat-50 rounded-lg border border-app-butter-300">
+            <div className="mb-3 p-3 rounded-lg border" style={{ backgroundColor: '#ffffd7', borderColor: '#E1C28B' }}>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <Paperclip size={16} className="text-app-orange-400" />
-                  <span className="text-sm text-app-text-900">Attached files ({attachedFiles.length})</span>
+                  <Paperclip size={16} style={{ color: '#4C3D1E', opacity: 0.7 }} />
+                  <span className="text-sm" style={{ color: '#4C3D1E' }}>Attached files ({attachedFiles.length})</span>
                 </div>
                 {isParsing && (
                   <button
@@ -479,7 +492,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                   const getFileTypeColor = (ext: string) => {
                     const colors: { [key: string]: string } = {
                       // Code files
-                      'py': 'text-yellow-400', 'js': 'text-yellow-400', 'ts': 'text-blue-400', 'tsx': 'text-blue-400', 'jsx': 'text-blue-400',
+                      'py': 'text-yellow-600', 'js': 'text-yellow-400', 'ts': 'text-blue-400', 'tsx': 'text-blue-400', 'jsx': 'text-blue-400',
                       'css': 'text-pink-400', 'scss': 'text-pink-400', 'sass': 'text-pink-400', 'less': 'text-pink-400',
                       'html': 'text-orange-400', 'htm': 'text-orange-400', 'vue': 'text-green-400', 'svelte': 'text-red-400',
                       'java': 'text-red-500', 'c': 'text-blue-500', 'cpp': 'text-blue-500', 'cs': 'text-purple-500',
@@ -510,27 +523,27 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                   const progress = parsingProgress[file.name] || 0;
                   
                   return (
-                    <div key={index} className="flex items-center justify-between p-2 bg-app-chat-50 rounded">
+                    <div key={index} className="flex items-center justify-between p-2 rounded" style={{ backgroundColor: '#feffaf' }}>
                       <div className="flex items-center gap-2 flex-1">
-                        <Paperclip size={14} className="text-app-orange-400" />
-                        <span className="text-sm text-app-text-900">{file.name}</span>
+                        <Paperclip size={14} style={{ color: '#4C3D1E', opacity: 0.7 }} />
+                        <span className="text-sm" style={{ color: '#4C3D1E' }}>{file.name}</span>
                         {fileExtension && (
-                          <span className={`text-xs px-1 py-0.5 rounded ${getFileTypeColor(fileExtension)} bg-app-butter-300`}>
+                          <span className="text-xs px-1 py-0.5 rounded" style={{ backgroundColor: '#E1C28B', color: '#4C3D1E' }}>
                             {fileExtension.toUpperCase()}
                           </span>
                         )}
-                        <span className="text-xs text-app-orange-400">
+                        <span className="text-xs" style={{ color: '#4C3D1E', opacity: 0.6 }}>
                           ({(file.size / 1024).toFixed(1)} KB)
                         </span>
                         {isParsing && progress > 0 && (
                           <div className="flex items-center gap-2 ml-2">
-                            <div className="w-16 bg-app-butter-300 rounded-full h-1.5">
+                            <div className="w-16 rounded-full h-1.5" style={{ backgroundColor: '#E1C28B' }}>
                               <div 
-                                className="bg-app-green-500 h-1.5 rounded-full transition-all duration-300"
-                                style={{ width: `${progress * 100}%` }}
+                                className="h-1.5 rounded-full transition-all duration-300"
+                                style={{ width: `${progress * 100}%`, backgroundColor: '#4C3D1E' }}
                               />
                             </div>
-                            <span className="text-xs text-app-orange-400">
+                            <span className="text-xs" style={{ color: '#4C3D1E', opacity: 0.6 }}>
                               {Math.round(progress * 100)}%
                             </span>
                           </div>
@@ -539,9 +552,12 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                       <button
                         type="button"
                         onClick={() => removeFile(index)}
-                        className="p-1 hover:bg-app-butter-300 rounded"
+                        className="p-1 rounded transition-colors"
+                        style={{ color: '#4C3D1E' }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E1C28B'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                       >
-                        <X size={14} className="text-app-orange-400" />
+                        <X size={14} />
                       </button>
                     </div>
                   );
@@ -556,8 +572,19 @@ const ChatArea: React.FC<ChatAreaProps> = ({
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
+              onPaste={(e) => {
+                console.log('Paste event detected:', e.clipboardData?.getData('text'))
+                // Let the default paste behavior happen
+              }}
               placeholder="Message Chatty..."
-              className="w-full p-4 pr-20 bg-app-chat-50 border border-app-butter-300 rounded-lg resize-none focus:outline-none focus:border-app-green-500 transition-colors min-h-[52px] max-h-32"
+              className="w-full p-4 pr-20 rounded-lg resize-none focus:outline-none transition-colors min-h-[52px] max-h-32"
+              style={{ 
+                backgroundColor: '#ffffd7',
+                border: '1px solid #E1C28B',
+                color: '#4C3D1E'
+              }}
+              onFocus={(e) => e.currentTarget.style.borderColor = '#4C3D1E'}
+              onBlur={(e) => e.currentTarget.style.borderColor = '#E1C28B'}
               rows={1}
               disabled={!conversation}
             />
@@ -574,12 +601,22 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             <button
               type="submit"
               disabled={(!inputValue.trim() && attachedFiles.length === 0) || !conversation}
-              className={cn(
-                "absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-colors",
-                (inputValue.trim() || attachedFiles.length > 0) && conversation
-                  ? "bg-app-green-600 hover:bg-app-green-700 text-app-text-900"
-                  : "bg-app-chat-50 text-app-orange-400 cursor-not-allowed"
-              )}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-colors"
+              style={{
+                backgroundColor: (inputValue.trim() || attachedFiles.length > 0) && conversation ? '#E1C28B' : '#feffaf',
+                color: '#4C3D1E',
+                cursor: (inputValue.trim() || attachedFiles.length > 0) && conversation ? 'pointer' : 'not-allowed'
+              }}
+              onMouseEnter={(e) => {
+                if ((inputValue.trim() || attachedFiles.length > 0) && conversation) {
+                  e.currentTarget.style.backgroundColor = '#d4b078'
+                }
+              }}
+              onMouseLeave={(e) => {
+                if ((inputValue.trim() || attachedFiles.length > 0) && conversation) {
+                  e.currentTarget.style.backgroundColor = '#E1C28B'
+                }
+              }}
             >
               <Send size={16} />
             </button>
@@ -595,7 +632,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             className="hidden"
           />
           
-          <div className="text-xs text-app-orange-500 mt-2 text-center">
+          <div className="text-xs mt-2 text-center" style={{ color: '#4C3D1E', opacity: 0.6 }}>
             Chatty can make mistakes. Consider checking important information.
           </div>
         </form>
