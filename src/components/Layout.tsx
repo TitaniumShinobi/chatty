@@ -377,10 +377,9 @@ export default function Layout() {
         <div className="flex items-center justify-between p-4">
           {/* Logo */}
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-              <span className="text-white text-sm font-bold">C</span>
+            <div className="w-8 h-8 rounded-lg overflow-hidden">
+              <img src="/assets/chatty_star.png" alt="ChattyStar" className="h-full w-full object-cover" />
             </div>
-            <span className="text-lg font-semibold" style={{ color: '#4c3d1e' }}>Chatty</span>
           </div>
           
           {/* Panel Toggle Button */}
