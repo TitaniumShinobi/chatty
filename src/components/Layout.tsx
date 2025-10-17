@@ -550,19 +550,32 @@ export default function Layout() {
             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
           >
-            {user.picture ? (
+            {user.picture || user.sub ? (
               <img 
-                src={user.picture} 
+                src={user.picture || `/api/profile-image/${user.sub}`}
                 alt={user.name || 'User'}
                 className="w-8 h-8 rounded-full"
+                onError={(e) => {
+                  console.log('Profile image failed to load, falling back to initial');
+                  e.currentTarget.style.display = 'none';
+                  const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                  if (fallback) {
+                    fallback.style.display = 'flex';
+                  }
+                }}
               />
-            ) : (
-              <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: '#E1C28B' }}>
-                <span className="text-sm font-medium" style={{ color: '#4c3d1e' }}>
-                  {user.name?.charAt(0) || user.email?.charAt(0) || 'U'}
-                </span>
-              </div>
-            )}
+            ) : null}
+            <div 
+              className="w-8 h-8 rounded-full flex items-center justify-center"
+              style={{ 
+                display: (user.picture || user.sub) ? 'none' : 'flex',
+                backgroundColor: '#E1C28B'
+              }}
+            >
+              <span className="text-sm font-medium" style={{ color: '#4c3d1e' }}>
+                {user.name?.charAt(0) || user.email?.charAt(0) || 'U'}
+              </span>
+            </div>
             <div className="flex flex-col text-left">
               <span className="text-sm font-medium truncate" style={{ color: '#4c3d1e' }}>
                 {user.name || user.email || 'User'}
