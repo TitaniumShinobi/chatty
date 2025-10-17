@@ -220,3 +220,5 @@ console.log('\n📋 RECOVERY SUMMARY:');
 console.log(`   Data sources found: ${Object.keys(foundData).length}`);
 console.log(`   User session: ${currentUser ? '✅ Found' : '❌ Missing'}`);
 console.log(`   Recovery function: window.runRecovery()`);
+
+
