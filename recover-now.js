@@ -222,3 +222,5 @@ console.log(`   User session: ${currentUser ? '✅ Found' : '❌ Missing'}`);
 console.log(`   Recovery function: window.runRecovery()`);
 
 
+
+

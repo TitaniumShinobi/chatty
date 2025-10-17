@@ -56,3 +56,5 @@ cookies.forEach(cookie => {
 console.log('\n✅ Run this and tell me what you see for user.sub and user.id');
 
 
+
+
