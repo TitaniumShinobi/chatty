@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="./assets/chattynova.png" alt="Chatty Nova Star">
+</div>
+
 # 🧠 Chatty
 
 A next-generation AI workspace for conversation, research, and creative development — built with **React**, **Node.js**, and a modular backend that supports multi-provider sign-in, persistent memory, file intelligence, and live collaboration.
