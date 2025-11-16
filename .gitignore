@@ -134,3 +134,10 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Duplicate/backup files (macOS/iOS creates these)
+* 2.*
+* 3.*
+* 2
+* 3
+.cursor/
