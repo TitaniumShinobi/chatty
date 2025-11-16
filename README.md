@@ -1,9 +1,9 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/TitaniumShinobi/Chatty/main/assets/chattynova.png" alt="Chatty Nova Star" width="200">
+  <img src="https://raw.githubusercontent.com/TitaniumShinobi/chatty/main/assets/chattynova.png" alt="Chatty Nova Star" width="200">
 </div>
 
 <div align="left">
-  <img src="https://raw.githubusercontent.com/TitaniumShinobi/Chatty/main/assets/chatty_collapsed.png" alt="Collapsed Chatty Logo" width="200">
+  <img src="https://raw.githubusercontent.com/TitaniumShinobi/chatty/main/assets/chatty_collapsed.png" alt="Collapsed Chatty Logo" width="200">
 </div>
 
 A next-generation AI workspace for conversation, research, and creative development — built with **React**, **Node.js**, and a modular backend that supports multi-provider sign-in, persistent memory, file intelligence, and live collaboration.
