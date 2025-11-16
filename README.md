@@ -3,7 +3,7 @@
 </div>
 
 <div align="left">
-  <img src="assets/chatty_collapsed.png" alt="Collapsed Chatty Logo" width="200">
+  <img src="assets/chatty_collapsed.png" alt="Collapsed Chatty Logo" width="200" style="margin-bottom: 0;">
 </div>
 
 A next-generation AI workspace for conversation, research, and creative development — built with **React**, **Node.js**, and a modular backend that supports multi-provider sign-in, persistent memory, file intelligence, and live collaboration.
