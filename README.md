@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./assets/chattynova.png" alt="Chatty Nova Star">
+  <img src="/assets/chattynova.png" alt="Chatty Nova Star">
 </div>
 
 # 🧠 Chatty
