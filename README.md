@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/TitaniumShinobi/chatty/main/assets/chattynova.png" alt="Chatty Nova Star" width="200">
+  <img src="./assets/chattynova.png" alt="Chatty Nova Star" width="200">
 </div>
 
 <div align="left">
