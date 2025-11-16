@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Search, X, MessageSquare, Clock } from 'lucide-react'
+import { Z_LAYERS } from '../lib/zLayers'
 
 interface SearchResult {
   threadId: string
@@ -158,7 +159,7 @@ export default function SearchPopup({ isOpen, onClose, threads, onResultClick }:
     return (
       <>
         {before}
-        <mark style={{ backgroundColor: '#feffaf', color: '#4C3D1E' }}>{match}</mark>
+        <mark style={{ backgroundColor: '#feffaf', color: 'var(--chatty-text)' }}>{match}</mark>
         {after}
       </>
     )
@@ -186,18 +187,18 @@ export default function SearchPopup({ isOpen, onClose, threads, onResultClick }:
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-start justify-center pt-20"
-      style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}
+      className="fixed inset-0 flex items-start justify-center pt-20"
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)', zIndex: Z_LAYERS.modal }}
       onClick={onClose}
     >
       <div 
         className="w-full max-w-2xl mx-4 rounded-lg shadow-xl"
-        style={{ backgroundColor: '#ffffeb' }}
+        style={{ backgroundColor: 'var(--chatty-bg-main)' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search Input */}
-        <div className="flex items-center p-4 border-b" style={{ borderColor: '#E1C28B' }}>
-          <Search size={20} style={{ color: '#4C3D1E', marginRight: 12 }} />
+        <div className="flex items-center p-4">
+          <Search size={20} style={{ color: 'var(--chatty-text)', marginRight: 12 }} />
           <input
             ref={inputRef}
             type="text"
@@ -205,28 +206,28 @@ export default function SearchPopup({ isOpen, onClose, threads, onResultClick }:
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Search conversations... (use quotes for exact phrases)"
-            className="flex-1 bg-transparent outline-none text-sm"
-            style={{ color: '#4C3D1E' }}
+            className="flex-1 bg-transparent outline-none text-sm placeholder:[color:var(--chatty-button)] placeholder-opacity-70"
+            style={{ color: 'var(--chatty-text)' }}
           />
           <button
             onClick={onClose}
-            className="p-1 rounded hover:bg-gray-100 transition-colors"
-            style={{ color: '#4C3D1E' }}
+            className="p-1 rounded transition-colors hover:bg-[#feffaf]"
+            style={{ color: 'var(--chatty-text)' }}
           >
             <X size={16} />
           </button>
         </div>
 
         {/* Search Results */}
-        <div className="max-h-96 overflow-y-auto">
+        <div className="max-h-96 overflow-y-auto message-area-scrollable">
           {query.trim() === '' ? (
-            <div className="p-8 text-center" style={{ color: '#4C3D1E', opacity: 0.6 }}>
+            <div className="p-8 text-center" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
               <Search size={32} className="mx-auto mb-3 opacity-50" />
               <p className="text-sm">Start typing to search your conversations</p>
               <p className="text-xs mt-1 opacity-75">Use quotes for exact phrase matching</p>
             </div>
           ) : results.length === 0 ? (
-            <div className="p-8 text-center" style={{ color: '#4C3D1E', opacity: 0.6 }}>
+            <div className="p-8 text-center" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
               <MessageSquare size={32} className="mx-auto mb-3 opacity-50" />
               <p className="text-sm">No results found for "{query}"</p>
             </div>
@@ -239,21 +240,19 @@ export default function SearchPopup({ isOpen, onClose, threads, onResultClick }:
                     onResultClick(result.threadId, result.messageId)
                     onClose()
                   }}
-                  className={`w-full text-left p-4 hover:bg-opacity-50 transition-colors ${
-                    index === selectedIndex ? 'bg-opacity-100' : 'bg-opacity-0'
-                  }`}
-                  style={{ 
+                  className="w-full text-left p-4 rounded-md transition-colors hover:bg-[#feffaf]"
+                  style={{
                     backgroundColor: index === selectedIndex ? '#feffaf' : 'transparent'
                   }}
                 >
                   <div className="flex items-start gap-3">
                     <div className="flex-shrink-0 mt-1">
                       {result.messageRole === 'user' ? (
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium" style={{ backgroundColor: '#E1C28B', color: '#4C3D1E' }}>
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium" style={{ backgroundColor: 'var(--chatty-button)', color: 'var(--chatty-text)' }}>
                           U
                         </div>
                       ) : (
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium" style={{ backgroundColor: '#4C3D1E', color: '#ffffeb' }}>
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium" style={{ backgroundColor: '#3A2E14', color: '#ffffeb' }}>
                           AI
                         </div>
                       )}
@@ -261,16 +260,16 @@ export default function SearchPopup({ isOpen, onClose, threads, onResultClick }:
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm font-medium truncate" style={{ color: '#4C3D1E' }}>
+                        <span className="text-sm font-medium truncate" style={{ color: 'var(--chatty-text)' }}>
                           {result.threadTitle}
                         </span>
-                        <div className="flex items-center gap-1 text-xs" style={{ color: '#4C3D1E', opacity: 0.6 }}>
+                        <div className="flex items-center gap-1 text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
                           <Clock size={12} />
                           {formatTimestamp(result.timestamp)}
                         </div>
                       </div>
                       
-                      <div className="text-sm leading-relaxed" style={{ color: '#4C3D1E', opacity: 0.8 }}>
+                      <div className="text-sm leading-relaxed" style={{ color: 'var(--chatty-text)', opacity: 0.8 }}>
                         {highlightText(result.messageText, result.matchIndex, result.matchLength)}
                       </div>
                     </div>
@@ -283,7 +282,7 @@ export default function SearchPopup({ isOpen, onClose, threads, onResultClick }:
 
         {/* Footer */}
         {results.length > 0 && (
-          <div className="px-4 py-2 border-t text-xs" style={{ borderColor: '#E1C28B', color: '#4C3D1E', opacity: 0.6 }}>
+          <div className="px-4 py-2 border-t text-xs" style={{ borderColor: 'var(--chatty-line)', color: 'var(--chatty-text)', opacity: 0.6 }}>
             {results.length} result{results.length !== 1 ? 's' : ''} • Use ↑↓ to navigate • Enter to select • Esc to close
           </div>
         )}
@@ -291,4 +290,3 @@ export default function SearchPopup({ isOpen, onClose, threads, onResultClick }:
     </div>
   )
 }
-

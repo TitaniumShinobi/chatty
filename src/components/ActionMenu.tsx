@@ -18,6 +18,7 @@ import {
   Camera,
   FileImage
 } from 'lucide-react';
+import { Z_LAYERS } from '../lib/zLayers';
 
 interface ActionMenuProps {
   onAction: (action: string, files?: File[]) => void;
@@ -168,25 +169,50 @@ const ActionMenu: React.FC<ActionMenuProps> = ({ onAction, disabled = false }) =
         disabled={disabled}
         className={`
           p-2 rounded-lg transition-all duration-200
-          ${isOpen 
-            ? 'bg-app-orange-700 text-white' 
-            : 'text-app-orange-400 hover:text-white hover:bg-app-orange-700'
-          }
+          text-inherit
           ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
         `}
+        style={{
+          backgroundColor: isOpen ? 'var(--chatty-highlight)' : 'var(--chatty-button)',
+          color: 'var(--chatty-plus-button)'
+        }}
+        onMouseEnter={(e) => {
+          if (!disabled && !isOpen) {
+            e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)'
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!disabled && !isOpen) {
+            e.currentTarget.style.backgroundColor = 'var(--chatty-button)'
+          }
+        }}
       >
-        <Plus size={16} className={isOpen ? 'rotate-45' : ''} />
+        <Plus
+          size={16}
+          className={isOpen ? 'rotate-45' : ''}
+          color="var(--chatty-plus-button)"
+        />
       </button>
 
       {/* Action Menu */}
       {isOpen && (
-        <div className="absolute bottom-full right-0 mb-2 w-80 bg-app-orange-800 border border-app-orange-700 rounded-lg shadow-xl z-50">
+        <div
+          className="absolute bottom-full right-0 mb-2 w-80 rounded-lg shadow-xl"
+          style={{
+            backgroundColor: 'var(--chatty-button)',
+            border: '1px solid var(--chatty-line)',
+            zIndex: Z_LAYERS.popover
+          }}
+        >
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-app-orange-700">
-            <h3 className="text-white font-medium">Chatty</h3>
+          <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--chatty-line)' }}>
+            <h3 className="font-medium" style={{ color: 'var(--chatty-text)' }}>Chatty</h3>
             <button
               onClick={() => setIsOpen(false)}
-              className="text-app-orange-400 hover:text-white transition-colors"
+              className="transition-colors"
+              style={{ color: 'var(--chatty-text)' }}
+              onMouseEnter={(e) => e.currentTarget.style.color = 'var(--chatty-highlight)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--chatty-text)'}
             >
               <X size={16} />
             </button>
@@ -199,21 +225,24 @@ const ActionMenu: React.FC<ActionMenuProps> = ({ onAction, disabled = false }) =
                 <button
                   key={action.id}
                   onClick={() => handleActionClick(action)}
-                  className="flex items-center gap-3 p-3 rounded-lg hover:bg-app-orange-700 transition-colors text-left group"
+                  className="flex items-center gap-3 p-3 rounded-lg transition-colors text-left group"
+                  style={{ color: 'var(--chatty-text)' }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                 >
                   <div className="flex-shrink-0">
                     {getActionIcon(action)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-white font-medium text-sm">
+                    <div className="font-medium text-sm" style={{ color: 'var(--chatty-text)' }}>
                       {action.title}
                     </div>
-                    <div className="text-app-orange-400 text-xs mt-1">
+                    <div className="text-xs mt-1" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
                       {action.description}
                     </div>
                   </div>
                   {action.fileTypes && (
-                    <div className="flex-shrink-0 text-app-orange-500 text-xs">
+                    <div className="flex-shrink-0 text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
                       {action.multiple ? 'Multiple' : 'Single'}
                     </div>
                   )}
@@ -223,8 +252,8 @@ const ActionMenu: React.FC<ActionMenuProps> = ({ onAction, disabled = false }) =
           </div>
 
           {/* Footer */}
-          <div className="px-4 py-3 border-t border-app-orange-700">
-            <div className="text-xs text-app-orange-500 text-center">
+          <div className="px-4 py-3 border-t" style={{ borderColor: 'var(--chatty-line)' }}>
+            <div className="text-xs text-center" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
               Choose an action to get started
             </div>
           </div>

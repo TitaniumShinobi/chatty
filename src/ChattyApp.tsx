@@ -4,6 +4,7 @@ import type { User } from './lib/auth'
 import { getUserId } from './lib/auth'
 import { R } from './runtime/render'
 import { useSettings } from './hooks/useSettings'
+import { stripSpeakerPrefix } from './lib/utils'
 
 type Message = {
   id: string
@@ -137,7 +138,11 @@ export default function ChattyApp({
     // Enable synth mode based on settings
     aiService.setSynthMode(settings.enableSynthMode)
     
-    const raw = await aiService.processMessage(input, files)
+    // Pass construct and thread IDs for memory provenance
+    const constructId = 'default-construct' // TODO: Get from context/state
+    const threadId = null // TODO: Get from active thread
+    
+    const raw = await aiService.processMessage(input, files, undefined, undefined, constructId, threadId)
     const packets = Array.isArray(raw) ? raw : [{ op: 'answer.v1' as const, payload: { content: String(raw ?? '') } }]
     
     const aiMsg: Message = {
@@ -264,7 +269,7 @@ function ChatView({
                 />
               </div>
             ) : (
-              <div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>
+              <div style={{ whiteSpace: 'pre-wrap' }}>{typeof m.text === 'string' ? stripSpeakerPrefix(m.text) : m.text}</div>
             )}
               {!!m.files?.length && (
                 <div style={s.fileList}>
@@ -294,7 +299,7 @@ function ChatView({
               setFiles([])
             }
           }}
-          placeholder="Message Chatty…"
+          placeholder="Ask anything"
           style={s.input}
           rows={1}
         />
@@ -315,40 +320,40 @@ function ChatView({
 }
 
 const s: Record<string, React.CSSProperties> = {
-  app: { display: 'flex', height: '100vh', background: '#ffffeb', color: '#4C3D1E', overflow: 'hidden' },
-  sidebar: { width: 260, background: '#ffffd7', borderRight: '1px solid #E1C28B', display: 'flex', flexDirection: 'column' },
+  app: { display: 'flex', height: '100vh', background: 'var(--chatty-bg-main)', color: 'var(--chatty-text)', overflow: 'hidden' },
+  sidebar: { width: 260, background: 'var(--chatty-button)', borderRight: '1px solid var(--chatty-line)', display: 'flex', flexDirection: 'column' },
   brand: { padding: '14px 14px 10px', fontWeight: 700 },
-  newBtn: { margin: '0 12px 8px', padding: '10px', borderRadius: 8, border: '1px solid #E1C28B', background: '#E1C28B', color: '#4C3D1E', cursor: 'pointer' },
+  newBtn: { margin: '0 12px 8px', padding: '10px', borderRadius: 8, border: '1px solid var(--chatty-line)', background: 'var(--chatty-button)', color: 'var(--chatty-text)', cursor: 'pointer' },
   sectionLabel: { padding: '6px 14px', opacity: .6, fontSize: 12 },
   threadList: { flex: 1, overflow: 'auto', padding: 6 },
-  threadItem: { width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 8, border: '1px solid transparent', background: 'transparent', color: '#4C3D1E', cursor: 'pointer' },
-  threadItemActive: { background: '#feffaf', borderColor: '#E1C28B' },
+  threadItem: { width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 8, border: '1px solid transparent', background: 'transparent', color: 'var(--chatty-text)', cursor: 'pointer' },
+  threadItemActive: { background: 'var(--chatty-highlight)', borderColor: 'var(--chatty-line)' },
   emptySide: { opacity: .6, padding: '10px 12px' },
-  footer: { borderTop: '1px solid #E1C28B', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 },
+  footer: { borderTop: '1px solid var(--chatty-line)', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 },
   userBox: { display: 'flex', gap: 10, alignItems: 'center' },
-  avatar: { width: 28, height: 28, borderRadius: 6, background: '#E1C28B', display: 'grid', placeItems: 'center', fontWeight: 700 },
-  logout: { padding: '8px', borderRadius: 8, border: '1px solid #E1C28B', background: '#E1C28B', color: '#4C3D1E', cursor: 'pointer' },
+  avatar: { width: 28, height: 28, borderRadius: 6, background: 'var(--chatty-button)', display: 'grid', placeItems: 'center', fontWeight: 700 },
+  logout: { padding: '8px', borderRadius: 8, border: '1px solid var(--chatty-line)', background: 'var(--chatty-button)', color: 'var(--chatty-text)', cursor: 'pointer' },
 
   main: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   welcome: { margin: 'auto', textAlign: 'center' },
   cards: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(220px, 1fr))', gap: 12, marginTop: 18 },
-  card: { padding: '14px', borderRadius: 10, border: '1px solid #E1C28B', background: '#ffffd7', color: '#4C3D1E', cursor: 'pointer', textAlign: 'left' },
+  card: { padding: '14px', borderRadius: 10, border: '1px solid var(--chatty-line)', background: 'var(--chatty-button)', color: 'var(--chatty-text)', cursor: 'pointer', textAlign: 'left' },
 
   chatWrap: { display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' },
   history: { flex: 1, overflow: 'auto', padding: '18px 18px 0', minHeight: 0 },
   attachRow: { marginBottom: 10 },
-  attachPill: { display: 'inline-block', padding: '8px 10px', borderRadius: 8, background: '#feffaf', border: '1px solid #E1C28B', fontSize: 12, opacity: .9 },
-  msg: { display: 'grid', gridTemplateColumns: '28px 1fr', gap: 10, padding: '12px', borderRadius: 10, border: '1px solid #E1C28B', marginBottom: 12, background: '#ffffd7' },
+  attachPill: { display: 'inline-block', padding: '8px 10px', borderRadius: 8, background: 'var(--chatty-highlight)', border: '1px solid var(--chatty-line)', fontSize: 12, opacity: .9 },
+  msg: { display: 'grid', gridTemplateColumns: '28px 1fr', gap: 10, padding: '12px', borderRadius: 10, border: '1px solid var(--chatty-line)', marginBottom: 12, background: 'var(--chatty-button)' },
   msgAI: {},
-  msgUser: { background: '#feffaf' },
-  msgRole: { width: 28, height: 28, borderRadius: 6, background: '#E1C28B', display: 'grid', placeItems: 'center', opacity: .8, fontWeight: 700 },
+  msgUser: { background: 'var(--chatty-highlight)' },
+  msgRole: { width: 28, height: 28, borderRadius: 6, background: 'var(--chatty-button)', display: 'grid', placeItems: 'center', opacity: .8, fontWeight: 700 },
   fileList: { marginTop: 8, display: 'grid', gap: 6 },
   fileItem: { fontSize: 12, opacity: .85 },
 
-  composer: { display: 'grid', gridTemplateColumns: '32px 1fr 80px', gap: 10, padding: 18, borderTop: '1px solid #E1C28B', flexShrink: 0 },
-  iconBtn: { display: 'grid', placeItems: 'center', width: 32, height: 38, borderRadius: 8, background: '#feffaf', border: '1px solid #E1C28B', cursor: 'pointer' },
-  input: { width: '100%', minHeight: 38, maxHeight: 160, resize: 'vertical', padding: '10px 12px', borderRadius: 8, background: '#ffffd7', color: '#4C3D1E', border: '1px solid #E1C28B', outline: 'none' },
-  send: { borderRadius: 8, border: '1px solid #E1C28B', background: '#E1C28B', color: '#4C3D1E', cursor: 'pointer' },
+  composer: { display: 'grid', gridTemplateColumns: '32px 1fr 80px', gap: 10, padding: 18, borderTop: '1px solid var(--chatty-line)', flexShrink: 0 },
+  iconBtn: { display: 'grid', placeItems: 'center', width: 32, height: 38, borderRadius: 8, background: 'var(--chatty-button)', border: '1px solid var(--chatty-line)', cursor: 'pointer' },
+  input: { width: '100%', minHeight: 38, maxHeight: 160, resize: 'vertical', padding: '10px 12px', borderRadius: 8, background: 'var(--chatty-button)', color: 'var(--chatty-text)', border: '1px solid var(--chatty-line)', outline: 'none' },
+  send: { borderRadius: 8, border: '1px solid var(--chatty-line)', background: 'var(--chatty-button)', color: 'var(--chatty-text)', cursor: 'pointer' },
 
   footerNote: { textAlign: 'center', opacity: .5, fontSize: 12, padding: '6px 0 14px', flexShrink: 0 },
 }

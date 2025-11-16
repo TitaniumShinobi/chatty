@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { CheckCircle, AlertCircle, Info } from 'lucide-react'
 import { StorageManager } from '../lib/storage'
+import { Z_LAYERS } from '../lib/zLayers'
 
 interface DataStatusIndicatorProps {
   isVisible: boolean
@@ -72,7 +73,10 @@ const DataStatusIndicator: React.FC<DataStatusIndicatorProps> = ({ isVisible }) 
   }
 
   return (
-    <div className={`fixed bottom-4 left-4 z-50 flex items-center gap-2 px-3 py-2 rounded-lg border ${getBgColor()} text-white text-sm transition-all duration-300`}>
+    <div
+      className={`fixed bottom-4 left-4 flex items-center gap-2 px-3 py-2 rounded-lg border ${getBgColor()} text-white text-sm transition-all duration-300`}
+      style={{ zIndex: Z_LAYERS.toast }}
+    >
       {getIcon()}
       <span>{message}</span>
     </div>

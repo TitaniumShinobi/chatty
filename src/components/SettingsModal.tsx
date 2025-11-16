@@ -1,246 +1,205 @@
 import React, { useState } from 'react'
-import { X, Mail, Shield, Bell, Palette, Globe, Database, Download } from 'lucide-react'
+import { 
+  X, Bell, Database, 
+  Settings, User, Lock, Clock, ShoppingCart, ShieldCheck, 
+  Plus
+} from 'lucide-react'
 import { User as UserType } from '../lib/auth'
 import BackupManager from './BackupManager'
+import { SettingsProvider } from '../context/SettingsContext'
+import { SettingsTab } from '../types/settings'
+import { Z_LAYERS } from '../lib/zLayers'
+
+// Import tab components
+import GeneralTab from './settings/GeneralTab'
+import NotificationsTab from './settings/NotificationsTab'
+import PersonalizationTab from './settings/PersonalizationTab'
+import DataControlsTab from './settings/DataControlsTab'
+import AccountTab from './settings/AccountTab'
+import StubTab from './settings/StubTab'
 
 interface SettingsModalProps {
   isVisible: boolean
   onClose: () => void
   user: UserType | null
   onLogout: () => void
+  onDeleteAllConversations?: () => void
 }
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ 
+const SettingsModalContent: React.FC<SettingsModalProps> = ({ 
   isVisible, 
   onClose, 
   user, 
-  onLogout 
+  onLogout,
+  onDeleteAllConversations 
 }) => {
-  const [activeTab, setActiveTab] = useState<'account' | 'app' | 'backup'>('account')
-  
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+
+  const sidebarItems = [
+    { id: 'general' as SettingsTab, label: 'General', icon: Settings },
+    { id: 'notifications' as SettingsTab, label: 'Notifications', icon: Bell },
+    { id: 'personalization' as SettingsTab, label: 'Personalization', icon: User },
+    { id: 'apps' as SettingsTab, label: 'Apps & Connectors', icon: Plus },
+    { id: 'schedules' as SettingsTab, label: 'Schedules', icon: Clock },
+    { id: 'orders' as SettingsTab, label: 'Orders', icon: ShoppingCart },
+    { id: 'data' as SettingsTab, label: 'Data Controls', icon: Database },
+    { id: 'security' as SettingsTab, label: 'Security', icon: Lock },
+    { id: 'parental' as SettingsTab, label: 'Parental Controls', icon: ShieldCheck },
+    { id: 'account' as SettingsTab, label: 'Account', icon: User },
+    { id: 'backup' as SettingsTab, label: 'Backup', icon: Database }
+  ]
+
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'general':
+        return <GeneralTab />
+      case 'notifications':
+        return <NotificationsTab />
+      case 'personalization':
+        return <PersonalizationTab />
+      case 'data':
+        return <DataControlsTab user={user} onDeleteAllConversations={onDeleteAllConversations} />
+      case 'account':
+        return <AccountTab user={user} onLogout={onLogout} />
+      case 'apps':
+        return <StubTab title="Apps & Connectors" description="Manage your app integrations and connectors." icon={<Plus size={24} style={{ color: 'var(--chatty-icon)' }} />} />
+      case 'schedules':
+        return <StubTab title="Schedules" description="Set up automated tasks and recurring conversations." icon={<Clock size={24} style={{ color: 'var(--chatty-icon)' }} />} />
+      case 'orders':
+        return <StubTab title="Orders" description="View your subscription and billing history." icon={<ShoppingCart size={24} style={{ color: 'var(--chatty-icon)' }} />} />
+      case 'security':
+        return <StubTab title="Security" description="Manage your account security and privacy settings." icon={<Lock size={24} style={{ color: 'var(--chatty-icon)' }} />} />
+      case 'parental':
+        return <StubTab title="Parental Controls" description="Set up content filtering and usage restrictions." icon={<ShieldCheck size={24} style={{ color: 'var(--chatty-icon)' }} />} />
+      case 'backup':
+        return (
+          <div>
+            <h3 className="text-lg font-medium mb-4" style={{ color: 'var(--chatty-text)' }}>
+              Backup & Recovery
+            </h3>
+            {user && (
+              <BackupManager 
+                user={user} 
+                onBackupRestored={() => {
+                  // Optionally refresh the page or show a success message
+                  window.location.reload();
+                }}
+              />
+            )}
+          </div>
+        )
+      default:
+        return <GeneralTab />
+    }
+  }
+
+  // Early return after all hooks to maintain hook order consistency
   if (!isVisible) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="rounded-lg shadow-xl w-full max-w-md mx-4 max-h-[80vh] overflow-y-auto" style={{ backgroundColor: '#ffffd7' }}>
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: '#E1C28B' }}>
-          <h2 className="text-xl font-semibold" style={{ color: '#4C3D1E' }}>Settings</h2>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg transition-colors"
-            style={{ color: '#4C3D1E' }}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-          >
-            <X size={20} />
-          </button>
-        </div>
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
+      style={{ zIndex: Z_LAYERS.modal }}
+    >
+      <div className="rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[70vh] flex" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
+        {/* Sidebar */}
+        <div className="w-64 rounded-l-lg" style={{ backgroundColor: 'var(--chatty-bg-sidebar)' }}>
+          <div className="h-full overflow-y-auto">
+            {/* Close Button */}
+            <div className="flex justify-start p-4">
+              <button
+                onClick={onClose}
+                className="p-2 rounded-lg transition-colors"
+                style={{ color: 'var(--chatty-text)' }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
+                <X size={20} />
+              </button>
+            </div>
 
-        {/* Tabs */}
-        <div className="flex border-b" style={{ borderColor: '#E1C28B' }}>
-          <button
-            onClick={() => setActiveTab('account')}
-            className={`flex-1 p-4 text-sm font-medium transition-colors ${
-              activeTab === 'account' ? 'border-b-2' : ''
-            }`}
-            style={{ 
-              color: activeTab === 'account' ? '#4C3D1E' : '#4C3D1E',
-              opacity: activeTab === 'account' ? 1 : 0.7,
-              borderBottomColor: activeTab === 'account' ? '#4C3D1E' : 'transparent'
-            }}
-          >
-            Account
-          </button>
-          <button
-            onClick={() => setActiveTab('app')}
-            className={`flex-1 p-4 text-sm font-medium transition-colors ${
-              activeTab === 'app' ? 'border-b-2' : ''
-            }`}
-            style={{ 
-              color: activeTab === 'app' ? '#4C3D1E' : '#4C3D1E',
-              opacity: activeTab === 'app' ? 1 : 0.7,
-              borderBottomColor: activeTab === 'app' ? '#4C3D1E' : 'transparent'
-            }}
-          >
-            App
-          </button>
-          <button
-            onClick={() => setActiveTab('backup')}
-            className={`flex-1 p-4 text-sm font-medium transition-colors ${
-              activeTab === 'backup' ? 'border-b-2' : ''
-            }`}
-            style={{ 
-              color: activeTab === 'backup' ? '#4C3D1E' : '#4C3D1E',
-              opacity: activeTab === 'backup' ? 1 : 0.7,
-              borderBottomColor: activeTab === 'backup' ? '#4C3D1E' : 'transparent'
-            }}
-          >
-            <Download size={16} className="inline mr-1" />
-            Backup
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="p-6 space-y-6">
-          {activeTab === 'account' && (
-            <>
-              {/* Account Section */}
-              <div>
-            <h3 className="text-lg font-medium mb-4" style={{ color: '#4C3D1E' }}>Account</h3>
-            <div className="space-y-3">
-              {/* User Info */}
-              <div className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: '#feffaf' }}>
-{user?.picture ? (
-  <img 
-    src={`${user.picture}?cb=${Date.now()}`} // cache-busting
-    alt={user.name}
-    className="w-10 h-10 rounded-full object-cover border"
-    style={{ borderColor: '#E1C28B' }}
-    onError={(e) => {
-      console.warn('Failed to load profile image, showing fallback.');
-      e.currentTarget.style.display = 'none';
-      const fallback = e.currentTarget.nextElementSibling as HTMLElement;
-      if (fallback) {
-        fallback.style.display = 'flex';
-      }
-    }}
-    onLoad={() => {
-      console.log('✅ Profile image loaded from:', user.picture);
-    }}
-    loading="lazy"
-    style={{ 
-      transition: 'opacity 0.2s ease-in-out',
-      opacity: 1
-    }}
-  />
-) : null}
-<div 
-  className="w-10 h-10 rounded-full flex items-center justify-center border"
-  style={{ 
-    display: user?.picture ? 'none' : 'flex',
-    backgroundColor: '#E1C28B',
-    borderColor: '#E1C28B'
-  }}
->
-  <span className="font-medium text-lg" style={{ color: '#4C3D1E' }}>
-    {user?.name?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U'}
-  </span>
-</div>
-                <div className="flex-1">
-                  <p className="font-medium" style={{ color: '#4C3D1E' }}>{user?.name || 'User'}</p>
-                  <p className="text-sm" style={{ color: '#4C3D1E', opacity: 0.7 }}>{user?.email}</p>
-                </div>
+            {/* User Email and Upgrade Plan */}
+            <div className="p-4">
+              <div className="text-sm mb-2" style={{ color: 'var(--chatty-text)' }}>
+                {user?.email}
               </div>
+              <button 
+                className="text-sm underline hover:no-underline transition-all" 
+                style={{ color: 'var(--chatty-text)' }}
+                onClick={() => {
+                  // TODO: Implement upgrade plan functionality
+                  console.log('Upgrade plan clicked');
+                }}
+              >
+                Upgrade plan
+              </button>
+            </div>
 
-              {/* Email */}
-              <div className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: '#feffaf' }}>
-                <Mail size={16} style={{ color: '#4C3D1E', opacity: 0.7 }} />
-                <div className="flex-1">
-                  <p className="text-sm" style={{ color: '#4C3D1E' }}>Email</p>
-                  <p className="text-sm" style={{ color: '#4C3D1E', opacity: 0.7 }}>{user?.email}</p>
-                </div>
-              </div>
+            {/* Navigation Items */}
+            {sidebarItems.map((item) => {
+              const Icon = item.icon
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id as any)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${
+                    activeTab === item.id ? 'border-r-2' : ''
+                  }`}
+                  style={{
+                    color: 'var(--chatty-text)',
+                    backgroundColor: activeTab === item.id ? 'var(--chatty-highlight)' : 'transparent',
+                    borderRightColor: activeTab === item.id ? 'var(--chatty-line)' : 'transparent'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (activeTab !== item.id) {
+                      e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (activeTab !== item.id) {
+                      e.currentTarget.style.backgroundColor = 'transparent'
+                    }
+                  }}
+                >
+                  <Icon size={16} style={{ color: 'var(--chatty-icon)', opacity: 0.7 }} />
+                  <span className="text-sm font-medium">{item.label}</span>
+                </button>
+              )
+            })}
 
-              {/* Account Type */}
-              <div className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: '#feffaf' }}>
-                <Shield size={16} style={{ color: '#4C3D1E', opacity: 0.7 }} />
-                <div className="flex-1">
-                  <p className="text-sm" style={{ color: '#4C3D1E' }}>Account Type</p>
-                  <p className="text-sm" style={{ color: '#4C3D1E', opacity: 0.7 }}>Free</p>
-                </div>
-              </div>
+            {/* Help button at bottom of sidebar */}
+            <div className="p-4">
+              <button 
+                className="text-sm underline hover:no-underline transition-all" 
+                style={{ color: 'var(--chatty-text)' }}
+                onClick={() => {
+                  // TODO: Implement help functionality
+                  console.log('Help clicked');
+                }}
+              >
+                Help
+              </button>
             </div>
           </div>
-            </>
-          )}
+        </div>
 
-          {activeTab === 'app' && (
-            <>
-              {/* App Section */}
-              <div>
-            <h3 className="text-lg font-medium mb-4" style={{ color: '#4C3D1E' }}>App</h3>
-            <div className="space-y-3">
-              {/* Language */}
-              <div className="flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors" style={{ backgroundColor: '#feffaf' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E1C28B'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}>
-                <div className="flex items-center gap-3">
-                  <Globe size={16} style={{ color: '#4C3D1E', opacity: 0.7 }} />
-                  <span className="text-sm" style={{ color: '#4C3D1E' }}>Language</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm" style={{ color: '#4C3D1E', opacity: 0.7 }}>English</span>
-                  <span style={{ color: '#4C3D1E', opacity: 0.7 }}>›</span>
-                </div>
-              </div>
-
-              {/* Theme */}
-              <div className="flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors" style={{ backgroundColor: '#feffaf' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E1C28B'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}>
-                <div className="flex items-center gap-3">
-                  <Palette size={16} style={{ color: '#4C3D1E', opacity: 0.7 }} />
-                  <span className="text-sm" style={{ color: '#4C3D1E' }}>Theme</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm" style={{ color: '#4C3D1E', opacity: 0.7 }}>Light</span>
-                  <span style={{ color: '#4C3D1E', opacity: 0.7 }}>›</span>
-                </div>
-              </div>
-
-              {/* Notifications */}
-              <div className="flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors" style={{ backgroundColor: '#feffaf' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E1C28B'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}>
-                <div className="flex items-center gap-3">
-                  <Bell size={16} style={{ color: '#4C3D1E', opacity: 0.7 }} />
-                  <span className="text-sm" style={{ color: '#4C3D1E' }}>Notifications</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm" style={{ color: '#4C3D1E', opacity: 0.7 }}>Off</span>
-                  <span style={{ color: '#4C3D1E', opacity: 0.7 }}>›</span>
-                </div>
-              </div>
-
-              {/* Data Storage */}
-              <div className="flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors" style={{ backgroundColor: '#feffaf' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E1C28B'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}>
-                <div className="flex items-center gap-3">
-                  <Database size={16} style={{ color: '#4C3D1E', opacity: 0.7 }} />
-                  <span className="text-sm" style={{ color: '#4C3D1E' }}>Data Storage</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm" style={{ color: '#4C3D1E', opacity: 0.7 }}>Local</span>
-                  <span style={{ color: '#4C3D1E', opacity: 0.7 }}>›</span>
-                </div>
-              </div>
-            </div>
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-6">
+            {renderTabContent()}
           </div>
-            </>
-          )}
-
-          {activeTab === 'backup' && user && (
-            <BackupManager 
-              user={user} 
-              onBackupRestored={() => {
-                // Optionally refresh the page or show a success message
-                window.location.reload();
-              }}
-            />
-          )}
-
-          {/* Logout Button - only show on account tab */}
-          {activeTab === 'account' && (
-            <div className="pt-4 border-t" style={{ borderColor: '#E1C28B' }}>
-            <button
-              onClick={onLogout}
-              className="w-full p-3 rounded-lg transition-colors font-medium"
-              style={{ backgroundColor: '#dc2626', color: '#fff' }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#b91c1c'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#dc2626'}
-            >
-              Log Out
-            </button>
-            </div>
-          )}
         </div>
       </div>
     </div>
   )
 }
+
+const SettingsModal: React.FC<SettingsModalProps> = (props) => {
+  return (
+    <SettingsProvider>
+      <SettingsModalContent {...props} />
+    </SettingsProvider>
+  );
+};
 
 export default SettingsModal

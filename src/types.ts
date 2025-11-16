@@ -23,6 +23,32 @@ export type AssistantPacket =
   | { op: "story.v1"; payload: { title: string; content: string } }
   | { op: "insight.v1"; payload: { note: string } };
 
+// Snapshot of client UI state that can be shared with prompt builders
+export interface UIContextSnapshot {
+  route?: string;
+  activeThreadId?: string | null;
+  sidebar?: {
+    collapsed?: boolean;
+  };
+  modals?: {
+    searchOpen?: boolean;
+    projectsOpen?: boolean;
+    settingsOpen?: boolean;
+    shareOpen?: boolean;
+  };
+  composer?: {
+    attachments?: number;
+    optionsOpen?: boolean;
+    isFocused?: boolean;
+    inputLength?: number;
+  };
+  featureFlags?: Record<string, boolean>;
+  theme?: string;
+  activePanel?: string | null;
+  synthMode?: 'synth' | 'lin';
+  additionalNotes?: string[];
+}
+
 // ------------------------------------------------------------------
 // legacy message shapes remain below (may be phased out later)
 
@@ -40,6 +66,10 @@ export type AssistantMsg = {
   content: AssistantPacket[]; // Strictly packets only, no union with string
   timestamp: string;
   files?: File[];
+  metadata?: {
+    responseTimeMs?: number;
+    thinkingLog?: string[];
+  };
 };
 
 export type SystemMsg = { 
@@ -58,29 +88,34 @@ export interface Conversation {
   messages: Message[]
   createdAt: string
   updatedAt: string
-}
-
-export interface ChatAreaProps {
-  conversation: Conversation | undefined
-  activeGPTName?: string
-  onSendMessage: (message: Message) => void
-  onNewConversation: () => void
-  onToggleSidebar: () => void
+  archived?: boolean
+  isCanonical?: boolean
+  canonicalForRuntime?: string
+  constructId?: string | null
+  runtimeId?: string | null
+  isPrimary?: boolean
+  importMetadata?: any
 }
 
 export interface SidebarProps {
-  conversations: Conversation[]
+  conversations?: Conversation[]
+  threads?: Conversation[]
   currentConversationId: string | null
   onConversationSelect: (id: string) => void
-  onNewConversation: () => void
+  onNewConversation: (options?: { title?: string; starter?: string; files?: File[] }) => unknown
   onNewConversationWithGPT: (gptId: string) => void
   onDeleteConversation: (id: string) => void
-  onUpdateConversation: (id: string, updates: Partial<Conversation>) => void
+  onRenameConversation: (id: string, title: string) => void
+  onArchiveConversation: (id: string, archive?: boolean) => void
+  onShareConversation: (id: string) => void
+  onOpenSearch?: () => void
+  onOpenProjects?: () => void
   onShowGPTCreator: () => void
   onShowGPTs: () => void
   currentUser?: any
   onLogout?: () => void
   onShowSettings?: () => void
+  onShowRuntimeDashboard?: () => void
 }
 
 export interface MessageProps {

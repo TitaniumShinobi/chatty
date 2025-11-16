@@ -1,2 +1,5 @@
-# Chatty Python helper scripts use only Python standard library.
-# No external packages are required.
+# Python dependencies for Chatty helper scripts / utilities.
+
+# Password hashing helpers (server/auth.py)
+# Includes argon2 extra for future-ready hashes.
+passlib[argon2]>=1.7.4

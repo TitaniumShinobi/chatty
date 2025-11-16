@@ -54,14 +54,14 @@ export const ProfilePictureSettings: React.FC<ProfilePictureSettingsProps> = ({
           className="shadow-lg"
         />
         <div className="flex-1">
-          <h3 className="text-lg font-medium" style={{ color: '#4C3D1E' }}>
+          <h3 className="text-lg font-medium" style={{ color: 'var(--chatty-text)' }}>
             Profile Picture
           </h3>
-          <p className="text-sm" style={{ color: '#4C3D1E', opacity: 0.7 }}>
+          <p className="text-sm" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
             Your Google profile picture is automatically synced
           </p>
           {lastRefresh && (
-            <p className="text-xs mt-1" style={{ color: '#4C3D1E', opacity: 0.5 }}>
+            <p className="text-xs mt-1" style={{ color: 'var(--chatty-text)', opacity: 0.5 }}>
               Last refreshed: {formatLastRefresh(lastRefresh)}
             </p>
           )}
@@ -74,11 +74,11 @@ export const ProfilePictureSettings: React.FC<ProfilePictureSettingsProps> = ({
           onClick={handleRefresh}
           disabled={isRefreshing}
           className="flex items-center gap-2 px-3 py-2 text-sm rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          style={{ backgroundColor: '#feffaf', color: '#4C3D1E' }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E1C28B'}
+          style={{ backgroundColor: '#feffaf', color: 'var(--chatty-text)' }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#ADA587'}
           onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
         >
-          <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} style={{ color: 'var(--chatty-icon)' }} />
           {isRefreshing ? 'Refreshing...' : 'Refresh Picture'}
         </button>
         
@@ -87,7 +87,7 @@ export const ProfilePictureSettings: React.FC<ProfilePictureSettingsProps> = ({
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 px-3 py-2 text-sm transition-colors"
-          style={{ color: '#4C3D1E', opacity: 0.7 }}
+          style={{ color: 'var(--chatty-text)', opacity: 0.7 }}
           onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
           onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
         >
@@ -97,10 +97,10 @@ export const ProfilePictureSettings: React.FC<ProfilePictureSettingsProps> = ({
       </div>
       
       {/* Information */}
-      <div className="border rounded-md p-3" style={{ backgroundColor: '#feffaf', borderColor: '#E1C28B' }}>
+      <div className="border rounded-md p-3" style={{ backgroundColor: '#feffaf', borderColor: 'var(--chatty-line)' }}>
         <div className="flex items-start gap-2">
-          <Info className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#4C3D1E' }} />
-          <div className="text-sm" style={{ color: '#4C3D1E' }}>
+          <Info className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: 'var(--chatty-icon)' }} />
+          <div className="text-sm" style={{ color: 'var(--chatty-text)' }}>
             <p className="font-medium mb-1">About Profile Pictures</p>
             <ul className="space-y-1 text-xs">
               <li>• Your profile picture is automatically synced from your Google account</li>
@@ -116,5 +116,4 @@ export const ProfilePictureSettings: React.FC<ProfilePictureSettingsProps> = ({
 };
 
 export default ProfilePictureSettings;
-
 

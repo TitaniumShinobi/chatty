@@ -72,26 +72,26 @@ export default function BackupManager({ user, onBackupRestored }: BackupManagerP
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold mb-4" style={{ color: '#4c3d1e' }}>
+        <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--chatty-text)' }}>
           Backup & Restore
         </h3>
-        <p className="text-sm opacity-75 mb-6" style={{ color: '#4c3d1e' }}>
+        <p className="text-sm opacity-75 mb-6" style={{ color: 'var(--chatty-text)' }}>
           Create backups of your conversations and settings, or restore from a previous backup.
         </p>
       </div>
 
       {/* Download Backups */}
       <div className="space-y-4">
-        <h4 className="font-medium" style={{ color: '#4c3d1e' }}>Download Backups</h4>
+        <h4 className="font-medium" style={{ color: 'var(--chatty-text)' }}>Download Backups</h4>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <button
             onClick={handleDownloadFullBackup}
             className="flex items-center gap-3 p-4 rounded-lg border transition-colors"
             style={{ 
-              borderColor: '#E1C28B',
-              backgroundColor: '#ffffd7',
-              color: '#4c3d1e'
+              borderColor: 'var(--chatty-line)',
+              backgroundColor: 'var(--chatty-button)',
+              color: 'var(--chatty-text)'
             }}
             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ffffd7'}
@@ -107,9 +107,9 @@ export default function BackupManager({ user, onBackupRestored }: BackupManagerP
             onClick={handleDownloadConversationsOnly}
             className="flex items-center gap-3 p-4 rounded-lg border transition-colors"
             style={{ 
-              borderColor: '#E1C28B',
-              backgroundColor: '#ffffd7',
-              color: '#4c3d1e'
+              borderColor: 'var(--chatty-line)',
+              backgroundColor: 'var(--chatty-button)',
+              color: 'var(--chatty-text)'
             }}
             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ffffd7'}
@@ -126,9 +126,9 @@ export default function BackupManager({ user, onBackupRestored }: BackupManagerP
           onClick={handleDownloadDebugData}
           className="flex items-center gap-3 p-3 rounded-lg border transition-colors text-sm"
           style={{ 
-            borderColor: '#E1C28B',
+            borderColor: 'var(--chatty-line)',
             backgroundColor: 'transparent',
-            color: '#4c3d1e'
+            color: 'var(--chatty-text)'
           }}
           onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
           onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -140,7 +140,7 @@ export default function BackupManager({ user, onBackupRestored }: BackupManagerP
 
       {/* Upload & Restore */}
       <div className="space-y-4">
-        <h4 className="font-medium" style={{ color: '#4c3d1e' }}>Restore Backup</h4>
+        <h4 className="font-medium" style={{ color: 'var(--chatty-text)' }}>Restore Backup</h4>
         
         <div className="space-y-3">
           <input
@@ -156,9 +156,9 @@ export default function BackupManager({ user, onBackupRestored }: BackupManagerP
             disabled={isUploading}
             className="flex items-center gap-3 p-4 rounded-lg border transition-colors disabled:opacity-50"
             style={{ 
-              borderColor: '#E1C28B',
-              backgroundColor: '#ffffd7',
-              color: '#4c3d1e'
+              borderColor: 'var(--chatty-line)',
+              backgroundColor: 'var(--chatty-button)',
+              color: 'var(--chatty-text)'
             }}
             onMouseEnter={(e) => !isUploading && (e.currentTarget.style.backgroundColor = '#feffaf')}
             onMouseLeave={(e) => !isUploading && (e.currentTarget.style.backgroundColor = '#ffffd7')}
@@ -191,7 +191,7 @@ export default function BackupManager({ user, onBackupRestored }: BackupManagerP
       {/* Local Backups */}
       {backups.length > 0 && (
         <div className="space-y-4">
-          <h4 className="font-medium" style={{ color: '#4c3d1e' }}>
+          <h4 className="font-medium" style={{ color: 'var(--chatty-text)' }}>
             Local Backups ({backups.length})
           </h4>
           
@@ -201,9 +201,9 @@ export default function BackupManager({ user, onBackupRestored }: BackupManagerP
                 key={backup.key}
                 className="flex items-center justify-between p-3 rounded-lg border"
                 style={{ 
-                  borderColor: '#E1C28B',
-                  backgroundColor: '#ffffd7',
-                  color: '#4c3d1e'
+                  borderColor: 'var(--chatty-line)',
+                  backgroundColor: 'var(--chatty-button)',
+                  color: 'var(--chatty-text)'
                 }}
               >
                 <div className="text-sm">
@@ -220,8 +220,8 @@ export default function BackupManager({ user, onBackupRestored }: BackupManagerP
                     window.location.reload();
                   }}
                   className="p-1 rounded transition-colors"
-                  style={{ color: '#4c3d1e' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E1C28B'}
+                  style={{ color: 'var(--chatty-text)' }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#ADA587'}
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                 >
                   <Trash2 size={16} />
@@ -231,7 +231,7 @@ export default function BackupManager({ user, onBackupRestored }: BackupManagerP
           </div>
           
           {backups.length > 5 && (
-            <p className="text-sm opacity-75" style={{ color: '#4c3d1e' }}>
+            <p className="text-sm opacity-75" style={{ color: 'var(--chatty-text)' }}>
               Showing 5 most recent backups. Total: {backups.length}
             </p>
           )}
@@ -240,9 +240,9 @@ export default function BackupManager({ user, onBackupRestored }: BackupManagerP
 
       {/* Info */}
       <div className="p-4 rounded-lg border" style={{ 
-        borderColor: '#E1C28B',
+        borderColor: 'var(--chatty-line)',
         backgroundColor: '#feffaf',
-        color: '#4c3d1e'
+        color: 'var(--chatty-text)'
       }}>
         <h5 className="font-medium mb-2">💡 Backup Tips</h5>
         <ul className="text-sm space-y-1 opacity-75">

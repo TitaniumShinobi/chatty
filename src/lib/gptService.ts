@@ -26,6 +26,20 @@ export interface GPTAction {
   createdAt: string;
 }
 
+export interface CharacterState {
+  identity: string;
+  emotionalContext: {
+    currentMood: string;
+    arousalLevel: number;
+    memoryWeight: number;
+  };
+  conversationalRules: {
+    neverBreakCharacter: boolean;
+    metaAwarenessLevel: 'none' | 'subtle' | 'full';
+    identityChallengeResponse: 'deflect' | 'reframe' | 'embody';
+  };
+}
+
 export interface GPTConfig {
   id: string;
   name: string;
@@ -33,11 +47,14 @@ export interface GPTConfig {
   instructions: string;
   conversationStarters: string[];
   avatar?: string;
+  isPublic?: boolean;
+  usageCount?: number;
   capabilities: {
     webSearch: boolean;
     canvas: boolean;
     imageGeneration: boolean;
     codeInterpreter: boolean;
+    synthesisMode?: 'lin' | 'synth';
   };
   modelId: string;
   conversationModel?: string;
@@ -50,6 +67,8 @@ export interface GPTConfig {
   createdAt: string;
   updatedAt: string;
   userId: string;
+  type?: 'gpt' | 'runtime';
+  characterState?: CharacterState;
 }
 
 export interface GPTResponse {
@@ -164,6 +183,27 @@ export class GPTService {
     }
     
     return data.file;
+  }
+
+  async uploadMemory(gptId: string, file: File): Promise<{ filePath: string; metadata: any }> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${this.baseUrl}/${gptId}/memories`, {
+      method: 'POST',
+      body: formData,
+    });
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to upload memory/transcript');
+    }
+    
+    return {
+      filePath: data.filePath,
+      metadata: data.metadata
+    };
   }
 
   async getFiles(gptId: string): Promise<GPTFile[]> {
@@ -322,6 +362,57 @@ export class GPTService {
     if (!data.success) {
       throw new Error(data.error || 'Failed to update context');
     }
+  }
+
+  // Filter Methods
+  /**
+   * Check if a GPT is an imported runtime (has import-metadata.json file)
+   */
+  isImportedRuntime(gpt: GPTConfig): boolean {
+    if (gpt.type === 'runtime') {
+      return true;
+    }
+    if (gpt.type === 'gpt') {
+      return false;
+    }
+    return this.matchesImportHeuristics(gpt);
+  }
+
+  /**
+   * Get only user-created GPTs (excludes imported runtimes)
+   */
+  async getUserCreatedGPTs(): Promise<GPTConfig[]> {
+    const allGpts = await this.getAllGPTs()
+    return allGpts.filter(gpt => {
+      if (gpt.type) {
+        return gpt.type === 'gpt'
+      }
+      return !this.matchesImportHeuristics(gpt)
+    })
+  }
+
+  /**
+   * Get only imported runtimes
+   */
+  async getImportedRuntimes(): Promise<GPTConfig[]> {
+    const allGpts = await this.getAllGPTs()
+    return allGpts.filter(gpt => {
+      if (gpt.type) {
+        return gpt.type === 'runtime'
+      }
+      return this.matchesImportHeuristics(gpt)
+    })
+  }
+
+  private matchesImportHeuristics(gpt: GPTConfig): boolean {
+    const hasImportMetadata = gpt.files?.some(
+      file =>
+        (file as any)?.name === 'import-metadata.json' ||
+        file.originalName === 'import-metadata.json' ||
+        file.filename?.endsWith?.('import-metadata.json')
+    )
+    const isImportedNamePattern = /^.+ — (ChatGPT|Gemini|Claude|Grok|DeepSeek|Copilot)/.test(gpt.name)
+    return Boolean(hasImportMetadata || isImportedNamePattern)
   }
 
   // Utility Methods

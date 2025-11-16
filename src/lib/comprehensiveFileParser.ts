@@ -140,7 +140,6 @@ export class ComprehensiveFileParser {
 
     // Video (duplicate removed)
     'video/x-msvideo': { category: 'video', language: 'avi', extensions: ['.avi'] },
-    'video/webm': { category: 'video', language: 'webm', extensions: ['.webm'] },
 
     // Fonts
     'font/ttf': { category: 'font', language: 'ttf', extensions: ['.ttf'] },

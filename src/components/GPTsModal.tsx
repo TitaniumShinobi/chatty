@@ -1,6 +1,7 @@
 import React from 'react'
 import { X, Bot, Plus, Search } from 'lucide-react'
 import { cn } from '../lib/utils'
+import { Z_LAYERS } from '../lib/zLayers'
 
 interface GPTsModalProps {
   isVisible: boolean
@@ -16,7 +17,10 @@ const GPTsModal: React.FC<GPTsModalProps> = ({
   if (!isVisible) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"
+      style={{ zIndex: Z_LAYERS.modal }}
+    >
       <div className="bg-app-orange-950 border border-app-orange-800 rounded-lg w-full max-w-4xl h-[80vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-app-orange-800">

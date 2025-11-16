@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 
 const PrefsSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", index: true, unique: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", unique: true }, // unique: true creates index automatically
   theme: { type: String, default: "dark" },
   defaultModel: { type: String, default: "gpt-4o-mini" },
   systemPrompt: { type: String, default: "" },

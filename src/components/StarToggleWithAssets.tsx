@@ -1,7 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 // Use public assets path for better compatibility
 const FourPointStar = '/assets/fourpointstarburst.svg';
+const EightPointNova = '/assets/eightpointnova.svg';
 
 interface StarToggleProps {
   toggled: boolean;
@@ -9,7 +10,6 @@ interface StarToggleProps {
   disabled?: boolean;
   size?: 'sm' | 'md' | 'lg';
   className?: string;
-  useNova?: boolean;
   spacing?: 'normal' | 'wide' | string;
 }
 
@@ -19,14 +19,20 @@ const StarToggleWithAssets: React.FC<StarToggleProps> = ({
   disabled = false,
   size = 'md',
   className = '',
-  useNova = false,
   spacing = 'normal'
 }) => {
   const [isAnimating, setIsAnimating] = useState(false);
-  const [showEightPoint, setShowEightPoint] = useState(false);
-  const [showNova, setShowNova] = useState(false);
+  const [showEightPoint, setShowEightPoint] = useState(toggled); // Initialize based on current toggle state
   const leftStarRef = useRef<HTMLImageElement>(null);
   const rightStarRef = useRef<HTMLImageElement>(null);
+
+  // Sync showEightPoint with toggled prop when component mounts or toggled changes externally
+  // But only if not currently animating (to preserve animation timing when clicking)
+  useEffect(() => {
+    if (!isAnimating) {
+      setShowEightPoint(toggled);
+    }
+  }, [toggled, isAnimating]);
 
   const sizeConfig = {
     sm: { container: 'w-24 h-8', star: 'w-5 h-5' },
@@ -54,24 +60,20 @@ const StarToggleWithAssets: React.FC<StarToggleProps> = ({
     setIsAnimating(true);
     onToggle(!toggled);
     
-    if (useNova && !toggled) {
-      // Multi-stage animation for Nova
+    if (!toggled) {
+      // When turning on, show nova star after cartwheel completes + pause
       setTimeout(() => {
         setShowEightPoint(true);
-        setTimeout(() => {
-          setShowNova(true);
-        }, 100);
-      }, 600);
+      }, 1000); // One mississippi after click (cartwheel finishes at 600ms)
+    } else {
+      // When turning off, hide the nova immediately
+      setShowEightPoint(false);
     }
     
     // Reset animation state after animation completes
     setTimeout(() => {
       setIsAnimating(false);
-      if (!useNova || toggled) {
-        setShowEightPoint(false);
-        setShowNova(false);
-      }
-    }, 600);
+    }, 1200); // Give extra time for nova appearance
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -113,7 +115,7 @@ const StarToggleWithAssets: React.FC<StarToggleProps> = ({
           if (rightStarRef.current) rightStarRef.current.style.filter = 'none';
         }}
       >
-      {/* Left Star (4-point) - cartwheels to right */}
+      {/* Left Star (4-point) - cartwheels to right, disappears when toggled */}
       <img
         ref={leftStarRef}
         src={FourPointStar}
@@ -126,28 +128,46 @@ const StarToggleWithAssets: React.FC<StarToggleProps> = ({
           transition: 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
           zIndex: 2,
           filter: 'none',
-          color: '#e294bc'
+          color: '#e294bc',
+          opacity: toggled && showEightPoint ? 0 : 1
         }}
         aria-hidden="true"
       />
 
-      {/* Right Star (4-point) - stays in place, transforms to 8-point/Nova when useNova=true */}
+      {/* Right Star (4-point) - disappears when toggled and nova appears */}
       <img
         ref={rightStarRef}
         src={FourPointStar}
-        alt={showNova ? "nova star" : showEightPoint ? "8-point star" : "4-point star"}
+        alt="4-point star"
         className={`absolute top-1 ${config.star}`}
         style={{
           right: '0px',
           zIndex: 1,
-          filter: showNova ? 'drop-shadow(0 0 8px #e294bc) brightness(1.2)' : 'none',
-          transform: showEightPoint || showNova ? 'scale(1.1)' : 'none',
-          transition: showEightPoint || showNova ? 'all 0.1s ease-in-out' : 'none',
-          animation: showNova ? 'pulse 1s ease-in-out infinite' : 'none',
-          color: '#e294bc'
+          filter: 'none',
+          color: '#e294bc',
+          opacity: toggled && showEightPoint ? 0 : 1,
+          transition: 'opacity 0.1s ease-in-out'
         }}
         aria-hidden="true"
       />
+
+      {/* Eight Point Nova Star - appears when toggled */}
+      {toggled && showEightPoint && (
+        <img
+          src={EightPointNova}
+          alt="eight-point nova star"
+          className={`absolute top-1 ${config.star}`}
+          style={{
+            right: '0px',
+            zIndex: 3,
+            filter: 'hue-rotate(200deg) saturate(1.5) brightness(1.2)',
+            color: '#4A90E2',
+            opacity: 1,
+            transition: 'all 0.2s ease-in-out'
+          }}
+          aria-hidden="true"
+        />
+      )}
 
       </div>
     </>

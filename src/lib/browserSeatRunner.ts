@@ -75,6 +75,7 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
   // Use Vite proxy for Ollama to avoid CORS issues
   const baseURL = '/ollama';
   const model = await resolveModel(opts.seat, opts.modelOverride);
+  const antiHedge = 'Respond in one or two sentences. No hedging, no apologies, no scope disclaimers, no “as an AI”. If uncertain, say “No idea” and stop.';
 
   // Quick availability check via /api/tags
   const tagsURL = `${baseURL}/api/tags`;
@@ -92,14 +93,13 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
   }
 
   const url = `${baseURL}/api/generate`;
-  const body = JSON.stringify({ model, prompt: opts.prompt, stream: false });
+  const body = JSON.stringify({ model, prompt: `${antiHedge}\n\n${opts.prompt}`, stream: false });
 
   try {
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Content-Length': new TextEncoder().encode(body).length.toString(),
       },
       body,
     });

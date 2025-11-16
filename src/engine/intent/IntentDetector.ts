@@ -21,6 +21,20 @@ export class IntentDetector {
       patterns: [/hello|hi|hey|good morning|good afternoon|good evening/i],
       context: 'social'
     },
+    // Smalltalk patterns
+    {
+      type: 'smalltalk',
+      patterns: [
+        /how (are|r) (you|ya)/i,
+        /how['’]s it going/i,
+        /what['’]s up/i,
+        /how are things/i,
+        /how are you feeling/i,
+        /how do you feel/i,
+        /how's your (day|morning|afternoon|evening)/i
+      ],
+      context: 'smalltalk'
+    },
     // Question patterns
     {
       type: 'question',
@@ -143,6 +157,7 @@ export class IntentDetector {
   private getContextKeywords(context: string): string[] {
     const contextMap: Record<string, string[]> = {
       'social': ['friend', 'family', 'relationship', 'social', 'community'],
+      'smalltalk': ['how are you', "how's it going", "what's up", 'how are things', 'feeling', 'day going', 'doing today'],
       'inquiry': ['question', 'ask', 'wonder', 'curious', 'inquiry'],
       'safety': ['help', 'support', 'crisis', 'emergency', 'safe'],
       'technical': ['code', 'programming', 'software', 'technical', 'debug'],

@@ -1,7 +1,7 @@
 // src/lib/conversationAI.ts
 // Simple, reliable chatbot responder
 
-import type { AssistantPacket } from '../types';
+import type { AssistantPacket, UIContextSnapshot } from '../types';
 import { composeEmpatheticReply } from '../engine/composers/empathy.js';
 import type { AffectVector } from '../engine/composers/ToneAdapter.js';
 import { IntentDetector } from '../engine/intent/IntentDetector.js';
@@ -20,7 +20,7 @@ export class ConversationAI {
   public gptCreationMode = false;
   private detector = new IntentDetector();
   
-  async processMessage(text: string, _files: File[] = []): Promise<AssistantPacket[]> {
+  async processMessage(text: string, _files: File[] = [], _uiContext?: UIContextSnapshot): Promise<AssistantPacket[]> {
     const msg = text.trim();
 
     const lowerMsg = msg.toLowerCase();

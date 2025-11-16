@@ -3,6 +3,7 @@ import { Send, Settings, FileText, Brain, Database } from 'lucide-react';
 import { useSettings } from '../hooks/useSettings';
 import { useEventBus, useEventEmitter } from '../hooks/useEventBus';
 import { createSimplePacket, SimpleOP } from '../proto/simpleOpcodes';
+import { stripSpeakerPrefix } from '../lib/utils';
 
 interface Message {
   id: string;
@@ -234,7 +235,7 @@ export function SimpleChatty({ onToggleAdvanced, onOpenSettings }: SimpleChattyP
         {/* Messages */}
         <div ref={messagesEndRef} className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8">
           {messages.length === 0 ? (
-            <div className="h-full w-full flex items-center justify-center" style={{ color: '#4C3D1E', opacity: 0.7 }}>
+            <div className="h-full w-full flex items-center justify-center" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
               <p className="text-sm">Start a conversation by typing a message below.</p>
             </div>
           ) : (
@@ -244,16 +245,16 @@ export function SimpleChatty({ onToggleAdvanced, onOpenSettings }: SimpleChattyP
                   key={message.id}
                   className="rounded-lg border p-4 whitespace-pre-wrap leading-relaxed"
                   style={{
-                    backgroundColor: message.role === "user" ? '#feffaf' : message.role === "system" ? '#fef2f2' : '#ffffd7',
-                    borderColor: message.role === "system" ? '#fecaca' : '#E1C28B',
-                    color: message.role === "system" ? '#dc2626' : '#4C3D1E'
+                    backgroundColor: message.role === "user" ? '#ADA587' : message.role === "system" ? '#fef2f2' : '#ffffd7',
+                    borderColor: message.role === "system" ? '#fecaca' : '#ADA587',
+                    color: message.role === "system" ? '#dc2626' : 'var(--chatty-text)'
                   }}
                 >
-                  {message.content}
+                  {typeof message.content === 'string' ? stripSpeakerPrefix(message.content) : message.content}
                 </div>
               ))}
               {isLoading && (
-                <div className="rounded-lg border p-4" style={{ backgroundColor: '#ffffd7', borderColor: '#E1C28B', color: '#4C3D1E', opacity: 0.7 }}>
+                <div className="rounded-lg border p-4" style={{ backgroundColor: 'var(--chatty-button)', borderColor: 'var(--chatty-line)', color: 'var(--chatty-text)', opacity: 0.7 }}>
                   Thinking...
                 </div>
               )}

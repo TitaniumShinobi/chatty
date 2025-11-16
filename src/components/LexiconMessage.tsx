@@ -1,4 +1,5 @@
 import lex from '../data/lexicon.json';
+import { stripSpeakerPrefix } from '../lib/utils';
 
 interface LexiconMessageProps {
   message: {
@@ -55,7 +56,7 @@ export function LexiconMessage({ message }: LexiconMessageProps) {
       <div className="flex items-start gap-2">
         <span className="text-sm opacity-70">{getRoleIcon()}</span>
         <div className="flex-1">
-          {renderContent(message.content)}
+          {renderContent(stripSpeakerPrefix(message.content))}
           {message.metadata && (
             <div className="mt-2 text-xs opacity-60">
               {message.metadata.timestamp && (

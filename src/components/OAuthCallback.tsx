@@ -65,10 +65,10 @@ const OAuthCallback: React.FC = () => {
   }, [searchParams])
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-orange-100">
+    <div className="flex items-center justify-center min-h-screen" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
       <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-        <p className="text-orange-600">Completing authentication...</p>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4" style={{ borderColor: 'var(--chatty-button)' }}></div>
+        <p style={{ color: 'var(--chatty-text)' }}>Completing authentication...</p>
       </div>
     </div>
   )

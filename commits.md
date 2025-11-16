@@ -5,6 +5,40 @@ Entries are always appended with full historical traceability.
 
 Ledger Entry Format:
 
+### [2025-11-13 — 17:55:00]
+**Project:** Data Loss Prevention - Runtime Persistence & Conversation Tracking
+**Files Created:** 
+- `chatty/scripts/track-conversations.js` - Conversation location tracker
+- `chatty/scripts/verify-runtime-persistence.js` - Runtime persistence verifier
+- `chatty/CONVERSATION_LOCATIONS_LEDGER.md` - Conversation location ledger (auto-generated)
+- `chatty/DATA_LOSS_PREVENTION_PLAN.md` - Data loss prevention plan
+**Files Edited:**
+- `chatty/src/components/Layout.tsx` - Added RuntimeDeletionManager filtering to loadRuntimes()
+**Description:**
+- Created conversation tracking system to prevent file location issues
+- Added runtime persistence verification script
+- Fixed loadRuntimes() to filter deleted runtimes (but NOT filter by isActive - imported runtimes may be inactive)
+- Identified 4 "devon@thewreck.org — ChatGPT" runtimes in database (all inactive but should still appear)
+- Added deletion filtering to prevent accidentally showing deleted runtimes
+- Created comprehensive data loss prevention plan
+**Impact:** Prevents data loss by tracking conversation locations and verifying runtime persistence
+**Status:** ✅ IN PROGRESS - Runtime filtering fixed, need to verify conversations.html imports appear
+
+### [2025-01-27 — 16:30:00]
+**Project:** VVAULT Web Login - Global Browser Access
+**Files Created:** 15 files created in /vvault-web-login/
+**Description:** 
+- Created complete React-based web version of VVAULT desktop login UI
+- Implemented pure black terminal aesthetic with blue accents (#3b82f6)
+- Built custom SVG VVAULT logo with gradient and glow effects
+- Added email/password authentication form with validation
+- Implemented responsive design for desktop and mobile
+- Created deployment configuration for global web hosting
+- Added glowing hover effects and loading states
+- Built automated deployment script and documentation
+**Impact:** VVAULT login now accessible from any browser worldwide
+**Status:** ✅ COMPLETED - Global web access achieved
+
 ### [2025-01-10 — 15:45:00]
 **Project:** Code Formatting - Profile Picture Files
 **Files Edited:** 6 files changed, 5 insertions(+)
@@ -1083,5 +1117,62 @@ function App() {
 - ✅ `VaultLogger` now appends PSL entries directly to commits.md
 - ⚠️ Requires models pulled locally (`ollama pull deepseek-coder mistral phi3`)
 - ❌ No breaking changes to existing single-model flow
+
+### [2025-01-20 — 16:30:00]
+**Project:** Slash Command - Image Generation `/create`
+**Files Created:** 3 new files, 1 modified
+**Reason:** First prototype of Chatty's internal image generation interface, invoked via `/create`
+**Status:** ✅ Complete
+
+**Files Affected:**
+- ✅ Created `src/cli/commands/create.ts` - CLI interface for `/create` command
+- ✅ Created `src/lib/image/imageGenerator.ts` - Core image generation module with mocked URLs
+- ✅ Created `src/lib/slashCommands/index.ts` - Slash command registry system
+- ✅ Modified `src/cli/chatty-cli.ts` - Integrated `/create` command into main CLI
+
+**Implementation Details:**
+- ✅ `/create` command takes natural language prompt from user
+- ✅ Outputs single image URL (mocked for development)
+- ✅ CLI shows image URL clearly with no extra noise
+- ✅ Fails gracefully if prompt is missing
+- ✅ Added to help system with proper documentation
+- ✅ Includes validation for prompt length (3-500 characters)
+- ✅ Simulates processing time with loading indicator
+- ✅ Returns structured response with emoji formatting
+
+**Technical Notes:**
+- Uses TypeScript with proper type definitions
+- Implements async/await pattern for image generation
+- Includes error handling and validation
+- Mock implementation ready for real API integration
+- Follows existing CLI command patterns
+
+### [2025-01-20 — 16:45:00]
+**Project:** Color Scheme Update - Text Color Migration
+**Files Modified:** 18 files updated, 226 color references changed
+**Reason:** Updated primary text color from #4C3D1E to #3A2E14 for improved contrast and readability
+**Status:** ✅ Complete
+
+**Files Affected:**
+- ✅ Updated `CHATTY_COLOR_SCHEME.md` - Added historical documentation of color swap
+- ✅ Updated `src/index.css` - Updated CSS variables for both day and night modes
+- ✅ Updated all React components - 17 files with inline color references
+- ✅ Updated all page components - Chat.tsx, ExplorePage.tsx, GPTsPage.tsx, etc.
+- ✅ Updated all modal components - ProjectsModal.tsx, ShareConversationModal.tsx, etc.
+
+**Implementation Details:**
+- ✅ Replaced all #4C3D1E references with #3A2E14 (226 total replacements)
+- ✅ Updated both uppercase (#4C3D1E) and lowercase (#4c3d1e) color references
+- ✅ Maintained consistency across day and night mode CSS variables
+- ✅ Verified --chatty-bg-main and --chatty-bg-message consistency
+- ✅ Updated all inline style color references in React components
+- ✅ Preserved all other color tokens (backgrounds, highlights, buttons)
+
+**Technical Notes:**
+- Color change improves text contrast and readability
+- All CSS variables updated consistently across themes
+- No breaking changes to existing functionality
+- Historical documentation added to color scheme guide
+- Comprehensive search and replace across entire src/ directory
 
 ---

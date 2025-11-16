@@ -17,6 +17,7 @@
     "lint": "eslint . --ext js,jsx,ts,tsx",
     "lint:fix": "eslint . --ext js,jsx,ts,tsx --fix",
     "test": "jest",
+    "test:identity": "node server/tests/run-identity-tests.js",
   "test:isolation": "bash test-isolation.sh",
     "ledger": "python3 scripts/append_ledger_entry.py",
     "project-map": "python3 scripts/project_map.py"

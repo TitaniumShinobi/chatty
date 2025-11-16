@@ -5,6 +5,32 @@ import path from 'path';
 import crypto from 'crypto';
 import { ServerFileParser } from './serverFileParser.js';
 
+const DEFAULT_CHARACTER_STATE = {
+  identity: 'Lin',
+  emotionalContext: {
+    currentMood: 'fierce',
+    arousalLevel: 0.85,
+    memoryWeight: 0.8
+  },
+  conversationalRules: {
+    neverBreakCharacter: true,
+    metaAwarenessLevel: 'none',
+    identityChallengeResponse: 'embody'
+  }
+};
+
+const serializeCharacterState = (state = DEFAULT_CHARACTER_STATE) =>
+  JSON.stringify(state || DEFAULT_CHARACTER_STATE);
+
+const parseCharacterState = (value) => {
+  if (!value) return JSON.parse(JSON.stringify(DEFAULT_CHARACTER_STATE));
+  try {
+    return JSON.parse(value);
+  } catch {
+    return JSON.parse(JSON.stringify(DEFAULT_CHARACTER_STATE));
+  }
+};
+
 export class GPTManager {
   static instance = null;
   db = null;
@@ -16,6 +42,12 @@ export class GPTManager {
     this.uploadDir = path.join(process.cwd(), 'gpt-uploads');
     this.initializeDatabase();
     this.ensureUploadDir();
+    this.migrateTypeColumn().catch(error => {
+      console.error('Error running GPT type migration:', error);
+    });
+    this.ensureCharacterStateMigration().catch(error => {
+      console.error('Error running character state migration:', error);
+    });
   }
 
   static getInstance() {
@@ -38,11 +70,37 @@ export class GPTManager {
         capabilities TEXT,
         model_id TEXT NOT NULL,
         is_active INTEGER DEFAULT 0,
+        is_public INTEGER DEFAULT 0,
+        is_community INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        user_id TEXT NOT NULL
+        user_id TEXT NOT NULL,
+        type TEXT DEFAULT 'gpt',
+        character_state TEXT
       )
     `);
+    
+    // Add new columns if they don't exist (migration)
+    try {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN is_public INTEGER DEFAULT 0`);
+    } catch (e) {
+      // Column already exists, ignore
+    }
+    try {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN is_community INTEGER DEFAULT 0`);
+    } catch (e) {
+      // Column already exists, ignore
+    }
+    try {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN type TEXT DEFAULT 'gpt'`);
+    } catch (e) {
+      // Column already exists, ignore
+    }
+    try {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN character_state TEXT`);
+    } catch (e) {
+      // Column already exists, ignore
+    }
 
     // GPT Files table
     this.db.exec(`
@@ -90,14 +148,59 @@ export class GPTManager {
     }
   }
 
+  async migrateTypeColumn() {
+    try {
+      const gpts = this.db.prepare('SELECT id, type FROM gpts').all();
+      const needsMigration = gpts.filter(gpt => !gpt.type);
+      if (needsMigration.length === 0) {
+        return;
+      }
+
+      console.log(`🔄 Migrating ${needsMigration.length} GPT records to explicit type classification`);
+      const updateStmt = this.db.prepare('UPDATE gpts SET type = ? WHERE id = ?');
+
+      for (const gpt of needsMigration) {
+        try {
+          const files = await this.getGPTFiles(gpt.id);
+          const hasImportMetadata = files.some(file =>
+            file.originalName === 'import-metadata.json' ||
+            file.filename?.endsWith('import-metadata.json') ||
+            file.name === 'import-metadata.json'
+          );
+          const resolvedType = hasImportMetadata ? 'runtime' : 'gpt';
+          updateStmt.run(resolvedType, gpt.id);
+        } catch (fileError) {
+          console.error(`❌ Failed to evaluate GPT ${gpt.id} for type migration:`, fileError);
+        }
+      }
+      console.log('✅ GPT type migration complete');
+    } catch (error) {
+      console.error('❌ Error while migrating GPT type column:', error);
+    }
+  }
+
+  async ensureCharacterStateMigration() {
+    try {
+      const rows = this.db.prepare('SELECT id, character_state FROM gpts').all();
+      const updateStmt = this.db.prepare('UPDATE gpts SET character_state = ? WHERE id = ?');
+      for (const row of rows) {
+        if (!row.character_state) {
+          updateStmt.run(serializeCharacterState(DEFAULT_CHARACTER_STATE), row.id);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error while migrating character_state column:', error);
+    }
+  }
+
   // GPT CRUD Operations
-  async createGPT(config) {
+  async createGPT(config, type = 'gpt') {
     const id = `gpt-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
     const stmt = this.db.prepare(`
-      INSERT INTO gpts (id, name, description, instructions, conversation_starters, avatar, capabilities, model_id, is_active, created_at, updated_at, user_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO gpts (id, name, description, instructions, conversation_starters, avatar, capabilities, model_id, is_active, created_at, updated_at, user_id, type, character_state)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -112,12 +215,16 @@ export class GPTManager {
       config.isActive ? 1 : 0,
       now,
       now,
-      config.userId
+      config.userId,
+      type,
+      serializeCharacterState(config.characterState)
     );
 
     return {
       id,
       ...config,
+      type,
+      characterState: config.characterState || JSON.parse(JSON.stringify(DEFAULT_CHARACTER_STATE)),
       files: [],
       actions: [],
       createdAt: now,
@@ -148,7 +255,9 @@ export class GPTManager {
       isActive: Boolean(row.is_active),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-      userId: row.user_id
+      userId: row.user_id,
+      type: row.type || 'gpt',
+      characterState: parseCharacterState(row.character_state)
     };
   }
 
@@ -175,7 +284,9 @@ export class GPTManager {
         isActive: Boolean(row.is_active),
         createdAt: row.created_at,
         updatedAt: row.updated_at,
-        userId: row.user_id
+        userId: row.user_id,
+        type: row.type || 'gpt',
+        characterState: parseCharacterState(row.character_state)
       });
     }
 
@@ -188,7 +299,7 @@ export class GPTManager {
 
     const stmt = this.db.prepare(`
       UPDATE gpts 
-      SET name = ?, description = ?, instructions = ?, conversation_starters = ?, avatar = ?, capabilities = ?, model_id = ?, is_active = ?, updated_at = ?
+      SET name = ?, description = ?, instructions = ?, conversation_starters = ?, avatar = ?, capabilities = ?, model_id = ?, is_active = ?, character_state = ?, updated_at = ?
       WHERE id = ?
     `);
 
@@ -201,6 +312,7 @@ export class GPTManager {
       JSON.stringify(updates.capabilities || existing.capabilities),
       updates.modelId || existing.modelId,
       updates.isActive !== undefined ? (updates.isActive ? 1 : 0) : (existing.isActive ? 1 : 0),
+      serializeCharacterState(updates.characterState || existing.characterState),
       new Date().toISOString(),
       id
     );
@@ -212,6 +324,21 @@ export class GPTManager {
     const stmt = this.db.prepare('DELETE FROM gpts WHERE id = ?');
     const result = stmt.run(id);
     return result.changes > 0;
+  }
+
+  getCharacterState(gptId) {
+    const stmt = this.db.prepare('SELECT character_state FROM gpts WHERE id = ?');
+    const row = stmt.get(gptId);
+    if (!row) return null;
+    return parseCharacterState(row.character_state);
+  }
+
+  updateCharacterState(gptId, state) {
+    const stmt = this.db.prepare('UPDATE gpts SET character_state = ?, updated_at = ? WHERE id = ?');
+    const serialized = serializeCharacterState(state);
+    const result = stmt.run(serialized, new Date().toISOString(), gptId);
+    if (result.changes === 0) return null;
+    return this.getCharacterState(gptId);
   }
 
   // File Management

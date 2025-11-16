@@ -1,0 +1,37 @@
+{
+  "name": "vvault-connector",
+  "version": "1.0.0",
+  "description": "Secure VVAULT connector for Chatty conversation storage",
+  "main": "index.js",
+  "scripts": {
+    "test": "node integration-example.js",
+    "start": "node index.js",
+    "example": "node integration-example.js"
+  },
+  "keywords": [
+    "vvault",
+    "memory",
+    "storage",
+    "chatty",
+    "ai",
+    "conversation",
+    "security"
+  ],
+  "author": "Devon Woodson",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "dependencies": {
+    "fs": "^0.0.1-security"
+  },
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/devonwoodson/chatty"
+  },
+  "bugs": {
+    "url": "https://github.com/devonwoodson/chatty/issues"
+  },
+  "homepage": "https://github.com/devonwoodson/chatty#readme"
+}

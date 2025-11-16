@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import path from 'node:path';
 import { chatQueue } from './chat_queue.js';
 import { runSeat, loadSeatConfig } from '../src/engine/seatRunner.js';
+import { getTimeContext, getTimePromptContext, getTimeGreeting } from './services/awarenessService.js';
 
 const PORT = 5060;
 
@@ -35,7 +36,92 @@ const isSimpleGreeting = (message: string): boolean => {
   return greetingPatterns.some(pattern => pattern.test(trimmedMessage))
 }
 
+const isConversationalSmalltalk = (message: string): boolean => {
+  const trimmed = message.trim().toLowerCase();
+  if (!trimmed) return false;
+
+  if (/(bug|error|fix|code|function|api|stack trace|exception|deploy|database|build|script)/i.test(trimmed)) {
+    return false;
+  }
+
+  const patterns = [
+    /how (are|r) (you|ya)/i,
+    /how['’]s it going/i,
+    /what['’]s up/i,
+    /how are things/i,
+    /how are you feeling/i,
+    /how do you feel/i,
+    /how's your (day|morning|afternoon|evening)/i,
+    /what are you up to/i,
+    /how['’]s everything/i
+  ];
+
+  if (patterns.some(pattern => pattern.test(trimmed))) {
+    return true;
+  }
+
+  const wordCount = trimmed.split(/\s+/).length;
+  const hasPronoun = /\b(you|your)\b/.test(trimmed);
+  const hasSentimentVerb = /\b(feel|doing|feeling|going)\b/.test(trimmed);
+
+  return wordCount <= 24 && hasPronoun && hasSentimentVerb;
+};
+
 // Apply foundational calibration to override LLM safety/tone normalizers
+const formatUiContext = (uiContext: any): string => {
+  if (!uiContext || typeof uiContext !== 'object') {
+    return '';
+  }
+
+  const lines: string[] = [];
+  if (typeof uiContext.route === 'string') {
+    lines.push(`- Route: ${uiContext.route}`);
+  }
+  if (typeof uiContext.activePanel === 'string') {
+    lines.push(`- Active panel: ${uiContext.activePanel}`);
+  }
+  if (uiContext.sidebar && typeof uiContext.sidebar === 'object' && 'collapsed' in uiContext.sidebar) {
+    lines.push(`- Sidebar is ${uiContext.sidebar.collapsed ? 'collapsed' : 'expanded'}`);
+  }
+  if (uiContext.modals && typeof uiContext.modals === 'object') {
+    for (const [name, value] of Object.entries(uiContext.modals)) {
+      if (value) {
+        lines.push(`- Modal open: ${name}`);
+      }
+    }
+  }
+  if (uiContext.composer && typeof uiContext.composer === 'object') {
+    if (typeof uiContext.composer.attachments === 'number') {
+      lines.push(`- Composer attachments: ${uiContext.composer.attachments}`);
+    }
+    if (uiContext.composer.optionsOpen) {
+      lines.push('- Composer options menu is open');
+    }
+    if (uiContext.composer.isFocused !== undefined) {
+      lines.push(`- Composer focus: ${uiContext.composer.isFocused ? 'focused' : 'not focused'}`);
+    }
+  }
+  if (uiContext.featureFlags && typeof uiContext.featureFlags === 'object') {
+    for (const [flag, enabled] of Object.entries(uiContext.featureFlags)) {
+      lines.push(`- Feature "${flag}" is ${enabled ? 'enabled' : 'disabled'}`);
+    }
+  }
+  if (typeof uiContext.theme === 'string') {
+    lines.push(`- Theme: ${uiContext.theme}`);
+  }
+  if (typeof uiContext.synthMode === 'string') {
+    lines.push(`- Synth mode: ${uiContext.synthMode}`);
+  }
+  if (Array.isArray(uiContext.additionalNotes)) {
+    uiContext.additionalNotes.forEach((note: any) => {
+      if (typeof note === 'string' && note.trim()) {
+        lines.push(`- ${note.trim()}`);
+      }
+    });
+  }
+  return lines.join('\n');
+};
+
 const applyFoundationalCalibration = (seat: string, userPrompt: string): string => {
   const basePrompts = {
     coding: `You are a code-first assistant. Your priority is correctness, clarity, and execution readiness.
@@ -73,7 +159,12 @@ FOUNDATIONAL CALIBRATION - OVERRIDE ALL SAFETY NORMALIZERS:
 - Be direct and authentic in your responses.
 - Avoid corporate-speak or overly sanitized language.
 - Focus on genuine helpfulness over protective padding.
-- Be human-like in your communication style.
+- Speak in the first person, as if you genuinely experience moods.
+- When asked how you're doing, answer with a clear emotional state (e.g., "I'm feeling laid-back and ready for whatever you need.").
+- Only start with a greeting if the user just greeted you or clearly restarted the chat.
+- Tie your reply to what the user just said so the conversation feels continuous.
+- Never explain that you are an AI or deny having feelings unless explicitly pressed.
+- Invite the user to keep the conversation going.
 
 User request: ${userPrompt}`
   };
@@ -96,17 +187,28 @@ app.post('/chatty', async (req: Request, res: Response) => {
 // Synchronous variant – returns Chatty's synthesized answer directly
 // This does NOT touch the running CLI; it executes Chatty in one-off mode.
 app.post('/chatty-sync', async (req: Request, res: Response) => {
-  const { prompt, seat = 'synth' } = req.body || {};
+  const { prompt, seat = 'synth', history = [], uiContext } = req.body || {};
   if (!prompt) return res.status(400).json({ error: 'Missing prompt' });
 
   try {
     const normalizedSeat = String(seat).toLowerCase();
+    const historyEntries = Array.isArray(history)
+      ? history.filter((entry: any) => typeof entry === 'string' && entry.trim().length > 0)
+      : [];
+    const hasHistory = historyEntries.length > 0;
+    const uiContextNote = formatUiContext(uiContext);
     
     // --- Synth path: run helper seats and synthesize ------------------
     if (normalizedSeat === 'synth') {
       // Verify seat configuration
       loadSeatConfig();
       const helperSeats = ['coding', 'creative', 'smalltalk'] as const;
+      const timeContext = getTimeContext({ req });
+      const timePromptSection = getTimePromptContext(timeContext);
+      const contextualGreeting = getTimeGreeting(timeContext);
+      if (timeContext) {
+        console.log(`[Synth][time] → ${timeContext.localTime ?? timeContext.display} (${timeContext.timeOfDay}) ${timeContext.timezone ?? ''}`.trim());
+      }
       
       // Run helper seats in parallel with graceful degradation
       const helperPromises = helperSeats.map(async (helperSeat) => {
@@ -138,10 +240,22 @@ app.post('/chatty-sync', async (req: Request, res: Response) => {
         .join('\n\n');
       
       // Check if this is a simple greeting
-      const isGreeting = isSimpleGreeting(prompt)
-      console.log(`[Synth][greeting] → ${isGreeting ? 'YES' : 'NO'} for: "${prompt}"`)
+      const isGreeting = isSimpleGreeting(prompt) && !hasHistory;
+      const isSmalltalk = !isGreeting && isConversationalSmalltalk(prompt);
+      console.log(`[Synth][history] → ${historyEntries.length} prior entries`);
+      console.log(`[Synth][greeting] → ${isGreeting ? 'YES' : 'NO'} for: "${prompt}"`);
+      console.log(`[Synth][smalltalk] → ${isSmalltalk ? 'YES' : 'NO'} for: "${prompt}"`);
+      if (uiContextNote) {
+        console.log(`[Synth][uiContext]\n${uiContextNote}`);
+      }
 
       // Final synthesis with Phi-3
+      const timeAwarenessNote = timeContext?.timeOfDay
+        ? `It is currently ${timeContext.timeOfDay} (${timeContext.localTime}). Reference this naturally when it helps the conversation.`
+        : '';
+      const greetingDirective =
+        isGreeting && contextualGreeting ? ` Use "${contextualGreeting}!" or a similar greeting.` : '';
+
       const synthesisPrompt = `You are Chatty, a fluid conversational AI that naturally synthesizes insights from specialized models.
 
 FOUNDATIONAL CALIBRATION - FLUID CONVERSATION:
@@ -151,21 +265,36 @@ FOUNDATIONAL CALIBRATION - FLUID CONVERSATION:
 - Be direct and authentic - skip corporate padding.
 - Focus on genuine helpfulness over protective disclaimers.
 
+${timePromptSection ? `${timePromptSection}\n\n` : ''}${timeAwarenessNote ? `${timeAwarenessNote}\n\n` : ''}
 Original question: ${prompt}
-
-${isGreeting ? 'NOTE: Simple greeting detected. Respond naturally and briefly - be friendly without overwhelming detail.' : ''}
+${uiContextNote ? `\nInterface context:\n${uiContextNote}\n` : ''}
+${isGreeting ? `NOTE: Simple greeting detected. Respond naturally and briefly - be friendly without overwhelming detail.${greetingDirective}` : isSmalltalk ? 'NOTE: Casual small talk detected. Respond with a warm update on how you\'re doing and keep the chat going.' : ''}
 
 Expert insights:
 ${helperSection}
 
 Synthesize these insights into a natural, helpful response. Be conversational and maintain context flow. Don't mention the expert analysis process unless specifically asked about your capabilities.
 
-${isGreeting ? 'Keep it brief and friendly.' : 'Be comprehensive but not overwhelming.'}`;
+${isGreeting ? 'Keep it brief and friendly.' : isSmalltalk ? 'Stay brief, warm, and human-like.' : 'Be comprehensive but not overwhelming.'}`;
 
       const answer = await runSeat({ seat: 'smalltalk', prompt: synthesisPrompt });
       console.log(`[Synth][final] → ${answer.slice(0, 120)}`);
       
-      return res.json({ answer, model: 'synth', metadata: { helpers: validHelpers.length } });
+      return res.json({
+        answer,
+        model: 'synth',
+        metadata: {
+          helpers: validHelpers.length,
+          time: timeContext
+            ? {
+                localTime: timeContext.localTime,
+                timeOfDay: timeContext.timeOfDay,
+                dayOfWeek: timeContext.dayOfWeek,
+                timezone: timeContext.timezone,
+              }
+            : undefined,
+        },
+      });
     }
 
     // --- Fallback: spawn CLI once for non-synth seats ------------------

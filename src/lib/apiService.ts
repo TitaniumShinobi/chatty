@@ -28,7 +28,8 @@ export interface ApiResponse<T> {
 }
 
 class ApiService {
-  private baseUrl = 'http://localhost:5000/api';
+  // Use relative URL to leverage Vite proxy (proxies /api to backend)
+  private baseUrl = import.meta.env.VITE_API_URL || '/api';
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;

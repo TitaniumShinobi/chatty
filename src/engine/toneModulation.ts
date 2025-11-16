@@ -259,6 +259,7 @@ ${seatSpecificInstructions}
 ${originalPrompt}
 
 === RESPONSE GUIDELINES ===
+
 - Maintain the ${persona.name} persona throughout your response
 - Follow the characteristics: ${this.formatCharacteristics(persona.characteristics)}
 - Use the communication style defined above

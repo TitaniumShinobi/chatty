@@ -1,8 +1,9 @@
 // Slash Command Input Component
 // Provides CLI-style command interface for web
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { cliBridge, type CommandResult } from '../lib/cliBridge';
+import { Z_LAYERS } from '../lib/zLayers';
 
 interface CommandInputProps {
   onCommandResult: (result: CommandResult) => void;
@@ -50,10 +51,17 @@ export function CommandInput({ onCommandResult, onMessage, disabled = false }: C
   // Auto-resize textarea
   const adjustTextareaHeight = () => {
     if (inputRef.current) {
+      const maxHeight = 128 // equivalent to max-h-32
       inputRef.current.style.height = 'auto'
       const scrollHeight = inputRef.current.scrollHeight
-      const maxHeight = 15 * 24 // 15 lines * 24px line height
-      inputRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
+      
+      if (scrollHeight <= maxHeight) {
+        inputRef.current.style.height = `${scrollHeight}px`
+        inputRef.current.style.overflowY = 'hidden'
+      } else {
+        inputRef.current.style.height = `${maxHeight}px`
+        inputRef.current.style.overflowY = 'hidden'
+      }
     }
   }
 
@@ -151,15 +159,18 @@ export function CommandInput({ onCommandResult, onMessage, disabled = false }: C
               // Delay hiding suggestions to allow clicks
               setTimeout(() => setShowSuggestions(false), 150);
             }}
-            placeholder={input.startsWith('/') ? "Type a command..." : "Message Chatty..."}
+            placeholder={input.startsWith('/') ? "Type a command..." : "Ask anything"}
             disabled={disabled}
-            className="w-full px-4 py-3 bg-app-orange-700 border border-app-orange-600 rounded-lg text-white placeholder-app-orange-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none min-h-[48px] max-h-32"
+            className="w-full px-4 py-3 bg-app-orange-700 border border-app-orange-600 rounded-lg text-white placeholder-app-orange-400 focus:outline-none focus:ring-0 focus:border-app-orange-600 resize-none min-h-[48px]"
             rows={1}
           />
           
           {/* Command suggestions dropdown */}
           {showSuggestions && suggestions.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-app-orange-800 border border-app-orange-600 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+            <div
+              className="absolute top-full left-0 right-0 mt-1 bg-app-orange-800 border border-app-orange-600 rounded-lg shadow-lg max-h-48 overflow-y-auto"
+              style={{ zIndex: Z_LAYERS.popover }}
+            >
               {suggestions.map((suggestion, index) => (
                 <button
                   key={suggestion}

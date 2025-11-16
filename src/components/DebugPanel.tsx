@@ -1,5 +1,6 @@
 import React from 'react'
 import { ConversationContext } from '../lib/conversationAI'
+import { Z_LAYERS } from '../lib/zLayers'
 
 interface DebugPanelProps {
   context: ConversationContext
@@ -11,7 +12,10 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ context, isVisible, onToggle })
   if (!isVisible) return null
 
   return (
-    <div className="fixed bottom-4 right-4 w-80 bg-app-orange-800 border border-app-orange-600 rounded-lg p-4 shadow-lg z-50">
+    <div
+      className="fixed bottom-4 right-4 w-80 bg-app-orange-800 border border-app-orange-600 rounded-lg p-4 shadow-lg"
+      style={{ zIndex: Z_LAYERS.toast }}
+    >
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-white">AI Debug Info</h3>
         <button

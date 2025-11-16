@@ -1,4 +1,5 @@
 import { conversationManager } from '../lib/conversationManager'
+import { Z_LAYERS } from '../lib/zLayers'
 
 export default function StorageFailureFallback({
   info,
@@ -12,7 +13,7 @@ export default function StorageFailureFallback({
   const stats = conversationManager.getStorageStats()
 
   return (
-    <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 12000 }}>
+    <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: Z_LAYERS.critical }}>
       <div style={{ width: 560, background: '#fff9ec', border: '1px solid #f3e0b3', borderRadius: 8, padding: 20, boxShadow: '0 10px 40px rgba(0,0,0,0.12)' }}>
         <h3 style={{ margin: 0, marginBottom: 8, color: '#1f2937' }}>Something went wrong</h3>
         <p style={{ marginTop: 0, marginBottom: 12, color: '#374151' }}>It looks like your browser's storage is full or a storage operation failed. This can happen when you have a lot of conversations.</p>

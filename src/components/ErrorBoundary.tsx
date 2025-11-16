@@ -37,11 +37,11 @@ export class ErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#ffffeb' }}>
+        <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
           <div className="max-w-md mx-4 p-6 rounded-lg border" style={{ 
-            backgroundColor: '#ffffd7',
-            borderColor: '#E1C28B',
-            color: '#4c3d1e'
+            backgroundColor: 'var(--chatty-button)',
+            borderColor: 'var(--chatty-line)',
+            color: 'var(--chatty-text)'
           }}>
             <h2 className="text-xl font-semibold mb-4">Something went wrong</h2>
             
@@ -75,11 +75,11 @@ export class ErrorBoundary extends Component<Props, State> {
                     onClick={() => window.location.reload()}
                     className="w-full p-3 rounded-lg border transition-colors"
                     style={{ 
-                      borderColor: '#E1C28B',
+                      borderColor: 'var(--chatty-line)',
                       backgroundColor: '#feffaf',
-                      color: '#4c3d1e'
+                      color: 'var(--chatty-text)'
                     }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E1C28B'}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#ADA587'}
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
                   >
                     Try Reloading
@@ -95,11 +95,11 @@ export class ErrorBoundary extends Component<Props, State> {
                   onClick={() => window.location.reload()}
                   className="w-full p-3 rounded-lg border transition-colors"
                   style={{ 
-                    borderColor: '#E1C28B',
+                    borderColor: 'var(--chatty-line)',
                     backgroundColor: '#feffaf',
-                    color: '#4c3d1e'
+                    color: 'var(--chatty-text)'
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E1C28B'}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#ADA587'}
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
                 >
                   Refresh Page

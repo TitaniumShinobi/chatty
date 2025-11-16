@@ -12,9 +12,12 @@ import '../../server/chatty-api.ts';
 import { PersonaBrain } from '../engine/memory/PersonaBrain.js';
 // Import file operations commands
 import { FileOpsCommands } from './fileOpsCommands.js';
+// Import create command
+import { CreateCommand } from './commands/create.js';
 // Import optimized synth processor
 import { OptimizedSynthProcessor } from '../engine/optimizedSynth.js';
 import { AdaptiveMemoryManager } from '../engine/adaptiveMemoryManager.js';
+import { SynthMemoryOrchestrator } from '../engine/orchestration/SynthMemoryOrchestrator.js';
 // Import conversation manager
 import { ConversationManager } from './conversationManager.js';
 // Import settings manager
@@ -34,6 +37,8 @@ import {
   shouldTriggerContainment,
   formatContainmentDuration
 } from '../lib/containmentManager.js';
+import { setVerbose, setQuiet, shouldLog } from '../lib/verbosity.js';
+import { cliAuth } from './auth.js';
 
 // Color utilities
 function colorize(text: string, color: string): string {
@@ -54,6 +59,37 @@ function log(message: string, color = 'reset') {
   console.log(colorize(message, color));
 }
 
+// Animated loading spinner (like Ollama)
+class LoadingSpinner {
+  private interval: NodeJS.Timeout | null = null;
+  private frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  private currentFrame = 0;
+  private message: string;
+
+  constructor(message: string = '') {
+    this.message = message;
+  }
+
+  start() {
+    this.interval = setInterval(() => {
+      process.stdout.write(`\r${this.frames[this.currentFrame]} ${this.message}`);
+      this.currentFrame = (this.currentFrame + 1) % this.frames.length;
+    }, 80);
+  }
+
+  stop(finalMessage?: string) {
+    if (this.interval) {
+      clearInterval(this.interval);
+      this.interval = null;
+    }
+    // Clear the spinner line
+    process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
+    if (finalMessage) {
+      process.stdout.write(finalMessage + '\n');
+    }
+  }
+}
+
 // CLI AI Service that uses the same enhanced AI service as Web
 class CLIAIService {
   private conversationHistory: { text: string; timestamp: string }[] = [];
@@ -65,6 +101,9 @@ class CLIAIService {
   private brain: PersonaBrain; // Enhanced persona support
   public optimizedSynth: OptimizedSynthProcessor;
   public memoryManager: AdaptiveMemoryManager;
+  private memoryOrchestratorPromise: Promise<SynthMemoryOrchestrator> | null = null;
+  private readonly orchestratorConstructId = 'chatty-cli-default';
+  private orchestratorUserId: string = 'cli'; // Will be set after authentication
 
   constructor(useFallback = false, addTimestamps = true, modelName = 'AI') {
     this.addTimestamps = addTimestamps;
@@ -83,6 +122,9 @@ class CLIAIService {
     // Initialize enhanced persona support with persistent memory
     const persistentMemory = new PersistentMemoryStore('cli');
     this.brain = new PersonaBrain(persistentMemory);
+    
+    // Try to load authenticated user ID
+    this.loadAuthenticatedUserId();
     
     // Initialize optimized synth processor and memory manager
     this.optimizedSynth = new OptimizedSynthProcessor(this.brain, {
@@ -121,6 +163,83 @@ class CLIAIService {
     } else {
       log(colorize('⚠️  Using fallback AI system for CLI stability', 'yellow'));
       this.core = null;
+    }
+  }
+
+
+  private async ensureMemoryOrchestrator(): Promise<SynthMemoryOrchestrator> {
+    if (!this.memoryOrchestratorPromise) {
+      this.memoryOrchestratorPromise = this.createMemoryOrchestrator();
+    }
+    return this.memoryOrchestratorPromise;
+  }
+
+  /**
+   * Load authenticated user ID from session
+   */
+  private async loadAuthenticatedUserId(): Promise<void> {
+    try {
+      const user = await cliAuth.getCurrentUser();
+      if (user) {
+        this.orchestratorUserId = user.sub;
+      }
+    } catch (error) {
+      // Not authenticated, use default 'cli' user
+    }
+  }
+
+  private async createMemoryOrchestrator(): Promise<SynthMemoryOrchestrator> {
+    let connectorInstance: any = null;
+    try {
+      const connectorModule: any = await import('../../vvaultConnector/index.js');
+      const ConnectorClass = connectorModule?.VVAULTConnector ?? connectorModule?.default?.VVAULTConnector;
+      if (ConnectorClass) {
+        // Allow VVAULT path to be configured via environment variable
+        const vvaultPath = process.env.VVAULT_PATH || process.env.CHATTY_VVAULT_PATH;
+        const connectorOptions = vvaultPath ? { vvaultPath } : {};
+        const connector = new ConnectorClass(connectorOptions);
+        if (typeof connector.initialize === 'function') {
+          await connector.initialize();
+        }
+        connectorInstance = connector;
+        
+        // Log VVAULT connection status
+        if (this.orchestratorUserId !== 'cli') {
+          console.log(colorize(`✅ VVAULT connected for user: ${this.orchestratorUserId}`, 'green'));
+        } else {
+          console.log(colorize('ℹ️  Using default CLI user. Set CHATTY_USER_ID to share memories with web interface.', 'cyan'));
+        }
+      }
+    } catch (error) {
+      console.warn(colorize('⚠️  VVAULT connector unavailable, continuing with local memory only', 'yellow'));
+    }
+
+    const orchestrator = new SynthMemoryOrchestrator({
+      constructId: this.orchestratorConstructId,
+      userId: this.orchestratorUserId,
+      personaProvider: (userId) => this.brain.getPersona(userId),
+      vvaultConnector: connectorInstance
+        ? {
+            writeTranscript: (params) => connectorInstance.writeTranscript(params),
+            readMemories: connectorInstance.readMemories?.bind(connectorInstance)
+          }
+        : undefined
+    });
+
+    await orchestrator.ensureReady();
+    return orchestrator;
+  }
+
+  private async recordOrchestratedMessage(
+    orchestrator: SynthMemoryOrchestrator,
+    role: 'user' | 'assistant',
+    content: string,
+    metadata: Record<string, unknown>
+  ): Promise<void> {
+    try {
+      await orchestrator.captureMessage(role, content, metadata);
+    } catch (error) {
+      console.warn(colorize('⚠️  Failed to persist memory via orchestrator', 'yellow'), error);
     }
   }
 
@@ -178,17 +297,22 @@ class CLIAIService {
       this.conversationHistory = this.conversationHistory.slice(-this.context.settings.maxHistory);
     }
 
+    const orchestrator = await this.ensureMemoryOrchestrator();
+    await this.recordOrchestratedMessage(orchestrator, 'user', userMessage, { source: 'cli' });
+
     try {
       if (this.currentModel === 'synth') {
         // Use optimized synth processor for better performance
+        const memoryContext = await orchestrator.prepareMemoryContext();
         const { response, metrics } = await this.optimizedSynth.processMessage(
           userMessage,
           this.conversationHistory,
-          'cli'
+          this.orchestratorUserId,
+          { memoryContext }
         );
         
-        // Log performance metrics for debugging
-        if (metrics.processingTime > 30000) { // Log if processing took more than 30 seconds
+        // Log performance metrics only in verbose mode
+        if (shouldLog('warn') && metrics.processingTime > 30000) { // Log if processing took more than 30 seconds
           console.warn(colorize(`⚠️  Slow processing detected: ${metrics.processingTime}ms`, 'yellow'));
           if (metrics.fallbackUsed) {
             console.warn(colorize('⚠️  Fallback response used due to timeout', 'yellow'));
@@ -198,6 +322,8 @@ class CLIAIService {
           }
         }
         
+        await this.recordOrchestratedMessage(orchestrator, 'assistant', response, { source: 'cli' });
+
         const ts = this.addTimestamps ? `[${new Date().toLocaleString()}] ` : '';
         const display = 'synth';
         return `${display}> ${ts}${response.trim()}`;
@@ -206,6 +332,7 @@ class CLIAIService {
       // single model path
       if (this.currentModel !== 'phi3' || !this.core) {
         const result = await runSeat({ seat: 'custom', prompt: userMessage, modelOverride: this.currentModel });
+        await this.recordOrchestratedMessage(orchestrator, 'assistant', result, { source: 'cli', model: this.currentModel });
         return result;
       }
 
@@ -217,7 +344,9 @@ class CLIAIService {
         const ctx = { history: sanitized } as any;
         const packets = await this.core.process(userMessage, ctx);
         if (packets && packets.length > 0) {
-          return this.renderPackets(packets);
+          const rendered = this.renderPackets(packets);
+          await this.recordOrchestratedMessage(orchestrator, 'assistant', rendered, { source: 'cli', mode: 'core' });
+          return rendered;
         }
       }
     } catch (error: any) {
@@ -227,7 +356,9 @@ class CLIAIService {
 
     // Fallback to simple AI with packet structure
     const fallbackPackets = this.generateFallbackPackets(userMessage);
-    return this.renderPackets(fallbackPackets ?? []);
+    const renderedFallback = this.renderPackets(fallbackPackets ?? []);
+    await this.recordOrchestratedMessage(orchestrator, 'assistant', renderedFallback, { source: 'cli', mode: 'fallback' });
+    return renderedFallback;
   }
 
   generateFallbackPackets(message: string) {
@@ -270,6 +401,7 @@ class CLIAIService {
   /models      - Show specific models in synth pipeline
   /persona <name> - Switch to a specific LLM persona (copilot, gemini, grok, claude, chatgpt)
   /personas - List all available personas
+  /create <prompt> - Generate images from text prompts
   /file        - File operations (cd, ls, cp, mv, ln, grep, find, etc.)
   /save <name> - Save current conversation
   /load <id>   - Load saved conversation
@@ -417,9 +549,33 @@ async function main() {
   const localModel = args.includes('--local-model');
   const onceMode = args.includes('--once');
   const jsonOut = args.includes('--json');
+  const quiet = args.includes('--quiet') || args.includes('-q');
+  const verbose = args.includes('--verbose') || args.includes('-v');
+  const loginMode = args.includes('--login') || args.includes('--auth');
   const seatArgIndex = args.indexOf('--seat');
   const seatOverride = seatArgIndex !== -1 ? args[seatArgIndex + 1] : undefined;
   let modelName = 'LLM';
+
+  // Initialize verbosity controls (redundant but ensures consistency)
+  // The verbosity module already initializes from args, but we sync here too
+  if (quiet) {
+    setQuiet(true);
+    setVerbose(false);
+  } else if (verbose) {
+    setQuiet(false);
+    setVerbose(true);
+  } else {
+    // Default: clean mode (already set at module load, but ensure it's clear)
+    setQuiet(false);
+    setVerbose(false);
+  }
+  
+  // Set environment variable for backward compatibility
+  if (verbose) {
+    process.env.CHATTY_VERBOSE = 'true';
+  } else {
+    delete process.env.CHATTY_VERBOSE;
+  }
 
   if (!localModel) {
     const host = process.env.OLLAMA_HOST || 'http://localhost';
@@ -444,6 +600,40 @@ async function main() {
 
   // Remove version/tag suffix for display (e.g., "phi3:latest" -> "phi3")
   modelName = modelName.split(':')[0];
+
+  // Auto-authenticate: Check for existing session, prompt for login if needed
+  // This provides seamless experience like desktop apps - login once, stay logged in
+  try {
+    const user = await cliAuth.getCurrentUser();
+    if (user) {
+      // Already authenticated - use existing session
+      if (!quiet) {
+        console.log(colorize(`👤 Authenticated as: ${user.email}`, 'cyan'));
+      }
+    } else {
+      // No session found - prompt for first-time login
+      if (!quiet && !loginMode) {
+        console.log(colorize('🔐 First time setup: Authenticating...', 'cyan'));
+      }
+      const authUser = await cliAuth.autoAuthenticate();
+      if (authUser) {
+        if (!quiet) {
+          console.log(colorize(`✅ Authenticated as: ${authUser.email}`, 'green'));
+          console.log(colorize('💾 Session saved. You\'ll stay logged in for future CLI sessions.', 'cyan'));
+        }
+      } else {
+        if (!quiet) {
+          console.log(colorize('⚠️  Authentication cancelled. Using isolated CLI user.', 'yellow'));
+          console.log(colorize('   Run /login later to share memories with web interface.', 'cyan'));
+        }
+      }
+    }
+  } catch (error: any) {
+    if (!quiet) {
+      console.error(colorize(`⚠️  Authentication failed: ${error.message}`, 'yellow'));
+      console.log(colorize('   Continuing with isolated CLI user. Run /login to retry.', 'cyan'));
+    }
+  }
 
   // --- animated banner fixed-top for 6 frames -----------------------
   const banners = [
@@ -853,6 +1043,21 @@ Be thoughtful, wise, and supportive.`;
       
       try {
         const result = await fileOps.handleCommand(command, args);
+        console.log(result);
+      } catch (error: any) {
+        console.log(colorize(`Error: ${error.message}`, 'red'));
+      }
+      rl.prompt();
+      return;
+    }
+
+    // Create command for image generation
+    if (message.startsWith('/create')) {
+      const parts = message.split(/\s+/);
+      const args = parts.slice(1);
+      
+      try {
+        const result = await CreateCommand.handle(args);
         console.log(result);
       } catch (error: any) {
         console.log(colorize(`Error: ${error.message}`, 'red'));
@@ -1406,6 +1611,41 @@ Be thoughtful, wise, and supportive.`;
       rl.close();
       return;
     }
+
+    if (message === '/login' || message.startsWith('/login ')) {
+      try {
+        console.log(colorize('🔐 Starting authentication...', 'cyan'));
+        const user = await cliAuth.authenticate();
+        ai.orchestratorUserId = user.sub;
+        console.log(colorize(`✅ Authenticated as: ${user.email} (${user.name})`, 'green'));
+        console.log(colorize('💾 Memories will now be shared with web interface', 'cyan'));
+      } catch (error: any) {
+        console.error(colorize(`❌ Authentication failed: ${error.message}`, 'red'));
+      }
+      rl.prompt();
+      return;
+    }
+
+    if (message === '/logout') {
+      await cliAuth.clearSession();
+      ai.orchestratorUserId = 'cli';
+      console.log(colorize('👋 Logged out. Using isolated CLI user.', 'yellow'));
+      rl.prompt();
+      return;
+    }
+
+    if (message === '/whoami') {
+      const user = await cliAuth.getCurrentUser();
+      if (user) {
+        console.log(colorize(`👤 Logged in as: ${user.name} (${user.email})`, 'cyan'));
+        console.log(colorize(`   User ID: ${user.sub}`, 'cyan'));
+      } else {
+        console.log(colorize('👤 Not authenticated. Using default CLI user.', 'yellow'));
+        console.log(colorize('   Run /login to authenticate and share memories with web interface.', 'cyan'));
+      }
+      rl.prompt();
+      return;
+    }
     
     if (message === '/help') {
       console.log(colorize(`I'm Chatty Advanced CLI with these capabilities:
@@ -1416,6 +1656,11 @@ Be thoughtful, wise, and supportive.`;
   • File Processing - I can analyze and process files
   • Context Awareness - I understand conversation context
   • Multi-Model Synthesis - I combine insights from specialized AI models
+
+⚙️  Command-Line Flags:
+  --quiet, -q   - Suppress debug output (clean responses only)
+  --verbose, -v - Show detailed debug information
+  --login       - Authenticate on startup to share memories with web interface
 
 💻 Commands:
   /help        - Show this help
@@ -1440,6 +1685,7 @@ Be thoughtful, wise, and supportive.`;
   /models      - Show specific models in synth pipeline
   /persona <name> - Switch to a specific LLM persona (copilot, gemini, grok, claude, chatgpt)
   /personas - List all available personas
+  /create <prompt> - Generate images from text prompts
   /file        - File operations (cd, ls, cp, mv, ln, grep, find, etc.)
   /save <name> - Save current conversation
   /load <id>   - Load saved conversation
@@ -1465,12 +1711,19 @@ Be thoughtful, wise, and supportive.`;
       return;
     }
     
-    console.log(colorize('🤔 Processing...', 'blue'));
+    // Show animated loading spinner (like Ollama)
+    const spinner = new LoadingSpinner('Processing...');
+    spinner.start();
     
     try {
       const response = await ai.processMessage(message);
-      console.log(response);
+      spinner.stop();
+      
+      // Clean response output - just the text, on the same line
+      const cleanResponse = response.replace(/^synth>\s*/, '').replace(/^\[.*?\]\s*/, '').trim();
+      console.log(cleanResponse);
     } catch (error: any) {
+      spinner.stop();
       console.error(colorize(`Error: ${error?.message || error}`, 'red'));
     }
     

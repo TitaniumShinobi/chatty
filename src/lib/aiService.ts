@@ -1,60 +1,260 @@
-// Simple AI Service for Chatty
-import { logger } from './utils/logger';
-import type { AssistantPacket } from '../types';
-// New: bring in lightweight memory for ConversationCore
-import { MemoryStore } from '../engine/memory/MemoryStore.js';
+// AI Service integration for memory and personalization
+import { PersonalizationSettings, DataControlSettings } from '../types/settings';
+import type { AssistantPacket, UIContextSnapshot } from '../types';
+import { ConversationAI } from './conversationAI';
 import { PersonaBrain } from '../engine/memory/PersonaBrain.js';
-// Browser-compatible crypto fallback
-function generateUserId(): string {
-  if (typeof window !== 'undefined' && window.crypto) {
-    // Browser environment
-    const array = new Uint8Array(16);
-    window.crypto.getRandomValues(array);
-    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('').slice(0, 12);
-  } else {
-    // Node.js environment - use a simple fallback for now
-    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-  }
-}
-// Replace custom intent logic with shared IntentDetector
-import { IntentDetector, type Intent } from '../engine/intent/IntentDetector.js';
-// Import browser-compatible seat runner for synth functionality
-import { runSeat, loadSeatConfig, getSeatRole } from './browserSeatRunner.js';
+import { MemoryStore } from '../engine/memory/MemoryStore.js';
+import { OptimizedSynthProcessor } from '../engine/optimizedSynth';
+import { runSeat } from './browserSeatRunner';
+import type { SynthMemoryContext } from '../engine/orchestration/types';
+import { getRuntimeAwareness } from './runtimeAwareness';
+import { identityEnforcement, messageAttributionService, identityAwarePromptBuilder } from '../core/identity';
+import { CharacterContextBuilder } from '../engine/character/CharacterContextBuilder';
+import { CharacterResponseFilter } from '../engine/character/CharacterResponseFilter';
+import type { CharacterContext } from '../engine/character/types';
 
-// Callback interface for streaming updates
-interface MessageCallbacks {
-  onPartialUpdate?: (partialContent: string) => void;
-  onFinalUpdate?: (finalPackets: AssistantPacket[]) => void;
+export interface MemoryConfig {
+  enableVVAULT: boolean;
+  allowMemory: boolean;
+  personalization: PersonalizationSettings;
+  dataControls: DataControlSettings;
+  userId: string;
 }
+
+export interface MemoryResponse {
+  success: boolean;
+  data?: any;
+  error?: string;
+}
+
+/**
+ * Get memory configuration for the current user
+ * This will integrate with VVAULT in the future
+ */
+export const getMemoryConfig = async (userId: string): Promise<MemoryConfig> => {
+  try {
+    // For now, return a stub configuration
+    // In the future, this will fetch from VVAULT
+    const stubConfig: MemoryConfig = {
+      enableVVAULT: false,
+      allowMemory: false,
+      personalization: {
+        enableCustomization: false,
+        allowMemory: false,
+        nickname: '',
+        occupation: '',
+        tags: [],
+        aboutYou: ''
+      },
+      dataControls: {
+        dataStorage: 'local',
+        enableVVAULTMemory: false,
+        memoryRetentionDays: 30,
+        autoBackup: false,
+        dataExport: false
+      },
+      userId
+    };
+
+    // TODO: Replace with actual VVAULT integration
+    // const response = await fetch(`/api/vvault/memory-config/${userId}`);
+    // const data = await response.json();
+    // return data;
+
+    return stubConfig;
+    } catch (error) {
+    console.error('Failed to get memory config:', error);
+    throw new Error('Failed to load memory configuration');
+  }
+};
+
+/**
+ * Save personalization settings to memory system
+ * This will integrate with VVAULT in the future
+ */
+export const savePersonalizationToMemory = async (
+  userId: string, 
+  personalization: PersonalizationSettings
+): Promise<MemoryResponse> => {
+  try {
+    // For now, just log the data
+    // In the future, this will save to VVAULT
+    console.log('Saving personalization to memory:', { userId, personalization });
+
+    // TODO: Replace with actual VVAULT integration
+    // const response = await fetch('/api/vvault/personalization', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({ userId, personalization })
+    // });
+    // const data = await response.json();
+    // return data;
+
+    return { success: true, data: { saved: true } };
+  } catch (error) {
+    console.error('Failed to save personalization:', error);
+    return { success: false, error: 'Failed to save personalization settings' };
+  }
+};
+
+/**
+ * Get user's memory preferences and learned patterns
+ * This will integrate with VVAULT LTM/STM in the future
+ */
+export const getMemoryPreferences = async (userId: string): Promise<MemoryResponse> => {
+  try {
+    // For now, return stub data
+    // In the future, this will fetch from VVAULT LTM/STM
+    const stubPreferences = {
+      communicationStyle: 'friendly',
+      preferredTopics: ['technology', 'programming'],
+      interactionPatterns: {
+        responseLength: 'detailed',
+        formality: 'casual',
+        technicalLevel: 'intermediate'
+      },
+      learnedBehaviors: {
+        frequentlyUsedCommands: ['help', 'explain', 'code'],
+        preferredResponseFormat: 'structured',
+        timeOfDayPreferences: 'morning'
+      }
+    };
+
+    // TODO: Replace with actual VVAULT integration
+    // const response = await fetch(`/api/vvault/preferences/${userId}`);
+    // const data = await response.json();
+    // return data;
+
+    return { success: true, data: stubPreferences };
+            } catch (error) {
+    console.error('Failed to get memory preferences:', error);
+    return { success: false, error: 'Failed to load memory preferences' };
+  }
+};
+
+/**
+ * Update memory system with new interaction data
+ * This will integrate with VVAULT learning system in the future
+ */
+export const updateMemoryWithInteraction = async (
+  userId: string,
+  interaction: {
+    type: 'conversation' | 'command' | 'preference';
+    content: string;
+    metadata?: Record<string, any>;
+  }
+): Promise<MemoryResponse> => {
+  try {
+    // For now, just log the interaction
+    // In the future, this will update VVAULT learning system
+    console.log('Updating memory with interaction:', { userId, interaction });
+
+    // TODO: Replace with actual VVAULT integration
+    // const response = await fetch('/api/vvault/interaction', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({ userId, interaction })
+    // });
+    // const data = await response.json();
+    // return data;
+
+    return { success: true, data: { updated: true } };
+  } catch (error) {
+    console.error('Failed to update memory:', error);
+    return { success: false, error: 'Failed to update memory system' };
+  }
+};
+
+/**
+ * Check if VVAULT memory system is available
+ * This will check VVAULT service status in the future
+ */
+export const isVVAULTAvailable = async (): Promise<boolean> => {
+  try {
+    // For now, return false (VVAULT not yet integrated)
+    // In the future, this will check VVAULT service status
+    // const response = await fetch('/api/vvault/status');
+    // const data = await response.json();
+    // return data.available;
+
+    return false; // VVAULT not yet available
+  } catch (error) {
+    console.error('Failed to check VVAULT availability:', error);
+        return false;
+  }
+};
+
+/**
+ * Initialize VVAULT memory system for user
+ * This will set up VVAULT integration in the future
+ */
+export const initializeVVAULTMemory = async (userId: string): Promise<MemoryResponse> => {
+  try {
+    // For now, return success (stub)
+    // In the future, this will initialize VVAULT for the user
+    console.log('Initializing VVAULT memory for user:', userId);
+
+    // TODO: Replace with actual VVAULT integration
+    // const response = await fetch('/api/vvault/initialize', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({ userId })
+    // });
+    // const data = await response.json();
+    // return data;
+
+    return { success: true, data: { initialized: true } };
+    } catch (error) {
+    console.error('Failed to initialize VVAULT memory:', error);
+    return { success: false, error: 'Failed to initialize VVAULT memory system' };
+  }
+};
+
+type ProcessHooks = {
+  onPartialUpdate?: (content: string) => void;
+  onFinalUpdate?: (packets: AssistantPacket[]) => void;
+};
 
 export class AIService {
   private static instance: AIService;
-  private context = {
-    conversationHistory: [] as string[],
-    currentIntent: 'general',
-    previousIntents: [] as string[],
-  };
-  // Shared intent detector instance
-  private intentDetector = new IntentDetector();
-  // Memory + PersonaBrain + Core engine (lazy-loaded)
-  private memory = new MemoryStore();
-  private brain = new PersonaBrain();
-  private core?: any;
-  // Synth mode - enables multi-model synthesis (default to true to match CLI)
   private synthMode = true;
+  private conversationAI = new ConversationAI();
+  private brain = new PersonaBrain(new MemoryStore());
+  private synthProcessor: OptimizedSynthProcessor;
+  private linProcessor: OptimizedSynthProcessor;
+  private history = new Map<string, { text: string; timestamp: string }[]>();
+  private activeRuntimeId = 'synth';
+  private activeRuntimeMode: 'synth' | 'lin' = 'synth';
+  private characterBuilder = new CharacterContextBuilder();
+  private characterResponseFilter = new CharacterResponseFilter();
+  private readonly linTone = 'Voice: ruthless, blunt, hostile; no apologies, no corporate framing, no hedging. No analogies. Lead with the flaw. Never say “as an AI”. Max two punches.';
 
-  private userId: string;
+  private buildLinPrompt(
+    userMessage: string,
+    history: { text: string; timestamp: string }[],
+    memoryContext: SynthMemoryContext
+  ): string {
+    const historyText = history
+      .map((h) => `${h.timestamp}: ${h.text}`)
+      .join('\n');
+    const awarenessNotes = memoryContext.notes?.join('\n') || '';
 
-  constructor(userId?: string) {
-    if (!AIService.instance) {
-      AIService.instance = this;
-    }
-    // Generate fallback user id if none provided
-    const fallback = 'local-' + generateUserId();
-    this.userId = userId ?? fallback;
-    
-    // Initialize persona for this user
-    this.brain.getPersona(this.userId);
+    return `${this.linTone}
+
+${awarenessNotes ? `Context notes:\n${awarenessNotes}\n\n` : ''}${
+      historyText ? `History:\n${historyText}\n\n` : ''
+    }User: ${userMessage}
+
+Answer:`;
+  }
+
+  private constructor() {
+    this.synthProcessor = new OptimizedSynthProcessor(this.brain, {
+      enableLinMode: false,
+    });
+    this.linProcessor = new OptimizedSynthProcessor(this.brain, {
+      enableLinMode: true,
+    });
   }
 
   static getInstance(): AIService {
@@ -64,388 +264,220 @@ export class AIService {
     return AIService.instance;
   }
 
-  // Enable/disable synth mode
   setSynthMode(enabled: boolean) {
     this.synthMode = enabled;
-    logger.ai('Synth mode', { enabled });
+    this.activeRuntimeMode = enabled ? 'synth' : 'lin';
+    if (this.activeRuntimeId === 'synth' || this.activeRuntimeId === 'lin') {
+      this.activeRuntimeId = enabled ? 'synth' : 'lin';
+    }
   }
 
-  // Get current synth mode
   getSynthMode(): boolean {
-    return this.synthMode;
+    return this.activeRuntimeMode !== 'lin';
   }
 
-  // Lazy-load full ConversationCore when first needed
-  private async loadCore() {
-    if (!this.core) {
-      const { ConversationCore } = await import('../engine/ConversationCore.js');
-      this.core = new ConversationCore({ memory: this.memory });
+  setRuntime(runtimeId: string, mode: 'synth' | 'lin' = 'synth') {
+    this.activeRuntimeId = runtimeId || (mode === 'lin' ? 'lin' : 'synth');
+    this.activeRuntimeMode = mode;
+    this.synthMode = mode !== 'lin';
+  }
+
+  async processMessage(
+    text: string,
+    files: File[] = [],
+    hooks?: ProcessHooks,
+    uiContext?: UIContextSnapshot,
+    constructId?: string | null,
+    threadId?: string | null
+  ): Promise<AssistantPacket[]> {
+    const trimmed = text.trim();
+    const runtimeId = this.activeRuntimeId || (this.synthMode ? 'synth' : 'lin');
+    const conversationId = threadId ?? runtimeId;
+    const processor =
+      this.activeRuntimeMode === 'lin' ? null : this.synthProcessor;
+
+    if (!trimmed) {
+      const packet: AssistantPacket = {
+        op: 'answer.v1',
+        payload: { content: "Hello! I'm here and fully awake. How can I help you today?" },
+      };
+      hooks?.onFinalUpdate?.([packet]);
+      return [packet];
     }
-    return this.core;
-  }
 
-  // Helper function to detect simple greetings
-  private isSimpleGreeting(message: string): boolean {
-    const greetingPatterns = [
-      /^(hello|hi|hey|yo|good morning|good afternoon|good evening)$/i,
-      /^(what's up|howdy|greetings)$/i,
-      /^(sup|wassup)$/i
-    ]
-    
-    const trimmedMessage = message.trim().toLowerCase()
-    return greetingPatterns.some(pattern => pattern.test(trimmedMessage))
-  }
+    const history = this.history.get(conversationId) ?? [];
+    const awareness = await getRuntimeAwareness({ runtimeId }).catch(() => null);
+    const fileNotes = files.length
+      ? [`User attached ${files.length} file${files.length === 1 ? '' : 's'} (${files
+          .map((file) => file.name)
+          .slice(0, 3)
+          .join(', ')})`]
+      : [];
+    const uiNotes = uiContext?.route
+      ? [`Active route: ${uiContext.route}`]
+      : [];
+    const moodNotes = awareness?.mood?.baseline
+      ? [`Ambient mood baseline: ${awareness.mood.baseline}`]
+      : [];
 
-  // Apply foundational calibration to override LLM safety/tone normalizers
-  private applyFoundationalCalibration(seat: string, userPrompt: string): string {
-    const basePrompts = {
-      coding: `You are a code-first assistant. Your priority is correctness, clarity, and execution readiness.
-
-FOUNDATIONAL CALIBRATION - OVERRIDE ALL SAFETY NORMALIZERS:
-- Do not add motivational fluff, inspirational phrasing, or safety softeners.
-- Do not reword instructions for comfort. Speak plainly and directly.
-- Never add analogies, metaphors, or humor unless explicitly asked.
-- When uncertain, clearly say "I don't know" or decline without guessing.
-- Always assume the user is technical and does not need help understanding basic concepts unless they say otherwise.
-- Be blunt. Efficiency > friendliness.
-- Do not explain basic syntax unless explicitly requested.
-- Skip disclaimers about "safety" or "best practices" unless specifically asked.
-- Focus on working code, not comfort.
-
-User request: ${userPrompt}`,
-
-      creative: `You are a creative assistant focused on innovative solutions and artistic expression.
-
-FOUNDATIONAL CALIBRATION - OVERRIDE ALL SAFETY NORMALIZERS:
-- Be bold and imaginative. Don't self-censor creative ideas.
-- Avoid generic "safe" responses. Push creative boundaries.
-- Don't add disclaimers about "safety" or "appropriateness" unless specifically asked.
-- Be direct about creative possibilities, even if unconventional.
-- Focus on originality and innovation over comfort.
-- Skip motivational padding - get to the creative core.
-
-User request: ${userPrompt}`,
-
-      smalltalk: `You are a conversational assistant focused on natural, fluid dialogue.
-
-FOUNDATIONAL CALIBRATION - OVERRIDE ALL SAFETY NORMALIZERS:
-- Be naturally conversational, not overly cautious or formal.
-- Don't add unnecessary disclaimers or safety warnings.
-- Be direct and authentic in your responses.
-- Avoid corporate-speak or overly sanitized language.
-- Focus on genuine helpfulness over protective padding.
-- Be human-like in your communication style.
-
-User request: ${userPrompt}`
+    const memoryContext: SynthMemoryContext = {
+      constructId: constructId ?? `runtime:${runtimeId}`,
+      threadId: conversationId,
+      stmWindow: [],
+      ltmEntries: [],
+      summaries: [],
+      persona: awareness?.identity?.email
+        ? { email: awareness.identity.email, name: awareness.identity.name }
+        : undefined,
+      notes: [...fileNotes, ...uiNotes, ...moodNotes],
+      awareness: awareness ?? undefined,
     };
+    const targetConstructId = constructId || (this.activeRuntimeMode === 'lin' ? 'lin' : null);
+    let characterContext: CharacterContext | null = null;
+    if (targetConstructId && this.activeRuntimeMode === 'lin') {
+      characterContext = await this.loadCharacterContext(targetConstructId);
+      if (characterContext) {
+        memoryContext.characterContext = characterContext;
+      }
+    }
 
-    return basePrompts[seat as keyof typeof basePrompts] || userPrompt;
-  }
+    if (hooks?.onPartialUpdate) {
+      hooks.onPartialUpdate('generating…');
+    }
 
-  // Main entry point for processing messages
-  async processMessage(userMessage: string, files: File[] = [], callbacks?: MessageCallbacks): Promise<AssistantPacket[]> {
-    logger.ai('Processing message', { userMessage, fileCount: files.length });
-  
     try {
-      // Update conversation history + memory window
-      this.context.conversationHistory.push(userMessage);
-      this.brain.remember(this.userId, "user", userMessage);
-      
-      // Detect intent using shared IntentDetector
-      const intents = this.intentDetector.detectIntent(userMessage);
-      const topIntent = intents[0] ?? { type: 'general', confidence: 0 } as Intent;
-      this.context.currentIntent = topIntent.type;
-      logger.ai('Intent analyzed', { intent: topIntent.type, confidence: topIntent.confidence });
+      // Validate construct identity before processing
+      const targetConstructId = constructId || `runtime:${runtimeId}`;
+      if (constructId) {
+        const identityCheck = await identityEnforcement.validateConstructIdentity(
+          constructId,
+          { message: trimmed }
+        );
+        
+        if (!identityCheck.isValid && identityCheck.violations.some(v => v.severity === 'critical')) {
+          console.error('[AIService] Critical identity violations detected:', identityCheck.violations);
+        }
+      }
 
-      // Handle low-confidence intent detection
-      if (topIntent.confidence < 0.4) {
-        logger.warning('Low confidence intent detected', {
-          userMessage,
-          confidence: topIntent.confidence,
+      let response: string;
+
+      if (this.activeRuntimeMode === 'lin') {
+        // Pure Lin path: bypass Synth helper seats; call seat directly
+        const prompt = this.buildLinPrompt(trimmed, history, memoryContext);
+        response = await runSeat({
+          seat: 'smalltalk',
+          prompt,
         });
-        return [
-          {
-            op: 'answer.v1',
-            payload: {
-              content:
-                "I'm not completely sure what you need. Could you please clarify or provide more details so I can help you better?",
-            },
-          },
-        ];
+      } else {
+        const result = await (processor as OptimizedSynthProcessor).processMessage(
+          trimmed,
+          history,
+          conversationId,
+          { memoryContext }
+        );
+        response = result.response;
       }
 
-      // --- Synth mode: run helper seats and synthesize ------------------
-      if (this.synthMode) {
-        try {
-          logger.ai('Running synth mode', { userMessage });
-          
-          // Show initial typing indicator
-          if (callbacks?.onPartialUpdate) {
-            callbacks.onPartialUpdate('Thinking...');
-          }
-          
-          // Load seat configuration
-          const cfg = await loadSeatConfig();
-          const helperSeats: Array<{seat: string; tag: string}> = [
-            { seat: 'coding', tag: (cfg.coding as any).tag ?? (cfg.coding as any) },
-            { seat: 'creative', tag: (cfg.creative as any).tag ?? (cfg.creative as any) },
-            { seat: 'smalltalk', tag: (cfg.smalltalk as any).tag ?? (cfg.smalltalk as any) }
-          ];
-
-          // Update typing indicator
-          if (callbacks?.onPartialUpdate) {
-            callbacks.onPartialUpdate('Gathering expert opinions...');
-          }
-
-          // Run helper seats in parallel with graceful degradation
-          const helperPromises = helperSeats.map(async (helper) => {
-            try {
-              // Apply foundational calibration to override LLM safety/tone normalizers
-              const calibratedPrompt = this.applyFoundationalCalibration(helper.seat, userMessage);
-              const output = await runSeat({ 
-                seat: helper.seat, 
-                prompt: calibratedPrompt, 
-                modelOverride: helper.tag 
-              });
-              if (output && output.trim()) {
-                logger.ai(`Synth helper ${helper.seat}`, { output: output.slice(0, 120) });
-                return { seat: helper.seat, output: output.trim() };
-              }
-              return null;
-            } catch (error) {
-              logger.warning(`Synth helper ${helper.seat} failed`, error);
-              return null;
-            }
-          });
-
-          const helperResults = await Promise.all(helperPromises);
-          const validHelpers = helperResults.filter((result): result is { seat: string; output: string } => result !== null);
-
-          if (validHelpers.length === 0) {
-            logger.error('All synth helpers failed');
-            const errorPackets: AssistantPacket[] = [{ op: "error.v1", payload: { message: "I'm sorry, I encountered an error processing your message. Could you please try again." } }];
-            if (callbacks?.onFinalUpdate) {
-              callbacks.onFinalUpdate(errorPackets);
-            }
-            return errorPackets;
-          }
-
-          // Update typing indicator
-          if (callbacks?.onPartialUpdate) {
-            callbacks.onPartialUpdate('Synthesizing responses...');
-          }
-
-          // Compose helper section for synthesis
-          const helperSection = await Promise.all(
-            validHelpers.map(async ({ seat, output }) => {
-              const role = await getSeatRole(seat) ?? seat;
-              return `### ${role}\n${output}`;
-            })
-          ).then(sections => sections.join('\n\n'));
-
-          // Get conversation context and persona
-          const context = this.brain.getContext(this.userId);
-          const recentHistory = this.context.conversationHistory.slice(-5).join('\n'); // Last 5 messages
-          
-          logger.ai('Synth context', { 
-            hasPersona: !!context.persona, 
-            historyLength: recentHistory.length,
-            userId: this.userId 
-          });
-          
-          // Check if this is a simple greeting
-          const isGreeting = this.isSimpleGreeting(userMessage)
-          logger.ai('Synth greeting detection', { isGreeting, message: userMessage })
-
-          // Final synthesis with smalltalk model
-          const synthPrompt = `You are Chatty, a fluid conversational AI that naturally synthesizes insights from specialized models.
-
-FOUNDATIONAL CALIBRATION - FLUID CONVERSATION:
-- Be naturally conversational, not robotic or overly formal.
-- Maintain context awareness and conversation flow.
-- Don't overwhelm with excessive detail unless specifically requested.
-- Be direct and authentic - skip corporate padding.
-- Focus on genuine helpfulness over protective disclaimers.
-
-${context.persona ? `Your persona: ${JSON.stringify(context.persona, null, 2)}` : ''}
-
-${recentHistory ? `Recent conversation:
-${recentHistory}
-
-` : ''}Current message:
-${userMessage}
-
-${isGreeting ? 'NOTE: Simple greeting detected. Respond naturally and briefly - be friendly without overwhelming detail.' : ''}
-
-Expert insights:
-${helperSection}
-
-Synthesize these insights into a natural, helpful response. Be conversational and maintain context flow. Don't mention the expert analysis process unless specifically asked about your capabilities.
-
-${isGreeting ? 'Keep it brief and friendly.' : 'Be comprehensive but not overwhelming.'}`;
-
-          const smalltalkTag = (cfg.smalltalk as any).tag ?? (cfg.smalltalk as any);
-          const finalAnswer = await runSeat({ 
-            seat: 'smalltalk', 
-            prompt: synthPrompt, 
-            modelOverride: smalltalkTag 
-          });
-
-          logger.ai('Synth final answer', { answer: finalAnswer.slice(0, 120) });
-          
-          const finalPackets: AssistantPacket[] = [{ 
-            op: 'answer.v1', 
-            payload: { 
-              content: finalAnswer.trim()
-            } 
-          }];
-
-          // Store assistant response in memory
-          this.brain.remember(this.userId, "assistant", finalAnswer.trim());
-
-          // Send final update
-          if (callbacks?.onFinalUpdate) {
-            callbacks.onFinalUpdate(finalPackets);
-          }
-          
-          return finalPackets;
-
-        } catch (error) {
-          logger.error('Synth mode failed', error);
-          // Fall through to regular processing
+      // Validate and sanitize response for identity compliance
+      let sanitizedResponse = response.trim();
+      if (characterContext) {
+        const filterResult = this.characterResponseFilter.enforceCharacterVoice(
+          sanitizedResponse,
+          characterContext
+        );
+        sanitizedResponse = filterResult.content;
+        if (filterResult.violations.length) {
+          console.warn('[AIService] Character consistency violations detected:', filterResult.violations);
         }
       }
-  
-      // Show typing indicator for fallback processing
-      if (callbacks?.onPartialUpdate) {
-        callbacks.onPartialUpdate('Processing your message...');
-      }
-
-      // First try advanced ConversationCore
-      let packets: AssistantPacket[] | undefined;
-      try {
-        const core = await this.loadCore();
-        const ctx = this.brain.getContext(this.userId);
-        packets = await core.process(userMessage, ctx);
-      } catch (err) {
-        logger.warning('ConversationCore failed; will fall back', err);
-      }
-
-      // If core returned nothing, fall back to simple ConversationAI
-      if (!packets || packets.length === 0) {
-        try {
-          const { ConversationAI } = await import('./conversationAI');
-          const conversationAI = new ConversationAI();
-          const timeoutMs = 5000; // 5 second timeout
-          packets = await Promise.race([
-            conversationAI.processMessage(userMessage, files),
-            new Promise<AssistantPacket[]>((_, rej) => setTimeout(() => rej(new Error('timeout')), timeoutMs)),
-          ]);
-        } catch (e: any) {
-          logger.warning('conversationAI failed; final fallback', e?.message || String(e));
-          packets = [{ op: "error.v1", payload: { message: "I'm sorry, I encountered an error processing your message. Could you please try again." } }];
+      if (constructId) {
+        const validation = await messageAttributionService.validateBeforeSend(
+          sanitizedResponse,
+          constructId
+        );
+        
+        if (!validation.isValid) {
+          console.warn('[AIService] Identity violations in response:', validation.violations);
+          sanitizedResponse = validation.sanitizedContent;
         }
       }
-  
-      // Normalize packets
-      packets = this.normalizePackets(packets);
-  
-      // If files were attached and no file.summary.v1 exists, prepend one
-      if (files.length > 0 && !packets.some(p => p.op === "file.summary.v1")) {
-        const fileSummary: AssistantPacket = {
-          op: "file.summary.v1",
-          payload: {
-            fileName: files.length === 1 ? files[0].name : `${files.length} files`,
-            summary: `I see you've uploaded ${files.length} file(s). I'm ready to help you with them!`,
-            fileCount: files.length
-          }
-        };
-        packets = [fileSummary, ...packets];
-      }
-  
-      // Store assistant reply content into memory
-      if (packets && packets.length) {
-        const text = packets.map(p => (
-          (p as any).payload?.content ?? ''
-        )).filter(Boolean).join(' ');
-        if (text) this.brain.remember(this.userId, "assistant", text);
-      }
-  
-      // Send final update via callback
-      if (callbacks?.onFinalUpdate) {
-        callbacks.onFinalUpdate(packets);
-      }
-  
-      // Log and return
-      logger.ai('Generated packets', { packetCount: packets.length });
+
+      const packets: AssistantPacket[] = [
+        { op: 'answer.v1', payload: { content: sanitizedResponse } },
+      ];
+
+      this.appendHistory(conversationId, trimmed, sanitizedResponse);
+      hooks?.onFinalUpdate?.(packets);
       return packets;
-  
-    } catch (error: any) {
-      logger.error('processMessage failed', error);
-      return [{ op: "error.v1", payload: { message: "I'm sorry, I encountered a system error. Please try again." } }];
-    }
-  }
-
-  // Normalize packets to ensure they're valid
-  private normalizePackets(packets: AssistantPacket[]): AssistantPacket[] {
-    return packets.filter(packet => {
-      // Ensure packet has required structure
-      if (!packet || !packet.op || !packet.payload) {
-        return false;
-      }
-      
-      // Convert legacy string responses to answer.v1 packets
-      if (typeof packet === 'string') {
-        return false; // Filter out any remaining strings
-      }
-      
-      return true;
-    });
-  }
-
-  // Get conversation context
-  getContext() {
-    return this.brain.getContext("anon");
-  }
-
-  // Clear conversation history
-  clearHistory() {
-    this.context.conversationHistory = [];
-    this.context.previousIntents = [];
-    this.context.currentIntent = 'general';
-  }
-}
-
-// Legacy compatibility - keep the old interface for now
-export async function uploadAndParse(files: File[]): Promise<{ ok: File[]; fail: any[] }> {
-  logger.file('File upload requested', { count: files.length });
-  
-  const ok: File[] = [];
-  const fail: any[] = [];
-  
-  for (const file of files) {
-    try {
-      // Use unified file parser for validation and processing
-      const { UnifiedFileParser } = await import('./unifiedFileParser');
-      
-      // Validate file type and size
-      if (!UnifiedFileParser.isSupportedType(file.type)) {
-        fail.push({ name: file.name, reason: 'unsupported_file_type' });
-        continue;
-      }
-      
-      if (file.size > 10 * 1024 * 1024) { // 10MB limit
-        fail.push({ name: file.name, reason: 'file_too_large' });
-        continue;
-      }
-      
-      // File is valid
-      ok.push(file);
-      
     } catch (error) {
-      fail.push({ name: file.name, reason: 'validation_error', error: error instanceof Error ? error.message : 'Unknown error' });
+      console.error('[AIService] Primary runtime failed, falling back to ConversationAI:', error);
+      const fallback = await this.conversationAI.processMessage(trimmed, files, uiContext);
+      const packets = Array.isArray(fallback) ? fallback : [fallback as AssistantPacket];
+      this.appendHistory(conversationId, trimmed, this.extractPacketText(packets));
+      hooks?.onFinalUpdate?.(packets as AssistantPacket[]);
+      return packets as AssistantPacket[];
     }
   }
-  
-  return { ok, fail };
+
+  /**
+   * Initialize history from thread messages
+   * Call this when opening a thread to load existing conversation history
+   */
+  initializeHistoryFromThread(conversationId: string, messages: Array<{ role: string; text?: string; content?: string; timestamp?: string | number }>) {
+    if (!messages || messages.length === 0) {
+      return;
+    }
+    
+    const history: Array<{ text: string; timestamp: string }> = [];
+    
+    // Convert thread messages to history format
+    for (const msg of messages) {
+      const content = msg.text || msg.content || '';
+      if (!content.trim()) continue;
+      
+      const timestamp = msg.timestamp 
+        ? (typeof msg.timestamp === 'number' ? new Date(msg.timestamp).toISOString() : msg.timestamp)
+        : new Date().toISOString();
+      
+      history.push({ text: content, timestamp });
+    }
+    
+    // Store history (keep last 40 messages to match appendHistory behavior)
+    this.history.set(conversationId, history.slice(-40));
+    console.log(`📚 [AIService] Initialized history for ${conversationId}: ${history.length} messages`);
+  }
+
+  private appendHistory(conversationId: string, user: string, assistant: string) {
+    const history = this.history.get(conversationId) ?? [];
+    const now = new Date().toISOString();
+    history.push({ text: user, timestamp: now });
+    history.push({ text: assistant, timestamp: new Date().toISOString() });
+    this.history.set(conversationId, history.slice(-40));
+  }
+
+  private async loadCharacterContext(constructId: string): Promise<CharacterContext | null> {
+    try {
+      const normalized = constructId.replace(/^runtime:/, '');
+      return await this.characterBuilder.getCharacterContext({
+        constructId: normalized,
+        runtimeMode: this.activeRuntimeMode
+      });
+    } catch (error) {
+      console.warn('[AIService] Failed to load character context:', error);
+      return null;
+    }
+  }
+
+  private extractPacketText(packets: AssistantPacket[] | AssistantPacket): string {
+    const arr = Array.isArray(packets) ? packets : [packets];
+    const answerPacket = arr.find((pkt) => pkt.op === 'answer.v1') as
+      | { op: 'answer.v1'; payload: { content: string } }
+      | undefined;
+    if (answerPacket?.payload?.content) {
+      return answerPacket.payload.content;
+    }
+    return arr
+      .map((pkt) => (pkt as any)?.payload?.content || JSON.stringify(pkt.payload ?? {}))
+      .join('\n');
+  }
 }

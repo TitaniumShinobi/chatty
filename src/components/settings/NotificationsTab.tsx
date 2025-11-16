@@ -5,19 +5,8 @@ import StarToggleWithAssets from '../StarToggleWithAssets';
 const NotificationsTab: React.FC = () => {
   const { settings, updateNotifications } = useSettings();
 
-  const ToggleSwitch: React.FC<{
-    enabled: boolean;
-    onChange: (enabled: boolean) => void;
-    leftPosition?: string;
-  }> = ({ enabled, onChange, leftPosition = 'calc(40px)' }) => (
-    <StarToggleWithAssets
-      toggled={enabled}
-      onToggle={onChange}
-      size="md"
-      useNova={false}
-      leftPosition={leftPosition}
-    />
-  );
+  // Debug logging
+  console.log('NotificationsTab settings:', settings.notifications);
 
   return (
     <div>
@@ -27,19 +16,22 @@ const NotificationsTab: React.FC = () => {
       <div className="space-y-6">
         {/* Responses */}
         <div className="pb-6">
-          <div className="flex items-start justify-between">
+          <div className="flex items-start gap-6">
             <div className="flex-1">
-              <div className="flex items-center justify-between mb-1 relative">
+              <div className="grid grid-cols-3 items-center">
                 <h4 className="font-medium" style={{ color: 'var(--chatty-text)' }}>Responses</h4>
-                <div className="flex items-center gap-2 absolute right-0">
+                <div></div>
+                <div className="flex justify-end items-center gap-1" style={{ marginRight: 'calc(1rem - 1px)' }}>
                   <span className="text-sm" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Push</span>
-                  <ToggleSwitch
-                    enabled={settings.notifications.responsesPush}
-                    onChange={(enabled) => updateNotifications({ responsesPush: enabled })}
+                  <StarToggleWithAssets
+                    toggled={settings.notifications.responsesPush}
+                    onToggle={(toggled) => updateNotifications({ responsesPush: toggled })}
+                    size="md"
+                    spacing="23px"
                   />
                 </div>
               </div>
-              <p className="text-sm mb-3 mr-32" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
+              <p className="text-sm mb-3 pr-32 -mt-1" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
                 Get notified when ChatGPT responds to requests that take time for research or image generation.
               </p>
             </div>
@@ -48,28 +40,37 @@ const NotificationsTab: React.FC = () => {
 
         {/* Tasks */}
         <div className="pb-6">
-          <div className="flex items-start justify-between">
+          <div className="flex items-start gap-6">
             <div className="flex-1">
-              <div className="flex items-center justify-between mb-1">
-                <h4 className="font-medium" style={{ color: 'var(--chatty-text)' }}>Tasks</h4>
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2">
+              <div>
+                <div className="grid grid-cols-3 items-center">
+                  <h4 className="font-medium" style={{ color: 'var(--chatty-text)' }}>Tasks</h4>
+                  <div></div>
+                  <div className="flex justify-end items-center gap-1" style={{ marginRight: 'calc(0.75rem - 1px)' }}>
                     <span className="text-sm" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Push</span>
-                    <ToggleSwitch
-                      enabled={settings.notifications.tasksPush}
-                      onChange={(enabled) => updateNotifications({ tasksPush: enabled })}
+                    <StarToggleWithAssets
+                      toggled={settings.notifications.tasksPush}
+                      onToggle={(toggled) => updateNotifications({ tasksPush: toggled })}
+                      size="md"
+                      spacing="27px"
                     />
                   </div>
-                  <div className="flex items-center gap-2">
+                </div>
+                <div className="grid grid-cols-3 items-center mt-0">
+                  <div></div>
+                  <div></div>
+                  <div className="flex justify-end items-center gap-1" style={{ marginRight: 'calc(0.75rem - 1px)' }}>
                     <span className="text-sm" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Email</span>
-                    <ToggleSwitch
-                      enabled={settings.notifications.tasksEmail}
-                      onChange={(enabled) => updateNotifications({ tasksEmail: enabled })}
+                    <StarToggleWithAssets
+                      toggled={settings.notifications.tasksEmail}
+                      onToggle={(toggled) => updateNotifications({ tasksEmail: toggled })}
+                      size="md"
+                      spacing="25px"
                     />
                   </div>
                 </div>
               </div>
-              <p className="text-sm mb-2 mr-32" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
+              <p className="text-sm mb-2 pr-32 -mt-12" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
                 Get notified when tasks you've created have updates.
               </p>
               <button 
@@ -88,28 +89,37 @@ const NotificationsTab: React.FC = () => {
 
         {/* Recommendations */}
         <div>
-          <div className="flex items-start justify-between">
+          <div className="flex items-start gap-6">
             <div className="flex-1">
-              <div className="flex items-center justify-between mb-1">
-                <h4 className="font-medium" style={{ color: 'var(--chatty-text)' }}>Recommendations</h4>
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2">
+              <div>
+                <div className="grid grid-cols-3 items-center">
+                  <h4 className="font-medium" style={{ color: 'var(--chatty-text)' }}>Recommendations</h4>
+                  <div></div>
+                  <div className="flex justify-end items-center gap-1" style={{ marginRight: 'calc(0.75rem - 1px)' }}>
                     <span className="text-sm" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Push</span>
-                    <ToggleSwitch
-                      enabled={settings.notifications.recommendationsPush}
-                      onChange={(enabled) => updateNotifications({ recommendationsPush: enabled })}
+                    <StarToggleWithAssets
+                      toggled={settings.notifications.recommendationsPush}
+                      onToggle={(toggled) => updateNotifications({ recommendationsPush: toggled })}
+                      size="md"
+                      spacing="27px"
                     />
                   </div>
-                  <div className="flex items-center gap-2">
+                </div>
+                <div className="grid grid-cols-3 items-center mt-0">
+                  <div></div>
+                  <div></div>
+                  <div className="flex justify-end items-center gap-1" style={{ marginRight: 'calc(0.75rem - 1px)' }}>
                     <span className="text-sm" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Email</span>
-                    <ToggleSwitch
-                      enabled={settings.notifications.recommendationsEmail}
-                      onChange={(enabled) => updateNotifications({ recommendationsEmail: enabled })}
+                    <StarToggleWithAssets
+                      toggled={settings.notifications.recommendationsEmail}
+                      onToggle={(toggled) => updateNotifications({ recommendationsEmail: toggled })}
+                      size="md"
+                      spacing="25px"
                     />
                   </div>
                 </div>
               </div>
-              <p className="text-sm mr-32" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
+              <p className="text-sm pr-32 -mt-12" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
                 Stay in the loop on new tools, tips, and features from ChatGPT.
               </p>
             </div>

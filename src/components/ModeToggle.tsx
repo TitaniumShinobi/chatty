@@ -1,6 +1,7 @@
 import React from 'react';
 import { Brain, Zap, Settings, Info } from 'lucide-react';
 import { useSettings } from '../hooks/useSettings';
+import { Z_LAYERS } from '../lib/zLayers';
 
 interface ModeToggleProps {
   mode: 'simple' | 'advanced';
@@ -94,7 +95,10 @@ export function SettingsPanel({ isVisible, onClose }: SettingsPanelProps) {
   if (!isVisible) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
+      style={{ zIndex: Z_LAYERS.modal }}
+    >
       <div className="bg-app-orange-800 rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[80vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-app-orange-700">

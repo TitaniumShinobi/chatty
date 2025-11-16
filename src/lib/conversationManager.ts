@@ -2,6 +2,7 @@
 // Handles localStorage backup, migration, and backend sync
 
 import { type User, getUserId } from './auth'
+import { Z_LAYERS } from './zLayers'
 
 export interface ConversationThread {
   id: string;
@@ -9,6 +10,7 @@ export interface ConversationThread {
   messages: any[];
   createdAt?: number;
   updatedAt?: number;
+  archived?: boolean;
 }
 
 export class ConversationManager {
@@ -163,6 +165,8 @@ export class ConversationManager {
     const userKey = `chatty:threads:${userId}`;
     
     // PRIMARY: Always try backend first
+    // DISABLED: Backend sync temporarily disabled to prevent overwriting local conversations
+    /*
     try {
       const backendThreads = await this.loadFromBackend(user);
       if (backendThreads.length > 0) {
@@ -179,6 +183,7 @@ export class ConversationManager {
     } catch (error) {
       console.warn('Backend load failed, trying localStorage cache:', error);
     }
+    */
     
     // FALLBACK: Try localStorage cache (only recent conversations)
     const existingData = localStorage.getItem(userKey);
@@ -208,7 +213,8 @@ export class ConversationManager {
     
     try {
       // PRIMARY: Save to backend first (this is the main storage)
-      await this.saveToBackend(user, threads);
+      // DISABLED: Backend save temporarily disabled to prevent overwriting local conversations
+      // await this.saveToBackend(user, threads);
       
   // SECONDARY: Only cache recent conversations in localStorage (last 10)
   const recentThreads = this.ensureCacheLimit(threads);
@@ -219,7 +225,7 @@ export class ConversationManager {
   // removed to free any space they may be consuming.
   this.cleanupAllBackups(userId);
       
-      console.log(`💾 Saved ${threads.length} conversations to backend, cached ${recentThreads.length} locally`);
+      console.log(`💾 Saved ${threads.length} conversations to localStorage only (backend sync disabled)`);
     } catch (error) {
       console.error('❌ Failed to save conversations:', error);
       // Don't throw error to prevent app crash
@@ -560,7 +566,7 @@ export class ConversationManager {
       padding: 12px 20px;
       border-radius: 8px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      z-index: 10000;
+      z-index: ${Z_LAYERS.toast};
       font-family: system-ui, -apple-system, sans-serif;
       font-size: 14px;
       max-width: 300px;

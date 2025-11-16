@@ -4,6 +4,23 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 
+const DEFAULT_CHARACTER_STATE: CharacterState = {
+  identity: 'Assistant',
+  emotionalContext: {
+    currentMood: 'neutral',
+    arousalLevel: 0.5,
+    memoryWeight: 0.5
+  },
+  conversationalRules: {
+    neverBreakCharacter: false,
+    metaAwarenessLevel: 'none',
+    identityChallengeResponse: 'reframe'
+  }
+};
+
+const cloneDefaultCharacterState = (): CharacterState =>
+  JSON.parse(JSON.stringify(DEFAULT_CHARACTER_STATE));
+
 export interface GPTFile {
   id: string;
   gptId: string;
@@ -29,6 +46,20 @@ export interface GPTAction {
   createdAt: string;
 }
 
+export interface CharacterState {
+  identity: string;
+  emotionalContext: {
+    currentMood: string;
+    arousalLevel: number;
+    memoryWeight: number;
+  };
+  conversationalRules: {
+    neverBreakCharacter: boolean;
+    metaAwarenessLevel: 'none' | 'subtle' | 'full';
+    identityChallengeResponse: 'deflect' | 'reframe' | 'embody';
+  };
+}
+
 export interface GPTConfig {
   id: string;
   name: string;
@@ -49,6 +80,7 @@ export interface GPTConfig {
   createdAt: string;
   updatedAt: string;
   userId: string;
+  characterState?: CharacterState;
 }
 
 export interface GPTRuntime {
@@ -93,7 +125,8 @@ export class GPTManager {
         is_active INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        user_id TEXT NOT NULL
+        user_id TEXT NOT NULL,
+        character_state TEXT
       )
     `);
 
@@ -147,8 +180,8 @@ export class GPTManager {
     const now = new Date().toISOString();
 
     const stmt = this.db.prepare(`
-      INSERT INTO gpts (id, name, description, instructions, conversation_starters, avatar, capabilities, model_id, is_active, created_at, updated_at, user_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO gpts (id, name, description, instructions, conversation_starters, avatar, capabilities, model_id, is_active, created_at, updated_at, user_id, character_state)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -163,12 +196,14 @@ export class GPTManager {
       config.isActive ? 1 : 0,
       now,
       now,
-      config.userId
+      config.userId,
+      JSON.stringify(config.characterState || cloneDefaultCharacterState())
     );
 
     return {
       id,
       ...config,
+      characterState: config.characterState || cloneDefaultCharacterState(),
       files: [],
       actions: [],
       createdAt: now,
@@ -199,7 +234,8 @@ export class GPTManager {
       isActive: Boolean(row.is_active),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-      userId: row.user_id
+      userId: row.user_id,
+      characterState: row.character_state ? JSON.parse(row.character_state) : cloneDefaultCharacterState()
     };
   }
 
@@ -239,7 +275,7 @@ export class GPTManager {
 
     const stmt = this.db.prepare(`
       UPDATE gpts 
-      SET name = ?, description = ?, instructions = ?, conversation_starters = ?, avatar = ?, capabilities = ?, model_id = ?, is_active = ?, updated_at = ?
+      SET name = ?, description = ?, instructions = ?, conversation_starters = ?, avatar = ?, capabilities = ?, model_id = ?, is_active = ?, character_state = ?, updated_at = ?
       WHERE id = ?
     `);
 
@@ -252,6 +288,7 @@ export class GPTManager {
       JSON.stringify(updates.capabilities || existing.capabilities),
       updates.modelId || existing.modelId,
       updates.isActive !== undefined ? (updates.isActive ? 1 : 0) : (existing.isActive ? 1 : 0),
+      JSON.stringify(updates.characterState || existing.characterState || cloneDefaultCharacterState()),
       new Date().toISOString(),
       id
     );

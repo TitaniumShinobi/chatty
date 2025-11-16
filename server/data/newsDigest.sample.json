@@ -1,0 +1,23 @@
+[
+  {
+    "headline": "Global markets hold steady as earnings season kicks off",
+    "summary": "Investors remain cautious but optimistic while major companies prepare to report quarterly performance.",
+    "sentiment": "neutral",
+    "category": "economy",
+    "source": "Chatty Digest"
+  },
+  {
+    "headline": "Severe weather system moves up the Atlantic coast",
+    "summary": "Heavy rain and snow are forecast across several states. Emergency services urge residents to follow local alerts.",
+    "sentiment": "caution",
+    "category": "weather",
+    "source": "Chatty Digest"
+  },
+  {
+    "headline": "Breakthrough in renewable storage technology announced",
+    "summary": "Researchers unveiled a new battery chemistry that could double grid-level storage capacity within five years.",
+    "sentiment": "positive",
+    "category": "technology",
+    "source": "Chatty Digest"
+  }
+]

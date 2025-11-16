@@ -15,7 +15,16 @@ export class ServerFileParser {
 
     try {
       // Read file content
-      const buffer = await fs.readFile(file.path || file.buffer);
+      let buffer;
+      if (file.buffer && Buffer.isBuffer(file.buffer)) {
+        buffer = file.buffer;
+      } else if (file.buffer && typeof file.buffer === 'string') {
+        buffer = Buffer.from(file.buffer, 'base64');
+      } else if (file.path && typeof file.path === 'string') {
+        buffer = await fs.readFile(file.path);
+      } else {
+        throw new Error('No file path or buffer provided for parsing');
+      }
       
       if (buffer.length > maxSize) {
         throw new Error(`File too large: ${buffer.length} bytes (max: ${maxSize})`);

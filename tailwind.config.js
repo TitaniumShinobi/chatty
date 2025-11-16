@@ -4,6 +4,7 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
@@ -90,8 +91,8 @@ export default {
           200: '#e7d9c8',
           300: '#d9c2a5',
           400: '#d1b68f',
-          500: '#E1C28B',
-          600: '#d4b078',
+          500: '#ADA587',
+          600: '#ADA587',
           700: '#c79d65',
           800: '#ba8a52',
           900: '#ad773f',
@@ -141,5 +142,7 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    require('@tailwindcss/typography'),
+  ],
 }
