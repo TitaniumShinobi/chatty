@@ -141,3 +141,20 @@ dist
 * 2
 * 3
 .cursor/
+
+# macOS system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Uploads and user data
+server/uploads/
+*.zip
+
+# Temporary/debug scripts (uncomment if you want to ignore these)
+# scripts/
+# server/*.js
+# server/*.py
+# docs/
