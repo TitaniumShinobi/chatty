@@ -1,3 +1,5 @@
+![Chatty Nova](./assets/chattynova.png)
+
 # Chatty
 
 A modern AI chat application with beautiful interface and powerful features.
