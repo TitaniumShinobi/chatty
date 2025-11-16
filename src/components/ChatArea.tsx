@@ -1,22 +1,24 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Menu, Plus, Paperclip, X } from 'lucide-react'
-import { ChatAreaProps } from '../types'
+import { Send, Paperclip, X, Brain, Database, AlertTriangle, Activity } from 'lucide-react'
+// import { ChatAreaProps } from '../types'
 import MessageComponent from './Message.tsx'
-import { cn } from '../lib/utils'
+// import { cn } from '../lib/utils'
 import ActionMenu from './ActionMenu'
 // Removed unused imports - now using UnifiedFileParser
 import { emitOpcode } from '../lib/emit'
 import { lexicon as lex } from '../data/lexicon'
 import type { AssistantPacket } from '../types'
+import { useBrowserThread } from '../hooks/useBrowserThread'
+import { DriftHistoryModal } from './DriftHistoryModal'
 
 const pktFromString = (s: string): AssistantPacket => ({ op: 'answer.v1', payload: { content: s } })
 
-const ChatArea: React.FC<ChatAreaProps> = ({
+const ChatArea: React.FC<any> = ({
   conversation,
-  activeGPTName,
+  activeGPTName: _activeGPTName,
   onSendMessage,
-  onNewConversation,
-  onToggleSidebar
+  onNewConversation: _onNewConversation,
+  onToggleSidebar: _onToggleSidebar
 }) => {
   const [inputValue, setInputValue] = useState('')
   const [isTyping, setIsTyping] = useState(false)
@@ -24,16 +26,94 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   const [attachedFiles, setAttachedFiles] = useState<File[]>([])
   const [parsingProgress, setParsingProgress] = useState<{ [key: string]: number }>({})
   const [isParsing, setIsParsing] = useState(false)
+  
+  // Memory system integration
+  const [constructId] = useState<string>('default-construct')
+  const [memoryStats, setMemoryStats] = useState<{
+    stmCount: number;
+    ltmCount: number;
+    driftDetected: boolean;
+  }>({ stmCount: 0, ltmCount: 0, driftDetected: false })
+  
+  // Drift history modal state
+  const [showDriftHistory, setShowDriftHistory] = useState(false)
+  
+  // Initialize thread management
+  const thread = useBrowserThread({
+    constructId,
+    autoAcquireLease: true,
+    enableDriftDetection: true
+  })
+
+  // Safety check for thread initialization
+  if (!thread) {
+    console.warn('ChatArea: Thread not initialized');
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-sm text-gray-500">Initializing...</p>
+        </div>
+      </div>
+    );
+  }
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const previousMessageCountRef = useRef<number>(0)
 
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll to bottom when NEW messages arrive (not on every update)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const currentMessageCount = conversation?.messages?.length ?? 0
+    const previousMessageCount = previousMessageCountRef.current
+    
+    // Only scroll if:
+    // 1. Message count increased (new message added)
+    // 2. User is already near the bottom (within 200px) or it's the first render
+    const container = messagesContainerRef.current
+    if (container && currentMessageCount > previousMessageCount) {
+      const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 200
+      const isFirstRender = previousMessageCount === 0
+      
+      if (isNearBottom || isFirstRender) {
+        // Use setTimeout to ensure DOM has updated
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        }, 0)
+      }
+    }
+    
+    previousMessageCountRef.current = currentMessageCount
   }, [conversation?.messages])
+
+  // Monitor memory stats
+  useEffect(() => {
+    if (!thread || !thread.isReady) return
+    
+    const updateMemoryStats = async () => {
+      try {
+        const stmStats = thread.getSTMStats()
+        const ltmStats = await thread.getLTMStats()
+        
+        setMemoryStats({
+          stmCount: stmStats?.messageCount || 0,
+          ltmCount: ltmStats?.totalEntries || 0,
+          driftDetected: thread.threadState.driftDetected
+        })
+        
+        // Thread ID is managed by the browser thread hook
+      } catch (error) {
+        console.error('Failed to update memory stats:', error)
+      }
+    }
+
+    updateMemoryStats()
+    const interval = setInterval(updateMemoryStats, 5000) // Update every 5 seconds
+    
+    return () => clearInterval(interval)
+  }, [thread?.isReady, thread?.threadState.threadId]) // Only restart when readiness or thread ID changes
 
   // Stop typing indicator when new AI message arrives
   useEffect(() => {
@@ -49,8 +129,17 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
+      const maxHeight = 128 // 32 * 4px (equivalent to max-h-32)
       textareaRef.current.style.height = 'auto'
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
+      const scrollHeight = textareaRef.current.scrollHeight
+      
+      if (scrollHeight <= maxHeight) {
+        textareaRef.current.style.height = `${scrollHeight}px`
+        textareaRef.current.style.overflowY = 'hidden'
+      } else {
+        textareaRef.current.style.height = `${maxHeight}px`
+        textareaRef.current.style.overflowY = 'hidden'
+      }
     }
   }, [inputValue])
 
@@ -64,7 +153,50 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       role: 'user' as const,
       content: inputValue.trim(),
       timestamp: new Date().toISOString(),
-      files: attachedFiles
+      files: attachedFiles,
+      // Add memory provenance
+      constructId,
+      threadId: thread.threadState.threadId,
+      memorySource: 'STM',
+      // Pass memory context to AI service
+      _memoryContext: {
+        constructId,
+        threadId: thread.threadState.threadId,
+        stmCount: memoryStats.stmCount,
+        ltmCount: memoryStats.ltmCount
+      }
+    }
+
+    // Add to memory system
+    try {
+      await thread.addMessage({
+        id: userMessage.id,
+        role: 'user',
+        content: userMessage.content,
+        timestamp: Date.now(),
+        metadata: { files: attachedFiles }
+      })
+      
+      // Update memory stats after adding message
+      const stmStats = thread.getSTMStats()
+      const ltmStats = await thread.getLTMStats()
+      const newStats = {
+        stmCount: stmStats?.messageCount || 0,
+        ltmCount: ltmStats?.totalEntries || 0,
+        driftDetected: thread.threadState.driftDetected
+      }
+      setMemoryStats(newStats)
+      
+      // Debug logging
+      console.log('🧠 Memory System Update:', {
+        constructId,
+        threadId: thread.threadState.threadId,
+        stmCount: newStats.stmCount,
+        ltmCount: newStats.ltmCount,
+        driftDetected: newStats.driftDetected
+      })
+    } catch (error) {
+      console.error('Failed to add message to memory:', error)
     }
 
     setInputValue('')
@@ -117,8 +249,9 @@ const ChatArea: React.FC<ChatAreaProps> = ({
           console.warn(`Unsupported file type: ${file.type} for file ${file.name}`);
           continue;
         }
-        if (file.size > UnifiedFileParser.DEFAULT_MAX_SIZE) {
-          console.warn(`File too large: ${file.name} (${UnifiedFileParser.formatFileSize(file.size)})`);
+        if (file.size > 10 * 1024 * 1024) { // 10MB limit
+          const sizeStr = `${(file.size / (1024 * 1024)).toFixed(1)}MB`
+          console.warn(`File too large: ${file.name} (${sizeStr})`);
           continue;
         }
         validFiles.push(file);
@@ -347,94 +480,55 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   }
 
   return (
-    <div className="flex flex-col h-full" style={{ backgroundColor: '#ffffeb' }}>
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: '#E1C28B', backgroundColor: '#ffffd7' }}>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onToggleSidebar}
-            className="p-2 rounded-lg transition-colors md:hidden"
-            style={{ color: '#4C3D1E' }}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-          >
-            <Menu size={20} />
-          </button>
-          <div className="flex flex-col">
-            <h2 className="text-lg font-semibold" style={{ color: '#4C3D1E' }}>
-              {conversation?.title || 'New conversation'}
-            </h2>
-            {activeGPTName && (
-              <p className="text-sm" style={{ color: '#4C3D1E', opacity: 0.7 }}>
-                Using: {activeGPTName}
-              </p>
-            )}
+    <div className="flex flex-col h-full bg-[var(--chatty-bg-main)]">
+      {/* Memory Status Bar */}
+      <div className="flex items-center justify-between px-4 py-2" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
+        <div className="flex items-center gap-4 text-xs">
+          <div className="flex items-center gap-1">
+            <Brain size={14} style={{ color: '#22c55e' }} />
+            <span style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>STM: {memoryStats.stmCount}</span>
           </div>
+          <div className="flex items-center gap-1">
+            <Database size={14} style={{ color: '#3b82f6' }} />
+            <span style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>LTM: {memoryStats.ltmCount}</span>
+          </div>
+          {memoryStats.driftDetected && (
+            <div className="flex items-center gap-1">
+              <AlertTriangle size={14} style={{ color: '#ef4444' }} />
+              <span style={{ color: '#ef4444' }}>Drift Detected</span>
+            </div>
+          )}
+          <button
+            onClick={() => setShowDriftHistory(true)}
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-gray-100 transition-colors"
+            style={{ color: 'var(--chatty-text)', opacity: 0.7 }}
+            title="View drift history"
+          >
+            <Activity size={14} />
+            <span>History</span>
+            {memoryStats.driftDetected && (
+              <AlertTriangle size={12} style={{ color: '#ef4444' }} />
+            )}
+          </button>
         </div>
-        
-        <button
-          onClick={onNewConversation}
-          className="p-2 rounded-lg transition-colors"
-          style={{ color: '#4C3D1E' }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-          title="New conversation"
-        >
-          <Plus size={20} />
-        </button>
+        <div className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.5 }}>
+          {thread.threadState.threadId ? `Thread: ${thread.threadState.threadId.slice(0, 8)}...` : 'No active thread'}
+        </div>
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto message-area-scrollable">
         {!conversation || conversation.messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center px-4">
-            <div className="max-w-md">
-              <h1 className="text-2xl font-bold mb-4" style={{ color: '#4C3D1E' }}>
-                Welcome to Chatty
-              </h1>
-              <p className="mb-8" style={{ color: '#4C3D1E', opacity: 0.7 }}>
-                Your AI assistant is ready to help. Ask me anything!
-              </p>
-              
-              {/* Example prompts */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[
-                  "Tell me about artificial intelligence",
-                  "Write a JavaScript function for me",
-                  "Create a short story about technology",
-                  "Explain how machine learning works"
-                ].map((prompt, index) => (
-                  <button
-                    key={index}
-                    onClick={() => {
-                      if (conversation) {
-                        const message = {
-                          id: Date.now().toString(),
-                          role: 'user' as const,
-                          content: prompt,
-                          timestamp: new Date().toISOString()
-                        }
-                        onSendMessage(message)
-                      }
-                    }}
-                    className="p-3 text-left text-sm border rounded-lg transition-colors"
-                    style={{ 
-                      borderColor: '#E1C28B', 
-                      color: '#4C3D1E',
-                      backgroundColor: '#ffffd7'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#feffaf'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ffffd7'}
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
+          <div className="flex flex-col items-center justify-center h-full px-6 text-center">
+            <div className="max-w-md space-y-4">
+              <h2 className="text-xl font-semibold" style={{ color: 'var(--chatty-text)' }}>
+                No messages yet
+              </h2>
             </div>
           </div>
         ) : (
           <div className="space-y-6 p-4">
-            {conversation.messages.map((message, index) => (
+            {conversation.messages.map((message: any, index: number) => (
               <MessageComponent
                 key={message.id}
                 message={message}
@@ -444,10 +538,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             
             {/* Typing indicator */}
             {isTyping && (
-              <div className="flex items-start gap-3 p-4 rounded-lg" style={{ backgroundColor: '#ffffd7' }}>
-                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#4C3D1E' }}>
-                  <span className="text-sm font-bold" style={{ color: '#ffffeb' }}>AI</span>
-                </div>
+              <div className="flex items-start gap-3 p-4 rounded-lg" style={{ backgroundColor: 'var(--chatty-button)' }}>
                 <div className="flex-1">
                   <div className="flex items-center gap-1">
                     <div className="typing-indicator"></div>
@@ -464,17 +555,17 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       </div>
 
       {/* Input Area */}
-      <div className="border-t p-4" style={{ borderColor: '#E1C28B' }}>
+      <div className="p-4">
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
 
 
           {/* Attached Files */}
           {attachedFiles.length > 0 && (
-            <div className="mb-3 p-3 rounded-lg border" style={{ backgroundColor: '#ffffd7', borderColor: '#E1C28B' }}>
+            <div className="mb-3 p-3 rounded-lg border" style={{ backgroundColor: 'var(--chatty-button)', borderColor: 'var(--chatty-line)' }}>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <Paperclip size={16} style={{ color: '#4C3D1E', opacity: 0.7 }} />
-                  <span className="text-sm" style={{ color: '#4C3D1E' }}>Attached files ({attachedFiles.length})</span>
+                  <Paperclip size={16} style={{ color: 'var(--chatty-text)', opacity: 0.7 }} />
+                  <span className="text-sm" style={{ color: 'var(--chatty-text)' }}>Attached files ({attachedFiles.length})</span>
                 </div>
                 {isParsing && (
                   <button
@@ -489,61 +580,31 @@ const ChatArea: React.FC<ChatAreaProps> = ({
               <div className="space-y-2">
                 {attachedFiles.map((file, index) => {
                   const fileExtension = file.name.split('.').pop()?.toLowerCase();
-                  const getFileTypeColor = (ext: string) => {
-                    const colors: { [key: string]: string } = {
-                      // Code files
-                      'py': 'text-yellow-600', 'js': 'text-yellow-400', 'ts': 'text-blue-400', 'tsx': 'text-blue-400', 'jsx': 'text-blue-400',
-                      'css': 'text-pink-400', 'scss': 'text-pink-400', 'sass': 'text-pink-400', 'less': 'text-pink-400',
-                      'html': 'text-orange-400', 'htm': 'text-orange-400', 'vue': 'text-green-400', 'svelte': 'text-red-400',
-                      'java': 'text-red-500', 'c': 'text-blue-500', 'cpp': 'text-blue-500', 'cs': 'text-purple-500',
-                      'php': 'text-purple-400', 'rb': 'text-red-400', 'go': 'text-blue-400', 'rs': 'text-orange-500',
-                      'swift': 'text-orange-400', 'kt': 'text-purple-400', 'scala': 'text-red-400', 'clj': 'text-green-400',
-                      'hs': 'text-purple-400', 'ml': 'text-orange-400', 'fs': 'text-blue-400', 'erl': 'text-red-400',
-                      'ex': 'text-purple-400', 'lua': 'text-blue-400', 'pl': 'text-blue-400', 'sh': 'text-green-400',
-                      'bat': 'text-orange-400', 'ps1': 'text-blue-400',
-                      // Config files
-                      'json': 'text-yellow-400', 'yaml': 'text-green-400', 'yml': 'text-green-400', 'toml': 'text-blue-400',
-                      'ini': 'text-orange-400', 'conf': 'text-orange-400', 'env': 'text-green-400', 'gitignore': 'text-orange-400',
-                      'editorconfig': 'text-blue-400', 'eslintrc': 'text-purple-400', 'prettierrc': 'text-pink-400',
-                      'babelrc': 'text-yellow-400', 'webpack': 'text-blue-400', 'rollup': 'text-red-400', 'vite': 'text-purple-400',
-                      'package': 'text-green-400', 'lock': 'text-orange-400',
-                      // Documentation
-                      'md': 'text-blue-400', 'markdown': 'text-blue-400', 'txt': 'text-orange-400', 'doc': 'text-blue-500',
-                      'docx': 'text-blue-500', 'rtf': 'text-orange-400', 'tex': 'text-orange-400', 'adoc': 'text-green-400',
-                      'rst': 'text-orange-400', 'readme': 'text-blue-400', 'license': 'text-green-400', 'changelog': 'text-yellow-400',
-                      // Data files
-                      'csv': 'text-green-400', 'tsv': 'text-green-400', 'sql': 'text-blue-400', 'xml': 'text-orange-400',
-                      'log': 'text-orange-400', 'diff': 'text-red-400', 'patch': 'text-red-400',
-                      // Special files
-                      'dockerfile': 'text-blue-400', 'makefile': 'text-yellow-400'
-                    };
-                    return colors[ext] || 'text-orange-400';
-                  };
                   
                   const progress = parsingProgress[file.name] || 0;
                   
                   return (
-                    <div key={index} className="flex items-center justify-between p-2 rounded" style={{ backgroundColor: '#feffaf' }}>
+                    <div key={index} className="flex items-center justify-between p-2 rounded" style={{ backgroundColor: 'var(--chatty-highlight)' }}>
                       <div className="flex items-center gap-2 flex-1">
-                        <Paperclip size={14} style={{ color: '#4C3D1E', opacity: 0.7 }} />
-                        <span className="text-sm" style={{ color: '#4C3D1E' }}>{file.name}</span>
+                        <Paperclip size={14} style={{ color: 'var(--chatty-text)', opacity: 0.7 }} />
+                        <span className="text-sm" style={{ color: 'var(--chatty-text)' }}>{file.name}</span>
                         {fileExtension && (
-                          <span className="text-xs px-1 py-0.5 rounded" style={{ backgroundColor: '#E1C28B', color: '#4C3D1E' }}>
+                          <span className="text-xs px-1 py-0.5 rounded" style={{ backgroundColor: 'var(--chatty-button)', color: 'var(--chatty-text)' }}>
                             {fileExtension.toUpperCase()}
                           </span>
                         )}
-                        <span className="text-xs" style={{ color: '#4C3D1E', opacity: 0.6 }}>
+                        <span className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
                           ({(file.size / 1024).toFixed(1)} KB)
                         </span>
                         {isParsing && progress > 0 && (
                           <div className="flex items-center gap-2 ml-2">
-                            <div className="w-16 rounded-full h-1.5" style={{ backgroundColor: '#E1C28B' }}>
+                            <div className="w-16 rounded-full h-1.5" style={{ backgroundColor: 'var(--chatty-button)' }}>
                               <div 
                                 className="h-1.5 rounded-full transition-all duration-300"
-                                style={{ width: `${progress * 100}%`, backgroundColor: '#4C3D1E' }}
+                                style={{ width: `${progress * 100}%`, backgroundColor: 'var(--chatty-text)' }}
                               />
                             </div>
-                            <span className="text-xs" style={{ color: '#4C3D1E', opacity: 0.6 }}>
+                            <span className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
                               {Math.round(progress * 100)}%
                             </span>
                           </div>
@@ -552,9 +613,12 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                       <button
                         type="button"
                         onClick={() => removeFile(index)}
-                        className="p-1 rounded transition-colors"
-                        style={{ color: '#4C3D1E' }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E1C28B'}
+                        className="p-1 rounded transition-colors file-remove-button theme-night:text-[#ffffeb]"
+                        style={{ 
+                          color: 'var(--chatty-text)',
+                          backgroundColor: 'transparent'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)'}
                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                       >
                         <X size={14} />
@@ -577,49 +641,72 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                 // Let the default paste behavior happen
               }}
               placeholder="Message Chatty..."
-              className="w-full p-4 pr-20 rounded-lg resize-none focus:outline-none transition-colors min-h-[52px] max-h-32"
+              className="chatty-input w-full p-4 pr-20 rounded-lg resize-none focus:outline-none focus:ring-0 focus:ring-offset-0 transition-colors min-h-[52px] chatty-message-input"
               style={{ 
-                backgroundColor: '#ffffd7',
-                border: '1px solid #E1C28B',
-                color: '#4C3D1E'
+                backgroundColor: 'var(--chatty-bg-message)',
+                border: '2px solid var(--chatty-bg-main)',
+                color: 'var(--chatty-text)',
+                outline: 'none',
+                '--placeholder-color': '#ADA587'
+              } as React.CSSProperties}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = 'transparent'
               }}
-              onFocus={(e) => e.currentTarget.style.borderColor = '#4C3D1E'}
-              onBlur={(e) => e.currentTarget.style.borderColor = '#E1C28B'}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = 'transparent'
+              }}
               rows={1}
-              disabled={!conversation}
+              disabled={!conversation || !thread}
             />
             
             {/* Action Menu */}
             <div className="absolute right-12 top-1/2 -translate-y-1/2">
               <ActionMenu 
                 onAction={handleAction}
-                disabled={!conversation}
+                disabled={!conversation || !thread}
               />
             </div>
             
             {/* Send Button */}
-            <button
-              type="submit"
-              disabled={(!inputValue.trim() && attachedFiles.length === 0) || !conversation}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-colors"
-              style={{
-                backgroundColor: (inputValue.trim() || attachedFiles.length > 0) && conversation ? '#E1C28B' : '#feffaf',
-                color: '#4C3D1E',
-                cursor: (inputValue.trim() || attachedFiles.length > 0) && conversation ? 'pointer' : 'not-allowed'
-              }}
-              onMouseEnter={(e) => {
-                if ((inputValue.trim() || attachedFiles.length > 0) && conversation) {
-                  e.currentTarget.style.backgroundColor = '#d4b078'
-                }
-              }}
-              onMouseLeave={(e) => {
-                if ((inputValue.trim() || attachedFiles.length > 0) && conversation) {
-                  e.currentTarget.style.backgroundColor = '#E1C28B'
-                }
-              }}
+            <div
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full transition-all duration-200 ease-out"
+              style={{ padding: 3, backgroundColor: 'var(--chatty-button)', borderRadius: '9999px' }}
             >
-              <Send size={16} />
-            </button>
+              <button
+                type="submit"
+                disabled={(!inputValue.trim() && attachedFiles.length === 0) || !conversation}
+                className="chatty-button rounded-full transition-all duration-200 ease-out flex items-center justify-center"
+                style={{
+                  width: 32,
+                  height: 32,
+                  backgroundColor: 'var(--chatty-button)',
+                  color: 'var(--chatty-text)',
+                  cursor: (inputValue.trim() || attachedFiles.length > 0) && conversation ? 'pointer' : 'default',
+                  border: 'none',
+                  boxShadow: (inputValue.trim() || attachedFiles.length > 0) && conversation
+                    ? '0 10px 24px rgba(58, 46, 20, 0.20), 0 6px 12px rgba(58, 46, 20, 0.16)'
+                    : '0 6px 12px rgba(58, 46, 20, 0.12), 0 3px 6px rgba(58, 46, 20, 0.08)',
+                  transform: (inputValue.trim() || attachedFiles.length > 0) && conversation ? 'translateY(-2px)' : 'translateY(0)',
+                  transition: 'box-shadow 0.2s ease, transform 0.2s ease, background-color 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  if ((inputValue.trim() || attachedFiles.length > 0) && conversation) {
+                    e.currentTarget.style.transform = 'translateY(-4px)';
+                    e.currentTarget.style.boxShadow = '0 14px 32px rgba(58, 46, 20, 0.24), 0 10px 18px rgba(58, 46, 20, 0.18)';
+                    e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = (inputValue.trim() || attachedFiles.length > 0) && conversation ? 'translateY(-2px)' : 'translateY(0)';
+                  e.currentTarget.style.boxShadow = (inputValue.trim() || attachedFiles.length > 0) && conversation
+                    ? '0 10px 24px rgba(58, 46, 20, 0.20), 0 6px 12px rgba(58, 46, 20, 0.16)'
+                    : '0 6px 12px rgba(58, 46, 20, 0.12), 0 3px 6px rgba(58, 46, 20, 0.08)';
+                  e.currentTarget.style.backgroundColor = 'var(--chatty-button)';
+                }}
+              >
+                <Send size={16} />
+              </button>
+            </div>
           </div>
 
           {/* Hidden File Input */}
@@ -632,11 +719,19 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             className="hidden"
           />
           
-          <div className="text-xs mt-2 text-center" style={{ color: '#4C3D1E', opacity: 0.6 }}>
+          <div className="text-xs mt-2 text-center" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
             Chatty can make mistakes. Consider checking important information.
           </div>
         </form>
       </div>
+      
+      {/* Drift History Modal */}
+      <DriftHistoryModal
+        isOpen={showDriftHistory}
+        onClose={() => setShowDriftHistory(false)}
+        constructId={constructId}
+      />
+      
     </div>
   )
 }

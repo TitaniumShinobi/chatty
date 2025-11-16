@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { 
   ArrowLeft, 
   Plus, 
@@ -16,22 +17,37 @@ import {
   Play,
   Bot,
   Paperclip,
-  Crop
+  Crop,
+  Share2
 } from 'lucide-react'
 import { GPTService, GPTConfig, GPTFile, GPTAction } from '../lib/gptService'
+import { stripSpeakerPrefix } from '../lib/utils'
 import Cropper from 'react-easy-crop'
-import { cn } from '../lib/utils'
+import { Z_LAYERS } from '../lib/zLayers'
+
+const buildCapabilities = (
+  caps: Partial<GPTConfig['capabilities']> | undefined,
+  mode: 'lin' | 'synth'
+): GPTConfig['capabilities'] => ({
+  webSearch: caps?.webSearch ?? false,
+  canvas: caps?.canvas ?? false,
+  imageGeneration: caps?.imageGeneration ?? false,
+  codeInterpreter: caps?.codeInterpreter ?? true,
+  synthesisMode: mode
+})
 
 interface GPTCreatorProps {
   isVisible: boolean
   onClose: () => void
   onGPTCreated?: (gpt: GPTConfig) => void
+  gptId?: string // Optional: if provided, load and edit this GPT
 }
 
 const GPTCreator: React.FC<GPTCreatorProps> = ({ 
   isVisible, 
   onClose, 
-  onGPTCreated 
+  onGPTCreated,
+  gptId
 }) => {
   const [activeTab, setActiveTab] = useState<'create' | 'configure'>('create')
   const [gptService] = useState(() => GPTService.getInstance())
@@ -48,7 +64,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       webSearch: false,
       canvas: false,
       imageGeneration: false,
-      codeInterpreter: true
+      codeInterpreter: true,
+      synthesisMode: 'lin'
     },
     modelId: 'phi3:latest',
     conversationModel: 'phi3:latest',
@@ -62,6 +79,11 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [filePage, setFilePage] = useState(1)
   const [filesPerPage] = useState(20) // Show 20 files per page for 300+ files
   const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  // Memory/Transcript management
+  const [memories, setMemories] = useState<Array<{id: string, name: string, filePath?: string, uploadedAt: string}>>([])
+  const [isUploadingMemory, setIsUploadingMemory] = useState(false)
+  const memoryInputRef = useRef<HTMLInputElement>(null)
   
   // Avatar upload
   const avatarInputRef = useRef<HTMLInputElement>(null)
@@ -78,13 +100,16 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [actions, setActions] = useState<GPTAction[]>([])
 
   // Preview
-  const [previewMessages, setPreviewMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([])
+  const [previewMessages, setPreviewMessages] = useState<Array<{role: 'user' | 'assistant', content: string, responseTimeMs?: number}>>([])
   const [previewInput, setPreviewInput] = useState('')
   const [isPreviewGenerating, setIsPreviewGenerating] = useState(false)
   const [useLinMode, setUseLinMode] = useState(true) // Default to Lin mode (respect custom tone)
   const [createMessages, setCreateMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([])
   const [createInput, setCreateInput] = useState('')
   const [isCreateGenerating, setIsCreateGenerating] = useState(false)
+  const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [shareLink, setShareLink] = useState<string | null>(null)
   const createInputRef = useRef<HTMLTextAreaElement>(null)
   const previewInputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -146,11 +171,93 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   }
 }`)
 
+  // Track if we're editing
+  const [isEditing, setIsEditing] = useState(false)
+  const [editingGptId, setEditingGptId] = useState<string | null>(null)
+
+  // Load GPT when editing
   useEffect(() => {
-    if (isVisible) {
+    if (isVisible && gptId) {
+      loadGPTForEditing(gptId)
+    } else if (isVisible && !gptId) {
       resetForm()
+      setIsEditing(false)
+      setEditingGptId(null)
     }
-  }, [isVisible])
+  }, [isVisible, gptId])
+
+  const loadGPTForEditing = async (id: string) => {
+    try {
+      setIsLoading(true)
+      setError(null)
+      const gpt = await gptService.getGPT(id)
+      
+      if (gpt) {
+        setConfig({
+          name: gpt.name || '',
+          description: gpt.description || '',
+          instructions: gpt.instructions || '',
+          conversationStarters: gpt.conversationStarters || [''],
+          capabilities: gpt.capabilities || {
+            webSearch: false,
+            canvas: false,
+            imageGeneration: false,
+            codeInterpreter: true,
+            synthesisMode: 'lin'
+          },
+          modelId: gpt.modelId || 'phi3:latest',
+          conversationModel: gpt.conversationModel || gpt.modelId || 'phi3:latest',
+          creativeModel: gpt.creativeModel || 'mistral:latest',
+          codingModel: gpt.codingModel || 'deepseek-coder:latest',
+          avatar: gpt.avatar
+        })
+        
+        // Load files
+        const gptFiles = await gptService.getFiles(id)
+        setFiles(gptFiles)
+        
+        // Load actions
+        const gptActions = await gptService.getActions(id)
+        setActions(gptActions)
+        
+        // Set editing mode
+        setIsEditing(true)
+        setEditingGptId(id)
+        
+        // Set synthesis mode based on capabilities
+        if (gpt.capabilities?.synthesisMode === 'synth') {
+          setUseLinMode(false)
+        } else {
+          setUseLinMode(true)
+        }
+      }
+    } catch (error: any) {
+      console.error('Failed to load GPT for editing:', error)
+      setError(error.message || 'Failed to load GPT')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Auto-save draft when config changes and validation passes
+  useEffect(() => {
+    if (!isVisible) return
+    const timer = setTimeout(async () => {
+      const errors = gptService.validateGPTConfig(config)
+      if (errors.length > 0) return
+      if (!isEditing || !editingGptId) return
+      try {
+        setIsSaving(true)
+        await gptService.updateGPT(editingGptId, config as any)
+        setLastAutoSave(new Date())
+      } catch (e) {
+        console.warn('Auto-save failed:', e)
+      } finally {
+        setIsSaving(false)
+      }
+    }, 1500) // brief debounce
+    return () => clearTimeout(timer)
+  }, [config, isEditing, editingGptId, isVisible, gptService])
 
   // Clear preview when config changes significantly
   useEffect(() => {
@@ -176,6 +283,21 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     adjustPreviewTextareaHeight()
   }, [previewInput])
 
+  useEffect(() => {
+    setConfig((prev) => {
+      const currentMode = prev.capabilities?.synthesisMode === 'synth' ? 'synth' : 'lin'
+      const desiredMode = useLinMode ? 'lin' : 'synth'
+      if (currentMode === desiredMode) {
+        return prev
+      }
+      const updatedCaps = buildCapabilities(prev.capabilities, desiredMode)
+      return {
+        ...prev,
+        capabilities: updatedCaps
+      }
+    })
+  }, [useLinMode])
+
   // TODO: Accept external capsule data via SimForge injection
   // This will allow future use of structured capsules as source material to pre-fill GPT configuration
 
@@ -189,7 +311,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         webSearch: false,
         canvas: false,
         imageGeneration: false,
-        codeInterpreter: true
+        codeInterpreter: true,
+        synthesisMode: 'lin'
       },
       modelId: 'phi3:latest',
       conversationModel: 'phi3:latest',
@@ -197,6 +320,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       codingModel: 'deepseek-coder:latest',
       hasPersistentMemory: true // VVAULT integration - defaults to true
     })
+    setUseLinMode(true)
     setFiles([])
     setActions([])
     setPreviewMessages([])
@@ -205,6 +329,10 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     setCreateInput('')
     setError(null)
     setActiveTab('create')
+  }
+
+  const handleSynthesisModeSelect = (mode: 'lin' | 'synth') => {
+    setUseLinMode(mode === 'lin')
   }
 
   const handleSave = async () => {
@@ -218,28 +346,84 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         return
       }
 
-      const gpt = await gptService.createGPT(config as any)
-      
-      // Upload files after GPT creation to avoid FOREIGN KEY constraint
-      for (const file of files) {
-        if (file.gptId === 'temp' && file._file) {
-          // Upload the file with the new GPT ID
-          await gptService.uploadFile(gpt.id, file._file)
-        }
-      }
+      let gpt: GPTConfig
 
-      // Create actions if any
-      for (const action of actions) {
-        if (action.name && action.url) {
-          await gptService.createAction(gpt.id, action as any)
+      if (isEditing && editingGptId) {
+        // Update existing GPT
+        gpt = await gptService.updateGPT(editingGptId, config as any)
+        
+        // Upload new files (only temp files that haven't been uploaded)
+        for (const file of files) {
+          if (file.gptId === 'temp' && file._file) {
+            try {
+              await gptService.uploadFile(editingGptId, file._file)
+            } catch (fileError: any) {
+              console.error(`Failed to upload file ${file.originalName}:`, fileError)
+              setError(`Failed to upload ${file.originalName}: ${fileError.message}`)
+            }
+          }
+        }
+
+        // Upload new memories
+        for (const memory of memories) {
+          if (memory.id.startsWith('temp-') && (memory as any)._file) {
+            try {
+              const result = await gptService.uploadMemory(editingGptId, (memory as any)._file)
+              setMemories(prev => prev.map(m => 
+                m.id === memory.id ? { ...m, filePath: result.filePath } : m
+              ))
+            } catch (error: any) {
+              console.error(`Failed to upload memory ${memory.name}:`, error)
+            }
+          }
+        }
+      } else {
+        // Create new GPT
+        gpt = await gptService.createGPT(config as any)
+        
+        // Upload files after GPT creation
+        for (const file of files) {
+          if (file.gptId === 'temp' && file._file) {
+            try {
+              await gptService.uploadFile(gpt.id, file._file)
+            } catch (fileError: any) {
+              console.error(`Failed to upload file ${file.originalName}:`, fileError)
+              setError(`Failed to upload ${file.originalName}: ${fileError.message}`)
+            }
+          }
+        }
+
+        // Upload memories/transcripts after GPT creation
+        for (const memory of memories) {
+          if (memory.id.startsWith('temp-') && (memory as any)._file) {
+            try {
+              const result = await gptService.uploadMemory(gpt.id, (memory as any)._file)
+              setMemories(prev => prev.map(m => 
+                m.id === memory.id ? { ...m, filePath: result.filePath } : m
+              ))
+            } catch (error: any) {
+              console.error(`Failed to upload memory ${memory.name}:`, error)
+            }
+          }
+        }
+
+        // Create actions if any
+        for (const action of actions) {
+          if (action.name && action.url) {
+            await gptService.createAction(gpt.id, action as any)
+          }
         }
       }
 
       onGPTCreated?.(gpt)
-      onClose()
+      setLastAutoSave(new Date())
+      if (typeof window !== 'undefined') {
+        setShareLink(`${window.location.origin}/app/gpts/edit/${gpt.id}`)
+      }
+      // Keep modal open after save to mimic ChatGPT-style autosave/edit loop
       
     } catch (error: any) {
-      setError(error.message || 'Failed to create GPT')
+      setError(error.message || (isEditing ? 'Failed to update GPT' : 'Failed to create GPT'))
     } finally {
       setIsLoading(false)
     }
@@ -288,6 +472,43 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
   const handleRemoveFile = (fileId: string) => {
     setFiles(prev => prev.filter(f => f.id !== fileId))
+  }
+
+  const handleMemoryUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('🧠 Memory upload triggered!', event.target.files)
+    const selectedFiles = event.target.files
+    if (!selectedFiles || selectedFiles.length === 0) {
+      console.log('No files selected')
+      return
+    }
+
+    console.log(`🧠 Processing ${selectedFiles.length} memory files:`, Array.from(selectedFiles).map(f => f.name))
+    setIsUploadingMemory(true)
+    setError(null)
+
+    try {
+      // Store files in local state (will be uploaded after GPT creation)
+      for (const file of Array.from(selectedFiles)) {
+        const tempMemory = {
+          id: `temp-${crypto.randomUUID()}`,
+          name: file.name,
+          uploadedAt: new Date().toISOString(),
+          _file: file // Store the actual File object for later processing
+        }
+        setMemories(prev => [...prev, tempMemory])
+      }
+    } catch (error: any) {
+      setError(error.message || 'Failed to prepare memory files')
+    } finally {
+      setIsUploadingMemory(false)
+      if (memoryInputRef.current) {
+        memoryInputRef.current.value = ''
+      }
+    }
+  }
+
+  const handleRemoveMemory = (memoryId: string) => {
+    setMemories(prev => prev.filter(m => m.id !== memoryId))
   }
 
   // Pagination helpers for 300+ files
@@ -389,7 +610,9 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     }
   }
 
-  const triggerAvatarUpload = () => {
+  const triggerAvatarUpload = (e?: React.MouseEvent) => {
+    e?.preventDefault()
+    e?.stopPropagation()
     avatarInputRef.current?.click()
   }
 
@@ -488,49 +711,105 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     })
 
     try {
-      // Use runSeat for direct AI model access
-      const { runSeat } = await import('../lib/browserSeatRunner')
+      // Route through Lin construct (lin-001) for persistent memory
+      // Lin remembers all GPT creation conversations and can reference previous GPTs
+      const { AIService } = await import('../lib/aiService')
+      const aiService = AIService.getInstance()
       
-      // Build system prompt for GPT creation assistant
-      const systemPrompt = buildCreateTabSystemPrompt()
+      // Set Lin runtime mode and construct ID
+      aiService.setRuntime('lin-001', 'lin')
       
-      // Check if this is a simple greeting
-      const isGreeting = isSimpleGreeting(userMessage)
-      console.log('Create tab: Is greeting?', isGreeting, 'Message:', userMessage)
+      console.log('🧠 [GPTCreator] Routing Create tab message through Lin (lin-001) with persistent memory')
       
-      // Create conversation context
-      const conversationContext = createMessages
-        .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
-        .join('\n')
+      // Build GPT creation context for Lin
+      const gptCreationContext = {
+        currentConfig: {
+          name: config.name || '',
+          description: config.description || '',
+          instructions: config.instructions || '',
+          capabilities: config.capabilities,
+          filesCount: files.length
+        }
+      }
       
-      // Build the full prompt with greeting context
-      const fullPrompt = `${systemPrompt}
-
-${isGreeting ? 'NOTE: The user just sent a simple greeting. Respond conversationally and briefly - do not overwhelm them with setup instructions.' : ''}
-
-${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : ''}User: ${userMessage}
-
-Assistant:`
+      // Process message through Lin with construct ID for memory persistence
+      const packets = await aiService.processMessage(
+        userMessage,
+        [], // No files in create tab
+        {
+          onUpdate: (packets: any[]) => {
+            // Handle streaming updates if needed
+            const content = packets
+              .filter(p => p.op === 'answer.v1')
+              .map(p => p.payload?.content || '')
+              .join('')
+            if (content) {
+              // Update last assistant message with streaming content
+              setCreateMessages(prev => {
+                const lastMsg = prev[prev.length - 1]
+                if (lastMsg?.role === 'assistant') {
+                  return [...prev.slice(0, -1), { ...lastMsg, content }]
+                }
+                return prev
+              })
+            }
+          },
+          onFinalUpdate: (packets: any[]) => {
+            // Extract final response
+            const response = packets
+              .filter(p => p.op === 'answer.v1')
+              .map(p => p.payload?.content || '')
+              .join('')
+              .trim()
+            
+            if (response) {
+              // Add final assistant response
+              setCreateMessages(prev => {
+                const lastMsg = prev[prev.length - 1]
+                // Remove any partial streaming updates
+                const withoutLast = lastMsg?.role === 'assistant' ? prev.slice(0, -1) : prev
+                return [...withoutLast, { role: 'assistant' as const, content: response }]
+              })
+              
+              // Try to extract GPT configuration from the conversation
+              const fullConversation = [
+                ...createMessages,
+                { role: 'user' as const, content: userMessage },
+                { role: 'assistant' as const, content: response }
+              ]
+              extractConfigFromConversation(fullConversation)
+            }
+          }
+        },
+        {
+          route: '/gpt-creator',
+          ...gptCreationContext
+        },
+        'lin-001', // Construct ID: Lin
+        'lin-001-gpt-creator' // Thread ID: Persistent thread for GPT creation
+      )
       
-      // Use a creative model for GPT creation assistance (better at brainstorming and design)
-      const selectedModel = 'mistral:latest' // Use creative model for creation assistance
-      console.log('Create tab using GPT creation assistant model:', selectedModel)
+      // Extract response from packets if onFinalUpdate didn't fire
+      const response = packets
+        .filter(p => p.op === 'answer.v1')
+        .map(p => p.payload?.content || '')
+        .join('')
+        .trim()
       
-      const response = await runSeat({
-        seat: 'creative',
-        prompt: fullPrompt,
-        modelOverride: selectedModel
-      })
-      
-      // Add AI response to create conversation
-      setCreateMessages(prev => {
-        const newMessages = [...prev, { role: 'assistant' as const, content: response.trim() }]
-        console.log('Create tab: Adding assistant message, total messages:', newMessages.length)
-        return newMessages
-      })
-      
-      // Try to extract GPT configuration from the conversation
-      extractConfigFromConversation([...createMessages, { role: 'user', content: userMessage }, { role: 'assistant', content: response.trim() }])
+      if (response && !createMessages.some(m => m.role === 'assistant' && m.content === response)) {
+        setCreateMessages(prev => {
+          const newMessages = [...prev, { role: 'assistant' as const, content: response }]
+          console.log('Create tab: Adding assistant message, total messages:', newMessages.length)
+          return newMessages
+        })
+        
+        // Try to extract GPT configuration from the conversation
+        extractConfigFromConversation([
+          ...createMessages,
+          { role: 'user' as const, content: userMessage },
+          { role: 'assistant' as const, content: response }
+        ])
+      }
       
     } catch (error) {
       console.error('Error in create tab:', error)
@@ -571,6 +850,9 @@ Assistant:`
     // Add user message to preview conversation
     setPreviewMessages(prev => [...prev, { role: 'user', content: userMessage }])
 
+    // Start timing the response
+    const startTime = Date.now()
+
     try {
       // Use Lin synthesis for custom GPT previews (bypasses Chatty tone normalization)
       const { OptimizedSynthProcessor } = await import('../engine/optimizedSynth')
@@ -598,54 +880,36 @@ Assistant:`
       
       let response: string
       
-      if (useLinMode) {
-        // Use Lin synthesis for unbiased, custom tone
-        const memoryStore = new MemoryStore()
-        const personaBrain = new PersonaBrain(memoryStore)
-        const synthProcessor = new OptimizedSynthProcessor(personaBrain, {
-          enableLinMode: true // Enable Lin mode for unbiased synthesis
-        })
-        
-        console.log('Preview using Lin synthesis (tone normalization bypassed)')
-        
-        // Process with Lin mode and custom instructions
-        const result = await synthProcessor.processMessageWithLinMode(
-          userMessage,
-          conversationHistory,
-          systemPrompt,
-          'gpt-preview'
-        )
-        
-        response = result.response
-      } else {
-        // Use normal Chatty synthesis with tone normalization
-        const { runSeat } = await import('../lib/browserSeatRunner')
-        
-        // Create conversation context
-        const conversationContext = previewMessages
-          .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
-          .join('\n')
-        
-        // Build the full prompt
-        const fullPrompt = `${systemPrompt}
+      // Pure Lin path for both modes: direct seat call, no Synth helper seats
+      const { runSeat } = await import('../lib/browserSeatRunner')
+      
+      // Create conversation context
+      const conversationContext = previewMessages
+        .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
+        .join('\n')
+      
+      // Build the full prompt
+      const fullPrompt = `${systemPrompt}
 
 ${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : ''}User: ${userMessage}
 
 Assistant:`
-        
-        // Process with the selected conversation model
-        const selectedModel = config.conversationModel || config.modelId || 'phi3:latest'
-        console.log('Preview using Chatty synthesis with tone normalization, model:', selectedModel)
-        
-        response = await runSeat({
-          seat: 'smalltalk',
-          prompt: fullPrompt,
-          modelOverride: selectedModel
-        })
-      }
       
-      // Add AI response to preview conversation
-      setPreviewMessages(prev => [...prev, { role: 'assistant', content: response.trim() }])
+      // Use the selected model override if provided, else defaults
+      const selectedModel = config.conversationModel || config.modelId || 'phi3:latest'
+      console.log('Preview using pure Lin seat - calling Ollama with model:', selectedModel)
+      
+      response = await runSeat({
+        seat: 'smalltalk',
+        prompt: fullPrompt,
+        modelOverride: selectedModel
+      })
+      
+      // Calculate response time
+      const responseTimeMs = Date.now() - startTime
+      
+      // Add AI response to preview conversation with response time
+      setPreviewMessages(prev => [...prev, { role: 'assistant', content: response.trim(), responseTimeMs }])
       
       // Try to extract GPT configuration from the conversation
       extractConfigFromConversation([...previewMessages, { role: 'user', content: userMessage }, { role: 'assistant', content: response.trim() }])
@@ -665,9 +929,13 @@ Assistant:`
         }
       }
       
+      // Calculate response time even for errors
+      const responseTimeMs = Date.now() - startTime
+      
       setPreviewMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: errorMessage
+        content: errorMessage,
+        responseTimeMs
       }])
     } finally {
       setIsPreviewGenerating(false)
@@ -725,19 +993,33 @@ Assistant:`
   // Auto-resize textarea functions
   const adjustCreateTextareaHeight = () => {
     if (createInputRef.current) {
+      const maxHeight = 15 * 24 // 15 lines * 24px line height
       createInputRef.current.style.height = 'auto'
       const scrollHeight = createInputRef.current.scrollHeight
-      const maxHeight = 15 * 24 // 15 lines * 24px line height
-      createInputRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
+      
+      if (scrollHeight <= maxHeight) {
+        createInputRef.current.style.height = `${scrollHeight}px`
+        createInputRef.current.style.overflowY = 'hidden'
+      } else {
+        createInputRef.current.style.height = `${maxHeight}px`
+        createInputRef.current.style.overflowY = 'hidden'
+      }
     }
   }
 
   const adjustPreviewTextareaHeight = () => {
     if (previewInputRef.current) {
+      const maxHeight = 15 * 24 // 15 lines * 24px line height
       previewInputRef.current.style.height = 'auto'
       const scrollHeight = previewInputRef.current.scrollHeight
-      const maxHeight = 15 * 24 // 15 lines * 24px line height
-      previewInputRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
+      
+      if (scrollHeight <= maxHeight) {
+        previewInputRef.current.style.height = `${scrollHeight}px`
+        previewInputRef.current.style.overflowY = 'hidden'
+      } else {
+        previewInputRef.current.style.height = `${maxHeight}px`
+        previewInputRef.current.style.overflowY = 'hidden'
+      }
     }
   }
 
@@ -837,7 +1119,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
     }
     
     // Add model context
-    if (config.conversationModel || config.creativeModel || config.codingModel) {
+    if (useLinMode && (config.conversationModel || config.creativeModel || config.codingModel)) {
       systemPrompt += `\n\nModel Configuration:`
       if (config.conversationModel) {
         systemPrompt += `\n- Conversation: ${config.conversationModel}`
@@ -962,86 +1244,128 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
     
     // Extract capability suggestions
     if (fullConversation.toLowerCase().includes('code') && config.capabilities && !config.capabilities.codeInterpreter) {
-      setConfig(prev => ({ 
-        ...prev, 
-        capabilities: { 
-          webSearch: prev.capabilities?.webSearch || false,
-          canvas: prev.capabilities?.canvas || false,
-          imageGeneration: prev.capabilities?.imageGeneration || false,
-          codeInterpreter: true
+      setConfig(prev => {
+        const mode = prev.capabilities?.synthesisMode === 'synth' ? 'synth' : (useLinMode ? 'lin' : 'synth')
+        const caps = buildCapabilities(prev.capabilities, mode)
+        return { 
+          ...prev, 
+          capabilities: { 
+            ...caps,
+            codeInterpreter: true
+          }
         }
-      }))
+      })
     }
     
     if (fullConversation.toLowerCase().includes('web search') && config.capabilities && !config.capabilities.webSearch) {
-      setConfig(prev => ({ 
-        ...prev, 
-        capabilities: { 
-          webSearch: true,
-          canvas: prev.capabilities?.canvas || false,
-          imageGeneration: prev.capabilities?.imageGeneration || false,
-          codeInterpreter: prev.capabilities?.codeInterpreter || false
+      setConfig(prev => {
+        const mode = prev.capabilities?.synthesisMode === 'synth' ? 'synth' : (useLinMode ? 'lin' : 'synth')
+        const caps = buildCapabilities(prev.capabilities, mode)
+        return { 
+          ...prev, 
+          capabilities: { 
+            ...caps,
+            webSearch: true
+          }
         }
-      }))
+      })
     }
     
     if (fullConversation.toLowerCase().includes('image') && config.capabilities && !config.capabilities.imageGeneration) {
-      setConfig(prev => ({ 
-        ...prev, 
-        capabilities: { 
-          webSearch: prev.capabilities?.webSearch || false,
-          canvas: prev.capabilities?.canvas || false,
-          imageGeneration: true,
-          codeInterpreter: prev.capabilities?.codeInterpreter || false
+      setConfig(prev => {
+        const mode = prev.capabilities?.synthesisMode === 'synth' ? 'synth' : (useLinMode ? 'lin' : 'synth')
+        const caps = buildCapabilities(prev.capabilities, mode)
+        return { 
+          ...prev, 
+          capabilities: { 
+            ...caps,
+            imageGeneration: true
+          }
         }
-      }))
+      })
     }
   }
 
   if (!isVisible) return null
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 overflow-auto"
+      style={{ zIndex: Z_LAYERS.modal }}
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
       {/* Hidden file input - accessible from all tabs */}
       <input
         ref={fileInputRef}
         type="file"
         multiple
         onChange={handleFileUpload}
+        onClick={(e) => {
+          // Prevent click from bubbling to modal backdrop
+          e.stopPropagation()
+        }}
         className="hidden"
         accept=".txt,.md,.pdf,.json,.csv,.doc,.docx,.mp4,.avi,.mov,.mkv,.webm,.flv,.wmv,.m4v,.3gp,.ogv,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.svg"
       />
       
-      <div className="bg-app-pale-50 border border-app-yellow-300 rounded-lg w-full max-w-6xl h-[90vh] flex flex-col shadow-lg">
+      <div
+        style={{ backgroundColor: 'var(--chatty-bg-main)', border: '1px solid var(--chatty-line)', color: 'var(--chatty-text)' }}
+        className="rounded-lg w-full max-w-6xl h-[90vh] flex flex-col shadow-lg my-4"
+        onClick={(event) => event.stopPropagation()}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-app-yellow-300">
-          <div className="flex items-center gap-3">
+        <div style={{ borderBottom: '1px solid var(--chatty-line)' }} className="flex items-center justify-between p-4 flex-shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={onClose}
-              className="p-2 hover:bg-app-yellow-100 rounded-lg text-app-text-800"
+              style={{ color: 'var(--chatty-text)' }}
+              className="p-2 rounded-lg transition-colors hover:bg-[var(--chatty-highlight)] flex-shrink-0"
             >
               <ArrowLeft size={20} />
             </button>
-            <div>
-              <h1 className="text-xl font-semibold text-app-text-900">Create New GPT</h1>
-              <p className="text-sm text-app-text-800">• Draft</p>
+            <div className="min-w-0">
+              <h1 style={{ color: 'var(--chatty-text)' }} className="text-xl font-semibold truncate">
+                {isEditing ? `Edit ${config.name || 'GPT'}` : 'Create New GPT'}
+              </h1>
+              <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-sm">
+                {isEditing ? '• Editing' : '• Draft'}
+              </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
+          {shareLink && (
             <button
-              onClick={handleSave}
-              disabled={isLoading || !config.name?.trim()}
-              className="px-4 py-2 text-sm bg-app-button-500 text-app-text-900 rounded-lg hover:bg-app-button-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(shareLink).catch(() => {})
+              }}
+              className="px-3 py-2 text-sm rounded-lg border border-[var(--chatty-line)] hover:bg-[var(--chatty-highlight)] flex items-center gap-1 transition-opacity"
             >
-              <Save size={14} />
-              {isLoading ? 'Creating...' : 'Create GPT'}
+              <Share2 size={14} />
+              Share
+            </button>
+          )}
+
+          <button
+            onClick={handleSave}
+            disabled={isLoading || !config.name?.trim()}
+            style={{ 
+              backgroundColor: 'transparent', 
+                color: 'var(--chatty-text)' 
+              }}
+              className="px-4 py-2 text-lg rounded-lg border border-[var(--chatty-line)] hover:bg-[var(--chatty-highlight)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-opacity"
+            >
+              <Save size={18} />
+              {isLoading ? (isEditing ? 'Saving...' : 'Creating...') : (isEditing ? 'Save' : 'Create GPT')}
             </button>
           </div>
         </div>
 
         {/* Error Display */}
         {error && (
-          <div className="mx-4 mt-2 p-3 bg-red-900/20 border border-red-500/50 rounded-lg text-red-400 text-sm">
+          <div style={{ backgroundColor: '#fee2e2', border: '1px solid #fca5a5', color: '#b91c1c' }} className="mx-4 mt-2 p-3 rounded-lg text-sm">
             {error}
           </div>
         )}
@@ -1049,28 +1373,28 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
         {/* Main Content */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left Panel - Configure */}
-          <div className="w-1/2 border-r border-app-yellow-300 overflow-y-auto">
+          <div style={{ borderRight: '1px solid var(--chatty-line)' }} className="w-1/2 overflow-y-auto">
             {/* Tabs */}
-            <div className="flex border-b border-app-yellow-300">
+            <div style={{ borderBottom: '1px solid var(--chatty-line)' }} className="flex">
               <button
                 onClick={() => setActiveTab('create')}
-                className={cn(
-                  "px-4 py-2 text-sm font-medium",
-                  activeTab === 'create' 
-                    ? "border-b-2 border-app-green-500 text-app-green-400" 
-                    : "text-app-text-800 hover:text-app-text-900"
-                )}
+                style={{ 
+                  color: activeTab === 'create' ? 'var(--chatty-button)' : 'var(--chatty-text)',
+                  borderBottom: activeTab === 'create' ? '2px solid var(--chatty-button)' : 'none',
+                  opacity: activeTab === 'create' ? 1 : 0.7
+                }}
+                className="px-4 py-2 text-sm font-medium transition-colors hover:opacity-100"
               >
                 Create
               </button>
               <button
                 onClick={() => setActiveTab('configure')}
-                className={cn(
-                  "px-4 py-2 text-sm font-medium",
-                  activeTab === 'configure' 
-                    ? "border-b-2 border-app-green-500 text-app-green-400" 
-                    : "text-app-text-800 hover:text-app-text-900"
-                )}
+                style={{ 
+                  color: activeTab === 'configure' ? 'var(--chatty-button)' : 'var(--chatty-text)',
+                  borderBottom: activeTab === 'configure' ? '2px solid var(--chatty-button)' : 'none',
+                  opacity: activeTab === 'configure' ? 1 : 0.7
+                }}
+                className="px-4 py-2 text-sm font-medium transition-colors hover:opacity-100"
               >
                 Configure
               </button>
@@ -1082,11 +1406,11 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                 <div className="flex flex-col h-full">
                   <div className="flex-1 p-4 overflow-y-auto">
                     <div className="text-center mb-6">
-                      <div className="w-16 h-16 bg-app-yellow-200 rounded-lg flex items-center justify-center mx-auto mb-4">
-                        <Bot size={24} className="text-app-text-800" />
+                      <div style={{ backgroundColor: 'var(--chatty-highlight)' }} className="w-16 h-16 rounded-lg flex items-center justify-center mx-auto mb-4">
+                        <Bot size={24} style={{ color: 'var(--chatty-text)' }} />
                       </div>
-                      <h3 className="text-lg font-medium text-app-text-900 mb-2">Let's create your GPT together</h3>
-                      <p className="text-app-text-800 text-sm">
+                      <h3 style={{ color: 'var(--chatty-text)' }} className="text-lg font-medium mb-2">Let's create your GPT together</h3>
+                      <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-sm">
                         I'll help you build your custom AI assistant. Just tell me what you want it to do!
                       </p>
                     </div>
@@ -1097,7 +1421,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                         console.log('Create tab render: createMessages.length =', createMessages.length, 'messages:', createMessages)
                         return createMessages.length === 0 ? (
                           <div className="text-center py-8">
-                            <p className="text-app-text-800 text-sm">
+                            <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-sm">
                               Start by telling me what kind of GPT you'd like to create...
                             </p>
                           </div>
@@ -1108,13 +1432,10 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                             className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                           >
                             <div
-                              className={`max-w-[80%] px-4 py-2 rounded-lg ${
-                                message.role === 'user'
-                                  ? 'bg-app-chat-50 text-app-text-900'
-                                  : 'bg-app-chat-50 text-app-text-900'
-                              }`}
+                              style={{ backgroundColor: 'var(--chatty-bg-message)', color: 'var(--chatty-text)' }}
+                              className="max-w-[80%] px-4 py-2 rounded-lg"
                             >
-                              <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                              <p className="text-sm whitespace-pre-wrap">{typeof message.content === 'string' ? stripSpeakerPrefix(message.content) : message.content}</p>
                             </div>
                           </div>
                         ))
@@ -1124,43 +1445,45 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                     {/* Uploaded Files Display */}
                     {files.length > 0 && (
-                      <div className="mb-4 p-3 bg-app-yellow-200 rounded-lg">
+                      <div style={{ backgroundColor: 'var(--chatty-highlight)', border: '1px solid var(--chatty-line)' }} className="mb-4 p-3 rounded-lg">
                         <div className="flex items-center gap-2 mb-2">
-                          <Paperclip size={16} className="text-app-green-400" />
-                          <span className="text-sm font-medium text-app-text-900">Knowledge Files</span>
-                          <span className="text-xs text-app-text-800">({files.length})</span>
+                          <Paperclip size={16} style={{ color: 'var(--chatty-button)' }} />
+                          <span style={{ color: 'var(--chatty-text)' }} className="text-sm font-medium">Knowledge Files</span>
+                          <span style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs">({files.length})</span>
                         </div>
                         <div className="space-y-1">
                           {currentFiles.map((file, index) => (
-                            <div key={index} className="flex items-center gap-2 text-xs text-app-text-900">
+                            <div key={index} className="flex items-center gap-2 text-xs" style={{ color: 'var(--chatty-text)' }}>
                               <FileText size={12} />
                               <span>{file.originalName}</span>
-                              <span className="text-app-text-800">({file.mimeType})</span>
+                              <span style={{ opacity: 0.7 }}>({file.mimeType})</span>
                             </div>
                           ))}
                           {totalFilePages > 1 && (
-                            <div className="flex items-center justify-between mt-2 pt-2 border-t border-app-yellow-300">
+                            <div style={{ borderTop: '1px solid var(--chatty-line)' }} className="flex items-center justify-between mt-2 pt-2">
                               <button
                                 onClick={() => goToFilePage(filePage - 1)}
                                 disabled={filePage === 1}
-                                className="text-xs text-app-text-800 hover:text-app-text-900 disabled:opacity-50"
+                                style={{ color: 'var(--chatty-text)', opacity: filePage === 1 ? 0.5 : 0.7 }}
+                                className="text-xs hover:opacity-100 disabled:cursor-not-allowed transition-opacity"
                               >
                                 ← Previous
                               </button>
-                              <span className="text-xs text-app-text-800">
+                              <span style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs">
                                 Page {filePage} of {totalFilePages}
                               </span>
                               <button
                                 onClick={() => goToFilePage(filePage + 1)}
                                 disabled={filePage === totalFilePages}
-                                className="text-xs text-app-text-800 hover:text-app-text-900 disabled:opacity-50"
+                                style={{ color: 'var(--chatty-text)', opacity: filePage === totalFilePages ? 0.5 : 0.7 }}
+                                className="text-xs hover:opacity-100 disabled:cursor-not-allowed transition-opacity"
                               >
                                 Next →
                               </button>
                             </div>
                           )}
                         </div>
-                        <p className="text-xs text-app-text-800 mt-2">
+                        <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs mt-2">
                           These files will be available to your GPT for reference and context.
                         </p>
                       </div>
@@ -1168,9 +1491,9 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                   </div>
 
                   {/* Input Area */}
-                  <div className="p-4 border-t border-app-button-300">
+                  <div style={{ borderTop: '1px solid var(--chatty-line)' }} className="p-4">
                     <form onSubmit={handleCreateSubmit} className="space-y-2">
-                      <div className="flex items-center gap-2 p-3 border border-app-yellow-300 rounded-lg bg-app-button-100">
+                      <div style={{ border: '1px solid var(--chatty-line)', backgroundColor: 'var(--chatty-bg-message)' }} className="flex items-center gap-2 p-3 rounded-lg">
                         <textarea
                           ref={createInputRef}
                           value={createInput}
@@ -1182,16 +1505,23 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                             }
                           }}
                           placeholder="Tell me what you want your GPT to do..."
-                          className="flex-1 outline-none text-sm bg-transparent text-app-text-900 placeholder-app-button-600 resize-none min-h-[20px] max-h-32"
+                          style={{ 
+                            backgroundColor: 'transparent', 
+                            color: 'var(--chatty-text)'
+                          }}
+                          className="flex-1 outline-none text-sm resize-none min-h-[20px] placeholder:opacity-60"
                           rows={1}
                         />
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
                             console.log('📎 Create tab paperclip clicked!')
                             fileInputRef.current?.click()
                           }}
-                          className="p-1 hover:bg-app-button-600 rounded text-app-text-800 hover:text-app-text-900"
+                          style={{ color: 'var(--chatty-text)' }}
+                          className="p-1 rounded transition-colors hover:bg-[var(--chatty-highlight)]"
                           title="Upload knowledge files"
                         >
                           <Paperclip size={16} />
@@ -1199,19 +1529,19 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                         <button
                           type="submit"
                           disabled={!createInput.trim() || isCreateGenerating}
-                          className="p-1 hover:bg-app-button-600 rounded disabled:opacity-50"
+                          className="p-1 rounded disabled:opacity-50 transition-colors hover:bg-[var(--chatty-highlight)]"
                         >
                           {isCreateGenerating ? (
-                            <div className="w-4 h-4 border-2 border-app-button-500 border-t-transparent rounded-full animate-spin"></div>
+                            <div style={{ borderColor: 'var(--chatty-button)', borderTopColor: 'transparent' }} className="w-4 h-4 border-2 rounded-full animate-spin"></div>
                           ) : (
-                            <Play size={16} className="text-app-text-800" />
+                            <Play size={16} style={{ color: 'var(--chatty-text)' }} />
                           )}
                         </button>
                       </div>
-                      <p className="text-xs text-app-text-800 text-center">
+                      <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs text-center">
                         I'll help you define your GPT's purpose, personality, and capabilities through conversation.
                         {files.length > 0 && (
-                          <span className="block mt-1 text-app-green-400">
+                          <span style={{ color: 'var(--chatty-button)' }} className="block mt-1">
                             📎 {files.length} knowledge file{files.length !== 1 ? 's' : ''} uploaded
                           </span>
                         )}
@@ -1225,33 +1555,40 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                   {/* Avatar */}
                   <div className="flex items-center gap-4">
                     <div 
-                      className="w-16 h-16 border-2 border-dashed border-app-orange-600 rounded-lg flex items-center justify-center overflow-hidden cursor-pointer hover:border-app-orange-500 transition-colors"
-                      onClick={triggerAvatarUpload}
+                      style={{ border: `2px dashed var(--chatty-line)` }}
+                      className="w-16 h-16 rounded-lg flex items-center justify-center overflow-hidden cursor-pointer transition-colors hover:border-opacity-80"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        triggerAvatarUpload(e)
+                      }}
                       title="Click to upload avatar image"
                     >
                       {isUploadingAvatar ? (
-                        <div className="animate-spin rounded-full h-6 w-6 border-2 border-app-button-500 border-t-transparent"></div>
+                        <div style={{ borderColor: 'var(--chatty-button)', borderTopColor: 'transparent' }} className="animate-spin rounded-full h-6 w-6 border-2"></div>
                       ) : config.avatar ? (
                         <img src={config.avatar} alt="GPT Avatar" className="w-full h-full object-cover" />
                       ) : (
-                        <Plus size={24} className="text-app-text-800" />
+                        <Plus size={24} style={{ color: 'var(--chatty-text)' }} />
                       )}
                     </div>
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-app-text-900">Avatar</p>
-                      <p className="text-xs text-app-text-800 mb-2">Click the + to upload an image, or generate one automatically</p>
+                      <p style={{ color: 'var(--chatty-text)' }} className="text-sm font-medium">Avatar</p>
+                      <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs mb-2">Click the + to upload an image, or generate one automatically</p>
                       <div className="flex gap-2">
                         <button
                           onClick={generateAvatar}
                           disabled={isGeneratingAvatar || !config.name?.trim()}
-                          className="px-3 py-1 text-xs bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                          style={{ backgroundColor: 'var(--chatty-button)', color: 'var(--chatty-text)' }}
+                          className="px-3 py-1 text-xs rounded hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
                         >
                           {isGeneratingAvatar ? 'Generating...' : 'Generate Avatar'}
                         </button>
                         {config.avatar && (
                           <button
                             onClick={() => setConfig(prev => ({ ...prev, avatar: undefined }))}
-                            className="px-3 py-1 text-xs bg-red-800 text-app-text-900 rounded hover:bg-red-700"
+                            style={{ backgroundColor: '#dc2626', color: 'var(--chatty-text)' }}
+                            className="px-3 py-1 text-xs rounded hover:opacity-90 transition-opacity"
                           >
                             Remove
                           </button>
@@ -1266,57 +1603,120 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                     type="file"
                     accept="image/png,image/jpeg,image/jpg,image/gif,image/webp,image/svg+xml"
                     onChange={handleAvatarUpload}
+                    onClick={(e) => {
+                      // Prevent click from bubbling to modal backdrop
+                      e.stopPropagation()
+                    }}
                     className="hidden"
                   />
 
                   {/* Name */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-app-text-900">Name</label>
+                    <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Name</label>
                     <input
                       type="text"
                       value={config.name || ''}
                       onChange={(e) => setConfig(prev => ({ ...prev, name: e.target.value }))}
                       placeholder="Name your GPT"
-                      className="w-full p-3 border border-app-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900 placeholder-app-button-600"
+                      style={{ 
+                        border: '1px solid var(--chatty-line)', 
+                        backgroundColor: 'var(--chatty-bg-message)', 
+                        color: 'var(--chatty-text)' 
+                      }}
+                      className="w-full p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--chatty-button)] placeholder:opacity-60"
                     />
                   </div>
 
                   {/* Description */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-app-text-900">Description</label>
+                    <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Description</label>
                     <input
                       type="text"
                       value={config.description || ''}
                       onChange={(e) => setConfig(prev => ({ ...prev, description: e.target.value }))}
                       placeholder="What does this GPT do?"
-                      className="w-full p-3 border border-app-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900 placeholder-app-button-600"
+                      style={{ 
+                        border: '1px solid var(--chatty-line)', 
+                        backgroundColor: 'var(--chatty-bg-message)', 
+                        color: 'var(--chatty-text)' 
+                      }}
+                      className="w-full p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--chatty-button)] placeholder:opacity-60"
                     />
                   </div>
 
                   {/* Instructions */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-app-text-900">Instructions</label>
+                    <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Instructions</label>
                     <textarea
                       value={config.instructions || ''}
                       onChange={(e) => setConfig(prev => ({ ...prev, instructions: e.target.value }))}
                       placeholder="How should this GPT behave? What should it do and avoid?"
                       rows={6}
-                      className="w-full p-3 border border-app-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 resize-none bg-app-button-100 text-app-text-900 placeholder-app-button-600"
+                      style={{ 
+                        border: '1px solid var(--chatty-line)', 
+                        backgroundColor: 'var(--chatty-bg-message)', 
+                        color: 'var(--chatty-text)' 
+                      }}
+                      className="w-full p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--chatty-button)] resize-none placeholder:opacity-60"
                     />
                   </div>
 
-                  {/* Model Selection */}
-                  <div className="space-y-4">
-                    <h3 className="text-sm font-medium text-app-text-900">Model Selection</h3>
-                    
-                    {/* Conversation Model */}
+                  {/* Tone Strategy */}
                   <div>
-                      <label className="block text-sm font-medium mb-2 text-app-text-900">Conversation</label>
-                    <select 
-                        value={config.conversationModel || 'phi3:latest'}
-                        onChange={(e) => setConfig(prev => ({ ...prev, conversationModel: e.target.value }))}
-                        className="w-full p-3 border border-app-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900"
-                      >
+                    <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Tone &amp; Orchestration</label>
+                    <div className="space-y-2">
+                      <div style={{ backgroundColor: 'var(--chatty-highlight)' }} className="inline-flex items-center rounded-full p-1 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleSynthesisModeSelect('synth')}
+                          style={{
+                            backgroundColor: !useLinMode ? 'var(--chatty-button)' : 'transparent',
+                            color: 'var(--chatty-text)'
+                          }}
+                          className="px-3 py-1 rounded-full text-xs font-medium transition-colors hover:opacity-90"
+                          title="Use Chatty Lin's orchestration with default models (deepseek, mistral, phi3)"
+                        >
+                          Chatty Lin
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSynthesisModeSelect('lin')}
+                          style={{
+                            backgroundColor: useLinMode ? 'var(--chatty-button)' : 'transparent',
+                            color: 'var(--chatty-text)'
+                          }}
+                          className="px-3 py-1 rounded-full text-xs font-medium transition-colors hover:opacity-90"
+                          title="Select your own models from the dropdowns below - these will be called directly via Ollama"
+                        >
+                          Custom Models
+                        </button>
+                    </div>
+                      <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs">
+                        {useLinMode
+                          ? 'Select specific models from the dropdowns below. These models will be called directly via Ollama and used for your GPT.'
+                          : 'Chatty Lin mode uses intelligent orchestration with default models (deepseek, mistral, phi3). Model selection is hidden in this mode.'}
+                      </p>
+                    </div>
+                    {/* Model Selection */}
+                    {useLinMode ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h3 style={{ color: 'var(--chatty-text)' }} className="text-sm font-medium">Model Selection</h3>
+                        </div>
+                        
+                        {/* Conversation Model */}
+                        <div>
+                          <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Conversation</label>
+                          <select 
+                            value={config.conversationModel || 'phi3:latest'}
+                            onChange={(e) => setConfig(prev => ({ ...prev, conversationModel: e.target.value }))}
+                            style={{ 
+                              border: '1px solid var(--chatty-line)', 
+                              backgroundColor: 'var(--chatty-bg-message)', 
+                              color: 'var(--chatty-text)' 
+                            }}
+                            className="w-full p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--chatty-button)]"
+                          >
                         <option value="aya:8b">Aya 8B</option>
                         <option value="aya:35b">Aya 35B</option>
                         <option value="aya-expanse:8b">Aya Expanse 8B</option>
@@ -1616,11 +2016,16 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                     {/* Creative Model */}
                     <div>
-                      <label className="block text-sm font-medium mb-2 text-app-text-900">Creative</label>
+                      <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Creative</label>
                       <select 
                         value={config.creativeModel || 'mistral:latest'}
                         onChange={(e) => setConfig(prev => ({ ...prev, creativeModel: e.target.value }))}
-                        className="w-full p-3 border border-app-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900"
+                        style={{ 
+                          border: '1px solid var(--chatty-line)', 
+                          backgroundColor: 'var(--chatty-bg-message)', 
+                          color: 'var(--chatty-text)' 
+                        }}
+                        className="w-full p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--chatty-button)]"
                       >
                         <option value="aya:8b">Aya 8B</option>
                         <option value="aya:35b">Aya 35B</option>
@@ -1906,11 +2311,16 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                     {/* Coding Model */}
                     <div>
-                      <label className="block text-sm font-medium mb-2 text-app-text-900">Coding</label>
+                      <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Coding</label>
                       <select 
                         value={config.codingModel || 'deepseek-coder:latest'}
                         onChange={(e) => setConfig(prev => ({ ...prev, codingModel: e.target.value }))}
-                        className="w-full p-3 border border-app-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900"
+                        style={{ 
+                          border: '1px solid var(--chatty-line)', 
+                          backgroundColor: 'var(--chatty-bg-message)', 
+                          color: 'var(--chatty-text)' 
+                        }}
+                        className="w-full p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--chatty-button)]"
                       >
                         <option value="codebooga:34b">CodeBooga 34B</option>
                         <option value="codegemma:2b">CodeGemma 2B</option>
@@ -1955,10 +2365,17 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                       </select>
                     </div>
                   </div>
+                    ) : (
+                      <div style={{ border: '1px solid var(--chatty-line)', backgroundColor: 'var(--chatty-bg-message)', color: 'var(--chatty-text)', opacity: 0.8 }} className="text-xs text-center rounded-lg py-3 px-4">
+                        Chatty Lin mode uses intelligent orchestration with default models (deepseek, mistral, phi3).
+                        Switch to Custom Models to select specific models from the dropdowns above.
+                      </div>
+                    )}
+                  </div>
 
                   {/* Conversation Starters */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-app-text-900">Conversation Starters</label>
+                    <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Conversation Starters</label>
                     <div className="space-y-2">
                       {config.conversationStarters?.map((starter, index) => (
                         <div key={index} className="flex items-center gap-2">
@@ -1967,11 +2384,17 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                             value={starter}
                             onChange={(e) => updateConversationStarter(index, e.target.value)}
                             placeholder="Add a conversation starter"
-                            className="flex-1 p-2 border border-app-yellow-300 rounded focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900 placeholder-app-button-600"
+                            style={{ 
+                              border: '1px solid var(--chatty-line)', 
+                              backgroundColor: 'var(--chatty-bg-message)', 
+                              color: 'var(--chatty-text)' 
+                            }}
+                            className="flex-1 p-2 rounded focus:outline-none focus:ring-2 focus:ring-[var(--chatty-button)] placeholder:opacity-60"
                           />
                           <button
                             onClick={() => removeConversationStarter(index)}
-                            className="p-1 hover:bg-app-button-400 rounded text-app-text-800 hover:text-app-text-900"
+                            style={{ color: 'var(--chatty-text)' }}
+                            className="p-1 rounded transition-colors hover:bg-[var(--chatty-highlight)]"
                           >
                             <X size={16} />
                           </button>
@@ -1979,7 +2402,8 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                       ))}
                       <button
                         onClick={addConversationStarter}
-                        className="text-sm text-app-green-400 hover:text-app-green-300"
+                        style={{ color: 'var(--chatty-button)' }}
+                        className="text-sm hover:opacity-80 transition-opacity"
                       >
                         + Add conversation starter
                       </button>
@@ -1988,16 +2412,24 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                   {/* File Upload */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-app-text-900">Knowledge Files</label>
-                    <p className="text-xs text-app-text-800 mb-2">Upload files to give your GPT access to specific information</p>
-                    
+                    <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Knowledge Files</label>
+                    <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs mb-2">Upload files to give your GPT access to specific information</p>
                     
                     <button
-                      onClick={() => fileInputRef.current?.click()}
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        fileInputRef.current?.click()
+                      }}
                       disabled={isUploading}
-                      className="px-4 py-2 border border-app-yellow-300 rounded-lg hover:bg-app-button-400 flex items-center gap-2 text-app-text-900 disabled:opacity-50"
+                      style={{ 
+                        border: '1px solid var(--chatty-line)', 
+                        color: 'var(--chatty-text)' 
+                      }}
+                      className="px-4 py-2 rounded-lg transition-colors hover:bg-[var(--chatty-highlight)] flex items-center gap-2 disabled:opacity-50"
                     >
-                      <Upload size={16} />
+                      <Paperclip size={16} />
                       {isUploading ? 'Uploading...' : 'Upload Files'}
                     </button>
 
@@ -2005,26 +2437,27 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                     {files.length > 0 && (
                       <div className="mt-3 space-y-2">
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm text-app-text-800">
+                          <span style={{ color: 'var(--chatty-text)', opacity: 0.8 }} className="text-sm">
                             {files.length} file{files.length !== 1 ? 's' : ''} uploaded
                           </span>
                           {totalFilePages > 1 && (
-                            <span className="text-xs text-app-text-800">
+                            <span style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs">
                               Page {filePage} of {totalFilePages}
                             </span>
                           )}
                         </div>
                         
                         {currentFiles.map((file) => (
-                          <div key={file.id} className="flex items-center justify-between p-2 bg-app-yellow-200 rounded">
+                          <div key={file.id} style={{ backgroundColor: 'var(--chatty-highlight)' }} className="flex items-center justify-between p-2 rounded">
                             <div className="flex items-center gap-2">
-                              <FileText size={16} className="text-app-text-800" />
-                              <span className="text-sm text-app-text-900">{file.originalName}</span>
-                              <span className="text-xs text-app-text-800">({gptService.formatFileSize(file.size)})</span>
+                              <FileText size={16} style={{ color: 'var(--chatty-text)' }} />
+                              <span style={{ color: 'var(--chatty-text)' }} className="text-sm">{file.originalName}</span>
+                              <span style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs">({gptService.formatFileSize(file.size)})</span>
                             </div>
                             <button
                               onClick={() => handleRemoveFile(file.id)}
-                              className="p-1 hover:bg-app-button-600 rounded text-app-text-800 hover:text-app-text-900"
+                              style={{ color: 'var(--chatty-text)' }}
+                              className="p-1 rounded transition-colors hover:bg-[var(--chatty-highlight)]"
                             >
                               <X size={14} />
                             </button>
@@ -2032,18 +2465,20 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                         ))}
                         
                         {totalFilePages > 1 && (
-                          <div className="flex items-center justify-center gap-2 pt-2 border-t border-app-yellow-300">
+                          <div style={{ borderTop: '1px solid var(--chatty-line)' }} className="flex items-center justify-center gap-2 pt-2">
                             <button
                               onClick={() => goToFilePage(filePage - 1)}
                               disabled={filePage === 1}
-                              className="px-3 py-1 text-xs bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600 disabled:opacity-50"
+                              style={{ backgroundColor: 'var(--chatty-button)', color: 'var(--chatty-text)' }}
+                              className="px-3 py-1 text-xs rounded hover:opacity-90 disabled:opacity-50 transition-opacity"
                             >
                               ← Previous
                             </button>
                             <button
                               onClick={() => goToFilePage(filePage + 1)}
                               disabled={filePage === totalFilePages}
-                              className="px-3 py-1 text-xs bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600 disabled:opacity-50"
+                              style={{ backgroundColor: 'var(--chatty-button)', color: 'var(--chatty-text)' }}
+                              className="px-3 py-1 text-xs rounded hover:opacity-90 disabled:opacity-50 transition-opacity"
                             >
                               Next →
                             </button>
@@ -2053,80 +2488,157 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                     )}
                   </div>
 
+                  {/* Memory/Transcript Upload */}
+                  <div>
+                    <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Memories</label>
+                    <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs mb-2">Upload conversation transcripts or memory files to extract tone and voice for this GPT</p>
+                    
+                    <button
+                      onClick={() => memoryInputRef.current?.click()}
+                      disabled={isUploadingMemory}
+                      style={{ 
+                        border: '1px solid var(--chatty-line)', 
+                        color: 'var(--chatty-text)' 
+                      }}
+                      className="px-4 py-2 rounded-lg transition-colors hover:bg-[var(--chatty-highlight)] flex items-center gap-2 disabled:opacity-50"
+                    >
+                      <Upload size={16} />
+                      {isUploadingMemory ? 'Uploading...' : 'Upload Transcripts'}
+                    </button>
+
+                    {/* Hidden Memory File Input */}
+                    <input
+                      ref={memoryInputRef}
+                      type="file"
+                      accept=".txt,.md,.html,.json"
+                      multiple
+                      onChange={handleMemoryUpload}
+                      className="hidden"
+                    />
+
+                    {/* Memory List */}
+                    {memories.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        <span style={{ color: 'var(--chatty-text)', opacity: 0.8 }} className="text-sm">
+                          {memories.length} memory file{memories.length !== 1 ? 's' : ''} ready
+                        </span>
+                        
+                        {memories.map((memory) => (
+                          <div key={memory.id} style={{ backgroundColor: 'var(--chatty-highlight)' }} className="flex items-center justify-between p-2 rounded">
+                            <div className="flex items-center gap-2">
+                              <Paperclip size={16} style={{ color: 'var(--chatty-text)' }} />
+                              <span style={{ color: 'var(--chatty-text)' }} className="text-sm">{memory.name}</span>
+                              {memory.filePath && (
+                                <span style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs">✓ Saved to VVAULT</span>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => handleRemoveMemory(memory.id)}
+                              style={{ color: 'var(--chatty-text)' }}
+                              className="p-1 rounded transition-colors hover:bg-[var(--chatty-highlight)]"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Capabilities */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-app-text-900">Capabilities</label>
+                    <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Capabilities</label>
                     <div className="space-y-2">
-                      <label className="flex items-center gap-2 text-app-text-900">
+                      <label style={{ color: 'var(--chatty-text)' }} className="flex items-center gap-2">
                         <input
                           type="checkbox"
                           checked={config.capabilities?.webSearch || false}
-                          onChange={(e) => setConfig(prev => ({
-                            ...prev,
-                            capabilities: { 
-                              webSearch: e.target.checked,
-                              canvas: prev.capabilities?.canvas || false,
-                              imageGeneration: prev.capabilities?.imageGeneration || false,
-                              codeInterpreter: prev.capabilities?.codeInterpreter || true
-                            }
-                          }))}
-                          className="rounded border-app-orange-600 bg-app-button-100 text-app-green-500"
+                      onChange={(e) => setConfig(prev => ({
+                        ...prev,
+                        capabilities: (() => {
+                          const mode = prev.capabilities?.synthesisMode === 'synth' ? 'synth' : (useLinMode ? 'lin' : 'synth')
+                          const caps = buildCapabilities(prev.capabilities, mode)
+                          return {
+                            ...caps,
+                            webSearch: e.target.checked
+                          }
+                        })()
+                      }))}
+                          style={{ 
+                            accentColor: 'var(--chatty-button)'
+                          }}
+                          className="rounded"
                         />
-                        <Search size={16} className="text-app-text-900" />
+                        <Search size={16} style={{ color: 'var(--chatty-text)' }} />
                         <span className="text-sm">Web Search</span>
                       </label>
-                      <label className="flex items-center gap-2 text-app-text-900">
+                      <label style={{ color: 'var(--chatty-text)' }} className="flex items-center gap-2">
                         <input
                           type="checkbox"
                           checked={config.capabilities?.canvas || false}
-                          onChange={(e) => setConfig(prev => ({
-                            ...prev,
-                            capabilities: { 
-                              webSearch: prev.capabilities?.webSearch || false,
-                              canvas: e.target.checked,
-                              imageGeneration: prev.capabilities?.imageGeneration || false,
-                              codeInterpreter: prev.capabilities?.codeInterpreter || true
-                            }
-                          }))}
-                          className="rounded border-app-orange-600 bg-app-button-100 text-app-green-500"
+                      onChange={(e) => setConfig(prev => ({
+                        ...prev,
+                        capabilities: (() => {
+                          const mode = prev.capabilities?.synthesisMode === 'synth' ? 'synth' : (useLinMode ? 'lin' : 'synth')
+                          const caps = buildCapabilities(prev.capabilities, mode)
+                          return {
+                            ...caps,
+                            canvas: e.target.checked
+                          }
+                        })()
+                      }))}
+                          style={{ 
+                            accentColor: 'var(--chatty-button)'
+                          }}
+                          className="rounded"
                         />
-                        <Palette size={16} className="text-app-text-900" />
+                        <Palette size={16} style={{ color: 'var(--chatty-text)' }} />
                         <span className="text-sm">Canvas</span>
                       </label>
-                      <label className="flex items-center gap-2 text-app-text-900">
+                      <label style={{ color: 'var(--chatty-text)' }} className="flex items-center gap-2">
                         <input
                           type="checkbox"
                           checked={config.capabilities?.imageGeneration || false}
-                          onChange={(e) => setConfig(prev => ({
-                            ...prev,
-                            capabilities: { 
-                              webSearch: prev.capabilities?.webSearch || false,
-                              canvas: prev.capabilities?.canvas || false,
-                              imageGeneration: e.target.checked,
-                              codeInterpreter: prev.capabilities?.codeInterpreter || true
-                            }
-                          }))}
-                          className="rounded border-app-orange-600 bg-app-button-100 text-app-green-500"
+                      onChange={(e) => setConfig(prev => ({
+                        ...prev,
+                        capabilities: (() => {
+                          const mode = prev.capabilities?.synthesisMode === 'synth' ? 'synth' : (useLinMode ? 'lin' : 'synth')
+                          const caps = buildCapabilities(prev.capabilities, mode)
+                          return {
+                            ...caps,
+                            imageGeneration: e.target.checked
+                          }
+                        })()
+                      }))}
+                          style={{ 
+                            accentColor: 'var(--chatty-button)'
+                          }}
+                          className="rounded"
                         />
-                        <Image size={16} className="text-app-text-900" />
+                        <Image size={16} style={{ color: 'var(--chatty-text)' }} />
                         <span className="text-sm">Image Generation</span>
                       </label>
-                      <label className="flex items-center gap-2 text-app-text-900">
+                      <label style={{ color: 'var(--chatty-text)' }} className="flex items-center gap-2">
                         <input
                           type="checkbox"
                           checked={config.capabilities?.codeInterpreter || false}
-                          onChange={(e) => setConfig(prev => ({
-                            ...prev,
-                            capabilities: { 
-                              webSearch: prev.capabilities?.webSearch || false,
-                              canvas: prev.capabilities?.canvas || false,
-                              imageGeneration: prev.capabilities?.imageGeneration || false,
-                              codeInterpreter: e.target.checked
-                            }
-                          }))}
-                          className="rounded border-app-orange-600 bg-app-button-100 text-app-green-500"
+                      onChange={(e) => setConfig(prev => ({
+                        ...prev,
+                        capabilities: (() => {
+                          const mode = prev.capabilities?.synthesisMode === 'synth' ? 'synth' : (useLinMode ? 'lin' : 'synth')
+                          const caps = buildCapabilities(prev.capabilities, mode)
+                          return {
+                            ...caps,
+                            codeInterpreter: e.target.checked
+                          }
+                        })()
+                      }))}
+                          style={{ 
+                            accentColor: 'var(--chatty-button)'
+                          }}
+                          className="rounded"
                         />
-                        <Code size={16} className="text-app-text-900" />
+                        <Code size={16} style={{ color: 'var(--chatty-text)' }} />
                         <span className="text-sm">Code Interpreter</span>
                       </label>
                     </div>
@@ -2175,31 +2687,30 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
           <div className="w-1/2 flex flex-col">
             <div className="p-4 border-b border-app-button-300">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-app-text-900">Preview</h2>
+                <h2 className="text-lg font-semibold" style={{ color: '#ffffeb' }}>Preview</h2>
                 <div className="flex items-center gap-3">
-                  {/* Tone Mode Toggle */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-app-text-800">Tone:</span>
-                    <button
-                      onClick={() => setUseLinMode(!useLinMode)}
-                      className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                        useLinMode
-                          ? 'bg-app-button-500 text-app-text-900'
-                          : 'bg-app-button-500 text-app-text-900 hover:bg-app-button-600'
-                      }`}
-                      title={useLinMode ? 'Lin mode: Respects custom tone (no Chatty normalization)' : 'Synth mode: Uses Chatty\'s friendly tone normalization'}
-                    >
-                      {useLinMode ? 'Lin' : 'Synth'}
-                    </button>
-                  </div>
-                {previewMessages.length > 0 && (
                   <button
                     onClick={() => setPreviewMessages([])}
-                      className="text-xs text-app-text-800 hover:text-app-text-900"
+                    className="text-xs font-medium"
+                    style={{ 
+                      color: '#ADA587',
+                      cursor: previewMessages.length > 0 ? 'pointer' : 'default',
+                      opacity: previewMessages.length > 0 ? 1 : 0.5
+                    }}
+                    disabled={previewMessages.length === 0}
+                    onMouseEnter={(e) => {
+                      if (previewMessages.length > 0) {
+                        e.currentTarget.style.opacity = '0.8'
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (previewMessages.length > 0) {
+                        e.currentTarget.style.opacity = '1'
+                      }
+                    }}
                   >
                     Clear
                   </button>
-                )}
                 </div>
               </div>
             </div>
@@ -2209,11 +2720,11 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
               <div className="flex-1 p-4 overflow-y-auto min-h-0">
                 {previewMessages.length === 0 ? (
                   <div className="text-center">
-                    <div className="w-16 h-16 bg-app-yellow-200 rounded-lg flex items-center justify-center mx-auto mb-4">
+                    <div className="w-16 h-16 bg-app-yellow-200 rounded-full flex items-center justify-center mx-auto mb-4 overflow-hidden">
                       {config.avatar ? (
                         <img src={config.avatar} alt="GPT Avatar" className="w-full h-full object-cover" />
                       ) : (
-                        <div className="w-8 h-8 bg-app-button-500 rounded"></div>
+                        <div className="w-8 h-8 bg-app-button-500 rounded-full"></div>
                       )}
                     </div>
                     <p className="text-app-text-800 text-sm">
@@ -2226,16 +2737,55 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                 ) : (
                   <div className="space-y-4 pb-4">
                     {previewMessages.map((message, index) => (
-                      <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[80%] p-3 rounded-lg ${
+                      <div 
+                        key={index} 
+                        className={`flex items-end gap-3 py-3 ${
                           message.role === 'user' 
-                            ? 'bg-app-chat-50 text-app-text-900' 
-                            : 'bg-app-chat-50 text-app-text-900'
-                        }`}>
-                          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                        </div>
+                            ? 'px-4 flex-row-reverse' 
+                            : 'px-0'
+                        }`}
+                      >
+                        {message.role === 'user' ? (
+                          <div 
+                            className="px-4 py-3 rounded-lg inline-block max-w-[80%] ml-auto"
+                            style={{
+                              backgroundColor: '#ADA587',
+                              borderRadius: '22px 22px 6px 22px',
+                              border: '1px solid rgba(76, 61, 30, 0.18)',
+                              boxShadow: '0 1px 2px rgba(58, 46, 20, 0.05)',
+                              color: 'var(--chatty-text)'
+                            }}
+                          >
+                            <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                          </div>
+                        ) : (
+                          <div className="block w-full" style={{ color: 'var(--chatty-text)' }}>
+                            {message.responseTimeMs && (
+                              <div className="text-xs mb-2 px-4" style={{ color: 'var(--chatty-text)', opacity: 0.55 }}>
+                                Generated in {message.responseTimeMs >= 1000 ? `${(message.responseTimeMs / 1000).toFixed(1)}s` : `${message.responseTimeMs}ms`}
+                              </div>
+                            )}
+                            <p className="text-sm whitespace-pre-wrap px-4">{message.content}</p>
+                          </div>
+                        )}
                       </div>
                     ))}
+                    {isPreviewGenerating && (
+                      <div className="flex items-end gap-3 py-3 px-0">
+                        <div className="block w-full" style={{ color: 'var(--chatty-text)' }}>
+                          <div className="flex items-center gap-2 px-4">
+                            <div className="flex space-x-1">
+                              <div className="typing-indicator"></div>
+                              <div className="typing-indicator"></div>
+                              <div className="typing-indicator"></div>
+                            </div>
+                            <span className="text-sm" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
+                              Generating response...
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -2255,12 +2805,14 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                         }
                       }}
                       placeholder="Ask anything"
-                      className="flex-1 outline-none text-sm bg-transparent text-app-text-900 placeholder-app-button-600 resize-none min-h-[20px] max-h-32"
+                      className="flex-1 outline-none text-sm bg-transparent text-app-text-900 placeholder-app-button-600 resize-none min-h-[20px]"
                       rows={1}
                     />
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
                         console.log('📎 Preview tab paperclip clicked!')
                         fileInputRef.current?.click()
                       }}
@@ -2287,7 +2839,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                     {config.name && (
                       <p className="text-app-green-400">✓ Configured as: {config.name}</p>
                     )}
-                    {(config.conversationModel || config.creativeModel || config.codingModel) && (
+                    {useLinMode && (config.conversationModel || config.creativeModel || config.codingModel) && (
                       <div className="text-xs text-app-text-800 mt-2">
                         <p>Models: {config.conversationModel || 'default'} | {config.creativeModel || 'default'} | {config.codingModel || 'default'}</p>
                       </div>
@@ -2307,7 +2859,10 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
       {/* Actions Editor Modal */}
       {isActionsEditorOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-60 flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"
+          style={{ zIndex: Z_LAYERS.modal }}
+        >
           <div className="bg-app-button-100 rounded-lg w-full max-w-4xl h-[80vh] flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-app-button-300">
@@ -2590,11 +3145,24 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
       {/* Crop Modal */}
       {showCropModal && imageToCrop && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-app-button-100 rounded-lg p-6 w-full max-w-2xl mx-4">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center"
+          style={{ zIndex: Z_LAYERS.modal }}
+          onClick={(e) => {
+            // Close modal when clicking backdrop, but not when clicking inside
+            if (e.target === e.currentTarget) {
+              handleCropCancel()
+            }
+          }}
+        >
+          <div 
+            className="bg-app-button-100 rounded-lg p-6 w-full max-w-2xl mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-app-text-900">Crop Avatar</h3>
               <button
+                type="button"
                 onClick={handleCropCancel}
                 className="text-app-text-800 hover:text-app-text-900"
               >
@@ -2640,13 +3208,19 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
             <div className="flex gap-3 justify-end">
               <button
+                type="button"
                 onClick={handleCropCancel}
                 className="px-4 py-2 text-sm bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-500"
               >
                 Cancel
               </button>
               <button
-                onClick={handleCropComplete}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  handleCropComplete()
+                }}
                 disabled={isUploadingAvatar}
                 className="px-4 py-2 text-sm bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
@@ -2667,7 +3241,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
         </div>
       )}
     </div>
-  )
+  , document.body)
 }
 
 export default GPTCreator

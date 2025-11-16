@@ -2,9 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
+
 @layer base {
-  * {
+  :where(
+    div,
+    section,
+    article,
+    main,
+    header,
+    footer,
+    nav,
+    aside,
+    fieldset
+  ) :not(.chatty-borderless) {
     @apply border-app-yellow-800;
+  }
+
+  button,
+  [type='button'],
+  [type='submit'],
+  [type='reset'],
+  input,
+  textarea,
+  select {
+    @apply border-none outline-none focus:outline-none focus:ring-0;
+    border-color: transparent;
+  }
+
+  button:focus-visible,
+  [type='button']:focus-visible,
+  [type='submit']:focus-visible,
+  [type='reset']:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    @apply ring-0 outline-none;
+    border-color: transparent;
   }
   
   html, body, #root {
@@ -12,8 +45,349 @@
   }
   
   body {
-    @apply bg-app-pale-50 text-app-text-900;
     font-feature-settings: "rlig" 1, "calt" 1;
+    scrollbar-width: thin;
+  }
+  
+  /* Placeholder styling for chat input */
+  .chatty-message-input::placeholder {
+    color: var(--placeholder-color, #ADA587) !important;
+  }
+
+  /* === THEME SYSTEM === */
+  
+  /* Light theme (default) */
+  :root {
+    /* Main backgrounds */
+    --chatty-bg-main: #FFFFEB;
+    --chatty-bg-message: #fffcd3;
+    
+    /* Interactive elements - theme specific */
+    --chatty-button: #ADA587;
+    --chatty-highlight: #FEFFAF;
+    
+    /* Semantic Color Tokens */
+    --chatty-bg-primary: #ffffeb;
+    --chatty-bg-secondary: #ffffd7;
+    --chatty-bg-tertiary: #feffaf;
+    
+    --chatty-interactive-primary: #ADA587;
+    --chatty-interactive-secondary: #feffaf;
+    --chatty-interactive-accent: #3A2E14;
+    
+    --chatty-text-primary: #3A2E14;
+    --chatty-text-secondary: #3A2E14;
+    --chatty-text-inverse: #ffffeb;
+    
+    --chatty-status-success: #22c55e;
+    --chatty-status-warning: #f59e0b;
+    --chatty-status-error: #dc2626;
+    --chatty-status-info: #3b82f6;
+    
+    --chatty-message-user: #ADA587;
+    --chatty-message-ai: #ffffd7;
+    --chatty-message-system: #fef2f2;
+    --chatty-border-subtle: rgba(76, 61, 30, 0.18);
+    
+    /* Legacy Support (for gradual migration) */
+    --chatty-bg-sidebar: #ffffeb;
+    --chatty-highlight-text: var(--chatty-interactive-accent);
+    --chatty-line: #ADA587;
+    --chatty-text: var(--chatty-text-primary);
+    --chatty-plus-button: var(--chatty-text-primary);
+    --chatty-icon: var(--chatty-text-primary);
+  }
+
+  /* === AUTO THEME SWITCHING - START === */
+  /* System dark theme preference */
+  @media (prefers-color-scheme: dark) {
+    :root:not(.theme-light) {
+      /* Main backgrounds */
+      --chatty-bg-main: #2F2510;
+      --chatty-bg-message: #3A2E14;
+      
+      /* Interactive elements - theme specific */
+      --chatty-button: #ADA587;
+      --chatty-highlight: #3A2E14;
+      
+      /* Semantic Color Tokens */
+      --chatty-bg-primary: #2F2510;
+      --chatty-bg-secondary: #ADA587;
+      --chatty-bg-tertiary: #3A2E14;
+      
+      --chatty-interactive-primary: #ffffd7;
+      --chatty-interactive-secondary: #3A2E14;
+      --chatty-interactive-accent: #ffffeb;
+      
+      --chatty-text-primary: #ffffeb;
+      --chatty-text-secondary: #ffffeb;
+      --chatty-text-inverse: #3A2E14;
+      
+      --chatty-message-user: #3A2E14;
+      --chatty-message-ai: #3A2E14;
+      --chatty-message-system: #2F2510;
+      --chatty-border-subtle: rgba(255, 255, 255, 0.18);
+      
+      /* Legacy Support */
+      --chatty-bg-sidebar: #2F2510;
+      --chatty-highlight-text: var(--chatty-interactive-accent);
+      --chatty-line: #ADA587;
+      --chatty-text: var(--chatty-text-primary);
+      --chatty-plus-button: var(--chatty-text-primary);
+      --chatty-icon: var(--chatty-text-primary);
+    }
+  }
+
+  /* System light theme preference */
+  @media (prefers-color-scheme: light) {
+    :root:not(.theme-night) {
+      /* Light theme variables (same as default above) */
+      --chatty-bg-main: #FFFFEB;
+      --chatty-bg-message: #fffcd3;
+      --chatty-button: #ADA587;
+      --chatty-highlight: #FEFFAF;
+      --chatty-bg-primary: #ffffeb;
+      --chatty-bg-secondary: #ffffd7;
+      --chatty-bg-tertiary: #feffaf;
+      --chatty-interactive-primary: #ADA587;
+      --chatty-interactive-secondary: #feffaf;
+      --chatty-interactive-accent: #3A2E14;
+      --chatty-text-primary: #3A2E14;
+      --chatty-text-secondary: #3A2E14;
+      --chatty-text-inverse: #ffffeb;
+      --chatty-message-user: #ADA587;
+      --chatty-message-ai: #ffffd7;
+      --chatty-message-system: #fef2f2;
+      --chatty-border-subtle: rgba(76, 61, 30, 0.18);
+      --chatty-bg-sidebar: #ffffeb;
+      --chatty-highlight-text: var(--chatty-interactive-accent);
+      --chatty-line: #ADA587;
+      --chatty-text: var(--chatty-text-primary);
+      --chatty-plus-button: var(--chatty-text-primary);
+      --chatty-icon: var(--chatty-text-primary);
+    }
+  }
+  /* === AUTO THEME SWITCHING - END === */
+
+  /* Manual night theme override */
+.theme-night {
+  /* Main backgrounds */
+  --chatty-bg-main: #2F2510;
+  --chatty-bg-message: #3A2E14;
+    
+    /* Interactive elements - theme specific */
+    --chatty-button: #ADA587;
+    --chatty-highlight: #3A2E14;
+    
+    /* Semantic Color Tokens */
+    --chatty-bg-primary: #2F2510;
+    --chatty-bg-secondary: #ADA587;
+    --chatty-bg-tertiary: #3A2E14;
+    
+    --chatty-interactive-primary: #ffffd7;
+    --chatty-interactive-secondary: #3A2E14;
+    --chatty-interactive-accent: #ffffeb;
+    
+    --chatty-text-primary: #ffffeb;
+    --chatty-text-secondary: #ffffeb;
+    --chatty-text-inverse: #3A2E14;
+    
+    --chatty-message-user: #3A2E14;
+    --chatty-message-ai: #3A2E14;
+    --chatty-message-system: #2F2510;
+    --chatty-border-subtle: rgba(255, 255, 255, 0.18);
+    
+    /* Legacy Support */
+    --chatty-bg-sidebar: #2F2510;
+    --chatty-highlight-text: var(--chatty-interactive-accent);
+    --chatty-line: #ADA587;
+    --chatty-text: var(--chatty-text-primary);
+    --chatty-plus-button: var(--chatty-text-primary);
+    --chatty-icon: var(--chatty-text-primary);
+  }
+
+  /* Manual light theme override */
+  .theme-light {
+    /* Light theme variables (explicit override) */
+    --chatty-bg-main: #FFFFEB;
+    --chatty-bg-message: #fffcd3;
+    --chatty-button: #ADA587;
+    --chatty-highlight: #FEFFAF;
+    --chatty-bg-primary: #ffffeb;
+    --chatty-bg-secondary: #ffffd7;
+    --chatty-bg-tertiary: #feffaf;
+    --chatty-interactive-primary: #ADA587;
+    --chatty-interactive-secondary: #feffaf;
+    --chatty-interactive-accent: #3A2E14;
+    --chatty-text-primary: #3A2E14;
+    --chatty-text-secondary: #3A2E14;
+    --chatty-text-inverse: #ffffeb;
+    --chatty-message-user: #ADA587;
+    --chatty-message-ai: #ffffd7;
+    --chatty-message-system: #fef2f2;
+    --chatty-border-subtle: rgba(76, 61, 30, 0.18);
+    --chatty-bg-sidebar: #ffffeb;
+    --chatty-highlight-text: var(--chatty-interactive-accent);
+    --chatty-line: #ADA587;
+    --chatty-text: var(--chatty-text-primary);
+    --chatty-plus-button: var(--chatty-text-primary);
+    --chatty-icon: var(--chatty-text-primary);
+  }
+
+  /* Apply theme variables */
+  body {
+    background-color: var(--chatty-bg-main);
+    color: var(--chatty-text);
+    scrollbar-color: var(--chatty-button) transparent;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  /* === COSMETIC ENHANCEMENTS === */
+  
+  /* Smooth transitions for all interactive elements */
+  button, a, input, textarea, select {
+    transition: all 0.2s ease;
+  }
+
+  /* Subtle shadows for depth */
+  .chatty-card {
+    box-shadow: 0 1px 3px rgba(58, 46, 20, 0.08), 0 1px 2px rgba(58, 46, 20, 0.06);
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+  }
+
+  .chatty-card:hover {
+    box-shadow: 0 4px 6px rgba(58, 46, 20, 0.1), 0 2px 4px rgba(58, 46, 20, 0.08);
+    transform: translateY(-1px);
+  }
+
+  /* Message bubble styling */
+  .chatty-message {
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 2px rgba(58, 46, 20, 0.05);
+  }
+
+  .chatty-message:hover {
+    box-shadow: 0 2px 4px rgba(58, 46, 20, 0.1);
+  }
+
+  /* Button polish */
+  .chatty-button {
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 2px rgba(58, 46, 20, 0.1);
+  }
+
+  .chatty-button:hover {
+    box-shadow: 0 2px 4px rgba(58, 46, 20, 0.15);
+    transform: translateY(-1px);
+  }
+
+  .chatty-button:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(58, 46, 20, 0.1);
+  }
+
+  /* Sidebar item polish */
+  .chatty-sidebar-item {
+    transition: all 0.15s ease;
+    border-radius: 8px;
+  }
+
+  .chatty-sidebar-item:hover {
+    background-color: var(--chatty-highlight);
+    transform: translateX(2px);
+  }
+
+  /* Input field polish */
+  .chatty-input {
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 2px rgba(58, 46, 20, 0.05);
+  }
+
+  .chatty-input:focus {
+    box-shadow: 0 0 0 2px var(--chatty-highlight), 0 2px 4px rgba(58, 46, 20, 0.1);
+    outline: none;
+  }
+
+  /* Smooth fade-in for new content */
+  .chatty-fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  /* Subtle glow for active states */
+  .chatty-active-glow {
+    box-shadow: 0 0 0 2px var(--chatty-highlight), 0 2px 8px rgba(58, 46, 20, 0.15);
+  }
+
+  *::-webkit-scrollbar {
+    width: 14px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--chatty-button);
+    border-radius: 9999px;
+    border: 6px solid transparent;
+    background-clip: padding-box;
+    min-height: 24px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: var(--chatty-highlight);
+  }
+
+  /* Specific scrollbar styling for sidebar and message areas */
+  .sidebar-scrollable::-webkit-scrollbar,
+  .message-area-scrollable::-webkit-scrollbar {
+    width: 14px;
+  }
+
+  .sidebar-scrollable::-webkit-scrollbar-track,
+  .message-area-scrollable::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .sidebar-scrollable::-webkit-scrollbar-thumb,
+  .message-area-scrollable::-webkit-scrollbar-thumb {
+    background-color: var(--chatty-button);
+    border-radius: 9999px;
+    border: 6px solid transparent;
+    background-clip: padding-box;
+    min-height: 24px;
+  }
+
+  .sidebar-scrollable::-webkit-scrollbar-thumb:hover,
+  .message-area-scrollable::-webkit-scrollbar-thumb:hover {
+    background-color: var(--chatty-highlight);
+  }
+}
+
+@keyframes sidebar-star-pulse {
+  0%, 100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes sidebar-star-spin-cw {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes sidebar-star-spin-ccw {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(-360deg);
   }
 }
 
@@ -25,6 +399,32 @@
   
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
+  }
+
+  /* Utility class for themed scrollbars */
+  .themed-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--chatty-button) transparent;
+  }
+
+  .themed-scrollbar::-webkit-scrollbar {
+    width: 14px;
+  }
+
+  .themed-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .themed-scrollbar::-webkit-scrollbar-thumb {
+    background-color: var(--chatty-button);
+    border-radius: 9999px;
+    border: 6px solid transparent;
+    background-clip: padding-box;
+    min-height: 24px;
+  }
+
+  .themed-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: var(--chatty-highlight);
   }
   
   .message-gradient {
@@ -46,6 +446,20 @@
   
   .typing-indicator:nth-child(2) {
     animation-delay: -0.16s;
+  }
+
+  .chatty-message-input::placeholder,
+  .chatty-message-input::-webkit-input-placeholder,
+  .chatty-message-input:-ms-input-placeholder,
+  .chatty-message-input::-moz-placeholder,
+  .chatty-message-input:-moz-placeholder {
+    color: #ADA587 !important;
+    opacity: 1 !important;
+  }
+
+  .library-search-input::placeholder {
+    color: #ffffeb;
+    opacity: 0.75;
   }
   
   @keyframes typing {
@@ -69,4 +483,27 @@
       transform: translateY(0);
     }
   }
+
+  /* Instant tooltip - remove browser default delay */
+  .instant-tooltip {
+    position: relative;
+  }
+
+  .instant-tooltip[title]:hover::after {
+    animation-delay: 0s !important;
+    transition-delay: 0s !important;
+  }
+}
+
+/* League Spartan font for legal pages */
+.legal-page {
+  font-family: 'League Spartan', sans-serif;
+}
+
+.legal-page ol > li > p:first-of-type {
+  color: #ADA587;
+  font-family: 'League Spartan', sans-serif;
+  font-size: 28px;
+  font-weight: 600;
+  margin-bottom: 12px;
 }
