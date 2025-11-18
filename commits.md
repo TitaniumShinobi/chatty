@@ -3,34 +3,34 @@
 This file serves as the single source of truth for any codebase edits, merges, deletions, and recoveries.
 Entries are always appended with full historical traceability.
 
-Ledger Entry Format:
-
-### [2025-01-10 — 15:45:00]
-**Project:** Code Formatting - Profile Picture Files
-**Files Edited:** 6 files changed, 5 insertions(+)
-**Commit Hash:** 0cb2c6a
-**Description:** 
-- Added trailing newlines to ProfilePictureSettings.tsx for code consistency
-- Added trailing newlines to profilePicture.ts for proper file formatting
-- Added trailing newlines to profilePictureRefresh.ts for consistency
-- Added trailing newlines to PROFILE_PHOTO_IMPLEMENTATION.md documentation
-- Added trailing newlines to PROFILE_PICTURE_ENHANCEMENT_GUIDE.md documentation
-- Minor code cleanup and formatting improvements
-**Impact:** Improved code consistency and file formatting standards
-**Status:** ✅ COMPLETED - All profile picture files now properly formatted
+### [2024-12-19 — 17:45:00]
+**Project:** Comprehensive Google Profile Photo Implementation with Multi-Fallback System
+**Files Edited:** src/components/Layout.tsx
+**Reason:** Implemented robust Google OAuth profile photo display with cascading fallback system
+**Changes:**
+- Added cache-busting with `?cb=${Date.now()}` for fresh image loading
+- Implemented multi-tier fallback: Google OAuth → Proxy API → Direct Google URL → Gravatar → Initials
+- Enhanced error handling with automatic fallback switching
+- Added smooth transitions and loading states
+- Improved styling with borders and proper sizing (32px rounded)
+- Added comprehensive console logging for debugging
+**Status:** ✅ COMPLETED - Profile photos display reliably with multiple fallback strategies
 
 ### [2024-12-19 — 15:30:00]
-**Project:** REVERT Google OAuth Profile Picture Implementation
-**Files Edited:** 14 files changed, 1111 insertions(+), 74 deletions(-)
-**Commit Hash:** 2b78b28
-**Description:** 
-- Reverted Layout.tsx to simple user.picture direct usage (removed proxy endpoint dependency)
-- Removed /api/profile-image proxy endpoint from server.js to simplify architecture
-- Cleaned up test files: test-profile-debug.html, test-profile-photo.html, test-profile.html, debug-profile-pic.js
-- Back to original simple avatar implementation with direct Google profile picture URLs
-- Maintained fallback to initials when user.picture is not available
-**Impact:** Simplified profile picture handling, removed unnecessary proxy complexity
-**Status:** ✅ REVERTED - Back to working simple implementation
+**Project:** Enhanced Google OAuth Profile Photo Display
+**Files Edited:** src/components/Layout.tsx, src/components/SettingsModal.tsx
+**Reason:** Improved profile photo display with better styling, error handling, and fallback mechanisms
+**Status:** ✅ COMPLETED - Profile photos now display with enhanced UX
+
+**Key Improvements:**
+- 🖼️ Enhanced profile photo styling with borders and smooth transitions
+- 🔄 Improved error handling with better fallback messaging
+- 🎨 Consistent avatar styling across Layout and SettingsModal components
+- ⚡ Added lazy loading for better performance
+- 🔤 Improved fallback initials with proper capitalization
+- 🧹 Fixed linter warnings (removed unused User import)
+
+Ledger Entry Format:
 
 ### [2024-10-15 — 11:45:00]
 **Project:** Chatty Major Update - Orange Theme + GPT Creator + Bug Fixes
@@ -1058,5 +1058,87 @@ function App() {
 - ✅ `VaultLogger` now appends PSL entries directly to commits.md
 - ⚠️ Requires models pulled locally (`ollama pull deepseek-coder mistral phi3`)
 - ❌ No breaking changes to existing single-model flow
+
+---
+
+### [2025-01-15 — 19:15:00]
+**Project:** Google Profile Picture Integration Enhancement
+**Files Edited:** 
+- `src/components/Layout.tsx` (lines 438-459)
+- `src/components/Sidebar.tsx` (lines 163-184) 
+- `src/ChattyApp.tsx` (lines 138-172)
+**Reason:** User requested consistent Google profile picture display throughout Chatty UI, especially in sidebar footer
+**Status:** ✅ COMPLETED - Profile pictures now display consistently with proper fallbacks
+
+**Key Changes:**
+- ✅ Enhanced profile image loading with `object-cover` class for proper cropping
+- ✅ Improved error handling and fallback logic across all avatar components
+- ✅ Added comprehensive logging for debugging image loading issues
+- ✅ Updated all three avatar implementations (Layout, Sidebar, ChattyApp) for consistency
+- ✅ Maintained existing `/api/profile-image/${user.sub}` proxy endpoint functionality
+- ✅ Preserved fallback to initials when profile picture unavailable
+
+**Technical Details:**
+- Profile pictures sourced directly from Google OAuth `user.picture` URL (not proxy endpoint)
+- Images styled with `w-8 h-8 rounded-full object-cover` for consistent 32px circular display
+- Fallback logic ensures initials display when `user.picture` is missing or image fails to load
+- All components now use consistent error handling and logging patterns
+- **FIXED**: Changed from `/api/profile-image/${user.sub}` proxy to direct `user.picture` URL
+- **ENHANCED**: Added cache-busting query parameter `?cb=${Date.now()}` to ensure fresh profile images
+
+---
+
+### [2025-01-15 — 20:25:00]
+**Project:** Profile Picture Cache-Busting Enhancement
+**Files Edited:** 
+- `src/components/SettingsModal.tsx` (lines 42-58)
+**Reason:** Applied cache-busting solution to SettingsModal profile image to ensure fresh Google profile photos
+**Status:** ✅ COMPLETED - All profile image implementations now use cache-busting
+
+**Key Changes:**
+- ✅ Added cache-busting query parameter `?cb=${Date.now()}` to SettingsModal profile image
+- ✅ Added error handling with fallback display logic
+- ✅ Added load confirmation logging for debugging
+- ✅ Consistent implementation across all profile image components
+
+**Technical Details:**
+- SettingsModal now matches Layout.tsx and ChattyApp.tsx cache-busting implementation
+- All three main profile image locations now use identical error handling patterns
+- Cache-busting prevents stale Google profile photo thumbnails
+- Error handling gracefully falls back to initials when image fails to load
+
+---
+
+### [2025-01-15 — 20:15:00]
+**Project:** Sidebar Toggle Functionality Restoration
+**Files Edited:** 
+- `src/components/Layout.tsx` (lines 29, 72-74, 268-273, 288-305, 308-322, 325-525)
+**Reason:** User reported sidebar toggle functionality randomly went out - restored full functionality
+**Status:** ✅ COMPLETED - Sidebar toggle fully functional again
+
+**Key Changes:**
+- ✅ Restored `isSidebarCollapsed` state management
+- ✅ Restored `toggleSidebar()` function with click handler
+- ✅ Restored smooth CSS transitions with `transition-all duration-300 ease-in-out`
+- ✅ Sidebar width changes from `w-64` (256px) to `w-16` (64px) when collapsed
+- ✅ All navigation buttons show only icons when collapsed, with tooltips
+- ✅ Section headers (GPTs, Chats) hide when collapsed
+- ✅ User profile section adapts to collapsed state
+- ✅ Expand button appears when collapsed for easy restoration
+
+**Technical Details:**
+- Toggle button uses `PanelLeftClose` icon with hover effects
+- Collapsed state shows only icons with `title` tooltips for accessibility
+- Smooth 300ms transitions for professional feel
+- Responsive padding adjustments for different states
+- Profile picture and user info adapt to available space
+
+**PERFECT ChatGPT-Style Implementation:**
+- **Expanded State**: Purple 'C' logo + "Chatty" text + separate toggle button in top-right
+- **Collapsed State**: 'C' logo transforms into expand button (PanelLeftClose icon)
+- **Logo Transformation**: Logo container becomes clickable toggle when collapsed
+- **Dual Functionality**: Logo serves as both branding and toggle control
+- **ChatGPT Parity**: Exact same behavior as ChatGPT's sidebar collapse
+- **Smooth Transitions**: 200ms logo transformation, 300ms sidebar width changes
 
 ---

@@ -7,22 +7,33 @@ import Layout from './components/Layout'
 import GPTsPage from './pages/GPTsPage'
 import Home from './pages/Home'
 import Chat from './pages/Chat'
+import VVAULTPage from './pages/VVAULTPage'
+import LibraryPage from './pages/LibraryPage'
+import CodePage from './pages/CodePage'
+import ExplorePage from './pages/ExplorePage 2'
+import { ThemeProvider } from './lib/ThemeContext'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<App />} />
-        <Route path="/auth/callback" element={<OAuthCallback />} />
-        <Route path="/api/auth/google/callback" element={<OAuthCallback />} />
-        <Route path="/app" element={<Layout />}>
-          <Route index element={<Home />} />
-          <Route path="chat/:threadId" element={<Chat />} />
-          <Route path="gpts" element={<GPTsPage />} />
-          <Route path="gpts/new" element={<GPTsPage initialOpen />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <ThemeProvider user={null}>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<App />} />
+          <Route path="/auth/callback" element={<OAuthCallback />} />
+          {/* /api/auth/google/callback is handled by Vite proxy → backend, not React Router */}
+          <Route path="/app" element={<Layout />}>
+            <Route index element={<Home />} />
+            <Route path="chat/:threadId" element={<Chat />} />
+            <Route path="gpts" element={<GPTsPage />} />
+            <Route path="gpts/new" element={<GPTsPage initialOpen />} />
+            <Route path="explore" element={<ExplorePage />} />
+            <Route path="vvault" element={<VVAULTPage />} />
+            <Route path="library" element={<LibraryPage />} />
+            <Route path="codex" element={<CodePage />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </ThemeProvider>
   </React.StrictMode>,
 )

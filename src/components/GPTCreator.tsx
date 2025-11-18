@@ -2163,11 +2163,25 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                             </button>
                           </div>
                         ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
-                  </div>
-                </div>
-              )}
+
+                    {/* Memories (runtime-scoped) */}
+                    <div className="p-3 border border-app-border/60 rounded-lg bg-app-surface">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <FileText size={14} className="text-app-purple-500" />
+                          <span className="text-sm font-medium text-app-text-900">Memories</span>
+                        </div>
+                        <span className="text-xs text-app-text-700">Stored under /instances/&lt;runtime&gt;/memory</span>
+                      </div>
+                      <p className="mt-2 text-xs text-app-text-800">
+                        Drop markdown, text, JSON, or HTML here to seed runtime memory. Files are stored as plain markdown; no embeddings required.
+                      </p>
+                    </div>
             </div>
           </div>
 

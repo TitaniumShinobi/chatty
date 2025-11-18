@@ -1,14 +1,14 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { 
-  Plus, 
   MessageSquare, 
   Trash2, 
   Search,
   Library,
   Clock,
   FolderPlus,
-  PanelLeftClose
+  PanelLeftClose,
+  Shield
 } from 'lucide-react'
 import { SidebarProps } from '../types'
 import { cn } from '../lib/utils'
@@ -18,9 +18,13 @@ const Sidebar: React.FC<SidebarProps> = ({
   conversations,
   currentConversationId,
   onConversationSelect,
-  onNewConversation,
   onNewConversationWithGPT,
   onDeleteConversation,
+  onOpenExplore,
+  onOpenCodex,
+  onOpenLibrary,
+  onOpenSearch,
+  onOpenProjects,
   currentUser,
   onShowSettings
 }) => {
@@ -50,29 +54,49 @@ const Sidebar: React.FC<SidebarProps> = ({
       <div className="px-4 pb-4">
         <div className="space-y-1">
           <button 
-            onClick={onNewConversation}
+            onClick={() => {
+              if (onOpenSearch) onOpenSearch()
+            }}
             className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
           >
-            <Plus size={16} className="text-gray-600" />
-            New chat
-          </button>
-          
-          <button className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors">
             <Search size={16} className="text-gray-600" />
             Search chats
           </button>
           
-          <button className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors">
+          <button 
+            onClick={() => {
+              if (onOpenLibrary) onOpenLibrary()
+            }}
+            className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+          >
             <Library size={16} className="text-gray-600" />
             Library
           </button>
           
-          <button className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors">
+          <button 
+            onClick={() => {
+              if (onOpenCodex) onOpenCodex()
+            }}
+            className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+          >
             <Clock size={16} className="text-gray-600" />
             Codex
           </button>
+
+          <button 
+            onClick={() => navigate('/app/vvault')}
+            className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+          >
+            <Shield size={16} className="text-gray-600" />
+            VVAULT
+          </button>
           
-          <button className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors">
+          <button 
+            onClick={() => {
+              if (onOpenProjects) onOpenProjects()
+            }}
+            className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+          >
             <FolderPlus size={16} className="text-gray-600" />
             Projects
           </button>
@@ -84,7 +108,10 @@ const Sidebar: React.FC<SidebarProps> = ({
         <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">GPTs</h3>
         <div className="space-y-1">
           <button 
-            onClick={() => navigate('/app/gpts')}
+            onClick={() => {
+              if (onOpenExplore) return onOpenExplore()
+              navigate('/app/explore')
+            }}
             className="flex items-center gap-3 w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
           >
             <div className="w-6 h-6 bg-gray-200 rounded flex items-center justify-center">
@@ -206,4 +233,3 @@ const Sidebar: React.FC<SidebarProps> = ({
 }
 
 export default Sidebar
-

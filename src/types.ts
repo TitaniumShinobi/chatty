@@ -78,6 +78,11 @@ export interface SidebarProps {
   onUpdateConversation: (id: string, updates: Partial<Conversation>) => void
   onShowGPTCreator: () => void
   onShowGPTs: () => void
+  onOpenExplore?: () => void
+  onOpenCodex?: () => void
+  onOpenLibrary?: () => void
+  onOpenSearch?: () => void
+  onOpenProjects?: () => void
   currentUser?: any
   onLogout?: () => void
   onShowSettings?: () => void

@@ -1,5 +1,11 @@
 export type User = { sub: string; email: string; name: string; picture?: string };
 
+export function getUserId(user: User | null | undefined): string | null {
+  if (!user) return null;
+  // Handle both User type (with sub) and any user object that might have id
+  return (user as any).sub || (user as any).id || user.email || null;
+}
+
 export async function fetchMe() {
   const r = await fetch("/api/me", { credentials: "include" });
   if (!r.ok) return null;
@@ -68,6 +74,18 @@ export function loginWithGoogle() {
   window.location.href = "/api/auth/google";
 }
 
+export function loginWithMicrosoft() {
+  window.location.href = "/api/auth/microsoft";
+}
+
+export function loginWithApple() {
+  window.location.href = "/api/auth/apple";
+}
+
+export function loginWithGithub() {
+  window.location.href = "/api/auth/github";
+}
+
 export async function loginWithEmail(email: string, password: string): Promise<User | null> {
   try {
     const response = await fetch("/api/auth/login", {
@@ -91,7 +109,13 @@ export async function loginWithEmail(email: string, password: string): Promise<U
   }
 }
 
-export async function signupWithEmail(email: string, password: string, name: string): Promise<User | null> {
+export async function signupWithEmail(
+  email: string, 
+  password: string, 
+  confirmPassword: string, 
+  name: string, 
+  turnstileToken?: string
+): Promise<User | null> {
   try {
     const response = await fetch("/api/auth/register", {
       method: "POST",
@@ -99,18 +123,25 @@ export async function signupWithEmail(email: string, password: string, name: str
         "Content-Type": "application/json",
       },
       credentials: "include",
-      body: JSON.stringify({ email, password, name }),
+      body: JSON.stringify({ 
+        email, 
+        password, 
+        confirmPassword,
+        name,
+        turnstileToken 
+      }),
     });
 
     if (!response.ok) {
-      throw new Error("Signup failed");
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || "Signup failed");
     }
 
     const data = await response.json();
     return data.user || null;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Signup error:", error);
-    return null;
+    throw error; // Re-throw so App.tsx can handle the error message
   }
 }
 

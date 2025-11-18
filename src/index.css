@@ -2,6 +2,38 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Chatty Lemon/Chocolate Theme CSS Variables */
+/* Based on CHATTY_COLOR_SCHEME 2.md */
+
+:root {
+  /* Day Mode - Light cream background, Dark chocolate text */
+  --chatty-bg-main: #ffffeb; /* Light cream - Main Area */
+  --chatty-bg-sidebar: #ffffd7; /* Slightly darker cream - Sidebar */
+  --chatty-bg-message: #ffffd7; /* Message Box */
+  --chatty-highlight: #feffaf; /* Highlight for hover states */
+  --chatty-button: #ADA587; /* Primary button color */
+  --chatty-line: #ADA587; /* Borders, dividers, structural elements */
+  --chatty-text: #3A2E14; /* Primary text color */
+  --chatty-text-inverse: #ffffeb; /* Inverse text (for buttons) */
+  --chatty-status-success: #22c55e; /* Green for success */
+  --chatty-status-error: #dc2626; /* Red for errors */
+}
+
+[data-theme="night"],
+:root.night-mode {
+  /* Night Mode - Dark cocoa background, Lemon text */
+  --chatty-bg-main: #2F2510; /* Dark cocoa - Main Area */
+  --chatty-bg-sidebar: #ADA587; /* Aged Soft Stone - Sidebar */
+  --chatty-bg-message: #3A2E14; /* Slightly lighter tone - Message Box */
+  --chatty-highlight: #3A2E14; /* Dark cocoa for hover states */
+  --chatty-button: #ffffd7; /* Lemon yellow for interactive elements */
+  --chatty-line: #ffffd7; /* Matching button tone for dividers and borders */
+  --chatty-text: #ffffeb; /* Lemon cloud for readability */
+  --chatty-text-inverse: #3A2E14; /* Dark cocoa for text on light buttons */
+  --chatty-status-success: #22c55e; /* Green for success */
+  --chatty-status-error: #dc2626; /* Red for errors */
+}
+
 @layer base {
   * {
     @apply border-app-yellow-800;
@@ -68,5 +100,36 @@
       opacity: 1;
       transform: translateY(0);
     }
+  }
+
+  /* Animated Chatty Star Logo */
+  @keyframes chatty-star-pulse {
+    0%, 100% {
+      transform: scale(1) rotate(0deg);
+      filter: brightness(1) drop-shadow(0 0 8px rgba(255, 235, 59, 0.6));
+    }
+    50% {
+      transform: scale(1.1) rotate(5deg);
+      filter: brightness(1.2) drop-shadow(0 0 12px rgba(255, 235, 59, 0.9));
+    }
+  }
+
+  @keyframes chatty-star-rotate {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .chatty-star-animated {
+    animation: chatty-star-pulse 3s ease-in-out infinite, chatty-star-rotate 20s linear infinite;
+    transition: all 0.3s ease;
+  }
+
+  .chatty-star-animated:hover {
+    animation: chatty-star-pulse 1s ease-in-out infinite, chatty-star-rotate 10s linear infinite;
+    filter: brightness(1.3) drop-shadow(0 0 16px rgba(255, 235, 59, 1));
   }
 }

@@ -32,6 +32,7 @@ export const connectDB = async () => {
       return;
     }
     
-    process.exit(1);
+    // Throw error instead of exiting - let the caller decide what to do
+    throw error;
   }
 };

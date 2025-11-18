@@ -1,6 +1,15 @@
-import React from 'react'
-import { X, Mail, Shield, Bell, Palette, Globe, Database } from 'lucide-react'
+import React, { useState } from 'react'
+import { 
+  X, Settings, Bell, User, Plus, Clock, ShoppingCart, Database, Lock, ShieldCheck
+} from 'lucide-react'
 import { User as UserType } from '../lib/auth'
+import AccountTab from './settings/AccountTab'
+import GeneralTab from './settings/GeneralTab'
+import NotificationsTab from './settings/NotificationsTab'
+import PersonalizationTab from './settings/PersonalizationTab'
+import DataControlsTab from './settings/DataControlsTab'
+import StubTab from './settings/StubTab'
+import { SettingsProvider } from '../context/SettingsContext'
 
 interface SettingsModalProps {
   isVisible: boolean
@@ -9,159 +18,141 @@ interface SettingsModalProps {
   onLogout: () => void
 }
 
+type Tab = 'general' | 'notifications' | 'personalization' | 'apps' | 'schedules' | 
+  'orders' | 'data' | 'security' | 'parental' | 'account'
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ 
   isVisible, 
   onClose, 
   user, 
   onLogout 
 }) => {
+  const [activeTab, setActiveTab] = useState<Tab>('general')
+
   if (!isVisible) return null
 
+  const sidebarItems = [
+    { id: 'general' as Tab, label: 'General', icon: Settings },
+    { id: 'notifications' as Tab, label: 'Notifications', icon: Bell },
+    { id: 'personalization' as Tab, label: 'Personalization', icon: User },
+    { id: 'apps' as Tab, label: 'Apps & Connectors', icon: Plus },
+    { id: 'schedules' as Tab, label: 'Schedules', icon: Clock },
+    { id: 'orders' as Tab, label: 'Orders', icon: ShoppingCart },
+    { id: 'data' as Tab, label: 'Data Controls', icon: Database },
+    { id: 'security' as Tab, label: 'Security', icon: Lock },
+    { id: 'parental' as Tab, label: 'Parental Controls', icon: ShieldCheck },
+    { id: 'account' as Tab, label: 'Account', icon: User }
+  ]
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-app-orange-800 rounded-lg shadow-xl w-full max-w-md mx-4 max-h-[80vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-app-orange-700">
-          <h2 className="text-xl font-semibold text-white">Settings</h2>
-          <button
-            onClick={onClose}
-            className="p-2 text-app-orange-400 hover:text-white hover:bg-app-orange-700 rounded-lg transition-colors"
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="p-6 space-y-6">
-          {/* Account Section */}
-          <div>
-            <h3 className="text-lg font-medium text-white mb-4">Account</h3>
-            <div className="space-y-3">
-              {/* User Info */}
-              <div className="flex items-center gap-3 p-3 bg-app-orange-700 rounded-lg">
-{user?.picture ? (
-  <img 
-    src={`${user.picture}?cb=${Date.now()}`} // cache-busting
-    alt={user.name}
-    className="w-10 h-10 rounded-full object-cover border border-app-orange-500"
-    onError={(e) => {
-      console.warn('Failed to load profile image, showing fallback.');
-      e.currentTarget.style.display = 'none';
-      const fallback = e.currentTarget.nextElementSibling as HTMLElement;
-      if (fallback) {
-        fallback.style.display = 'flex';
-      }
-    }}
-    onLoad={() => {
-      console.log('✅ Profile image loaded from:', user.picture);
-    }}
-    loading="lazy"
-    style={{ 
-      transition: 'opacity 0.2s ease-in-out',
-      opacity: 1
-    }}
-  />
-) : null}
-<div 
-  className="w-10 h-10 bg-app-orange-600 rounded-full flex items-center justify-center border border-app-orange-500"
-  style={{ display: user?.picture ? 'none' : 'flex' }}
->
-  <span className="text-app-orange-300 font-medium text-lg">
-    {user?.name?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || 'U'}
-  </span>
-</div>
-                <div className="flex-1">
-                  <p className="text-white font-medium">{user?.name || 'User'}</p>
-                  <p className="text-app-orange-400 text-sm">{user?.email}</p>
-                </div>
+    <SettingsProvider>
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={onClose}>
+        <div 
+          className="rounded-lg shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] flex" 
+          style={{ backgroundColor: 'var(--chatty-bg-main)' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Sidebar */}
+          <div className="w-64 flex flex-col" style={{ backgroundColor: 'var(--chatty-bg-sidebar)' }}>
+            <div className="flex-1 overflow-y-auto">
+              {/* Close Button */}
+              <div className="flex justify-start p-4">
+                <button
+                  onClick={onClose}
+                  className="p-2 rounded-lg transition-colors"
+                  style={{ color: 'var(--chatty-text)' }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  <X size={20} />
+                </button>
               </div>
 
-              {/* Email */}
-              <div className="flex items-center gap-3 p-3 bg-app-orange-700 rounded-lg">
-                <Mail size={16} className="text-app-orange-400" />
-                <div className="flex-1">
-                  <p className="text-white text-sm">Email</p>
-                  <p className="text-app-orange-400 text-sm">{user?.email}</p>
+              {/* User Email and Upgrade Plan */}
+              <div className="px-4 pb-4">
+                <div className="text-sm mb-2" style={{ color: 'var(--chatty-text)' }}>
+                  {user?.email}
                 </div>
+                <button 
+                  className="text-sm underline hover:no-underline transition-all" 
+                  style={{ color: 'var(--chatty-text)' }}
+                  onClick={() => {
+                    // TODO: Implement upgrade plan functionality
+                    console.log('Upgrade plan clicked');
+                  }}
+                >
+                  Upgrade plan
+                </button>
               </div>
 
-              {/* Account Type */}
-              <div className="flex items-center gap-3 p-3 bg-app-orange-700 rounded-lg">
-                <Shield size={16} className="text-app-orange-400" />
-                <div className="flex-1">
-                  <p className="text-white text-sm">Account Type</p>
-                  <p className="text-app-orange-400 text-sm">Free</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* App Section */}
-          <div>
-            <h3 className="text-lg font-medium text-white mb-4">App</h3>
-            <div className="space-y-3">
-              {/* Language */}
-              <div className="flex items-center justify-between p-3 bg-app-orange-700 rounded-lg cursor-pointer hover:bg-app-orange-600 transition-colors">
-                <div className="flex items-center gap-3">
-                  <Globe size={16} className="text-app-orange-400" />
-                  <span className="text-white text-sm">Language</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-app-orange-400 text-sm">English</span>
-                  <span className="text-app-orange-400">›</span>
-                </div>
-              </div>
-
-              {/* Theme */}
-              <div className="flex items-center justify-between p-3 bg-app-orange-700 rounded-lg cursor-pointer hover:bg-app-orange-600 transition-colors">
-                <div className="flex items-center gap-3">
-                  <Palette size={16} className="text-app-orange-400" />
-                  <span className="text-white text-sm">Theme</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-app-orange-400 text-sm">Dark</span>
-                  <span className="text-app-orange-400">›</span>
-                </div>
+              {/* Navigation Items */}
+              <div className="flex-1">
+                {sidebarItems.map((item) => {
+                  const Icon = item.icon
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setActiveTab(item.id)}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${
+                        activeTab === item.id ? 'border-r-2' : ''
+                      }`}
+                      style={{
+                        color: 'var(--chatty-text)',
+                        backgroundColor: activeTab === item.id ? 'var(--chatty-highlight)' : 'transparent',
+                        borderRightColor: activeTab === item.id ? 'var(--chatty-line)' : 'transparent'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (activeTab !== item.id) {
+                          e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)'
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (activeTab !== item.id) {
+                          e.currentTarget.style.backgroundColor = 'transparent'
+                        }
+                      }}
+                    >
+                      <Icon size={16} style={{ color: 'var(--chatty-text)', opacity: 0.7 }} />
+                      <span className="text-sm font-medium">{item.label}</span>
+                    </button>
+                  )
+                })}
               </div>
 
-              {/* Notifications */}
-              <div className="flex items-center justify-between p-3 bg-app-orange-700 rounded-lg cursor-pointer hover:bg-app-orange-600 transition-colors">
-                <div className="flex items-center gap-3">
-                  <Bell size={16} className="text-app-orange-400" />
-                  <span className="text-white text-sm">Notifications</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-app-orange-400 text-sm">Off</span>
-                  <span className="text-app-orange-400">›</span>
-                </div>
-              </div>
-
-              {/* Data Storage */}
-              <div className="flex items-center justify-between p-3 bg-app-orange-700 rounded-lg cursor-pointer hover:bg-app-orange-600 transition-colors">
-                <div className="flex items-center gap-3">
-                  <Database size={16} className="text-app-orange-400" />
-                  <span className="text-white text-sm">Data Storage</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-app-orange-400 text-sm">Local</span>
-                  <span className="text-app-orange-400">›</span>
-                </div>
+              {/* Help button at bottom of sidebar */}
+              <div className="p-4 border-t" style={{ borderColor: 'var(--chatty-line)' }}>
+                <button 
+                  className="text-sm underline hover:no-underline transition-all" 
+                  style={{ color: 'var(--chatty-text)' }}
+                  onClick={() => {
+                    // TODO: Implement help functionality
+                    console.log('Help clicked');
+                  }}
+                >
+                  Help
+                </button>
               </div>
             </div>
           </div>
 
-          {/* Logout Button */}
-          <div className="pt-4 border-t border-app-orange-700">
-            <button
-              onClick={onLogout}
-              className="w-full p-3 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium"
-            >
-              Log Out
-            </button>
+          {/* Content Area */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-6">
+              {activeTab === 'general' && <GeneralTab />}
+              {activeTab === 'notifications' && <NotificationsTab />}
+              {activeTab === 'personalization' && <PersonalizationTab />}
+              {activeTab === 'apps' && <StubTab title="Apps & Connectors" description="App integrations coming soon..." />}
+              {activeTab === 'schedules' && <StubTab title="Schedules" description="Schedule management coming soon..." />}
+              {activeTab === 'orders' && <StubTab title="Orders" description="Order history coming soon..." />}
+              {activeTab === 'data' && <DataControlsTab />}
+              {activeTab === 'security' && <StubTab title="Security" description="Security options coming soon..." />}
+              {activeTab === 'parental' && <StubTab title="Parental Controls" description="Parental control settings coming soon..." />}
+              {activeTab === 'account' && <AccountTab user={user} onLogout={onLogout} />}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </SettingsProvider>
   )
 }
 
