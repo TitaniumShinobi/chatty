@@ -10,7 +10,7 @@ import Chat from './pages/Chat'
 import VVAULTPage from './pages/VVAULTPage'
 import LibraryPage from './pages/LibraryPage'
 import CodePage from './pages/CodePage'
-import ExplorePage from './pages/ExplorePage 2'
+import ExplorePage from './pages/ExplorePage'
 import { ThemeProvider } from './lib/ThemeContext'
 import './index.css'
 
