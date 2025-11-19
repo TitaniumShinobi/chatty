@@ -71,17 +71,17 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
   // Apply theme to document
   useEffect(() => {
     const root = document.documentElement
-    
-    // Remove all theme classes first
-    root.classList.remove('theme-light', 'theme-night')
-    
-    if (theme === 'system') {
-      // Let CSS @media queries handle system preference
-      console.log(`Using system theme preference: ${systemTheme}`)
-    } else {
-      // Apply explicit theme class
-      root.classList.add(`theme-${theme}`)
-      console.log(`Applied theme-${theme} class to document element`)
+    const resolved = theme === 'system' ? systemTheme : theme
+
+    // Clear previous state
+    root.classList.remove('theme-light', 'theme-night', 'night-mode')
+    root.removeAttribute('data-theme')
+
+    // Apply classes/attributes so CSS variables take effect
+    root.setAttribute('data-theme', resolved)
+    root.classList.add(`theme-${resolved}`)
+    if (resolved === 'night') {
+      root.classList.add('night-mode')
     }
   }, [theme, systemTheme])
   // === THEME APPLICATION - END ===

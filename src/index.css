@@ -8,9 +8,9 @@
 :root {
   /* Day Mode - Light cream background, Dark chocolate text */
   --chatty-bg-main: #ffffeb; /* Light cream - Main Area */
-  --chatty-bg-sidebar: #ffffd7; /* Slightly darker cream - Sidebar */
+  --chatty-bg-sidebar: #ffffeb; /* Sidebar matches main cream in day mode */
   --chatty-bg-message: #ffffd7; /* Message Box */
-  --chatty-highlight: #feffaf; /* Highlight for hover states */
+  --chatty-highlight: #ffffd7; /* Highlight for hover states */
   --chatty-button: #ADA587; /* Primary button color */
   --chatty-line: #ADA587; /* Borders, dividers, structural elements */
   --chatty-text: #3A2E14; /* Primary text color */
@@ -23,7 +23,7 @@
 :root.night-mode {
   /* Night Mode - Dark cocoa background, Lemon text */
   --chatty-bg-main: #2F2510; /* Dark cocoa - Main Area */
-  --chatty-bg-sidebar: #ADA587; /* Aged Soft Stone - Sidebar */
+  --chatty-bg-sidebar: #2F2510; /* Match main for sidebar in night mode */
   --chatty-bg-message: #3A2E14; /* Slightly lighter tone - Message Box */
   --chatty-highlight: #3A2E14; /* Dark cocoa for hover states */
   --chatty-button: #ffffd7; /* Lemon yellow for interactive elements */
@@ -46,6 +46,11 @@
   body {
     @apply bg-app-pale-50 text-app-text-900;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  .chatty-placeholder::placeholder {
+    color: #ADA587;
+    opacity: 1;
   }
 }
 
@@ -131,5 +136,148 @@
   .chatty-star-animated:hover {
     animation: chatty-star-pulse 1s ease-in-out infinite, chatty-star-rotate 10s linear infinite;
     filter: brightness(1.3) drop-shadow(0 0 16px rgba(255, 235, 59, 1));
+  }
+
+  .chatty-logo {
+    filter: none;
+    transition: transform 0.3s ease;
+  }
+
+  .chatty-logo:hover,
+  .chatty-star-wrapper:hover .chatty-star {
+    animation: chatty-logo-swim 3s ease-in-out infinite;
+    transform: scale(1.02);
+  }
+
+  @keyframes chatty-logo-swim {
+    0% {
+      filter:
+        drop-shadow(-4px -2px 4px rgba(255, 235, 59, 0.2))
+        drop-shadow(2px 4px 10px rgba(255, 211, 78, 0.35));
+    }
+    25% {
+      filter:
+        drop-shadow(4px -2px 6px rgba(255, 235, 59, 0.3))
+        drop-shadow(-2px 4px 12px rgba(255, 221, 120, 0.4));
+    }
+    50% {
+      filter:
+        drop-shadow(2px 4px 6px rgba(255, 235, 59, 0.25))
+        drop-shadow(-4px -2px 14px rgba(255, 199, 46, 0.45));
+    }
+    75% {
+      filter:
+        drop-shadow(-3px 4px 8px rgba(255, 235, 59, 0.3))
+        drop-shadow(4px -3px 12px rgba(255, 211, 78, 0.4));
+    }
+    100% {
+      filter:
+        drop-shadow(-4px -2px 4px rgba(255, 235, 59, 0.2))
+        drop-shadow(2px 4px 10px rgba(255, 211, 78, 0.35));
+    }
+  }
+
+  .chatty-star-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    filter: none;
+    transition: transform 0.3s ease;
+  }
+
+  .chatty-star {
+    transition: opacity 0.2s ease;
+  }
+
+  .chatty-starburst {
+    position: absolute;
+    width: 50%;
+    height: 50%;
+    opacity: 0;
+    z-index: 2;
+    transition: opacity 0.3s ease;
+  }
+
+  .chatty-starburst-left {
+    animation: chatty-starburst-ccw 7s linear infinite;
+    transform: rotate(0deg);
+  }
+
+  .chatty-starburst-right {
+    animation: chatty-starburst-cw 7s linear infinite;
+    transform: rotate(45deg);
+  }
+
+  .chatty-starburst-nova-left,
+  .chatty-starburst-nova-right {
+    width: 90%;
+    height: 90%;
+    opacity: 0;
+    z-index: 0;
+  }
+
+  .chatty-starburst-nova-left {
+    animation: chatty-starburst-ccw 21s linear infinite;
+    transform: rotate(0deg);
+  }
+
+  .chatty-starburst-nova-right {
+    animation: chatty-starburst-cw 21s linear infinite;
+    transform: rotate(45deg);
+  }
+
+  .chatty-starburst-ray-left,
+  .chatty-starburst-ray-right {
+    width: 90%;
+    height: 90%;
+    opacity: 0;
+    z-index: 1;
+  }
+
+  .chatty-starburst-ray-left {
+    animation: chatty-starburst-ccw 14s linear infinite;
+    transform: rotate(0deg);
+  }
+
+  .chatty-starburst-ray-right {
+    animation: chatty-starburst-cw 14s linear infinite;
+    transform: rotate(45deg);
+  }
+
+  .chatty-star-wrapper:hover .chatty-star {
+    opacity: 0;
+  }
+
+  .chatty-star-wrapper:hover .chatty-starburst {
+    opacity: 1;
+  }
+
+  .chatty-star-wrapper:hover .chatty-starburst-ray-left,
+  .chatty-star-wrapper:hover .chatty-starburst-ray-right {
+    opacity: 0.7;
+  }
+
+  .chatty-star-wrapper:hover .chatty-starburst-nova-left,
+  .chatty-star-wrapper:hover .chatty-starburst-nova-right {
+    opacity: 0.9;
+  }
+
+  @keyframes chatty-starburst-cw {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes chatty-starburst-ccw {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(-360deg);
+    }
   }
 }

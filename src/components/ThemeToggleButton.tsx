@@ -17,13 +17,11 @@ export const ThemeToggleButton: React.FC<ThemeToggleButtonProps> = ({
   const { theme, setTheme, actualTheme } = useTheme()
   
   const toggleTheme = () => {
-    if (theme === 'light') {
-      setTheme('night')
-    } else if (theme === 'night') {
-      setTheme('system')
-    } else {
-      setTheme('light')
+    if (theme === 'system') {
+      setTheme(actualTheme === 'light' ? 'night' : 'light')
+      return
     }
+    setTheme(theme === 'light' ? 'night' : 'light')
   }
 
   const getIcon = () => {

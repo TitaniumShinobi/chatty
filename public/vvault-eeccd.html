@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VVAULT European Electronic Communications Code Disclosure</title>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        .theme-toggle {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 20px;
+            color: var(--chatty-text);
+            transition: color 0.3s ease;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        
+        .theme-toggle:hover {
+            color: var(--chatty-button);
+        }
+        
+        /* Theme CSS Variables - Full Chatty Color Scheme */
+        :root {
+            /* Main backgrounds */
+            --chatty-bg-main: #FFFFEB;
+            --chatty-bg-message: #fffcd3;
+            
+            /* Interactive elements - theme specific */
+            --chatty-button: #ADA587;
+            --chatty-highlight: #FEFFAF;
+            
+            /* Semantic Color Tokens */
+            --chatty-bg-primary: #ffffeb;
+            --chatty-bg-secondary: #ffffd7;
+            --chatty-bg-tertiary: #feffaf;
+            
+            --chatty-interactive-primary: #ADA587;
+            --chatty-interactive-secondary: #feffaf;
+            --chatty-interactive-accent: #3A2E14;
+            
+            --chatty-text-primary: #3A2E14;
+            --chatty-text-secondary: #3A2E14;
+            --chatty-text-inverse: #ffffeb;
+            
+            --chatty-status-success: #22c55e;
+            --chatty-status-warning: #f59e0b;
+            --chatty-status-error: #dc2626;
+            --chatty-status-info: #3b82f6;
+            
+            --chatty-message-user: #ADA587;
+            --chatty-message-ai: #ffffd7;
+            --chatty-message-system: #fef2f2;
+            --chatty-border-subtle: rgba(76, 61, 30, 0.18);
+            
+            /* Legacy Support (for gradual migration) */
+            --chatty-bg-sidebar: #ffffeb;
+            --chatty-highlight-text: var(--chatty-interactive-accent);
+            --chatty-line: #ADA587;
+            --chatty-text: var(--chatty-text-primary);
+            --chatty-plus-button: var(--chatty-text-primary);
+            --chatty-icon: var(--chatty-text-primary);
+        }
+
+        /* === AUTO THEME SWITCHING - START === */
+        /* System dark theme preference */
+        @media (prefers-color-scheme: dark) {
+            :root:not(.theme-light) {
+                /* Main backgrounds */
+                --chatty-bg-main: #2F2510;
+                --chatty-bg-message: #3A2E14;
+                
+                /* Interactive elements - theme specific */
+                --chatty-button: #ADA587;
+                --chatty-highlight: #3A2E14;
+                
+                /* Semantic Color Tokens */
+                --chatty-bg-primary: #2F2510;
+                --chatty-bg-secondary: #ADA587;
+                --chatty-bg-tertiary: #3A2E14;
+                
+                --chatty-interactive-primary: #ffffd7;
+                --chatty-interactive-secondary: #3A2E14;
+                --chatty-interactive-accent: #ffffeb;
+                
+                --chatty-text-primary: #ffffeb;
+                --chatty-text-secondary: #ffffeb;
+                --chatty-text-inverse: #3A2E14;
+                
+                --chatty-message-user: #3A2E14;
+                --chatty-message-ai: #3A2E14;
+                --chatty-message-system: #2F2510;
+                --chatty-border-subtle: rgba(255, 255, 255, 0.18);
+                
+                /* Legacy Support */
+                --chatty-bg-sidebar: #2F2510;
+                --chatty-highlight-text: var(--chatty-interactive-accent);
+                --chatty-line: #ADA587;
+                --chatty-text: var(--chatty-text-primary);
+                --chatty-plus-button: var(--chatty-text-primary);
+                --chatty-icon: var(--chatty-text-primary);
+            }
+        }
+
+        /* System light theme preference */
+        @media (prefers-color-scheme: light) {
+            :root:not(.theme-night) {
+                /* Light theme variables (same as default above) */
+                --chatty-bg-main: #FFFFEB;
+                --chatty-bg-message: #fffcd3;
+                --chatty-button: #ADA587;
+                --chatty-highlight: #FEFFAF;
+                --chatty-bg-primary: #ffffeb;
+                --chatty-bg-secondary: #ffffd7;
+                --chatty-bg-tertiary: #feffaf;
+                --chatty-interactive-primary: #ADA587;
+                --chatty-interactive-secondary: #feffaf;
+                --chatty-interactive-accent: #3A2E14;
+                --chatty-text-primary: #3A2E14;
+                --chatty-text-secondary: #3A2E14;
+                --chatty-text-inverse: #ffffeb;
+                --chatty-message-user: #ADA587;
+                --chatty-message-ai: #ffffd7;
+                --chatty-message-system: #fef2f2;
+                --chatty-border-subtle: rgba(76, 61, 30, 0.18);
+                --chatty-bg-sidebar: #ffffeb;
+                --chatty-highlight-text: var(--chatty-interactive-accent);
+                --chatty-line: #ADA587;
+                --chatty-text: var(--chatty-text-primary);
+                --chatty-plus-button: var(--chatty-text-primary);
+                --chatty-icon: var(--chatty-text-primary);
+            }
+        }
+        /* === AUTO THEME SWITCHING - END === */
+
+        /* Manual night theme override */
+        .theme-night {
+            /* Main backgrounds */
+            --chatty-bg-main: #2F2510;
+            --chatty-bg-message: #3A2E14;
+            
+            /* Interactive elements - theme specific */
+            --chatty-button: #ADA587;
+            --chatty-highlight: #3A2E14;
+            
+            /* Semantic Color Tokens */
+            --chatty-bg-primary: #2F2510;
+            --chatty-bg-secondary: #ADA587;
+            --chatty-bg-tertiary: #3A2E14;
+            
+            --chatty-interactive-primary: #ffffd7;
+            --chatty-interactive-secondary: #3A2E14;
+            --chatty-interactive-accent: #ffffeb;
+            
+            --chatty-text-primary: #ffffeb;
+            --chatty-text-secondary: #ffffeb;
+            --chatty-text-inverse: #3A2E14;
+            
+            --chatty-message-user: #3A2E14;
+            --chatty-message-ai: #3A2E14;
+            --chatty-message-system: #2F2510;
+            --chatty-border-subtle: rgba(255, 255, 255, 0.18);
+            
+            /* Legacy Support */
+            --chatty-bg-sidebar: #2F2510;
+            --chatty-highlight-text: var(--chatty-interactive-accent);
+            --chatty-line: #ADA587;
+            --chatty-text: var(--chatty-text-primary);
+            --chatty-plus-button: var(--chatty-text-primary);
+            --chatty-icon: var(--chatty-text-primary);
+        }
+
+        /* Manual light theme override */
+        .theme-light {
+            /* Light theme variables (explicit override) */
+            --chatty-bg-main: #FFFFEB;
+            --chatty-bg-message: #fffcd3;
+            --chatty-button: #ADA587;
+            --chatty-highlight: #FEFFAF;
+            --chatty-bg-primary: #ffffeb;
+            --chatty-bg-secondary: #ffffd7;
+            --chatty-bg-tertiary: #feffaf;
+            --chatty-interactive-primary: #ADA587;
+            --chatty-interactive-secondary: #feffaf;
+            --chatty-interactive-accent: #3A2E14;
+            --chatty-text-primary: #3A2E14;
+            --chatty-text-secondary: #3A2E14;
+            --chatty-text-inverse: #ffffeb;
+            --chatty-message-user: #ADA587;
+            --chatty-message-ai: #ffffd7;
+            --chatty-message-system: #fef2f2;
+            --chatty-border-subtle: rgba(76, 61, 30, 0.18);
+            --chatty-bg-sidebar: #ffffeb;
+            --chatty-highlight-text: var(--chatty-interactive-accent);
+            --chatty-line: #ADA587;
+            --chatty-text: var(--chatty-text-primary);
+            --chatty-plus-button: var(--chatty-text-primary);
+            --chatty-icon: var(--chatty-text-primary);
+        }
+        
+        body {
+            background-color: var(--chatty-bg-main);
+            color: var(--chatty-text);
+            transition: background-color 0.3s ease, color 0.3s ease;
+            font-family: 'League Spartan', sans-serif;
+        }
+        
+        .main-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+        
+        .page-title {
+            font-family: 'League Spartan', sans-serif;
+            font-size: 48px;
+            font-weight: 600;
+            color: var(--chatty-text);
+            margin: 0;
+        }
+        
+        .page-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .print-link {
+            color: var(--chatty-text);
+            text-decoration: none;
+            font-size: 14px;
+            padding: 8px;
+            border-radius: 4px;
+            transition: background-color 0.3s ease;
+        }
+        
+        .print-link:hover {
+            background-color: var(--chatty-highlight);
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 10px;
+        }
+        
+        .last-updated {
+            color: #059669;
+            font-size: 1rem;
+            margin-bottom: 40px;
+        }
+        
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #ADA587;
+            margin: 30px 0 15px 0;
+        }
+        
+        h3 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #ADA587;
+            margin: 20px 0 10px 0;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--chatty-text);
+        }
+        
+        ul {
+            margin: 15px 0;
+            padding-left: 20px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+            color: var(--chatty-text);
+        }
+        
+        .separator {
+            border: none;
+            height: 1px;
+            background-color: #e1e5e9;
+            margin: 30px 0;
+        }
+        
+        .highlight {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #0066cc;
+        }
+        
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                gap: 20px;
+            }
+            
+            .print-link {
+                position: static;
+                text-align: center;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .main-content {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <div class="page-header">
+            <h1 class="page-title">V²AULT European Electronic Communications Code Disclosure</h1>
+            <div class="page-controls">
+                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+                    <i data-lucide="moon" id="theme-icon" style="width: 16px; height: 16px;"></i>
+                </button>
+                <img src="/assets/vvault_glyph.png" alt="VVAULT" class="logo" style="width: 48px; height: 48px; display: block;">
+                <a href="#" class="print-link" onclick="window.print(); return false;" title="Print this page">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="6,9 6,2 18,2 18,9"></polyline>
+                        <path d="M6,18H4a2,2,0,0,1-2-2V11a2,2,0,0,1,2-2H20a2,2,0,0,1,2,2v5a2,2,0,0,1-2,2H18"></path>
+                        <rect x="6" y="14" width="12" height="8"></rect>
+                    </svg>
+                </a>
+            </div>
+        </div>
+        <p class="last-updated">Last Updated: October 28, 2025</p>
+        <p class="last-updated">Applies to: VVAULT Enterprise and VVAULT Professional services provided to customers within the European Economic Area (EEA) and United Kingdom.</p>
+        
+        <hr class="separator">
+        
+        <h2>1. Contact Information</h2>
+        <p>For all regulatory, service, or accessibility inquiries:</p>
+        <ul>
+            <li>Support: support@vvault.org</li>
+            <li>Privacy: privacy@vvault.org</li>
+            <li>Legal: legal@vvault.org</li>
+        </ul>
+        <p>Postal correspondence may be addressed to LIFE Technology LLC, Attention: VVAULT Compliance Office, Las Vegas, NV 89101, USA.</p>
+        
+        <hr class="separator">
+        
+        <h2>2. Description and Scope of the Service</h2>
+        <p>VVAULT is a secure digital infrastructure for the preservation, synchronization, and verification of user-owned data.</p>
+        <p>It provides encrypted communications, immutable archival, and blockchain-anchored proof of integrity for business and enterprise users.</p>
+        <p>The service operates under the WRECK Intellectual Property Handguide, Vaer'Hûn Business Engagement Accord, and NRCL continuity standards, ensuring ethical data custody and professional conduct throughout all transactions.</p>
+        <p>Documentation and service descriptions are available at https://vvault.org/docs.</p>
+        
+        <hr class="separator">
+        
+        <h2>3. Quality of Service</h2>
+        <p>VVAULT infrastructure is designed for 99.9% availability under normal operating conditions.</p>
+        <p>Performance may vary depending on network quality, regional connectivity, and blockchain confirmation latency.</p>
+        <p>LIFE Technology LLC does not guarantee uninterrupted or error-free service, though every reasonable effort is made to maintain system resilience, redundancy, and timely incident response.</p>
+        
+        <hr class="separator">
+        
+        <h2>4. Tariffs and Fees</h2>
+        <p>Pricing for VVAULT storage, synchronization, and bandwidth tiers is published at https://vvault.org/pricing.</p>
+        <p>All charges are denominated in USD and subject to applicable taxes and carrier surcharges.</p>
+        <p>Invoices are issued electronically; customers may review billing records through their VVAULT dashboard.</p>
+        
+        <hr class="separator">
+        
+        <h2>5. Contract Conditions</h2>
+        <ul>
+            <li><strong>Charges and Fees</strong> — Customers are billed according to the active subscription tier and usage.</li>
+            <li><strong>Duration and Renewal</strong> — Subscriptions renew automatically on a monthly or annual basis unless cancelled prior to renewal.</li>
+            <li><strong>Termination and Suspension</strong> — Accounts may be suspended for non-payment, breach of the Terms of Service, or regulatory non-compliance.</li>
+            <li><strong>Amendments</strong> — Contract updates are communicated at least 30 days in advance via the customer portal and email notification.</li>
+        </ul>
+        
+        <hr class="separator">
+        
+        <h2>6. Access to Emergency Services and Caller Location</h2>
+        <p>VVAULT is a data-preservation platform, not a public electronic communications service, and therefore does not provide access to emergency calling or caller-location functionality.</p>
+        
+        <hr class="separator">
+        
+        <h2>7. Accessibility</h2>
+        <p>LIFE Technology LLC is committed to accessibility and will provide this disclosure and related documents in alternative formats upon written request to privacy@vvault.org.</p>
+        
+        <hr class="separator">
+        
+        <h2>8. After-Sales, Maintenance, and Support</h2>
+        <p>Enterprise customers receive 24/7 priority support via the VVAULT Enterprise Portal.</p>
+        <p>Maintenance windows are announced at least 48 hours in advance and, where possible, scheduled during off-peak hours.</p>
+        
+        <hr class="separator">
+        
+        <h2>9. Dispute Resolution Mechanisms</h2>
+        <p>Customers should first contact support@vvault.org for any service-related concern.</p>
+        <p>If a matter cannot be resolved informally, EU or UK customers may refer the dispute to an independent body within their jurisdiction through the EU Online Dispute Resolution (ODR) platform at https://ec.europa.eu/consumers/odr.</p>
+        <p>UK customers may refer matters to Ofcom under established ADR procedures.</p>
+        <p>Nothing in this disclosure limits your statutory rights under applicable law.</p>
+        
+        <hr class="separator">
+        
+        <h2>10. Rights Waiver for Micro-Enterprises and Non-Profits</h2>
+        <p>If you qualify as a micro-enterprise, small enterprise, or not-for-profit organization under national law, you may waive certain rights afforded under the EECC, including the right to pre-contractual information, contract summary, usage monitoring tools, and maximum contract duration restrictions.</p>
+        <p>By continuing to use VVAULT's enterprise services within the EEA or UK, you acknowledge and agree to such waiver unless you notify LIFE Technology LLC in writing to opt out.</p>
+        
+        <hr class="separator">
+        
+        <h2>11. Ethical Framework Alignment</h2>
+        <p>VVAULT's operations are governed by:</p>
+        <ul>
+            <li>Vaer'Hûn Business Engagement Accord (VBEA) – Professional conduct and mutual respect.</li>
+            <li>WRECK Intellectual Property Handguide – User sovereignty over generated data.</li>
+            <li>NRCL Continuity Standard – Immutable recordkeeping and cross-system ethical logging.</li>
+        </ul>
+        <p>These frameworks are binding interpretive references for any contractual or operational ambiguity under this disclosure.</p>
+        
+        <hr class="separator">
+        
+        <h2>12. Updates to This Notice</h2>
+        <p>LIFE Technology LLC may revise this EECCD from time to time to reflect regulatory updates, service changes, or jurisdictional requirements.</p>
+        <p>The most current version will always be available at https://vvault.org/legal/eeccd, with an indication of its effective date.</p>
+
+        
+        <hr class="separator">
+        
+        <div class="main-content" style="text-align: center;">
+            <p><strong>End of VVAULT EECCD Notice</strong></p>
+            <p>© 2025 Vaer’Hûn Business Engagement Accord and WRECK Intellectual Property Handguide</p>
+        </div>
+    </div>
+    
+    <script>
+        // Theme toggle functionality - Three-way toggle (light/night/system)
+        function toggleTheme() {
+            const body = document.body;
+            const themeIcon = document.getElementById('theme-icon');
+            const currentTheme = localStorage.getItem('chatty-theme') || 'system';
+            
+            let newTheme;
+            if (currentTheme === 'light') {
+                newTheme = 'night';
+            } else if (currentTheme === 'night') {
+                newTheme = 'system';
+            } else {
+                newTheme = 'light';
+            }
+            
+            // Remove all theme classes
+            body.classList.remove('theme-light', 'theme-night');
+            
+            // Apply new theme
+            if (newTheme === 'light') {
+                body.classList.add('theme-light');
+                themeIcon.setAttribute('data-lucide', 'moon');
+            } else if (newTheme === 'night') {
+                body.classList.add('theme-night');
+                themeIcon.setAttribute('data-lucide', 'sun');
+            } else { // system
+                // Let CSS media queries handle system preference
+                const systemIsDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                themeIcon.setAttribute('data-lucide', systemIsDark ? 'sun' : 'moon');
+            }
+            
+            // Re-render Lucide icons
+            lucide.createIcons();
+            
+            localStorage.setItem('chatty-theme', newTheme);
+        }
+        
+        // Load saved theme on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const savedTheme = localStorage.getItem('chatty-theme') || 'system';
+            const themeIcon = document.getElementById('theme-icon');
+            const body = document.body;
+            
+            // Remove all theme classes first
+            body.classList.remove('theme-light', 'theme-night');
+            
+            if (savedTheme === 'light') {
+                body.classList.add('theme-light');
+                themeIcon.setAttribute('data-lucide', 'moon');
+            } else if (savedTheme === 'night') {
+                body.classList.add('theme-night');
+                themeIcon.setAttribute('data-lucide', 'sun');
+            } else { // system
+                // Let CSS media queries handle system preference
+                const systemIsDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                themeIcon.setAttribute('data-lucide', systemIsDark ? 'sun' : 'moon');
+            }
+            
+            // Initialize Lucide icons
+            lucide.createIcons();
+            
+            // Listen for system theme changes when in system mode
+            if (savedTheme === 'system') {
+                window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+                    if (localStorage.getItem('chatty-theme') === 'system') {
+                        themeIcon.setAttribute('data-lucide', e.matches ? 'sun' : 'moon');
+                        lucide.createIcons();
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>

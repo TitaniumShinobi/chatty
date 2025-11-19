@@ -1097,27 +1097,28 @@ export default function Layout() {
         className="flex h-screen bg-[var(--chatty-bg-main)] text-[var(--chatty-text)] relative"
         style={{ isolation: 'isolate' }} // Ensure proper stacking context for children
       >
-        {/* Sidebar - always visible like search and projects modals */}
-        <Sidebar
-          conversations={threads as any}
-          threads={threads as any}
-          currentConversationId={activeId}
-          onConversationSelect={(id: string) => {
-            console.log('🖱️ [Layout.tsx] Sidebar thread selected:', id);
-            navigate(`/app/chat/${id}`);
-          }}
-          onNewConversation={newThread}
-          onNewConversationWithGPT={(gptId: string) => { navigate('/app/gpts/new') }}
-          onDeleteConversation={deleteThread}
-          onRenameConversation={renameThread}
-          onArchiveConversation={archiveThread}
-          onShareConversation={handleShareConversation}
-          onOpenExplore={handleExploreClick}
-          onOpenCodex={() => navigate('/app/codex')}
-          onOpenLibrary={() => navigate('/app/library')}
-          onOpenSearch={handleSearchClick}
-          onShowGPTCreator={() => navigate('/app/gpts/new')}
-          onShowGPTs={() => navigate('/app/gpts')}
+        {/* Sidebar - hide when runtime dashboard is open */}
+        {!showRuntimeDashboard && (
+          <Sidebar
+            conversations={threads as any}
+            threads={threads as any}
+            currentConversationId={activeId}
+            onConversationSelect={(id: string) => {
+              console.log('🖱️ [Layout.tsx] Sidebar thread selected:', id);
+              navigate(`/app/chat/${id}`);
+            }}
+            onNewConversation={newThread}
+            onNewConversationWithGPT={(gptId: string) => { navigate('/app/gpts/new') }}
+            onDeleteConversation={deleteThread}
+            onRenameConversation={renameThread}
+            onArchiveConversation={archiveThread}
+            onShareConversation={handleShareConversation}
+            onOpenExplore={handleExploreClick}
+            onOpenCodex={() => navigate('/app/codex')}
+            onOpenLibrary={() => navigate('/app/library')}
+            onOpenSearch={handleSearchClick}
+            onShowGPTCreator={() => navigate('/app/gpts/new')}
+            onShowGPTs={() => navigate('/app/gpts')}
           onOpenProjects={handleProjectsClick}
           currentUser={user}
           onLogout={handleLogout}
@@ -1127,6 +1128,7 @@ export default function Layout() {
           onToggleCollapsed={toggleSidebar}
           hasBlockingOverlay={hasBlockingOverlay}
         />
+        )}
 
         {/* Main Content */}
         <main 

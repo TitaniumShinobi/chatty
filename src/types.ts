@@ -83,6 +83,9 @@ export interface SidebarProps {
   onOpenLibrary?: () => void
   onOpenSearch?: () => void
   onOpenProjects?: () => void
+  onShowRuntimeDashboard?: () => void
+  collapsed?: boolean
+  onToggleCollapsed?: () => void
   currentUser?: any
   onLogout?: () => void
   onShowSettings?: () => void

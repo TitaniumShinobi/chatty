@@ -1,5 +1,5 @@
 // src/App.tsx
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   fetchMe,
   loginWithGoogle,
@@ -37,13 +37,20 @@ export default function App() {
 
   // email auth UI state
   const [mode, setMode] = useState<'login' | 'signup'>('login')
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(() => {
+    if (typeof window === 'undefined') return ''
+    return localStorage.getItem('auth:lastEmail') || ''
+  })
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [name, setName] = useState('')
   const [acceptTerms, setAcceptTerms] = useState(false)
   const [acceptVVAULTTerms, setAcceptVVAULTTerms] = useState(false)
   const [authError, setAuthError] = useState('')
+  const [lastEmailHint, setLastEmailHint] = useState(() => {
+    if (typeof window === 'undefined') return ''
+    return localStorage.getItem('auth:lastEmail') || ''
+  })
   
   // Enhanced UI states
   const [isAuthenticating, setIsAuthenticating] = useState(false)
@@ -52,7 +59,8 @@ export default function App() {
   const [turnstileWidgetId, setTurnstileWidgetId] = useState<string>('')
   const [turnstileError, setTurnstileError] = useState('')
   const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined
-
+  const passwordInputRef = useRef<HTMLInputElement | null>(null)
+  
   // Initialize Cloudflare Turnstile
   useEffect(() => {
     const loadTurnstile = () => {
@@ -252,6 +260,11 @@ export default function App() {
       // For login, proceed normally
       // Migration removed - migrateUserData function doesn't exist
       
+      if (mode === 'login') {
+        localStorage.setItem('auth:lastEmail', email)
+        setLastEmailHint(email)
+      }
+
       setUser(u)
       setEmail('')
       setPassword('')
@@ -591,6 +604,46 @@ export default function App() {
             </div>
           )}
 
+          {mode === 'login' && lastEmailHint && (
+            <div className="mb-4 p-3 border rounded-lg flex items-center justify-between"
+              style={{ borderColor: 'var(--chatty-line)', backgroundColor: 'var(--chatty-bg-main)' }}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center"
+                  style={{ backgroundColor: 'var(--chatty-highlight)', color: 'var(--chatty-text)' }}>
+                  {lastEmailHint.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <div className="text-sm font-semibold" style={{ color: 'var(--chatty-text)' }}>{lastEmailHint}</div>
+                  <div className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Last used on this device</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="px-3 py-1 rounded-lg text-sm font-medium transition-colors"
+                  style={{ backgroundColor: 'var(--chatty-button)', color: 'var(--chatty-text)' }}
+                  onClick={() => {
+                    setEmail(lastEmailHint)
+                    passwordInputRef.current?.focus()
+                  }}
+                >
+                  Use
+                </button>
+                <button
+                  type="button"
+                  className="px-2 py-1 rounded-lg text-sm transition-colors"
+                  style={{ color: 'var(--chatty-text)' }}
+                  onClick={() => {
+                    localStorage.removeItem('auth:lastEmail')
+                    setLastEmailHint('')
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm opacity-70 mb-2">Email</label>
             <input
@@ -612,6 +665,7 @@ export default function App() {
             <label className="block text-sm opacity-70 mb-2">Password</label>
             <input
               type="password"
+              ref={passwordInputRef}
               className="w-full px-3 py-2 rounded-lg outline-none focus:ring-2"
               style={{ 
                 backgroundColor: 'var(--chatty-bg-main)', 

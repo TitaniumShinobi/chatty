@@ -185,17 +185,26 @@ app.get("/api/profile-image/:userId", async (req, res) => {
     }
     
     const user = jwt.verify(raw, process.env.JWT_SECRET);
-    
-    if (user.uid !== userId) {
+
+    // Accept sub/id/uid from token for matching
+    const tokenUserId = user.sub || user.id || user.uid;
+    if (!tokenUserId || tokenUserId !== userId) {
       return res.status(403).json({ error: "Forbidden" });
     }
     
-    if (!user.picture) {
+    // Choose image: explicit OAuth picture first, otherwise gravatar/identicon from email
+    let imageUrl = user.picture;
+    if (!imageUrl && user.email) {
+      const { createHash } = await import('crypto');
+      const hash = createHash('md5').update(user.email.trim().toLowerCase()).digest('hex');
+      imageUrl = `https://www.gravatar.com/avatar/${hash}?d=identicon&s=128`;
+    }
+
+    if (!imageUrl) {
       return res.status(404).json({ error: "No profile picture available" });
     }
     
-    // Fetch the image from Google
-    const imageResponse = await fetch(user.picture, {
+    const imageResponse = await fetch(imageUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; Chatty/1.0)'
       }

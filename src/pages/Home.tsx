@@ -60,10 +60,7 @@ export default function Home() {
         <img 
           src="/assets/Chatty.png" 
           alt="CHATTY" 
-          className="w-auto h-32 md:h-40 object-contain"
-          style={{
-            filter: 'drop-shadow(0 0 8px rgba(255, 235, 59, 0.8))'
-          }}
+          className="chatty-logo w-auto h-32 md:h-40 object-contain"
         />
       </div>
 
@@ -105,7 +102,7 @@ export default function Home() {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             placeholder="Ask Chatty"
-            className="flex-1 bg-transparent outline-none text-lg"
+            className="flex-1 bg-transparent outline-none text-lg chatty-placeholder"
             style={{ color: 'var(--chatty-text)' }}
           />
           <span className="text-xl">😎</span>
