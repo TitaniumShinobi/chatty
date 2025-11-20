@@ -95,42 +95,42 @@ const Sidebar: React.FC<SidebarProps> = ({
                 )}
               >
                 <img
-                  src="/assets/chatty_star.png"
+                  src="/assets/stars/chatty_star.png"
                   alt="Chatty"
                   className="chatty-star w-full h-full object-contain"
                 />
                 <img
-                  src="/assets/fourpointray.svg"
+                  src="/assets/stars/fourpointray.svg"
                   alt=""
                   aria-hidden="true"
                   className="chatty-starburst chatty-starburst-ray-left"
                 />
                 <img
-                  src="/assets/fourpointray.svg"
+                  src="/assets/stars/fourpointray.svg"
                   alt=""
                   aria-hidden="true"
                   className="chatty-starburst chatty-starburst-ray-right"
                 />
                 <img
-                  src="/assets/fourpointstarburst.svg"
+                  src="/assets/stars/fourpointstarburst.svg"
                   alt=""
                   aria-hidden="true"
                   className="chatty-starburst chatty-starburst-left"
                 />
                 <img
-                  src="/assets/fourpointstarburst.svg"
+                  src="/assets/stars/fourpointstarburst.svg"
                   alt=""
                   aria-hidden="true"
                   className="chatty-starburst chatty-starburst-right"
                 />
                 <img
-                  src="/assets/fourpointnova.svg"
+                  src="/assets/stars/fourpointnova.svg"
                   alt=""
                   aria-hidden="true"
                   className="chatty-starburst chatty-starburst-nova-left"
                 />
                 <img
-                  src="/assets/fourpointnova.svg"
+                  src="/assets/stars/fourpointnova.svg"
                   alt=""
                   aria-hidden="true"
                   className="chatty-starburst chatty-starburst-nova-right"
@@ -183,42 +183,42 @@ const Sidebar: React.FC<SidebarProps> = ({
                 )}
               >
                 <img
-                  src="/assets/chatty_star.png"
+                  src="/assets/stars/chatty_star.png"
                   alt="Chatty"
                   className="chatty-star w-full h-full object-contain"
                 />
                 <img
-                  src="/assets/fourpointray.svg"
+                  src="/assets/stars/fourpointray.svg"
                   alt=""
                   aria-hidden="true"
                   className="chatty-starburst chatty-starburst-ray-left"
                 />
                 <img
-                  src="/assets/fourpointray.svg"
+                  src="/assets/stars/fourpointray.svg"
                   alt=""
                   aria-hidden="true"
                   className="chatty-starburst chatty-starburst-ray-right"
                 />
                 <img
-                  src="/assets/fourpointstarburst.svg"
+                  src="/assets/stars/fourpointstarburst.svg"
                   alt=""
                   aria-hidden="true"
                   className="chatty-starburst chatty-starburst-left"
                 />
                 <img
-                  src="/assets/fourpointstarburst.svg"
+                  src="/assets/stars/fourpointstarburst.svg"
                   alt=""
                   aria-hidden="true"
                   className="chatty-starburst chatty-starburst-right"
                 />
                 <img
-                  src="/assets/fourpointnova.svg"
+                  src="/assets/stars/fourpointnova.svg"
                   alt=""
                   aria-hidden="true"
                   className="chatty-starburst chatty-starburst-nova-left"
                 />
                 <img
-                  src="/assets/fourpointnova.svg"
+                  src="/assets/stars/fourpointnova.svg"
                   alt=""
                   aria-hidden="true"
                   className="chatty-starburst chatty-starburst-nova-right"
@@ -376,11 +376,11 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Chats Section */}
+      {/* Address Book Section */}
       <div className={cn('flex-1 overflow-y-auto', collapsed ? 'px-3 pb-3' : 'px-4 pb-4')}>
         {!collapsed && (
           <h3 className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
-            Chats
+            Address Book
           </h3>
         )}
         <div className="space-y-1">

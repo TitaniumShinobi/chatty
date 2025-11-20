@@ -54,7 +54,7 @@ export default function LegalMarkdownPage({ markdown }: LegalMarkdownPageProps) 
     >
       <header className="px-6 py-4 flex justify-between items-center">
         <Link to="/" className="inline-flex items-center gap-3">
-          <img src="/assets/chatty.png" alt="Chatty" className="h-12 w-auto" />
+          <img src="/assets/logo/Chatty.png" alt="Chatty" className="h-12 w-auto" />
         </Link>
         <div className="flex items-center gap-3">
           <button

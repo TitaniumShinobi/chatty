@@ -558,7 +558,7 @@ const DataControlsTab: React.FC<DataControlsTabProps> = ({ user, onDeleteAllConv
             toggled={settings.dataControls.improveModel}
             onToggle={(toggled) => updateDataControls({ improveModel: toggled })}
             size="md"
-            spacing="36px"
+            spacing="63px"
           />
         </div>
 
@@ -579,7 +579,7 @@ const DataControlsTab: React.FC<DataControlsTabProps> = ({ user, onDeleteAllConv
             toggled={settings.dataControls.remoteBrowserData}
             onToggle={(toggled) => updateDataControls({ remoteBrowserData: toggled })}
             size="md"
-            spacing="48px"
+            spacing="63px"
           />
         </div>
 

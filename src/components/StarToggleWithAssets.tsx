@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 
 // Use public assets path for better compatibility
-const FourPointStar = '/assets/fourpointstarburst.svg';
-const EightPointNova = '/assets/eightpointnova.svg';
+const FourPointStar = '/assets/stars/fourpointstarburst.svg';
+const EightPointNova = '/assets/stars/eightpointnova.svg';
 
 interface StarToggleProps {
   toggled: boolean;

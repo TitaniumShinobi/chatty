@@ -13,7 +13,7 @@ This document specifies the exact requirements for `chatty/src/App.tsx` - the lo
 - **Text Inverse**: `var(--chatty-text-inverse)` - For text on buttons
 
 ### Logo
-- **Image**: `/assets/Chatty.png` (NOT the hexagonal SVG logo)
+- **Image**: `/assets/logo/Chatty.png` (NOT the hexagonal SVG logo)
 - **Height**: 256px
 - **Position**: Centered at top, with negative margin-top (-50px) and negative margin-bottom (-70px)
 - **Display**: Block, auto width, max-width 100%
@@ -207,4 +207,3 @@ Defined in `src/index.css`:
 - ❌ Do NOT remove Terms of Service checkboxes
 - ❌ Do NOT simplify to basic login only
 - ❌ Do NOT use localStorage for session (use fetchMe API)
-

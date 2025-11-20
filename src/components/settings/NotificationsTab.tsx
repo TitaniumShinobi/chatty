@@ -27,7 +27,7 @@ const NotificationsTab: React.FC = () => {
                     toggled={settings.notifications.responsesPush}
                     onToggle={(toggled) => updateNotifications({ responsesPush: toggled })}
                     size="md"
-                    spacing="23px"
+                    spacing="63px"
                   />
                 </div>
               </div>
@@ -52,7 +52,7 @@ const NotificationsTab: React.FC = () => {
                       toggled={settings.notifications.tasksPush}
                       onToggle={(toggled) => updateNotifications({ tasksPush: toggled })}
                       size="md"
-                      spacing="27px"
+                      spacing="63px"
                     />
                   </div>
                 </div>
@@ -65,7 +65,7 @@ const NotificationsTab: React.FC = () => {
                       toggled={settings.notifications.tasksEmail}
                       onToggle={(toggled) => updateNotifications({ tasksEmail: toggled })}
                       size="md"
-                      spacing="25px"
+                      spacing="63px"
                     />
                   </div>
                 </div>
@@ -101,7 +101,7 @@ const NotificationsTab: React.FC = () => {
                       toggled={settings.notifications.recommendationsPush}
                       onToggle={(toggled) => updateNotifications({ recommendationsPush: toggled })}
                       size="md"
-                      spacing="27px"
+                      spacing="63px"
                     />
                   </div>
                 </div>
@@ -114,7 +114,7 @@ const NotificationsTab: React.FC = () => {
                       toggled={settings.notifications.recommendationsEmail}
                       onToggle={(toggled) => updateNotifications({ recommendationsEmail: toggled })}
                       size="md"
-                      spacing="25px"
+                      spacing="63px"
                     />
                   </div>
                 </div>

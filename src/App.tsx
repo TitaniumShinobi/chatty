@@ -561,7 +561,7 @@ export default function App() {
           marginTop: '0px'
         }}>
           <img 
-            src="/assets/Chatty.png" 
+            src="/assets/logo/Chatty.png" 
             alt="Chatty" 
             style={{
               height: '64px',

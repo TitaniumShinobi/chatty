@@ -118,7 +118,7 @@ export default function ChattyApp({
         <div style={s.brand}>Chatty</div>
         <button style={s.newBtn} onClick={newThread}>+ New chat</button>
 
-        <div style={s.sectionLabel}>Chats</div>
+        <div style={s.sectionLabel}>Address Book</div>
         <div style={s.threadList}>
           {threads.length === 0 && <div style={s.emptySide}>No conversations yet</div>}
           {threads.map(t => (

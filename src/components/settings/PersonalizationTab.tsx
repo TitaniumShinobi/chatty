@@ -51,7 +51,7 @@ const PersonalizationTab: React.FC = () => {
             toggled={settings.personalization.enableCustomization}
             onToggle={(toggled) => updatePersonalization({ enableCustomization: toggled })}
             size="md"
-            spacing="29px"
+            spacing="63px"
           />
         </div>
 
@@ -72,7 +72,7 @@ const PersonalizationTab: React.FC = () => {
             toggled={settings.personalization.allowMemory}
             onToggle={(toggled) => updatePersonalization({ allowMemory: toggled })}
             size="md"
-            spacing="19px"
+            spacing="63px"
           />
         </div>
 
