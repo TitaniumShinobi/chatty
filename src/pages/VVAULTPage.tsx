@@ -34,6 +34,18 @@ export default function VVAULTPage() {
   useEffect(() => {
     const fetchAccountStatus = async () => {
       try {
+        // Wait for backend to be ready before making requests
+        const { waitForBackendReady } = await import('../lib/backendReady');
+        try {
+          await waitForBackendReady(5, (attempt) => {
+            if (attempt === 1) {
+              console.log('⏳ [VVAULTPage] Waiting for backend to be ready...');
+            }
+          });
+        } catch (error) {
+          console.warn('⚠️ [VVAULTPage] Backend readiness check failed, continuing anyway:', error);
+        }
+
         const response = await fetch('/api/vvault/account/status', {
           credentials: 'include'
         })
@@ -171,8 +183,8 @@ export default function VVAULTPage() {
         style={{ zIndex: 0 }}
       >
         <img
-          src="/assets/vvault_glyph.png"
-          alt="VVAULT Glyph"
+          src="/assets/vvault_icon.png"
+          alt="VVAULT Icon"
           className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 vvault-watermark"
           style={{
             width: '60%',

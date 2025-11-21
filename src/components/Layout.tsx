@@ -42,9 +42,15 @@ type Thread = {
   constructId?: string | null;
   runtimeId?: string | null;
   isPrimary?: boolean;
+  canonicalForRuntime?: string | null;
+  importMetadata?: Record<string, any> | null;
+  isFallback?: boolean;
 }
 
-const VVAULT_FILESYSTEM_ROOT = '/Users/devonwoodson/Documents/GitHub/VVAULT';
+const VVAULT_FILESYSTEM_ROOT = '/Users/devonwoodson/Documents/GitHub/vvault';
+const DEFAULT_SYNTH_CANONICAL_SESSION_ID = 'synth-001_chat_with_synth-001';
+const DEFAULT_SYNTH_CANONICAL_CONSTRUCT_ID = 'synth-001';
+const DEFAULT_SYNTH_RUNTIME_ID = 'synth-001';
 
 function mapChatMessageToThreadMessage(message: ChatMessage): Message | null {
   const parsedTs = message.timestamp ? Date.parse(message.timestamp) : NaN
@@ -118,6 +124,7 @@ export default function Layout() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [showRuntimeDashboard, setShowRuntimeDashboard] = useState(false)
   const [shareConversationId, setShareConversationId] = useState<string | null>(null)
+  const [isBackendUnavailable, setIsBackendUnavailable] = useState(false)
   const pendingStarterRef = useRef<{ threadId: string; starter: string; files: File[] } | null>(null)
   const hasAuthenticatedRef = useRef(false)
   const initialPathRef = useRef(location.pathname)
@@ -130,10 +137,18 @@ export default function Layout() {
     const match = location.pathname.match(/^\/app\/chat\/(.+)$/)
     return match ? match[1] : null
   }, [location.pathname])
+  const activeRuntimeId = (location.state as any)?.activeRuntimeId || null
   const shareConversation = useMemo(
     () => threads.find(thread => thread.id === shareConversationId) || null,
     [threads, shareConversationId]
   )
+  const synthAddressBookThreads = useMemo(() => {
+    const canonical =
+      threads.find(t => t.id === DEFAULT_SYNTH_CANONICAL_SESSION_ID) ||
+      threads.find(t => t.constructId === DEFAULT_SYNTH_CANONICAL_CONSTRUCT_ID) ||
+      threads.find(t => t.runtimeId === DEFAULT_SYNTH_RUNTIME_ID && t.isPrimary);
+    return canonical ? [canonical] : [];
+  }, [threads])
 
   // Calculate hasBlockingOverlay early (before any early returns)
   const hasBlockingOverlay =
@@ -191,6 +206,95 @@ export default function Layout() {
 
   function closeStorageFailure() {
     setStorageFailureInfo(null)
+  }
+
+  function extractRuntimeKeyFromThreadId(threadId?: string | null) {
+    if (!threadId) return null
+    const match = threadId.match(/^([a-zA-Z0-9-]+)_[0-9]{6,}$/)
+    return match ? match[1] : null
+  }
+
+  function getCanonicalThreadForKeys(threadList: Thread[], keys: (string | null | undefined)[]) {
+    const lookup = new Set((keys.filter(Boolean) as string[]).map(k => k.toLowerCase()))
+    if (lookup.size === 0) return null
+
+    return (
+      threadList.find(thread => {
+        if (!thread.isPrimary || !thread.constructId) return false
+        const threadKeys = [thread.constructId, thread.runtimeId, thread.canonicalForRuntime]
+          .filter(Boolean)
+          .map(k => (k as string).toLowerCase())
+        return threadKeys.some(key => lookup.has(key))
+      }) || null
+    )
+  }
+
+  function preferCanonicalThreadId(threadId: string | null | undefined, threadList: Thread[]) {
+    if (!threadId) return null
+    const target = threadList.find(t => t.id === threadId)
+    const runtimeHint = extractRuntimeKeyFromThreadId(threadId)
+    const canonical = getCanonicalThreadForKeys(threadList, [
+      target?.constructId,
+      target?.runtimeId,
+      target?.canonicalForRuntime,
+      runtimeHint
+    ])
+    if (!canonical) {
+      if (runtimeHint === DEFAULT_SYNTH_RUNTIME_ID) {
+        return DEFAULT_SYNTH_CANONICAL_SESSION_ID;
+      }
+      return threadId;
+    }
+
+    if (canonical.id === threadId) return threadId
+
+    const isRuntimeLikeId = Boolean(runtimeHint)
+    const isNonPrimaryThread = target ? !target.isPrimary : false
+
+    return (isRuntimeLikeId || isNonPrimaryThread) ? canonical.id : threadId
+  }
+
+  function filterThreadsWithCanonicalPreference(threadList: Thread[]) {
+    const canonicalKeys = new Set<string>()
+
+    threadList.forEach(thread => {
+      if (thread.isPrimary && thread.constructId) {
+        [thread.constructId, thread.runtimeId, thread.canonicalForRuntime]
+          .filter(Boolean)
+          .forEach(key => canonicalKeys.add((key as string).toLowerCase()))
+      }
+    })
+
+    return threadList.filter(thread => {
+      if (thread.isPrimary && thread.constructId) return true
+      const runtimeHint = extractRuntimeKeyFromThreadId(thread.id)
+      const keys = [thread.constructId, thread.runtimeId, runtimeHint]
+        .filter(Boolean)
+        .map(k => (k as string).toLowerCase())
+      const hasCanonical = keys.some(key => canonicalKeys.has(key))
+      if (!hasCanonical) return true
+      const isRuntimeTimestampThread = Boolean(runtimeHint)
+      return !isRuntimeTimestampThread
+    })
+  }
+
+  function filterByActiveRuntime(threadList: Thread[], activeRuntimeId?: string | null) {
+    if (!activeRuntimeId) return threadList
+    const target = activeRuntimeId.toLowerCase()
+    return threadList.filter(thread => {
+      const construct = (thread.constructId || '').toLowerCase()
+      const runtime = (thread.runtimeId || '').toLowerCase()
+      const idHint = extractRuntimeKeyFromThreadId(thread.id)?.toLowerCase()
+      return construct === target || runtime === target || idHint === target
+    })
+  }
+
+  function routeIdForThread(threadId: string, threadList: Thread[]) {
+    const thread = threadList.find(t => t.id === threadId)
+    if (thread && thread.isPrimary && thread.constructId) {
+      return `${thread.constructId}_chat_with_${thread.constructId}`
+    }
+    return threadId
   }
 
   // Professional conversation saving with fail-safes
@@ -270,13 +374,14 @@ export default function Layout() {
         const userId = me.sub || me.id || getUserId(me);
         // Use email for VVAULT lookup since user IDs might not match (Chatty uses MongoDB ObjectId, VVAULT uses LIFE format)
         const vvaultUserId = me.email || userId;
-        const transcriptsPath = `${VVAULT_FILESYSTEM_ROOT}/users/${userId}/transcripts/`;
+        const transcriptsPath = `${VVAULT_FILESYSTEM_ROOT}/users/shard_0000/${userId}/instances/`;
         console.log('📁 [Layout.tsx] VVAULT root:', VVAULT_FILESYSTEM_ROOT);
-        console.log('📁 [Layout.tsx] User transcripts directory:', transcriptsPath);
+        console.log('📁 [Layout.tsx] User instances directory:', transcriptsPath);
         console.log('📁 [Layout.tsx] Using email for VVAULT lookup:', vvaultUserId);
         
         // Load VVAULT conversations with timeout protection (but don't race - wait for actual result)
         let vvaultConversations: any[] = [];
+        let backendUnavailable = false;
         try {
           const vvaultPromise = conversationManager.loadAllConversations(vvaultUserId);
           
@@ -300,7 +405,14 @@ export default function Layout() {
         } catch (vvaultError) {
           console.error('❌ [Layout.tsx] VVAULT loading error:', vvaultError);
           vvaultConversations = []; // Use empty array on error
+          const message = (vvaultError as any)?.message || '';
+          backendUnavailable =
+            message.includes('Failed to fetch') ||
+            message.includes('Backend route not found') ||
+            message.includes('404') ||
+            message.includes('ENOENT');
         }
+        setIsBackendUnavailable(backendUnavailable);
         console.log('📚 [Layout.tsx] VVAULT returned:', vvaultConversations);
         
         const loadedThreads: Thread[] = vvaultConversations.map(conv => {
@@ -310,6 +422,26 @@ export default function Layout() {
           normalizedTitle = normalizedTitle.replace(/^Chat with /i, '');
           // Extract construct name (remove callsigns like "-001")
           normalizedTitle = normalizedTitle.replace(/-\d{3,}$/i, '');
+          
+          const constructId =
+            conv.constructId ||
+            conv.importMetadata?.constructId ||
+            conv.importMetadata?.connectedConstructId ||
+            conv.constructFolder ||
+            null;
+          const runtimeId =
+            conv.runtimeId ||
+            conv.importMetadata?.runtimeId ||
+            (constructId ? constructId.replace(/-001$/, '') : null) ||
+            null;
+          const isPrimary =
+            typeof conv.isPrimary === 'boolean'
+              ? conv.isPrimary
+              : typeof conv.importMetadata?.isPrimary === 'boolean'
+                ? conv.importMetadata.isPrimary
+                : typeof conv.importMetadata?.isPrimary === 'string'
+                  ? conv.importMetadata.isPrimary.toLowerCase() === 'true'
+                  : false;
           
           return {
           id: conv.sessionId,
@@ -324,7 +456,11 @@ export default function Layout() {
           createdAt: conv.messages.length > 0 ? new Date(conv.messages[0].timestamp).getTime() : Date.now(),
           updatedAt: conv.messages.length > 0 ? new Date(conv.messages[conv.messages.length - 1].timestamp).getTime() : Date.now(),
           archived: false,
-          importMetadata: (conv as any).importMetadata || null
+          importMetadata: (conv as any).importMetadata || null,
+          constructId,
+          runtimeId,
+          isPrimary,
+          canonicalForRuntime: isPrimary && constructId ? runtimeId || constructId : null
           };
         });
         
@@ -332,14 +468,38 @@ export default function Layout() {
         
         // Check if there's a thread ID in the URL that we should preserve
         const urlThreadId = activeId;
-        const hasUrlThread = urlThreadId && loadedThreads.some(t => t.id === urlThreadId);
+        const preferredUrlThreadId = preferCanonicalThreadId(urlThreadId, loadedThreads);
+        const hasUrlThread = preferredUrlThreadId && loadedThreads.some(t => t.id === preferredUrlThreadId);
+
+        let filteredThreads = filterThreadsWithCanonicalPreference(loadedThreads);
+        const synthCanonicalThread = getCanonicalThreadForKeys(loadedThreads, ['synth', 'synth-001']);
+        const synthCanonicalHasMessages = Boolean(synthCanonicalThread && (synthCanonicalThread.messages?.length ?? 0) > 0);
+        let runtimeScopedThreads = filterByActiveRuntime(filteredThreads, activeRuntimeId);
+        const backendDown = backendUnavailable || isBackendUnavailable;
+        let fallbackThread: Thread | null = null;
         
-        // Only create a new welcome thread if:
-        // 1. No conversations loaded from VVAULT
-        // 2. AND no thread ID in URL (or URL thread doesn't exist in loaded conversations)
-        if (loadedThreads.length === 0 && !hasUrlThread) {
+        // Guard clause: Skip thread creation if canonical Synth thread exists with messages
+        if (synthCanonicalHasMessages) {
+          console.log('✅ [Layout.tsx] Canonical Synth thread exists with messages - skipping thread creation');
+        } else if (filteredThreads.length === 0 && !hasUrlThread) {
+          // Only create a new welcome thread if:
+          // 1. No conversations loaded from VVAULT
+          // 2. AND no thread ID in URL (or URL thread doesn't exist in loaded conversations)
+          // 3. AND canonical thread doesn't exist or is empty
           console.log('🎯 [Layout.tsx] No conversations and no URL thread - creating Synth-001');
-          const defaultThreadId = urlThreadId || `synth_${Date.now()}`;
+          const urlRuntimeHint = extractRuntimeKeyFromThreadId(preferredUrlThreadId || urlThreadId);
+          const shouldForceCanonicalSynth =
+            !preferredUrlThreadId &&
+            !synthCanonicalThread?.id &&
+            urlRuntimeHint === DEFAULT_SYNTH_RUNTIME_ID;
+
+          const defaultThreadId =
+            preferredUrlThreadId ||
+            synthCanonicalThread?.id ||
+            (shouldForceCanonicalSynth ? DEFAULT_SYNTH_CANONICAL_SESSION_ID : `synth_${Date.now()}`);
+          const synthConstructId =
+            synthCanonicalThread?.constructId ||
+            (defaultThreadId === DEFAULT_SYNTH_CANONICAL_SESSION_ID ? DEFAULT_SYNTH_CANONICAL_CONSTRUCT_ID : DEFAULT_SYNTH_CANONICAL_CONSTRUCT_ID);
           const welcomeTimestamp = Date.now();
           const localNow = new Date();
           const hour = localNow.getHours();
@@ -350,44 +510,41 @@ export default function Layout() {
           const timeString = localNow.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
           const weekday = localNow.toLocaleDateString('en-US', { weekday: 'long' });
           const welcomeText = `${greeting}! I'm Synth, your main AI companion in Chatty. It's ${timeString} on ${weekday}, so let me know what I can help you with today.`;
-          
-          const welcomeMessage: Message = {
-            id: `msg_welcome_${welcomeTimestamp}`,
-            role: 'assistant',
-            text: welcomeText,
-            packets: [{
-              op: 'answer.v1',
-              payload: { content: welcomeText }
-            }],
-            ts: welcomeTimestamp
-          };
-          
+          const canonicalConstructId = synthCanonicalThread?.constructId || DEFAULT_SYNTH_CANONICAL_CONSTRUCT_ID;
+          const finalConstructId = canonicalConstructId === 'synth' ? DEFAULT_SYNTH_CANONICAL_CONSTRUCT_ID : canonicalConstructId;
+
           const defaultThread: Thread = {
             id: defaultThreadId,
             title: 'Synth',
-            messages: [welcomeMessage],
+            messages: [],
             createdAt: welcomeTimestamp,
             updatedAt: welcomeTimestamp,
-            archived: false
+            archived: false,
+            constructId: finalConstructId,
+            runtimeId: DEFAULT_SYNTH_RUNTIME_ID,
+            isPrimary: true,
+            isFallback: backendDown
           };
           
           loadedThreads.push(defaultThread);
+          filteredThreads = filterThreadsWithCanonicalPreference(loadedThreads);
+          runtimeScopedThreads = filterByActiveRuntime(filteredThreads, activeRuntimeId);
+          fallbackThread = defaultThread;
           
-          console.log('💾 [Layout.tsx] Creating Synth-001 in VVAULT...');
-          try {
-            await conversationManager.createConversation(userId, defaultThreadId, 'Synth', 'synth');
-            console.log('✅ [Layout.tsx] Synth conversation structure created');
-            
-            await conversationManager.addMessageToConversation(me, defaultThreadId, {
-              role: 'assistant',
-              content: welcomeText,
-              timestamp: new Date(welcomeTimestamp).toISOString(),
-              metadata: { isWelcomeMessage: true }
-            });
-            console.log('✅ [Layout.tsx] Welcome message saved to VVAULT');
-            console.log('🔍 [Layout.tsx] Verify at: /VVAULT/synth-001/chatty/chat_with_synth-001.md');
-          } catch (error) {
-            console.error('❌ [Layout.tsx] Failed to create Synth conversation in VVAULT:', error);
+          // Guard clause: Skip createConversation if canonical thread exists with messages
+          if (backendDown) {
+            console.log('⚠️ [Layout.tsx] Backend unavailable; created local Synth fallback without VVAULT save');
+          } else if (synthCanonicalHasMessages) {
+            console.log('✅ [Layout.tsx] Canonical Synth thread exists with messages - skipping createConversation');
+          } else {
+            console.log('💾 [Layout.tsx] Creating Synth-001 in VVAULT...');
+            try {
+              await conversationManager.createConversation(userId, defaultThreadId, 'Synth', finalConstructId);
+              console.log('✅ [Layout.tsx] Synth conversation structure created');
+              console.log('🔍 [Layout.tsx] Verify at: /vvault/users/shard_0000/{userId}/instances/synth-001/chatty/chat_with_synth-001.md');
+            } catch (error) {
+              console.error('❌ [Layout.tsx] Failed to create Synth conversation in VVAULT:', error);
+            }
           }
         } else if (hasUrlThread) {
           console.log(`✅ [Layout.tsx] Found existing thread in URL: ${urlThreadId} - continuing conversation`);
@@ -395,12 +552,16 @@ export default function Layout() {
           console.log(`✅ [Layout.tsx] Found ${loadedThreads.length} existing conversations - continuing`);
         }
         
-        const canonicalThreads = loadedThreads.filter(thread => thread.isPrimary && thread.constructId)
-        const nonCanonical = loadedThreads.filter(thread => !canonicalThreads.includes(thread))
-        const sortedThreads = [
+        const canonicalThreads = runtimeScopedThreads.filter(thread => thread.isPrimary && thread.constructId)
+        const nonCanonical = runtimeScopedThreads.filter(thread => !canonicalThreads.includes(thread))
+        let sortedThreads = [
           ...canonicalThreads,
           ...nonCanonical.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
         ]
+
+        if (backendDown && fallbackThread) {
+          sortedThreads = [fallbackThread];
+        }
         
         console.log(`✅ [Layout.tsx] Prepared ${sortedThreads.length} conversations`);
         
@@ -417,6 +578,24 @@ export default function Layout() {
         
         console.log('🔄 [Layout.tsx] Setting threads in state...');
         setThreads(sortedThreads);
+
+        const urlRuntimeHint = extractRuntimeKeyFromThreadId(urlThreadId);
+        const shouldRedirectToCanonical =
+          Boolean(urlRuntimeHint && preferredUrlThreadId && preferredUrlThreadId !== urlThreadId);
+        let didNavigateToCanonical = false;
+
+        if (shouldRedirectToCanonical && urlThreadId && preferredUrlThreadId) {
+          const requestedPath = `/app/chat/${urlThreadId}`;
+          const canonicalPath = `/app/chat/${preferredUrlThreadId}`;
+          if (location.pathname === requestedPath) {
+            console.log('🎯 [Layout.tsx] URL points to runtime thread, redirecting to canonical:', {
+              requested: urlThreadId,
+              canonical: preferredUrlThreadId
+            });
+            navigate(canonicalPath);
+            didNavigateToCanonical = true;
+          }
+        }
         
         // Only navigate to conversation if user is already on a specific chat route
         // If on /app or /app/, show home page instead
@@ -425,13 +604,13 @@ export default function Layout() {
         const isChatRoute = initialPath.startsWith('/app/chat') && initialPath !== '/app/chat'
         const shouldFocusFirstConversation = isChatRoute && !isAppRoot
 
-        if (sortedThreads.length > 0 && shouldFocusFirstConversation) {
+        if (!didNavigateToCanonical && sortedThreads.length > 0 && shouldFocusFirstConversation) {
           const firstThread = sortedThreads[0];
-          const targetPath = `/app/chat/${firstThread.id}`;
+          const targetPath = `/app/chat/${routeIdForThread(firstThread.id, sortedThreads)}`;
           console.log(`🎯 [Layout.tsx] Preparing to show conversation: ${firstThread.title} (${firstThread.id})`);
           if (location.pathname !== targetPath) {
             console.log(`🎯 [Layout.tsx] Navigating to: ${targetPath}`);
-            navigate(targetPath);
+            navigate(targetPath, { state: { activeRuntimeId } });
           } else {
             console.log(`📍 [Layout.tsx] Already on route: ${targetPath}`);
           }
@@ -1038,7 +1217,15 @@ export default function Layout() {
   }
 
   function handleThreadClick(threadId: string) {
-    navigate(`/app/chat/${threadId}`)
+    const targetId = preferCanonicalThreadId(threadId, threads) || threadId
+    const routedId = routeIdForThread(targetId, threads)
+    if (targetId !== threadId) {
+      console.log(
+        '🧭 [Layout.tsx] Routing to canonical thread instead of runtime thread:',
+        { requested: threadId, canonical: targetId }
+      )
+    }
+    navigate(`/app/chat/${routedId}`, { state: { activeRuntimeId } })
   }
 
 
@@ -1079,7 +1266,9 @@ export default function Layout() {
   }
 
   function handleSearchResultClick(threadId: string, messageId: string) {
-    navigate(`/app/chat/${threadId}`)
+    const targetId = preferCanonicalThreadId(threadId, threads) || threadId
+    const routedId = routeIdForThread(targetId, threads)
+    navigate(`/app/chat/${routedId}`, { state: { activeRuntimeId } })
     // TODO: Scroll to specific message
   }
 
@@ -1100,12 +1289,12 @@ export default function Layout() {
         {/* Sidebar - hide when runtime dashboard is open */}
         {!showRuntimeDashboard && (
           <Sidebar
-            conversations={threads as any}
+            conversations={synthAddressBookThreads as any}
             threads={threads as any}
             currentConversationId={activeId}
             onConversationSelect={(id: string) => {
               console.log('🖱️ [Layout.tsx] Sidebar thread selected:', id);
-              navigate(`/app/chat/${id}`);
+              handleThreadClick(id);
             }}
             onNewConversation={newThread}
             onNewConversationWithGPT={(gptId: string) => { navigate('/app/gpts/new') }}

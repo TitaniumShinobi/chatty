@@ -69,24 +69,22 @@ export default function Chat() {
 
   if (!thread) {
     return (
-      <div className="flex flex-col h-full" style={{ backgroundColor: '#ffffeb' }}>
+      <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
         <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
-          <h2 className="text-xl font-semibold mb-2" style={{ color: '#4c3d1e' }}>Thread not found</h2>
-          <p className="mb-4" style={{ color: '#4c3d1e', opacity: 0.7 }}>This conversation could not be found.</p>
+          <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--chatty-text)' }}>Thread not found</h2>
+          <p className="mb-4" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>This conversation could not be found.</p>
           <button 
             className="px-4 py-2 rounded-lg transition-colors"
             style={{ 
-              backgroundColor: '#E1C28B',
-              color: '#4c3d1e',
-              border: '1px solid #d4b078'
+              backgroundColor: 'var(--chatty-button)',
+              color: 'var(--chatty-text-inverse, #ffffeb)',
+              border: '1px solid var(--chatty-line)'
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#d4b078'
-              e.currentTarget.style.borderColor = '#c79d65'
+              e.currentTarget.style.backgroundColor = 'var(--chatty-hover)'
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#E1C28B'
-              e.currentTarget.style.borderColor = '#d4b078'
+              e.currentTarget.style.backgroundColor = 'var(--chatty-button)'
             }}
             onClick={() => navigate('/app')}
           >
@@ -115,25 +113,68 @@ export default function Chat() {
     }
   }
 
+  const isUser = (role: string) => role === 'user'
+
   return (
-    <div className="flex flex-col h-full" style={{ backgroundColor: '#ffffeb' }}>
-      <div className="flex-1 overflow-auto p-4 min-h-0">
-        <div className="mb-2">
+    <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
+      <div className="flex-1 overflow-auto min-h-0">
+        <div className="mb-2 px-4 pt-4">
           {files.length > 0 && (
-            <div className="inline-block px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#E1C28B', border: '1px solid #d4b078', color: '#4c3d1e' }}>
+            <div className="inline-block px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: 'var(--chatty-button)', border: '1px solid var(--chatty-line)', color: 'var(--chatty-text-inverse, #ffffeb)' }}>
               Attached files ({files.length})
             </div>
           )}
         </div>
 
-        {thread.messages.map(m => (
-          <div key={m.id} className="grid grid-cols-[28px_1fr] gap-3 p-3 mb-3 rounded-lg" style={{ backgroundColor: '#ffffeb', border: '1px solid #d4b078' }}>
-            <div className="w-7 h-7 rounded-md flex items-center justify-center text-xs font-semibold" style={{ backgroundColor: '#E1C28B', color: '#4c3d1e' }}>
-              {m.role === 'assistant' ? 'AI' : 'U'}
-            </div>
-            <div>
-              {m.role === 'assistant' ? (
-                <div className="whitespace-normal" style={{ color: '#4c3d1e' }}>
+        {thread.messages.map(m => {
+          const user = isUser(m.role)
+          
+          // User messages: right-aligned with iMessage-style bubble
+          if (user) {
+            // Calculate dynamic max-width based on content length
+            const content = m.text || ''
+            const contentLength = content.length
+            let maxWidth = 'max-w-[85%] sm:max-w-[80%] md:max-w-[75%] lg:max-w-[70%]'
+            if (contentLength <= 20) {
+              maxWidth = 'max-w-[200px]'
+            } else if (contentLength <= 100) {
+              maxWidth = 'max-w-[300px] sm:max-w-[400px]'
+            }
+            
+            return (
+              <div key={m.id} className="flex items-end gap-3 py-3 px-4 flex-row-reverse">
+                <div className="flex flex-col items-end">
+                  <div 
+                    className={`px-4 py-3 shadow-sm transition-colors inline-block ${maxWidth} ml-auto text-left`}
+                    style={{
+                      backgroundColor: '#ADA587',
+                      borderRadius: '22px 22px 6px 22px',
+                      border: '1px solid rgba(76, 61, 30, 0.18)',
+                      boxShadow: '0 1px 0 rgba(58, 46, 20, 0.12)',
+                      color: 'var(--chatty-text-inverse, #ffffeb)'
+                    }}
+                  >
+                    <div className="whitespace-pre-wrap">{m.text}</div>
+                    {!!m.files?.length && (
+                      <div className="mt-2 space-y-1">
+                        {m.files.map((f, i) => (
+                          <div key={i} className="text-xs" style={{ opacity: 0.7 }}>
+                            {f.name} <span className="opacity-60">({Math.round(f.size / 1024)} KB)</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          }
+          
+          // AI/Construct messages: left-aligned, full screen width, no bubble styling
+          return (
+            <div key={m.id} className="flex items-start gap-3 py-3 px-4">
+              <div className="flex flex-col items-start text-left w-full">
+                <div className="whitespace-normal w-full" style={{ color: 'var(--chatty-text)' }}>
                   <R
                     packets={
                       Array.isArray((m as any).packets)
@@ -145,24 +186,22 @@ export default function Chat() {
                     }
                   />
                 </div>
-              ) : (
-                <div className="whitespace-pre-wrap" style={{ color: '#4c3d1e' }}>{m.text}</div>
-              )}
-              {!!m.files?.length && (
-                <div className="mt-2 space-y-1">
-                  {m.files.map((f, i) => (
-                    <div key={i} className="text-xs" style={{ color: '#4c3d1e', opacity: 0.7 }}>
-                      {f.name} <span className="opacity-60">({Math.round(f.size / 1024)} KB)</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+                {!!m.files?.length && (
+                  <div className="mt-2 space-y-1">
+                    {m.files.map((f, i) => (
+                      <div key={i} className="text-xs" style={{ opacity: 0.7 }}>
+                        {f.name} <span className="opacity-60">({Math.round(f.size / 1024)} KB)</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
-      <div className="grid grid-cols-[32px_1fr_80px] gap-3 p-4 border-t flex-shrink-0" style={{ borderColor: '#d4b078' }}>
+      <div className="grid grid-cols-[32px_1fr_80px] gap-3 p-4 border-t flex-shrink-0" style={{ borderColor: 'var(--chatty-line)' }}>
         <input 
           type="file" 
           multiple 
@@ -173,9 +212,9 @@ export default function Chat() {
         <label 
           htmlFor="filepick" 
           className="w-8 h-10 rounded-lg flex items-center justify-center cursor-pointer transition-colors" 
-          style={{ backgroundColor: '#E1C28B', border: '1px solid #d4b078' }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#d4b078'}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#E1C28B'}
+          style={{ backgroundColor: 'var(--chatty-button)', border: '1px solid var(--chatty-line)' }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--chatty-hover)'}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--chatty-button)'}
           title="Attach files"
         >
           📎
@@ -190,28 +229,28 @@ export default function Chat() {
           placeholder="Message Chatty…"
           className="w-full min-h-10 max-h-96 resize-none p-3 rounded-lg outline-none text-base leading-relaxed font-inherit transition-all"
           style={{ 
-            backgroundColor: '#ffffeb',
-            border: isFocused ? '1px solid #4a9eff' : '1px solid #d4b078',
-            color: '#4c3d1e',
-            boxShadow: isFocused ? '0 0 0 2px rgba(74, 158, 255, 0.2)' : 'none'
+            backgroundColor: 'var(--chatty-bg-main)',
+            border: isFocused ? '1px solid var(--chatty-button)' : '1px solid var(--chatty-line)',
+            color: 'var(--chatty-text)',
+            boxShadow: isFocused ? '0 0 0 2px rgba(173, 165, 135, 0.2)' : 'none'
           }}
           rows={1}
         />
         <button
           className="rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           style={{ 
-            backgroundColor: '#E1C28B',
-            border: '1px solid #d4b078',
-            color: '#4c3d1e'
+            backgroundColor: 'var(--chatty-button)',
+            border: '1px solid var(--chatty-line)',
+            color: 'var(--chatty-text-inverse, #ffffeb)'
           }}
           onMouseEnter={(e) => {
             if (!e.currentTarget.disabled) {
-              e.currentTarget.style.backgroundColor = '#d4b078'
+              e.currentTarget.style.backgroundColor = 'var(--chatty-hover)'
             }
           }}
           onMouseLeave={(e) => {
             if (!e.currentTarget.disabled) {
-              e.currentTarget.style.backgroundColor = '#E1C28B'
+              e.currentTarget.style.backgroundColor = 'var(--chatty-button)'
             }
           }}
           disabled={!text.trim() && files.length === 0}
@@ -221,7 +260,7 @@ export default function Chat() {
         </button>
       </div>
 
-      <div className="text-center text-xs py-2 px-4 flex-shrink-0" style={{ color: '#4c3d1e', opacity: 0.5 }}>
+      <div className="text-center text-xs py-2 px-4 flex-shrink-0" style={{ color: 'var(--chatty-text)', opacity: 0.5 }}>
         Chatty can make mistakes. Consider checking important information.
       </div>
     </div>
