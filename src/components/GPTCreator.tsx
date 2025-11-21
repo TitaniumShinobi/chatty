@@ -26,17 +26,23 @@ interface GPTCreatorProps {
   isVisible: boolean
   onClose: () => void
   onGPTCreated?: (gpt: GPTConfig) => void
+  initialConfig?: GPTConfig | null
 }
 
 const GPTCreator: React.FC<GPTCreatorProps> = ({ 
   isVisible, 
   onClose, 
-  onGPTCreated 
+  onGPTCreated,
+  initialConfig
 }) => {
   const [activeTab, setActiveTab] = useState<'create' | 'configure'>('create')
   const [gptService] = useState(() => GPTService.getInstance())
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [lastSaveTime, setLastSaveTime] = useState<string | null>(null)
+  // Removed normalizeCallsign - server now auto-generates constructCallsign from name
+  // Only use stored constructCallsign from existing GPTs
   
   // GPT Configuration
   const [config, setConfig] = useState<Partial<GPTConfig>>({
@@ -50,6 +56,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       imageGeneration: false,
       codeInterpreter: true
     },
+    constructCallsign: '',
     modelId: 'phi3:latest',
     conversationModel: 'phi3:latest',
     creativeModel: 'mistral:latest',
@@ -62,6 +69,11 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [filePage, setFilePage] = useState(1)
   const [filesPerPage] = useState(20) // Show 20 files per page for 300+ files
   const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  // Identity management
+  const [identityFiles, setIdentityFiles] = useState<Array<{id: string, name: string, path: string}>>([])
+  const [isUploadingIdentity, setIsUploadingIdentity] = useState(false)
+  const identityInputRef = useRef<HTMLInputElement>(null)
   
   // Avatar upload
   const avatarInputRef = useRef<HTMLInputElement>(null)
@@ -82,7 +94,159 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [previewInput, setPreviewInput] = useState('')
   const [isPreviewGenerating, setIsPreviewGenerating] = useState(false)
   const [useLinMode, setUseLinMode] = useState(true) // Default to Lin mode (respect custom tone)
+  const [orchestrationMode, setOrchestrationMode] = useState<'lin' | 'custom'>('lin') // Tone & Orchestration mode
   const [createMessages, setCreateMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([])
+
+  // Load identity files function (keep above effects that call it)
+  const loadIdentityFiles = useCallback(async (constructCallsign: string) => {
+    if (!constructCallsign || !constructCallsign.trim()) {
+      console.warn('⚠️ [GPTCreator] Cannot load identity files: constructCallsign is empty');
+      return;
+    }
+    
+    try {
+      console.log(`🔄 [GPTCreator] Loading identity files for: ${constructCallsign}`);
+      const response = await fetch(`/api/vvault/identity/list?constructCallsign=${encodeURIComponent(constructCallsign)}`, {
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        console.warn(`⚠️ [GPTCreator] Failed to load identity files (${response.status}):`, response.statusText);
+        return;
+      }
+      
+      const data = await response.json();
+      if (data.ok && data.files) {
+        const mappedFiles = data.files.map((f: any) => ({
+          id: f.path || `identity_${Date.now()}_${Math.random()}`,
+          name: f.name,
+          path: f.path
+        }));
+        setIdentityFiles(mappedFiles);
+        console.log(`✅ [GPTCreator] Loaded ${mappedFiles.length} identity files for ${constructCallsign}:`, mappedFiles.map(f => f.name));
+      } else {
+        console.log(`ℹ️ [GPTCreator] No identity files found for ${constructCallsign}`);
+        setIdentityFiles([]);
+      }
+    } catch (error) {
+      console.error('❌ [GPTCreator] Failed to load identity files:', error);
+    }
+  }, [])
+
+  // Set default models when Chatty Lin mode is selected
+  useEffect(() => {
+    if (orchestrationMode === 'lin') {
+      setConfig(prev => ({
+        ...prev,
+        conversationModel: 'phi3:latest',
+        creativeModel: 'mistral:latest',
+        codingModel: 'deepseek-coder:latest'
+      }))
+    }
+  }, [orchestrationMode])
+
+  // Reset save state when modal opens/closes
+  useEffect(() => {
+    if (!isVisible) {
+      setSaveState('idle')
+      setLastSaveTime(null)
+    }
+  }, [isVisible])
+
+  // Track if this is the initial load to prevent auto-save on mount
+  const isInitialLoadRef = useRef(true)
+  
+  useEffect(() => {
+    if (initialConfig) {
+      isInitialLoadRef.current = true
+      // Reset after a delay to allow initial load to complete
+      setTimeout(() => {
+        isInitialLoadRef.current = false
+      }, 1000)
+    }
+  }, [initialConfig])
+
+  // Auto-save debounced effect (only for existing GPTs)
+  useEffect(() => {
+    if (!config.id || !isVisible) return // Only auto-save existing GPTs
+    
+    // Don't auto-save if name is empty (invalid state)
+    if (!config.name?.trim()) return
+    
+    // Don't auto-save during initial load
+    if (isInitialLoadRef.current) return
+
+    // Debounce auto-save - wait 2 seconds after last change
+    const timeoutId = setTimeout(async () => {
+      try {
+        setSaveState('saving')
+        
+        // Don't set constructCallsign - let server auto-generate it from name
+        // Only include it if it's already set (from existing GPT)
+        const updateData: any = { ...config }
+        if (!config.constructCallsign) {
+          delete updateData.constructCallsign
+        }
+        
+        const validationErrors = gptService.validateGPTConfig(config)
+        if (validationErrors.length > 0) {
+          // Don't auto-save if validation fails
+          setSaveState('idle')
+          return
+        }
+
+        console.log('💾 [GPTCreator] Auto-saving GPT:', config.id)
+        const updatedGPT = await gptService.updateGPT(config.id, updateData)
+        
+        setSaveState('saved')
+        setLastSaveTime(new Date().toLocaleTimeString())
+        
+        // Update config with saved data (including server-generated constructCallsign)
+        if (updatedGPT.constructCallsign) {
+          setConfig(prev => ({ ...prev, constructCallsign: updatedGPT.constructCallsign }))
+        }
+        
+        // Auto-fade after 2 seconds
+        setTimeout(() => {
+          setSaveState('idle')
+        }, 2000)
+      } catch (error: any) {
+        console.error('❌ [GPTCreator] Auto-save failed:', error)
+        setSaveState('error')
+      }
+    }, 2000) // 2 second debounce
+
+    return () => clearTimeout(timeoutId)
+  }, [config.id, config.name, config.description, config.instructions, config.conversationModel, config.creativeModel, config.codingModel, config.capabilities, isVisible, gptService])
+
+  // Load existing GPT when provided (edit mode)
+  useEffect(() => {
+    if (!initialConfig) return
+    
+    console.log('📥 [GPTCreator] Loading initial config:', {
+      id: initialConfig.id,
+      name: initialConfig.name,
+      constructCallsign: initialConfig.constructCallsign
+    })
+    
+    setConfig(initialConfig)
+    // Prioritize stored constructCallsign from loaded GPT
+    if (initialConfig.constructCallsign) {
+      console.log(`🔄 [GPTCreator] Loading identity files for existing GPT: ${initialConfig.constructCallsign}`)
+      loadIdentityFiles(initialConfig.constructCallsign)
+    } else {
+      console.warn('⚠️ [GPTCreator] Initial config loaded but no constructCallsign found')
+    }
+  }, [initialConfig, loadIdentityFiles])
+
+  // Load identity files when component mounts or config changes
+  // Only use stored constructCallsign from existing GPTs - don't derive client-side
+  useEffect(() => {
+    // Only load if we have a stored constructCallsign (from existing GPT)
+    if (config.constructCallsign && config.constructCallsign.trim().length > 0 && isVisible) {
+      loadIdentityFiles(config.constructCallsign);
+    }
+  }, [config.constructCallsign, isVisible, loadIdentityFiles])
   const [createInput, setCreateInput] = useState('')
   const [isCreateGenerating, setIsCreateGenerating] = useState(false)
   const createInputRef = useRef<HTMLTextAreaElement>(null)
@@ -147,10 +311,12 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 }`)
 
   useEffect(() => {
-    if (isVisible) {
+    // Only reset form if modal opens without an initial config (new GPT creation)
+    // If initialConfig is provided, it will be loaded by the initialConfig effect
+    if (isVisible && !initialConfig) {
       resetForm()
     }
-  }, [isVisible])
+  }, [isVisible, initialConfig])
 
   // Clear preview when config changes significantly
   useEffect(() => {
@@ -211,6 +377,14 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     try {
       setIsLoading(true)
       setError(null)
+      setSaveState('saving')
+
+      // Don't set constructCallsign - let server auto-generate it from name
+      // Only include it if it's already set (from existing GPT)
+      const saveData: any = { ...config }
+      if (!config.constructCallsign) {
+        delete saveData.constructCallsign
+      }
 
       const validationErrors = gptService.validateGPTConfig(config)
       if (validationErrors.length > 0) {
@@ -218,7 +392,12 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         return
       }
 
-      const gpt = await gptService.createGPT(config as any)
+      let gpt: GPTConfig
+      if (config.id) {
+        gpt = await gptService.updateGPT(config.id, saveData)
+      } else {
+        gpt = await gptService.createGPT(saveData)
+      }
       
       // Upload files after GPT creation to avoid FOREIGN KEY constraint
       for (const file of files) {
@@ -236,13 +415,116 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       }
 
       onGPTCreated?.(gpt)
-      onClose()
+      setSaveState('saved')
+      setLastSaveTime(new Date().toLocaleTimeString())
+      
+      // Update config with saved GPT data (including server-generated constructCallsign)
+      setConfig(prev => ({ ...prev, ...gpt }))
+      
+      // Reload identity files after save to ensure we have the latest list
+      if (gpt.constructCallsign) {
+        console.log(`🔄 [GPTCreator] Reloading identity files after save: ${gpt.constructCallsign}`)
+        loadIdentityFiles(gpt.constructCallsign)
+      }
+      
+      // Auto-fade save status after 2 seconds
+      setTimeout(() => {
+        setSaveState('idle')
+      }, 2000)
+      
+      // Don't close modal - allow continued editing
+      // onClose()
       
     } catch (error: any) {
       setError(error.message || 'Failed to create GPT')
+      setSaveState('error')
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const handleIdentityUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = event.target.files
+    if (!selectedFiles || selectedFiles.length === 0) {
+      return
+    }
+
+    setIsUploadingIdentity(true)
+    setSaveState('saving')
+    setError(null)
+
+    try {
+      // Get construct-callsign from config (e.g., "luna-001")
+      // If GPT not yet created, use a temporary construct-callsign based on name
+      // Use stored constructCallsign from existing GPT, or require user to save first
+      if (!config.constructCallsign || !config.constructCallsign.trim()) {
+        setError('Please save the GPT first to generate a construct callsign before uploading identity files.')
+        setIsUploadingIdentity(false)
+        return
+      }
+
+      const formData = new FormData()
+      for (const file of Array.from(selectedFiles)) {
+        formData.append('files', file)
+      }
+      formData.append('constructCallsign', config.constructCallsign)
+
+      console.log(`📤 [GPTCreator] Uploading ${selectedFiles.length} file(s) to construct: ${config.constructCallsign}`)
+
+      const response = await fetch('/api/vvault/identity/upload', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to upload identity files')
+      }
+
+      const result = await response.json()
+      
+      const successCount = result.results.filter((r: any) => r.success).length
+      const duplicateCount = result.results.filter((r: any) => r.duplicate).length
+      console.log(`✅ [GPTCreator] Uploaded ${successCount} identity files${duplicateCount > 0 ? ` (${duplicateCount} already existed)` : ''}`)
+      
+      if (duplicateCount > 0) {
+        // Show info message, not error - duplicates are handled gracefully
+        const message = duplicateCount === 1 
+          ? '1 file was already uploaded and skipped.'
+          : `${duplicateCount} files were already uploaded and skipped.`
+        // Use a temporary info state or show in a non-error way
+        setError(null) // Clear any previous errors
+        // Could show a toast here instead of using error state
+      }
+      
+      // IMPORTANT: Reload files from server using the SAME constructCallsign
+      // Wait a brief moment to ensure file system has written
+      await new Promise(resolve => setTimeout(resolve, 500))
+      console.log(`🔄 [GPTCreator] Reloading identity files for: ${config.constructCallsign}`)
+      await loadIdentityFiles(config.constructCallsign)
+      
+      setSaveState('saved')
+      setLastSaveTime(new Date().toLocaleTimeString())
+      
+      // Auto-fade save status after 2 seconds
+      setTimeout(() => {
+        setSaveState('idle')
+      }, 2000)
+    } catch (error: any) {
+      console.error('❌ [GPTCreator] Failed to upload identity files:', error)
+      setError(error.message || 'Failed to upload identity files')
+      setSaveState('error')
+    } finally {
+      setIsUploadingIdentity(false)
+      if (identityInputRef.current) {
+        identityInputRef.current.value = ''
+      }
+    }
+  }
+
+  const handleRemoveIdentity = (identityId: string) => {
+    setIdentityFiles(prev => prev.filter(m => m.id !== identityId))
   }
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1023,18 +1305,31 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
               <ArrowLeft size={20} />
             </button>
             <div>
-              <h1 className="text-xl font-semibold text-app-text-900">Create New GPT</h1>
+              <h1 className="text-xl font-semibold text-app-text-900">{config.id ? 'Edit GPT' : 'Create New GPT'}</h1>
               <p className="text-sm text-app-text-800">• Draft</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <div 
+              className="text-xs px-3 py-1 rounded-full border transition-colors"
+              style={{
+                borderColor: saveState === 'error' ? '#ef4444' : 'var(--chatty-line)',
+                backgroundColor: saveState === 'saving' ? '#ffffd7' : saveState === 'saved' ? '#ffffd7' : saveState === 'error' ? '#fee2e2' : 'transparent',
+                color: saveState === 'error' ? '#dc2626' : 'var(--chatty-text)'
+              }}
+            >
+              {saveState === 'saving' && 'Saving…'}
+              {saveState === 'saved' && `Saved${lastSaveTime ? ` at ${lastSaveTime}` : ''}`}
+              {saveState === 'error' && 'Error'}
+              {saveState === 'idle' && 'Draft'}
+            </div>
             <button
               onClick={handleSave}
               disabled={isLoading || !config.name?.trim()}
               className="px-4 py-2 text-sm bg-app-button-500 text-app-text-900 rounded-lg hover:bg-app-button-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
             >
               <Save size={14} />
-              {isLoading ? 'Creating...' : 'Create GPT'}
+              {isLoading ? (config.id ? 'Saving...' : 'Creating...') : (config.id ? 'Save GPT' : 'Create GPT')}
             </button>
           </div>
         </div>
@@ -1305,7 +1600,46 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                     />
                   </div>
 
+                  {/* Tone & Orchestration */}
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-app-text-900">Tone & Orchestration</label>
+                    <div className="space-y-2">
+                      <div className="inline-flex items-center rounded-full p-1 gap-1 bg-app-button-200">
+                        <button
+                          type="button"
+                          onClick={() => setOrchestrationMode('lin')}
+                          className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                            orchestrationMode === 'lin'
+                              ? 'bg-app-button-500 text-app-text-900'
+                              : 'bg-transparent text-app-text-800 hover:bg-app-button-300'
+                          }`}
+                          title="Use Chatty Lin intelligent orchestration with default models"
+                        >
+                          Chatty Lin
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setOrchestrationMode('custom')}
+                          className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                            orchestrationMode === 'custom'
+                              ? 'bg-app-button-500 text-app-text-900'
+                              : 'bg-transparent text-app-text-800 hover:bg-app-button-300'
+                          }`}
+                          title="Use custom model selection"
+                        >
+                          Custom Models
+                        </button>
+                      </div>
+                      <p className="text-xs text-app-text-800">
+                        {orchestrationMode === 'lin' 
+                          ? "Chatty Lin mode uses intelligent orchestration with default models (deepseek, mistral, phi3). Model selection is hidden in this mode."
+                          : "Custom Models mode allows you to select specific models for conversation, creative, and coding tasks."}
+                      </p>
+                    </div>
+                  </div>
+
                   {/* Model Selection */}
+                  {orchestrationMode === 'custom' && (
                   <div className="space-y-4">
                     <h3 className="text-sm font-medium text-app-text-900">Model Selection</h3>
                     
@@ -1955,6 +2289,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                       </select>
                     </div>
                   </div>
+                  )}
 
                   {/* Conversation Starters */}
                   <div>
@@ -1997,7 +2332,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                       disabled={isUploading}
                       className="px-4 py-2 border border-app-yellow-300 rounded-lg hover:bg-app-button-400 flex items-center gap-2 text-app-text-900 disabled:opacity-50"
                     >
-                      <Upload size={16} />
+                      <Paperclip size={16} />
                       {isUploading ? 'Uploading...' : 'Upload Files'}
                     </button>
 
@@ -2051,6 +2386,66 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                         )}
                       </div>
                     )}
+                  </div>
+
+                  {/* Memories Upload */}
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-app-text-900">Memories</label>
+                    <p className="text-xs text-app-text-800 mb-2">Upload conversation transcripts or memory files to extract tone and voice for this GPT</p>
+                    
+                    <button
+                      onClick={() => identityInputRef.current?.click()}
+                      disabled={isUploadingIdentity}
+                      className="px-4 py-2 border border-app-yellow-300 rounded-lg hover:bg-app-button-400 flex items-center gap-2 text-app-text-900 disabled:opacity-50"
+                    >
+                      <Upload size={16} />
+                      {isUploadingIdentity ? 'Uploading...' : 'Upload Transcripts'}
+                    </button>
+
+                    {/* Memory File Count Display */}
+                    {identityFiles.length > 0 && (
+                      <div className="mt-2 mb-2">
+                        <span className="text-sm text-app-text-800">
+                          {identityFiles.length} memory file{identityFiles.length !== 1 ? 's' : ''} ready
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Memory File List */}
+                    {identityFiles.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm text-app-text-800">
+                            {identityFiles.length} memory file{identityFiles.length !== 1 ? 's' : ''} uploaded
+                          </span>
+                        </div>
+                        
+                        {identityFiles.map((identity) => (
+                          <div key={identity.id} className="flex items-center justify-between p-2 bg-app-yellow-200 rounded">
+                            <div className="flex items-center gap-2">
+                              <FileText size={16} className="text-app-text-800" />
+                              <span className="text-sm text-app-text-900">{identity.name}</span>
+                            </div>
+                            <button
+                              onClick={() => handleRemoveIdentity(identity.id)}
+                              className="p-1 hover:bg-app-button-600 rounded text-app-text-800 hover:text-app-text-900"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Hidden Memory File Input */}
+                    <input
+                      ref={identityInputRef}
+                      type="file"
+                      multiple
+                      accept=".txt,.md,.pdf,.doc,.docx,.csv,.json"
+                      onChange={handleIdentityUpload}
+                      className="hidden"
+                    />
                   </div>
 
                   {/* Capabilities */}

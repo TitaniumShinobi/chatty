@@ -446,12 +446,15 @@ export default function Layout() {
           return {
           id: conv.sessionId,
             title: normalizedTitle,
-          messages: conv.messages.map(msg => ({
+          messages: conv.messages.map((msg: any) => ({
             id: msg.id,
             role: msg.role,
             text: msg.content,
             packets: msg.role === 'assistant' ? [{ op: 'answer.v1', payload: { content: msg.content } }] : undefined,
-            ts: new Date(msg.timestamp).getTime()
+            ts: new Date(msg.timestamp).getTime(),
+            metadata: msg.metadata || undefined,
+            responseTimeMs: msg.metadata?.responseTimeMs,
+            thinkingLog: msg.metadata?.thinkingLog
           })),
           createdAt: conv.messages.length > 0 ? new Date(conv.messages[0].timestamp).getTime() : Date.now(),
           updatedAt: conv.messages.length > 0 ? new Date(conv.messages[conv.messages.length - 1].timestamp).getTime() : Date.now(),
@@ -940,9 +943,36 @@ export default function Layout() {
       return
     }
     
-    // 5. Generate AI response with callbacks
+    // 5. Query relevant identity/memories for prompt injection
+    let relevantMemories: Array<{ context: string; response: string; timestamp: string; relevance: number }> = []
+    try {
+      const constructCallsign = thread.constructId || 'synth-001'
+      console.log(`🧠 [Layout.tsx] Querying identity for construct: ${constructCallsign}`)
+      relevantMemories = await conversationManager.loadMemoriesForConstruct(
+        user.id || user.sub || '',
+        constructCallsign,
+        input, // Use user's message as query
+        5 // Limit to 5 most relevant identity/memories
+      )
+      if (relevantMemories.length > 0) {
+        console.log(`✅ [Layout.tsx] Found ${relevantMemories.length} relevant identity/memories`)
+      }
+    } catch (error) {
+      console.warn('⚠️ [Layout.tsx] Failed to load identity (non-critical):', error)
+      // Continue without identity - don't break conversation flow
+    }
+
+    // 6. Generate AI response with callbacks
     const { AIService } = await import('../lib/aiService')
     const aiService = AIService.getInstance()
+    
+    // Format identity/memories for prompt injection
+    const memoryContext = relevantMemories.length > 0
+      ? `\n\nRelevant Identity/Memories:\n${relevantMemories.map((m, i) => 
+          `${i + 1}. Context: ${m.context}\n   Response: ${m.response}\n   (Relevance: ${(m.relevance * 100).toFixed(0)}%)`
+        ).join('\n\n')}`
+      : ''
+    
     const baseUiContext: UIContextSnapshot = {
       route: location.pathname,
       activeThreadId: threadId,
@@ -992,7 +1022,10 @@ export default function Layout() {
     let finalAssistantThinking: string[] = []
     
     try {
-      const raw = await aiService.processMessage(input, files, {
+      // Inject memories into the input if available
+      const enhancedInput = memoryContext ? `${input}${memoryContext}` : input
+      
+      const raw = await aiService.processMessage(enhancedInput, files, {
         onPartialUpdate: (partialContent: string) => {
           const trimmed = (partialContent || '').trim()
           const normalized = trimmed.toLowerCase()

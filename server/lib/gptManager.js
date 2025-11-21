@@ -2,8 +2,12 @@
 import Database from 'better-sqlite3';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import { ServerFileParser } from './serverFileParser.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export class GPTManager {
   static instance = null;
@@ -12,7 +16,21 @@ export class GPTManager {
   uploadDir = '';
 
   constructor() {
-    this.db = new Database('chatty.db');
+    // Resolve DB at project root (chatty/chatty.db)
+    // __dirname is /server/lib, so go up two levels to project root
+    const dbPath = path.join(__dirname, '..', '..', 'chatty.db');
+    const absoluteDbPath = path.resolve(dbPath);
+    
+    // Check if database exists in server/ directory (wrong location)
+    const serverDbPath = path.join(__dirname, '..', 'chatty.db');
+    fs.access(serverDbPath).then(() => {
+      console.warn(`⚠️ [GPTManager] Found database at wrong location: ${serverDbPath}. Using correct location: ${absoluteDbPath}`);
+    }).catch(() => {
+      // Database not in server/ directory, which is correct
+    });
+    
+    this.db = new Database(absoluteDbPath);
+    console.log(`✅ [GPTManager] Database initialized at: ${absoluteDbPath}`);
     this.uploadDir = path.join(process.cwd(), 'gpt-uploads');
     this.initializeDatabase();
     this.ensureUploadDir();
@@ -36,6 +54,7 @@ export class GPTManager {
         conversation_starters TEXT,
         avatar TEXT,
         capabilities TEXT,
+        construct_callsign TEXT,
         model_id TEXT NOT NULL,
         is_active INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -43,6 +62,12 @@ export class GPTManager {
         user_id TEXT NOT NULL
       )
     `);
+
+    // Ensure construct_callsign column exists for older databases
+    const hasConstructCallsign = this.db.prepare(`PRAGMA table_info(gpts)`).all().some(col => col.name === 'construct_callsign');
+    if (!hasConstructCallsign) {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN construct_callsign TEXT`);
+    }
 
     // GPT Files table
     this.db.exec(`
@@ -90,14 +115,82 @@ export class GPTManager {
     }
   }
 
+  /**
+   * Generate constructCallsign from GPT name with sequential numbering
+   * Example: "Katana" → "katana-001", "Katana" (second one) → "katana-002"
+   * 
+   * @param {string} name - GPT name (e.g., "Katana", "Luna")
+   * @param {string} userId - User ID to scope the search
+   * @returns {Promise<string>} - Construct callsign (e.g., "katana-001")
+   */
+  async generateConstructCallsign(name, userId) {
+    if (!name || !name.trim()) {
+      throw new Error('GPT name is required to generate constructCallsign');
+    }
+
+    // Normalize name: lowercase, remove special chars, replace spaces with hyphens
+    const normalized = name
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s-]/g, '') // Remove special chars except spaces and hyphens
+      .replace(/\s+/g, '-') // Replace spaces with hyphens
+      .replace(/-+/g, '-') // Collapse multiple hyphens
+      .replace(/^-|-$/g, ''); // Remove leading/trailing hyphens
+
+    if (!normalized) {
+      throw new Error(`Cannot generate constructCallsign from name: "${name}"`);
+    }
+
+    // Query existing GPTs with same normalized name for this user
+    const stmt = this.db.prepare(`
+      SELECT construct_callsign FROM gpts 
+      WHERE user_id = ? AND construct_callsign LIKE ?
+      ORDER BY construct_callsign DESC
+    `);
+    const pattern = `${normalized}-%`;
+    const existing = stmt.all(userId, pattern);
+
+    // Find highest existing callsign number
+    let maxNumber = 0;
+    for (const row of existing) {
+      if (row.construct_callsign) {
+        const match = row.construct_callsign.match(/^(.+)-(\d+)$/);
+        if (match && match[1] === normalized) {
+          const num = parseInt(match[2], 10);
+          if (num > maxNumber) {
+            maxNumber = num;
+          }
+        }
+      }
+    }
+
+    // Generate next sequential callsign
+    const nextNumber = maxNumber + 1;
+    const callsign = `${normalized}-${String(nextNumber).padStart(3, '0')}`;
+    
+    console.log(`✅ [GPTManager] Generated constructCallsign: "${name}" → ${callsign} (user: ${userId})`);
+    return callsign;
+  }
+
   // GPT CRUD Operations
   async createGPT(config) {
     const id = `gpt-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
+    // Auto-generate constructCallsign if not provided
+    let constructCallsign = config.constructCallsign;
+    if (!constructCallsign && config.name) {
+      try {
+        constructCallsign = await this.generateConstructCallsign(config.name, config.userId || 'anonymous');
+      } catch (error) {
+        console.warn(`⚠️ [GPTManager] Failed to generate constructCallsign: ${error.message}, using null`);
+        constructCallsign = null;
+      }
+    }
+
     const stmt = this.db.prepare(`
-      INSERT INTO gpts (id, name, description, instructions, conversation_starters, avatar, capabilities, model_id, is_active, created_at, updated_at, user_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO gpts (id, name, description, instructions, conversation_starters, avatar, capabilities, construct_callsign, model_id, is_active, created_at, updated_at, user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -108,11 +201,12 @@ export class GPTManager {
       JSON.stringify(config.conversationStarters || []),
       config.avatar || null,
       JSON.stringify(config.capabilities || {}),
+      constructCallsign,
       config.modelId,
       config.isActive ? 1 : 0,
       now,
       now,
-      config.userId
+      config.userId || 'anonymous'
     );
 
     return {
@@ -121,7 +215,8 @@ export class GPTManager {
       files: [],
       actions: [],
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      constructCallsign: constructCallsign
     };
   }
 
@@ -142,6 +237,7 @@ export class GPTManager {
       conversationStarters: JSON.parse(row.conversation_starters || '[]'),
       avatar: row.avatar,
       capabilities: JSON.parse(row.capabilities || '{}'),
+      constructCallsign: row.construct_callsign,
       modelId: row.model_id,
       files,
       actions,
@@ -152,34 +248,97 @@ export class GPTManager {
     };
   }
 
-  async getAllGPTs(userId) {
-    const stmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? ORDER BY updated_at DESC');
-    const rows = stmt.all(userId);
+  async getAllGPTs(userId, originalUserId = null) {
+    try {
+      if (!this.db) {
+        throw new Error('Database not initialized');
+      }
 
-    const gpts = [];
-    for (const row of rows) {
-      const files = await this.getGPTFiles(row.id);
-      const actions = await this.getGPTActions(row.id);
+      if (!userId) {
+        console.warn('⚠️ [GPTManager] getAllGPTs called with null/undefined userId');
+        return [];
+      }
 
-      gpts.push({
-        id: row.id,
-        name: row.name,
-        description: row.description,
-        instructions: row.instructions,
-        conversationStarters: JSON.parse(row.conversation_starters || '[]'),
-        avatar: row.avatar,
-        capabilities: JSON.parse(row.capabilities || '{}'),
-        modelId: row.model_id,
-        files,
-        actions,
-        isActive: Boolean(row.is_active),
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-        userId: row.user_id
-      });
+      // Try primary lookup with provided user ID (may be VVAULT format)
+      const stmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? ORDER BY updated_at DESC');
+      let rows = stmt.all(userId);
+
+      // Fallback: if none found and we have an original user ID (email/ObjectId), try that too
+      if ((!rows || rows.length === 0) && originalUserId && originalUserId !== userId) {
+        console.log(`🔄 [GPTManager] Trying fallback query with original user ID: ${originalUserId}`);
+        const fallbackStmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? ORDER BY updated_at DESC');
+        rows = fallbackStmt.all(originalUserId);
+      }
+
+      // Last resort: if still none found, try email-based lookup (for backward compatibility)
+      if ((!rows || rows.length === 0) && originalUserId && originalUserId.includes('@')) {
+        console.log(`🔄 [GPTManager] Trying email-based lookup: ${originalUserId}`);
+        const emailStmt = this.db.prepare('SELECT * FROM gpts WHERE user_id LIKE ? ORDER BY updated_at DESC');
+        rows = emailStmt.all(`%${originalUserId}%`);
+      }
+
+      console.log(`📊 [GPTManager] Found ${rows?.length || 0} GPTs for user: ${userId}${originalUserId && originalUserId !== userId ? ` (original: ${originalUserId})` : ''}`);
+
+      const gpts = [];
+      for (const row of rows) {
+        try {
+          const files = await this.getGPTFiles(row.id);
+          const actions = await this.getGPTActions(row.id);
+
+          // Parse JSON fields with error handling
+          let conversationStarters = [];
+          let capabilities = {};
+          
+          try {
+            conversationStarters = JSON.parse(row.conversation_starters || '[]');
+          } catch (e) {
+            console.warn(`⚠️ [GPTManager] Invalid conversation_starters JSON for ${row.id}, using empty array`);
+            conversationStarters = [];
+          }
+          
+          try {
+            capabilities = JSON.parse(row.capabilities || '{}');
+          } catch (e) {
+            console.warn(`⚠️ [GPTManager] Invalid capabilities JSON for ${row.id}, using empty object`);
+            // Try to fix common issues (unquoted keys in object literals)
+            try {
+              const fixed = (row.capabilities || '{}').replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/g, '$1"$2":');
+              capabilities = JSON.parse(fixed);
+              console.log(`✅ [GPTManager] Fixed capabilities JSON for ${row.id}`);
+            } catch (e2) {
+              capabilities = {};
+            }
+          }
+
+          gpts.push({
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            instructions: row.instructions,
+            conversationStarters,
+            avatar: row.avatar,
+            capabilities,
+            constructCallsign: row.construct_callsign,
+            modelId: row.model_id,
+            files,
+            actions,
+            isActive: Boolean(row.is_active),
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+            userId: row.user_id
+          });
+        } catch (rowError) {
+          console.error(`❌ [GPTManager] Error processing GPT row ${row.id}:`, rowError);
+          // Continue processing other rows
+        }
+      }
+
+      return gpts;
+    } catch (error) {
+      console.error(`❌ [GPTManager] Error in getAllGPTs for user ${userId}:`, error);
+      console.error(`❌ [GPTManager] Error stack:`, error.stack);
+      throw error; // Re-throw to be handled by route handler
     }
-
-    return gpts;
   }
 
   async updateGPT(id, updates) {
@@ -188,7 +347,7 @@ export class GPTManager {
 
     const stmt = this.db.prepare(`
       UPDATE gpts 
-      SET name = ?, description = ?, instructions = ?, conversation_starters = ?, avatar = ?, capabilities = ?, model_id = ?, is_active = ?, updated_at = ?
+      SET name = ?, description = ?, instructions = ?, conversation_starters = ?, avatar = ?, capabilities = ?, construct_callsign = ?, model_id = ?, is_active = ?, updated_at = ?
       WHERE id = ?
     `);
 
@@ -199,6 +358,7 @@ export class GPTManager {
       JSON.stringify(updates.conversationStarters || existing.conversationStarters),
       updates.avatar !== undefined ? updates.avatar : existing.avatar,
       JSON.stringify(updates.capabilities || existing.capabilities),
+      updates.constructCallsign !== undefined ? updates.constructCallsign : existing.constructCallsign,
       updates.modelId || existing.modelId,
       updates.isActive !== undefined ? (updates.isActive ? 1 : 0) : (existing.isActive ? 1 : 0),
       new Date().toISOString(),
@@ -505,6 +665,43 @@ export class GPTManager {
       console.error('Error executing action:', error);
       throw error;
     }
+  }
+
+  /**
+   * Migrate existing GPTs to have constructCallsign based on their names
+   * This should be called once to backfill missing constructCallsign values
+   */
+  async migrateExistingGPTs() {
+    console.log('🔄 [GPTManager] Starting migration of existing GPTs...');
+    
+    const stmt = this.db.prepare('SELECT * FROM gpts WHERE construct_callsign IS NULL OR construct_callsign = ""');
+    const rows = stmt.all();
+    
+    let migrated = 0;
+    let errors = 0;
+    
+    for (const row of rows) {
+      if (!row.name || !row.name.trim()) {
+        console.warn(`⚠️ [GPTManager] Skipping GPT ${row.id} - no name`);
+        continue;
+      }
+      
+      try {
+        const constructCallsign = await this.generateConstructCallsign(row.name, row.user_id);
+        
+        const updateStmt = this.db.prepare('UPDATE gpts SET construct_callsign = ? WHERE id = ?');
+        updateStmt.run(constructCallsign, row.id);
+        
+        console.log(`✅ [GPTManager] Migrated GPT ${row.id}: "${row.name}" → ${constructCallsign}`);
+        migrated++;
+      } catch (error) {
+        console.error(`❌ [GPTManager] Failed to migrate GPT ${row.id}: ${error.message}`);
+        errors++;
+      }
+    }
+    
+    console.log(`✅ [GPTManager] Migration complete: ${migrated} migrated, ${errors} errors`);
+    return { migrated, errors, total: rows.length };
   }
 
   // Cleanup

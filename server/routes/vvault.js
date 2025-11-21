@@ -3,9 +3,31 @@ import { createRequire } from "module";
 import { requireAuth } from "../middleware/auth.js";
 import User from "../models/User.js";
 import { createPrimaryConversationFile } from "../services/importService.js";
+import multer from "multer";
 
 const require = createRequire(import.meta.url);
 const router = express.Router();
+
+// Configure multer for identity file uploads
+const identityUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Allow text files, PDFs, markdown, and common document formats
+    const allowedTypes = [
+      'text/plain', 'text/markdown', 'application/pdf',
+      'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/csv', 'application/json'
+    ];
+    if (allowedTypes.includes(file.mimetype) || file.originalname.match(/\.(txt|md|pdf|doc|docx|csv|json)$/i)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Allowed: txt, md, pdf, doc, docx, csv, json'));
+    }
+  }
+});
 
 // Lazy load VVAULT modules to speed up server startup
 let readConversations, readCharacterProfile, VVAULTConnector, VVAULT_ROOT;
@@ -249,8 +271,9 @@ router.post("/conversations", async (req, res) => {
       role: "system",
       content: `CONVERSATION_CREATED:${title}`,
       title,
-      constructId,
-      constructName: title
+      constructId: constructId || 'synth',
+      constructName: title,
+      constructCallsign: constructId // constructId may already be in callsign format (e.g., "katana-001")
     });
 
     res.status(201).json({
@@ -271,26 +294,54 @@ router.post("/conversations/:sessionId/messages", async (req, res) => {
   if (!userId) return;
 
   const { sessionId } = req.params;
-  const { role, content, timestamp, title, metadata, constructId, constructName } = req.body || {};
+  const { role, content, timestamp, title, metadata, constructId, constructName, packets } = req.body || {};
 
-  if (!role || !content) {
-    res.status(400).json({ ok: false, error: "Missing role or content" });
+  if (!role) {
+    res.status(400).json({ ok: false, error: "Missing role" });
+    return;
+  }
+
+  // Extract content from packets if content is empty but packets exist
+  let finalContent = content;
+  if ((!finalContent || finalContent.trim() === '') && Array.isArray(packets)) {
+    finalContent = packets
+      .map(packet => {
+        if (!packet) return '';
+        if (packet.op === 'answer.v1' && packet.payload?.content) {
+          return packet.payload.content;
+        }
+        try {
+          return JSON.stringify(packet.payload ?? packet);
+        } catch {
+          return '';
+        }
+      })
+      .filter(Boolean)
+      .join('\n\n');
+  }
+
+  if (!finalContent || finalContent.trim() === '') {
+    res.status(400).json({ ok: false, error: "Missing content (empty message)" });
     return;
   }
 
   try {
     const connector = await getConnector();
+    const actualConstructId = constructId || metadata?.constructId || 'synth';
+    const actualConstructCallsign = metadata?.constructCallsign || constructId || metadata?.constructId;
+    
     await connector.writeTranscript({
       userId, // Will be resolved to VVAULT user ID in writeTranscript.js
       userEmail: req.user?.email, // Pass email for VVAULT user ID resolution
       sessionId,
       timestamp: timestamp || new Date().toISOString(),
       role,
-      content,
+      content: finalContent,
       title: title || "Chat with Synth",
       metadata,
-      constructId: constructId || metadata?.constructId,
-      constructName: constructName || metadata?.constructName || title || 'Synth'
+      constructId: actualConstructId,
+      constructName: constructName || metadata?.constructName || title || 'Synth',
+      constructCallsign: actualConstructCallsign
     });
 
     res.status(201).json({ ok: true });
@@ -298,6 +349,319 @@ router.post("/conversations/:sessionId/messages", async (req, res) => {
     console.error("❌ [VVAULT API] Failed to append message:", error);
     res.status(500).json({ ok: false, error: "Failed to save VVAULT message" });
   }
+});
+
+router.get("/identity/query", async (req, res) => {
+  const userId = validateUser(res, req.user);
+  if (!userId) return;
+
+  const { constructCallsign, query, limit = 10 } = req.query || {};
+  
+  if (!constructCallsign || !query) {
+    return res.status(400).json({ ok: false, error: "Missing constructCallsign or query" });
+  }
+
+  try {
+    const { getIdentityService } = await import('../services/identityService.js');
+    const identityService = getIdentityService();
+    
+    const identities = await identityService.queryIdentities(
+      userId,
+      constructCallsign,
+      query,
+      parseInt(limit, 10)
+    );
+
+    res.json({
+      ok: true,
+      memories: identities // Keep "memories" key for backward compatibility with frontend
+    });
+  } catch (error) {
+    console.error("❌ [VVAULT API] Failed to query identity:", error);
+    res.status(500).json({ ok: false, error: "Failed to query identity" });
+  }
+});
+
+router.get("/identity/list", requireAuth, async (req, res) => {
+  const userId = validateUser(res, req.user);
+  if (!userId) return;
+
+  const { constructCallsign } = req.query || {};
+  
+  if (!constructCallsign) {
+    return res.status(400).json({ ok: false, error: "Missing constructCallsign" });
+  }
+
+  try {
+    await loadVVAULTModules();
+    const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
+    const fs = require('fs').promises;
+    const path = require('path');
+
+    // Resolve VVAULT user ID
+    const vvaultUserId = await resolveVVAULTUserId(userId, req.user?.email);
+    if (!vvaultUserId) {
+      return res.status(404).json({ ok: false, error: "User not found in VVAULT" });
+    }
+
+    // Build path to identity directory
+    const shard = 'shard_0000'; // Sequential sharding
+    const identityDir = path.join(
+      VVAULT_ROOT,
+      'users',
+      shard,
+      vvaultUserId,
+      'instances',
+      constructCallsign,
+      'identity'
+    );
+
+    // Check if directory exists
+    try {
+      await fs.access(identityDir);
+    } catch {
+      // Directory doesn't exist, return empty list
+      return res.json({ ok: true, files: [] });
+    }
+
+    // Read directory and filter for identity files
+    const files = await fs.readdir(identityDir, { withFileTypes: true });
+    const identityFiles = [];
+
+    for (const file of files) {
+      if (file.isFile()) {
+        const filePath = path.join(identityDir, file.name);
+        const ext = path.extname(file.name).toLowerCase();
+        
+        // Only include supported file types
+        if (['.md', '.txt', '.pdf', '.doc', '.docx', '.csv', '.json'].includes(ext)) {
+          try {
+            const stats = await fs.stat(filePath);
+            identityFiles.push({
+              name: file.name,
+              path: filePath,
+              size: stats.size,
+              modifiedAt: stats.mtime.toISOString()
+            });
+          } catch (error) {
+            console.warn(`⚠️ [VVAULT API] Failed to stat file ${file.name}:`, error);
+          }
+        }
+      }
+    }
+
+    // Sort by modified date (newest first)
+    identityFiles.sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
+
+    res.json({
+      ok: true,
+      files: identityFiles
+    });
+  } catch (error) {
+    console.error("❌ [VVAULT API] Failed to list identity files:", error);
+    res.status(500).json({ ok: false, error: "Failed to list identity files" });
+  }
+});
+
+// Legacy endpoint for backward compatibility
+router.get("/memories/query", async (req, res) => {
+  // Redirect to identity endpoint
+  req.url = req.url.replace('/memories/query', '/identity/query');
+  return router.handle(req, res);
+});
+
+router.post("/identity/upload", requireAuth, (req, res) => {
+  identityUpload.array('files', 10)(req, res, async (err) => {
+    if (err) {
+      console.error('❌ [VVAULT API] Multer error during identity upload:', err);
+      return res.status(400).json({ ok: false, error: err.message || 'Upload failed' });
+    }
+
+    const userId = validateUser(res, req.user);
+    if (!userId) return;
+
+    const files = req.files || [];
+    if (files.length === 0) {
+      return res.status(400).json({ ok: false, error: "No files provided" });
+    }
+
+    const { constructCallsign } = req.body || {};
+    if (!constructCallsign) {
+      return res.status(400).json({ ok: false, error: "Missing constructCallsign" });
+    }
+
+    try {
+      const { convertFileToMarkdown } = await import('../services/fileToMarkdownConverter.js');
+      const results = [];
+
+      for (const file of files) {
+        try {
+          const crypto = require('crypto');
+          // For identity files, store in /instances/{construct-callsign}/identity/ instead of provider subdirectory
+          const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
+          const vvaultUserId = await resolveVVAULTUserId(userId, req.user?.email);
+          if (!vvaultUserId) {
+            throw new Error(`Cannot resolve VVAULT user ID for: ${userId}`);
+          }
+
+          const path = await import('path');
+          const fs = await import('fs/promises');
+          const { VVAULT_ROOT } = require('../../vvaultConnector/config.js');
+          
+          // Parse file to extract text
+          const { ServerFileParser } = await import('../lib/serverFileParser.js');
+          const parsed = await ServerFileParser.parseFile(file, {
+            maxSize: 10 * 1024 * 1024, // 10MB
+            extractText: true,
+            storeContent: false
+          });
+
+          // Convert to markdown
+          const convertTextToMarkdown = (text, filename, metadata) => {
+            const timestamp = new Date().toISOString();
+            const title = path.basename(filename, path.extname(filename));
+            
+            return `# ${title}
+
+**Source File**: ${filename}
+**Converted**: ${timestamp}
+**Word Count**: ${metadata.wordCount || 0}
+**File Category**: ${metadata.fileCategory || 'unknown'}
+
+<!-- FILE_METADATA
+sourceFile: ${filename}
+convertedAt: ${timestamp}
+wordCount: ${metadata.wordCount || 0}
+fileCategory: ${metadata.fileCategory || 'unknown'}
+programmingLanguage: ${metadata.programmingLanguage || 'none'}
+complexity: ${metadata.complexity || 'unknown'}
+---
+
+${text}
+`;
+          };
+          const markdown = convertTextToMarkdown(parsed.extractedText, file.originalname || file.name, parsed.metadata);
+
+          // Store in /instances/{construct-callsign}/identity/{filename}.md
+          // Sanitize filename
+          const sanitizeFilename = (filename) => {
+            if (!filename) return 'untitled';
+            const base = path.basename(filename, path.extname(filename));
+            return base
+              .replace(/[^a-z0-9._-]+/gi, '-')
+              .replace(/^-|-$/g, '')
+              .substring(0, 100);
+          };
+          const sanitizedFilename = sanitizeFilename(file.originalname || file.name);
+          const hash = crypto.createHash('sha256').update(file.buffer || '').digest('hex').substring(0, 8);
+          const hashedFilename = `${sanitizedFilename}-${hash}`;
+          const identityDir = path.join(
+            VVAULT_ROOT,
+            'users',
+            'shard_0000',
+            vvaultUserId,
+            'instances',
+            constructCallsign,
+            'identity'
+          );
+          
+          await fs.mkdir(identityDir, { recursive: true });
+          const filePath = path.join(identityDir, `${hashedFilename}.md`);
+
+          // Dedup: if file with same hash exists, skip writing new copy
+          try {
+            await fs.access(filePath);
+            console.log(`ℹ️ [VVAULT API] Duplicate identity file detected, skipping write: ${filePath}`);
+            results.push({
+              success: true,
+              duplicate: true,
+              filePath,
+              metadata: {
+                originalName: file.originalname || file.name,
+                originalType: file.mimetype || file.type,
+                originalSize: file.size,
+                wordCount: parsed.metadata.wordCount
+              }
+            });
+            continue;
+          } catch {
+            // file not found, proceed to write
+          }
+
+          await fs.writeFile(filePath, markdown, 'utf8');
+
+          console.log(`✅ [VVAULT API] Identity file saved: ${filePath}`);
+
+          // Optionally import into ChromaDB via identity service
+          try {
+            const { getIdentityService } = await import('../services/identityService.js');
+            const identityService = getIdentityService();
+            
+            // Extract title and content for memory
+            const titleMatch = markdown.match(/^#\s+(.+)$/m);
+            const title = titleMatch ? titleMatch[1] : file.originalname || 'Untitled';
+            const content = markdown.replace(/^#.*$/m, '').trim();
+
+            // Import as long-term identity
+            await identityService.addIdentity(
+              userId,
+              constructCallsign,
+              `Identity file: ${title}`,
+              content,
+              {
+                email: req.user?.email,
+                sessionId: constructCallsign,
+                memoryType: 'long-term',
+                sourceModel: 'chatty-identity'
+              }
+            );
+          } catch (identityError) {
+            console.warn('⚠️ [VVAULT API] Failed to import identity to ChromaDB (non-critical):', identityError);
+          }
+
+          results.push({
+            success: true,
+            filePath,
+            metadata: {
+              originalName: file.originalname || file.name,
+              originalType: file.mimetype || file.type,
+              originalSize: file.size,
+              wordCount: parsed.metadata.wordCount
+            }
+          });
+        } catch (error) {
+          console.error(`❌ [VVAULT API] Failed to process identity file ${file.originalname || file.name}:`, error);
+          results.push({
+            success: false,
+            error: error.message,
+            filename: file.originalname || file.name
+          });
+        }
+      }
+
+      return res.status(201).json({
+        ok: true,
+        results,
+        message: `Processed ${results.filter(r => r.success).length} of ${results.length} files`
+      });
+    } catch (error) {
+      console.error("❌ [VVAULT API] Failed to upload identity files:", error);
+      return res.status(500).json({ ok: false, error: "Failed to upload identity files" });
+    }
+  });
+});
+
+// Legacy endpoint for backward compatibility
+router.post("/memories/upload", requireAuth, (req, res) => {
+  identityUpload.array('files', 10)(req, res, (err) => {
+    if (err) {
+      console.error('❌ [VVAULT API] Multer error during memories upload:', err);
+      return res.status(400).json({ ok: false, error: err.message || 'Upload failed' });
+    }
+    // Redirect to identity endpoint handler logic for backward compatibility
+    req.url = req.url.replace('/memories/upload', '/identity/upload');
+    return router.handle(req, res);
+  });
 });
 
 router.post("/conversations/:sessionId/connect-construct", async (req, res) => {

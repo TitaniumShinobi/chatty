@@ -171,9 +171,28 @@ export default function Chat() {
           }
           
           // AI/Construct messages: left-aligned, full screen width, no bubble styling
+          const formatGenerationTime = (ms: number): string => {
+            if (ms < 1000) return `${ms}ms`
+            return `${(ms / 1000).toFixed(1)}s`
+          }
+          
+          const responseTimeMs = (m as any).metadata?.responseTimeMs
+          const formattedResponseTime = responseTimeMs ? formatGenerationTime(responseTimeMs) : null
+          
           return (
             <div key={m.id} className="flex items-start gap-3 py-3 px-4">
               <div className="flex flex-col items-start text-left w-full">
+                {formattedResponseTime && (
+                  <div 
+                    className="text-xs mb-1" 
+                    style={{ 
+                      color: 'var(--chatty-text)', 
+                      opacity: 0.55 
+                    }}
+                  >
+                    Generated in {formattedResponseTime}
+                  </div>
+                )}
                 <div className="whitespace-normal w-full" style={{ color: 'var(--chatty-text)' }}>
                   <R
                     packets={

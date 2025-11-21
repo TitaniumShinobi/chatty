@@ -56,22 +56,37 @@ const OAUTH = {
 
 const COOKIE_NAME = process.env.COOKIE_NAME || "sid";
 
-// health
+// health endpoints
 app.get("/health", (_req, res) => res.json({ ok: true }));
+app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 // start OAuth (front-end should hit this)
 app.get("/api/auth/google", authLimiter, (req, res) => {
-  const state = cryptoRandom();
-  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-  url.searchParams.set("client_id", OAUTH.client_id);
-  url.searchParams.set("redirect_uri", OAUTH.redirect_uri);
-  url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", "openid email profile");
-  url.searchParams.set("include_granted_scopes", "true");
-  url.searchParams.set("access_type", "offline");
-  url.searchParams.set("prompt", "consent");
-  url.searchParams.set("state", state);
-  res.redirect(url.toString());
+  try {
+    if (!OAUTH.client_id) {
+      console.error("❌ [OAuth] GOOGLE_CLIENT_ID is not set in environment variables");
+      return res.status(500).json({ error: "OAuth configuration missing: GOOGLE_CLIENT_ID" });
+    }
+    if (!OAUTH.client_secret) {
+      console.error("❌ [OAuth] GOOGLE_CLIENT_SECRET is not set in environment variables");
+      return res.status(500).json({ error: "OAuth configuration missing: GOOGLE_CLIENT_SECRET" });
+    }
+    
+    const state = cryptoRandom();
+    const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    url.searchParams.set("client_id", OAUTH.client_id);
+    url.searchParams.set("redirect_uri", OAUTH.redirect_uri);
+    url.searchParams.set("response_type", "code");
+    url.searchParams.set("scope", "openid email profile");
+    url.searchParams.set("include_granted_scopes", "true");
+    url.searchParams.set("access_type", "offline");
+    url.searchParams.set("prompt", "consent");
+    url.searchParams.set("state", state);
+    res.redirect(url.toString());
+  } catch (error) {
+    console.error("❌ [OAuth] Error in /api/auth/google:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // OAuth callback → exchange code → set cookie → redirect home

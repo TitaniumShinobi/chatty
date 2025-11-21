@@ -51,15 +51,49 @@ const upload = multer({
   }
 });
 
-// Get all GPTs for a user
 router.get('/', async (req, res) => {
   try {
-    const userId = req.user?.id || 'anonymous';
-    const gpts = await gptManager.getAllGPTs(userId);
-    res.json({ success: true, gpts });
+    // Prefer stable identifiers; fall back to email, sub, uid
+    const chattyUserId = req.user?.id || req.user?.uid || req.user?.sub || req.user?.email || 'anonymous';
+    console.log(`📋 [GPTs API] GET /api/gpts - User: ${chattyUserId}`);
+    
+    // Resolve to VVAULT user ID format for database queries
+    let userId = chattyUserId;
+    try {
+      const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
+      const vvaultUserId = await resolveVVAULTUserId(chattyUserId, req.user?.email);
+      if (vvaultUserId) {
+        userId = vvaultUserId;
+        console.log(`✅ [GPTs API] Resolved user ID: ${chattyUserId} → ${vvaultUserId}`);
+      } else {
+        console.warn(`⚠️ [GPTs API] Could not resolve VVAULT user ID for: ${chattyUserId}, using as-is`);
+      }
+    } catch (error) {
+      console.warn(`⚠️ [GPTs API] User ID resolution failed: ${error.message}, using original ID`);
+      console.warn(`⚠️ [GPTs API] Resolution error stack:`, error.stack);
+    }
+    
+    const gpts = await gptManager.getAllGPTs(userId, chattyUserId);
+    console.log(`✅ [GPTs API] Returning ${gpts?.length || 0} GPTs`);
+    
+    // Ensure response is valid JSON
+    if (!res.headersSent) {
+      res.json({ success: true, gpts: gpts || [] });
+    }
   } catch (error) {
-    console.error('Error fetching GPTs:', error);
-    res.status(500).json({ success: false, error: error.message });
+    console.error('❌ [GPTs API] Error fetching GPTs:', error);
+    console.error('❌ [GPTs API] Error stack:', error.stack);
+    
+    // Ensure we always return valid JSON, even on error
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        success: false, 
+        error: error.message || 'Internal server error',
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
+    } else {
+      console.error('❌ [GPTs API] Response already sent, cannot send error response');
+    }
   }
 });
 
@@ -80,7 +114,21 @@ router.get('/:id', async (req, res) => {
 // Create a new GPT
 router.post('/', async (req, res) => {
   try {
-    const userId = req.user?.id || 'anonymous';
+    const chattyUserId = req.user?.id || req.user?.uid || req.user?.sub || req.user?.email || 'anonymous';
+    
+    // Resolve to VVAULT user ID format for database storage
+    let userId = chattyUserId;
+    try {
+      const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
+      const vvaultUserId = await resolveVVAULTUserId(chattyUserId, req.user?.email);
+      if (vvaultUserId) {
+        userId = vvaultUserId;
+        console.log(`✅ [GPTs API] Resolved user ID for creation: ${chattyUserId} → ${vvaultUserId}`);
+      }
+    } catch (error) {
+      console.warn(`⚠️ [GPTs API] User ID resolution failed during creation: ${error.message}`);
+    }
+    
     const gptData = {
       ...req.body,
       userId,
@@ -277,6 +325,18 @@ router.post('/:id/load', async (req, res) => {
     res.json({ success: true, runtime });
   } catch (error) {
     console.error('Error loading GPT for runtime:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Migrate existing GPTs to have constructCallsign
+router.post('/migrate', async (req, res) => {
+  try {
+    console.log('🔄 [GPTs API] Starting migration of existing GPTs...');
+    const result = await gptManager.migrateExistingGPTs();
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Error migrating GPTs:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

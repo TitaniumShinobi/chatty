@@ -213,6 +213,7 @@ export class VVAULTConversationManager {
         console.log(`✅ Created new conversation via VVAULT API: ${response.conversation.sessionId}`);
       } else {
         const timestamp = new Date().toISOString();
+        const constructDescriptor = this.resolveConstructDescriptor(sessionId, { constructId });
         await this.vvaultConnector.writeTranscript({
           userId,
           sessionId,
@@ -220,8 +221,9 @@ export class VVAULTConversationManager {
           role: 'system',
           content: `CONVERSATION_CREATED:${title}`,
           title,
-          constructId,
-          constructName: constructId
+          constructId: constructDescriptor.constructId,
+          constructName: constructDescriptor.constructName,
+          constructCallsign: constructDescriptor.constructCallsign
         });
         console.log(`✅ Created new conversation via VVAULT: ${title} (${sessionId})`);
       }
@@ -345,6 +347,61 @@ export class VVAULTConversationManager {
   }
 
   /**
+   * Load relevant identity/memories for a construct from ChromaDB.
+   * Queries ChromaDB for identity/memories related to the given query text.
+   * @param userId - Chatty user ID (will be resolved to VVAULT format)
+   * @param constructCallsign - Construct-callsign (e.g., "luna-001")
+   * @param query - Query text to find relevant identity/memories
+   * @param limit - Maximum number of identity/memories to return (default: 10)
+   * @returns Array of relevant identity/memories formatted for prompt injection
+   */
+  async loadMemoriesForConstruct(
+    userId: string,
+    constructCallsign: string,
+    query: string,
+    limit: number = 10
+  ): Promise<Array<{ context: string; response: string; timestamp: string; relevance: number }>> {
+    try {
+      if (this.isBrowserEnv()) {
+        // Query identity via API
+        const params = new URLSearchParams({
+          constructCallsign,
+          query,
+          limit: limit.toString()
+        });
+        
+        const response = await this.browserRequest<{ memories: Array<{ context: string; response: string; timestamp: string; relevance: number }> }>(
+          `/identity/query?${params.toString()}`,
+          { method: 'GET' }
+        );
+        
+        return response?.memories || [];
+      } else {
+        // Server-side: directly use identityService
+        const { getIdentityService } = await import('../../server/services/identityService.js');
+        const identityService = getIdentityService();
+        return await identityService.queryIdentities(userId, constructCallsign, query, limit);
+      }
+    } catch (error) {
+      console.error('❌ Failed to load identity for construct:', error);
+      // Return empty array on error (don't break conversation flow)
+      return [];
+    }
+  }
+
+  /**
+   * Alias for backward compatibility
+   */
+  async loadIdentityForConstruct(
+    userId: string,
+    constructCallsign: string,
+    query: string,
+    limit: number = 10
+  ): Promise<Array<{ context: string; response: string; timestamp: string; relevance: number }>> {
+    return this.loadMemoriesForConstruct(userId, constructCallsign, query, limit);
+  }
+
+  /**
    * Load all conversations for a user from VVAULT
    */
   async loadUserConversations(user: User): Promise<ConversationThread[]> {
@@ -403,7 +460,8 @@ export class VVAULTConversationManager {
           role: message.role,
           content: contentPayload,
           constructId: construct.constructId,
-          constructName: construct.constructName
+          constructName: construct.constructName,
+          constructCallsign: construct.constructCallsign
         });
       }
       
@@ -460,17 +518,25 @@ export class VVAULTConversationManager {
         console.log('🌐 [VVAULTConversationManager] Browser environment - routing through API');
         const constructDescriptor = this.resolveConstructDescriptor(threadId, message.metadata);
         
+        const normalizedContent = this.normalizeMessageContent(message);
+        if (!normalizedContent || normalizedContent.trim() === '') {
+          console.warn('⚠️ [VVAULTConversationManager] Empty content after normalization, skipping save');
+          return;
+        }
+
         const response = await this.browserRequest(`/conversations/${threadId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             role: message.role,
-            content: this.normalizeMessageContent(message),
+            content: normalizedContent,
+            packets: message.packets, // Include packets as fallback for server-side extraction
             timestamp: message.timestamp || new Date().toISOString(),
             title: message.title,
             constructId: constructDescriptor.constructId,
             constructName: constructDescriptor.constructName,
-            metadata: message.metadata || {}
+            constructCallsign: constructDescriptor.constructCallsign,
+            metadata: { ...message.metadata, constructCallsign: constructDescriptor.constructCallsign }
           })
         });
 
@@ -497,6 +563,9 @@ export class VVAULTConversationManager {
 
       console.log('🏷️  [VVAULTConversationManager] Construct:', constructId, 'Callsign:', callsign);
 
+      // Use constructCallsign from descriptor if available, otherwise construct from constructId + callsign
+      const constructCallsign = constructDescriptor.constructCallsign || `${constructId}-${String(callsign).padStart(3, '0')}`;
+      
       const transcriptModule = await import('../../vvaultConnector/writeTranscript.js');
       const filepath = await transcriptModule.appendToConstructTranscript(
         constructId,
@@ -508,6 +577,7 @@ export class VVAULTConversationManager {
           userName: user.name || user.email || 'User',
           timestamp: message.timestamp || new Date().toISOString(),
           title: message.title,
+          constructCallsign,
           ...message.metadata
         }
       );
@@ -574,7 +644,8 @@ export class VVAULTConversationManager {
         role: 'system',
         content: `CONVERSATION_DELETED:${timestamp}`,
         constructId: construct.constructId,
-        constructName: construct.constructName
+        constructName: construct.constructName,
+        constructCallsign: construct.constructCallsign
       });
       
       console.log(`✅ Marked conversation ${threadId} as deleted in VVAULT for user: ${user.email}`);
@@ -607,7 +678,8 @@ export class VVAULTConversationManager {
           role: 'system',
           content: `USER_DATA_CLEARED:${timestamp}`,
           constructId: construct.constructId,
-          constructName: construct.constructName
+          constructName: construct.constructName,
+          constructCallsign: construct.constructCallsign
         });
       }
       
@@ -619,30 +691,91 @@ export class VVAULTConversationManager {
     }
   }
 
-  private resolveConstructDescriptor(threadId: string, metadata?: any): { constructId: string; constructName: string } {
+  private resolveConstructDescriptor(threadId: string, metadata?: any): { constructId: string; constructName: string; constructCallsign?: string } {
     // Per SYNTH_PRIMARY_CONSTRUCT_RUBRIC.md: Synth is the primary construct of Chatty
     // Default to Synth when unspecified or ambiguous
     const explicit = (metadata?.constructId || metadata?.construct) as string | undefined;
+    const explicitCallsign = (metadata?.constructCallsign) as string | undefined;
     const extracted = this.extractConstructIdFromThread(threadId);
+    
+    // PRIORITY 1: Use constructCallsign from metadata if available (e.g., "katana-001")
+    if (explicitCallsign) {
+      const callsignMatch = explicitCallsign.match(/^([a-z-]+)-(\d+)$/);
+      if (callsignMatch) {
+        return {
+          constructId: callsignMatch[1],
+          constructName: this.toTitleCase(callsignMatch[1]),
+          constructCallsign: explicitCallsign
+        };
+      }
+    }
     
     // Check if explicitly synth (primary construct)
     const isExplicitSynth = explicit?.toLowerCase() === 'synth' || 
+                             explicit?.toLowerCase()?.startsWith('synth-') ||
                              extracted?.toLowerCase() === 'synth' ||
+                             extracted?.toLowerCase()?.startsWith('synth-') ||
                              threadId.toLowerCase().includes('synth') ||
                              (metadata?.title && (metadata.title as string).toLowerCase().includes('synth'));
     
     if (isExplicitSynth) {
-      return { constructId: 'synth', constructName: 'Synth' };
+      // Preserve callsign if present in threadId or explicit constructId
+      // e.g., "synth-001_chat_with_synth-001" → "synth-001"
+      let constructId = 'synth';
+      let constructCallsign: string | undefined = undefined;
+      if (extracted && extracted.startsWith('synth-')) {
+        constructId = extracted; // e.g., "synth-001"
+        constructCallsign = extracted;
+      } else if (explicit && explicit.startsWith('synth-')) {
+        constructId = explicit; // e.g., "synth-001"
+        constructCallsign = explicit;
+      } else if (threadId.match(/synth-\d{3}/i)) {
+        const match = threadId.match(/(synth-\d{3})/i);
+        if (match) {
+          constructId = match[1].toLowerCase(); // e.g., "synth-001"
+          constructCallsign = constructId;
+        }
+      }
+      return { constructId, constructName: 'Synth', constructCallsign };
     }
     
     // If explicit other construct → use that construct (secondary)
-    if (explicit && explicit.toLowerCase() !== 'synth') {
+    if (explicit && explicit.toLowerCase() !== 'synth' && !explicit.toLowerCase().startsWith('synth-')) {
       const constructId = explicit.toLowerCase();
-      return { constructId, constructName: metadata?.constructName || this.toTitleCase(constructId) };
+      // Check if explicit has callsign format
+      const callsignMatch = explicit.match(/^([a-z-]+)-(\d+)$/);
+      const constructCallsign = callsignMatch ? explicit : undefined;
+      return { 
+        constructId, 
+        constructName: metadata?.constructName || this.toTitleCase(constructId),
+        constructCallsign
+      };
+    }
+    
+    // If extracted has callsign format (e.g., "katana-001"), use it
+    if (extracted && extracted.match(/^[a-z-]+-\d{3,}$/)) {
+      const callsignMatch = extracted.match(/^([a-z-]+)-(\d+)$/);
+      if (callsignMatch) {
+        return {
+          constructId: callsignMatch[1],
+          constructName: this.toTitleCase(callsignMatch[1]),
+          constructCallsign: extracted
+        };
+      }
     }
     
     // Default to Synth (primary construct) when unspecified or ambiguous
-    return { constructId: 'synth', constructName: 'Synth' };
+    // Try to preserve callsign from threadId if present
+    let defaultConstructId = 'synth';
+    let defaultCallsign: string | undefined = undefined;
+    if (threadId.match(/synth-\d{3}/i)) {
+      const match = threadId.match(/(synth-\d{3})/i);
+      if (match) {
+        defaultConstructId = match[1].toLowerCase();
+        defaultCallsign = defaultConstructId;
+      }
+    }
+    return { constructId: defaultConstructId, constructName: 'Synth', constructCallsign: defaultCallsign };
   }
 
   private extractConstructIdFromThread(threadId?: string): string | null {

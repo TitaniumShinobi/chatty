@@ -10,7 +10,7 @@ import Chat from './pages/Chat'
 import VVAULTPage from './pages/VVAULTPage'
 import LibraryPage from './pages/LibraryPage'
 import CodePage from './pages/CodePage'
-import ExplorePage from './pages/ExplorePage'
+import SimForge from './pages/SimForge'
 import { ThemeProvider } from './lib/ThemeContext'
 import './index.css'
 
@@ -27,7 +27,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="chat/:threadId" element={<Chat />} />
             <Route path="gpts" element={<GPTsPage />} />
             <Route path="gpts/new" element={<GPTsPage initialOpen />} />
-            <Route path="explore" element={<ExplorePage />} />
+            <Route path="explore" element={<SimForge />} />
             <Route path="vvault" element={<VVAULTPage />} />
             <Route path="library" element={<LibraryPage />} />
             <Route path="codex" element={<CodePage />} />

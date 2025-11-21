@@ -39,6 +39,7 @@ export interface GPTConfig {
     imageGeneration: boolean;
     codeInterpreter: boolean;
   };
+  constructCallsign?: string;
   modelId: string;
   conversationModel?: string;
   creativeModel?: string;

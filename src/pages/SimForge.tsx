@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Bot, Search, Star, Users, TrendingUp, Filter, Grid, List } from 'lucide-react'
+import { Plus, Bot, Search, Star, Users, TrendingUp, Filter, Grid, List, ChevronDown, Check } from 'lucide-react'
 import GPTCreator from '../components/GPTCreator'
 import { GPTService, GPTConfig } from '../lib/gptService'
+import { Z_LAYERS } from '../lib/zLayers'
 
 interface CommunityGPT extends GPTConfig {
   author: string
@@ -15,7 +16,7 @@ interface CommunityGPT extends GPTConfig {
   tags: string[]
 }
 
-export default function ExplorePage() {
+export default function SimForge() {
   const navigate = useNavigate()
   const gptService = GPTService.getInstance()
   const [isCreatorOpen, setCreatorOpen] = useState(false)
@@ -26,6 +27,8 @@ export default function ExplorePage() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [sortBy, setSortBy] = useState<'trending' | 'newest' | 'popular'>('trending')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false)
+  const categoryDropdownRef = useRef<HTMLDivElement>(null)
 
   // Mock community GPTs data (in a real app, this would come from an API)
   const mockCommunityGPTs: CommunityGPT[] = [
@@ -92,6 +95,23 @@ export default function ExplorePage() {
   useEffect(() => {
     loadData()
   }, [])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target as Node)) {
+        setIsCategoryDropdownOpen(false)
+      }
+    }
+
+    if (isCategoryDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isCategoryDropdownOpen])
 
   const loadData = async () => {
     try {
@@ -160,13 +180,13 @@ export default function ExplorePage() {
     })
 
   return (
-    <div className="h-full flex flex-col" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
+    <div className="h-full flex flex-col" style={{ backgroundColor: '#ffffeb' }}>
       {/* Header */}
       <div className="p-6 border-b" style={{ borderColor: 'var(--chatty-line)' }}>
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-2xl font-semibold" style={{ color: 'var(--chatty-text)' }}>
-              Explore GPTs
+              SimForge
             </h1>
             <p className="text-sm mt-1" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
               Discover and use community-created AI assistants
@@ -180,10 +200,10 @@ export default function ExplorePage() {
               style={{ 
                 backgroundColor: 'transparent', 
                 color: 'var(--chatty-text)',
-                border: '1px solid var(--chatty-line)'
+                border: 'none'
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--chatty-button)'
+                e.currentTarget.style.backgroundColor = 'transparent'
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = 'transparent'
@@ -195,13 +215,13 @@ export default function ExplorePage() {
               onClick={() => setCreatorOpen(true)}
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
               style={{ 
-                backgroundColor: 'var(--chatty-button)', 
+                backgroundColor: 'transparent', 
                 color: 'var(--chatty-text)' 
               }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#ADA587'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ADA587'}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             >
-              <Plus size={16} style={{ color: 'var(--chatty-plus-button)' }} />
+              <Plus size={16} style={{ color: 'var(--chatty-text)' }} />
               Create GPT
             </button>
           </div>
@@ -216,43 +236,86 @@ export default function ExplorePage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search GPTs..."
-              className="w-full pl-10 pr-4 py-2 rounded-lg border text-sm"
+              className="w-full pl-10 pr-4 py-2 rounded-lg text-sm simforge-search-input"
               style={{ 
-                backgroundColor: 'var(--chatty-button)',
-                borderColor: 'var(--chatty-line)',
+                backgroundColor: 'transparent',
+                border: 'none',
                 color: 'var(--chatty-text)'
               }}
             />
+            <style>{`
+              .simforge-search-input::placeholder {
+                color: #ADA587;
+                opacity: 1;
+              }
+            `}</style>
           </div>
           
           <div className="flex items-center gap-2">
             <Filter size={16} style={{ color: 'var(--chatty-text)', opacity: 0.7 }} />
-            <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="px-3 py-2 rounded-lg border text-sm"
-              style={{ 
-                backgroundColor: 'var(--chatty-button)',
-                borderColor: 'var(--chatty-line)',
-                color: 'var(--chatty-text)'
-              }}
-            >
-              {categories.map(category => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
+            <div className="relative" ref={categoryDropdownRef}>
+              <button
+                onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+                style={{ 
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  color: 'var(--chatty-text)'
+                }}
+              >
+                <span>{categories.find(c => c.id === selectedCategory)?.name || 'All Categories'}</span>
+                <ChevronDown size={14} style={{ color: 'var(--chatty-text)', opacity: 0.7 }} />
+              </button>
+              {isCategoryDropdownOpen && (
+                <div
+                  className="absolute top-full left-0 mt-1 rounded-lg shadow-lg border w-48"
+                  style={{
+                    backgroundColor: 'var(--chatty-bg-main)',
+                    borderColor: 'var(--chatty-line)',
+                    zIndex: Z_LAYERS.popover
+                  }}
+                >
+                  {categories.map((category) => (
+                    <div
+                      key={category.id}
+                      className="flex items-center justify-between p-3 cursor-pointer transition-colors"
+                      style={{ 
+                        backgroundColor: selectedCategory === category.id ? '#feffaf' : 'transparent'
+                      }}
+                      onClick={() => {
+                        setSelectedCategory(category.id)
+                        setIsCategoryDropdownOpen(false)
+                      }}
+                      onMouseEnter={(e) => {
+                        if (selectedCategory !== category.id) {
+                          e.currentTarget.style.backgroundColor = 'var(--chatty-hover)'
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (selectedCategory !== category.id) {
+                          e.currentTarget.style.backgroundColor = 'transparent'
+                        }
+                      }}
+                    >
+                      <span className="text-sm" style={{ color: 'var(--chatty-text)' }}>
+                        {category.name}
+                      </span>
+                      {selectedCategory === category.id && (
+                        <Check size={16} style={{ color: 'var(--chatty-text)' }} />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-1">
             <button
               onClick={() => setSortBy('trending')}
-              className={`px-3 py-2 rounded-lg text-sm transition-colors ${
-                sortBy === 'trending' ? 'bg-opacity-100' : 'bg-opacity-0'
-              }`}
+              className="px-3 py-2 rounded-lg text-sm transition-colors"
               style={{ 
-                backgroundColor: sortBy === 'trending' ? '#feffaf' : 'transparent',
+                backgroundColor: 'transparent',
                 color: 'var(--chatty-text)'
               }}
             >
@@ -261,11 +324,9 @@ export default function ExplorePage() {
             </button>
             <button
               onClick={() => setSortBy('newest')}
-              className={`px-3 py-2 rounded-lg text-sm transition-colors ${
-                sortBy === 'newest' ? 'bg-opacity-100' : 'bg-opacity-0'
-              }`}
+              className="px-3 py-2 rounded-lg text-sm transition-colors"
               style={{ 
-                backgroundColor: sortBy === 'newest' ? '#feffaf' : 'transparent',
+                backgroundColor: 'transparent',
                 color: 'var(--chatty-text)'
               }}
             >
@@ -273,11 +334,9 @@ export default function ExplorePage() {
             </button>
             <button
               onClick={() => setSortBy('popular')}
-              className={`px-3 py-2 rounded-lg text-sm transition-colors ${
-                sortBy === 'popular' ? 'bg-opacity-100' : 'bg-opacity-0'
-              }`}
+              className="px-3 py-2 rounded-lg text-sm transition-colors"
               style={{ 
-                backgroundColor: sortBy === 'popular' ? '#feffaf' : 'transparent',
+                backgroundColor: 'transparent',
                 color: 'var(--chatty-text)'
               }}
             >
@@ -288,11 +347,9 @@ export default function ExplorePage() {
           <div className="flex items-center gap-1">
             <button
               onClick={() => setViewMode('grid')}
-              className={`p-2 rounded transition-colors ${
-                viewMode === 'grid' ? 'bg-opacity-100' : 'bg-opacity-0'
-              }`}
+              className="p-2 rounded transition-colors"
               style={{ 
-                backgroundColor: viewMode === 'grid' ? '#feffaf' : 'transparent',
+                backgroundColor: 'transparent',
                 color: 'var(--chatty-text)'
               }}
             >
@@ -300,11 +357,9 @@ export default function ExplorePage() {
             </button>
             <button
               onClick={() => setViewMode('list')}
-              className={`p-2 rounded transition-colors ${
-                viewMode === 'list' ? 'bg-opacity-100' : 'bg-opacity-0'
-              }`}
+              className="p-2 rounded transition-colors"
               style={{ 
-                backgroundColor: viewMode === 'list' ? '#feffaf' : 'transparent',
+                backgroundColor: 'transparent',
                 color: 'var(--chatty-text)'
               }}
             >
@@ -334,7 +389,7 @@ export default function ExplorePage() {
           </div>
         ) : filteredGpts.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
-            <div className="w-24 h-24 rounded-full flex items-center justify-center mb-6" style={{ backgroundColor: '#feffaf' }}>
+            <div className="w-24 h-24 rounded-full flex items-center justify-center mb-6">
               <Bot size={32} style={{ color: 'var(--chatty-icon)', opacity: 0.6 }} />
             </div>
             <h3 className="text-lg font-medium mb-2" style={{ color: 'var(--chatty-text)' }}>
@@ -349,16 +404,15 @@ export default function ExplorePage() {
             {filteredGpts.map((gpt) => (
               <div
                 key={gpt.id}
-                className={`rounded-lg border p-4 transition-all hover:shadow-md ${
+                className={`rounded-lg p-4 transition-all ${
                   viewMode === 'list' ? 'flex items-start gap-4' : ''
                 }`}
                 style={{ 
-                  backgroundColor: 'var(--chatty-button)',
-                  borderColor: 'var(--chatty-line)'
+                  backgroundColor: 'transparent'
                 }}
               >
                 <div className={`flex items-start gap-3 ${viewMode === 'list' ? 'flex-shrink-0' : 'mb-3'}`}>
-                  <div className="w-12 h-12 rounded-lg flex items-center justify-center overflow-hidden" style={{ backgroundColor: '#feffaf' }}>
+                  <div className="w-12 h-12 rounded-lg flex items-center justify-center overflow-hidden">
                     {gpt.avatar ? (
                       <img src={gpt.avatar} alt={gpt.name} className="w-full h-full object-cover" />
                     ) : (
@@ -375,11 +429,11 @@ export default function ExplorePage() {
                     </p>
                     
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'var(--chatty-button)', color: 'var(--chatty-text)' }}>
+                      <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'transparent', color: 'var(--chatty-text)' }}>
                         {gpt.category}
                       </span>
                       {gpt.tags.slice(0, 2).map((tag, index) => (
-                        <span key={index} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: '#feffaf', color: 'var(--chatty-text)' }}>
+                        <span key={index} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'transparent', color: 'var(--chatty-text)' }}>
                           {tag}
                         </span>
                       ))}
@@ -405,11 +459,9 @@ export default function ExplorePage() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleLike(gpt.id)}
-                    className={`p-2 rounded transition-colors ${
-                      gpt.isLiked ? 'bg-opacity-100' : 'bg-opacity-0'
-                    }`}
+                    className="p-2 rounded transition-colors"
                     style={{ 
-                      backgroundColor: gpt.isLiked ? '#feffaf' : 'transparent',
+                      backgroundColor: 'transparent',
                       color: 'var(--chatty-text)'
                     }}
                   >
@@ -420,11 +472,11 @@ export default function ExplorePage() {
                     onClick={() => handleDownload(gpt.id)}
                     className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
                     style={{ 
-                      backgroundColor: 'var(--chatty-button)', 
+                      backgroundColor: 'transparent', 
                       color: 'var(--chatty-text)' 
                     }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#ADA587'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ADA587'}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                   >
                     {gpt.isDownloaded ? 'Downloaded' : 'Download'}
                   </button>

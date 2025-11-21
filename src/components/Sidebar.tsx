@@ -289,7 +289,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             onMouseLeave={(e) => handleNavHover(e, '/app/codex', false)}
           >
             <Clock size={16} />
-            {!collapsed && <span>Codex</span>}
+            {!collapsed && <span>Code</span>}
           </button>
 
           <button 
@@ -346,7 +346,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 marginTop: collapsed ? '-9px' : '0px'
               }}
             />
-            {!collapsed && <span>Explore</span>}
+            {!collapsed && <span>SimForge</span>}
           </button>
           
           {/* Custom GPTs */}
