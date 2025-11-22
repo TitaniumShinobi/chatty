@@ -13,7 +13,7 @@
   --chatty-highlight: #ffffd7; /* Highlight for hover states */
   --chatty-button: #ADA587; /* Primary button color */
   --chatty-line: #ADA587; /* Borders, dividers, structural elements */
-  --chatty-text: #3A2E14; /* Primary text color */
+  --chatty-text: #3A2E14; /* Primary text color (dark for light background) */
   --chatty-text-inverse: #ffffeb; /* Inverse text (for buttons) */
   --chatty-status-success: #22c55e; /* Green for success */
   --chatty-status-error: #dc2626; /* Red for errors */
@@ -44,13 +44,37 @@
   }
   
   body {
-    @apply bg-app-pale-50 text-app-text-900;
+    background-color: var(--chatty-bg-main);
+    color: var(--chatty-text);
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+
+  /* Override tailwind text utility colors to follow theme vars */
+  .text-app-text-900 { color: var(--chatty-text) !important; }
+  .text-app-text-800 { color: var(--chatty-text) !important; opacity: 0.85; }
+  .text-app-text-700 { color: var(--chatty-text) !important; opacity: 0.75; }
+  .text-app-text-600 { color: var(--chatty-text) !important; opacity: 0.65; }
 
   .chatty-placeholder::placeholder {
     color: #ADA587;
     opacity: 1;
+  }
+
+  /* Slim scrollbars globally */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--chatty-highlight) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--chatty-highlight);
+    border-radius: 999px;
   }
 }
 

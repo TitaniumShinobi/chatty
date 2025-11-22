@@ -44,6 +44,7 @@ export interface GPTConfig {
   conversationModel?: string;
   creativeModel?: string;
   codingModel?: string;
+  orchestrationMode?: 'lin' | 'custom';
   files: GPTFile[];
   actions: GPTAction[];
   hasPersistentMemory: boolean; // VVAULT integration - defaults to true

@@ -63,11 +63,53 @@ export class GPTManager {
       )
     `);
 
+    // GPT Versions table for draft history
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS gpt_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        gpt_id TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        snapshot TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (gpt_id) REFERENCES gpts (id) ON DELETE CASCADE
+      )
+    `);
+
     // Ensure construct_callsign column exists for older databases
     const hasConstructCallsign = this.db.prepare(`PRAGMA table_info(gpts)`).all().some(col => col.name === 'construct_callsign');
     if (!hasConstructCallsign) {
       this.db.exec(`ALTER TABLE gpts ADD COLUMN construct_callsign TEXT`);
     }
+
+    // Ensure per-mode model columns and orchestration_mode exist
+    const columns = this.db.prepare(`PRAGMA table_info(gpts)`).all();
+    const hasConversationModel = columns.some(col => col.name === 'conversation_model');
+    const hasCreativeModel = columns.some(col => col.name === 'creative_model');
+    const hasCodingModel = columns.some(col => col.name === 'coding_model');
+    const hasOrchestrationMode = columns.some(col => col.name === 'orchestration_mode');
+
+    if (!hasConversationModel) {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN conversation_model TEXT`);
+    }
+    if (!hasCreativeModel) {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN creative_model TEXT`);
+    }
+    if (!hasCodingModel) {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN coding_model TEXT`);
+    }
+    if (!hasOrchestrationMode) {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN orchestration_mode TEXT`);
+    }
+
+    // Backfill defaults for existing rows
+    this.db.exec(`
+      UPDATE gpts
+      SET 
+        conversation_model = COALESCE(conversation_model, model_id),
+        creative_model = COALESCE(creative_model, model_id),
+        coding_model = COALESCE(coding_model, model_id),
+        orchestration_mode = COALESCE(orchestration_mode, 'lin')
+    `);
 
     // GPT Files table
     this.db.exec(`
@@ -189,8 +231,12 @@ export class GPTManager {
     }
 
     const stmt = this.db.prepare(`
-      INSERT INTO gpts (id, name, description, instructions, conversation_starters, avatar, capabilities, construct_callsign, model_id, is_active, created_at, updated_at, user_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO gpts (
+        id, name, description, instructions, conversation_starters, avatar, capabilities, construct_callsign, 
+        model_id, conversation_model, creative_model, coding_model, orchestration_mode, 
+        is_active, created_at, updated_at, user_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -203,11 +249,18 @@ export class GPTManager {
       JSON.stringify(config.capabilities || {}),
       constructCallsign,
       config.modelId,
+      config.conversationModel || config.modelId,
+      config.creativeModel || config.modelId,
+      config.codingModel || config.modelId,
+      config.orchestrationMode || 'lin',
       config.isActive ? 1 : 0,
       now,
       now,
       config.userId || 'anonymous'
     );
+
+    // Record initial version history (version 1)
+    this.recordVersion(id, 1, { ...config, constructCallsign });
 
     return {
       id,
@@ -216,7 +269,11 @@ export class GPTManager {
       actions: [],
       createdAt: now,
       updatedAt: now,
-      constructCallsign: constructCallsign
+      constructCallsign: constructCallsign,
+      conversationModel: config.conversationModel || config.modelId,
+      creativeModel: config.creativeModel || config.modelId,
+      codingModel: config.codingModel || config.modelId,
+      orchestrationMode: config.orchestrationMode || 'lin'
     };
   }
 
@@ -239,6 +296,10 @@ export class GPTManager {
       capabilities: JSON.parse(row.capabilities || '{}'),
       constructCallsign: row.construct_callsign,
       modelId: row.model_id,
+      conversationModel: row.conversation_model,
+      creativeModel: row.creative_model,
+      codingModel: row.coding_model,
+      orchestrationMode: row.orchestration_mode || 'lin',
       files,
       actions,
       isActive: Boolean(row.is_active),
@@ -320,6 +381,10 @@ export class GPTManager {
             capabilities,
             constructCallsign: row.construct_callsign,
             modelId: row.model_id,
+            conversationModel: row.conversation_model,
+            creativeModel: row.creative_model,
+            codingModel: row.coding_model,
+            orchestrationMode: row.orchestration_mode || 'lin',
             files,
             actions,
             isActive: Boolean(row.is_active),
@@ -345,9 +410,25 @@ export class GPTManager {
     const existing = await this.getGPT(id);
     if (!existing) return null;
 
+    const nextVersion = this.getNextVersion(id);
+
     const stmt = this.db.prepare(`
       UPDATE gpts 
-      SET name = ?, description = ?, instructions = ?, conversation_starters = ?, avatar = ?, capabilities = ?, construct_callsign = ?, model_id = ?, is_active = ?, updated_at = ?
+      SET 
+        name = ?, 
+        description = ?, 
+        instructions = ?, 
+        conversation_starters = ?, 
+        avatar = ?, 
+        capabilities = ?, 
+        construct_callsign = ?, 
+        model_id = ?, 
+        conversation_model = ?, 
+        creative_model = ?, 
+        coding_model = ?, 
+        orchestration_mode = ?, 
+        is_active = ?, 
+        updated_at = ?
       WHERE id = ?
     `);
 
@@ -360,10 +441,17 @@ export class GPTManager {
       JSON.stringify(updates.capabilities || existing.capabilities),
       updates.constructCallsign !== undefined ? updates.constructCallsign : existing.constructCallsign,
       updates.modelId || existing.modelId,
+      updates.conversationModel || existing.conversationModel || existing.modelId,
+      updates.creativeModel || existing.creativeModel || existing.modelId,
+      updates.codingModel || existing.codingModel || existing.modelId,
+      updates.orchestrationMode || existing.orchestrationMode || 'lin',
       updates.isActive !== undefined ? (updates.isActive ? 1 : 0) : (existing.isActive ? 1 : 0),
       new Date().toISOString(),
       id
     );
+
+    // Record version snapshot
+    this.recordVersion(id, nextVersion, { ...existing, ...updates });
 
     return await this.getGPT(id);
   }
@@ -372,6 +460,25 @@ export class GPTManager {
     const stmt = this.db.prepare('DELETE FROM gpts WHERE id = ?');
     const result = stmt.run(id);
     return result.changes > 0;
+  }
+
+  getNextVersion(gptId) {
+    const stmt = this.db.prepare('SELECT MAX(version) as maxVersion FROM gpt_versions WHERE gpt_id = ?');
+    const row = stmt.get(gptId);
+    const maxVersion = row?.maxVersion || 0;
+    return maxVersion + 1;
+  }
+
+  recordVersion(gptId, version, snapshot) {
+    try {
+      const stmt = this.db.prepare(`
+        INSERT INTO gpt_versions (gpt_id, version, snapshot)
+        VALUES (?, ?, ?)
+      `);
+      stmt.run(gptId, version, JSON.stringify(snapshot || {}));
+    } catch (error) {
+      console.warn(`⚠️ [GPTManager] Failed to record version for ${gptId}:`, error.message);
+    }
   }
 
   // File Management

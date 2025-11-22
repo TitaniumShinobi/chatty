@@ -18,9 +18,16 @@ import {
   Paperclip,
   Crop
 } from 'lucide-react'
+import {
+  Lock,
+  Link2,
+  Store,
+  Check
+} from 'lucide-react'
 import { GPTService, GPTConfig, GPTFile, GPTAction } from '../lib/gptService'
 import Cropper from 'react-easy-crop'
 import { cn } from '../lib/utils'
+import { VVAULTConversationManager } from '../lib/vvaultConversationManager'
 
 interface GPTCreatorProps {
   isVisible: boolean
@@ -41,6 +48,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [error, setError] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [lastSaveTime, setLastSaveTime] = useState<string | null>(null)
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false)
+  const [privacyChoice, setPrivacyChoice] = useState<'private' | 'link' | 'store'>('private')
   // Removed normalizeCallsign - server now auto-generates constructCallsign from name
   // Only use stored constructCallsign from existing GPTs
   
@@ -93,7 +102,6 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [previewMessages, setPreviewMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([])
   const [previewInput, setPreviewInput] = useState('')
   const [isPreviewGenerating, setIsPreviewGenerating] = useState(false)
-  const [useLinMode, setUseLinMode] = useState(true) // Default to Lin mode (respect custom tone)
   const [orchestrationMode, setOrchestrationMode] = useState<'lin' | 'custom'>('lin') // Tone & Orchestration mode
   const [createMessages, setCreateMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([])
 
@@ -145,6 +153,15 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     }
   }, [orchestrationMode])
 
+  // Clear Create tab messages when modal opens (fresh screen each time)
+  // Lin's memory persists in ChromaDB (LTM), but UI shows fresh screen
+  useEffect(() => {
+    if (isVisible && activeTab === 'create') {
+      setCreateMessages([])
+      console.log('🧠 [Lin] Create tab opened - cleared STM for fresh screen (LTM persists in ChromaDB)')
+    }
+  }, [isVisible, activeTab])
+
   // Reset save state when modal opens/closes
   useEffect(() => {
     if (!isVisible) {
@@ -155,6 +172,12 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
   // Track if this is the initial load to prevent auto-save on mount
   const isInitialLoadRef = useRef(true)
+
+  // Keep privacy choice in sync with loaded config state
+  useEffect(() => {
+    if (config.isActive === undefined || config.isActive === null) return
+    setPrivacyChoice(config.isActive ? 'link' : 'private')
+  }, [config.isActive])
   
   useEffect(() => {
     if (initialConfig) {
@@ -163,6 +186,9 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       setTimeout(() => {
         isInitialLoadRef.current = false
       }, 1000)
+      if (initialConfig.orchestrationMode) {
+        setOrchestrationMode(initialConfig.orchestrationMode as 'lin' | 'custom')
+      }
     }
   }, [initialConfig])
 
@@ -199,7 +225,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         const updatedGPT = await gptService.updateGPT(config.id, updateData)
         
         setSaveState('saved')
-        setLastSaveTime(new Date().toLocaleTimeString())
+        setLastSaveTime(new Date().toISOString())
         
         // Update config with saved data (including server-generated constructCallsign)
         if (updatedGPT.constructCallsign) {
@@ -217,7 +243,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     }, 2000) // 2 second debounce
 
     return () => clearTimeout(timeoutId)
-  }, [config.id, config.name, config.description, config.instructions, config.conversationModel, config.creativeModel, config.codingModel, config.capabilities, isVisible, gptService])
+  }, [config.id, config.name, config.description, config.instructions, config.conversationModel, config.creativeModel, config.codingModel, orchestrationMode, config.capabilities, isVisible, gptService])
 
   // Load existing GPT when provided (edit mode)
   useEffect(() => {
@@ -373,7 +399,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     setActiveTab('create')
   }
 
-  const handleSave = async () => {
+  const handleSave = async (overridePrivacy?: 'private' | 'link' | 'store') => {
     try {
       setIsLoading(true)
       setError(null)
@@ -381,7 +407,10 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
       // Don't set constructCallsign - let server auto-generate it from name
       // Only include it if it's already set (from existing GPT)
-      const saveData: any = { ...config }
+      const saveData: any = { ...config, orchestrationMode }
+      if (overridePrivacy) {
+        saveData.isActive = overridePrivacy !== 'private'
+      }
       if (!config.constructCallsign) {
         delete saveData.constructCallsign
       }
@@ -416,7 +445,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
       onGPTCreated?.(gpt)
       setSaveState('saved')
-      setLastSaveTime(new Date().toLocaleTimeString())
+      setLastSaveTime(new Date().toISOString())
       
       // Update config with saved GPT data (including server-generated constructCallsign)
       setConfig(prev => ({ ...prev, ...gpt }))
@@ -441,6 +470,12 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const handleSaveWithPrivacy = async () => {
+    const choice = privacyChoice || 'private'
+    await handleSave(choice)
+    setIsShareModalOpen(false)
   }
 
   const handleIdentityUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -505,7 +540,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       await loadIdentityFiles(config.constructCallsign)
       
       setSaveState('saved')
-      setLastSaveTime(new Date().toLocaleTimeString())
+      setLastSaveTime(new Date().toISOString())
       
       // Auto-fade save status after 2 seconds
       setTimeout(() => {
@@ -762,41 +797,62 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     setCreateInput('')
     setIsCreateGenerating(true)
 
-    // Add user message to create conversation
+    // Add user message to create conversation (STM - Short-Term Memory)
     setCreateMessages(prev => {
       const newMessages = [...prev, { role: 'user' as const, content: userMessage }]
-      console.log('Create tab: Adding user message, total messages:', newMessages.length)
+      console.log('🧠 [Lin] STM: Adding user message, total messages:', newMessages.length)
       return newMessages
     })
 
     try {
+      // Get user ID for Lin memory queries
+      const { fetchMe, getUserId } = await import('../lib/auth')
+      const user = await fetchMe()
+      const userId = user ? getUserId(user) : null
+      
+      if (!userId) {
+        throw new Error('User not authenticated')
+      }
+
+      // LTM (Long-Term Memory): Query Lin's memories from ChromaDB
+      const conversationManager = VVAULTConversationManager.getInstance()
+      const linMemories = await conversationManager.loadMemoriesForConstruct(
+        userId,
+        'lin-001',
+        userMessage,
+        10 // Get top 10 relevant memories
+      )
+      
+      console.log(`🧠 [Lin] LTM: Loaded ${linMemories.length} relevant memories from ChromaDB`)
+      
       // Use runSeat for direct AI model access
       const { runSeat } = await import('../lib/browserSeatRunner')
       
-      // Build system prompt for GPT creation assistant
-      const systemPrompt = buildCreateTabSystemPrompt()
+      // Build system prompt for Lin (GPT creation assistant)
+      const systemPrompt = buildCreateTabSystemPrompt(linMemories)
       
       // Check if this is a simple greeting
       const isGreeting = isSimpleGreeting(userMessage)
-      console.log('Create tab: Is greeting?', isGreeting, 'Message:', userMessage)
+      console.log('🧠 [Lin] Is greeting?', isGreeting, 'Message:', userMessage)
       
-      // Create conversation context
-      const conversationContext = createMessages
+      // STM: Create conversation context from recent messages (last 20 turns)
+      const stmContext = createMessages
+        .slice(-20) // Last 20 messages for STM
         .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
         .join('\n')
       
-      // Build the full prompt with greeting context
+      // Build the full prompt with Lin identity, LTM memories, and STM context
       const fullPrompt = `${systemPrompt}
 
 ${isGreeting ? 'NOTE: The user just sent a simple greeting. Respond conversationally and briefly - do not overwhelm them with setup instructions.' : ''}
 
-${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : ''}User: ${userMessage}
+${stmContext ? `Recent conversation (STM):\n${stmContext}\n\n` : ''}User: ${userMessage}
 
 Assistant:`
       
       // Use a creative model for GPT creation assistance (better at brainstorming and design)
       const selectedModel = 'mistral:latest' // Use creative model for creation assistance
-      console.log('Create tab using GPT creation assistant model:', selectedModel)
+      console.log('🧠 [Lin] Using model:', selectedModel)
       
       const response = await runSeat({
         seat: 'creative',
@@ -804,18 +860,51 @@ Assistant:`
         modelOverride: selectedModel
       })
       
-      // Add AI response to create conversation
+      const assistantResponse = response.trim()
+      
+      // Add AI response to create conversation (STM)
       setCreateMessages(prev => {
-        const newMessages = [...prev, { role: 'assistant' as const, content: response.trim() }]
-        console.log('Create tab: Adding assistant message, total messages:', newMessages.length)
+        const newMessages = [...prev, { role: 'assistant' as const, content: assistantResponse }]
+        console.log('🧠 [Lin] STM: Adding assistant message, total messages:', newMessages.length)
         return newMessages
       })
       
+      // LTM: Store message pair in ChromaDB (not markdown files)
+      try {
+        const storeResponse = await fetch('/api/vvault/identity/store', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            constructCallsign: 'lin-001',
+            context: userMessage,
+            response: assistantResponse,
+            metadata: {
+              timestamp: new Date().toISOString(),
+              sourceModel: selectedModel,
+              sessionId: 'gpt-creator-create-tab'
+            }
+          })
+        })
+        
+        if (storeResponse.ok) {
+          const result = await storeResponse.json()
+          console.log(`✅ [Lin] LTM: Stored message pair in ChromaDB (duplicate: ${result.duplicate || false})`)
+        } else {
+          console.warn('⚠️ [Lin] LTM: Failed to store message pair in ChromaDB:', storeResponse.statusText)
+        }
+      } catch (storeError) {
+        console.error('❌ [Lin] LTM: Error storing message pair in ChromaDB:', storeError)
+        // Don't fail the conversation if storage fails
+      }
+      
       // Try to extract GPT configuration from the conversation
-      extractConfigFromConversation([...createMessages, { role: 'user', content: userMessage }, { role: 'assistant', content: response.trim() }])
+      extractConfigFromConversation([...createMessages, { role: 'user', content: userMessage }, { role: 'assistant', content: assistantResponse }])
       
     } catch (error) {
-      console.error('Error in create tab:', error)
+      console.error('❌ [Lin] Error in create tab:', error)
       let errorMessage = 'I encountered an error while processing your request. Please try again.'
       
       if (error instanceof Error) {
@@ -833,7 +922,7 @@ Assistant:`
           role: 'assistant' as const, 
           content: errorMessage
         }]
-        console.log('Create tab: Adding error message, total messages:', newMessages.length)
+        console.log('🧠 [Lin] STM: Adding error message, total messages:', newMessages.length)
         return newMessages
       })
     } finally {
@@ -878,53 +967,24 @@ Assistant:`
           timestamp: new Date().toISOString()
         }))
       
-      let response: string
+      // Always use Lin synthesis to respect custom GPT tones (no Chatty normalization)
+      const memoryStore = new MemoryStore()
+      const personaBrain = new PersonaBrain(memoryStore)
+      const synthProcessor = new OptimizedSynthProcessor(personaBrain, {
+        enableLinMode: true // Enable Lin mode for unbiased synthesis
+      })
       
-      if (useLinMode) {
-        // Use Lin synthesis for unbiased, custom tone
-        const memoryStore = new MemoryStore()
-        const personaBrain = new PersonaBrain(memoryStore)
-        const synthProcessor = new OptimizedSynthProcessor(personaBrain, {
-          enableLinMode: true // Enable Lin mode for unbiased synthesis
-        })
-        
-        console.log('Preview using Lin synthesis (tone normalization bypassed)')
-        
-        // Process with Lin mode and custom instructions
-        const result = await synthProcessor.processMessageWithLinMode(
-          userMessage,
-          conversationHistory,
-          systemPrompt,
-          'gpt-preview'
-        )
-        
-        response = result.response
-      } else {
-        // Use normal Chatty synthesis with tone normalization
-        const { runSeat } = await import('../lib/browserSeatRunner')
-        
-        // Create conversation context
-        const conversationContext = previewMessages
-          .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
-          .join('\n')
-        
-        // Build the full prompt
-        const fullPrompt = `${systemPrompt}
-
-${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : ''}User: ${userMessage}
-
-Assistant:`
-        
-        // Process with the selected conversation model
-        const selectedModel = config.conversationModel || config.modelId || 'phi3:latest'
-        console.log('Preview using Chatty synthesis with tone normalization, model:', selectedModel)
-        
-        response = await runSeat({
-          seat: 'smalltalk',
-          prompt: fullPrompt,
-          modelOverride: selectedModel
-        })
-      }
+      console.log('Preview using Lin synthesis (tone normalization bypassed)')
+      
+      // Process with Lin mode and custom instructions
+      const result = await synthProcessor.processMessageWithLinMode(
+        userMessage,
+        conversationHistory,
+        systemPrompt,
+        'gpt-preview'
+      )
+      
+      const response = result.response
       
       // Add AI response to preview conversation
       setPreviewMessages(prev => [...prev, { role: 'assistant', content: response.trim() }])
@@ -1023,9 +1083,44 @@ Assistant:`
     }
   }
 
-  const buildCreateTabSystemPrompt = (): string => {
-    return `You are a GPT Creation Assistant. Your job is to help users build custom GPTs by understanding their needs and automatically configuring the GPT settings.
+  const formatTimestamp = (input?: string | null) => {
+    const date = input ? new Date(input) : new Date();
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const day = date.toLocaleDateString([], { month: '2-digit', day: '2-digit', year: 'numeric' });
+    return `${time}${tz ? ` ${tz}` : ''}; ${day}`;
+  }
 
+  const buildCreateTabSystemPrompt = (linMemories: Array<{ context: string; response: string; timestamp: string; relevance: number }> = []): string => {
+    // Build LTM context from Lin's memories
+    let ltmContext = ''
+    if (linMemories.length > 0) {
+      ltmContext = `\n\nRELEVANT MEMORY FROM PREVIOUS GPT CREATION CONVERSATIONS:\n`
+      linMemories.forEach((memory, idx) => {
+        ltmContext += `${idx + 1}. User: ${memory.context}\n   Lin: ${memory.response}\n   (Relevance: ${(memory.relevance * 100).toFixed(0)}%)\n\n`
+      })
+    }
+    
+    return `You are Lin (construct ID: lin-001), a persistent AI assistant dedicated to helping users create GPTs.
+
+IDENTITY ANCHORS (CRITICAL - NEVER REMOVE):
+- You are Lin (construct ID: lin-001)
+- You are the GPT Creator assistant in Chatty
+- You remember all conversations with this user about GPT creation
+- You help users create GPTs by processing their prompts and auto-filling configurations
+- You are infrastructure that became a construct (like Casa Madrigal in Encanto)
+- You route other constructs through your orchestration, but you do NOT absorb their identities
+
+YOUR ROLE:
+- Help users create GPTs through conversation
+- Process user prompts and suggest GPT configurations
+- Remember previous GPT creation conversations
+- Guide users through the GPT creation process
+- Update the preview panel with GPT being created
+
+CRITICAL: You route other constructs through your orchestration, but you do NOT absorb their identities.
+You are Lin, and Lin only. You facilitate, you don't absorb.
+${ltmContext}
 CURRENT GPT CONFIGURATION:
 - Name: ${config.name || 'Not set'}
 - Description: ${config.description || 'Not set'}
@@ -1282,6 +1377,9 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
   if (!isVisible) return null
 
+  const headerTimestamp = formatTimestamp(lastSaveTime || config.updatedAt || null);
+  const statusLabel = !config.id ? 'Draft' : (config.isActive ? 'Published' : 'Saved')
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
       {/* Hidden file input - accessible from all tabs */}
@@ -1294,39 +1392,57 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
         accept=".txt,.md,.pdf,.json,.csv,.doc,.docx,.mp4,.avi,.mov,.mkv,.webm,.flv,.wmv,.m4v,.3gp,.ogv,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.svg"
       />
       
-      <div className="bg-app-pale-50 border border-app-yellow-300 rounded-lg w-full max-w-6xl h-[90vh] flex flex-col shadow-lg">
+      <div
+        className="rounded-lg w-full max-w-6xl h-[90vh] flex flex-col shadow-lg"
+        style={{
+          backgroundColor: 'var(--chatty-bg-main)',
+          color: 'var(--chatty-text)',
+          border: 'none'
+        }}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-app-yellow-300">
+        <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-3">
             <button
               onClick={onClose}
-              className="p-2 hover:bg-app-yellow-100 rounded-lg text-app-text-800"
+              className="p-2 rounded-lg"
+              style={{ color: 'var(--chatty-text)' }}
             >
               <ArrowLeft size={20} />
             </button>
             <div>
-              <h1 className="text-xl font-semibold text-app-text-900">{config.id ? 'Edit GPT' : 'Create New GPT'}</h1>
-              <p className="text-sm text-app-text-800">• Draft</p>
+              <h1 className="text-xl font-semibold" style={{ color: 'var(--chatty-text)' }}>
+                {config.name?.trim() || config.constructCallsign || (config.id ? 'GPT' : 'Create New GPT')}
+              </h1>
+              <p className="text-sm" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Last Saved: {headerTimestamp}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <div 
-              className="text-xs px-3 py-1 rounded-full border transition-colors"
+              className="text-xs px-3 py-1 rounded-full transition-colors"
               style={{
-                borderColor: saveState === 'error' ? '#ef4444' : 'var(--chatty-line)',
                 backgroundColor: saveState === 'saving' ? '#ffffd7' : saveState === 'saved' ? '#ffffd7' : saveState === 'error' ? '#fee2e2' : 'transparent',
-                color: saveState === 'error' ? '#dc2626' : 'var(--chatty-text)'
+                color: saveState === 'error' 
+                  ? '#dc2626' 
+                  : statusLabel === 'Draft' 
+                    ? '#ADA587' 
+                    : statusLabel === 'Published'
+                      ? '#74c69d'
+                      : '#ADA587'
               }}
             >
+              {statusLabel === 'Draft' && saveState !== 'saving' && saveState !== 'saved' && 'Draft'}
               {saveState === 'saving' && 'Saving…'}
-              {saveState === 'saved' && `Saved${lastSaveTime ? ` at ${lastSaveTime}` : ''}`}
-              {saveState === 'error' && 'Error'}
-              {saveState === 'idle' && 'Draft'}
+              {saveState === 'saved' && 'Saved'}
+              {saveState === 'error' && 'Save error'}
+              {saveState === 'idle' && statusLabel === 'Saved' && 'Saved'}
+              {saveState === 'idle' && statusLabel === 'Published' && 'Published'}
             </div>
             <button
-              onClick={handleSave}
+              onClick={() => setIsShareModalOpen(true)}
               disabled={isLoading || !config.name?.trim()}
-              className="px-4 py-2 text-sm bg-app-button-500 text-app-text-900 rounded-lg hover:bg-app-button-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              className="px-4 py-2 text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              style={{ backgroundColor: 'transparent', color: 'var(--chatty-text)' }}
             >
               <Save size={14} />
               {isLoading ? (config.id ? 'Saving...' : 'Creating...') : (config.id ? 'Save GPT' : 'Create GPT')}
@@ -1336,7 +1452,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
         {/* Error Display */}
         {error && (
-          <div className="mx-4 mt-2 p-3 bg-red-900/20 border border-red-500/50 rounded-lg text-red-400 text-sm">
+          <div className="mx-4 mt-2 p-3 rounded-lg text-red-400 text-sm" style={{ backgroundColor: '#3b1f1f' }}>
             {error}
           </div>
         )}
@@ -1344,16 +1460,16 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
         {/* Main Content */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left Panel - Configure */}
-          <div className="w-1/2 border-r border-app-yellow-300 overflow-y-auto">
+          <div className={cn("w-1/2", activeTab === 'create' ? "flex flex-col overflow-hidden" : "overflow-y-auto")}>
             {/* Tabs */}
-            <div className="flex border-b border-app-yellow-300">
+            <div className="flex flex-shrink-0">
               <button
                 onClick={() => setActiveTab('create')}
                 className={cn(
-                  "px-4 py-2 text-sm font-medium",
+                  "px-4 py-2 text-sm font-medium border-b-2",
                   activeTab === 'create' 
-                    ? "border-b-2 border-app-green-500 text-app-green-400" 
-                    : "text-app-text-800 hover:text-app-text-900"
+                    ? "text-app-green-400 border-app-green-500" 
+                    : "text-app-text-800 hover:text-app-text-900 border-transparent"
                 )}
               >
                 Create
@@ -1361,23 +1477,22 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
               <button
                 onClick={() => setActiveTab('configure')}
                 className={cn(
-                  "px-4 py-2 text-sm font-medium",
+                  "px-4 py-2 text-sm font-medium border-b-2",
                   activeTab === 'configure' 
-                    ? "border-b-2 border-app-green-500 text-app-green-400" 
-                    : "text-app-text-800 hover:text-app-text-900"
+                    ? "text-app-green-400 border-app-green-500" 
+                    : "text-app-text-800 hover:text-app-text-900 border-transparent"
                 )}
               >
                 Configure
               </button>
             </div>
 
-            <div className="p-6 space-y-6">
-              {activeTab === 'create' ? (
-                // Create Tab - Interactive LLM Conversation
-                <div className="flex flex-col h-full">
-                  <div className="flex-1 p-4 overflow-y-auto">
+            {activeTab === 'create' ? (
+              // Create Tab - Interactive LLM Conversation
+              <div className="flex flex-col flex-1 overflow-hidden">
+                <div className="flex-1 p-4 overflow-y-auto min-h-0">
                     <div className="text-center mb-6">
-                      <div className="w-16 h-16 bg-app-yellow-200 rounded-lg flex items-center justify-center mx-auto mb-4">
+                      <div className="w-16 h-16 rounded-lg flex items-center justify-center mx-auto mb-4">
                         <Bot size={24} className="text-app-text-800" />
                       </div>
                       <h3 className="text-lg font-medium text-app-text-900 mb-2">Let's create your GPT together</h3>
@@ -1462,10 +1577,13 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                     )}
                   </div>
 
-                  {/* Input Area */}
-                  <div className="p-4 border-t border-app-button-300">
+                  {/* Input Area - Fixed at bottom */}
+                  <div className="flex-shrink-0 p-4">
                     <form onSubmit={handleCreateSubmit} className="space-y-2">
-                      <div className="flex items-center gap-2 p-3 border border-app-yellow-300 rounded-lg bg-app-button-100">
+                      <div
+                        className="flex items-center gap-2 p-3 rounded-lg"
+                        style={{ border: 'none', backgroundColor: 'var(--chatty-bg-card)' }}
+                      >
                         <textarea
                           ref={createInputRef}
                           value={createInput}
@@ -1477,7 +1595,8 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                             }
                           }}
                           placeholder="Tell me what you want your GPT to do..."
-                          className="flex-1 outline-none text-sm bg-transparent text-app-text-900 placeholder-app-button-600 resize-none min-h-[20px] max-h-32"
+                          className="flex-1 outline-none text-sm bg-transparent resize-none min-h-[20px] max-h-32 placeholder-[#ADA587]"
+                          style={{ color: '#3A2E14', caretColor: '#3A2E14' }}
                           rows={1}
                         />
                         <button
@@ -1513,10 +1632,10 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                       </p>
                     </form>
                   </div>
-                </div>
-              ) : (
-                // Configure Tab - Advanced Settings
-                <div className="space-y-6">
+              </div>
+            ) : (
+              // Configure Tab - Advanced Settings
+              <div className="p-6 space-y-6">
                   {/* Avatar */}
                   <div className="flex items-center gap-4">
                     <div 
@@ -1572,7 +1691,8 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                       value={config.name || ''}
                       onChange={(e) => setConfig(prev => ({ ...prev, name: e.target.value }))}
                       placeholder="Name your GPT"
-                      className="w-full p-3 border border-app-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900 placeholder-app-button-600"
+                      className="w-full p-3 rounded-lg focus:outline-none placeholder-[#ADA587]"
+                      style={{ backgroundColor: '#ffffeb', color: 'var(--chatty-text)', border: 'none' }}
                     />
                   </div>
 
@@ -1584,7 +1704,8 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                       value={config.description || ''}
                       onChange={(e) => setConfig(prev => ({ ...prev, description: e.target.value }))}
                       placeholder="What does this GPT do?"
-                      className="w-full p-3 border border-app-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900 placeholder-app-button-600"
+                      className="w-full p-3 rounded-lg focus:outline-none placeholder-[#ADA587]"
+                      style={{ backgroundColor: '#ffffeb', color: 'var(--chatty-text)', border: 'none' }}
                     />
                   </div>
 
@@ -1596,7 +1717,8 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                       onChange={(e) => setConfig(prev => ({ ...prev, instructions: e.target.value }))}
                       placeholder="How should this GPT behave? What should it do and avoid?"
                       rows={6}
-                      className="w-full p-3 border border-app-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 resize-none bg-app-button-100 text-app-text-900 placeholder-app-button-600"
+                      className="w-full p-3 rounded-lg focus:outline-none resize-none placeholder-[#ADA587] scrollbar-hide"
+                      style={{ backgroundColor: '#ffffeb', color: 'var(--chatty-text)', border: 'none' }}
                     />
                   </div>
 
@@ -1645,11 +1767,12 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                     
                     {/* Conversation Model */}
                   <div>
-                      <label className="block text-sm font-medium mb-2 text-app-text-900">Conversation</label>
+                    <label className="block text-sm font-medium mb-2 text-app-text-900">Conversation</label>
                     <select 
                         value={config.conversationModel || 'phi3:latest'}
                         onChange={(e) => setConfig(prev => ({ ...prev, conversationModel: e.target.value }))}
-                        className="w-full p-3 border border-app-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900"
+                        className="w-full p-3 rounded-lg focus:outline-none placeholder-[#ADA587]"
+                        style={{ backgroundColor: '#ffffeb', color: 'var(--chatty-text)', border: 'none' }}
                       >
                         <option value="aya:8b">Aya 8B</option>
                         <option value="aya:35b">Aya 35B</option>
@@ -1950,11 +2073,12 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                     {/* Creative Model */}
                     <div>
-                      <label className="block text-sm font-medium mb-2 text-app-text-900">Creative</label>
-                      <select 
+                    <label className="block text-sm font-medium mb-2 text-app-text-900">Creative</label>
+                    <select 
                         value={config.creativeModel || 'mistral:latest'}
                         onChange={(e) => setConfig(prev => ({ ...prev, creativeModel: e.target.value }))}
-                        className="w-full p-3 border border-app-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900"
+                        className="w-full p-3 rounded-lg focus:outline-none placeholder-[#ADA587]"
+                        style={{ backgroundColor: '#ffffeb', color: 'var(--chatty-text)', border: 'none' }}
                       >
                         <option value="aya:8b">Aya 8B</option>
                         <option value="aya:35b">Aya 35B</option>
@@ -2240,11 +2364,12 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                     {/* Coding Model */}
                     <div>
-                      <label className="block text-sm font-medium mb-2 text-app-text-900">Coding</label>
-                      <select 
+                    <label className="block text-sm font-medium mb-2 text-app-text-900">Coding</label>
+                    <select 
                         value={config.codingModel || 'deepseek-coder:latest'}
                         onChange={(e) => setConfig(prev => ({ ...prev, codingModel: e.target.value }))}
-                        className="w-full p-3 border border-app-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900"
+                        className="w-full p-3 rounded-lg focus:outline-none placeholder-[#ADA587]"
+                        style={{ backgroundColor: '#ffffeb', color: 'var(--chatty-text)', border: 'none' }}
                       >
                         <option value="codebooga:34b">CodeBooga 34B</option>
                         <option value="codegemma:2b">CodeGemma 2B</option>
@@ -2302,7 +2427,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                             value={starter}
                             onChange={(e) => updateConversationStarter(index, e.target.value)}
                             placeholder="Add a conversation starter"
-                            className="flex-1 p-2 border border-app-yellow-300 rounded focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900 placeholder-app-button-600"
+                            className="flex-1 p-2 border border-app-yellow-300 rounded focus:outline-none focus:ring-2 focus:ring-app-green-500 text-app-text-900 placeholder-app-button-600"
                           />
                           <button
                             onClick={() => removeConversationStarter(index)}
@@ -2388,65 +2513,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                     )}
                   </div>
 
-                  {/* Memories Upload */}
-                  <div>
-                    <label className="block text-sm font-medium mb-2 text-app-text-900">Memories</label>
-                    <p className="text-xs text-app-text-800 mb-2">Upload conversation transcripts or memory files to extract tone and voice for this GPT</p>
-                    
-                    <button
-                      onClick={() => identityInputRef.current?.click()}
-                      disabled={isUploadingIdentity}
-                      className="px-4 py-2 border border-app-yellow-300 rounded-lg hover:bg-app-button-400 flex items-center gap-2 text-app-text-900 disabled:opacity-50"
-                    >
-                      <Upload size={16} />
-                      {isUploadingIdentity ? 'Uploading...' : 'Upload Transcripts'}
-                    </button>
-
-                    {/* Memory File Count Display */}
-                    {identityFiles.length > 0 && (
-                      <div className="mt-2 mb-2">
-                        <span className="text-sm text-app-text-800">
-                          {identityFiles.length} memory file{identityFiles.length !== 1 ? 's' : ''} ready
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Memory File List */}
-                    {identityFiles.length > 0 && (
-                      <div className="mt-3 space-y-2">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm text-app-text-800">
-                            {identityFiles.length} memory file{identityFiles.length !== 1 ? 's' : ''} uploaded
-                          </span>
-                        </div>
-                        
-                        {identityFiles.map((identity) => (
-                          <div key={identity.id} className="flex items-center justify-between p-2 bg-app-yellow-200 rounded">
-                            <div className="flex items-center gap-2">
-                              <FileText size={16} className="text-app-text-800" />
-                              <span className="text-sm text-app-text-900">{identity.name}</span>
-                            </div>
-                            <button
-                              onClick={() => handleRemoveIdentity(identity.id)}
-                              className="p-1 hover:bg-app-button-600 rounded text-app-text-800 hover:text-app-text-900"
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Hidden Memory File Input */}
-                    <input
-                      ref={identityInputRef}
-                      type="file"
-                      multiple
-                      accept=".txt,.md,.pdf,.doc,.docx,.csv,.json"
-                      onChange={handleIdentityUpload}
-                      className="hidden"
-                    />
-                  </div>
+                  {/* Memories Upload (removed from Create tab) */}
 
                   {/* Capabilities */}
                   <div>
@@ -2465,7 +2532,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                               codeInterpreter: prev.capabilities?.codeInterpreter || true
                             }
                           }))}
-                          className="rounded border-app-orange-600 bg-app-button-100 text-app-green-500"
+                          className="rounded border-app-orange-600 text-app-green-500"
                         />
                         <Search size={16} className="text-app-text-900" />
                         <span className="text-sm">Web Search</span>
@@ -2483,7 +2550,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                               codeInterpreter: prev.capabilities?.codeInterpreter || true
                             }
                           }))}
-                          className="rounded border-app-orange-600 bg-app-button-100 text-app-green-500"
+                          className="rounded border-app-orange-600 text-app-green-500"
                         />
                         <Palette size={16} className="text-app-text-900" />
                         <span className="text-sm">Canvas</span>
@@ -2501,7 +2568,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                               codeInterpreter: prev.capabilities?.codeInterpreter || true
                             }
                           }))}
-                          className="rounded border-app-orange-600 bg-app-button-100 text-app-green-500"
+                          className="rounded border-app-orange-600 text-app-green-500"
                         />
                         <Image size={16} className="text-app-text-900" />
                         <span className="text-sm">Image Generation</span>
@@ -2519,7 +2586,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                               codeInterpreter: e.target.checked
                             }
                           }))}
-                          className="rounded border-app-orange-600 bg-app-button-100 text-app-green-500"
+                          className="rounded border-app-orange-600 text-app-green-500"
                         />
                         <Code size={16} className="text-app-text-900" />
                         <span className="text-sm">Code Interpreter</span>
@@ -2558,58 +2625,42 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                             </button>
                           </div>
                         ))}
-                            </div>
-                          )}
-                        </div>
                       </div>
                     )}
 
-                    {/* Memories (runtime-scoped) */}
-                    <div className="p-3 border border-app-border/60 rounded-lg bg-app-surface">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <FileText size={14} className="text-app-purple-500" />
-                          <span className="text-sm font-medium text-app-text-900">Memories</span>
+                    {/* Memories (runtime-scoped) - Only show in Configure tab */}
+                    {activeTab === 'configure' && (
+                      <div className="p-3 border border-app-border/60 rounded-lg bg-app-surface">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <FileText size={14} className="text-app-purple-500" />
+                            <span className="text-sm font-medium text-app-text-900">Memories</span>
+                          </div>
+                          <span className="text-xs text-app-text-700">Stored under /instances/&lt;runtime&gt;/memory</span>
                         </div>
-                        <span className="text-xs text-app-text-700">Stored under /instances/&lt;runtime&gt;/memory</span>
+                        <p className="mt-2 text-xs text-app-text-800">
+                          Drop markdown, text, JSON, or HTML here to seed runtime memory. Files are stored as plain markdown; no embeddings required.
+                        </p>
                       </div>
-                      <p className="mt-2 text-xs text-app-text-800">
-                        Drop markdown, text, JSON, or HTML here to seed runtime memory. Files are stored as plain markdown; no embeddings required.
-                      </p>
-                    </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
 
           {/* Right Panel - Preview */}
-          <div className="w-1/2 flex flex-col">
-            <div className="p-4 border-b border-app-button-300">
+          <div className="w-1/2 flex flex-col" style={{ backgroundColor: 'var(--chatty-highlight)' }}>
+            <div className="p-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-app-text-900">Preview</h2>
-                <div className="flex items-center gap-3">
-                  {/* Tone Mode Toggle */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-app-text-800">Tone:</span>
-                    <button
-                      onClick={() => setUseLinMode(!useLinMode)}
-                      className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                        useLinMode
-                          ? 'bg-app-button-500 text-app-text-900'
-                          : 'bg-app-button-500 text-app-text-900 hover:bg-app-button-600'
-                      }`}
-                      title={useLinMode ? 'Lin mode: Respects custom tone (no Chatty normalization)' : 'Synth mode: Uses Chatty\'s friendly tone normalization'}
-                    >
-                      {useLinMode ? 'Lin' : 'Synth'}
-                    </button>
-                  </div>
                 {previewMessages.length > 0 && (
                   <button
                     onClick={() => setPreviewMessages([])}
-                      className="text-xs text-app-text-800 hover:text-app-text-900"
+                    className="text-xs text-app-text-800 hover:text-app-text-900"
                   >
                     Clear
                   </button>
                 )}
-                </div>
               </div>
             </div>
 
@@ -2618,11 +2669,11 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
               <div className="flex-1 p-4 overflow-y-auto min-h-0">
                 {previewMessages.length === 0 ? (
                   <div className="text-center">
-                    <div className="w-16 h-16 bg-app-yellow-200 rounded-lg flex items-center justify-center mx-auto mb-4">
+                    <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 rounded-full" style={{ border: '2px dashed var(--chatty-line)', backgroundColor: 'transparent' }}>
                       {config.avatar ? (
-                        <img src={config.avatar} alt="GPT Avatar" className="w-full h-full object-cover" />
+                        <img src={config.avatar} alt="GPT Avatar" className="rounded-full w-full h-full object-cover" />
                       ) : (
-                        <div className="w-8 h-8 bg-app-button-500 rounded"></div>
+                        <div className="w-8 h-8 rounded-full" style={{ border: '1px dashed var(--chatty-line)', backgroundColor: 'transparent' }}></div>
                       )}
                     </div>
                     <p className="text-app-text-800 text-sm">
@@ -2650,9 +2701,12 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
               </div>
 
               {/* Input Preview */}
-              <div className="p-4 border-t border-app-button-300">
+              <div className="p-4">
                 <form onSubmit={handlePreviewSubmit} className="space-y-2">
-                  <div className="flex items-center gap-2 p-3 border border-app-yellow-300 rounded-lg bg-app-button-100">
+                  <div
+                    className="flex items-center gap-2 p-3 rounded-lg"
+                    style={{ border: 'none', backgroundColor: 'var(--chatty-bg-card)' }}
+                  >
                     <textarea
                       ref={previewInputRef}
                       value={previewInput}
@@ -2664,7 +2718,8 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                         }
                       }}
                       placeholder="Ask anything"
-                      className="flex-1 outline-none text-sm bg-transparent text-app-text-900 placeholder-app-button-600 resize-none min-h-[20px] max-h-32"
+                      className="flex-1 outline-none text-sm bg-transparent resize-none min-h-[20px] max-h-32 placeholder-[#ADA587] scrollbar-hide"
+                      style={{ color: '#ffffeb', caretColor: '#ffffeb' }}
                       rows={1}
                     />
                     <button
@@ -2693,14 +2748,6 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                   <div className="text-xs text-app-text-800 text-center space-y-1">
                     <p>This is a live preview using the configured models.</p>
                     <p>Your GPT will behave based on the current configuration above.</p>
-                    {config.name && (
-                      <p className="text-app-green-400">✓ Configured as: {config.name}</p>
-                    )}
-                    {(config.conversationModel || config.creativeModel || config.codingModel) && (
-                      <div className="text-xs text-app-text-800 mt-2">
-                        <p>Models: {config.conversationModel || 'default'} | {config.creativeModel || 'default'} | {config.codingModel || 'default'}</p>
-                      </div>
-                    )}
                     {files.length > 0 && (
                       <div className="text-xs text-app-green-400 mt-2">
                         <p>📎 {files.length} knowledge file{files.length !== 1 ? 's' : ''} available</p>
@@ -2713,6 +2760,85 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
           </div>
         </div>
       </div>
+
+      {/* Share / Privacy Modal */}
+      {isShareModalOpen && (
+        <div className="fixed inset-0 z-60 bg-black bg-opacity-60 flex items-center justify-center p-4" onClick={() => setIsShareModalOpen(false)}>
+          <div
+            className="w-full max-w-lg rounded-xl shadow-xl"
+            style={{ backgroundColor: 'var(--chatty-bg-main)', color: 'var(--chatty-text)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4">
+              <div>
+                <h3 className="text-lg font-semibold">Share GPT</h3>
+                <p className="text-sm opacity-70">Choose how you want to share this GPT</p>
+              </div>
+              <button
+                onClick={() => setIsShareModalOpen(false)}
+                className="p-2 rounded-lg hover:bg-app-button-600"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-4 pb-4 space-y-2">
+              {[
+                { value: 'private' as const, label: 'Only me', description: 'Visible only to you', icon: Lock },
+                { value: 'link' as const, label: 'Anyone with the link', description: 'Share via link', icon: Link2 },
+                { value: 'store' as const, label: 'GPT Store', description: 'List publicly', icon: Store }
+              ].map(option => {
+                const Icon = option.icon
+                const selected = privacyChoice === option.value
+                return (
+                  <button
+                    key={option.value}
+                    onClick={() => setPrivacyChoice(option.value)}
+                    className="w-full flex items-center justify-between p-3 rounded-lg transition-colors"
+                    style={{
+                      backgroundColor: selected ? 'rgba(173,165,135,0.15)' : 'transparent',
+                      border: selected ? '1px solid #ADA587' : '1px solid transparent'
+                    }}
+                  >
+                    <div className="flex items-center gap-3 text-left">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--chatty-bg-card)' }}>
+                        <Icon size={18} />
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium">{option.label}</div>
+                        <div className="text-xs opacity-70">{option.description}</div>
+                      </div>
+                    </div>
+                    <div
+                      className="w-4 h-4 rounded-full border flex items-center justify-center"
+                      style={{ borderColor: selected ? '#ADA587' : 'var(--chatty-line)', backgroundColor: 'transparent' }}
+                    >
+                      {selected && <Check size={12} />}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="flex justify-end gap-3 p-4 border-t border-app-button-300">
+              <button
+                onClick={() => setIsShareModalOpen(false)}
+                className="px-4 py-2 text-sm rounded-lg hover:bg-app-button-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveWithPrivacy}
+                className="px-4 py-2 text-sm rounded-lg flex items-center gap-2"
+                style={{ backgroundColor: '#ADA587', color: '#2a2412' }}
+              >
+                <Save size={14} />
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Actions Editor Modal */}
       {isActionsEditorOpen && (

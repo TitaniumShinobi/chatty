@@ -50,6 +50,14 @@ const Sidebar: React.FC<SidebarProps> = ({
   )
   const activeNavColor = '#ADA587'
   const hoverColor = 'var(--chatty-highlight)'
+  const simforgeIcon = (() => {
+    const active = isActiveRoute('/app/explore')
+    if (actualTheme === 'night') {
+      return active ? '/assets/simforge_day.svg' : '/assets/simforge_night.svg'
+    }
+    // day theme
+    return active ? '/assets/simforge_night.svg' : '/assets/simforge_day.svg'
+  })()
 
   const navButtonStyle = (path: string) => ({
     backgroundColor: isActiveRoute(path) ? activeNavColor : 'transparent',
@@ -337,7 +345,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             onMouseLeave={(e) => handleNavHover(e, '/app/explore', false)}
           >
             <img
-              src={actualTheme === 'night' ? '/assets/simforge_night.svg' : '/assets/simforge_day.svg'}
+              src={simforgeIcon}
               alt="SimForge"
               className="w-6 h-6 object-contain"
               style={{

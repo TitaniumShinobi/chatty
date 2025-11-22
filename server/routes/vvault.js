@@ -382,6 +382,44 @@ router.get("/identity/query", async (req, res) => {
   }
 });
 
+// Store message pair in ChromaDB (for Lin conversations)
+router.post("/identity/store", requireAuth, async (req, res) => {
+  const userId = validateUser(res, req.user);
+  if (!userId) return;
+
+  const { constructCallsign, context, response, metadata = {} } = req.body || {};
+  
+  if (!constructCallsign || !context || !response) {
+    return res.status(400).json({ ok: false, error: "Missing constructCallsign, context, or response" });
+  }
+
+  try {
+    const { getIdentityService } = await import('../services/identityService.js');
+    const identityService = getIdentityService();
+    
+    const result = await identityService.addIdentity(
+      userId,
+      constructCallsign,
+      context,
+      response,
+      {
+        email: req.user?.email,
+        ...metadata
+      }
+    );
+
+    res.json({
+      ok: true,
+      success: result.success,
+      id: result.id,
+      duplicate: result.duplicate || false
+    });
+  } catch (error) {
+    console.error("❌ [VVAULT API] Failed to store identity:", error);
+    res.status(500).json({ ok: false, error: "Failed to store identity" });
+  }
+});
+
 router.get("/identity/list", requireAuth, async (req, res) => {
   const userId = validateUser(res, req.user);
   if (!userId) return;

@@ -180,7 +180,7 @@ export default function SimForge() {
     })
 
   return (
-    <div className="h-full flex flex-col" style={{ backgroundColor: '#ffffeb' }}>
+    <div className="h-full flex flex-col" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
       {/* Header */}
       <div className="p-6 border-b" style={{ borderColor: 'var(--chatty-line)' }}>
         <div className="flex items-center justify-between mb-4">
@@ -238,8 +238,8 @@ export default function SimForge() {
               placeholder="Search GPTs..."
               className="w-full pl-10 pr-4 py-2 rounded-lg text-sm simforge-search-input"
               style={{ 
-                backgroundColor: 'transparent',
-                border: 'none',
+                backgroundColor: 'var(--chatty-bg-message)',
+                border: '1px solid var(--chatty-line)',
                 color: 'var(--chatty-text)'
               }}
             />
@@ -280,7 +280,7 @@ export default function SimForge() {
                       key={category.id}
                       className="flex items-center justify-between p-3 cursor-pointer transition-colors"
                       style={{ 
-                        backgroundColor: selectedCategory === category.id ? '#feffaf' : 'transparent'
+                        backgroundColor: selectedCategory === category.id ? 'var(--chatty-highlight)' : 'transparent'
                       }}
                       onClick={() => {
                         setSelectedCategory(category.id)
@@ -288,7 +288,7 @@ export default function SimForge() {
                       }}
                       onMouseEnter={(e) => {
                         if (selectedCategory !== category.id) {
-                          e.currentTarget.style.backgroundColor = 'var(--chatty-hover)'
+                          e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)'
                         }
                       }}
                       onMouseLeave={(e) => {
@@ -371,8 +371,8 @@ export default function SimForge() {
         {/* Your GPTs Section */}
         {userGpts.length > 0 && (
           <div className="flex items-center gap-2 mb-4">
-            <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ backgroundColor: '#3A2E14' }}>
-              <span className="text-white text-xs font-bold">Y</span>
+            <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--chatty-text-inverse)' }}>
+              <span className="text-xs font-bold" style={{ color: 'var(--chatty-bg-main)' }}>Y</span>
             </div>
             <span className="text-sm font-medium" style={{ color: 'var(--chatty-text)' }}>
               Your GPTs ({userGpts.length})
@@ -408,7 +408,7 @@ export default function SimForge() {
                   viewMode === 'list' ? 'flex items-start gap-4' : ''
                 }`}
                 style={{ 
-                  backgroundColor: 'transparent'
+                  backgroundColor: 'var(--chatty-bg-message)'
                 }}
               >
                 <div className={`flex items-start gap-3 ${viewMode === 'list' ? 'flex-shrink-0' : 'mb-3'}`}>
@@ -429,11 +429,11 @@ export default function SimForge() {
                     </p>
                     
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'transparent', color: 'var(--chatty-text)' }}>
+                      <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'var(--chatty-highlight)', color: 'var(--chatty-text)' }}>
                         {gpt.category}
                       </span>
                       {gpt.tags.slice(0, 2).map((tag, index) => (
-                        <span key={index} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'transparent', color: 'var(--chatty-text)' }}>
+                        <span key={index} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'var(--chatty-highlight)', color: 'var(--chatty-text)' }}>
                           {tag}
                         </span>
                       ))}

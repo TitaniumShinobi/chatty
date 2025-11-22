@@ -162,7 +162,7 @@ return (
 
 #### 4. Input Area
 - **Auto-resizing textarea** (max 15 lines)
-- **File attachment button** (📎)
+- **File attachment button** (class"glyphicon glyphicon-paperclip")
 - **Send button** (➤)
 - **Enter to send** (Shift+Enter for new line)
 
