@@ -20,10 +20,12 @@ This directory contains design rubrics and standards for Chatty. Rubrics define 
 ### **Construct Rubrics**
 - `CONSTRUCT_FORMATTING_RUBRIC.md` - Construct formatting standards
 - `SYNTH_PRIMARY_CONSTRUCT_RUBRIC.md` - Synth as primary construct rules
+- `LIN_INFRASTRUCTURE_RUBRIC.md` - Lin as infrastructure for GPTs (a house that is alive)
 - `STAR_TOGGLE_RUBRIC.md` - Star toggle functionality standards
 
 ### **UI/UX Rubrics**
 - `ADDRESS_BOOK_RUBRIC.md` - Address Book display and navigation standards
+- `SIMFORGE_GPT_STORE_RUBRIC.md` - SimForge GPT Store public discovery platform standards
 
 ### **Registry Rubrics**
 - `USER_REGISTRY_ENFORCEMENT_RUBRIC.md` - User registry enforcement rules

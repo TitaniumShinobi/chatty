@@ -15,6 +15,7 @@
   --chatty-line: #ADA587; /* Borders, dividers, structural elements */
   --chatty-text: #3A2E14; /* Primary text color (dark for light background) */
   --chatty-text-inverse: #ffffeb; /* Inverse text (for buttons) */
+  --chatty-placeholder: #ADA587; /* Placeholder text color */
   --chatty-status-success: #22c55e; /* Green for success */
   --chatty-status-error: #dc2626; /* Red for errors */
 }
@@ -30,6 +31,7 @@
   --chatty-line: #ffffd7; /* Matching button tone for dividers and borders */
   --chatty-text: #ffffeb; /* Lemon cloud for readability */
   --chatty-text-inverse: #3A2E14; /* Dark cocoa for text on light buttons */
+  --chatty-placeholder: #ADA587; /* Placeholder text color (with reduced opacity 0.7) */
   --chatty-status-success: #22c55e; /* Green for success */
   --chatty-status-error: #dc2626; /* Red for errors */
 }
@@ -56,8 +58,29 @@
   .text-app-text-600 { color: var(--chatty-text) !important; opacity: 0.65; }
 
   .chatty-placeholder::placeholder {
-    color: #ADA587;
+    color: var(--chatty-placeholder);
     opacity: 1;
+  }
+
+  [data-theme="night"] .chatty-placeholder::placeholder,
+  :root.night-mode .chatty-placeholder::placeholder {
+    opacity: 0.7;
+  }
+
+  /* Global placeholder styling for form inputs */
+  input::placeholder,
+  textarea::placeholder,
+  select::placeholder {
+    color: var(--chatty-placeholder);
+  }
+
+  [data-theme="night"] input::placeholder,
+  [data-theme="night"] textarea::placeholder,
+  [data-theme="night"] select::placeholder,
+  :root.night-mode input::placeholder,
+  :root.night-mode textarea::placeholder,
+  :root.night-mode select::placeholder {
+    opacity: 0.7;
   }
 
   /* Slim scrollbars globally */

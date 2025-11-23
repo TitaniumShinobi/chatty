@@ -1,7 +1,18 @@
 // optimizedSynth.ts - Optimized Synth processing with adaptive memory and timeout handling
 // Addresses performance bottlenecks in deeply contextual prompts
 
-import { runSeat, loadSeatConfig, getSeatRole } from './seatRunner.js';
+// Use browserSeatRunner in browser (uses /ollama proxy), seatRunner in Node.js (direct connection)
+const isBrowser = typeof window !== 'undefined';
+
+// Conditional import: use browserSeatRunner in browser, seatRunner in Node.js
+import { runSeat as browserRunSeat, loadSeatConfig as browserLoadSeatConfig, getSeatRole as browserGetSeatRole } from '../lib/browserSeatRunner.js';
+import { runSeat as nodeRunSeat, loadSeatConfig as nodeLoadSeatConfig, getSeatRole as nodeGetSeatRole } from './seatRunner.js';
+
+// Export the appropriate functions based on environment
+const runSeat = isBrowser ? browserRunSeat : nodeRunSeat;
+const loadSeatConfig = isBrowser ? browserLoadSeatConfig : nodeLoadSeatConfig;
+const getSeatRole = isBrowser ? browserGetSeatRole : nodeGetSeatRole;
+
 import { PersonaBrain } from './memory/PersonaBrain.js';
 import { MemoryStore } from './memory/MemoryStore.js';
 import { ToneModulator, LLM_PERSONAS, ToneModulationConfig } from './toneModulation.js';
@@ -24,6 +35,8 @@ export interface ProcessingMetrics {
   processingTime: number;
   fallbackUsed: boolean;
   memoryPruned: boolean;
+  retryCount?: number; // Number of retries attempted
+  retryDelays?: number[]; // Array of retry delay times in ms
 }
 
 export class OptimizedSynthProcessor {
@@ -394,16 +407,17 @@ Provide a direct response based on the expert insights above. Do not add convers
   }
 
   /**
-   * Run seat with individual timeout and foundational calibration
+   * Run seat with individual timeout, retry logic, and foundational calibration
    */
   private async runSeatWithTimeout(
     opts: { seat: string; prompt: string; modelOverride?: string },
     timeoutMs: number
   ): Promise<string> {
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error(`Seat ${opts.seat} timeout`)), timeoutMs);
-    });
+    const maxRetries = 2; // 2 retries max
+    let lastError: Error | null = null;
+    const retryDelays: number[] = [];
 
+    // Prepare final prompt (only once, reused for retries)
     let finalPrompt: string;
     if (this.config.enableLinMode) {
       // Lin mode: Use prompt directly without tone modulation
@@ -413,8 +427,49 @@ Provide a direct response based on the expert insights above. Do not add convers
       finalPrompt = this.toneModulator.modulatePrompt(opts.prompt, opts.seat);
     }
     
-    const seatPromise = runSeat({ ...opts, prompt: finalPrompt });
-    return Promise.race([seatPromise, timeoutPromise]);
+    // Retry loop with exponential backoff
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error(`Seat ${opts.seat} timeout`)), timeoutMs);
+        });
+
+        const seatPromise = runSeat({ 
+          ...opts, 
+          prompt: finalPrompt,
+          timeout: timeoutMs,
+          retries: 0 // Don't retry at browserSeatRunner level, we handle it here
+        });
+        
+        const result = await Promise.race([seatPromise, timeoutPromise]);
+        
+        // Track retry metrics if retries were used
+        if (attempt > 0 && this.metrics) {
+          this.metrics.retryCount = attempt;
+          this.metrics.retryDelays = retryDelays;
+        }
+        
+        return result;
+      } catch (error: any) {
+        lastError = error;
+        
+        // Don't retry on timeout or if we've exhausted retries
+        if (error.message?.includes('timeout') || attempt === maxRetries) {
+          break;
+        }
+        
+        // Exponential backoff for retries (1s, 2s delays)
+        if (attempt < maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
+          retryDelays.push(delay);
+          console.log(`Retrying ${opts.seat} seat (attempt ${attempt + 1}/${maxRetries}) after ${delay}ms delay...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    // If we get here, all retries failed
+    throw new Error(`Seat ${opts.seat} failed after ${maxRetries} retries: ${lastError?.message || 'Unknown error'}`);
   }
 
   /**

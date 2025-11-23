@@ -14,7 +14,7 @@ import ShareConversationModal from './ShareConversationModal'
 import RuntimeDashboard, { type RuntimeDashboardOption } from './RuntimeDashboard'
 import SynthGuidance from './SynthGuidance'
 import { useSynthGuidance } from '../hooks/useSynthGuidance'
-import { GPTService } from '../lib/gptService'
+import { AIService } from '../lib/aiService'
 import type { UIContextSnapshot, Message as ChatMessage } from '../types'
 
 type Message = {
@@ -485,9 +485,9 @@ export default function Layout() {
         if (synthCanonicalHasMessages) {
           console.log('✅ [Layout.tsx] Canonical Synth thread exists with messages - skipping thread creation');
         } else if (filteredThreads.length === 0 && !hasUrlThread) {
-          // Only create a new welcome thread if:
-          // 1. No conversations loaded from VVAULT
-          // 2. AND no thread ID in URL (or URL thread doesn't exist in loaded conversations)
+        // Only create a new welcome thread if:
+        // 1. No conversations loaded from VVAULT
+        // 2. AND no thread ID in URL (or URL thread doesn't exist in loaded conversations)
           // 3. AND canonical thread doesn't exist or is empty
           console.log('🎯 [Layout.tsx] No conversations and no URL thread - creating Synth-001');
           const urlRuntimeHint = extractRuntimeKeyFromThreadId(preferredUrlThreadId || urlThreadId);
@@ -515,7 +515,7 @@ export default function Layout() {
           const welcomeText = `${greeting}! I'm Synth, your main AI companion in Chatty. It's ${timeString} on ${weekday}, so let me know what I can help you with today.`;
           const canonicalConstructId = synthCanonicalThread?.constructId || DEFAULT_SYNTH_CANONICAL_CONSTRUCT_ID;
           const finalConstructId = canonicalConstructId === 'synth' ? DEFAULT_SYNTH_CANONICAL_CONSTRUCT_ID : canonicalConstructId;
-
+          
           const defaultThread: Thread = {
             id: defaultThreadId,
             title: 'Synth',
@@ -540,13 +540,13 @@ export default function Layout() {
           } else if (synthCanonicalHasMessages) {
             console.log('✅ [Layout.tsx] Canonical Synth thread exists with messages - skipping createConversation');
           } else {
-            console.log('💾 [Layout.tsx] Creating Synth-001 in VVAULT...');
-            try {
+          console.log('💾 [Layout.tsx] Creating Synth-001 in VVAULT...');
+          try {
               await conversationManager.createConversation(userId, defaultThreadId, 'Synth', finalConstructId);
-              console.log('✅ [Layout.tsx] Synth conversation structure created');
+            console.log('✅ [Layout.tsx] Synth conversation structure created');
               console.log('🔍 [Layout.tsx] Verify at: /vvault/users/shard_0000/{userId}/instances/synth-001/chatty/chat_with_synth-001.md');
-            } catch (error) {
-              console.error('❌ [Layout.tsx] Failed to create Synth conversation in VVAULT:', error);
+          } catch (error) {
+            console.error('❌ [Layout.tsx] Failed to create Synth conversation in VVAULT:', error);
             }
           }
         } else if (hasUrlThread) {

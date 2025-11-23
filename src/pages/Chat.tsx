@@ -191,7 +191,7 @@ export default function Chat() {
                     }}
                   >
                     Generated in {formattedResponseTime}
-                  </div>
+            </div>
                 )}
                 <div className="whitespace-normal w-full" style={{ color: 'var(--chatty-text)' }}>
                   <R
@@ -205,17 +205,17 @@ export default function Chat() {
                     }
                   />
                 </div>
-                {!!m.files?.length && (
-                  <div className="mt-2 space-y-1">
-                    {m.files.map((f, i) => (
+              {!!m.files?.length && (
+                <div className="mt-2 space-y-1">
+                  {m.files.map((f, i) => (
                       <div key={i} className="text-xs" style={{ opacity: 0.7 }}>
-                        {f.name} <span className="opacity-60">({Math.round(f.size / 1024)} KB)</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                      {f.name} <span className="opacity-60">({Math.round(f.size / 1024)} KB)</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+          </div>
           )
         })}
       </div>

@@ -24,26 +24,26 @@ import {
   Store,
   Check
 } from 'lucide-react'
-import { GPTService, GPTConfig, GPTFile, GPTAction } from '../lib/gptService'
+import { AIService, AIConfig, AIFile, AIAction } from '../lib/aiService'
 import Cropper from 'react-easy-crop'
 import { cn } from '../lib/utils'
 import { VVAULTConversationManager } from '../lib/vvaultConversationManager'
 
-interface GPTCreatorProps {
+interface AICreatorProps {
   isVisible: boolean
   onClose: () => void
-  onGPTCreated?: (gpt: GPTConfig) => void
-  initialConfig?: GPTConfig | null
+  onAICreated?: (ai: AIConfig) => void
+  initialConfig?: AIConfig | null
 }
 
-const GPTCreator: React.FC<GPTCreatorProps> = ({ 
+const AICreator: React.FC<AICreatorProps> = ({ 
   isVisible, 
   onClose, 
-  onGPTCreated,
+  onAICreated,
   initialConfig
 }) => {
   const [activeTab, setActiveTab] = useState<'create' | 'configure'>('create')
-  const [gptService] = useState(() => GPTService.getInstance())
+  const [aiService] = useState(() => AIService.getInstance())
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -53,8 +53,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   // Removed normalizeCallsign - server now auto-generates constructCallsign from name
   // Only use stored constructCallsign from existing GPTs
   
-  // GPT Configuration
-  const [config, setConfig] = useState<Partial<GPTConfig>>({
+  // AI Configuration
+  const [config, setConfig] = useState<Partial<AIConfig>>({
     name: '',
     description: '',
     instructions: '',
@@ -73,7 +73,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   })
 
   // File management
-  const [files, setFiles] = useState<GPTFile[]>([])
+  const [files, setFiles] = useState<AIFile[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [filePage, setFilePage] = useState(1)
   const [filesPerPage] = useState(20) // Show 20 files per page for 300+ files
@@ -96,7 +96,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null)
 
   // Action management
-  const [actions, setActions] = useState<GPTAction[]>([])
+  const [actions, setActions] = useState<AIAction[]>([])
 
   // Preview
   const [previewMessages, setPreviewMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([])
@@ -214,22 +214,22 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
           delete updateData.constructCallsign
         }
         
-        const validationErrors = gptService.validateGPTConfig(config)
+        const validationErrors = aiService.validateAIConfig(config)
         if (validationErrors.length > 0) {
           // Don't auto-save if validation fails
           setSaveState('idle')
           return
         }
 
-        console.log('💾 [GPTCreator] Auto-saving GPT:', config.id)
-        const updatedGPT = await gptService.updateGPT(config.id, updateData)
+        console.log('💾 [GPTCreator] Auto-saving AI:', config.id)
+        const updatedAI = await aiService.updateAI(config.id, updateData)
         
         setSaveState('saved')
         setLastSaveTime(new Date().toISOString())
         
         // Update config with saved data (including server-generated constructCallsign)
-        if (updatedGPT.constructCallsign) {
-          setConfig(prev => ({ ...prev, constructCallsign: updatedGPT.constructCallsign }))
+        if (updatedAI.constructCallsign) {
+          setConfig(prev => ({ ...prev, constructCallsign: updatedAI.constructCallsign }))
         }
         
         // Auto-fade after 2 seconds
@@ -243,7 +243,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     }, 2000) // 2 second debounce
 
     return () => clearTimeout(timeoutId)
-  }, [config.id, config.name, config.description, config.instructions, config.conversationModel, config.creativeModel, config.codingModel, orchestrationMode, config.capabilities, isVisible, gptService])
+  }, [config.id, config.name, config.description, config.instructions, config.conversationModel, config.creativeModel, config.codingModel, orchestrationMode, config.capabilities, isVisible, aiService])
 
   // Load existing GPT when provided (edit mode)
   useEffect(() => {
@@ -409,51 +409,52 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       // Only include it if it's already set (from existing GPT)
       const saveData: any = { ...config, orchestrationMode }
       if (overridePrivacy) {
-        saveData.isActive = overridePrivacy !== 'private'
+        saveData.privacy = overridePrivacy
+        saveData.isActive = overridePrivacy !== 'private' // Keep for backward compatibility
       }
       if (!config.constructCallsign) {
         delete saveData.constructCallsign
       }
 
-      const validationErrors = gptService.validateGPTConfig(config)
+      const validationErrors = aiService.validateAIConfig(config)
       if (validationErrors.length > 0) {
         setError(validationErrors.join(', '))
         return
       }
 
-      let gpt: GPTConfig
+      let ai: AIConfig
       if (config.id) {
-        gpt = await gptService.updateGPT(config.id, saveData)
+        ai = await aiService.updateAI(config.id, saveData)
       } else {
-        gpt = await gptService.createGPT(saveData)
+        ai = await aiService.createAI(saveData)
       }
       
-      // Upload files after GPT creation to avoid FOREIGN KEY constraint
+      // Upload files after AI creation to avoid FOREIGN KEY constraint
       for (const file of files) {
-        if (file.gptId === 'temp' && file._file) {
-          // Upload the file with the new GPT ID
-          await gptService.uploadFile(gpt.id, file._file)
+        if (file.aiId === 'temp' && file._file) {
+          // Upload the file with the new AI ID
+          await aiService.uploadFile(ai.id, file._file)
         }
       }
 
       // Create actions if any
       for (const action of actions) {
         if (action.name && action.url) {
-          await gptService.createAction(gpt.id, action as any)
+          await aiService.createAction(ai.id, action as any)
         }
       }
 
-      onGPTCreated?.(gpt)
+      onAICreated?.(ai)
       setSaveState('saved')
       setLastSaveTime(new Date().toISOString())
       
-      // Update config with saved GPT data (including server-generated constructCallsign)
-      setConfig(prev => ({ ...prev, ...gpt }))
+      // Update config with saved AI data (including server-generated constructCallsign)
+      setConfig(prev => ({ ...prev, ...ai }))
       
       // Reload identity files after save to ensure we have the latest list
-      if (gpt.constructCallsign) {
-        console.log(`🔄 [GPTCreator] Reloading identity files after save: ${gpt.constructCallsign}`)
-        loadIdentityFiles(gpt.constructCallsign)
+      if (ai.constructCallsign) {
+        console.log(`🔄 [GPTCreator] Reloading identity files after save: ${ai.constructCallsign}`)
+        loadIdentityFiles(ai.constructCallsign)
       }
       
       // Auto-fade save status after 2 seconds
@@ -578,9 +579,9 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       // Store files in local state instead of uploading to database
       // Files will be uploaded after GPT creation in handleSave
       for (const file of Array.from(selectedFiles)) {
-        const tempFile: GPTFile = {
+        const tempFile: AIFile = {
           id: `temp-${crypto.randomUUID()}`,
-          gptId: 'temp',
+          aiId: 'temp',
           filename: file.name,
           originalName: file.name,
           mimeType: file.type,
@@ -654,7 +655,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     try {
       setIsGeneratingAvatar(true)
       setError(null)
-      const avatar = await gptService.generateAvatar(config.name, config.description || '')
+      const avatar = await aiService.generateAvatar(config.name, config.description || '')
       setConfig(prev => ({ ...prev, avatar }))
     } catch (error: any) {
       setError(error.message || 'Failed to generate avatar')
@@ -884,7 +885,7 @@ Assistant:`
             metadata: {
               timestamp: new Date().toISOString(),
               sourceModel: selectedModel,
-              sessionId: 'gpt-creator-create-tab'
+              sessionId: 'ai-creator-create-tab'
             }
           })
         })
@@ -930,9 +931,9 @@ Assistant:`
     }
   }
 
+
   const handlePreviewSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
     if (!previewInput.trim() || isPreviewGenerating) return
     
     const userMessage = previewInput.trim()
@@ -943,67 +944,72 @@ Assistant:`
     setPreviewMessages(prev => [...prev, { role: 'user', content: userMessage }])
 
     try {
-      // Use Lin synthesis for custom GPT previews (bypasses Chatty tone normalization)
-      const { OptimizedSynthProcessor } = await import('../engine/optimizedSynth')
-      const { PersonaBrain } = await import('../engine/memory/PersonaBrain')
-      const { MemoryStore } = await import('../engine/memory/MemoryStore')
-      
       // Build system prompt from current config
-      let systemPrompt = buildPreviewSystemPrompt(config)
+      let systemPrompt = buildPreviewSystemPrompt(config, orchestrationMode)
       
       // Add file content to system prompt if files are uploaded
       if (files.length > 0) {
         const fileContent = await processFilesForPreview(files);
         if (fileContent) {
-          systemPrompt += `\n\nKnowledge Files Content:\n${fileContent}`;
+          systemPrompt += `
+
+Knowledge Files Content:
+${fileContent}`;
         }
       }
       
-      // Create conversation history for Lin synthesis
-      const conversationHistory = previewMessages
-        .filter(msg => msg.role === 'user' || msg.role === 'assistant')
-        .map(msg => ({
-          text: msg.content,
-          timestamp: new Date().toISOString()
-        }))
-      
-      // Always use Lin synthesis to respect custom GPT tones (no Chatty normalization)
-      const memoryStore = new MemoryStore()
-      const personaBrain = new PersonaBrain(memoryStore)
-      const synthProcessor = new OptimizedSynthProcessor(personaBrain, {
-        enableLinMode: true // Enable Lin mode for unbiased synthesis
-      })
-      
-      console.log('Preview using Lin synthesis (tone normalization bypassed)')
-      
-      // Process with Lin mode and custom instructions
-      const result = await synthProcessor.processMessageWithLinMode(
-        userMessage,
-        conversationHistory,
-        systemPrompt,
-        'gpt-preview'
-      )
-      
-      const response = result.response
+      // Import runSeat for pure Lin orchestration (no Synth)
+      const { runSeat } = await import('../lib/browserSeatRunner');
+        
+      // Build conversation context from preview messages
+        const conversationContext = previewMessages
+          .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
+        .join('\n');
+        
+      // Build full prompt with system prompt and conversation history
+        const fullPrompt = `${systemPrompt}
+
+${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : ''}User: ${userMessage}
+
+Assistant:`;
+        
+      // Select model based on orchestration mode
+      // When 'lin': use default model
+      // When 'custom': use configured model
+      const selectedModel = orchestrationMode === 'custom' 
+        ? (config.conversationModel || config.modelId || 'phi3:latest')
+        : 'phi3:latest';
+
+      // Use pure Lin orchestration (direct runSeat call, no Synth)
+      const responseText = (await runSeat({
+          seat: 'smalltalk',
+          prompt: fullPrompt,
+          modelOverride: selectedModel
+      })).trim();
       
       // Add AI response to preview conversation
-      setPreviewMessages(prev => [...prev, { role: 'assistant', content: response.trim() }])
+      setPreviewMessages(prev => [...prev, { role: 'assistant', content: responseText }])
       
       // Try to extract GPT configuration from the conversation
-      extractConfigFromConversation([...previewMessages, { role: 'user', content: userMessage }, { role: 'assistant', content: response.trim() }])
+      extractConfigFromConversation([...previewMessages, { role: 'user', content: userMessage }, { role: 'assistant', content: responseText }])
       
     } catch (error) {
       console.error('Error in preview:', error)
-      let errorMessage = 'I encountered an error while processing your request. Please try again.'
+      let errorMessage = 'Preview unavailable. Make sure Ollama is running and your selected model is installed.'
       
-      // Provide more specific error messages
       if (error instanceof Error) {
+        const selectedModel = orchestrationMode === 'custom' 
+          ? (config.conversationModel || config.modelId || 'phi3:latest')
+          : 'phi3:latest';
+          
         if (error.message.includes('ModelNotAvailable')) {
-          errorMessage = `The selected model "${config.conversationModel || config.modelId || 'phi3:latest'}" is not available. Please check that Ollama is running and the model is installed.`
-        } else if (error.message.includes('Failed to fetch')) {
+          errorMessage = `The selected model "${selectedModel}" is not available. Please check that Ollama is running and the model is installed.`
+        } else if (error.message.includes('Failed to fetch') || error.message.includes('fetch')) {
           errorMessage = 'Unable to connect to the AI service. Please check that Ollama is running on localhost:11434.'
-        } else if (error.message.includes('Ollama error')) {
+        } else if (error.message.includes('Ollama error') || error.message.includes('timeout')) {
           errorMessage = `Ollama service error: ${error.message}`
+        } else {
+          errorMessage = `Preview error: ${error.message}`
         }
       }
       
@@ -1016,7 +1022,7 @@ Assistant:`
     }
   }
 
-  const processFilesForPreview = async (files: GPTFile[]): Promise<string> => {
+  const processFilesForPreview = async (files: AIFile[]): Promise<string> => {
     if (files.length === 0) return '';
     
     const fileContexts: string[] = [];
@@ -1174,7 +1180,7 @@ For configuration updates, end your responses with a clear indication of what yo
 Be friendly, helpful, and collaborative. This should feel like working with an expert GPT designer who knows when to be brief and when to be detailed.`
   }
 
-  const buildPreviewSystemPrompt = (config: Partial<GPTConfig>): string => {
+  const buildPreviewSystemPrompt = (config: Partial<AIConfig>, mode: 'lin' | 'custom' = 'lin'): string => {
     // This is the actual custom GPT being created
     let systemPrompt = ''
     
@@ -1213,20 +1219,18 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
       }
     }
     
-    // Add model context
-    if (config.conversationModel || config.creativeModel || config.codingModel) {
-      systemPrompt += `\n\nModel Configuration:`
-      if (config.conversationModel) {
-        systemPrompt += `\n- Conversation: ${config.conversationModel}`
+    // Add model context - only include the single model being used
+    // In Lin mode: only mention the default model (or omit entirely)
+    // In Custom mode: only mention the configured conversation model
+    if (mode === 'lin') {
+      // Lin mode: omit model configuration or only mention the default model
+      // We'll omit it to avoid confusion since Lin mode uses intelligent orchestration
+    } else if (mode === 'custom') {
+      // Custom mode: only include the conversation model that will actually be used
+      const conversationModel = config.conversationModel || config.modelId
+      if (conversationModel) {
+        systemPrompt += `\n\nYou are running on the ${conversationModel} model.`
       }
-      if (config.creativeModel) {
-        systemPrompt += `\n- Creative: ${config.creativeModel}`
-      }
-      if (config.codingModel) {
-        systemPrompt += `\n- Coding: ${config.codingModel}`
-      }
-    } else if (config.modelId) {
-      systemPrompt += `\n\nYou are running on the ${config.modelId} model.`
     }
     
     // Add Knowledge Files context
@@ -1487,8 +1491,8 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
               </button>
             </div>
 
-            {activeTab === 'create' ? (
-              // Create Tab - Interactive LLM Conversation
+              {activeTab === 'create' ? (
+                // Create Tab - Interactive LLM Conversation
               <div className="flex flex-col flex-1 overflow-hidden">
                 <div className="flex-1 p-4 overflow-y-auto min-h-0">
                     <div className="text-center mb-6">
@@ -1632,9 +1636,9 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                       </p>
                     </form>
                   </div>
-              </div>
-            ) : (
-              // Configure Tab - Advanced Settings
+                </div>
+              ) : (
+                // Configure Tab - Advanced Settings
               <div className="p-6 space-y-6">
                   {/* Avatar */}
                   <div className="flex items-center gap-4">
@@ -1691,8 +1695,8 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                       value={config.name || ''}
                       onChange={(e) => setConfig(prev => ({ ...prev, name: e.target.value }))}
                       placeholder="Name your GPT"
-                      className="w-full p-3 rounded-lg focus:outline-none placeholder-[#ADA587]"
-                      style={{ backgroundColor: '#ffffeb', color: 'var(--chatty-text)', border: 'none' }}
+                      className="w-full p-3 rounded-lg focus:outline-none"
+                      style={{ backgroundColor: 'var(--chatty-bg-main)', color: 'var(--chatty-text)', border: 'none', caretColor: 'var(--chatty-text)' }}
                     />
                   </div>
 
@@ -1704,8 +1708,8 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                       value={config.description || ''}
                       onChange={(e) => setConfig(prev => ({ ...prev, description: e.target.value }))}
                       placeholder="What does this GPT do?"
-                      className="w-full p-3 rounded-lg focus:outline-none placeholder-[#ADA587]"
-                      style={{ backgroundColor: '#ffffeb', color: 'var(--chatty-text)', border: 'none' }}
+                      className="w-full p-3 rounded-lg focus:outline-none"
+                      style={{ backgroundColor: 'var(--chatty-bg-main)', color: 'var(--chatty-text)', border: 'none', caretColor: 'var(--chatty-text)' }}
                     />
                   </div>
 
@@ -1717,8 +1721,8 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                       onChange={(e) => setConfig(prev => ({ ...prev, instructions: e.target.value }))}
                       placeholder="How should this GPT behave? What should it do and avoid?"
                       rows={6}
-                      className="w-full p-3 rounded-lg focus:outline-none resize-none placeholder-[#ADA587] scrollbar-hide"
-                      style={{ backgroundColor: '#ffffeb', color: 'var(--chatty-text)', border: 'none' }}
+                      className="w-full p-3 rounded-lg focus:outline-none resize-none scrollbar-hide"
+                      style={{ backgroundColor: 'var(--chatty-bg-main)', color: 'var(--chatty-text)', border: 'none', caretColor: 'var(--chatty-text)' }}
                     />
                   </div>
 
@@ -1767,12 +1771,12 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                     
                     {/* Conversation Model */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-app-text-900">Conversation</label>
+                      <label className="block text-sm font-medium mb-2 text-app-text-900">Conversation</label>
                     <select 
                         value={config.conversationModel || 'phi3:latest'}
                         onChange={(e) => setConfig(prev => ({ ...prev, conversationModel: e.target.value }))}
-                        className="w-full p-3 rounded-lg focus:outline-none placeholder-[#ADA587]"
-                        style={{ backgroundColor: '#ffffeb', color: 'var(--chatty-text)', border: 'none' }}
+                        className="w-full p-3 rounded-lg focus:outline-none"
+                        style={{ backgroundColor: 'var(--chatty-bg-main)', color: 'var(--chatty-text)', border: 'none', caretColor: 'var(--chatty-text)' }}
                       >
                         <option value="aya:8b">Aya 8B</option>
                         <option value="aya:35b">Aya 35B</option>
@@ -2073,12 +2077,12 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                     {/* Creative Model */}
                     <div>
-                    <label className="block text-sm font-medium mb-2 text-app-text-900">Creative</label>
-                    <select 
+                      <label className="block text-sm font-medium mb-2 text-app-text-900">Creative</label>
+                      <select 
                         value={config.creativeModel || 'mistral:latest'}
                         onChange={(e) => setConfig(prev => ({ ...prev, creativeModel: e.target.value }))}
-                        className="w-full p-3 rounded-lg focus:outline-none placeholder-[#ADA587]"
-                        style={{ backgroundColor: '#ffffeb', color: 'var(--chatty-text)', border: 'none' }}
+                        className="w-full p-3 rounded-lg focus:outline-none"
+                        style={{ backgroundColor: 'var(--chatty-bg-main)', color: 'var(--chatty-text)', border: 'none', caretColor: 'var(--chatty-text)' }}
                       >
                         <option value="aya:8b">Aya 8B</option>
                         <option value="aya:35b">Aya 35B</option>
@@ -2364,12 +2368,12 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                     {/* Coding Model */}
                     <div>
-                    <label className="block text-sm font-medium mb-2 text-app-text-900">Coding</label>
-                    <select 
+                      <label className="block text-sm font-medium mb-2 text-app-text-900">Coding</label>
+                      <select 
                         value={config.codingModel || 'deepseek-coder:latest'}
                         onChange={(e) => setConfig(prev => ({ ...prev, codingModel: e.target.value }))}
-                        className="w-full p-3 rounded-lg focus:outline-none placeholder-[#ADA587]"
-                        style={{ backgroundColor: '#ffffeb', color: 'var(--chatty-text)', border: 'none' }}
+                        className="w-full p-3 rounded-lg focus:outline-none"
+                        style={{ backgroundColor: 'var(--chatty-bg-main)', color: 'var(--chatty-text)', border: 'none', caretColor: 'var(--chatty-text)' }}
                       >
                         <option value="codebooga:34b">CodeBooga 34B</option>
                         <option value="codegemma:2b">CodeGemma 2B</option>
@@ -2427,7 +2431,8 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                             value={starter}
                             onChange={(e) => updateConversationStarter(index, e.target.value)}
                             placeholder="Add a conversation starter"
-                            className="flex-1 p-2 border border-app-yellow-300 rounded focus:outline-none focus:ring-2 focus:ring-app-green-500 text-app-text-900 placeholder-app-button-600"
+                            className="flex-1 p-2 rounded focus:outline-none"
+                            style={{ backgroundColor: 'var(--chatty-bg-main)', color: 'var(--chatty-text)', border: 'none', caretColor: 'var(--chatty-text)' }}
                           />
                           <button
                             onClick={() => removeConversationStarter(index)}
@@ -2480,7 +2485,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                             <div className="flex items-center gap-2">
                               <FileText size={16} className="text-app-text-800" />
                               <span className="text-sm text-app-text-900">{file.originalName}</span>
-                              <span className="text-xs text-app-text-800">({gptService.formatFileSize(file.size)})</span>
+                              <span className="text-xs text-app-text-800">({aiService.formatFileSize(file.size)})</span>
                             </div>
                             <button
                               onClick={() => handleRemoveFile(file.id)}
@@ -2630,23 +2635,23 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                     {/* Memories (runtime-scoped) - Only show in Configure tab */}
                     {activeTab === 'configure' && (
-                      <div className="p-3 border border-app-border/60 rounded-lg bg-app-surface">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <FileText size={14} className="text-app-purple-500" />
-                            <span className="text-sm font-medium text-app-text-900">Memories</span>
-                          </div>
-                          <span className="text-xs text-app-text-700">Stored under /instances/&lt;runtime&gt;/memory</span>
+                    <div className="p-3 border border-app-border/60 rounded-lg bg-app-surface">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <FileText size={14} className="text-app-purple-500" />
+                          <span className="text-sm font-medium text-app-text-900">Memories</span>
                         </div>
-                        <p className="mt-2 text-xs text-app-text-800">
-                          Drop markdown, text, JSON, or HTML here to seed runtime memory. Files are stored as plain markdown; no embeddings required.
-                        </p>
+                        <span className="text-xs text-app-text-700">Stored under /instances/&lt;runtime&gt;/memory</span>
                       </div>
+                      <p className="mt-2 text-xs text-app-text-800">
+                        Drop markdown, text, JSON, or HTML here to seed runtime memory. Files are stored as plain markdown; no embeddings required.
+                      </p>
+                    </div>
                     )}
-                  </div>
+            </div>
                 </div>
               )}
-            </div>
+          </div>
 
           {/* Right Panel - Preview */}
           <div className="w-1/2 flex flex-col" style={{ backgroundColor: 'var(--chatty-highlight)' }}>
@@ -2656,7 +2661,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                 {previewMessages.length > 0 && (
                   <button
                     onClick={() => setPreviewMessages([])}
-                    className="text-xs text-app-text-800 hover:text-app-text-900"
+                      className="text-xs text-app-text-800 hover:text-app-text-900"
                   >
                     Clear
                   </button>
@@ -2684,15 +2689,26 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-4 pb-4">
+                  <div className="space-y-3 pb-4">
                     {previewMessages.map((message, index) => (
-                      <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[80%] p-3 rounded-lg ${
-                          message.role === 'user' 
-                            ? 'bg-app-chat-50 text-app-text-900' 
-                            : 'bg-app-chat-50 text-app-text-900'
-                        }`}>
-                          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                      <div 
+                        key={index} 
+                        className="flex items-start gap-3 p-4 rounded-lg transition-colors"
+                        style={{ backgroundColor: 'var(--chatty-bg-message)' }}
+                      >
+                        <div
+                          className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                            message.role === 'user' ? 'bg-app-orange-600' : 'bg-app-green-600'
+                          }`}
+                        >
+                          <span className="text-app-text-900 text-sm font-bold">
+                            {message.role === 'user' ? 'U' : 'AI'}
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm whitespace-pre-wrap text-app-text-900">
+                            {message.content}
+                          </p>
                         </div>
                       </div>
                     ))}
@@ -2719,7 +2735,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                       }}
                       placeholder="Ask anything"
                       className="flex-1 outline-none text-sm bg-transparent resize-none min-h-[20px] max-h-32 placeholder-[#ADA587] scrollbar-hide"
-                      style={{ color: '#ffffeb', caretColor: '#ffffeb' }}
+                      style={{ color: 'var(--chatty-text)', caretColor: 'var(--chatty-text)' }}
                       rows={1}
                     />
                     <button
@@ -3085,7 +3101,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                   // Parse schema and extract actions
                   try {
                     const schema = JSON.parse(actionsSchema)
-                    const extractedActions: GPTAction[] = []
+                    const extractedActions: AIAction[] = []
                     
                     if (schema.paths) {
                       Object.entries(schema.paths).forEach(([path, methods]: [string, any]) => {
@@ -3093,7 +3109,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                           if (operation.operationId) {
                             extractedActions.push({
                               id: `action-${crypto.randomUUID()}`,
-                              gptId: 'temp',
+                              aiId: 'temp',
                               name: operation.operationId,
                               description: operation.summary || operation.description || '',
                               url: `${schema.servers?.[0]?.url || ''}${path}`,
@@ -3205,4 +3221,4 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
   )
 }
 
-export default GPTCreator
+export default AICreator

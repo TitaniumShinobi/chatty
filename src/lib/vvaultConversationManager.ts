@@ -523,7 +523,7 @@ export class VVAULTConversationManager {
           console.warn('⚠️ [VVAULTConversationManager] Empty content after normalization, skipping save');
           return;
         }
-
+        
         const response = await this.browserRequest(`/conversations/${threadId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -565,7 +565,7 @@ export class VVAULTConversationManager {
 
       // Use constructCallsign from descriptor if available, otherwise construct from constructId + callsign
       const constructCallsign = constructDescriptor.constructCallsign || `${constructId}-${String(callsign).padStart(3, '0')}`;
-      
+
       const transcriptModule = await import('../../vvaultConnector/writeTranscript.js');
       const filepath = await transcriptModule.appendToConstructTranscript(
         constructId,

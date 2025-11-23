@@ -1,8 +1,6 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import http from 'node:http';
-import https from 'node:https';
-import { URL } from 'node:url';
+// Keep this module browser-safe: require Node libs only when not running in the browser.
+const isBrowser = typeof window !== 'undefined';
+const envVars = (!isBrowser && typeof process !== 'undefined' && process.env) ? process.env : undefined;
 
 export type Seat = 'smalltalk' | 'coding' | 'creative' | string;
 
@@ -15,12 +13,24 @@ let cachedConfig: SeatConfig | undefined;
 
 function loadSeatConfig(): SeatConfig {
   if (cachedConfig) return cachedConfig;
+  if (isBrowser) {
+    // In the browser we don't have filesystem access; use defaults.
+    cachedConfig = {
+      smalltalk: 'phi3:latest',
+      coding: 'deepseek-coder-v2',
+      creative: 'mistral:instruct',
+    };
+    return cachedConfig;
+  }
+
+  const fs = require('node:fs') as typeof import('node:fs');
+  const path = require('node:path') as typeof import('node:path');
+
   const cfgPath = path.resolve(process.cwd(), 'models.json');
   try {
     const raw = fs.readFileSync(cfgPath, 'utf-8');
     cachedConfig = JSON.parse(raw);
-  } catch (_) {}
-  if (!cachedConfig) {
+  } catch (_) {
     cachedConfig = {
       smalltalk: 'phi3:latest',
       coding: 'deepseek-coder-v2',
@@ -33,7 +43,7 @@ function loadSeatConfig(): SeatConfig {
 function envOverrideForSeat(seat: Seat): string | undefined {
   // e.g., OLLAMA_MODEL_CODING overrides coding seat
   const key = `OLLAMA_MODEL_${seat.toUpperCase()}`;
-  return process.env[key];
+  return envVars?.[key];
 }
 
 function seatInfo(seat: Seat): SeatInfo | undefined {
@@ -64,8 +74,8 @@ interface GenerateOptions {
 }
 
 export async function runSeat(opts: GenerateOptions): Promise<string> {
-  const host = (opts.host ?? process.env.OLLAMA_HOST ?? 'http://localhost').replace(/\/$/, '');
-  const port = (opts.port ?? Number(process.env.OLLAMA_PORT)) ?? 11434;
+  const host = (opts.host ?? envVars?.OLLAMA_HOST ?? 'http://localhost').replace(/\/$/, '');
+  const port = (opts.port ?? Number(envVars?.OLLAMA_PORT)) || 11434;
   const model = resolveModel(opts.seat, opts.modelOverride);
 
   // quick availability check via /api/tags
@@ -81,33 +91,54 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
   }
 
   const url = `${host}:${port}/api/generate`;
-  const { protocol } = new URL(url);
   const body = JSON.stringify({ model, prompt: opts.prompt, stream: false });
+
+  if (isBrowser) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Ollama error ${res.status}: ${text}`);
+    }
+    const parsed = await res.json();
+    return parsed.response ?? '';
+  }
+
+  const { protocol } = new URL(url);
+  const http = require('node:http') as typeof import('node:http');
+  const https = require('node:https') as typeof import('node:https');
 
   return new Promise<string>((resolve, reject) => {
     const requester = protocol === 'https:' ? https.request : http.request;
-    const req = requester(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
+    const req = requester(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+        },
       },
-    }, (res) => {
-      let data = '';
-      res.on('data', (chunk) => (data += chunk));
-      res.on('end', () => {
-        if (res.statusCode && res.statusCode >= 400) {
-          reject(new Error(`Ollama error ${res.statusCode}: ${data}`));
-          return;
-        }
-        try {
-          const parsed = JSON.parse(data);
-          resolve(parsed.response ?? '');
-        } catch (err) {
-          reject(err);
-        }
-      });
-    });
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => (data += chunk));
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 400) {
+            reject(new Error(`Ollama error ${res.statusCode}: ${data}`));
+            return;
+          }
+          try {
+            const parsed = JSON.parse(data);
+            resolve(parsed.response ?? '');
+          } catch (err) {
+            reject(err);
+          }
+        });
+      }
+    );
     req.on('error', reject);
     req.write(body);
     req.end();
@@ -116,12 +147,21 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
 
 // simple helper using native http/https
 async function fetchJSON(urlStr: string): Promise<any> {
+  if (isBrowser) {
+    const res = await fetch(urlStr);
+    if (!res.ok) throw new Error(`Request failed ${res.status}`);
+    return res.json();
+  }
+
+  const http = require('node:http') as typeof import('node:http');
+  const https = require('node:https') as typeof import('node:https');
+
   return new Promise((resolve, reject) => {
     const { protocol } = new URL(urlStr);
     const requester = protocol === 'https:' ? https.request : http.request;
-    const req = requester(urlStr, res => {
+    const req = requester(urlStr, (res) => {
       let data = '';
-      res.on('data', c => (data += c));
+      res.on('data', (c) => (data += c));
       res.on('end', () => {
         try {
           resolve(JSON.parse(data));

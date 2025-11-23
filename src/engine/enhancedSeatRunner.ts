@@ -1,10 +1,8 @@
 // enhancedSeatRunner.ts - Enhanced seat runner with timeout, retry, and performance optimizations
 
-import fs from 'node:fs';
-import path from 'node:path';
-import http from 'node:http';
-import https from 'node:https';
-import { URL } from 'node:url';
+// Guard for browser bundles
+const isBrowser = typeof window !== 'undefined';
+const envVars = (!isBrowser && typeof process !== 'undefined' && process.env) ? process.env : undefined;
 
 export type Seat = 'smalltalk' | 'coding' | 'creative' | string;
 
@@ -38,12 +36,23 @@ let cachedConfig: SeatConfig | undefined;
 
 function loadSeatConfig(): SeatConfig {
   if (cachedConfig) return cachedConfig;
+  if (isBrowser) {
+    cachedConfig = {
+      smalltalk: 'phi3:latest',
+      coding: 'deepseek-coder-v2',
+      creative: 'mistral:instruct',
+    };
+    return cachedConfig;
+  }
+
+  const fs = require('node:fs') as typeof import('node:fs');
+  const path = require('node:path') as typeof import('node:path');
+
   const cfgPath = path.resolve(process.cwd(), 'models.json');
   try {
     const raw = fs.readFileSync(cfgPath, 'utf-8');
     cachedConfig = JSON.parse(raw);
-  } catch (_) {}
-  if (!cachedConfig) {
+  } catch (_) {
     cachedConfig = {
       smalltalk: 'phi3:latest',
       coding: 'deepseek-coder-v2',
@@ -55,7 +64,7 @@ function loadSeatConfig(): SeatConfig {
 
 function envOverrideForSeat(seat: Seat): string | undefined {
   const key = `OLLAMA_MODEL_${seat.toUpperCase()}`;
-  return process.env[key];
+  return envVars ? envVars[key] : undefined;
 }
 
 function resolveModel(seat: Seat, modelOverride?: string): string {
@@ -88,8 +97,8 @@ export async function runSeatEnhanced(opts: GenerateOptions): Promise<{ response
     responseLength: 0
   };
 
-  const host = (opts.host ?? process.env.OLLAMA_HOST ?? 'http://localhost').replace(/\/$/, '');
-  const port = (opts.port ?? Number(process.env.OLLAMA_PORT)) ?? 11434;
+  const host = (opts.host ?? envVars?.OLLAMA_HOST ?? 'http://localhost').replace(/\/$/, '');
+  const port = (opts.port ?? Number(envVars?.OLLAMA_PORT)) || 11434;
   const model = resolveModel(opts.seat, opts.modelOverride);
   const timeout = opts.timeout ?? 30000; // 30 second default timeout
   const maxRetries = opts.retries ?? 2;
@@ -171,7 +180,6 @@ async function makeRequest(
   enableStreaming = false
 ): Promise<string> {
   const url = `${host}:${port}/api/generate`;
-  const { protocol } = new URL(url);
   const body = JSON.stringify({ 
     model, 
     prompt, 
@@ -182,6 +190,33 @@ async function makeRequest(
       max_tokens: 2000
     }
   });
+
+  if (isBrowser) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Ollama error ${res.status}: ${text}`);
+      }
+      const parsed = await res.json();
+      return parsed.response ?? '';
+    } catch (err: any) {
+      clearTimeout(timer);
+      throw err;
+    }
+  }
+
+  const { protocol } = new URL(url);
+  const http = require('node:http') as typeof import('node:http');
+  const https = require('node:https') as typeof import('node:https');
 
   return new Promise<string>((resolve, reject) => {
     const timeoutId = setTimeout(() => {
@@ -240,6 +275,23 @@ async function makeRequest(
  * Fetch JSON with timeout
  */
 async function fetchJSON(urlStr: string, timeout = 10000): Promise<any> {
+  if (isBrowser) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const res = await fetch(urlStr, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error(`Fetch timeout or failure ${res.status}`);
+      return res.json();
+    } catch (err) {
+      clearTimeout(timer);
+      throw err;
+    }
+  }
+
+  const http = require('node:http') as typeof import('node:http');
+  const https = require('node:https') as typeof import('node:https');
+
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
       reject(new Error(`Fetch timeout after ${timeout}ms`));

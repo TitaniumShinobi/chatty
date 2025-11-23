@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Bot, Search, Star, Users, TrendingUp, Filter, Grid, List, ChevronDown, Check } from 'lucide-react'
 import GPTCreator from '../components/GPTCreator'
-import { GPTService, GPTConfig } from '../lib/gptService'
+import { AIService, AIConfig } from '../lib/aiService'
 import { Z_LAYERS } from '../lib/zLayers'
 
-interface CommunityGPT extends GPTConfig {
+interface CommunityGPT extends AIConfig {
   author: string
   authorAvatar?: string
   likes: number
@@ -18,10 +18,10 @@ interface CommunityGPT extends GPTConfig {
 
 export default function SimForge() {
   const navigate = useNavigate()
-  const gptService = GPTService.getInstance()
+  const aiService = AIService.getInstance()
   const [isCreatorOpen, setCreatorOpen] = useState(false)
   const [gpts, setGpts] = useState<CommunityGPT[]>([])
-  const [userGpts, setUserGpts] = useState<GPTConfig[]>([])
+  const [userGpts, setUserGpts] = useState<AIConfig[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
@@ -116,12 +116,31 @@ export default function SimForge() {
   const loadData = async () => {
     try {
       setIsLoading(true)
-      // Load user's GPTs
-      const userGPTs = await gptService.getAllGPTs()
-      setUserGpts(userGPTs)
+      // Load user's AIs
+      const userAIs = await aiService.getAllAIs()
+      setUserGpts(userAIs)
       
-      // Set mock community GPTs (in real app, fetch from API)
-      setGpts(mockCommunityGPTs)
+      // Fetch store AIs from API
+      try {
+        const storeAIs = await aiService.getStoreAIs()
+        // Map store AIs to CommunityGPT format
+        const communityGPTs: CommunityGPT[] = storeAIs.map(ai => ({
+          ...ai,
+          author: 'Community', // TODO: Get actual author from user data
+          authorAvatar: '',
+          likes: 0, // TODO: Implement likes system
+          downloads: 0, // TODO: Implement downloads tracking
+          isLiked: false,
+          isDownloaded: false,
+          category: 'General', // TODO: Extract from metadata or capabilities
+          tags: [] // TODO: Extract tags from metadata
+        }))
+        setGpts(communityGPTs)
+      } catch (error) {
+        console.error('Failed to load store AIs:', error)
+        // Fallback to empty array if store fetch fails
+        setGpts([])
+      }
     } catch (error) {
       console.error('Failed to load data:', error)
     } finally {

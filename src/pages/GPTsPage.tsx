@@ -1,87 +1,102 @@
 import { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Plus, Bot, Trash2, Lock } from 'lucide-react'
-import GPTCreator from '../components/GPTCreator'
-import { GPTService, GPTConfig } from '../lib/gptService'
+import { Plus, Bot, Trash2, Lock, Copy, Link2, Store } from 'lucide-react'
+import AICreator from '../components/GPTCreator'
+import { AIService, AIConfig } from '../lib/aiService'
 
-interface GPTsPageProps {
+interface AIsPageProps {
   initialOpen?: boolean
 }
 
-export default function GPTsPage({ initialOpen = false }: GPTsPageProps) {
+export default function AIsPage({ initialOpen = false }: AIsPageProps) {
   const navigate = useNavigate()
   const location = useLocation()
-  const gptService = GPTService.getInstance()
+  const aiService = AIService.getInstance()
   const [isCreatorOpen, setCreatorOpen] = useState(initialOpen)
-  const [gpts, setGpts] = useState<GPTConfig[]>([])
+  const [ais, setAIs] = useState<AIConfig[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [editingConfig, setEditingConfig] = useState<GPTConfig | null>(null)
+  const [editingConfig, setEditingConfig] = useState<AIConfig | null>(null)
 
   // Route controls modal state
   useEffect(() => {
-    const editMatch = location.pathname.match(/\/app\/gpts\/edit\/([^/]+)/)
+    const editMatch = location.pathname.match(/\/app\/ais\/edit\/([^/]+)/)
     if (location.pathname.endsWith('/new')) {
       setCreatorOpen(true)
       setEditingConfig(null)
     } else if (editMatch) {
       setCreatorOpen(true)
-      loadGPTForEdit(editMatch[1])
+      loadAIForEdit(editMatch[1])
     } else {
       setCreatorOpen(false)
       setEditingConfig(null)
     }
   }, [location.pathname])
 
-  // Load GPTs when component mounts
+  // Load AIs when component mounts
   useEffect(() => {
-    loadGPTs()
+    loadAIs()
   }, [])
 
-  const loadGPTs = async () => {
+  const loadAIs = async () => {
     try {
       setIsLoading(true)
-      const allGpts = await gptService.getAllGPTs()
-      console.log(`📊 [GPTsPage] Loaded ${allGpts.length} GPTs`)
-      console.log(`📊 [GPTsPage] GPTs:`, allGpts.map(g => ({ id: g.id, name: g.name, constructCallsign: g.constructCallsign })))
-      setGpts(allGpts)
+      const allAIs = await aiService.getAllAIs()
+      console.log(`📊 [AIsPage] Loaded ${allAIs.length} AIs`)
+      console.log(`📊 [AIsPage] AIs:`, allAIs.map(a => ({ id: a.id, name: a.name, constructCallsign: a.constructCallsign })))
+      setAIs(allAIs)
     } catch (error) {
-      console.error('Failed to load GPTs:', error)
+      console.error('Failed to load AIs:', error)
     } finally {
       setIsLoading(false)
     }
   }
 
-  const loadGPTForEdit = async (id: string) => {
+  const loadAIForEdit = async (id: string) => {
     try {
-      const gpt = await gptService.getGPT(id)
-      setEditingConfig(gpt)
+      const ai = await aiService.getAI(id)
+      setEditingConfig(ai)
     } catch (error) {
-      console.error('Failed to load GPT for edit:', error)
+      console.error('Failed to load AI for edit:', error)
     }
   }
 
   const handleDelete = async (id: string) => {
     try {
-      await gptService.deleteGPT(id)
-      await loadGPTs() // Refresh the list
+      await aiService.deleteAI(id)
+      await loadAIs() // Refresh the list
     } catch (error) {
-      console.error('Failed to delete GPT:', error)
+      console.error('Failed to delete AI:', error)
+    }
+  }
+
+  const handleClone = async (id: string) => {
+    try {
+      const clonedAI = await aiService.cloneAI(id)
+      console.log(`✅ [AIsPage] Cloned AI ${id} → ${clonedAI.id} (${clonedAI.constructCallsign})`)
+      // Open cloned AI in editor
+      setEditingConfig(clonedAI)
+      setCreatorOpen(true)
+      navigate(`/app/ais/edit/${clonedAI.id}`)
+      // Refresh the list to show the new clone
+      await loadAIs()
+    } catch (error) {
+      console.error('Failed to clone AI:', error)
     }
   }
 
   const handleEdit = (id: string) => {
-    navigate(`/app/gpts/edit/${id}`)
+    navigate(`/app/ais/edit/${id}`)
   }
 
   const handleClose = () => {
     setCreatorOpen(false)
-    navigate('/app/gpts')
+    navigate('/app/ais')
     setEditingConfig(null)
-    loadGPTs() // Refresh the list
+    loadAIs() // Refresh the list
   }
 
-  const handleGPTCreated = () => {
-    loadGPTs() // Refresh the list
+  const handleAICreated = () => {
+    loadAIs() // Refresh the list
   }
 
   return (
@@ -89,16 +104,16 @@ export default function GPTsPage({ initialOpen = false }: GPTsPageProps) {
       {/* Header */}
       <div className="px-6 pt-6 pb-8">
         <div className="flex items-center justify-between gap-4 max-w-6xl mx-auto">
-          <h1 className="text-2xl font-semibold" style={{ color: 'var(--chatty-text)' }}>My GPTs</h1>
+          <h1 className="text-2xl font-semibold" style={{ color: 'var(--chatty-text)' }}>My AIs</h1>
           <button
-            onClick={() => navigate('/app/gpts/new')}
+            onClick={() => navigate('/app/ais/new')}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
             style={{ background: 'transparent', color: 'var(--chatty-text)', border: 'none', marginTop: '10px' }}
             onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
           >
             <Plus size={16} style={{ color: 'var(--chatty-text)' }} />
-            Create GPT
+            Create AI
           </button>
         </div>
       </div>
@@ -108,17 +123,36 @@ export default function GPTsPage({ initialOpen = false }: GPTsPageProps) {
         {isLoading ? (
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-2 border-t-transparent mx-auto mb-4" style={{ borderColor: 'var(--chatty-line)' }}></div>
-            <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Loading GPTs...</p>
+            <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Loading AIs...</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {/* GPT Cards */}
-            {gpts.map((gpt) => (
+            {/* AI Cards */}
+            {ais.map((ai) => {
+              // DEBUG: Log avatar information for each AI card
+              const avatarValue = ai.avatar;
+              const avatarType = avatarValue === null ? 'null' : avatarValue === undefined ? 'undefined' : typeof avatarValue;
+              const avatarLength = typeof avatarValue === 'string' ? avatarValue.length : 'N/A';
+              const avatarIsEmpty = !avatarValue || (typeof avatarValue === 'string' && avatarValue.trim() === '');
+              const avatarPreview = typeof avatarValue === 'string' && avatarValue.length > 0 
+                ? avatarValue.substring(0, 50) + (avatarValue.length > 50 ? '...' : '')
+                : avatarValue;
+              
+              console.log(`🖼️ [AIsPage] Avatar debug for ${ai.id} (${ai.name}):`, {
+                type: avatarType,
+                length: avatarLength,
+                isEmpty: avatarIsEmpty,
+                preview: avatarPreview,
+                hasValue: !!avatarValue,
+                fullValue: avatarValue
+              });
+
+              return (
               <div
-                key={gpt.id}
+                key={ai.id}
                 className="group rounded-lg px-4 py-3 cursor-pointer transition-colors flex items-center gap-4"
                 style={{ backgroundColor: 'transparent', border: 'none' }}
-                onClick={() => handleEdit(gpt.id)}
+                onClick={() => handleEdit(ai.id)}
                 onMouseEnter={(e) => { 
                   e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)'
                   e.currentTarget.style.color = 'var(--chatty-bg-main)'
@@ -130,43 +164,72 @@ export default function GPTsPage({ initialOpen = false }: GPTsPageProps) {
               >
                 {/* Avatar on LEFT */}
                 <div className="w-12 h-12 rounded-full flex items-center justify-center overflow-hidden">
-                  {gpt.avatar ? (
-                    <img src={gpt.avatar} alt={gpt.name} className="w-full h-full object-cover" />
-                  ) : (
+                  {ai.avatar ? (
+                    <img src={ai.avatar} alt={ai.name} className="w-full h-full object-cover" />
+                      ) : (
                     <Bot size={20} style={{ color: 'var(--chatty-text)' }} />
-                  )}
-                </div>
+                      )}
+                    </div>
                 {/* Content on RIGHT */}
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold truncate" style={{ color: 'var(--chatty-text)' }}>{gpt.name}</h3>
-                  <p className="text-sm truncate" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>{gpt.description}</p>
+                  <h3 className="font-semibold truncate" style={{ color: 'var(--chatty-text)' }}>{ai.name}</h3>
+                  <p className="text-sm truncate" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>{ai.description}</p>
                   <div className="flex items-center gap-1 mt-1">
-                    <Lock size={12} style={{ color: 'var(--chatty-text)', opacity: 0.7 }} />
-                    <span className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Only me</span>
+                    {ai.privacy === 'store' ? (
+                      <>
+                        <Store size={12} style={{ color: 'var(--chatty-text)', opacity: 0.7 }} />
+                        <span className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>GPT Store</span>
+                      </>
+                    ) : ai.privacy === 'link' ? (
+                      <>
+                        <Link2 size={12} style={{ color: 'var(--chatty-text)', opacity: 0.7 }} />
+                        <span className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Anyone with link</span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock size={12} style={{ color: 'var(--chatty-text)', opacity: 0.7 }} />
+                        <span className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Only me</span>
+                      </>
+                    )}
                   </div>
                 </div>
-                {/* Delete button - only visible on hover */}
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDelete(gpt.id); }}
-                  className="p-1 transition-colors opacity-0 group-hover:opacity-100"
-                  style={{ color: 'var(--chatty-text)' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = '#dc2626' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--chatty-text)' }}
-                  title="Delete GPT"
-                >
-                  <Trash2 size={14} />
-                </button>
+                {/* Action buttons - only visible on hover */}
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {/* Clone button */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleClone(ai.id); }}
+                    className="p-1 transition-colors"
+                    style={{ color: 'var(--chatty-text)' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--chatty-highlight)' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--chatty-text)' }}
+                    title="Clone AI"
+                          >
+                    <Copy size={14} />
+                  </button>
+                  {/* Delete button */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDelete(ai.id); }}
+                    className="p-1 transition-colors"
+                    style={{ color: 'var(--chatty-text)' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = '#dc2626' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--chatty-text)' }}
+                    title="Delete AI"
+                    >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* GPT Creator Modal */}
-      <GPTCreator
+      {/* AI Creator Modal */}
+      <AICreator
         isVisible={isCreatorOpen}
         onClose={handleClose}
-        onGPTCreated={handleGPTCreated}
+        onAICreated={handleAICreated}
         initialConfig={editingConfig}
       />
     </div>

@@ -5,7 +5,7 @@ import path from "path";
 import fs from "fs/promises";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
-import { GPTManager } from "../lib/gptManager.js";
+import { AIManager } from "../lib/aiManager.js";
 import VVAULTMemoryManager from "../lib/vvaultMemoryManager.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -31,7 +31,7 @@ const buildConstructBase = (source = 'imported', identity = null, fallbackId = '
   return sanitizeConstructId(`${provider}-${suffix}`);
 };
 
-const gptManager = GPTManager.getInstance();
+const aiManager = AIManager.getInstance();
 
 // Allow repairing slightly truncated ZIP archives (up to ~5MB padding)
 const MAX_TRUNCATED_ZIP_PAD_BYTES = 5 * 1024 * 1024;
@@ -763,14 +763,14 @@ const PROVIDER_PRESETS = {
 };
 
 /**
- * Read import metadata from GPT files if available
- * @param {object} gpt - GPT object with files array
+ * Read import metadata from AI files if available
+ * @param {object} ai - AI object with files array
  * @returns {object|null} - Import metadata or null
  */
-function readImportMetadata(gpt) {
-  if (!gpt.files || !Array.isArray(gpt.files)) return null;
+function readImportMetadata(ai) {
+  if (!ai.files || !Array.isArray(ai.files)) return null;
   
-  const metadataFile = gpt.files.find(f => f.name === 'import-metadata.json' || f.originalname === 'import-metadata.json');
+  const metadataFile = ai.files.find(f => f.name === 'import-metadata.json' || f.originalname === 'import-metadata.json');
   if (!metadataFile) return null;
   
   try {
@@ -782,7 +782,7 @@ function readImportMetadata(gpt) {
       return content;
     }
   } catch (error) {
-    console.warn(`Failed to parse import metadata for GPT ${gpt.id}:`, error);
+    console.warn(`Failed to parse import metadata for AI ${ai.id}:`, error);
   }
   
   return null;
@@ -803,11 +803,11 @@ async function checkForDuplicateRuntime(userId, source, identity) {
   const expectedConstructId = expectedConstructBase.endsWith('-001') ? expectedConstructBase : `${expectedConstructBase}-001`;
   
   // Get all GPTs for this user
-  const allGPTs = await gptManager.getAllGPTs(userId);
+  const allAIs = await aiManager.getAllAIs(userId);
   
   // Check for duplicate by constructId (not name, since name is just provider label)
-  for (const gpt of allGPTs) {
-    const importMetadata = readImportMetadata(gpt);
+  for (const ai of allAIs) {
+    const importMetadata = readImportMetadata(ai);
     if (importMetadata) {
       // Check if constructId matches (this identifies unique imports by email)
       if (importMetadata.constructId === expectedConstructId) {
@@ -918,8 +918,8 @@ export async function createImportedRuntime({
     ];
   }
 
-  console.log(`💾 [createImportedRuntime] Creating GPT entry with userId: ${userId}`);
-  const runtimeConfig = await gptManager.createGPT({
+  console.log(`💾 [createImportedRuntime] Creating AI entry with userId: ${userId}`);
+  const runtimeConfig = await aiManager.createAI({
     name: runtimeName,
     description,
     instructions,
@@ -936,7 +936,7 @@ export async function createImportedRuntime({
     isActive: true,
     userId,
   }, 'runtime');
-  console.log(`✅ [createImportedRuntime] Created GPT entry: ${runtimeConfig.id} with userId: ${userId}`);
+  console.log(`✅ [createImportedRuntime] Created AI entry: ${runtimeConfig.id} with userId: ${userId}`);
 
   const constructBase = buildConstructBase(source, identity, runtimeConfig.id);
   // Ensure constructId has -001 suffix (per VVAULT spec: constructs/{constructId}-001/)
@@ -956,7 +956,7 @@ export async function createImportedRuntime({
   // Persist metadata to VVAULT/GPT file store
   try {
     const serialized = JSON.stringify(metadataPayload, null, 2);
-    await gptManager.uploadFile(runtimeConfig.id, {
+    await aiManager.uploadFile(runtimeConfig.id, {
       name: "import-metadata.json",
       originalname: "import-metadata.json",
       mimetype: "application/json",

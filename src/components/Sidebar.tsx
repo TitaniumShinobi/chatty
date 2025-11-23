@@ -423,18 +423,28 @@ const Sidebar: React.FC<SidebarProps> = ({
               <span className="truncate flex-1">
                 {conversation.title}
               </span>
-              <button
+              <div
+                role="button"
+                tabIndex={0}
                 className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all ml-2"
                 onClick={(e) => {
                   e.stopPropagation();
                   onDeleteConversation(conversation.id);
                 }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onDeleteConversation(conversation.id);
+                  }
+                }}
                 style={{ color: 'var(--chatty-text)' }}
                 onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+                aria-label={`Delete conversation ${conversation.title}`}
               >
                 <Trash2 size={12} />
-              </button>
+              </div>
             </button>
           ))}
           
@@ -479,8 +489,9 @@ const Sidebar: React.FC<SidebarProps> = ({
               collapsed ? 'justify-center' : 'hover:bg-gray-100'
             )}
           >
+            {currentUser.sub || currentUser.id || currentUser.uid ? (
             <img 
-              src={`/api/profile-image/${currentUser.sub}`}
+                src={`/api/profile-image/${currentUser.sub || currentUser.id || currentUser.uid}`}
               alt={currentUser.name}
               className="w-8 h-8 rounded-full flex-shrink-0 object-cover"
               onError={(e) => {
@@ -489,9 +500,10 @@ const Sidebar: React.FC<SidebarProps> = ({
                 if (fallback) fallback.style.display = 'flex';
               }}
             />
+            ) : null}
             <div 
               className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0"
-              style={{ display: 'none' }}
+              style={{ display: (currentUser.sub || currentUser.id || currentUser.uid) ? 'none' : 'flex' }}
             >
               <span className="text-white text-sm font-medium">
                 {currentUser.name?.charAt(0) || currentUser.email?.charAt(0) || 'U'}

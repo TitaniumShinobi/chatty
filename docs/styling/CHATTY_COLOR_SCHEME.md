@@ -41,6 +41,13 @@ This document defines the official color scheme for Chatty's user interface.
 - **Secondary Text**: `#3A2E14` with reduced opacity (0.6-0.8) for labels and metadata
 - **Placeholder Text**: `#ADA587` for all placeholder text in input fields, text areas, and search boxes
 
+### Form Inputs
+- **Background**: Match container background (`2F2510` or `#ffffeb`)
+- **Borders**: No visible borders
+- **Text Color**: `#3A2E14` (day) and `ffffeb` (night) for input text
+- **Placeholder Text**: `#ADA587` for placeholder text
+- **Focus States**: Subtle focus ring using `#ADA587` if needed
+
 ## Implementation Notes
 
 1. All backgrounds should use the cream color palette for consistency
@@ -49,6 +56,9 @@ This document defines the official color scheme for Chatty's user interface.
 4. Borders and dividers should be subtle using the line color
 5. The color scheme should create a warm, professional appearance
 6. Hover and selected states should be visually distinct: hover uses a lighter cream (`#ffffd7`), selected uses the accent color (`#ADA587`)
+7. Form inputs should blend with their container background - no visible borders or contrasting backgrounds
+8. Form text uses primary text color (`#3A2E14`) for readability
+9. Placeholder text uses accent color (`#ADA587`) for subtle distinction
 
 ## CSS Variables (Recommended)
 

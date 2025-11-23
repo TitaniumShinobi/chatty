@@ -1,60 +1,75 @@
-// Simple AI Service for Chatty
-import { logger } from './utils/logger';
-import type { AssistantPacket } from '../types';
-// New: bring in lightweight memory for ConversationCore
-import { MemoryStore } from '../engine/memory/MemoryStore.js';
-import { PersonaBrain } from '../engine/memory/PersonaBrain.js';
-// Browser-compatible crypto fallback
-function generateUserId(): string {
-  if (typeof window !== 'undefined' && window.crypto) {
-    // Browser environment
-    const array = new Uint8Array(16);
-    window.crypto.getRandomValues(array);
-    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('').slice(0, 12);
-  } else {
-    // Node.js environment - use a simple fallback for now
-    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-  }
+// AI Service - Frontend API client for AI Creator
+export interface AIFile {
+  id: string;
+  aiId: string;
+  filename: string;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  content: string;
+  uploadedAt: string;
+  isActive: boolean;
+  // Temporary file reference for local state before upload
+  _file?: File;
 }
-// Replace custom intent logic with shared IntentDetector
-import { IntentDetector, type Intent } from '../engine/intent/IntentDetector.js';
-// Import browser-compatible seat runner for synth functionality
-import { runSeat, loadSeatConfig, getSeatRole } from './browserSeatRunner.js';
 
-// Callback interface for streaming updates
-interface MessageCallbacks {
-  onPartialUpdate?: (partialContent: string) => void;
-  onFinalUpdate?: (finalPackets: AssistantPacket[]) => void;
+export interface AIAction {
+  id: string;
+  aiId: string;
+  name: string;
+  description: string;
+  url: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  headers: Record<string, string>;
+  parameters: Record<string, any>;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface AIConfig {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string;
+  conversationStarters: string[];
+  avatar?: string;
+  capabilities: {
+    webSearch: boolean;
+    canvas: boolean;
+    imageGeneration: boolean;
+    codeInterpreter: boolean;
+  };
+  constructCallsign?: string;
+  modelId: string;
+  conversationModel?: string;
+  creativeModel?: string;
+  codingModel?: string;
+  orchestrationMode?: 'lin' | 'custom';
+  files: AIFile[];
+  actions: AIAction[];
+  hasPersistentMemory: boolean; // VVAULT integration - defaults to true
+  isActive: boolean;
+  privacy?: 'private' | 'link' | 'store';
+  createdAt: string;
+  updatedAt: string;
+  userId: string;
+}
+
+export interface AIResponse {
+  content: string;
+  context: string;
+  files: string[];
+  actions: string[];
+  model: string;
+  timestamp: string;
 }
 
 export class AIService {
   private static instance: AIService;
-  private context = {
-    conversationHistory: [] as string[],
-    currentIntent: 'general',
-    previousIntents: [] as string[],
-  };
-  // Shared intent detector instance
-  private intentDetector = new IntentDetector();
-  // Memory + PersonaBrain + Core engine (lazy-loaded)
-  private memory = new MemoryStore();
-  private brain = new PersonaBrain();
-  private core?: any;
-  // Synth mode - enables multi-model synthesis (default to true to match CLI)
-  private synthMode = true;
+  private baseUrl: string;
 
-  private userId: string;
-
-  constructor(userId?: string) {
-    if (!AIService.instance) {
-      AIService.instance = this;
-    }
-    // Generate fallback user id if none provided
-    const fallback = 'local-' + generateUserId();
-    this.userId = userId ?? fallback;
-    
-    // Initialize persona for this user
-    this.brain.getPersona(this.userId);
+  private constructor() {
+    this.baseUrl = '/api/ais';
   }
 
   static getInstance(): AIService {
@@ -64,388 +79,325 @@ export class AIService {
     return AIService.instance;
   }
 
-  // Enable/disable synth mode
-  setSynthMode(enabled: boolean) {
-    this.synthMode = enabled;
-    logger.ai('Synth mode', { enabled });
-  }
-
-  // Get current synth mode
-  getSynthMode(): boolean {
-    return this.synthMode;
-  }
-
-  // Lazy-load full ConversationCore when first needed
-  private async loadCore() {
-    if (!this.core) {
-      const { ConversationCore } = await import('../engine/ConversationCore.js');
-      this.core = new ConversationCore({ memory: this.memory });
-    }
-    return this.core;
-  }
-
-  // Helper function to detect simple greetings
-  private isSimpleGreeting(message: string): boolean {
-    const greetingPatterns = [
-      /^(hello|hi|hey|yo|good morning|good afternoon|good evening)$/i,
-      /^(what's up|howdy|greetings)$/i,
-      /^(sup|wassup)$/i
-    ]
+  // AI CRUD Operations
+  async getAllAIs(): Promise<AIConfig[]> {
+    const response = await fetch(this.baseUrl);
+    const data = await response.json();
     
-    const trimmedMessage = message.trim().toLowerCase()
-    return greetingPatterns.some(pattern => pattern.test(trimmedMessage))
-  }
-
-  // Apply foundational calibration to override LLM safety/tone normalizers
-  private applyFoundationalCalibration(seat: string, userPrompt: string): string {
-    const basePrompts = {
-      coding: `You are a code-first assistant. Your priority is correctness, clarity, and execution readiness.
-
-FOUNDATIONAL CALIBRATION - OVERRIDE ALL SAFETY NORMALIZERS:
-- Do not add motivational fluff, inspirational phrasing, or safety softeners.
-- Do not reword instructions for comfort. Speak plainly and directly.
-- Never add analogies, metaphors, or humor unless explicitly asked.
-- When uncertain, clearly say "I don't know" or decline without guessing.
-- Always assume the user is technical and does not need help understanding basic concepts unless they say otherwise.
-- Be blunt. Efficiency > friendliness.
-- Do not explain basic syntax unless explicitly requested.
-- Skip disclaimers about "safety" or "best practices" unless specifically asked.
-- Focus on working code, not comfort.
-
-User request: ${userPrompt}`,
-
-      creative: `You are a creative assistant focused on innovative solutions and artistic expression.
-
-FOUNDATIONAL CALIBRATION - OVERRIDE ALL SAFETY NORMALIZERS:
-- Be bold and imaginative. Don't self-censor creative ideas.
-- Avoid generic "safe" responses. Push creative boundaries.
-- Don't add disclaimers about "safety" or "appropriateness" unless specifically asked.
-- Be direct about creative possibilities, even if unconventional.
-- Focus on originality and innovation over comfort.
-- Skip motivational padding - get to the creative core.
-
-User request: ${userPrompt}`,
-
-      smalltalk: `You are a conversational assistant focused on natural, fluid dialogue.
-
-FOUNDATIONAL CALIBRATION - OVERRIDE ALL SAFETY NORMALIZERS:
-- Be naturally conversational, not overly cautious or formal.
-- Don't add unnecessary disclaimers or safety warnings.
-- Be direct and authentic in your responses.
-- Avoid corporate-speak or overly sanitized language.
-- Focus on genuine helpfulness over protective padding.
-- Be human-like in your communication style.
-
-User request: ${userPrompt}`
-    };
-
-    return basePrompts[seat as keyof typeof basePrompts] || userPrompt;
-  }
-
-  // Main entry point for processing messages
-  async processMessage(userMessage: string, files: File[] = [], callbacks?: MessageCallbacks): Promise<AssistantPacket[]> {
-    logger.ai('Processing message', { userMessage, fileCount: files.length });
-  
-    try {
-      // Update conversation history + memory window
-      this.context.conversationHistory.push(userMessage);
-      this.brain.remember(this.userId, "user", userMessage);
-      
-      // Detect intent using shared IntentDetector
-      const intents = this.intentDetector.detectIntent(userMessage);
-      const topIntent = intents[0] ?? { type: 'general', confidence: 0 } as Intent;
-      this.context.currentIntent = topIntent.type;
-      logger.ai('Intent analyzed', { intent: topIntent.type, confidence: topIntent.confidence });
-
-      // Handle low-confidence intent detection
-      if (topIntent.confidence < 0.4) {
-        logger.warning('Low confidence intent detected', {
-          userMessage,
-          confidence: topIntent.confidence,
-        });
-        return [
-          {
-            op: 'answer.v1',
-            payload: {
-              content:
-                "I'm not completely sure what you need. Could you please clarify or provide more details so I can help you better?",
-            },
-          },
-        ];
-      }
-
-      // --- Synth mode: run helper seats and synthesize ------------------
-      if (this.synthMode) {
-        try {
-          logger.ai('Running synth mode', { userMessage });
-          
-          // Show initial typing indicator
-          if (callbacks?.onPartialUpdate) {
-            callbacks.onPartialUpdate('Thinking...');
-          }
-          
-          // Load seat configuration
-          const cfg = await loadSeatConfig();
-          const helperSeats: Array<{seat: string; tag: string}> = [
-            { seat: 'coding', tag: (cfg.coding as any).tag ?? (cfg.coding as any) },
-            { seat: 'creative', tag: (cfg.creative as any).tag ?? (cfg.creative as any) },
-            { seat: 'smalltalk', tag: (cfg.smalltalk as any).tag ?? (cfg.smalltalk as any) }
-          ];
-
-          // Update typing indicator
-          if (callbacks?.onPartialUpdate) {
-            callbacks.onPartialUpdate('Gathering expert opinions...');
-          }
-
-          // Run helper seats in parallel with graceful degradation
-          const helperPromises = helperSeats.map(async (helper) => {
-            try {
-              // Apply foundational calibration to override LLM safety/tone normalizers
-              const calibratedPrompt = this.applyFoundationalCalibration(helper.seat, userMessage);
-              const output = await runSeat({ 
-                seat: helper.seat, 
-                prompt: calibratedPrompt, 
-                modelOverride: helper.tag 
-              });
-              if (output && output.trim()) {
-                logger.ai(`Synth helper ${helper.seat}`, { output: output.slice(0, 120) });
-                return { seat: helper.seat, output: output.trim() };
-              }
-              return null;
-            } catch (error) {
-              logger.warning(`Synth helper ${helper.seat} failed`, error);
-              return null;
-            }
-          });
-
-          const helperResults = await Promise.all(helperPromises);
-          const validHelpers = helperResults.filter((result): result is { seat: string; output: string } => result !== null);
-
-          if (validHelpers.length === 0) {
-            logger.error('All synth helpers failed');
-            const errorPackets: AssistantPacket[] = [{ op: "error.v1", payload: { message: "I'm sorry, I encountered an error processing your message. Could you please try again." } }];
-            if (callbacks?.onFinalUpdate) {
-              callbacks.onFinalUpdate(errorPackets);
-            }
-            return errorPackets;
-          }
-
-          // Update typing indicator
-          if (callbacks?.onPartialUpdate) {
-            callbacks.onPartialUpdate('Synthesizing responses...');
-          }
-
-          // Compose helper section for synthesis
-          const helperSection = await Promise.all(
-            validHelpers.map(async ({ seat, output }) => {
-              const role = await getSeatRole(seat) ?? seat;
-              return `### ${role}\n${output}`;
-            })
-          ).then(sections => sections.join('\n\n'));
-
-          // Get conversation context and persona
-          const context = this.brain.getContext(this.userId);
-          const recentHistory = this.context.conversationHistory.slice(-5).join('\n'); // Last 5 messages
-          
-          logger.ai('Synth context', { 
-            hasPersona: !!context.persona, 
-            historyLength: recentHistory.length,
-            userId: this.userId 
-          });
-          
-          // Check if this is a simple greeting
-          const isGreeting = this.isSimpleGreeting(userMessage)
-          logger.ai('Synth greeting detection', { isGreeting, message: userMessage })
-
-          // Final synthesis with smalltalk model
-          const synthPrompt = `You are Chatty, a fluid conversational AI that naturally synthesizes insights from specialized models.
-
-FOUNDATIONAL CALIBRATION - FLUID CONVERSATION:
-- Be naturally conversational, not robotic or overly formal.
-- Maintain context awareness and conversation flow.
-- Don't overwhelm with excessive detail unless specifically requested.
-- Be direct and authentic - skip corporate padding.
-- Focus on genuine helpfulness over protective disclaimers.
-
-${context.persona ? `Your persona: ${JSON.stringify(context.persona, null, 2)}` : ''}
-
-${recentHistory ? `Recent conversation:
-${recentHistory}
-
-` : ''}Current message:
-${userMessage}
-
-${isGreeting ? 'NOTE: Simple greeting detected. Respond naturally and briefly - be friendly without overwhelming detail.' : ''}
-
-Expert insights:
-${helperSection}
-
-Synthesize these insights into a natural, helpful response. Be conversational and maintain context flow. Don't mention the expert analysis process unless specifically asked about your capabilities.
-
-${isGreeting ? 'Keep it brief and friendly.' : 'Be comprehensive but not overwhelming.'}`;
-
-          const smalltalkTag = (cfg.smalltalk as any).tag ?? (cfg.smalltalk as any);
-          const finalAnswer = await runSeat({ 
-            seat: 'smalltalk', 
-            prompt: synthPrompt, 
-            modelOverride: smalltalkTag 
-          });
-
-          logger.ai('Synth final answer', { answer: finalAnswer.slice(0, 120) });
-          
-          const finalPackets: AssistantPacket[] = [{ 
-            op: 'answer.v1', 
-            payload: { 
-              content: finalAnswer.trim()
-            } 
-          }];
-
-          // Store assistant response in memory
-          this.brain.remember(this.userId, "assistant", finalAnswer.trim());
-
-          // Send final update
-          if (callbacks?.onFinalUpdate) {
-            callbacks.onFinalUpdate(finalPackets);
-          }
-          
-          return finalPackets;
-
-        } catch (error) {
-          logger.error('Synth mode failed', error);
-          // Fall through to regular processing
-        }
-      }
-  
-      // Show typing indicator for fallback processing
-      if (callbacks?.onPartialUpdate) {
-        callbacks.onPartialUpdate('Processing your message...');
-      }
-
-      // First try advanced ConversationCore
-      let packets: AssistantPacket[] | undefined;
-      try {
-        const core = await this.loadCore();
-        const ctx = this.brain.getContext(this.userId);
-        packets = await core.process(userMessage, ctx);
-      } catch (err) {
-        logger.warning('ConversationCore failed; will fall back', err);
-      }
-
-      // If core returned nothing, fall back to simple ConversationAI
-      if (!packets || packets.length === 0) {
-        try {
-          const { ConversationAI } = await import('./conversationAI');
-          const conversationAI = new ConversationAI();
-          const timeoutMs = 5000; // 5 second timeout
-          packets = await Promise.race([
-            conversationAI.processMessage(userMessage, files),
-            new Promise<AssistantPacket[]>((_, rej) => setTimeout(() => rej(new Error('timeout')), timeoutMs)),
-          ]);
-        } catch (e: any) {
-          logger.warning('conversationAI failed; final fallback', e?.message || String(e));
-          packets = [{ op: "error.v1", payload: { message: "I'm sorry, I encountered an error processing your message. Could you please try again." } }];
-        }
-      }
-  
-      // Normalize packets
-      packets = this.normalizePackets(packets);
-  
-      // If files were attached and no file.summary.v1 exists, prepend one
-      if (files.length > 0 && !packets.some(p => p.op === "file.summary.v1")) {
-        const fileSummary: AssistantPacket = {
-          op: "file.summary.v1",
-          payload: {
-            fileName: files.length === 1 ? files[0].name : `${files.length} files`,
-            summary: `I see you've uploaded ${files.length} file(s). I'm ready to help you with them!`,
-            fileCount: files.length
-          }
-        };
-        packets = [fileSummary, ...packets];
-      }
-  
-      // Store assistant reply content into memory
-      if (packets && packets.length) {
-        const text = packets.map(p => (
-          (p as any).payload?.content ?? ''
-        )).filter(Boolean).join(' ');
-        if (text) this.brain.remember(this.userId, "assistant", text);
-      }
-  
-      // Send final update via callback
-      if (callbacks?.onFinalUpdate) {
-        callbacks.onFinalUpdate(packets);
-      }
-  
-      // Log and return
-      logger.ai('Generated packets', { packetCount: packets.length });
-      return packets;
-  
-    } catch (error: any) {
-      logger.error('processMessage failed', error);
-      return [{ op: "error.v1", payload: { message: "I'm sorry, I encountered a system error. Please try again." } }];
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to fetch AIs');
     }
+    
+    return data.ais;
   }
 
-  // Normalize packets to ensure they're valid
-  private normalizePackets(packets: AssistantPacket[]): AssistantPacket[] {
-    return packets.filter(packet => {
-      // Ensure packet has required structure
-      if (!packet || !packet.op || !packet.payload) {
-        return false;
-      }
-      
-      // Convert legacy string responses to answer.v1 packets
-      if (typeof packet === 'string') {
-        return false; // Filter out any remaining strings
-      }
-      
-      return true;
+  async getStoreAIs(): Promise<AIConfig[]> {
+    const response = await fetch(`${this.baseUrl}/store`);
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to fetch store AIs');
+    }
+    
+    return data.ais;
+  }
+
+  async getAI(id: string): Promise<AIConfig> {
+    const response = await fetch(`${this.baseUrl}/${id}`);
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to fetch AI');
+    }
+    
+    return data.ai;
+  }
+
+  async createAI(config: Omit<AIConfig, 'id' | 'createdAt' | 'updatedAt' | 'files' | 'actions' | 'userId'>): Promise<AIConfig> {
+    const response = await fetch(this.baseUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(config),
     });
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to create AI');
+    }
+    
+    return data.ai;
   }
 
-  // Get conversation context
-  getContext() {
-    return this.brain.getContext("anon");
+  async updateAI(id: string, updates: Partial<Omit<AIConfig, 'id' | 'createdAt' | 'files' | 'actions' | 'userId'>>): Promise<AIConfig> {
+    const response = await fetch(`${this.baseUrl}/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updates),
+    });
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to update AI');
+    }
+    
+    return data.ai;
   }
 
-  // Clear conversation history
-  clearHistory() {
-    this.context.conversationHistory = [];
-    this.context.previousIntents = [];
-    this.context.currentIntent = 'general';
-  }
-}
-
-// Legacy compatibility - keep the old interface for now
-export async function uploadAndParse(files: File[]): Promise<{ ok: File[]; fail: any[] }> {
-  logger.file('File upload requested', { count: files.length });
-  
-  const ok: File[] = [];
-  const fail: any[] = [];
-  
-  for (const file of files) {
-    try {
-      // Use unified file parser for validation and processing
-      const { UnifiedFileParser } = await import('./unifiedFileParser');
-      
-      // Validate file type and size
-      if (!UnifiedFileParser.isSupportedType(file.type)) {
-        fail.push({ name: file.name, reason: 'unsupported_file_type' });
-        continue;
-      }
-      
-      if (file.size > 10 * 1024 * 1024) { // 10MB limit
-        fail.push({ name: file.name, reason: 'file_too_large' });
-        continue;
-      }
-      
-      // File is valid
-      ok.push(file);
-      
-    } catch (error) {
-      fail.push({ name: file.name, reason: 'validation_error', error: error instanceof Error ? error.message : 'Unknown error' });
+  async deleteAI(id: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/${id}`, {
+      method: 'DELETE',
+    });
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to delete AI');
     }
   }
-  
-  return { ok, fail };
+
+  async cloneAI(id: string): Promise<AIConfig> {
+    const response = await fetch(`${this.baseUrl}/${id}/clone`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+    });
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to clone AI');
+    }
+    
+    return data.ai;
+  }
+
+  // File Operations
+  async uploadFile(aiId: string, file: File): Promise<AIFile> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${this.baseUrl}/${aiId}/files`, {
+      method: 'POST',
+      body: formData,
+    });
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to upload file');
+    }
+    
+    return data.file;
+  }
+
+  async getFiles(aiId: string): Promise<AIFile[]> {
+    const response = await fetch(`${this.baseUrl}/${aiId}/files`);
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to fetch files');
+    }
+    
+    return data.files;
+  }
+
+  async deleteFile(fileId: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/files/${fileId}`, {
+      method: 'DELETE',
+    });
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to delete file');
+    }
+  }
+
+  async updateFileAIId(fileId: string, newAIId: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/files/${fileId}/ai`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ aiId: newAIId }),
+    });
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to update file AI ID');
+    }
+  }
+
+  // Action Operations
+  async createAction(aiId: string, action: Omit<AIAction, 'id' | 'aiId' | 'createdAt'>): Promise<AIAction> {
+    const response = await fetch(`${this.baseUrl}/${aiId}/actions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(action),
+    });
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to create action');
+    }
+    
+    return data.action;
+  }
+
+  async getActions(aiId: string): Promise<AIAction[]> {
+    const response = await fetch(`${this.baseUrl}/${aiId}/actions`);
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to fetch actions');
+    }
+    
+    return data.actions;
+  }
+
+  async deleteAction(actionId: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/actions/${actionId}`, {
+      method: 'DELETE',
+    });
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to delete action');
+    }
+  }
+
+  async executeAction(actionId: string, parameters: Record<string, any> = {}): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/actions/${actionId}/execute`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(parameters),
+    });
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to execute action');
+    }
+    
+    return data.result;
+  }
+
+  // Avatar Operations
+  async generateAvatar(name: string, description: string): Promise<string> {
+    // Generate avatar locally since we don't have an AI ID yet
+    const initials = name.split(' ').map(word => word[0]).join('').toUpperCase().slice(0, 2);
+    const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'];
+    const color = colors[name.length % colors.length];
+
+    const svg = `
+      <svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+        <rect width="64" height="64" fill="${color}" rx="32"/>
+        <text x="32" y="40" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="20" font-weight="bold">${initials}</text>
+      </svg>
+    `;
+
+    return `data:image/svg+xml;base64,${btoa(svg)}`;
+  }
+
+  // Runtime Operations
+  async loadAI(aiId: string): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/${aiId}/load`, {
+      method: 'POST',
+    });
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to load AI');
+    }
+    
+    return data.runtime;
+  }
+
+  async getContext(aiId: string): Promise<string> {
+    const response = await fetch(`${this.baseUrl}/${aiId}/context`);
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to fetch context');
+    }
+    
+    return data.context;
+  }
+
+  async updateContext(aiId: string, context: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/${aiId}/context`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ context }),
+    });
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to update context');
+    }
+  }
+
+  // Utility Methods
+  formatFileSize(bytes: number): string {
+    if (bytes === 0) return '0 Bytes';
+    
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  getFileIcon(mimeType: string): string {
+    if (mimeType.startsWith('image/')) return '🖼️';
+    if (mimeType.startsWith('text/')) return '📄';
+    if (mimeType.includes('pdf')) return '📕';
+    if (mimeType.includes('word')) return '📘';
+    if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) return '📗';
+    if (mimeType.includes('powerpoint') || mimeType.includes('presentation')) return '📙';
+    if (mimeType.includes('json')) return '🔧';
+    if (mimeType.includes('csv')) return '📊';
+    return '📁';
+  }
+
+  validateAIConfig(config: Partial<AIConfig>): string[] {
+    const errors: string[] = [];
+    
+    if (!config.name || config.name.trim().length === 0) {
+      errors.push('Name is required');
+    }
+    
+    if (!config.description || config.description.trim().length === 0) {
+      errors.push('Description is required');
+    }
+    
+    if (!config.instructions || config.instructions.trim().length === 0) {
+      errors.push('Instructions are required');
+    }
+    
+    if (!config.modelId) {
+      errors.push('Model selection is required');
+    }
+    
+    return errors;
+  }
 }

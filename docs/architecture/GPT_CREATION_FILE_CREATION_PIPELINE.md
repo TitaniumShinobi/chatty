@@ -1,6 +1,6 @@
 # GPT Creation and File Creation Pipeline for VVAULT Accounts
 
-**Last Updated**: November 20, 2025
+**Last Updated**: January 27, 2025
 
 ## Overview
 
@@ -8,11 +8,51 @@ This document describes the current pipeline for GPT creation and file creation 
 
 ## Terminology
 
-- **construct-callsign**: The full construct identifier including callsign (e.g., `luna-001`, `synth-001`)
+- **construct-callsign**: The full construct identifier including callsign (e.g., `luna-001`, `synth-001`, `katana-001`)
   - Format: `{construct-name}-{callsign}` (lowercase, hyphenated)
-  - Example: If construct name is "Luna" → `luna-001`
-  - Used in: Directory names (`/instances/luna-001/`), file names (`chat_with_luna-001.md`)
+  - **Callsign Format**: Triple-digit index (e.g., `001`, `002`, `003`, `928`, `007`)
+  - **First Instance**: Always `-001` (e.g., first "Katana" → `katana-001`)
+  - **Cloning**: Automatically increments (e.g., clone "Katana" → `katana-002`, next clone → `katana-003`)
+  - Example: If construct name is "Katana" → first instance is `katana-001`, second is `katana-002`
+  - Used in: Directory names (`/instances/katana-001/`), file names (`chat_with_katana-001.md`)
 - **constructId**: Same as construct-callsign (used interchangeably in code)
+- **construct name**: The human-readable name (e.g., "Katana", "Luna", "Synth") - capitalized, can have spaces
+- **normalized name**: Lowercase, hyphenated version of construct name (e.g., "Katana" → `katana`, "My AI" → `my-ai`)
+
+---
+
+## Construct Callsign Generation
+
+### Automatic Callsign Assignment
+
+Construct callsigns are automatically generated when creating a new AI/construct. The system ensures unique callsigns per user and per construct name.
+
+**Process**:
+1. **Normalize construct name**: Convert to lowercase, replace spaces with hyphens, remove special characters
+   - Example: "Katana" → `katana`, "My AI" → `my-ai`
+2. **Query existing instances**: Search for existing constructs with the same normalized name for the current user
+3. **Find highest callsign**: Extract the highest callsign number (e.g., if `katana-001` and `katana-003` exist, highest is `003`)
+4. **Generate next callsign**: Increment by 1 and pad to 3 digits
+   - First instance: `001` (always)
+   - If `katana-001` exists → next is `katana-002`
+   - If `katana-001` and `katana-002` exist → next is `katana-003`
+   - If no instances exist → first is `katana-001`
+
+**Implementation**: `chatty/server/lib/aiManager.js` → `generateConstructCallsign(name, userId)`
+
+**Examples**:
+- First "Katana" created → `katana-001`
+- Clone "Katana" → `katana-002`
+- Clone again → `katana-003`
+- First "Luna" created → `luna-001`
+- Clone "Luna" → `luna-002`
+
+**Key Rules**:
+- ✅ First instance is always `-001`
+- ✅ Callsigns are triple-digit (001, 002, 003, etc.)
+- ✅ Callsigns auto-increment on cloning
+- ✅ Callsigns are scoped per user (each user can have their own `katana-001`)
+- ✅ Callsigns are scoped per construct name (different names don't conflict)
 
 ---
 
@@ -282,28 +322,52 @@ Every user automatically gets:
 3. **GPT Creation**: GPT creation UI exists but may need additional VVAULT integration
 4. **File Structure**: Migrating from `constructs/` to `instances/` structure
 5. **Callsign Handling**: Construct IDs include callsigns (e.g., `synth-001`), but base construct name is extracted for folder creation
+6. **Callsign Format**: Triple-digit, zero-padded (001, 002, 003) - always starts at 001 for first instance
+7. **Auto-Increment**: Cloning automatically generates next sequential callsign (e.g., `katana-001` → `katana-002`)
 
 ---
 
-## Example Flow: User Creates GPT Named "Luna"
+## Example Flow: User Creates GPT Named "Katana"
+
+### First Instance Creation
 
 1. **User logs in**: `dwoodson92@gmail.com`
 2. **Frontend resolves user**: Uses email for VVAULT lookup
-3. **User creates GPT**: Name = "Luna"
-4. **System generates construct-callsign**: `luna-001` (lowercase, hyphenated, with callsign)
-5. **Frontend calls**: `POST /api/vvault/conversations` with `constructId: "luna-001"`
+3. **User creates GPT**: Name = "Katana"
+4. **System generates construct-callsign**: 
+   - Normalizes name: "Katana" → `katana`
+   - Checks for existing instances: None found
+   - Generates first callsign: `katana-001` (always starts at 001)
+5. **Frontend calls**: `POST /api/vvault/conversations` with `constructId: "katana-001"`
 6. **Backend resolves VVAULT user ID**: `devon_woodson_1762969514958`
 7. **Backend creates file**: 
    ```
-   /vvault/users/shard_0000/devon_woodson_1762969514958/instances/luna-001/chatty/chat_with_luna-001.md
+   /vvault/users/shard_0000/devon_woodson_1762969514958/instances/katana-001/chatty/chat_with_katana-001.md
    ```
 8. **User sends message**: Message appends to this file
 9. **AI responds**: Response appends to this file with generation time
 
 **Key Points**:
-- Construct name "Luna" → construct-callsign `luna-001` (lowercase, hyphenated)
-- Directory: `/instances/luna-001/`
-- File: `chat_with_luna-001.md`
+- Construct name "Katana" → construct-callsign `katana-001` (lowercase, hyphenated, triple-digit callsign)
+- First instance always gets `-001`
+- Directory: `/instances/katana-001/`
+- File: `chat_with_katana-001.md`
+
+### Cloning Example
+
+1. **User clones "Katana"**: Clicks "Clone" on existing `katana-001`
+2. **System generates new construct-callsign**:
+   - Normalizes name: "Katana" → `katana`
+   - Checks for existing instances: Finds `katana-001`
+   - Finds highest callsign: `001`
+   - Generates next callsign: `katana-002` (auto-incremented)
+3. **New instance created**: `katana-002` with its own directory and conversation file
+4. **Result**: User now has both `katana-001` and `katana-002` as separate instances
+
+**Key Points**:
+- Cloning automatically increments callsign (`001` → `002` → `003`, etc.)
+- Each clone is a separate instance with its own directory and files
+- Callsigns are triple-digit and zero-padded (001, 002, 003, not 1, 2, 3)
 
 ---
 

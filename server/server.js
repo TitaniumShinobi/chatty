@@ -9,9 +9,10 @@ import { connectDB } from "./config/database.js";
 import { Store } from "./store.js";
 import { requireAuth } from "./middleware/auth.js";
 import convRoutes from "./routes/conversations.js";
-import gptRoutes from "./routes/gpts.js";
+import aiRoutes from "./routes/ais.js";
 import { randomBytes } from "node:crypto";
 import vvaultRoutes from "./routes/vvault.js";
+import previewRoutes from "./routes/preview.js";
 
 dotenv.config();
 
@@ -72,17 +73,17 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
       return res.status(500).json({ error: "OAuth configuration missing: GOOGLE_CLIENT_SECRET" });
     }
     
-    const state = cryptoRandom();
-    const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-    url.searchParams.set("client_id", OAUTH.client_id);
-    url.searchParams.set("redirect_uri", OAUTH.redirect_uri);
-    url.searchParams.set("response_type", "code");
-    url.searchParams.set("scope", "openid email profile");
-    url.searchParams.set("include_granted_scopes", "true");
-    url.searchParams.set("access_type", "offline");
-    url.searchParams.set("prompt", "consent");
-    url.searchParams.set("state", state);
-    res.redirect(url.toString());
+  const state = cryptoRandom();
+  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  url.searchParams.set("client_id", OAUTH.client_id);
+  url.searchParams.set("redirect_uri", OAUTH.redirect_uri);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", "openid email profile");
+  url.searchParams.set("include_granted_scopes", "true");
+  url.searchParams.set("access_type", "offline");
+  url.searchParams.set("prompt", "consent");
+  url.searchParams.set("state", state);
+  res.redirect(url.toString());
   } catch (error) {
     console.error("❌ [OAuth] Error in /api/auth/google:", error);
     res.status(500).json({ error: error.message });
@@ -271,11 +272,14 @@ if (process.env.NODE_ENV !== 'production') {
 // Mount conversation routes with auth
 app.use("/api/conversations", requireAuth, convRoutes);
 
-// Mount GPT routes with auth
-app.use("/api/gpts", requireAuth, gptRoutes);
+// Mount AI routes with auth
+app.use("/api/ais", requireAuth, aiRoutes);
 
 // Mount VVAULT routes with auth
 app.use("/api/vvault", requireAuth, vvaultRoutes);
+
+// Preview synthesis proxy (no auth required for now; adjust if needed)
+app.use("/api/preview", previewRoutes);
 
 function cryptoRandom() {
   return randomBytes(16).toString("hex");
