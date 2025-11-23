@@ -16,7 +16,8 @@ import {
   Play,
   Bot,
   Paperclip,
-  Crop
+  Crop,
+  ChevronRight
 } from 'lucide-react'
 import {
   Lock,
@@ -25,9 +26,11 @@ import {
   Check
 } from 'lucide-react'
 import { AIService, AIConfig, AIFile, AIAction } from '../lib/aiService'
+import { buildLegalFrameworkSection } from '../lib/legalFrameworks'
 import Cropper from 'react-easy-crop'
 import { cn } from '../lib/utils'
 import { VVAULTConversationManager } from '../lib/vvaultConversationManager'
+import { Z_LAYERS } from '../lib/zLayers'
 
 interface AICreatorProps {
   isVisible: boolean
@@ -82,6 +85,7 @@ const AICreator: React.FC<AICreatorProps> = ({
   // Identity management
   const [identityFiles, setIdentityFiles] = useState<Array<{id: string, name: string, path: string}>>([])
   const [isUploadingIdentity, setIsUploadingIdentity] = useState(false)
+  const [showTranscriptsDropdown, setShowTranscriptsDropdown] = useState(false)
   const identityInputRef = useRef<HTMLInputElement>(null)
   
   // Avatar upload
@@ -1197,6 +1201,10 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
     if (config.instructions) {
       systemPrompt += `\n\nInstructions:\n${config.instructions}`
     }
+    // Ensure legal frameworks are always present
+    if (!systemPrompt.includes('LEGAL FRAMEWORKS (HARDCODED')) {
+      systemPrompt += buildLegalFrameworkSection()
+    }
     
     // Add capabilities
     if (config.capabilities) {
@@ -1394,6 +1402,16 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
         onChange={handleFileUpload}
         className="hidden"
         accept=".txt,.md,.pdf,.json,.csv,.doc,.docx,.mp4,.avi,.mov,.mkv,.webm,.flv,.wmv,.m4v,.3gp,.ogv,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.svg"
+      />
+      
+      {/* Hidden identity/transcript file input */}
+      <input
+        ref={identityInputRef}
+        type="file"
+        multiple
+        onChange={handleIdentityUpload}
+        className="hidden"
+        accept=".txt,.md,.json,.html"
       />
       
       <div
@@ -1642,8 +1660,10 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
               <div className="p-6 space-y-6">
                   {/* Avatar */}
                   <div className="flex items-center gap-4">
-                    <div 
-                      className="w-16 h-16 border-2 border-dashed border-app-orange-600 rounded-lg flex items-center justify-center overflow-hidden cursor-pointer hover:border-app-orange-500 transition-colors"
+                    <div
+                      className={`w-16 h-16 rounded-lg flex items-center justify-center overflow-hidden cursor-pointer transition-colors ${
+                        config.avatar ? '' : 'border-2 border-dashed border-app-orange-600 hover:border-app-orange-500'
+                      }`}
                       onClick={triggerAvatarUpload}
                       title="Click to upload avatar image"
                     >
@@ -2518,7 +2538,98 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                     )}
                   </div>
 
-                  {/* Memories Upload (removed from Create tab) */}
+                  {/* Upload Transcripts */}
+                  <div>
+                    <label className="block text-sm font-medium mb-2 text-app-text-900">Memories</label>
+                    <p className="text-xs text-app-text-800 mb-2">Upload conversation transcripts or memory files to extract tone and voice for this GPT</p>
+                    
+                    {/* Upload Button */}
+                    <button
+                      onClick={() => identityInputRef.current?.click()}
+                      disabled={isUploadingIdentity}
+                      className="px-4 py-2 border rounded-lg hover:bg-app-button-400 flex items-center gap-2 text-app-text-900 disabled:opacity-50 mb-3"
+                      style={{ 
+                        borderColor: 'var(--chatty-line)',
+                        backgroundColor: 'var(--chatty-bg-secondary)'
+                      }}
+                    >
+                      <Paperclip size={16} />
+                      {isUploadingIdentity ? 'Uploading...' : 'Upload Transcripts'}
+                    </button>
+
+                    {/* Dropdown Button with File Count */}
+                    {identityFiles.length > 0 && (
+                      <div className="relative">
+                        <div 
+                          className="flex items-center justify-between p-3 cursor-pointer rounded-lg"
+                          onClick={() => setShowTranscriptsDropdown(!showTranscriptsDropdown)}
+                          style={{
+                            backgroundColor: showTranscriptsDropdown ? 'var(--chatty-highlight)' : 'var(--chatty-bg-secondary)'
+                          }}
+                        >
+                          <div className="flex items-center gap-3">
+                            <FileText size={16} style={{ color: 'var(--chatty-icon)', opacity: 0.7 }} />
+                            <span className="text-sm" style={{ color: 'var(--chatty-text)' }}>
+                              {identityFiles.length} memory file{identityFiles.length !== 1 ? 's' : ''} ready
+                            </span>
+                            <ChevronRight 
+                              size={16} 
+                              className="transition-transform duration-200 flex-shrink-0"
+                              style={{ 
+                                color: 'var(--chatty-text)', 
+                                opacity: 0.7,
+                                transform: showTranscriptsDropdown ? 'rotate(90deg)' : 'rotate(0deg)'
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Dropdown List */}
+                        {showTranscriptsDropdown && (
+                          <div
+                            className="absolute top-full left-0 right-0 mt-1 rounded-lg border shadow-lg max-h-60 overflow-y-auto"
+                            style={{
+                              backgroundColor: 'var(--chatty-bg-main)',
+                              borderColor: 'var(--chatty-line)',
+                              zIndex: Z_LAYERS.popover
+                            }}
+                          >
+                            {identityFiles.map((file) => (
+                              <div 
+                                key={file.id} 
+                                className="flex items-center justify-between p-3 hover:bg-gray-100 transition-colors border-b last:border-b-0"
+                                style={{ 
+                                  borderColor: 'var(--chatty-line)',
+                                  backgroundColor: 'transparent'
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)'
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = 'transparent'
+                                }}
+                              >
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <FileText size={16} style={{ color: 'var(--chatty-icon)', opacity: 0.7 }} className="flex-shrink-0" />
+                                  <span className="text-sm truncate" style={{ color: 'var(--chatty-text)' }}>{file.name}</span>
+                                </div>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleRemoveIdentity(file.id)
+                                  }}
+                                  className="p-1 rounded hover:bg-red-100 transition-colors flex-shrink-0"
+                                  style={{ color: 'var(--chatty-text)' }}
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   {/* Capabilities */}
                   <div>
@@ -2674,13 +2785,15 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
               <div className="flex-1 p-4 overflow-y-auto min-h-0">
                 {previewMessages.length === 0 ? (
                   <div className="text-center">
-                    <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 rounded-full" style={{ border: '2px dashed var(--chatty-line)', backgroundColor: 'transparent' }}>
-                      {config.avatar ? (
-                        <img src={config.avatar} alt="GPT Avatar" className="rounded-full w-full h-full object-cover" />
-                      ) : (
+                    {config.avatar ? (
+                      <div className="w-24 h-24 mx-auto mb-4 rounded-full overflow-hidden flex items-center justify-center">
+                        <img src={config.avatar} alt="GPT Avatar" className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="w-16 h-16 flex items-center justify-center mx-auto mb-4 rounded-full" style={{ border: '2px dashed var(--chatty-line)', backgroundColor: 'transparent' }}>
                         <div className="w-8 h-8 rounded-full" style={{ border: '1px dashed var(--chatty-line)', backgroundColor: 'transparent' }}></div>
-                      )}
-                    </div>
+                      </div>
+                    )}
                     <p className="text-app-text-800 text-sm">
                       {config.name || 'Your GPT'}
                     </p>

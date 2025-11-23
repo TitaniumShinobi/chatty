@@ -966,12 +966,40 @@ export default function Layout() {
     const { AIService } = await import('../lib/aiService')
     const aiService = AIService.getInstance()
     
-    // Format identity/memories for prompt injection
+    // Format identity/memories as seamless background context
+    // Simple conversation pairs that inform responses naturally, without meta-commentary
     const memoryContext = relevantMemories.length > 0
-      ? `\n\nRelevant Identity/Memories:\n${relevantMemories.map((m, i) => 
-          `${i + 1}. Context: ${m.context}\n   Response: ${m.response}\n   (Relevance: ${(m.relevance * 100).toFixed(0)}%)`
-        ).join('\n\n')}`
+      ? relevantMemories.slice(0, 5).map((m, idx) => 
+          `[${idx + 1}] User: ${m.context}\nYou: ${m.response}`
+        ).join('\n\n')
       : ''
+    
+    // Inject memories directly into instructions if we have a constructId and memories
+    // Weave memories naturally into instructions as background context, not separate directives
+    let enhancedInstructions = null
+    if (thread.constructId && relevantMemories.length > 0 && memoryContext) {
+      try {
+        // Get AI config to access current instructions
+        const aiId = `gpt-${thread.constructId}` // Format: gpt-katana-001
+        const aiConfig = await aiService.getAI(aiId)
+        
+        // Get base instructions (should already include legal frameworks from AIManager)
+        let baseInstructions = aiConfig.instructions || ''
+        
+        // Ensure legal frameworks are present (fallback if not already included)
+        if (!baseInstructions.includes('LEGAL FRAMEWORKS (HARDCODED')) {
+          const { buildLegalFrameworkSection } = await import('../lib/legalFrameworks')
+          baseInstructions += buildLegalFrameworkSection()
+        }
+        
+        // Inject memories seamlessly as background context that informs responses
+        // Format: base instructions + natural memory context (no meta-directives)
+        enhancedInstructions = `${baseInstructions}\n\n[Background context from past conversations:]\n${memoryContext}`
+        console.log(`✅ [Layout.tsx] Injected ${relevantMemories.length} memories into instructions for ${thread.constructId}`)
+      } catch (error) {
+        console.warn(`⚠️ [Layout.tsx] Failed to get AI config for ${thread.constructId}, using memory context in UI context only:`, error)
+      }
+    }
     
     const baseUiContext: UIContextSnapshot = {
       route: location.pathname,
@@ -1022,10 +1050,22 @@ export default function Layout() {
     let finalAssistantThinking: string[] = []
     
     try {
-      // Inject memories into the input if available
-      const enhancedInput = memoryContext ? `${input}${memoryContext}` : input
+      // Pass memories as background context via UI context, not in user message
+      // This prevents the AI from responding about the memories themselves
+      // CRITICAL: Also pass constructId so the backend can inject memories into instructions
+      const enhancedUiContext = memoryContext 
+        ? { 
+            ...mergedUiContext, 
+            additionalNotes: [...(mergedUiContext.additionalNotes || []), memoryContext],
+            constructId: thread.constructId, // Pass constructId so backend can fetch AI config and inject memories
+            enhancedInstructions: enhancedInstructions // Pass enhanced instructions if we have them
+          }
+        : { 
+            ...mergedUiContext,
+            constructId: thread.constructId // Always pass constructId
+          }
       
-      const raw = await aiService.processMessage(enhancedInput, files, {
+      const raw = await aiService.processMessage(input, files, {
         onPartialUpdate: (partialContent: string) => {
           const trimmed = (partialContent || '').trim()
           const normalized = trimmed.toLowerCase()
@@ -1097,7 +1137,7 @@ export default function Layout() {
           finalAssistantResponseMs = responseTimeMs
           finalAssistantThinking = filteredThinking
         }
-      }, mergedUiContext)
+      }, enhancedUiContext)
       
       if (finalAssistantPackets && user) {
         console.log('💾 [Layout.tsx] Saving ASSISTANT message to VVAULT...')

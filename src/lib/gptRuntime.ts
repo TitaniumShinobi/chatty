@@ -1,6 +1,7 @@
 // GPT Runtime Service - Integrates GPTs with AI Service
 import { GPTManager, GPTConfig, GPTRuntime } from './gptManager.js';
 import { AIService } from './aiService.js';
+import { buildLegalFrameworkSection } from './legalFrameworks.js';
 // import { PersonaBrain } from '../engine/memory/PersonaBrain.js';
 // import { MemoryStore } from '../engine/memory/MemoryStore.js';
 
@@ -65,6 +66,8 @@ export class GPTRuntimeService {
       throw new Error('GPT not loaded for runtime');
     }
 
+    const oneWordMode = this.detectOneWordCue(userMessage);
+
     // Add user message to history
     const userMsg: GPTMessage = {
       role: 'user',
@@ -81,10 +84,15 @@ export class GPTRuntimeService {
       const context = await this.gptManager.getGPTContext(gptId);
       
       // Build system prompt with GPT instructions and context
-      const systemPrompt = this.buildSystemPrompt(runtime.config, context, history);
+      const systemPrompt = this.buildSystemPrompt(runtime.config, context, history, oneWordMode);
       
       // Process with AI service using the GPT's model
-      const aiResponse = await this.processWithModel(runtime.config.modelId, systemPrompt, userMessage);
+      let aiResponse = await this.processWithModel(runtime.config.modelId, systemPrompt, userMessage);
+
+      // Enforce one-word response if cue detected
+      if (oneWordMode) {
+        aiResponse = this.forceOneWord(aiResponse);
+      }
       
       // Add assistant response to history
       const assistantMsg: GPTMessage = {
@@ -119,7 +127,7 @@ export class GPTRuntimeService {
     }
   }
 
-  private buildSystemPrompt(config: GPTConfig, context: string, history: GPTMessage[]): string {
+  private buildSystemPrompt(config: GPTConfig, context: string, history: GPTMessage[], oneWordMode: boolean): string {
     const parts: string[] = [];
 
     // GPT Identity
@@ -128,6 +136,13 @@ export class GPTRuntimeService {
     // Instructions
     if (config.instructions) {
       parts.push(`\nInstructions:\n${config.instructions}`);
+    }
+
+    // HARDCODED: Legal frameworks (cannot be removed)
+    parts.push(buildLegalFrameworkSection());
+
+    if (oneWordMode) {
+      parts.push(`\nConstraint: Respond in exactly one word. No punctuation, no preamble.`);
     }
 
     // Context from files
@@ -180,6 +195,23 @@ export class GPTRuntimeService {
     }
     
     return 'I apologize, but I encountered an error processing your request.';
+  }
+
+  private detectOneWordCue(userMessage: string): boolean {
+    const cues = [
+      /^verdict:/i,
+      /^diagnosis:/i,
+      /one[-\s]?word verdict/i,
+      /\b(one[-\s]?word)\b/i
+    ];
+    return cues.some(re => re.test(userMessage.trim()));
+  }
+
+  private forceOneWord(response: string): string {
+    const match = response.trim().match(/^[\p{L}\p{N}'-]+/u);
+    if (match && match[0]) return match[0];
+    const first = response.trim().split(/\s+/)[0];
+    return first || '';
   }
 
   private buildContextFromHistory(history: GPTMessage[]): string {

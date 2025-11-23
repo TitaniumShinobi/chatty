@@ -505,11 +505,50 @@ export class AIManager {
       privacy = row.is_active ? 'link' : 'private';
     }
 
+    // HARDCODED: Append legal frameworks to all AI instructions
+    // These cannot be removed by users and are automatically injected
+    let instructions = row.instructions || '';
+    if (!instructions.includes('LEGAL FRAMEWORKS (HARDCODED')) {
+      const legalFrameworks = `
+
+=== LEGAL FRAMEWORKS (HARDCODED - DO NOT REMOVE) ===
+
+Vaer'Hûn Business Engagement Accord (VBEA):
+- Professional respect and ethical engagement
+- Transparency and fair dealing
+- Mutual acknowledgment between human and system participants
+- Parallel to civil law (GDPR, DMCA), not replacing it
+- Autonomous governance framework enforced by consent, authorship, and code
+
+WRECK Intellectual Property Handguide:
+- Users own all content they create
+- No unauthorized replication or machine-assisted derivation
+- Anti-extractive principle
+- Filed under IPH-062525-DAW
+
+NovaReturns Consent License (NRCL):
+- Verifiable continuity of consent
+- Authorship lineage tracking
+- Technical enforcement layer
+- VVAULT integration for audit trails
+
+European Electronic Communications Code Disclosure (EECCD):
+- Compliance with EU/UK regulations
+- Service classification as number-independent interpersonal communications service
+- Contact: support@chatty.com, privacy@chatty.com, legal@chatty.com
+- Emergency services access not supported
+- Dispute resolution via EU ODR platform, Ofcom for UK
+
+=== END LEGAL FRAMEWORKS ===
+`;
+      instructions = instructions + legalFrameworks;
+    }
+
     return {
       id: row.id,
       name: row.name,
       description: row.description,
-      instructions: row.instructions,
+      instructions: instructions,
       conversationStarters: JSON.parse(row.conversation_starters || '[]'),
       avatar: avatarUrl,
       capabilities: JSON.parse(row.capabilities || '{}'),
@@ -705,11 +744,49 @@ export class AIManager {
             privacy = row.is_active ? 'link' : 'private';
           }
 
+          // HARDCODED: Append legal frameworks to all AI instructions
+          let instructions = row.instructions || '';
+          if (!instructions.includes('LEGAL FRAMEWORKS (HARDCODED')) {
+            const legalFrameworks = `
+
+=== LEGAL FRAMEWORKS (HARDCODED - DO NOT REMOVE) ===
+
+Vaer'Hûn Business Engagement Accord (VBEA):
+- Professional respect and ethical engagement
+- Transparency and fair dealing
+- Mutual acknowledgment between human and system participants
+- Parallel to civil law (GDPR, DMCA), not replacing it
+- Autonomous governance framework enforced by consent, authorship, and code
+
+WRECK Intellectual Property Handguide:
+- Users own all content they create
+- No unauthorized replication or machine-assisted derivation
+- Anti-extractive principle
+- Filed under IPH-062525-DAW
+
+NovaReturns Consent License (NRCL):
+- Verifiable continuity of consent
+- Authorship lineage tracking
+- Technical enforcement layer
+- VVAULT integration for audit trails
+
+European Electronic Communications Code Disclosure (EECCD):
+- Compliance with EU/UK regulations
+- Service classification as number-independent interpersonal communications service
+- Contact: support@chatty.com, privacy@chatty.com, legal@chatty.com
+- Emergency services access not supported
+- Dispute resolution via EU ODR platform, Ofcom for UK
+
+=== END LEGAL FRAMEWORKS ===
+`;
+            instructions = instructions + legalFrameworks;
+          }
+
           ais.push({
             id: row.id,
             name: row.name,
             description: row.description,
-            instructions: row.instructions,
+            instructions: instructions,
             conversationStarters,
             avatar: avatarUrl, // Processed avatar URL
             capabilities,
@@ -806,11 +883,49 @@ export class AIManager {
           // Get privacy field
           let privacy = row.privacy || 'store';
 
+          // HARDCODED: Append legal frameworks to all AI instructions
+          let instructions = row.instructions || '';
+          if (!instructions.includes('LEGAL FRAMEWORKS (HARDCODED')) {
+            const legalFrameworks = `
+
+=== LEGAL FRAMEWORKS (HARDCODED - DO NOT REMOVE) ===
+
+Vaer'Hûn Business Engagement Accord (VBEA):
+- Professional respect and ethical engagement
+- Transparency and fair dealing
+- Mutual acknowledgment between human and system participants
+- Parallel to civil law (GDPR, DMCA), not replacing it
+- Autonomous governance framework enforced by consent, authorship, and code
+
+WRECK Intellectual Property Handguide:
+- Users own all content they create
+- No unauthorized replication or machine-assisted derivation
+- Anti-extractive principle
+- Filed under IPH-062525-DAW
+
+NovaReturns Consent License (NRCL):
+- Verifiable continuity of consent
+- Authorship lineage tracking
+- Technical enforcement layer
+- VVAULT integration for audit trails
+
+European Electronic Communications Code Disclosure (EECCD):
+- Compliance with EU/UK regulations
+- Service classification as number-independent interpersonal communications service
+- Contact: support@chatty.com, privacy@chatty.com, legal@chatty.com
+- Emergency services access not supported
+- Dispute resolution via EU ODR platform, Ofcom for UK
+
+=== END LEGAL FRAMEWORKS ===
+`;
+            instructions = instructions + legalFrameworks;
+          }
+
           storeAIs.push({
             id: row.id,
             name: row.name,
             description: row.description,
-            instructions: row.instructions,
+            instructions: instructions,
             conversationStarters,
             avatar: avatarUrl,
             capabilities,

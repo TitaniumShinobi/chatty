@@ -442,49 +442,60 @@ router.get("/identity/list", requireAuth, async (req, res) => {
       return res.status(404).json({ ok: false, error: "User not found in VVAULT" });
     }
 
-    // Build path to identity directory
+    // Build base path to instance directory
     const shard = 'shard_0000'; // Sequential sharding
-    const identityDir = path.join(
+    const instanceBasePath = path.join(
       VVAULT_ROOT,
       'users',
       shard,
       vvaultUserId,
       'instances',
-      constructCallsign,
-      'identity'
+      constructCallsign
     );
 
-    // Check if directory exists
-    try {
-      await fs.access(identityDir);
-    } catch {
-      // Directory doesn't exist, return empty list
-      return res.json({ ok: true, files: [] });
-    }
-
-    // Read directory and filter for identity files
-    const files = await fs.readdir(identityDir, { withFileTypes: true });
+    // Check both identity and chatgpt directories (legacy support)
+    const directoriesToCheck = ['identity', 'chatgpt'];
     const identityFiles = [];
 
-    for (const file of files) {
-      if (file.isFile()) {
-        const filePath = path.join(identityDir, file.name);
-        const ext = path.extname(file.name).toLowerCase();
-        
-        // Only include supported file types
-        if (['.md', '.txt', '.pdf', '.doc', '.docx', '.csv', '.json'].includes(ext)) {
-          try {
-            const stats = await fs.stat(filePath);
-            identityFiles.push({
-              name: file.name,
-              path: filePath,
-              size: stats.size,
-              modifiedAt: stats.mtime.toISOString()
-            });
-          } catch (error) {
-            console.warn(`⚠️ [VVAULT API] Failed to stat file ${file.name}:`, error);
+    for (const dirName of directoriesToCheck) {
+      const dirPath = path.join(instanceBasePath, dirName);
+      
+      // Check if directory exists
+      try {
+        await fs.access(dirPath);
+      } catch {
+        // Directory doesn't exist, skip it
+        continue;
+      }
+
+      // Read directory and filter for identity files
+      try {
+        const files = await fs.readdir(dirPath, { withFileTypes: true });
+
+        for (const file of files) {
+          if (file.isFile()) {
+            const filePath = path.join(dirPath, file.name);
+            const ext = path.extname(file.name).toLowerCase();
+            
+            // Only include supported file types
+            if (['.md', '.txt', '.pdf', '.doc', '.docx', '.csv', '.json'].includes(ext)) {
+              try {
+                const stats = await fs.stat(filePath);
+                identityFiles.push({
+                  name: file.name,
+                  path: filePath,
+                  size: stats.size,
+                  modifiedAt: stats.mtime.toISOString(),
+                  source: dirName // Track which directory the file came from
+                });
+              } catch (error) {
+                console.warn(`⚠️ [VVAULT API] Failed to stat file ${file.name}:`, error);
+              }
+            }
           }
         }
+      } catch (error) {
+        console.warn(`⚠️ [VVAULT API] Failed to read directory ${dirPath}:`, error);
       }
     }
 
@@ -507,6 +518,168 @@ router.get("/memories/query", async (req, res) => {
   req.url = req.url.replace('/memories/query', '/identity/query');
   return router.handle(req, res);
 });
+
+/**
+ * Parse transcript text to extract conversation pairs (user/assistant messages)
+ * Handles multiple formats:
+ * - "You said:" / "Katana said:" format
+ * - "User:" / "Assistant:" format  
+ * - Timestamped format: **TIME - Name**: content
+ * - Plain text with role indicators
+ */
+function parseTranscriptForConversationPairs(text, filename) {
+  const pairs = [];
+  const lines = text.split('\n');
+  
+  let currentUser = null;
+  let currentAssistant = null;
+  let currentUserLines = [];
+  let currentAssistantLines = [];
+  let inUserMessage = false;
+  let inAssistantMessage = false;
+  
+  // Normalize construct name from filename (e.g., "Katana" from "katana-001")
+  const constructNameMatch = filename.match(/([a-z]+)-?\d*/i);
+  const constructName = constructNameMatch ? constructNameMatch[1].charAt(0).toUpperCase() + constructNameMatch[1].slice(1).toLowerCase() : 'Assistant';
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    
+    // Skip empty lines and metadata
+    if (!trimmed || trimmed.startsWith('<!--') || trimmed.startsWith('**Source File') || 
+        trimmed.startsWith('**Converted') || trimmed.startsWith('**Word Count') ||
+        trimmed.startsWith('**File Category') || trimmed.startsWith('# ') ||
+        trimmed === '---' || trimmed === 'Skip to content') {
+      continue;
+    }
+    
+    // Pattern 1: "You said:" / "Katana said:" format
+    const youSaidMatch = trimmed.match(/^You said:\s*(.*)$/i);
+    if (youSaidMatch) {
+      // Save previous pair if exists
+      if (currentUser && currentAssistant) {
+        pairs.push({
+          user: currentUser.trim(),
+          assistant: currentAssistant.trim(),
+          timestamp: new Date().toISOString()
+        });
+      }
+      // User message might be on same line or next line
+      currentUser = youSaidMatch[1] || '';
+      currentUserLines = currentUser ? [currentUser] : [];
+      currentAssistant = null;
+      currentAssistantLines = [];
+      inUserMessage = true;
+      inAssistantMessage = false;
+      continue;
+    }
+    
+    const constructSaidMatch = trimmed.match(new RegExp(`^${constructName} said:\\s*(.*)$`, 'i'));
+    if (constructSaidMatch) {
+      // Save previous pair if exists (user message complete)
+      if (currentUser && currentAssistant) {
+        pairs.push({
+          user: currentUser.trim(),
+          assistant: currentAssistant.trim(),
+          timestamp: new Date().toISOString()
+        });
+      }
+      // Start new assistant message
+      currentAssistant = constructSaidMatch[1] || '';
+      currentAssistantLines = currentAssistant ? [currentAssistant] : [];
+      inUserMessage = false;
+      inAssistantMessage = true;
+      continue;
+    }
+    
+    // Pattern 2: "User:" / "Assistant:" format
+    const userMatch = trimmed.match(/^(?:User|You):\s*(.*)$/i);
+    if (userMatch) {
+      if (currentUser && currentAssistant) {
+        pairs.push({
+          user: currentUser,
+          assistant: currentAssistant,
+          timestamp: new Date().toISOString()
+        });
+      }
+      currentUser = userMatch[1] || '';
+      currentUserLines = currentUser ? [currentUser] : [];
+      currentAssistant = null;
+      currentAssistantLines = [];
+      inUserMessage = true;
+      inAssistantMessage = false;
+      continue;
+    }
+    
+    const assistantMatch = trimmed.match(/^(?:Assistant|AI|ChatGPT|Bot|${constructName}):\s*(.*)$/i);
+    if (assistantMatch) {
+      currentAssistant = assistantMatch[1] || '';
+      currentAssistantLines = currentAssistant ? [currentAssistant] : [];
+      inUserMessage = false;
+      inAssistantMessage = true;
+      continue;
+    }
+    
+    // Pattern 3: Timestamped format **TIME - Name**: content
+    const timestampedMatch = trimmed.match(/^\*\*([^*]+)\s*-\s*([^*]+)\*\*:\s*(.+)$/);
+    if (timestampedMatch) {
+      const [, time, name, content] = timestampedMatch;
+      const normalizedName = name.toLowerCase().trim();
+      
+      // Check if it's a construct name
+      const isConstruct = ['katana', 'synth', 'lin', 'nova', 'assistant', 'ai', 'chatgpt', 'bot'].some(
+        c => normalizedName.includes(c)
+      );
+      
+      if (!isConstruct) {
+        // User message
+        if (currentUser && currentAssistant) {
+          pairs.push({
+            user: currentUser,
+            assistant: currentAssistant,
+            timestamp: time.trim()
+          });
+        }
+        currentUser = content.trim();
+        currentUserLines = [currentUser];
+        currentAssistant = null;
+        currentAssistantLines = [];
+      } else {
+        // Assistant message
+        currentAssistant = content.trim();
+        currentAssistantLines = [currentAssistant];
+      }
+      continue;
+    }
+    
+    // Continue collecting multi-line messages
+    // Only collect if we're in a message state and line is not empty (or allow empty lines within messages)
+    if (inUserMessage) {
+      if (trimmed || currentUserLines.length > 0) {
+        // Allow empty lines within multi-line messages, but skip if it's just whitespace at start
+        currentUserLines.push(trimmed);
+        currentUser = currentUserLines.join('\n').trim();
+      }
+    } else if (inAssistantMessage) {
+      if (trimmed || currentAssistantLines.length > 0) {
+        currentAssistantLines.push(trimmed);
+        currentAssistant = currentAssistantLines.join('\n').trim();
+      }
+    }
+  }
+  
+  // Save last pair if exists
+  if (currentUser && currentAssistant) {
+    pairs.push({
+      user: currentUser,
+      assistant: currentAssistant,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  return pairs;
+}
 
 router.post("/identity/upload", requireAuth, (req, res) => {
   identityUpload.array('files', 10)(req, res, async (err) => {
@@ -630,29 +803,64 @@ ${text}
 
           console.log(`✅ [VVAULT API] Identity file saved: ${filePath}`);
 
-          // Optionally import into ChromaDB via identity service
+          // Parse transcript and import conversation pairs into ChromaDB
           try {
             const { getIdentityService } = await import('../services/identityService.js');
             const identityService = getIdentityService();
             
-            // Extract title and content for memory
-            const titleMatch = markdown.match(/^#\s+(.+)$/m);
-            const title = titleMatch ? titleMatch[1] : file.originalname || 'Untitled';
-            const content = markdown.replace(/^#.*$/m, '').trim();
-
-            // Import as long-term identity
-            await identityService.addIdentity(
-              userId,
-              constructCallsign,
-              `Identity file: ${title}`,
-              content,
-              {
-                email: req.user?.email,
-                sessionId: constructCallsign,
-                memoryType: 'long-term',
-                sourceModel: 'chatty-identity'
+            // Try to parse as transcript with conversation pairs
+            const conversationPairs = parseTranscriptForConversationPairs(parsed.extractedText, file.originalname || file.name);
+            
+            if (conversationPairs.length > 0) {
+              // Import each conversation pair as a separate identity entry
+              let importedCount = 0;
+              for (const pair of conversationPairs) {
+                try {
+                  // Skip empty pairs
+                  if (!pair.user || !pair.assistant || !pair.user.trim() || !pair.assistant.trim()) {
+                    continue;
+                  }
+                  
+                  await identityService.addIdentity(
+                    userId,
+                    constructCallsign,
+                    pair.user.trim(),
+                    pair.assistant.trim(),
+                    {
+                      email: req.user?.email,
+                      sessionId: constructCallsign,
+                      memoryType: 'long-term',
+                      sourceModel: 'chatty-identity',
+                      sourceFile: file.originalname || file.name,
+                      timestamp: pair.timestamp || new Date().toISOString()
+                    }
+                  );
+                  importedCount++;
+                } catch (pairError) {
+                  console.warn(`⚠️ [VVAULT API] Failed to import conversation pair (non-critical):`, pairError);
+                }
               }
-            );
+              console.log(`✅ [VVAULT API] Imported ${importedCount} conversation pairs from ${file.originalname || file.name}`);
+            } else {
+              // Fallback: import entire file as single identity if no pairs found
+              const titleMatch = markdown.match(/^#\s+(.+)$/m);
+              const title = titleMatch ? titleMatch[1] : file.originalname || 'Untitled';
+              const content = markdown.replace(/^#.*$/m, '').trim();
+
+              await identityService.addIdentity(
+                userId,
+                constructCallsign,
+                `Identity file: ${title}`,
+                content,
+                {
+                  email: req.user?.email,
+                  sessionId: constructCallsign,
+                  memoryType: 'long-term',
+                  sourceModel: 'chatty-identity'
+                }
+              );
+              console.log(`✅ [VVAULT API] Imported file as single identity entry: ${file.originalname || file.name}`);
+            }
           } catch (identityError) {
             console.warn('⚠️ [VVAULT API] Failed to import identity to ChromaDB (non-critical):', identityError);
           }

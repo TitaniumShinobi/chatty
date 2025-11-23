@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { createRequire } from 'module';
+import os from 'os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -12,14 +13,23 @@ const __dirname = dirname(__filename);
 const router = express.Router();
 router.use(requireAuth);
 
-// Get VVAULT root path
-const require = createRequire(import.meta.url);
-const { VVAULT_ROOT } = require('../../vvaultConnector/config.js');
-
 // Media file extensions
 const IMAGE_EXTENSIONS = /\.(png|jpg|jpeg|gif|webp|bmp|svg|tiff|tif|ico)$/i;
 const VIDEO_EXTENSIONS = /\.(mp4|avi|mov|mkv|webm|flv|wmv|ts|3gp|ogv|m4v)$/i;
 const AUDIO_EXTENSIONS = /\.(mp3|wav|ogg|m4a|flac|aac|wma)$/i;
+
+// User media root lives in Chatty workspace, not in VVAULT (protect sovereign constructs)
+const USER_MEDIA_ROOT = path.join(process.cwd(), 'user-media');
+
+async function ensureUserMediaDir(userId) {
+  const userDir = path.join(USER_MEDIA_ROOT, sanitizeUserId(userId));
+  await fs.mkdir(userDir, { recursive: true });
+  return userDir;
+}
+
+function sanitizeUserId(userId) {
+  return String(userId || 'anonymous').replace(/[^a-zA-Z0-9_\-]/g, '_');
+}
 
 /**
  * Recursively scan directory for media files
@@ -73,6 +83,7 @@ async function scanDirectoryForMedia(dirPath, basePath, userId) {
 
 /**
  * Get all media files for the current user
+ * Note: user media lives in Chatty workspace (user-media/{userId}), not in VVAULT.
  */
 router.get('/media', async (req, res) => {
   try {
@@ -82,68 +93,16 @@ router.get('/media', async (req, res) => {
     if (!userId) {
       return res.status(401).json({ ok: false, error: 'User not authenticated' });
     }
-    
-    // Try to find user's VVAULT directory
-    // Check both MongoDB user ID and VVAULT user ID formats
-    const shard = 'shard_0000';
-    const possibleUserIds = [
-      userId,
-      userEmail?.split('@')[0]?.toLowerCase().replace(/[^a-z0-9]/g, '_'),
-      // Also check for VVAULT format (devon_woodson_timestamp)
-      userEmail ? userEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '_') : null
-    ].filter(Boolean);
-    
-    const mediaFiles = [];
-    
-    // Scan imports directory for media files
-    // Path: vvault/users/{shard}/{user_id}/imports/{provider}/media/
-    for (const uid of possibleUserIds) {
-      const importsPath = path.join(VVAULT_ROOT, 'users', shard, uid, 'imports');
-      
-      try {
-        const exists = await fs.access(importsPath).then(() => true).catch(() => false);
-        if (exists) {
-          const media = await scanDirectoryForMedia(importsPath, importsPath, uid);
-          mediaFiles.push(...media);
-        }
-      } catch (error) {
-        // Directory doesn't exist, continue
-      }
-    }
-    
-    // Also scan constructs for media (in case media is stored per-construct)
-    for (const uid of possibleUserIds) {
-      const constructsPath = path.join(VVAULT_ROOT, 'users', shard, uid, 'constructs');
-      
-      try {
-        const exists = await fs.access(constructsPath).then(() => true).catch(() => false);
-        if (exists) {
-          const constructs = await fs.readdir(constructsPath, { withFileTypes: true });
-          
-          for (const construct of constructs) {
-            if (construct.isDirectory()) {
-              const constructPath = path.join(constructsPath, construct.name);
-              const media = await scanDirectoryForMedia(constructPath, constructsPath, uid);
-              mediaFiles.push(...media);
-            }
-          }
-        }
-      } catch (error) {
-        // Directory doesn't exist, continue
-      }
-    }
-    
-    // Remove duplicates (same file path)
-    const uniqueMedia = Array.from(
-      new Map(mediaFiles.map(item => [item.path, item])).values()
-    );
-    
+
+    const safeUserId = sanitizeUserId(userId);
+    const userDir = await ensureUserMediaDir(safeUserId);
+
+    const media = await scanDirectoryForMedia(userDir, userDir, safeUserId);
     // Sort by creation date (newest first)
-    uniqueMedia.sort((a, b) => b.createdAt - a.createdAt);
-    
-    console.log(`✅ [Library API] Found ${uniqueMedia.length} media files for user ${userEmail || userId}`);
-    
-    res.json({ ok: true, media: uniqueMedia });
+    media.sort((a, b) => b.createdAt - a.createdAt);
+
+    console.log(`✅ [Library API] Found ${media.length} media files for user ${userEmail || safeUserId} (user-media)`);
+    res.json({ ok: true, media });
   } catch (error) {
     console.error('❌ [Library API] Failed to get media files:', error);
     res.status(500).json({ ok: false, error: error.message });
@@ -155,19 +114,19 @@ router.get('/media', async (req, res) => {
  */
 router.get('/media/:userId/*', async (req, res) => {
   try {
-    const userId = req.params.userId;
+    const userId = sanitizeUserId(req.params.userId);
     const filePath = req.params[0]; // Everything after /media/:userId/
     
     // Security: prevent path traversal
-    if (filePath.includes('..') || filePath.includes('/') && !filePath.startsWith('imports/') && !filePath.startsWith('constructs/')) {
+    if (filePath.includes('..')) {
       return res.status(403).json({ ok: false, error: 'Invalid path' });
     }
     
-    const shard = 'shard_0000';
-    const fullPath = path.join(VVAULT_ROOT, 'users', shard, userId, filePath);
+    const userDir = await ensureUserMediaDir(userId);
+    const fullPath = path.join(userDir, filePath);
     
-    // Verify file exists and is within VVAULT
-    if (!fullPath.startsWith(VVAULT_ROOT)) {
+    // Verify file exists and is within user media root
+    if (!fullPath.startsWith(userDir)) {
       return res.status(403).json({ ok: false, error: 'Access denied' });
     }
     
@@ -210,4 +169,3 @@ router.get('/media/:userId/*', async (req, res) => {
 });
 
 export default router;
-

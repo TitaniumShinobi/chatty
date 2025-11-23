@@ -9,7 +9,8 @@ import {
   FolderPlus,
   PanelLeftClose,
   Shield,
-  Gauge
+  Gauge,
+  Pin
 } from 'lucide-react'
 import { SidebarProps } from '../types'
 import { cn } from '../lib/utils'
@@ -420,9 +421,15 @@ const Sidebar: React.FC<SidebarProps> = ({
                 }
               }}
             >
-              <span className="truncate flex-1">
-                {conversation.title}
-              </span>
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <span className="truncate">
+                  {conversation.title}
+                </span>
+                {/* Blue pin icon for Synth (primary construct) */}
+                {(conversation as any).isPrimary || (conversation as any).constructId === 'synth-001' ? (
+                  <Pin size={12} className="text-blue-500 flex-shrink-0" style={{ color: '#3b82f6' }} />
+                ) : null}
+              </div>
               <div
                 role="button"
                 tabIndex={0}
