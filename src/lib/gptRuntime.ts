@@ -2,6 +2,9 @@
 import { GPTManager, GPTConfig, GPTRuntime } from './gptManager.js';
 import { AIService } from './aiService.js';
 import { buildLegalFrameworkSection } from './legalFrameworks.js';
+import { detectTone } from './toneDetector.js';
+import { VVAULTRetrievalWrapper } from './vvaultRetrieval.js';
+import { buildKatanaPrompt } from './katanaPromptBuilder.js';
 // import { PersonaBrain } from '../engine/memory/PersonaBrain.js';
 // import { MemoryStore } from '../engine/memory/MemoryStore.js';
 
@@ -27,6 +30,7 @@ export class GPTRuntimeService {
   private aiService: AIService;
   private activeGPTs: Map<string, GPTRuntime> = new Map();
   private messageHistory: Map<string, GPTMessage[]> = new Map();
+  private vvaultRetrieval = new VVAULTRetrievalWrapper();
 
   private constructor() {
     this.gptManager = GPTManager.getInstance();
@@ -82,9 +86,9 @@ export class GPTRuntimeService {
     try {
       // Get GPT context
       const context = await this.gptManager.getGPTContext(gptId);
-      
-      // Build system prompt with GPT instructions and context
-      const systemPrompt = this.buildSystemPrompt(runtime.config, context, history, oneWordMode);
+
+      // Build system prompt (Katana-aware path uses tone + VVAULT memories)
+      const systemPrompt = await this.buildSystemPrompt(runtime.config, context, history, oneWordMode, userMessage, gptId);
       
       // Process with AI service using the GPT's model
       let aiResponse = await this.processWithModel(runtime.config.modelId, systemPrompt, userMessage);
@@ -102,6 +106,11 @@ export class GPTRuntimeService {
         gptId
       };
       history.push(assistantMsg);
+
+      // Persist this turn into VVAULT for Katana/LIN continuity
+      await this.persistTurnToVvault(gptId, userMessage, aiResponse).catch(err => {
+        console.warn('[gptRuntime] Failed to persist turn to VVAULT', err);
+      });
 
       // Update context
       await this.gptManager.updateGPTContext(gptId, this.buildContextFromHistory(history));
@@ -127,8 +136,37 @@ export class GPTRuntimeService {
     }
   }
 
-  private buildSystemPrompt(config: GPTConfig, context: string, history: GPTMessage[], oneWordMode: boolean): string {
+  private async buildSystemPrompt(
+    config: GPTConfig,
+    context: string,
+    history: GPTMessage[],
+    oneWordMode: boolean,
+    incomingMessage: string,
+    gptId: string
+  ): Promise<string> {
     const parts: string[] = [];
+
+    // Katana-specialized prompt building: use persona instructions + memories + tone.
+    if (config.name?.toLowerCase().includes('katana')) {
+      const tone = detectTone({ text: incomingMessage });
+      const memories = await this.vvaultRetrieval.retrieveMemories({
+        constructCallsign: gptId,
+        semanticQuery: 'katana continuity memory',
+        toneHints: tone ? [tone.tone] : [],
+        limit: 5,
+      });
+
+      return buildKatanaPrompt({
+        personaManifest: config.instructions || config.description || 'You are Katana.',
+        incomingMessage,
+        tone,
+        memories: memories.memories,
+        callSign: gptId,
+        includeLegalSection: true,
+        maxMemorySnippets: 5,
+        oneWordCue: oneWordMode,
+      });
+    }
 
     // GPT Identity
     parts.push(`You are ${config.name}, ${config.description}`);
@@ -171,6 +209,39 @@ export class GPTRuntimeService {
     }
 
     return parts.join('\n');
+  }
+
+  /**
+   * Store the latest user/assistant exchange in VVAULT for downstream retrieval.
+   * Scoped to Katana/LIN constructs (identified by name/callsign containing "katana").
+   */
+  private async persistTurnToVvault(gptId: string, userMessage: string, assistantMessage: string): Promise<void> {
+    if (!gptId.toLowerCase().includes('katana')) return;
+
+    const timestamp = new Date().toISOString();
+    const payload = {
+      constructCallsign: gptId,
+      context: userMessage,
+      response: assistantMessage,
+      metadata: {
+        timestamp,
+        source: 'gptRuntime',
+        memoryType: 'long-term',
+        threadId: gptId,
+      },
+    };
+
+    const res = await fetch('/api/vvault/identity/store', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`VVAULT store failed: ${res.status} ${errText}`);
+    }
   }
 
   private async processWithModel(modelId: string, systemPrompt: string, userMessage: string): Promise<string> {

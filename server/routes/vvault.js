@@ -527,6 +527,51 @@ router.get("/memories/query", async (req, res) => {
  * - Timestamped format: **TIME - Name**: content
  * - Plain text with role indicators
  */
+/**
+ * Trigger personality extraction from transcript (async, non-blocking)
+ */
+async function triggerPersonalityExtraction(
+  transcriptContent,
+  constructCallsign,
+  userId,
+  transcriptPath,
+  filename
+) {
+  try {
+    // Extract construct ID and callsign from constructCallsign
+    const constructMatch = constructCallsign.match(/^([a-z]+)-?(\d+)$/i);
+    if (!constructMatch) {
+      console.warn(`⚠️ [PersonalityExtraction] Invalid construct callsign: ${constructCallsign}`);
+      return;
+    }
+
+    const constructId = constructMatch[1];
+    const callsign = constructMatch[2] || '001';
+
+    // Dynamic import to avoid loading in browser context
+    const { DeepTranscriptParser } = await import('../../src/engine/transcript/DeepTranscriptParser.js');
+    const { PersonalityExtractor } = await import('../../src/engine/character/PersonalityExtractor.js');
+    const { IdentityMatcher } = await import('../../src/engine/character/IdentityMatcher.js');
+
+    // Parse transcript
+    const parser = new DeepTranscriptParser();
+    const analysis = await parser.parseTranscript(transcriptContent, constructId, transcriptPath);
+
+    // Extract personality blueprint
+    const extractor = new PersonalityExtractor();
+    const blueprint = await extractor.buildPersonalityBlueprint([analysis]);
+
+    // Persist blueprint
+    const matcher = new IdentityMatcher();
+    await matcher.persistPersonalityBlueprint(userId, constructId, callsign, blueprint);
+
+    console.log(`✅ [PersonalityExtraction] Extracted and persisted personality blueprint for ${constructCallsign}`);
+  } catch (error) {
+    console.error('❌ [PersonalityExtraction] Failed:', error);
+    throw error;
+  }
+}
+
 function parseTranscriptForConversationPairs(text, filename) {
   const pairs = [];
   const lines = text.split('\n');
@@ -865,6 +910,19 @@ ${text}
             console.warn('⚠️ [VVAULT API] Failed to import identity to ChromaDB (non-critical):', identityError);
           }
 
+          // Trigger deep parsing and personality extraction (async, non-blocking)
+          if (conversationPairs.length > 0) {
+            triggerPersonalityExtraction(
+              parsed.extractedText,
+              constructCallsign,
+              userId,
+              filePath,
+              file.originalname || file.name
+            ).catch(err => {
+              console.warn('⚠️ [VVAULT API] Personality extraction failed (non-critical):', err);
+            });
+          }
+
           results.push({
             success: true,
             filePath,
@@ -872,7 +930,8 @@ ${text}
               originalName: file.originalname || file.name,
               originalType: file.mimetype || file.type,
               originalSize: file.size,
-              wordCount: parsed.metadata.wordCount
+              wordCount: parsed.metadata.wordCount,
+              conversationPairs: conversationPairs.length
             }
           });
         } catch (error) {
@@ -1177,5 +1236,69 @@ if (process.env.NODE_ENV !== 'production') {
     }
   });
 }
+
+/**
+ * Serve persona files from user-specific prompts/customAI directory
+ */
+router.get("/identity/persona/:filename", requireAuth, async (req, res) => {
+  try {
+    const userId = validateUser(res, req.user);
+    if (!userId) return;
+
+    const { filename } = req.params;
+    
+    // Security: prevent path traversal
+    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      return res.status(403).json({ ok: false, error: 'Invalid filename' });
+    }
+    
+    // Only allow .md files
+    if (!filename.endsWith('.md')) {
+      return res.status(403).json({ ok: false, error: 'Only markdown files allowed' });
+    }
+    
+    const path = await import('path');
+    const fs = await import('fs/promises');
+    const { getUserPersonaDirectory } = await import('../lib/userRegistry.js');
+    
+    try {
+      // Get user's persona directory
+      const personaDir = await getUserPersonaDirectory(userId);
+      const personaPath = path.join(personaDir, filename);
+      
+      // Security: verify path is within user's directory
+      if (!personaPath.startsWith(personaDir)) {
+        return res.status(403).json({ ok: false, error: 'Access denied' });
+      }
+      
+      const content = await fs.readFile(personaPath, 'utf8');
+      res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+      res.send(content);
+    } catch (error) {
+      if (error.code === 'ENOENT' || error.message.includes('not found')) {
+        // Fallback to global prompts/customAI directory for backward compatibility
+        const { fileURLToPath } = await import('url');
+        const { dirname } = await import('path');
+        const __filename = fileURLToPath(import.meta.url);
+        const __dirname = dirname(__filename);
+        const projectRoot = path.resolve(__dirname, '../..');
+        const fallbackPath = path.join(projectRoot, 'prompts', 'customAI', filename);
+        
+        try {
+          const content = await fs.readFile(fallbackPath, 'utf8');
+          res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+          res.send(content);
+        } catch (fallbackError) {
+          return res.status(404).json({ ok: false, error: 'Persona file not found' });
+        }
+      } else {
+        throw error;
+      }
+    }
+  } catch (error) {
+    console.error('❌ [VVAULT API] Failed to serve persona file:', error);
+    res.status(500).json({ ok: false, error: error.message || 'Failed to serve persona file' });
+  }
+});
 
 export default router;

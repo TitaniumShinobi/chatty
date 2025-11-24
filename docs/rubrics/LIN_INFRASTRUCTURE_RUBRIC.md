@@ -244,10 +244,53 @@ async function routeWithLin(
 
 ### VVAULT Storage
 
-- Lin's conversations stored in `/vvault/users/shard_0000/{user_id}/constructs/lin-001/chatty/chat_with_lin-001.md`
-- Lin's memories stored in ChromaDB: `{user_id}_lin_001_long_term_memory` and `{user_id}_lin_001_short_term_memory`
-- Lin's config stored in `/vvault/users/shard_0000/{user_id}/constructs/lin-001/config/`
+- Lin's conversations stored in `/vvault/users/shard_0000/{user_id}/instances/lin-001/chatty/chat_with_lin-001.md`
+- Lin's memories stored in ChromaDB: **User-scoped collections** `{vvaultUserId}_lin-001_short-term_identity` and `{vvaultUserId}_lin-001_long-term_identity`
+- Lin's config stored in `/vvault/users/shard_0000/{user_id}/instances/lin-001/config/`
 - GPT configurations stored in `chatty/chatty.db` with `orchestration_mode`, `conversation_model`, `creative_model`, `coding_model`
+
+#### Memory Isolation
+
+**Critical**: Lin's memories are user-scoped in ChromaDB to match the `/instances/` file structure isolation pattern.
+
+- **Collection naming**: `{vvaultUserId}_{constructCallsign}_{memoryType}_identity`
+- **User isolation**: Each user's memories are in separate ChromaDB collections
+- **No cross-user leakage**: Two users with the same construct callsign (e.g., `lin-001`) have separate memory collections
+- **Matches file structure**: Memory isolation mirrors `/instances/` directory isolation
+
+**Implementation**:
+- `identityService.js` resolves `vvaultUserId` before creating/querying collections
+- Collections are created per-user, not per-construct-callsign
+- Memory recall queries are automatically scoped to the authenticated user
+
+**Memory Recall Flow**:
+```
+User Message
+    ↓
+Resolve userId → vvaultUserId
+    ↓
+Query ChromaDB: {vvaultUserId}_{constructCallsign}_{memoryType}_identity
+    ↓
+Tone Detection → Matching → Retrieval
+    ↓
+Inject into Lin's prompt
+```
+
+**Memory Recall Architecture**:
+
+Lin's memory recall follows a 5-phase system:
+
+1. **Deep Transcript Parsing**: Extract conversation pairs from transcripts
+2. **Tone Detection**: Analyze text for tone markers (feral, directive, protective, etc.)
+3. **Matching**: Match detected constructs to existing constructs by callsign
+4. **Persistence**: Store memories in user-scoped ChromaDB collections
+5. **Drift Prevention**: Monitor responses for personality drift
+
+**User Isolation Enforcement**:
+- Memory queries automatically include `vvaultUserId` in collection names
+- No cross-user memory access possible
+- Each user's Lin instance has isolated memory
+- Supports flexible identity systems (hard-locked or freeform)
 
 ### Model Selection
 
@@ -398,6 +441,9 @@ codingModel: 'phi3:latest' // Can be same as conversation
 - ✅ `buildPreviewSystemPrompt` accepts and respects `orchestrationMode`
 - ✅ Lin mode omits model configuration from system prompt
 - ✅ Custom mode only includes single conversation model in system prompt
+- ✅ Memory collections are user-scoped (no cross-user memory leakage)
+- ✅ Memory recall respects user isolation (matches `/instances/` structure)
+- ✅ ChromaDB collections follow pattern: `{vvaultUserId}_{constructCallsign}_{memoryType}_identity`
 
 ## Summary
 

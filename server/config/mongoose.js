@@ -13,7 +13,11 @@ dotenv.config();
  */
 export async function initMongoose() {
   try {
-    const mongoUri = process.env.MONGODB_URI || "mongodb+srv://dwoodson92_db_user:7Ez8fnZaWsrqQCo1@chatty.obnxwcm.mongodb.net/?retryWrites=true&w=majority&appName=Chatty";
+    const mongoUri = process.env.MONGODB_URI;
+    
+    if (!mongoUri) {
+      throw new Error('MONGODB_URI environment variable is required. Set it in .env file or export it.');
+    }
     
     console.log('🔌 Initializing mongoose connection...');
     

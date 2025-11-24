@@ -88,6 +88,9 @@ const AICreator: React.FC<AICreatorProps> = ({
   const [showTranscriptsDropdown, setShowTranscriptsDropdown] = useState(false)
   const identityInputRef = useRef<HTMLInputElement>(null)
   
+  // Katana persona state
+  const [katanaPersona, setKatanaPersona] = useState<string | null>(null)
+  
   // Avatar upload
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
@@ -277,6 +280,30 @@ const AICreator: React.FC<AICreatorProps> = ({
       loadIdentityFiles(config.constructCallsign);
     }
   }, [config.constructCallsign, isVisible, loadIdentityFiles])
+
+  // Load Katana persona file when Lin mode is active
+  useEffect(() => {
+    if (orchestrationMode === 'lin' && !katanaPersona) {
+      // Load katana_lin.md via API endpoint
+      fetch('/api/vvault/identity/persona/katana_lin.md', {
+        credentials: 'include'
+      })
+        .then(response => {
+          if (response.ok) {
+            return response.text()
+          }
+          throw new Error('Failed to load Katana persona')
+        })
+        .then(content => {
+          console.log('✅ [GPTCreator] Loaded Katana persona file')
+          setKatanaPersona(content)
+        })
+        .catch(error => {
+          console.warn('⚠️ [GPTCreator] Could not load Katana persona file:', error)
+          // Continue without Katana persona - will use default Lin prompt
+        })
+    }
+  }, [orchestrationMode, katanaPersona])
   const [createInput, setCreateInput] = useState('')
   const [isCreateGenerating, setIsCreateGenerating] = useState(false)
   const createInputRef = useRef<HTMLTextAreaElement>(null)
@@ -1111,6 +1138,33 @@ Assistant:`;
       })
     }
     
+    // If Katana persona is loaded, use it instead of default Lin prompt
+    if (katanaPersona && orchestrationMode === 'lin') {
+      // Extract the main content from the markdown file (skip the header)
+      const personaContent = katanaPersona
+        .replace(/^#.*$/m, '') // Remove first header
+        .replace(/^\*\*Construct\*\*:.*$/m, '') // Remove construct line
+        .replace(/^\*\*Purpose\*\*:.*$/m, '') // Remove purpose line
+        .replace(/^\*\*Source\*\*:.*$/m, '') // Remove source line
+        .trim()
+      
+      // Add current GPT configuration context
+      const configContext = `
+CURRENT GPT CONFIGURATION:
+- Name: ${config.name || 'Not set'}
+- Description: ${config.description || 'Not set'}
+- Instructions: ${config.instructions || 'Not set'}
+- Conversation Model: ${config.conversationModel || 'Not set'}
+- Creative Model: ${config.creativeModel || 'Not set'}
+- Coding Model: ${config.codingModel || 'Not set'}
+- Knowledge Files: ${files.length} files uploaded
+- Capabilities: ${config.capabilities ? Object.entries(config.capabilities).filter(([_, enabled]) => enabled).map(([cap, _]) => cap).join(', ') || 'None' : 'Not set'}
+${ltmContext}`
+      
+      return `${personaContent}${configContext}`
+    }
+    
+    // Default Lin prompt (fallback if Katana persona not loaded)
     return `You are Lin (construct ID: lin-001), a persistent AI assistant dedicated to helping users create GPTs.
 
 IDENTITY ANCHORS (CRITICAL - NEVER REMOVE):

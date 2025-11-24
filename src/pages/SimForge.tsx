@@ -276,12 +276,12 @@ export default function SimForge() {
               <button
                 onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
-                style={{ 
-                  backgroundColor: 'transparent',
+              style={{ 
+                backgroundColor: 'transparent',
                   border: 'none',
-                  color: 'var(--chatty-text)'
-                }}
-              >
+                color: 'var(--chatty-text)'
+              }}
+            >
                 <span>{categories.find(c => c.id === selectedCategory)?.name || 'All Categories'}</span>
                 <ChevronDown size={14} style={{ color: 'var(--chatty-text)', opacity: 0.7 }} />
               </button>
@@ -317,13 +317,13 @@ export default function SimForge() {
                       }}
                     >
                       <span className="text-sm" style={{ color: 'var(--chatty-text)' }}>
-                        {category.name}
+                  {category.name}
                       </span>
                       {selectedCategory === category.id && (
                         <Check size={16} style={{ color: 'var(--chatty-text)' }} />
                       )}
                     </div>
-                  ))}
+              ))}
                 </div>
               )}
             </div>

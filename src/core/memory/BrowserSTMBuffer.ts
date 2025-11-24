@@ -1,5 +1,5 @@
-// Browser-compatible STM Buffer using localStorage as fallback
-// Simplified version for browser environment
+// Browser-compatible STM Buffer using VVAULT API
+// NOW USES VVAULT API - All construct memories stored in VVAULT ChromaDB, not localStorage
 
 export interface MessagePacket {
   id: string;
@@ -68,22 +68,24 @@ export class BrowserSTMBuffer {
       }
     }
     
-    // Persist to localStorage if enabled
+    // Persist to VVAULT if enabled
     if (this.persistToStorage) {
-      this.saveToStorage(constructId, threadId, messageWithSequence);
+      this.saveToStorage(constructId, threadId, messageWithSequence).catch(error => {
+        console.error('Failed to persist message to VVAULT:', error);
+      });
     }
   }
 
   /**
    * Get the current STM window for a construct/thread
    */
-  getWindow(constructId: string, threadId: string, limit?: number): MessagePacket[] {
+  async getWindow(constructId: string, threadId: string, limit?: number): Promise<MessagePacket[]> {
     const key = this.getKey(constructId, threadId);
     const messages = this.buffer.get(key) || [];
     
-    // If no in-memory buffer, try to load from localStorage
+    // If no in-memory buffer, try to load from VVAULT
     if (messages.length === 0 && this.persistToStorage) {
-      return this.loadFromStorage(constructId, threadId, limit);
+      return await this.loadFromStorage(constructId, threadId, limit);
     }
     
     const effectiveLimit = limit || this.windowSize;
@@ -106,13 +108,13 @@ export class BrowserSTMBuffer {
   /**
    * Get STM statistics for monitoring
    */
-  getStats(constructId: string, threadId: string): {
+  async getStats(constructId: string, threadId: string): Promise<{
     messageCount: number;
     windowSize: number;
     oldestMessage?: number;
     newestMessage?: number;
-  } {
-    const messages = this.getWindow(constructId, threadId);
+  }> {
+    const messages = await this.getWindow(constructId, threadId);
     return {
       messageCount: messages.length,
       windowSize: this.windowSize,
@@ -122,36 +124,104 @@ export class BrowserSTMBuffer {
   }
 
   /**
-   * Save message to localStorage
+   * Save message to VVAULT API
    */
-  private saveToStorage(constructId: string, threadId: string, message: MessagePacket & { sequence: number }): void {
+  private async saveToStorage(constructId: string, threadId: string, message: MessagePacket & { sequence: number }): Promise<void> {
     try {
-      const key = `chatty_stm_${constructId}_${threadId}`;
-      const existing = JSON.parse(localStorage.getItem(key) || '[]');
-      existing.push(message);
-      
-      // Keep only recent messages
-      const recent = existing.slice(-this.windowSize);
-      localStorage.setItem(key, JSON.stringify(recent));
+      const context = message.role === 'user' ? message.content : '';
+      const response = message.role === 'assistant' ? message.content : '';
+
+      // Store via VVAULT API with short-term memory type
+      const storeResponse = await fetch('/api/vvault/identity/store', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          constructCallsign: constructId,
+          context: context || `Message ${message.role}`,
+          response: response || context,
+          metadata: {
+            timestamp: new Date(message.timestamp).toISOString(),
+            sessionId: threadId,
+            source: 'browser-stm-buffer',
+            memoryType: 'short-term', // Explicitly set as STM
+            messageId: message.id,
+            role: message.role,
+            sequence: message.sequence
+          }
+        })
+      });
+
+      if (!storeResponse.ok) {
+        const errorText = await storeResponse.text();
+        console.error('Failed to persist STM message to VVAULT:', storeResponse.status, errorText);
+      }
     } catch (error) {
-      console.error('Failed to persist STM message to localStorage:', error);
+      console.error('Failed to persist STM message to VVAULT:', error);
     }
   }
 
   /**
-   * Load messages from localStorage
+   * Load messages from VVAULT API
    */
-  private loadFromStorage(constructId: string, threadId: string, limit?: number): MessagePacket[] {
+  private async loadFromStorage(constructId: string, threadId: string, limit?: number): Promise<MessagePacket[]> {
     try {
-      const key = `chatty_stm_${constructId}_${threadId}`;
-      const stored = localStorage.getItem(key);
+      const effectiveLimit = limit || this.windowSize;
       
-      if (!stored) {
+      // Query VVAULT for recent short-term memories
+      const queryResponse = await fetch(
+        `/api/vvault/identity/query?constructCallsign=${encodeURIComponent(constructId)}&query=recent messages&limit=${effectiveLimit}`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        }
+      );
+
+      if (!queryResponse.ok) {
+        console.error('Failed to load STM messages from VVAULT:', queryResponse.statusText);
+        return [];
+      }
+
+      const result = await queryResponse.json();
+      if (!result.ok || !result.memories) {
         return [];
       }
       
-      const messages = JSON.parse(stored);
-      const effectiveLimit = limit || this.windowSize;
+      // Filter for short-term memories and convert to MessagePacket format
+      const messages: (MessagePacket & { sequence: number })[] = [];
+      
+      result.memories
+        .filter((m: any) => m.memoryType === 'short-term' || !m.memoryType)
+        .slice(0, effectiveLimit)
+        .forEach((memory: any) => {
+          if (memory.context && memory.context !== `Message user`) {
+            messages.push({
+              id: memory.metadata?.messageId || `user_${Date.now()}`,
+              role: 'user',
+              content: memory.context,
+              timestamp: memory.timestamp ? new Date(memory.timestamp).getTime() : Date.now(),
+              sequence: memory.metadata?.sequence || 0
+            });
+          }
+          
+          if (memory.response && memory.response !== memory.context) {
+            messages.push({
+              id: memory.metadata?.messageId || `assistant_${Date.now()}`,
+              role: 'assistant',
+              content: memory.response,
+              timestamp: memory.timestamp ? new Date(memory.timestamp).getTime() : Date.now(),
+              sequence: (memory.metadata?.sequence || 0) + 1
+            });
+          }
+        });
+
+      // Sort by sequence and timestamp
+      messages.sort((a, b) => {
+        if (a.sequence !== b.sequence) return a.sequence - b.sequence;
+        return a.timestamp - b.timestamp;
+      });
       
       // Update in-memory buffer
       const bufferKey = this.getKey(constructId, threadId);
@@ -159,39 +229,29 @@ export class BrowserSTMBuffer {
       
       return messages.slice(-effectiveLimit);
     } catch (error) {
-      console.error('Failed to load STM messages from localStorage:', error);
+      console.error('Failed to load STM messages from VVAULT:', error);
       return [];
     }
   }
 
   /**
-   * Remove message from localStorage
+   * Remove message from VVAULT
+   * Note: VVAULT is append-only, so we can't actually delete messages.
+   * This method is kept for API compatibility but is a no-op.
    */
   private removeFromStorage(constructId: string, threadId: string, messageId: string): void {
-    try {
-      const key = `chatty_stm_${constructId}_${threadId}`;
-      const stored = localStorage.getItem(key);
-      
-      if (stored) {
-        const messages = JSON.parse(stored);
-        const filtered = messages.filter((msg: any) => msg.id !== messageId);
-        localStorage.setItem(key, JSON.stringify(filtered));
-      }
-    } catch (error) {
-      console.error('Failed to remove STM message from localStorage:', error);
-    }
+    // VVAULT is append-only - messages cannot be deleted
+    // Messages will naturally transition from STM to LTM based on age
   }
 
   /**
-   * Clear all messages for a construct/thread from localStorage
+   * Clear all messages for a construct/thread from VVAULT
+   * Note: VVAULT is append-only, so we can't actually delete messages.
+   * This method only clears the in-memory buffer.
    */
   private clearFromStorage(constructId: string, threadId: string): void {
-    try {
-      const key = `chatty_stm_${constructId}_${threadId}`;
-      localStorage.removeItem(key);
-    } catch (error) {
-      console.error('Failed to clear STM messages from localStorage:', error);
-    }
+    // VVAULT is append-only - messages cannot be deleted
+    // This method only affects the in-memory buffer (which is already cleared by clearWindow)
   }
 
   /**

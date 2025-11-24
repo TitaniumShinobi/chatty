@@ -32,6 +32,15 @@ if (process.env.MONGODB_URI) {
   console.log('🚀 Running in memory-only mode (no MONGODB_URI set)');
 }
 
+// Initialize user registry
+try {
+  const { initializeUserRegistry } = await import('./lib/userRegistry.js');
+  await initializeUserRegistry();
+} catch (error) {
+  console.error('⚠️ [Server] Failed to initialize user registry:', error);
+  // Continue anyway - registry will be created on first use
+}
+
 const app = express();
 app.use(express.json());
 app.use(cookieParser());
@@ -146,8 +155,20 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       picture: profile.picture 
     });
     
+    const userId = doc._id.toString?.() ?? doc._id;
+    
+    // 3b) Register user in Chatty user registry
+    try {
+      const { getOrCreateUser } = await import('./lib/userRegistry.js');
+      await getOrCreateUser(userId, profile.email, profile.name);
+      console.log(`✅ [User Registry] Registered user: ${userId} (${profile.email})`);
+    } catch (regError) {
+      console.error('⚠️ [User Registry] Failed to register user (non-critical):', regError);
+      // Continue anyway - user can still use the app
+    }
+    
     const payload = { 
-      id: doc._id.toString?.() ?? doc._id, 
+      id: userId, 
       uid: profile.sub, 
       name: profile.name, 
       email: profile.email, 

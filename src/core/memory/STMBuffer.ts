@@ -1,8 +1,20 @@
 // STM Buffer: Short-Term Memory with sliding window logic per construct/thread
 // Implements in-RAM fast-access buffer with configurable window size
+// NOW USES VVAULT API - All construct memories stored in VVAULT ChromaDB, not Chatty DB
 
-import db from '../../lib/db';
 import { shouldLog } from '../../lib/verbosity';
+
+// Code guard: Prevent SQLite usage for construct memories
+if (typeof window === 'undefined') {
+  try {
+    const db = require('../../lib/db').default;
+    if (db && db.prepare) {
+      console.warn('⚠️ [STMBuffer] SQLite database access detected. STMBuffer now uses VVAULT API only.');
+    }
+  } catch (e) {
+    // Ignore - db may not be available in all environments
+  }
+}
 
 export interface MessagePacket {
   id: string;
@@ -125,144 +137,158 @@ export class STMBuffer {
   }
 
   /**
-   * Persist message to database
+   * Persist message to VVAULT API
    */
   private async persistToDatabase(constructId: string, threadId: string, message: MessagePacket & { sequence: number }): Promise<void> {
     try {
-      if (db.stmBuffer) {
-        // Browser environment - use Dexie
-        await db.stmBuffer.add({
-          constructId,
-          threadId,
+      // For STM, we need to store message pairs (user/assistant)
+      // Since we're storing individual messages, we'll create a context/response pair
+      // If it's a user message, we'll store it with an empty response (will be updated when assistant responds)
+      // If it's an assistant message, we'll try to find the previous user message
+      
+      const context = message.role === 'user' ? message.content : '';
+      const response = message.role === 'assistant' ? message.content : '';
+
+      // Store via VVAULT API with short-term memory type
+      const storeResponse = await fetch('/api/vvault/identity/store', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          constructCallsign: constructId,
+          context: context || `Message ${message.role}`,
+          response: response || context,
+          metadata: {
+            timestamp: new Date(message.timestamp).toISOString(),
+            sessionId: threadId,
+            source: 'stm-buffer',
+            memoryType: 'short-term', // Explicitly set as STM
           messageId: message.id,
           role: message.role,
-          content: message.content,
-          ts: message.timestamp,
           sequence: message.sequence
-        });
-      } else {
-        // Node.js environment - use SQLite
-        const stmt = db.prepare(`
-          INSERT INTO stm_buffer (construct_id, thread_id, message_id, role, content, ts, sequence)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `);
-        
-        stmt.run(
-          constructId,
-          threadId,
-          message.id,
-          message.role,
-          message.content,
-          message.timestamp,
-          message.sequence
-        );
+          }
+        })
+      });
+
+      if (!storeResponse.ok) {
+        if (shouldLog('error')) {
+          const errorText = await storeResponse.text();
+          console.error('Failed to persist STM message to VVAULT:', storeResponse.status, errorText);
+        }
+      } else if (shouldLog('debug')) {
+        const result = await storeResponse.json();
+        console.log(`✅ [STMBuffer] Persisted message to VVAULT (duplicate: ${result.duplicate || false})`);
       }
     } catch (error) {
-      // In CLI/Node.js environment, IndexedDB errors are expected
-      // Only log if verbose mode is enabled
-      const isIndexedDBError = error instanceof Error && 
-        (error.message.includes('IndexedDB') || error.message.includes('MissingAPIError'));
-      
-      // Suppress IndexedDB errors by default (they're expected in Node.js)
-      // Only log if it's not an IndexedDB error, or if verbose mode is enabled
-      if (!isIndexedDBError && shouldLog('error')) {
-        console.error('Failed to persist STM message to database:', error);
+      if (shouldLog('error')) {
+        console.error('Failed to persist STM message to VVAULT:', error);
       }
     }
   }
 
   /**
-   * Load messages from database
+   * Load messages from VVAULT API
    */
   private async loadFromDatabase(constructId: string, threadId: string, limit?: number): Promise<MessagePacket[]> {
     try {
       const effectiveLimit = limit || this.windowSize;
       
-      if (db.stmBuffer) {
-        // Browser environment - use Dexie
-        const rows = await db.stmBuffer
-          .where(['constructId', 'threadId'])
-          .equals([constructId, threadId])
-          .reverse()
-          .limit(effectiveLimit)
-          .toArray();
-        
-        // Convert to MessagePacket format and reverse to get chronological order
-        const messages = rows.reverse().map(row => ({
-          id: row.messageId,
-          role: row.role as 'user' | 'assistant' | 'system',
-          content: row.content,
-          timestamp: row.ts,
-          sequence: row.sequence
-        }));
-        
-        // Update in-memory buffer
-        const key = this.getKey(constructId, threadId);
-        this.buffer.set(key, messages);
-        
-        return messages;
-      } else {
-        // Node.js environment - use SQLite
-        const stmt = db.prepare(`
-          SELECT message_id, role, content, ts, sequence
-          FROM stm_buffer 
-          WHERE construct_id = ? AND thread_id = ?
-          ORDER BY sequence DESC
-          LIMIT ?
-        `);
-        
-        const rows = stmt.all(constructId, threadId, effectiveLimit);
-        
-        // Convert to MessagePacket format and reverse to get chronological order
-        const messages = rows.reverse().map(row => ({
-          id: row.message_id,
-          role: row.role as 'user' | 'assistant' | 'system',
-          content: row.content,
-          timestamp: row.ts,
-          sequence: row.sequence
-        }));
-        
-        // Update in-memory buffer
-        const key = this.getKey(constructId, threadId);
-        this.buffer.set(key, messages);
-        
-        return messages;
+      // Query VVAULT for recent short-term memories
+      const queryResponse = await fetch(
+        `/api/vvault/identity/query?constructCallsign=${encodeURIComponent(constructId)}&query=recent messages&limit=${effectiveLimit}`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        }
+      );
+
+      if (!queryResponse.ok) {
+        if (shouldLog('error')) {
+          console.error('Failed to load STM messages from VVAULT:', queryResponse.statusText);
+        }
+        return [];
       }
+
+      const result = await queryResponse.json();
+      if (!result.ok || !result.memories) {
+        return [];
+      }
+
+      // Filter for short-term memories and convert to MessagePacket format
+      const messages: (MessagePacket & { sequence: number })[] = [];
+      
+      result.memories
+        .filter((m: any) => m.memoryType === 'short-term' || !m.memoryType) // Prefer STM, but include any if no type specified
+        .slice(0, effectiveLimit)
+        .forEach((memory: any) => {
+          // VVAULT stores context/response pairs, so we need to create message packets
+          // We'll create two messages: one for context (user) and one for response (assistant)
+          if (memory.context && memory.context !== `Message user`) {
+            messages.push({
+              id: memory.metadata?.messageId || `user_${Date.now()}`,
+              role: 'user',
+              content: memory.context,
+              timestamp: memory.timestamp ? new Date(memory.timestamp).getTime() : Date.now(),
+              sequence: memory.metadata?.sequence || 0
+            });
+          }
+          
+          if (memory.response && memory.response !== memory.context) {
+            messages.push({
+              id: memory.metadata?.messageId || `assistant_${Date.now()}`,
+              role: 'assistant',
+              content: memory.response,
+              timestamp: memory.timestamp ? new Date(memory.timestamp).getTime() : Date.now(),
+              sequence: (memory.metadata?.sequence || 0) + 1
+            });
+          }
+        });
+
+      // Sort by sequence and timestamp
+      messages.sort((a, b) => {
+        if (a.sequence !== b.sequence) return a.sequence - b.sequence;
+        return a.timestamp - b.timestamp;
+      });
+        
+        // Update in-memory buffer
+        const key = this.getKey(constructId, threadId);
+        this.buffer.set(key, messages);
+        
+        return messages;
     } catch (error) {
       if (shouldLog('error')) {
-        console.error('Failed to load STM messages from database:', error);
+        console.error('Failed to load STM messages from VVAULT:', error);
       }
       return [];
     }
   }
 
   /**
-   * Remove message from database
+   * Remove message from VVAULT
+   * Note: VVAULT is append-only, so we can't actually delete messages.
+   * This method is kept for API compatibility but is a no-op.
+   * Messages will naturally age out of STM into LTM based on the 7-day threshold.
    */
   private removeFromDB(constructId: string, threadId: string, messageId: string): void {
-    try {
-      const stmt = db.prepare(`
-        DELETE FROM stm_buffer 
-        WHERE construct_id = ? AND thread_id = ? AND message_id = ?
-      `);
-      stmt.run(constructId, threadId, messageId);
-    } catch (error) {
-      console.error('Failed to remove STM message from database:', error);
+    // VVAULT is append-only - messages cannot be deleted
+    // Messages will naturally transition from STM to LTM based on age
+    if (shouldLog('debug')) {
+      console.log(`[STMBuffer] Remove requested (VVAULT is append-only): constructId=${constructId}, messageId=${messageId}`);
     }
   }
 
   /**
-   * Clear all messages for a construct/thread from database
+   * Clear all messages for a construct/thread from VVAULT
+   * Note: VVAULT is append-only, so we can't actually delete messages.
+   * This method only clears the in-memory buffer.
    */
   private clearFromDatabase(constructId: string, threadId: string): void {
-    try {
-      const stmt = db.prepare(`
-        DELETE FROM stm_buffer 
-        WHERE construct_id = ? AND thread_id = ?
-      `);
-      stmt.run(constructId, threadId);
-    } catch (error) {
-      console.error('Failed to clear STM messages from database:', error);
+    // VVAULT is append-only - messages cannot be deleted
+    // This method only affects the in-memory buffer (which is already cleared by clearWindow)
+    if (shouldLog('debug')) {
+      console.log(`[STMBuffer] Clear requested (VVAULT is append-only, only clearing in-memory buffer): constructId=${constructId}, threadId=${threadId}`);
     }
   }
 

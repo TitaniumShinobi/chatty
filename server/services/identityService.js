@@ -87,16 +87,18 @@ class IdentityService {
   }
 
   /**
-   * Get or create collection for a construct
+   * Get or create collection for a construct (USER-SCOPED)
+   * @param {string} vvaultUserId - VVAULT user ID (for isolation)
    * @param {string} constructCallsign - Construct-callsign (e.g., "synth-001")
    * @param {string} memoryType - "short-term" or "long-term"
    */
-  async getCollection(constructCallsign, memoryType) {
+  async getCollection(vvaultUserId, constructCallsign, memoryType) {
     if (!this.initialized || !this.client) {
       throw new Error('ChromaDB not initialized. Ensure ChromaDB server is running.');
     }
 
-    const collectionName = `${constructCallsign}_${memoryType}_identity`;
+    // User-scoped collection name to match /instances/ isolation
+    const collectionName = `${vvaultUserId}_${constructCallsign}_${memoryType}_identity`;
     
     try {
       // Try to get existing collection
@@ -111,12 +113,13 @@ class IdentityService {
         name: collectionName,
         embeddingFunction: this.embedder,
         metadata: {
+          vvaultUserId,
           constructCallsign,
           memoryType,
           created: new Date().toISOString()
         }
       });
-      console.log(`✅ [IdentityService] Created collection: ${collectionName}`);
+      console.log(`✅ [IdentityService] Created user-scoped collection: ${collectionName}`);
       return collection;
     }
   }
@@ -171,8 +174,8 @@ class IdentityService {
         memory_type: memoryType
       };
 
-      // Get appropriate collection
-      const collection = await this.getCollection(constructCallsign, memoryType);
+      // Get appropriate collection (user-scoped)
+      const collection = await this.getCollection(vvaultUserId, constructCallsign, memoryType);
 
       // Check for duplicates
       try {
@@ -234,10 +237,10 @@ class IdentityService {
       const queryTexts = Array.isArray(query) ? query : [query];
       const results = [];
 
-      // Query both short-term and long-term collections
+      // Query both short-term and long-term collections (user-scoped)
       for (const memoryType of ['short-term', 'long-term']) {
         try {
-          const collection = await this.getCollection(constructCallsign, memoryType);
+          const collection = await this.getCollection(vvaultUserId, constructCallsign, memoryType);
           
           const queryResult = await collection.query({
             queryTexts,
@@ -273,7 +276,7 @@ class IdentityService {
           }
         } catch (error) {
           // Collection may not exist yet, or ChromaDB server unavailable - which is fine
-          console.debug(`[IdentityService] Collection ${constructCallsign}_${memoryType}_identity not accessible (expected if no memories yet or server unavailable):`, error.message);
+          console.debug(`[IdentityService] Collection ${vvaultUserId}_${constructCallsign}_${memoryType}_identity not accessible (expected if no memories yet or server unavailable):`, error.message);
         }
       }
 

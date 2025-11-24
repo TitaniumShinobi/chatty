@@ -113,7 +113,17 @@ class ChattyDatabase extends Dexie {
   constructs!: Table<Construct>;
   threads!: Table<Thread>;
   threadLeases!: Table<ThreadLease>;
+  /**
+   * @deprecated vaultEntries table is deprecated. All construct memories are now stored in VVAULT ChromaDB via /api/vvault/identity/store.
+   * This table should not be used for new code. Existing data should be migrated to VVAULT.
+   * Migration: Use VVAULT API endpoints instead of this table.
+   */
   vaultEntries!: Table<VaultEntry>;
+  /**
+   * @deprecated stmBuffer table is deprecated. All construct memories are now stored in VVAULT ChromaDB via /api/vvault/identity/store.
+   * This table should not be used for new code. Existing data should be migrated to VVAULT.
+   * Migration: Use VVAULT API endpoints instead of this table.
+   */
   stmBuffer!: Table<STMBufferEntry>;
   fingerprintHistory!: Table<FingerprintHistory>;
   vaultSummaries!: Table<VaultSummary>;
@@ -187,8 +197,22 @@ export class BrowserDB {
   get constructs() { return this.db.constructs; }
   get threads() { return this.db.threads; }
   get threadLeases() { return this.db.threadLeases; }
-  get vaultEntries() { return this.db.vaultEntries; }
-  get stmBuffer() { return this.db.stmBuffer; }
+  /**
+   * @deprecated vaultEntries table is deprecated. Use VVAULT API instead.
+   * Accessing this table will log a deprecation warning.
+   */
+  get vaultEntries() {
+    console.warn('⚠️ [BrowserDB] vaultEntries table is deprecated. All construct memories should use VVAULT API (/api/vvault/identity/store).');
+    return this.db.vaultEntries;
+  }
+  /**
+   * @deprecated stmBuffer table is deprecated. Use VVAULT API instead.
+   * Accessing this table will log a deprecation warning.
+   */
+  get stmBuffer() {
+    console.warn('⚠️ [BrowserDB] stmBuffer table is deprecated. All construct memories should use VVAULT API (/api/vvault/identity/store).');
+    return this.db.stmBuffer;
+  }
   get fingerprintHistory() { return this.db.fingerprintHistory; }
   get vaultSummaries() { return this.db.vaultSummaries; }
   get messages() { return this.db.messages; }

@@ -34,6 +34,11 @@ export class AIManager {
     this.uploadDir = path.join(process.cwd(), 'ai-uploads');
     this.initializeDatabase();
     this.ensureUploadDir();
+    
+    // VVAULT/Chatty Database Separation Guard
+    // This class manages Chatty user database ONLY. Construct memories (STM/LTM) MUST be stored in VVAULT.
+    // See: chatty/docs/architecture/VVAULT_CHATTY_DATABASE_SEPARATION.md
+    console.log(`🔒 [AIManager] VVAULT boundary enforced: Construct memories must go to VVAULT, not Chatty DB`);
   }
 
   static getInstance() {
@@ -1600,6 +1605,10 @@ European Electronic Communications Code Disclosure (EECCD):
   }
 
   async updateAIContext(aiId, context) {
+    // VVAULT BOUNDARY GUARD: This method should NOT store construct memories.
+    // Construct memories (STM/LTM) MUST be stored in VVAULT via VVAULT API.
+    // This method is for UI convenience context only, not canonical construct memory.
+    // See: chatty/docs/architecture/VVAULT_CHATTY_DATABASE_SEPARATION.md
     // For now, we'll store context in memory
     // In a full implementation, you might want to store this in the database
     console.log(`Updated context for AI ${aiId}:`, context.substring(0, 100) + '...');

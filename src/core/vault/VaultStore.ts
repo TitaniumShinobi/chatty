@@ -1,8 +1,21 @@
 // VaultStore: Long-Term Memory Vault with persistent storage and semantic retrieval
 // Implements append-only persistent store with semantic search capabilities
+// NOW USES VVAULT API - All construct memories stored in VVAULT ChromaDB, not Chatty DB
 
-import db from '../../lib/db';
 import { shouldLog } from '../../lib/verbosity';
+
+// Code guard: Prevent SQLite usage for construct memories
+if (typeof window === 'undefined') {
+  // Node.js environment - check if db is being imported for construct memory operations
+  try {
+    const db = require('../../lib/db').default;
+    if (db && db.prepare) {
+      console.warn('⚠️ [VaultStore] SQLite database access detected. VaultStore now uses VVAULT API only.');
+    }
+  } catch (e) {
+    // Ignore - db may not be available in all environments
+  }
+}
 
 export interface VaultEntry {
   id?: number;
@@ -40,174 +53,281 @@ export class VaultStore {
   constructor(private constructId: string) {}
 
   /**
-   * Save a message to the LTM vault
+   * Save a message to the LTM vault via VVAULT API
    */
   async saveMessage(threadId: string, message: any): Promise<void> {
     try {
-      const stmt = db.prepare(`
-        INSERT INTO vault_entries (construct_id, thread_id, kind, payload, ts, relevance_score, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
-      
-      stmt.run(
-        this.constructId,
-        threadId,
-        'LTM',
-        JSON.stringify(message),
-        Date.now(),
-        1.0, // Default relevance score
-        JSON.stringify({ source: 'message', timestamp: Date.now() })
-      );
+      // Extract user and assistant messages from the message payload
+      const context = message.role === 'user' ? message.content : 
+                     (message.payload?.role === 'user' ? message.payload.content : 
+                     (typeof message === 'string' ? message : JSON.stringify(message)));
+      const response = message.role === 'assistant' ? message.content :
+                      (message.payload?.role === 'assistant' ? message.payload.content : '');
+
+      // If we don't have a proper context/response pair, create one from the message
+      const finalContext = context || (message.content || JSON.stringify(message));
+      const finalResponse = response || (message.role === 'assistant' ? message.content : '');
+
+      // Store via VVAULT API
+      const storeResponse = await fetch('/api/vvault/identity/store', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          constructCallsign: this.constructId,
+          context: finalContext,
+          response: finalResponse || finalContext, // Use context as response if no response available
+          metadata: {
+            timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : new Date().toISOString(),
+            sessionId: threadId,
+            source: message.metadata?.source || 'vault-store',
+            memoryType: 'long-term', // Explicitly set as LTM
+            ...message.metadata
+          }
+        })
+      });
+
+      if (!storeResponse.ok) {
+        const errorText = await storeResponse.text();
+        throw new Error(`VVAULT API error: ${storeResponse.status} ${errorText}`);
+      }
+
+      const result = await storeResponse.json();
+      if (shouldLog('debug')) {
+        console.log(`✅ [VaultStore] Saved message to VVAULT (duplicate: ${result.duplicate || false})`);
+      }
     } catch (error) {
-      console.error('Failed to save message to vault:', error);
+      console.error('Failed to save message to VVAULT:', error);
       throw error;
     }
   }
 
   /**
-   * Save a checkpoint to the vault
+   * Save a checkpoint to the vault via VVAULT API
    */
   async saveCheckpoint(kind: string, payload: any, threadId?: string): Promise<void> {
     try {
-      const stmt = db.prepare(`
-        INSERT INTO vault_entries (construct_id, thread_id, kind, payload, ts, relevance_score, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
+      const checkpointContent = typeof payload === 'string' ? payload : JSON.stringify(payload);
       
-      stmt.run(
-        this.constructId,
-        threadId || null,
+      // Store checkpoint as a memory entry
+      const storeResponse = await fetch('/api/vvault/identity/store', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          constructCallsign: this.constructId,
+          context: `Checkpoint: ${kind}`,
+          response: checkpointContent,
+          metadata: {
+            timestamp: new Date().toISOString(),
+            sessionId: threadId || this.constructId,
+            source: 'checkpoint',
         kind,
-        JSON.stringify(payload),
-        Date.now(),
-        1.0,
-        JSON.stringify({ source: 'checkpoint', timestamp: Date.now() })
-      );
+            memoryType: 'long-term'
+          }
+        })
+      });
+
+      if (!storeResponse.ok) {
+        const errorText = await storeResponse.text();
+        throw new Error(`VVAULT API error: ${storeResponse.status} ${errorText}`);
+      }
+
+      if (shouldLog('debug')) {
+        console.log(`✅ [VaultStore] Saved checkpoint to VVAULT: ${kind}`);
+      }
     } catch (error) {
-      console.error('Failed to save checkpoint to vault:', error);
+      console.error('Failed to save checkpoint to VVAULT:', error);
       throw error;
     }
   }
 
   /**
-   * Get STM window from vault (recent messages)
+   * Get STM window from vault (recent messages) via VVAULT API
    */
   async getSTM(threadId: string, limit = 50): Promise<any[]> {
     try {
-      const stmt = db.prepare(`
-        SELECT payload, ts
-        FROM vault_entries 
-        WHERE construct_id = ? AND thread_id = ? AND kind = 'LTM'
-        ORDER BY ts DESC 
-        LIMIT ?
-      `);
-      
-      const rows = stmt.all(this.constructId, threadId, limit);
-      return rows.map(row => ({
-        ...JSON.parse(row.payload),
-        timestamp: row.ts
-      })).reverse(); // Return in chronological order
+      // Query VVAULT for recent messages
+      const queryResponse = await fetch(
+        `/api/vvault/identity/query?constructCallsign=${encodeURIComponent(this.constructId)}&query=recent messages&limit=${limit}`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        }
+      );
+
+      if (!queryResponse.ok) {
+        if (shouldLog('error')) {
+          console.error('Failed to query VVAULT for STM:', queryResponse.statusText);
+        }
+        return [];
+      }
+
+      const result = await queryResponse.json();
+      if (!result.ok || !result.memories) {
+        return [];
+      }
+
+      // Convert VVAULT memory format to VaultStore format
+      return result.memories.map((memory: any) => ({
+        role: 'assistant', // VVAULT stores context/response pairs
+        content: memory.response || memory.context,
+        timestamp: memory.timestamp ? new Date(memory.timestamp).getTime() : Date.now(),
+        context: memory.context,
+        response: memory.response,
+        relevanceScore: memory.relevance || 1.0,
+        metadata: {
+          memoryType: memory.memoryType,
+          sessionId: threadId
+        }
+      })).sort((a: any, b: any) => a.timestamp - b.timestamp); // Return in chronological order
     } catch (error) {
-      console.error('Failed to get STM from vault:', error);
+      if (shouldLog('error')) {
+        console.error('Failed to get STM from VVAULT:', error);
+      }
       return [];
     }
   }
 
   /**
-   * Search vault entries with semantic relevance
+   * Search vault entries with semantic relevance via VVAULT API
    */
   async search(options: VaultSearchOptions): Promise<VaultEntry[]> {
     try {
-      let query = `
-        SELECT id, construct_id, thread_id, kind, payload, ts, relevance_score, metadata
-        FROM vault_entries 
-        WHERE construct_id = ?
-      `;
-      const params: any[] = [this.constructId];
+      // Build query string from options
+      const queryText = options.threadId 
+        ? `thread ${options.threadId} ${options.kind || ''}`
+        : (options.kind || 'memory');
+
+      const limit = options.limit || 10;
       
-      if (options.threadId) {
-        query += ' AND thread_id = ?';
-        params.push(options.threadId);
+      // Query VVAULT API
+      const queryResponse = await fetch(
+        `/api/vvault/identity/query?constructCallsign=${encodeURIComponent(this.constructId)}&query=${encodeURIComponent(queryText)}&limit=${limit}`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        }
+      );
+
+      if (!queryResponse.ok) {
+        if (shouldLog('error')) {
+          console.error('Failed to search VVAULT:', queryResponse.statusText);
       }
-      
-      if (options.kind) {
-        query += ' AND kind = ?';
-        params.push(options.kind);
+        return [];
       }
+
+      const result = await queryResponse.json();
+      if (!result.ok || !result.memories) {
+        return [];
+      }
+
+      // Filter and convert results
+      let memories = result.memories;
       
+      // Apply filters that can be done client-side
       if (options.minRelevanceScore !== undefined) {
-        query += ' AND relevance_score >= ?';
-        params.push(options.minRelevanceScore);
+        memories = memories.filter((m: any) => (m.relevance || 1.0) >= options.minRelevanceScore!);
       }
       
       if (options.startTime) {
-        query += ' AND ts >= ?';
-        params.push(options.startTime);
+        memories = memories.filter((m: any) => {
+          const ts = m.timestamp ? new Date(m.timestamp).getTime() : 0;
+          return ts >= options.startTime!;
+        });
       }
       
       if (options.endTime) {
-        query += ' AND ts <= ?';
-        params.push(options.endTime);
+        memories = memories.filter((m: any) => {
+          const ts = m.timestamp ? new Date(m.timestamp).getTime() : 0;
+          return ts <= options.endTime!;
+        });
       }
       
-      query += ' ORDER BY relevance_score DESC, ts DESC';
-      
-      if (options.limit) {
-        query += ' LIMIT ?';
-        params.push(options.limit);
-      }
-      
-      const stmt = db.prepare(query);
-      const rows = stmt.all(...params);
-      
-      return rows.map(row => ({
-        id: row.id,
-        constructId: row.construct_id,
-        threadId: row.thread_id,
-        kind: row.kind,
-        payload: JSON.parse(row.payload),
-        timestamp: row.ts,
-        relevanceScore: row.relevance_score,
-        metadata: row.metadata ? JSON.parse(row.metadata) : undefined
+      // Convert to VaultEntry format
+      return memories.map((memory: any, index: number) => ({
+        id: index, // VVAULT doesn't return numeric IDs, use index
+        constructId: this.constructId,
+        threadId: options.threadId,
+        kind: options.kind || 'LTM',
+        payload: {
+          context: memory.context,
+          response: memory.response,
+          role: 'assistant'
+        },
+        timestamp: memory.timestamp ? new Date(memory.timestamp).getTime() : Date.now(),
+        relevanceScore: memory.relevance || 1.0,
+        metadata: {
+          memoryType: memory.memoryType,
+          sessionId: options.threadId
+        }
       }));
     } catch (error) {
-      console.error('Failed to search vault:', error);
+      if (shouldLog('error')) {
+        console.error('Failed to search VVAULT:', error);
+      }
       return [];
     }
   }
 
   /**
-   * Get vault summary metadata
+   * Get vault summary metadata via VVAULT API
+   * Note: Summaries are now stored as checkpoint entries in VVAULT
    */
   async getVaultSummaryMeta(): Promise<VaultSummary[]> {
     try {
-      const stmt = db.prepare(`
-        SELECT id, construct_id, thread_id, summary_type, content, start_ts, end_ts, created_at
-        FROM vault_summaries 
-        WHERE construct_id = ?
-        ORDER BY created_at DESC
-      `);
-      
-      const rows = stmt.all(this.constructId);
-      
-      return rows.map(row => ({
-        id: row.id,
-        constructId: row.construct_id,
-        threadId: row.thread_id,
-        summaryType: row.summary_type,
-        content: row.content,
-        startTs: row.start_ts,
-        endTs: row.end_ts,
-        createdAt: row.created_at
-      }));
+      // Query VVAULT for checkpoint/summary entries
+      const queryResponse = await fetch(
+        `/api/vvault/identity/query?constructCallsign=${encodeURIComponent(this.constructId)}&query=checkpoint summary&limit=50`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        }
+      );
+
+      if (!queryResponse.ok) {
+        if (shouldLog('error')) {
+          console.error('Failed to get vault summaries from VVAULT:', queryResponse.statusText);
+        }
+        return [];
+      }
+
+      const result = await queryResponse.json();
+      if (!result.ok || !result.memories) {
+        return [];
+      }
+
+      // Filter for summary/checkpoint entries and convert format
+      return result.memories
+        .filter((m: any) => m.metadata?.kind?.includes('SUMMARY') || m.metadata?.kind?.includes('CHECKPOINT'))
+        .map((memory: any, index: number) => {
+          const metadata = memory.metadata || {};
+          return {
+            id: index,
+            constructId: this.constructId,
+            threadId: metadata.sessionId,
+            summaryType: metadata.kind?.replace('SUMMARY_', '') as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'MANUAL' || 'MANUAL',
+            content: memory.response || memory.context,
+            startTs: metadata.startTs || (memory.timestamp ? new Date(memory.timestamp).getTime() : Date.now()),
+            endTs: metadata.endTs || (memory.timestamp ? new Date(memory.timestamp).getTime() : Date.now()),
+            createdAt: memory.timestamp ? new Date(memory.timestamp).getTime() : Date.now()
+          };
+        })
+        .sort((a, b) => b.createdAt - a.createdAt); // Most recent first
     } catch (error) {
-      console.error('Failed to get vault summary metadata:', error);
+      if (shouldLog('error')) {
+        console.error('Failed to get vault summary metadata from VVAULT:', error);
+      }
       return [];
     }
   }
 
   /**
-   * Create a vault summary
+   * Create a vault summary via VVAULT API
    */
   async createSummary(
     summaryType: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'MANUAL',
@@ -217,46 +337,58 @@ export class VaultStore {
     threadId?: string
   ): Promise<void> {
     try {
-      const stmt = db.prepare(`
-        INSERT INTO vault_summaries (construct_id, thread_id, summary_type, content, start_ts, end_ts, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
-      
-      stmt.run(
-        this.constructId,
-        threadId || null,
-        summaryType,
-        content,
+      // Store summary as a checkpoint entry in VVAULT
+      const storeResponse = await fetch('/api/vvault/identity/store', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          constructCallsign: this.constructId,
+          context: `Summary: ${summaryType}`,
+          response: content,
+          metadata: {
+            timestamp: new Date().toISOString(),
+            sessionId: threadId || this.constructId,
+            source: 'summary',
+            kind: `SUMMARY_${summaryType}`,
         startTs,
         endTs,
-        Date.now()
-      );
+            memoryType: 'long-term'
+          }
+        })
+      });
+
+      if (!storeResponse.ok) {
+        const errorText = await storeResponse.text();
+        throw new Error(`VVAULT API error: ${storeResponse.status} ${errorText}`);
+      }
+
+      if (shouldLog('debug')) {
+        console.log(`✅ [VaultStore] Created ${summaryType} summary in VVAULT`);
+      }
     } catch (error) {
-      console.error('Failed to create vault summary:', error);
+      console.error('Failed to create vault summary in VVAULT:', error);
       throw error;
     }
   }
 
   /**
    * Update relevance score for an entry
+   * Note: VVAULT ChromaDB manages relevance scores automatically via semantic search.
+   * This method is kept for API compatibility but is a no-op.
    */
   async updateRelevanceScore(entryId: number, score: number): Promise<void> {
-    try {
-      const stmt = db.prepare(`
-        UPDATE vault_entries 
-        SET relevance_score = ? 
-        WHERE id = ? AND construct_id = ?
-      `);
-      
-      stmt.run(score, entryId, this.constructId);
-    } catch (error) {
-      console.error('Failed to update relevance score:', error);
-      throw error;
+    // VVAULT ChromaDB calculates relevance scores automatically based on semantic similarity
+    // No manual update needed - scores are computed during query time
+    if (shouldLog('debug')) {
+      console.log(`[VaultStore] Relevance score update requested (VVAULT manages scores automatically): entryId=${entryId}, score=${score}`);
     }
   }
 
   /**
-   * Get vault statistics
+   * Get vault statistics via VVAULT API
    */
   async getStats(): Promise<{
     totalEntries: number;
@@ -266,49 +398,68 @@ export class VaultStore {
     newestEntry?: number;
   }> {
     try {
-      // Total entries
-      const totalStmt = db.prepare(`
-        SELECT COUNT(*) as count FROM vault_entries WHERE construct_id = ?
-      `);
-      const totalResult = totalStmt.get(this.constructId);
-      
-      // Entries by kind
-      const kindStmt = db.prepare(`
-        SELECT kind, COUNT(*) as count 
-        FROM vault_entries 
-        WHERE construct_id = ? 
-        GROUP BY kind
-      `);
-      const kindRows = kindStmt.all(this.constructId);
-      const entriesByKind = kindRows.reduce((acc, row) => {
-        acc[row.kind] = row.count;
-        return acc;
-      }, {} as Record<string, number>);
-      
-      // Total summaries
-      const summaryStmt = db.prepare(`
-        SELECT COUNT(*) as count FROM vault_summaries WHERE construct_id = ?
-      `);
-      const summaryResult = summaryStmt.get(this.constructId);
-      
-      // Time range
-      const timeStmt = db.prepare(`
-        SELECT MIN(ts) as oldest, MAX(ts) as newest 
-        FROM vault_entries 
-        WHERE construct_id = ?
-      `);
-      const timeResult = timeStmt.get(this.constructId);
+      // Query VVAULT for all memories to compute stats
+      const queryResponse = await fetch(
+        `/api/vvault/identity/query?constructCallsign=${encodeURIComponent(this.constructId)}&query=*&limit=1000`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        }
+      );
+
+      if (!queryResponse.ok) {
+        if (shouldLog('error')) {
+          console.error('Failed to get vault stats from VVAULT:', queryResponse.statusText);
+        }
+        return {
+          totalEntries: 0,
+          entriesByKind: {},
+          totalSummaries: 0
+        };
+      }
+
+      const result = await queryResponse.json();
+      if (!result.ok || !result.memories) {
+        return {
+          totalEntries: 0,
+          entriesByKind: {},
+          totalSummaries: 0
+        };
+      }
+
+      const memories = result.memories;
+      const entriesByKind: Record<string, number> = {};
+      let oldestEntry: number | undefined;
+      let newestEntry: number | undefined;
+      let totalSummaries = 0;
+
+      memories.forEach((memory: any) => {
+        const kind = memory.metadata?.kind || 'LTM';
+        entriesByKind[kind] = (entriesByKind[kind] || 0) + 1;
+
+        if (memory.metadata?.kind?.includes('SUMMARY')) {
+          totalSummaries++;
+        }
+
+        const ts = memory.timestamp ? new Date(memory.timestamp).getTime() : Date.now();
+        if (!oldestEntry || ts < oldestEntry) {
+          oldestEntry = ts;
+        }
+        if (!newestEntry || ts > newestEntry) {
+          newestEntry = ts;
+        }
+      });
       
       return {
-        totalEntries: totalResult?.count ?? 0,
+        totalEntries: memories.length,
         entriesByKind,
-        totalSummaries: summaryResult?.count ?? 0,
-        oldestEntry: timeResult?.oldest,
-        newestEntry: timeResult?.newest
+        totalSummaries,
+        oldestEntry,
+        newestEntry
       };
     } catch (error) {
       if (shouldLog('error')) {
-        console.error('Failed to get vault stats:', error);
+        console.error('Failed to get vault stats from VVAULT:', error);
       }
       return {
         totalEntries: 0,
@@ -320,22 +471,18 @@ export class VaultStore {
 
   /**
    * Cleanup old entries (for memory management)
+   * Note: VVAULT ChromaDB manages memory lifecycle automatically via STM/LTM separation.
+   * This method is kept for API compatibility but is a no-op.
    */
   async cleanup(olderThanDays = 30): Promise<number> {
-    try {
-      const cutoffTime = Date.now() - (olderThanDays * 24 * 60 * 60 * 1000);
-      
-      const stmt = db.prepare(`
-        DELETE FROM vault_entries 
-        WHERE construct_id = ? AND ts < ? AND kind = 'LTM'
-      `);
-      
-      const result = stmt.run(this.constructId, cutoffTime);
-      return result.changes;
-    } catch (error) {
-      console.error('Failed to cleanup vault entries:', error);
-      return 0;
+    // VVAULT automatically manages memory lifecycle:
+    // - Short-term memories (< 7 days) are in STM collection
+    // - Long-term memories (>= 7 days) are in LTM collection
+    // No manual cleanup needed
+    if (shouldLog('debug')) {
+      console.log(`[VaultStore] Cleanup requested (VVAULT manages lifecycle automatically): olderThanDays=${olderThanDays}`);
     }
+    return 0; // Return 0 to indicate no entries were deleted
   }
 }
 

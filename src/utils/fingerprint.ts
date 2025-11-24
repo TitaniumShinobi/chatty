@@ -257,29 +257,39 @@ export class FingerprintDetector {
   }
 
   /**
-   * Get behavior pattern for fingerprinting
+   * Get behavior pattern for fingerprinting via VVAULT API
    */
   private async getBehaviorPattern(constructId: string): Promise<string> {
     try {
-      // Get recent message patterns
-      const stmt = db.prepare(`
-        SELECT role, text, ts
-        FROM vault_entries 
-        WHERE construct_id = ? AND kind = 'LTM'
-        ORDER BY ts DESC 
-        LIMIT 20
-      `);
-      
-      const rows = stmt.all(constructId);
-      const patterns = rows.map(row => ({
-        role: row.role,
-        textLength: row.text?.length || 0,
-        timestamp: row.ts
+      // Query VVAULT for recent messages
+      const queryResponse = await fetch(
+        `/api/vvault/identity/query?constructCallsign=${encodeURIComponent(constructId)}&query=recent messages&limit=20`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        }
+      );
+
+      if (!queryResponse.ok) {
+        console.error('Failed to get behavior pattern from VVAULT:', queryResponse.statusText);
+        return '';
+      }
+
+      const result = await queryResponse.json();
+      if (!result.ok || !result.memories) {
+        return '';
+      }
+
+      // Convert VVAULT memory format to behavior pattern format
+      const patterns = result.memories.map((memory: any) => ({
+        role: memory.metadata?.role || 'assistant',
+        textLength: (memory.context?.length || 0) + (memory.response?.length || 0),
+        timestamp: memory.timestamp ? new Date(memory.timestamp).getTime() : Date.now()
       }));
       
       return JSON.stringify(patterns, null, 2);
     } catch (error) {
-      console.error('Failed to get behavior pattern:', error);
+      console.error('Failed to get behavior pattern from VVAULT:', error);
       return '';
     }
   }
@@ -302,22 +312,38 @@ export class FingerprintDetector {
   }
 
   /**
-   * Get last assistant packet for fingerprinting
+   * Get last assistant packet for fingerprinting via VVAULT API
    */
   private async getLastAssistantPacket(constructId: string): Promise<string> {
     try {
-      const stmt = db.prepare(`
-        SELECT payload, ts
-        FROM vault_entries 
-        WHERE construct_id = ? AND kind = 'LTM' AND JSON_EXTRACT(payload, '$.role') = 'assistant'
-        ORDER BY ts DESC 
-        LIMIT 1
-      `);
-      
-      const row = stmt.get(constructId);
-      return row?.payload || '';
+      // Query VVAULT for most recent assistant message
+      const queryResponse = await fetch(
+        `/api/vvault/identity/query?constructCallsign=${encodeURIComponent(constructId)}&query=assistant response&limit=1`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        }
+      );
+
+      if (!queryResponse.ok) {
+        console.error('Failed to get last assistant packet from VVAULT:', queryResponse.statusText);
+        return '';
+      }
+
+      const result = await queryResponse.json();
+      if (!result.ok || !result.memories || result.memories.length === 0) {
+        return '';
+      }
+
+      // Get the most recent memory (should be first in results)
+      const memory = result.memories[0];
+      return JSON.stringify({
+        role: 'assistant',
+        content: memory.response || memory.context,
+        timestamp: memory.timestamp
+      });
     } catch (error) {
-      console.error('Failed to get last assistant packet:', error);
+      console.error('Failed to get last assistant packet from VVAULT:', error);
       return '';
     }
   }

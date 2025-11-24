@@ -1,17 +1,31 @@
 import { VVAULTConversationManager } from '../../lib/vvaultConversationManager';
 import { DEFAULT_CHARACTER_PROFILES } from './defaultProfiles';
 import type { CharacterContext, CharacterProfile } from './types';
+import { IdentityMatcher } from './IdentityMatcher';
+import type { PersonalityBlueprint } from '../transcript/types';
 
 export interface CharacterContextRequest {
   constructId: string;
   callsign?: string | number;
   runtimeMode?: 'lin' | 'synth';
   profileOverride?: Partial<CharacterProfile>;
+  userId?: string; // Added for personality blueprint loading
 }
 
 export class CharacterContextBuilder {
   private cache = new Map<string, CharacterContext>();
   private vvaultManager = VVAULTConversationManager.getInstance();
+  private identityMatcher: IdentityMatcher | null = null;
+
+  constructor() {
+    // Initialize IdentityMatcher if VVAULT_ROOT is available
+    try {
+      const vvaultRoot = process.env.VVAULT_ROOT || '/vvault';
+      this.identityMatcher = new IdentityMatcher(vvaultRoot);
+    } catch (error) {
+      console.warn('[CharacterContextBuilder] Failed to initialize IdentityMatcher:', error);
+    }
+  }
 
   async getCharacterContext(request: CharacterContextRequest): Promise<CharacterContext | null> {
     const constructId = request.constructId || 'lin';
@@ -25,6 +39,44 @@ export class CharacterContextBuilder {
     const profile = await this.loadProfile(constructId, callsign, request.profileOverride);
     if (!profile) {
       return null;
+    }
+
+    // Try to load personality blueprint and merge with profile
+    let personalityBlueprint: PersonalityBlueprint | null = null;
+    if (request.userId && this.identityMatcher) {
+      try {
+        personalityBlueprint = await this.identityMatcher.loadPersonalityBlueprint(
+          request.userId,
+          constructId,
+          callsign
+        );
+      } catch (error) {
+        console.warn('[CharacterContextBuilder] Failed to load personality blueprint:', error);
+      }
+    }
+
+    // Merge personality blueprint data into profile
+    if (personalityBlueprint) {
+      profile.personalityTraits = [
+        ...this.ensureList(profile.personalityTraits),
+        ...personalityBlueprint.coreTraits,
+      ];
+      profile.behavioralMarkers = [
+        ...this.ensureList(profile.behavioralMarkers),
+        ...personalityBlueprint.behavioralMarkers.map(m => m.responsePattern),
+      ];
+      profile.speechPatterns = [
+        ...this.ensureList(profile.speechPatterns),
+        ...personalityBlueprint.speechPatterns.map(p => p.pattern),
+      ];
+      profile.memoryAnchors = [
+        ...this.ensureList(profile.memoryAnchors),
+        ...personalityBlueprint.memoryAnchors.map(a => a.anchor),
+      ];
+      profile.consistencyRules = [
+        ...this.ensureList(profile.consistencyRules),
+        ...personalityBlueprint.consistencyRules.map(r => r.rule),
+      ];
     }
 
     const context: CharacterContext = {
