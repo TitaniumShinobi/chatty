@@ -68,9 +68,13 @@ Construct callsigns are automatically generated when creating a new AI/construct
             ├── identity/
             │   └── profile.json       # User profile with email, constructs list, etc.
             ├── instances/             # Runtime instances (NEW structure)
-            │   └── {construct-callsign}/  # e.g., "synth-001", "luna-001", "lin-001"
+            │   └── {constructCallsign}/  # e.g., "synth-001", "luna-001", "lin-001", "katana-001"
             │       └── chatty/
-            │           └── chat_with_{construct-callsign}.md  # e.g., "chat_with_luna-001.md"
+            │           └── chat_with_{constructCallsign}.md  # e.g., "chat_with_luna-001.md"
+            │       
+            │   CRITICAL: Use constructCallsign DIRECTLY (e.g., "katana-001")
+            │   DO NOT parse into constructId-callsign and reconstruct (would create "katana-katana-001")
+            │   The constructCallsign IS the directory name: instances/{constructCallsign}/
             ├── constructs/            # Legacy structure (being migrated)
             └── capsules/              # User's capsule files
 ```

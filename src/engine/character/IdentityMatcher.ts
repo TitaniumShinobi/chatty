@@ -17,6 +17,17 @@ interface ConstructInfo {
   name?: string;
 }
 
+function isBrowserEnv(): boolean {
+  return typeof window !== 'undefined' && typeof document !== 'undefined';
+}
+
+async function dynamicNodeImport(specifier: string): Promise<any> {
+  // Avoid Vite/webpack static analysis by using an indirect dynamic import.
+  // In browser environments this should never be called (guarded above).
+  const loader = new Function('s', 'return import(s);');
+  return loader(specifier);
+}
+
 /**
  * Match transcript patterns to constructs and persist personality blueprints
  */
@@ -141,8 +152,13 @@ export class IdentityMatcher {
     callsign: string,
     blueprint: PersonalityBlueprint
   ): Promise<string> {
-    const fs = await import('fs/promises');
-    const path = await import('path');
+    if (isBrowserEnv()) {
+      console.warn('[IdentityMatcher] persistPersonalityBlueprint skipped in browser');
+      return '';
+    }
+
+    const fs = await dynamicNodeImport('fs/promises');
+    const path = await dynamicNodeImport('path');
 
     // Resolve VVAULT user ID (would need to call resolve function)
     const vvaultUserId = await this.resolveVVAULTUserId(userId);
@@ -195,8 +211,13 @@ export class IdentityMatcher {
     constructId: string,
     callsign: string
   ): Promise<PersonalityBlueprint | null> {
-    const fs = await import('fs/promises');
-    const path = await import('path');
+    if (isBrowserEnv()) {
+      console.warn('[IdentityMatcher] loadPersonalityBlueprint skipped in browser');
+      return null;
+    }
+
+    const fs = await dynamicNodeImport('fs/promises');
+    const path = await dynamicNodeImport('path');
 
     try {
       const vvaultUserId = await this.resolveVVAULTUserId(userId);
@@ -214,6 +235,9 @@ export class IdentityMatcher {
 
       const content = await fs.readFile(personalityPath, 'utf-8');
       const blueprint = JSON.parse(content) as PersonalityBlueprint;
+      if (!blueprint.personalIdentifiers) {
+        blueprint.personalIdentifiers = [];
+      }
 
       console.log(`✅ [IdentityMatcher] Loaded personality blueprint: ${personalityPath}`);
       return blueprint;
@@ -253,6 +277,10 @@ export class IdentityMatcher {
       ]
         .sort((a, b) => b.significance - a.significance)
         .slice(0, 20),
+      personalIdentifiers: this.mergePersonalIdentifiers(
+        existing.personalIdentifiers || [],
+        newBlueprint.personalIdentifiers || []
+      ),
       consistencyRules: [
         ...existing.consistencyRules,
         ...newBlueprint.consistencyRules,
@@ -268,6 +296,31 @@ export class IdentityMatcher {
         mergedWithExisting: true,
       },
     };
+  }
+
+  private mergePersonalIdentifiers(
+    existing: PersonalityBlueprint['personalIdentifiers'],
+    incoming: PersonalityBlueprint['personalIdentifiers']
+  ): PersonalityBlueprint['personalIdentifiers'] {
+    const merged = new Map<string, PersonalityBlueprint['personalIdentifiers'][number]>();
+
+    const add = (id: PersonalityBlueprint['personalIdentifiers'][number]) => {
+      const key = `${id.type}:${id.value.toLowerCase()}`;
+      const existingEntry = merged.get(key);
+      if (!existingEntry || id.salience > existingEntry.salience) {
+        merged.set(key, {
+          ...id,
+          evidence: Array.from(new Set([...(existingEntry?.evidence || []), ...id.evidence])).slice(0, 3),
+          salience: Math.min(1, id.salience),
+        });
+      }
+    };
+
+    [...existing, ...incoming].forEach(add);
+
+    return Array.from(merged.values())
+      .sort((a, b) => b.salience - a.salience)
+      .slice(0, 12);
   }
 
   /**
@@ -293,4 +346,3 @@ export class IdentityMatcher {
     return userId;
   }
 }
-

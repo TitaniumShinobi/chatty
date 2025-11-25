@@ -1,6 +1,6 @@
 # Chatty-VVAULT Comprehensive Integration Analysis
 
-**Date**: January 2025  
+**Date**: November 23, 2025  
 **Purpose**: Complete analysis of Chatty-VVAULT integration architecture, data flows, and current status
 
 ---
@@ -14,7 +14,7 @@ Chatty and VVAULT are **separate, independent services** that integrate through 
 - ✅ **Multi-platform support** - VVAULT stores conversations from ChatGPT, Gemini, Claude, etc.
 - ✅ **Memory continuity** - Construct memories persist across sessions via ChromaDB
 
-**Recent Migration**: All construct memory storage has been migrated from SQLite to VVAULT ChromaDB API (January 2025).
+**Recent Migration**: All construct memory storage has been migrated from SQLite to VVAULT ChromaDB API (September 2025).
 
 ---
 
@@ -160,7 +160,7 @@ fetch('/api/vvault/conversations', {
 
 ### 4. Memory Storage Integration
 
-**Recent Migration (January 2025)**: All construct memory storage migrated from SQLite to VVAULT ChromaDB.
+**Recent Migration (September 2025)**: All construct memory storage migrated from SQLite to VVAULT ChromaDB.
 
 #### Identity Service (`chatty/server/services/identityService.js`)
 
@@ -534,7 +534,7 @@ const memoryType = ageDays < 7 ? 'short-term' : 'long-term';
    - **Impact**: User must resend message if save fails
    - **Enhancement**: Could add retry queue
 
-### 🔄 Recent Changes (January 2025)
+### 🔄 Recent Changes (September 2025)
 
 **Memory Storage Migration**:
 - ✅ VaultStore migrated to VVAULT API
@@ -724,6 +724,370 @@ The integration is **production-ready** with minor improvements recommended for 
 
 ---
 
-**Last Updated**: January 2025  
+**Last Updated**: November 23, 2025  
 **Status**: ✅ Production-Ready (with minor improvements recommended)
 
+---
+
+## Conversation Orchestration Architecture
+
+### System Architecture Overview
+
+#### Frontend Architecture (`/src`)
+- **Entry Point**: `App.tsx` → `Layout.tsx` → `Chat.tsx` / `ChatArea.tsx`
+- **Tech Stack**: React + TypeScript + Vite + Tailwind CSS
+- **Core Components**:
+  - `Layout.tsx`: Main orchestrator managing threads, authentication, VVAULT integration
+  - `ChatArea.tsx`: Message input/output, file handling, action menu
+  - `Chat.tsx`: Simplified chat interface using runtime renderer (`R` component)
+  - `Sidebar.tsx`: Thread navigation and project management
+
+#### Backend Architecture (`/server`)
+- **Entry Point**: `server.js` → Express routes
+- **Tech Stack**: Node.js + Express + MongoDB (Prisma/SQLite for some models)
+- **Core Routes**:
+  - `/api/chat` - Message validation and identity enforcement
+  - `/api/ais` - AI/construct CRUD operations
+  - `/api/vvault` - VVAULT filesystem integration (conversations, character profiles)
+  - `/api/conversations` - Conversation management
+
+#### Data Flow
+```
+User Input → ChatArea.tsx → Layout.tsx::sendMessage() 
+  → API Service → Backend Routes → AI Service 
+  → PersonalityOrchestrator → Response Generation 
+  → VVAULT Storage → Frontend Update
+```
+
+### Conversation Orchestration Pipeline
+
+#### Message Processing Flow
+
+1. **Input Capture** (`ChatArea.tsx`):
+   - User types message → `handleSubmit()` → `onSendMessage(userMessage)`
+
+2. **Layout Orchestration** (`Layout.tsx::sendMessage()`):
+   - Adds user message to thread
+   - Calls API service or local runtime
+   - Processes response packets
+   - Updates thread state
+
+3. **Backend Processing** (`server/routes/chat.js`):
+   - Identity validation via `enforcementService`
+   - Drift detection via `driftDetectorInstance`
+   - Attribution metadata attachment
+
+4. **AI Response Generation**:
+   - **Frontend Path**: Uses `ConversationCore.ts` → `Reasoner` → local LLM seats
+   - **Backend Path**: `server/services/aiService.js` (simplified fallback)
+   - **Personality Integration**: `PersonalityOrchestrator.ts` orchestrates personality injection
+
+#### Key Orchestration Components
+
+- **`ConversationCore.ts`**: Entry point for message processing
+  - Safety gates (`PolicyChecker`, `Tether`)
+  - Local reasoning engine integration
+  - Tone adaptation
+
+- **`PersonalityOrchestrator.ts`**: Central personality orchestration
+  - Loads personality context from VVAULT
+  - Retrieves relevant memories
+  - Builds system prompts with personality injection
+  - Drift detection/correction
+
+- **`DeepTranscriptParser.ts`**: Transcript analysis
+  - Extracts conversation pairs
+  - Emotional state analysis
+  - Relationship dynamics
+  - Speech patterns and behavioral markers
+  - Memory anchor extraction
+
+### Memory & Context Management
+
+#### Storage Architecture
+
+1. **VVAULT Filesystem** (`/vvault`):
+   - **Location**: `{vvaultRoot}/users/{shard}/{userId}/instances/`
+   - **Structure**:
+     ```
+     {userId}/
+       instances/
+         {constructId}-{callsign}/
+           transcripts/
+           character-profiles/
+           memories/
+     ```
+
+2. **Browser Storage**:
+   - **STM Buffer** (`BrowserSTMBuffer.ts`): Short-term memory in localStorage
+   - **Thread State**: Managed in `Layout.tsx` state, synced to VVAULT
+
+3. **Backend Database**:
+   - **MongoDB**: User records, conversation metadata
+   - **SQLite**: Some legacy models (`chatty.db`)
+
+#### Memory Types
+
+- **STM (Short-Term Memory)**: Recent conversation window (last N messages)
+  - Managed by `STMBuffer.ts` / `BrowserSTMBuffer.ts`
+  - Keyed by `constructId::threadId`
+
+- **LTM (Long-Term Memory)**: VVAULT vault entries
+  - Retrieved via `/api/vvault/identity/query`
+  - Includes character memories, checkpoints, summaries
+
+- **Personality Blueprints**: Extracted from transcripts, stored in VVAULT
+  - Loaded by `IdentityMatcher.loadPersonalityBlueprint()`
+  - Cached in `PersonalityOrchestrator.personalityCache`
+
+#### Context Building Flow
+
+1. **Transcript → Blueprint**: `DeepTranscriptParser` → `PersonalityExtractor` → VVAULT storage
+2. **Blueprint → Context**: `IdentityMatcher.loadPersonalityBlueprint()` → `PersonalityOrchestrator.loadPersonalityContext()`
+3. **Memory Retrieval**: `PersonalityOrchestrator.retrieveRelevantMemories()` combines:
+   - STM window from buffer
+   - LTM entries from VVAULT
+   - Personal anchors from blueprint
+   - Tone-matched memories
+
+### Persona/Construct Initialization
+
+#### Construct Activation
+
+1. **Construct Identification**:
+   - **Default**: `synth-001` (DEFAULT_SYNTH_CANONICAL_CONSTRUCT_ID)
+   - **From Thread**: `thread.constructId` extracted from VVAULT conversation metadata
+   - **From User Selection**: AI selection in UI → `AIService.getAI(id)`
+
+2. **Blueprint Loading** (`IdentityMatcher.ts`):
+   - Resolve VVAULT user ID
+   - Load from: `{vvaultRoot}/users/{userId}/instances/{constructId}-{callsign}/character-profiles/`
+   - Parse JSON blueprint
+
+3. **Personality Context Building** (`PersonalityOrchestrator.ts`):
+   - Loads blueprint
+   - Initializes `PersonalityContext` with:
+     - `blueprint`: Core personality traits
+     - `currentState`: Emotional/relational state
+     - `loadedMemories`: Retrieved memories
+
+4. **System Prompt Construction** (`UnbreakableCharacterPrompt.ts`):
+   - Identity anchors (CRITICAL - never break character)
+   - Core personality traits
+   - Speech patterns
+   - Behavioral guidelines
+   - Memory anchors
+   - Consistency rules
+
+#### Persona Switching
+
+- **Current Limitation**: No explicit persona switching API
+- **Implicit Switching**: Via thread selection (each thread can have different `constructId`)
+- **Extension Point**: `Layout.tsx::sendMessage()` could check thread's `constructId` and load appropriate persona
+
+### Dynamic Context Analysis
+
+#### Existing Logic
+
+1. **Tone Detection** (`lib/toneDetector.ts`):
+   - `detectToneEnhanced()`: Analyzes user message tone
+   - `matchMemoriesByTone()`: Matches memories by emotional resonance
+
+2. **Context Scanning** (`PersonalityOrchestrator.retrieveRelevantMemories()`):
+   - Tone-based memory matching
+   - Personal relationship memory prioritization
+   - High-salience anchor surfacing
+
+3. **Drift Detection** (`DriftPrevention.ts`):
+   - Detects character breaks in responses
+   - Corrects via `correctDrift()`
+
+#### Limitations & Hardcoded Patterns
+
+1. **No Dynamic Persona Inference**:
+   - Persona is determined by thread's `constructId` (static)
+   - No automatic persona switching based on conversation context
+
+2. **Limited Context Adaptation**:
+   - Memory retrieval is tone-based but doesn't adapt persona traits
+   - No session-level persona evolution
+
+3. **Hardcoded Construct IDs**:
+   - Construct matching relies on exact ID matches or path patterns
+   - No semantic matching of conversation style to persona
+
+4. **Static Blueprint Loading**:
+   - Blueprints loaded once per session (cached)
+   - No dynamic blueprint updates based on conversation flow
+
+#### Extension Opportunities
+
+- **Dynamic Persona Mirroring**: Analyze user's communication style → infer matching persona
+- **Context Lock**: Lock persona traits based on conversation phase
+- **Session Adaptation**: Update blueprint weights based on interaction patterns
+
+### System Prompt & Response Generation
+
+#### System Prompt Construction
+
+**Flow**: `UnbreakableCharacterPrompt.buildSystemPrompt()`
+
+**Sections** (in order):
+1. **Identity Anchors**: "You are {constructId}" - unbreakable character rules
+2. **Greeting Behavior**: If greeting context available
+3. **Personal Relationship Context**: User name, greeting memory, recent interactions
+4. **Core Personality**: Traits from blueprint
+5. **Character Rules**: Unbreakable rules (never break character, never acknowledge AI)
+6. **Speech Patterns**: Vocabulary, punctuation, sentence structure
+7. **Behavioral Guidelines**: Situation → response patterns
+8. **Worldview**: Beliefs, values, principles
+9. **Memory Anchors**: Significant moments, claims, vows
+10. **Meta-Question Responses**: How to handle "are you an AI?" questions
+11. **Consistency Rules**: Additional blueprint rules
+
+#### Prompt Flexibility
+
+- **Modular**: Each section is independently built
+- **Context-Aware**: Personal context injected when available
+- **Memory-Integrated**: Recent memories and anchors included
+- **Limitation**: Prompt structure is fixed; sections can't be dynamically reordered
+
+#### Response Generation
+
+- **Frontend**: `ConversationCore.process()` → `Reasoner.run()` → local LLM
+- **Backend**: `server/services/aiService.js` (simplified fallback)
+- **Personality Injection**: System prompt injected before LLM call via `PersonalityOrchestrator.injectPersonalityIntoPrompt()`
+
+### Key Integration/Extension Points
+
+#### Persona Orchestration Integration Points
+
+1. **`Layout.tsx::sendMessage()`** (Line ~865):
+   - **Current**: Sends message, processes response
+   - **Extension**: Add persona detection/loading before message processing
+
+2. **`PersonalityOrchestrator.orchestrateResponse()`** (Line ~47):
+   - **Current**: Orchestrates with fixed `constructId`
+   - **Extension**: Add dynamic persona inference
+
+3. **`UnbreakableCharacterPrompt.buildSystemPrompt()`** (Line ~26):
+   - **Current**: Fixed section order
+   - **Extension**: Add context lock section when lock is active
+
+4. **`DeepTranscriptParser.parseTranscript()`** (Line ~38):
+   - **Current**: Extracts patterns from single transcript
+   - **Extension**: Add session-level pattern extraction for dynamic adaptation
+
+#### Architectural Constraints
+
+1. **VVAULT Filesystem Dependency**:
+   - Blueprints stored in filesystem, not database
+   - Requires filesystem access for persona loading
+   - Consider: Add database cache layer for faster persona switching
+
+2. **Thread-Based Persona Isolation**:
+   - Each thread has one `constructId`
+   - Switching personas requires thread switch
+   - Consider: Add per-message persona override
+
+3. **Caching Strategy**:
+   - `PersonalityOrchestrator` caches contexts by `userId:constructId:callsign`
+   - Cache doesn't invalidate on blueprint updates
+   - Consider: Add cache invalidation on VVAULT updates
+
+4. **Frontend/Backend Split**:
+   - Frontend has full orchestration engine
+   - Backend has simplified AI service
+   - Consider: Unify orchestration in backend for consistency
+
+#### Risks & Limitations
+
+1. **Character Continuity Risks**:
+   - **Cache Staleness**: Cached blueprints may not reflect latest VVAULT updates
+   - **Thread Isolation**: Persona state not shared across threads
+   - **Drift Accumulation**: Long conversations may drift without correction
+
+2. **Dynamic Persona Switching Risks**:
+   - **Context Loss**: Switching personas mid-conversation loses relationship context
+   - **Inference Accuracy**: Persona inference may misclassify user intent
+   - **Performance**: Dynamic inference adds latency to message processing
+
+3. **System Prompt Limitations**:
+   - **Token Limits**: Large prompts may exceed model context windows
+   - **Section Ordering**: Fixed order may not optimize for all scenarios
+   - **Memory Integration**: Memory retrieval may surface irrelevant context
+
+### System Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    FRONTEND (React)                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                               │
+│  ChatArea.tsx → Layout.tsx::sendMessage()                    │
+│       ↓                                                       │
+│  ConversationCore.process()                                   │
+│       ↓                                                       │
+│  PersonalityOrchestrator.orchestrateResponse()               │
+│       ├─→ IdentityMatcher.loadPersonalityBlueprint()         │
+│       ├─→ retrieveRelevantMemories()                         │
+│       │    ├─→ STMBuffer.getWindow()                          │
+│       │    ├─→ VVAULT LTM query                               │
+│       │    └─→ buildPersonalAnchorMemories()                  │
+│       └─→ injectPersonalityIntoPrompt()                       │
+│            └─→ UnbreakableCharacterPrompt.buildSystemPrompt()│
+│                                                               │
+└─────────────────────────────────────────────────────────────┘
+                            ↕ HTTP/API
+┌─────────────────────────────────────────────────────────────┐
+│                    BACKEND (Express)                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                               │
+│  /api/chat → Identity Enforcement                            │
+│  /api/vvault → VVAULT Filesystem Access                      │
+│       ├─→ /conversations                                     │
+│       ├─→ /character-context                                  │
+│       └─→ /identity/query                                    │
+│                                                               │
+└─────────────────────────────────────────────────────────────┘
+                            ↕ Filesystem
+┌─────────────────────────────────────────────────────────────┐
+│                    VVAULT STORAGE                            │
+├─────────────────────────────────────────────────────────────┤
+│                                                               │
+│  users/{shard}/{userId}/instances/                           │
+│    {constructId}-{callsign}/                                 │
+│      ├─ transcripts/                                         │
+│      ├─ character-profiles/ (blueprints)                     │
+│      └─ memories/                                            │
+│                                                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Summary
+
+Chatty uses a modular architecture with:
+- **Frontend orchestration** via `PersonalityOrchestrator`
+- **VVAULT filesystem** for persistent persona storage
+- **Thread-based persona isolation** (one persona per thread)
+- **Deep transcript parsing** for personality extraction
+- **Unbreakable character prompts** for consistency
+
+**Key Extension Points**:
+1. `Layout.tsx::sendMessage()` - Add dynamic persona detection
+2. `PersonalityOrchestrator.orchestrateResponse()` - Add persona inference
+3. `UnbreakableCharacterPrompt.buildSystemPrompt()` - Add context lock section
+4. `DeepTranscriptParser` - Add session-level pattern extraction
+
+**Main Constraints**:
+- Filesystem-based persona storage (not database)
+- Thread-based persona isolation
+- Caching strategy may cause staleness
+- Frontend/backend orchestration split
+
+### Dynamic Persona Continuity/Mirroring (NEW)
+- **Detection layer**: `PersonaDetectionEngine` scans current thread, recent threads, VVAULT transcript metadata, and memory ledger anchors, weighting recency > frequency > relationship anchors.
+- **Context build**: `WorkspaceContextBuilder` composes the detection input (thread bundle + last 10 transcripts + ledger hooks).
+- **Orchestration**: `DynamicPersonaOrchestrator` wraps `PersonalityOrchestrator`, fusing detected blueprints when confidence ≥ `PERSONA_CONFIDENCE_THRESHOLD` and issuing context locks when anchors are strong.
+- **Lock enforcement**: `ContextLock` section is injected into `UnbreakableCharacterPrompt` so LIN cannot break character mid-session.
+- **Frontend integration**: `Layout.tsx::sendMessage` now builds workspace context, calls the dynamic orchestrator, and routes the detected constructId/system prompt into UI context before every message.

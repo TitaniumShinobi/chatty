@@ -172,8 +172,16 @@ export default function Chat() {
           
           // AI/Construct messages: left-aligned, full screen width, no bubble styling
           const formatGenerationTime = (ms: number): string => {
-            if (ms < 1000) return `${ms}ms`
-            return `${(ms / 1000).toFixed(1)}s`
+            const totalSeconds = ms / 1000
+            if (totalSeconds < 60) {
+              // Show seconds with 1 decimal for quick responses (e.g., "3.2s")
+              return `${totalSeconds.toFixed(1)}s`
+            } else {
+              // Show mm:ss for longer generations (e.g., "01:23")
+              const minutes = Math.floor(totalSeconds / 60)
+              const seconds = Math.floor(totalSeconds % 60)
+              return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+            }
           }
           
           const responseTimeMs = (m as any).metadata?.responseTimeMs

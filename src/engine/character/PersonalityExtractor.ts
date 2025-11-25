@@ -14,6 +14,9 @@ import type {
   ConsistencyRule,
   ResolvedProfile,
   ConflictResolution,
+  PersonalIdentifier,
+  MemoryAnchor,
+  RelationshipPattern,
 } from '../transcript/types';
 import type { CharacterProfile } from './types';
 import type { EmotionalState } from './types';
@@ -179,6 +182,9 @@ export class PersonalityExtractor {
     // Aggregate memory anchors (weighted by significance)
     const memoryAnchors = this.mergeMemoryAnchors(patternSets, weights, analyses);
 
+    // Derive top-level personal identifiers (name, projects, signature phrases)
+    const personalIdentifiers = this.derivePersonalIdentifiers(memoryAnchors, relationshipPatterns);
+
     // Generate consistency rules from patterns
     const consistencyRules = this.generateConsistencyRules(
       speechPatterns,
@@ -200,6 +206,7 @@ export class PersonalityExtractor {
       emotionalRange,
       relationshipPatterns,
       memoryAnchors,
+      personalIdentifiers,
       consistencyRules,
       metadata: {
         sourceTranscripts: analyses.map(a => a.transcriptPath),
@@ -434,7 +441,7 @@ export class PersonalityExtractor {
   }
 
   /**
-   * Merge memory anchors
+   * Merge memory anchors with personal identifier prioritization
    */
   private mergeMemoryAnchors(
     patternSets: PatternSet[],
@@ -450,9 +457,23 @@ export class PersonalityExtractor {
         const key = anchor.anchor.toLowerCase().substring(0, 50);
         const existing = anchorMap.get(key);
 
+        // Boost weight for personal identifiers and relationship markers
+        let personalBoost = 0;
+        if (anchor.type === 'relationship-marker') {
+          personalBoost = 0.35; // High boost for relationship markers
+        }
+        if (anchor.anchor.toLowerCase().includes("user's name") || 
+            anchor.anchor.toLowerCase().includes("greets")) {
+          personalBoost = 0.6; // Maximum boost for name and greeting anchors
+        }
+        if (anchor.relatedAnchors?.includes('greeting-style') || anchor.relatedAnchors?.includes('self-introduction')) {
+          personalBoost = Math.max(personalBoost, 0.55);
+        }
+
         const weight = 
           anchor.significance +
-          weights.recency * recencyWeight;
+          weights.recency * recencyWeight +
+          personalBoost;
 
         if (existing) {
           existing.totalWeight += weight;
@@ -466,10 +487,100 @@ export class PersonalityExtractor {
       });
     });
 
-    return Array.from(anchorMap.values())
+    // Separate personal anchors from others
+    const allAnchors = Array.from(anchorMap.values());
+    const personalAnchors = allAnchors.filter(item => 
+      item.anchor.type === 'relationship-marker' ||
+      item.anchor.anchor.toLowerCase().includes("user's name") ||
+      item.anchor.anchor.toLowerCase().includes("greets")
+    );
+    const otherAnchors = allAnchors.filter(item => !personalAnchors.includes(item));
+
+    // Sort and prioritize: personal anchors first, then others
+    const sortedPersonal = personalAnchors
       .sort((a, b) => b.totalWeight - a.totalWeight)
-      .slice(0, 20) // Top 20 most significant anchors
-      .map(item => item.anchor);
+      .slice(0, 10); // Top 10 personal anchors
+    const sortedOther = otherAnchors
+      .sort((a, b) => b.totalWeight - a.totalWeight)
+      .slice(0, 10); // Top 10 other anchors
+
+    return [...sortedPersonal, ...sortedOther].map(item => item.anchor);
+  }
+
+  /**
+  * Distill top-level personal identifiers so greeting logic can always recall the user
+  */
+  private derivePersonalIdentifiers(
+    memoryAnchors: MemoryAnchor[],
+    relationshipPatterns: RelationshipPattern[]
+  ): PersonalIdentifier[] {
+    const identifiers = new Map<string, PersonalIdentifier>();
+
+    const addIdentifier = (id: PersonalIdentifier) => {
+      const key = `${id.type}:${id.value.toLowerCase()}`;
+      const existing = identifiers.get(key);
+      if (!existing || id.salience > existing.salience) {
+        identifiers.set(key, { ...id, evidence: id.evidence.slice(0, 3) });
+      }
+    };
+
+    memoryAnchors.forEach(anchor => {
+      const lower = anchor.anchor.toLowerCase();
+      const nameMatch = anchor.anchor.match(/"([^"]+)"/);
+
+      if (lower.includes("user's name") && nameMatch) {
+        addIdentifier({
+          type: 'user-name',
+          value: nameMatch[1],
+          salience: Math.min(1, anchor.significance + 0.15),
+          evidence: [anchor.context],
+          lastSeen: anchor.timestamp,
+        });
+        return;
+      }
+
+      if (lower.includes('greets') && nameMatch) {
+        addIdentifier({
+          type: 'greeting-style',
+          value: anchor.context || anchor.anchor,
+          salience: Math.min(1, anchor.significance + 0.1),
+          evidence: [anchor.context || anchor.anchor],
+          lastSeen: anchor.timestamp,
+        });
+      }
+
+      // High-significance personal anchors become shared-memory identifiers
+      if (anchor.significance >= 0.8) {
+        const type: PersonalIdentifier['type'] =
+          lower.includes('project') || lower.includes('build') || lower.includes('launch')
+            ? 'project'
+            : 'shared-memory';
+
+        addIdentifier({
+          type,
+          value: anchor.anchor,
+          salience: anchor.significance,
+          evidence: [anchor.context],
+          lastSeen: anchor.timestamp,
+        });
+      }
+    });
+
+    relationshipPatterns
+      .filter(p => p.patternType === 'intimacy' || p.patternType === 'collaboration')
+      .forEach(pattern => {
+        addIdentifier({
+          type: 'phrase',
+          value: pattern.evidence[0] || pattern.patternType,
+          salience: Math.min(1, 0.6 + pattern.strength / 2),
+          evidence: pattern.evidence.slice(0, 2),
+          lastSeen: pattern.evolution?.[pattern.evolution.length - 1]?.timestamp,
+        });
+      });
+
+    return Array.from(identifiers.values())
+      .sort((a, b) => b.salience - a.salience)
+      .slice(0, 12);
   }
 
   /**
@@ -479,9 +590,24 @@ export class PersonalityExtractor {
     speechPatterns: SpeechPattern[],
     behavioralMarkers: BehavioralMarker[],
     worldview: WorldviewExpression[],
-    memoryAnchors: MemoryAnchor[]
+    memoryAnchors: MemoryAnchor[],
+    personalIdentifiers: PersonalIdentifier[]
   ): ConsistencyRule[] {
     const rules: ConsistencyRule[] = [];
+
+    // Personal identifiers should always be honored (e.g., greet Devon by name)
+    personalIdentifiers
+      .filter(id => id.type === 'user-name')
+      .slice(0, 1)
+      .forEach(id => {
+        rules.push({
+          rule: `Greet ${id.value} by name and acknowledge shared history when they initiate conversation.`,
+          type: 'relationship',
+          source: 'transcript',
+          confidence: id.salience,
+          examples: id.evidence.slice(0, 2),
+        });
+      });
 
     // Speech pattern rules
     speechPatterns.slice(0, 5).forEach(pattern => {
@@ -667,4 +793,3 @@ export class PersonalityExtractor {
     };
   }
 }
-

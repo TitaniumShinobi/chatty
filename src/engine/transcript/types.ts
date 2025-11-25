@@ -4,6 +4,8 @@
 
 import type { EmotionalState, RelationalState } from '../character/types';
 import type { ToneLabel } from '../../../lib/toneDetector';
+import type { PersonaSignal } from '../character/PersonaDetectionEngine';
+import type { ContextLock } from '../character/ContextLock';
 
 /**
  * Basic conversation pair extracted from transcript
@@ -108,6 +110,18 @@ export interface MemoryAnchor {
 }
 
 /**
+ * Personal identifiers distilled from transcripts
+ * Used to persist high-salience anchors like the user's name and shared projects
+ */
+export interface PersonalIdentifier {
+  type: 'user-name' | 'project' | 'phrase' | 'shared-memory' | 'greeting-style';
+  value: string;
+  salience: number; // 0-1
+  evidence: string[];
+  lastSeen?: string;
+}
+
+/**
  * Complete deep transcript analysis
  */
 export interface DeepTranscriptAnalysis {
@@ -191,6 +205,7 @@ export interface PersonalityBlueprint {
   emotionalRange: EmotionalRange;
   relationshipPatterns: RelationshipPattern[];
   memoryAnchors: MemoryAnchor[];
+  personalIdentifiers: PersonalIdentifier[];
   consistencyRules: ConsistencyRule[];
   metadata: {
     sourceTranscripts: string[];
@@ -287,5 +302,7 @@ export interface OrchestratedResponse {
   memoriesUsed: Memory[];
   driftDetected: boolean;
   driftCorrected: boolean;
+  systemPrompt?: string;
+  detectedPersona?: PersonaSignal;
+  contextLock?: ContextLock | null;
 }
-

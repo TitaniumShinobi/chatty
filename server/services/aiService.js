@@ -4,12 +4,30 @@
 // For now, we'll use a simple fallback since we can't easily import frontend modules
 // In a production setup, you'd want to share the reasoning engine between frontend and backend
 
+import { validatePersonaLock } from '../lib/personaLockValidator.js';
+
 export class ConversationAI {
   constructor() {
     this.reasoner = null;
   }
 
-  async processMessage(content, files = [], history = []) {
+  async processMessage(content, files = [], history = [], options = {}) {
+    // STEP 3: Validate persona lock if present
+    const { personaLock, constructId, personaSystemPrompt } = options;
+    
+    if (personaLock) {
+      const validation = validatePersonaLock({ personaLock, constructId, personaSystemPrompt });
+      if (!validation.valid) {
+        throw new Error(`[ConversationAI] ${validation.error}`);
+      }
+      
+      // If lock is active, we should use the orchestrator systemPrompt
+      // This service should not rebuild prompts when lock exists
+      console.warn(`⚠️ [ConversationAI] Persona lock active for ${personaLock.constructId} - this service should not rebuild prompts. Use orchestrator systemPrompt.`);
+      
+      // For now, throw to prevent fallback prompt building
+      throw new Error(`[ConversationAI] Persona lock active - must use orchestrator systemPrompt, not fallback builder`);
+    }
     try {
       // Simple intent detection
       const lower = content.toLowerCase();

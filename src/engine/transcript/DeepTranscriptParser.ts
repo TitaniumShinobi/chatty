@@ -46,6 +46,9 @@ export class DeepTranscriptParser {
     // Build context for each pair
     const pairsWithContext = this.buildConversationContext(conversationPairs);
 
+    // Extract personal anchors first (synchronous, fast)
+    const personalAnchors = this.extractPersonalAnchors(pairsWithContext);
+
     // Run parallel analyses
     const [
       emotionalStates,
@@ -53,7 +56,7 @@ export class DeepTranscriptParser {
       worldviewMarkers,
       speechPatterns,
       behavioralMarkers,
-      memoryAnchors,
+      semanticAnchors,
     ] = await Promise.all([
       this.extractEmotionalStates(pairsWithContext),
       this.analyzeRelationshipDynamics(pairsWithContext),
@@ -62,6 +65,12 @@ export class DeepTranscriptParser {
       this.identifyBehavioralMarkers(pairsWithContext),
       this.findMemoryAnchors(pairsWithContext),
     ]);
+
+    // Merge personal anchors with semantic anchors (prioritize personal)
+    const memoryAnchors = [
+      ...personalAnchors,
+      ...semanticAnchors,
+    ].sort((a, b) => b.significance - a.significance);
 
     // Extract date range from pairs
     const timestamps = conversationPairs
@@ -701,6 +710,144 @@ Only respond with valid JSON array, no other text.`;
   }
 
   /**
+   * Extract personal relationship anchors (names, direct addresses, relationship markers)
+   */
+  private extractPersonalAnchors(
+    pairs: (ConversationPair & { context: ConversationContext })[]
+  ): MemoryAnchor[] {
+    const anchors: MemoryAnchor[] = [];
+    const namePatterns = new Map<string, { count: number; contexts: string[]; firstTimestamp?: string; firstPairIndex?: number; reason?: string }>();
+
+    const pushNameAnchor = (
+      name: string,
+      context: string,
+      timestamp: string,
+      pairIndex: number,
+      significance: number,
+      reason: string
+    ) => {
+      anchors.push({
+        anchor: `User's name is "${name}"`,
+        type: 'relationship-marker',
+        significance,
+        timestamp,
+        pairIndex,
+        context,
+        relatedAnchors: [reason],
+      });
+    };
+
+    for (const pair of pairs) {
+      const combinedText = (pair.user + ' ' + pair.assistant).toLowerCase();
+
+      // Self-identification from the user ("I'm Devon", "this is Devon")
+      const selfIdMatch = pair.user.match(/\b(?:i['’]?m|i am|this is)\s+([A-Z][a-z]{2,})\b/);
+      if (selfIdMatch) {
+        const name = selfIdMatch[1];
+        pushNameAnchor(
+          name,
+          pair.user.substring(0, 150),
+          pair.timestamp,
+          pairs.indexOf(pair),
+          0.95,
+          'self-introduction'
+        );
+      }
+
+      // Extract names (capitalized words that appear in user messages)
+      const userWords = pair.user.match(/\b[A-Z][a-z]+\b/g) || [];
+      userWords.forEach(name => {
+        if (name.length > 2 && !['You', 'I', 'The', 'This', 'That', 'What', 'How', 'Why', 'When', 'Where'].includes(name)) {
+          const lowerName = name.toLowerCase();
+          if (!namePatterns.has(lowerName)) {
+            namePatterns.set(lowerName, { count: 0, contexts: [], firstTimestamp: pair.timestamp, firstPairIndex: pairs.indexOf(pair), reason: 'repeated-user-reference' });
+          }
+          const entry = namePatterns.get(lowerName)!;
+          entry.count++;
+          if (entry.contexts.length < 3) {
+            entry.contexts.push(pair.user.substring(0, 100));
+          }
+        }
+      });
+
+      // Extract direct addresses (assistant addressing user by name)
+      const directAddressMatch = pair.assistant.match(/\b(?:hi|hello|hey|yo|what's up|what up)\s+([A-Z][a-z]+)\b/i);
+      if (directAddressMatch) {
+        const name = directAddressMatch[1];
+        const pairIndex = pairs.indexOf(pair);
+        const greetingSignificance = pair.context?.conversationStart ? 0.95 : 0.85;
+        anchors.push({
+          anchor: `Greets user as "${name}"`,
+          type: 'relationship-marker',
+          significance: greetingSignificance,
+          timestamp: pair.timestamp,
+          pairIndex,
+          context: pair.assistant.substring(0, 150),
+          relatedAnchors: ['greeting-style'],
+        });
+        // Ensure the name is also captured as a top-level identifier even if seen once
+        pushNameAnchor(
+          name,
+          pair.assistant.substring(0, 150),
+          pair.timestamp,
+          pairIndex,
+          greetingSignificance,
+          'assistant-greeting'
+        );
+      }
+
+      // Extract personal references ("you said", "remember when", "that time")
+      if (pair.assistant.match(/\b(?:you said|remember when|that time|last time|you told me|you mentioned)\b/i)) {
+        anchors.push({
+          anchor: pair.assistant.match(/\b(?:you said|remember when|that time|last time|you told me|you mentioned)[^.!?]{0,100}/i)?.[0] || 'Personal reference',
+          type: 'relationship-marker',
+          significance: 0.7,
+          timestamp: pair.timestamp,
+          pairIndex: pairs.indexOf(pair),
+          context: pair.assistant.substring(0, 150),
+        });
+      }
+    }
+
+    // Add most frequent names as high-significance anchors
+    Array.from(namePatterns.entries())
+      .filter(([_, data]) => data.count >= 2)
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, 3)
+      .forEach(([name, data]) => {
+        pushNameAnchor(
+          name,
+          data.contexts[0] || '',
+          data.firstTimestamp || pairs[0]?.timestamp || new Date().toISOString(),
+          data.firstPairIndex ?? 0,
+          0.9,
+          data.reason || 'repeated-user-reference'
+        );
+      });
+
+    // If only a single name mention exists (e.g., opener "yo Devon"), still capture it
+    if (anchors.filter(a => a.anchor.toLowerCase().includes("user's name")).length === 0) {
+      const singleName = Array.from(namePatterns.entries())
+        .filter(([_, data]) => data.count === 1)
+        .sort((a, b) => (b[1].firstTimestamp || '').localeCompare(a[1].firstTimestamp || ''))[0];
+
+      if (singleName) {
+        const [name, data] = singleName;
+        pushNameAnchor(
+          name,
+          data.contexts[0] || '',
+          data.firstTimestamp || pairs[0]?.timestamp || new Date().toISOString(),
+          data.firstPairIndex ?? 0,
+          0.82,
+          'single-high-salience-name'
+        );
+      }
+    }
+
+    return anchors;
+  }
+
+  /**
    * Find memory anchors (significant events, claims, vows, boundaries, core statements)
    */
   async findMemoryAnchors(
@@ -770,4 +917,3 @@ Only respond with valid JSON array, no other text.`;
     return 0.9;
   }
 }
-

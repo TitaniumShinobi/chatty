@@ -13,6 +13,7 @@ import aiRoutes from "./routes/ais.js";
 import { randomBytes } from "node:crypto";
 import vvaultRoutes from "./routes/vvault.js";
 import previewRoutes from "./routes/preview.js";
+import awarenessRoutes from "./routes/awareness.js";
 
 dotenv.config();
 
@@ -144,35 +145,54 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
     // 2) fetch user info
     const user = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
       headers: { Authorization: `Bearer ${tokenRes.access_token}` }
-    }).then(r => r.json()); // {sub, email, name, picture}
+    }).then(r => r.json()); 
+    // Google returns: {sub, email, name, picture, given_name, family_name, locale, email_verified}
 
     // 3) persist user to DB and issue session
-    const profile = { sub: user.sub, name: user.name, email: user.email, picture: user.picture };
+    const profile = { 
+      sub: user.sub, 
+      name: user.name, 
+      email: user.email, 
+      picture: user.picture,
+      given_name: user.given_name,
+      family_name: user.family_name,
+      locale: user.locale,
+      email_verified: user.email_verified
+    };
     const doc = await Store.upsertUser({ 
       uid: profile.sub, 
-      name: profile.name, 
+      name: profile.name,
+      given_name: profile.given_name,
+      family_name: profile.family_name,
       email: profile.email, 
-      picture: profile.picture 
+      picture: profile.picture,
+      locale: profile.locale,
+      emailVerified: profile.email_verified !== undefined ? profile.email_verified : true // Default to true for OAuth users
     });
     
-    const userId = doc._id.toString?.() ?? doc._id;
-    
-    // 3b) Register user in Chatty user registry
+    // CRITICAL: Use LIFE format user ID (same as VVAULT) instead of MongoDB _id
+    // Register user in Chatty user registry (generates LIFE format ID)
+    let userId;
     try {
       const { getOrCreateUser } = await import('./lib/userRegistry.js');
-      await getOrCreateUser(userId, profile.email, profile.name);
+      const userProfile = await getOrCreateUser(doc._id.toString?.() ?? doc._id, profile.email, profile.name);
+      userId = userProfile.user_id; // LIFE format: devon_woodson_1762969514958
       console.log(`✅ [User Registry] Registered user: ${userId} (${profile.email})`);
     } catch (regError) {
       console.error('⚠️ [User Registry] Failed to register user (non-critical):', regError);
-      // Continue anyway - user can still use the app
+      // Fallback to MongoDB _id if registry fails
+      userId = doc._id.toString?.() ?? doc._id;
     }
     
     const payload = { 
-      id: userId, 
-      uid: profile.sub, 
-      name: profile.name, 
+      id: userId, // LIFE format user ID
+      uid: profile.sub, // Google sub (for OAuth)
+      name: profile.name,
+      given_name: profile.given_name,
+      family_name: profile.family_name,
       email: profile.email, 
-      picture: profile.picture 
+      picture: profile.picture,
+      locale: profile.locale
     };
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "30d" });
@@ -208,6 +228,34 @@ app.get("/api/me", (req, res) => {
     res.json({ ok:true, user });
   } catch {
     res.status(401).json({ ok:false });
+  }
+});
+
+// Initialize user registry (for existing users)
+app.post("/api/user/initialize-registry", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?.uid || req.user?.sub;
+    const email = req.user?.email || '';
+    const name = req.user?.name || req.user?.given_name || 'User';
+
+    if (!userId) {
+      return res.status(400).json({ ok: false, error: "User ID not found in session" });
+    }
+
+    const { getOrCreateUser } = await import('./lib/userRegistry.js');
+    const userProfile = await getOrCreateUser(userId, email, name);
+    
+    res.json({ 
+      ok: true, 
+      message: "Registry initialized successfully",
+      user: userProfile 
+    });
+  } catch (error) {
+    console.error('❌ [User Registry] Failed to initialize:', error);
+    res.status(500).json({ 
+      ok: false, 
+      error: error.message || "Failed to initialize registry" 
+    });
   }
 });
 
@@ -298,6 +346,11 @@ app.use("/api/ais", requireAuth, aiRoutes);
 
 // Mount VVAULT routes with auth
 app.use("/api/vvault", requireAuth, vvaultRoutes);
+console.log('✅ [Server] VVAULT routes mounted at /api/vvault');
+
+// Mount awareness routes (time context, etc.)
+app.use("/api/awareness", awarenessRoutes);
+console.log('✅ [Server] Awareness routes mounted at /api/awareness');
 
 // Preview synthesis proxy (no auth required for now; adjust if needed)
 app.use("/api/preview", previewRoutes);

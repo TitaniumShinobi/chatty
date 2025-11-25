@@ -1094,7 +1094,7 @@ async function extractChatGPTConfig(conversation, zip = null) {
   const detectedModel = model || mappingSlug || 'gpt-4';
   return {
     modelId: detectedModel,
-    constructId: 'synth', // Default to Synth for regular ChatGPT conversations
+    constructId: 'synth-001', // CRITICAL: Always use constructCallsign format (e.g., "synth-001"), never just "synth"
     isCustomGPT: false,
     instructions: null,
     name: null,
@@ -1120,7 +1120,8 @@ async function convertConversationToTranscript(conversation, userId, userName, g
   const crypto = require('crypto');
   
   // Use detected construct or default to synth
-  const constructId = gptConfig.constructId || 'synth';
+  // CRITICAL: Always use constructCallsign format (e.g., "synth-001"), never just "synth"
+  const constructId = gptConfig.constructId || 'synth-001';
   
   // Create unique callsign for each conversation to ensure separate files
   // Use a hash of conversation ID to get a consistent callsign (1-999 range)
@@ -1648,7 +1649,7 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
         ? await extractChatGPTConfig(convo, zip)
         : {
             modelId: 'unknown',
-            constructId: 'synth',
+            constructId: 'synth-001', // CRITICAL: Always use constructCallsign format
             isCustomGPT: false,
             instructions: null,
             name: null,

@@ -57,12 +57,13 @@ router.get('/', async (req, res) => {
     // Prefer stable identifiers; fall back to email, sub, uid
     const chattyUserId = req.user?.id || req.user?.uid || req.user?.sub || req.user?.email || 'anonymous';
     console.log(`📋 [AIs API] GET /api/ais - User: ${chattyUserId}`);
+    console.log(`🔍 [AIs API] req.user details:`, req.user ? { id: req.user.id, sub: req.user.sub, email: req.user.email } : 'none');
     
     // Resolve to VVAULT user ID format for database queries
     let userId = chattyUserId;
     try {
       const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
-      const vvaultUserId = await resolveVVAULTUserId(chattyUserId, req.user?.email);
+      const vvaultUserId = await resolveVVAULTUserId(chattyUserId, req.user?.email, true, req.user?.name); // Auto-create if needed
       if (vvaultUserId) {
         userId = vvaultUserId;
         console.log(`✅ [AIs API] Resolved user ID: ${chattyUserId} → ${vvaultUserId}`);
@@ -74,8 +75,14 @@ router.get('/', async (req, res) => {
       console.warn(`⚠️ [AIs API] Resolution error stack:`, error.stack);
     }
     
+    console.log(`🔍 [AIs API] Querying with userId: ${userId}, originalUserId: ${chattyUserId}`);
     const ais = await aiManager.getAllAIs(userId, chattyUserId);
-    console.log(`✅ [AIs API] Returning ${ais?.length || 0} AIs`);
+    console.log(`✅ [AIs API] Found ${ais?.length || 0} AIs`);
+    if (ais && ais.length > 0) {
+      console.log(`📊 [AIs API] AI names:`, ais.map(a => ({ id: a.id, name: a.name, constructCallsign: a.constructCallsign })));
+    } else {
+      console.log(`⚠️ [AIs API] No AIs found - checking if this is expected`);
+    }
     
     // Ensure response is valid JSON
     if (!res.headersSent) {

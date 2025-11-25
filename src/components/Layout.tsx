@@ -16,6 +16,8 @@ import SynthGuidance from './SynthGuidance'
 import { useSynthGuidance } from '../hooks/useSynthGuidance'
 import { AIService } from '../lib/aiService'
 import type { UIContextSnapshot, Message as ChatMessage } from '../types'
+import { WorkspaceContextBuilder } from '../engine/context/WorkspaceContextBuilder'
+import { DynamicPersonaOrchestrator } from '../engine/orchestration/DynamicPersonaOrchestrator'
 
 type Message = {
   id: string
@@ -882,6 +884,60 @@ export default function Layout() {
       return
     }
     
+    // Dynamic persona detection + context lock
+    const detectionEnabled = (process.env.PERSONA_DETECTION_ENABLED || 'true') !== 'false'
+    let detectedPersona: import('../engine/character/PersonaDetectionEngine').PersonaSignal | undefined
+    let personaContextLock: import('../engine/character/ContextLock').ContextLock | null = null
+    let personaSystemPrompt: string | null = null
+    let effectiveConstructId: string | null = thread.constructId || null
+
+    if (detectionEnabled) {
+      try {
+        const workspaceContext = await WorkspaceContextBuilder.buildWorkspaceContext(
+          user.id || user.sub || '',
+          threadId,
+          threads as any
+        )
+        const dynamicOrchestrator = new DynamicPersonaOrchestrator()
+        const conversationHistory = thread.messages.map(m => {
+          if (m.role === 'assistant') {
+            const payload = (m.packets || []).map(p => p?.payload?.content || '').filter(Boolean).join('\n')
+            return { role: 'assistant' as const, content: payload || m.text || '' }
+          }
+          return { role: m.role, content: m.text || '' }
+        })
+        const orchestration = await dynamicOrchestrator.orchestrateWithDynamicPersona(
+          input,
+          user.id || user.sub || '',
+          workspaceContext,
+          conversationHistory,
+          threadId
+        )
+        detectedPersona = orchestration.detectedPersona
+        personaContextLock = orchestration.contextLock || null
+        personaSystemPrompt = orchestration.systemPrompt || null
+        const lockedConstructId = personaContextLock?.personaSignal?.constructId || detectedPersona?.constructId
+        // Use detected persona if confidence is high enough, otherwise fall back to thread's constructId
+        if (lockedConstructId && (detectedPersona?.confidence || 0) >= 0.7) {
+          effectiveConstructId = lockedConstructId
+        } else {
+          // Fall back to thread's constructId if detection confidence is low
+          effectiveConstructId = thread.constructId || 'synth'
+        }
+      } catch (error) {
+        console.error('❌ [Layout.tsx] Persona detection/lock failed:', error)
+        // Fall back to thread's constructId if detection fails
+        effectiveConstructId = thread.constructId || 'synth'
+        console.warn('⚠️ [Layout.tsx] Falling back to thread constructId:', effectiveConstructId)
+      }
+    }
+    
+    if (!effectiveConstructId) {
+      // Final fallback to synth
+      effectiveConstructId = 'synth'
+      console.warn('⚠️ [Layout.tsx] No effective constructId, defaulting to synth')
+    }
+
     const conversationManager = VVAULTConversationManager.getInstance()
     const userTimestamp = Date.now()
 
@@ -946,7 +1002,7 @@ export default function Layout() {
     // 5. Query relevant identity/memories for prompt injection
     let relevantMemories: Array<{ context: string; response: string; timestamp: string; relevance: number }> = []
     try {
-      const constructCallsign = thread.constructId || 'synth-001'
+      const constructCallsign = effectiveConstructId
       console.log(`🧠 [Layout.tsx] Querying identity for construct: ${constructCallsign}`)
       relevantMemories = await conversationManager.loadMemoriesForConstruct(
         user.id || user.sub || '',
@@ -974,32 +1030,8 @@ export default function Layout() {
         ).join('\n\n')
       : ''
     
-    // Inject memories directly into instructions if we have a constructId and memories
-    // Weave memories naturally into instructions as background context, not separate directives
-    let enhancedInstructions = null
-    if (thread.constructId && relevantMemories.length > 0 && memoryContext) {
-      try {
-        // Get AI config to access current instructions
-        const aiId = `gpt-${thread.constructId}` // Format: gpt-katana-001
-        const aiConfig = await aiService.getAI(aiId)
-        
-        // Get base instructions (should already include legal frameworks from AIManager)
-        let baseInstructions = aiConfig.instructions || ''
-        
-        // Ensure legal frameworks are present (fallback if not already included)
-        if (!baseInstructions.includes('LEGAL FRAMEWORKS (HARDCODED')) {
-          const { buildLegalFrameworkSection } = await import('../lib/legalFrameworks')
-          baseInstructions += buildLegalFrameworkSection()
-        }
-        
-        // Inject memories seamlessly as background context that informs responses
-        // Format: base instructions + natural memory context (no meta-directives)
-        enhancedInstructions = `${baseInstructions}\n\n[Background context from past conversations:]\n${memoryContext}`
-        console.log(`✅ [Layout.tsx] Injected ${relevantMemories.length} memories into instructions for ${thread.constructId}`)
-      } catch (error) {
-        console.warn(`⚠️ [Layout.tsx] Failed to get AI config for ${thread.constructId}, using memory context in UI context only:`, error)
-      }
-    }
+    // We no longer inject or mutate AI instructions; keep memory context only in UI notes.
+    const enhancedInstructions = null
     
     const baseUiContext: UIContextSnapshot = {
       route: location.pathname,
@@ -1011,7 +1043,7 @@ export default function Layout() {
         settingsOpen: isSettingsOpen,
         shareOpen: Boolean(shareConversationId)
       },
-      composer: { attachments: files.length },
+      composer: { attachments: files ? files.length : 0 },
       synthMode: aiService.getSynthMode() ? 'synth' : 'lin'
     }
     if (!baseUiContext.activePanel) {
@@ -1039,6 +1071,16 @@ export default function Layout() {
       ...(baseUiContext.additionalNotes ?? []),
       ...(uiOverrides?.additionalNotes ?? [])
     ]
+    if (detectedPersona) {
+      mergedNotes.push(
+        `Persona: ${detectedPersona.constructId}-${detectedPersona.callsign} (confidence ${detectedPersona.confidence.toFixed(
+          2
+        )})`
+      )
+      detectedPersona.evidence.slice(0, 3).forEach(evidence => {
+        mergedNotes.push(`Persona evidence: ${evidence}`)
+      })
+    }
     if (mergedNotes.length > 0) {
       mergedUiContext.additionalNotes = mergedNotes
     }
@@ -1053,17 +1095,26 @@ export default function Layout() {
       // Pass memories as background context via UI context, not in user message
       // This prevents the AI from responding about the memories themselves
       // CRITICAL: Also pass constructId so the backend can inject memories into instructions
-      const enhancedUiContext = memoryContext 
-        ? { 
-            ...mergedUiContext, 
-            additionalNotes: [...(mergedUiContext.additionalNotes || []), memoryContext],
-            constructId: thread.constructId, // Pass constructId so backend can fetch AI config and inject memories
-            enhancedInstructions: enhancedInstructions // Pass enhanced instructions if we have them
-          }
-        : { 
-            ...mergedUiContext,
-            constructId: thread.constructId // Always pass constructId
-          }
+      // STEP 1: Pass personaSystemPrompt and personaLock to enforce single prompt source
+    const enhancedUiContext = memoryContext 
+      ? { 
+          ...mergedUiContext, 
+          additionalNotes: [...(mergedUiContext.additionalNotes || []), memoryContext],
+          constructId: effectiveConstructId, // Pass constructId so backend can fetch AI config and inject memories
+          personaLock: personaContextLock ? { remaining: personaContextLock.remainingMessages, constructId: effectiveConstructId } : undefined,
+          personaSystemPrompt: personaSystemPrompt || undefined // STEP 1: Pass orchestrator system prompt
+        }
+      : { 
+          ...mergedUiContext,
+          constructId: effectiveConstructId, // Always pass constructId
+          personaLock: personaContextLock ? { remaining: personaContextLock.remainingMessages, constructId: effectiveConstructId } : undefined,
+          personaSystemPrompt: personaSystemPrompt || undefined // STEP 1: Pass orchestrator system prompt
+        }
+
+    if (personaContextLock && !personaSystemPrompt) {
+      console.error('❌ [Layout.tsx] Persona lock active but system prompt missing; aborting send');
+      return;
+    }
       
       const raw = await aiService.processMessage(input, files, {
         onPartialUpdate: (partialContent: string) => {

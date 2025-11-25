@@ -9,6 +9,14 @@ import { ServerFileParser } from './serverFileParser.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Strip legacy legal framework block from instructions
+const stripLegalFrameworks = (text = '') => {
+  if (!text) return '';
+  return text.replace(/=== LEGAL FRAMEWORKS \(HARDCODED - DO NOT REMOVE\) ===[\s\S]*?=== END LEGAL FRAMEWORKS ===/g, '').trim();
+};
+
+const sanitizeInstructions = (text = '') => stripLegalFrameworks(text).trim();
+
 export class AIManager {
   static instance = null;
   db = null;
@@ -405,7 +413,7 @@ export class AIManager {
       id,
       config.name,
       config.description,
-      config.instructions,
+      sanitizeInstructions(config.instructions),
       JSON.stringify(config.conversationStarters || []),
       avatarPath,
       JSON.stringify(config.capabilities || {}),
@@ -425,9 +433,12 @@ export class AIManager {
     // Record initial version history (version 1)
     this.recordVersion(id, 1, { ...config, constructCallsign, avatar: avatarPath, privacy });
 
+    const cleanInstructions = sanitizeInstructions(config.instructions);
+
     return {
       id,
       ...config,
+      instructions: cleanInstructions,
       avatar: avatarPath,
       privacy,
       isActive,
@@ -510,44 +521,8 @@ export class AIManager {
       privacy = row.is_active ? 'link' : 'private';
     }
 
-    // HARDCODED: Append legal frameworks to all AI instructions
-    // These cannot be removed by users and are automatically injected
-    let instructions = row.instructions || '';
-    if (!instructions.includes('LEGAL FRAMEWORKS (HARDCODED')) {
-      const legalFrameworks = `
-
-=== LEGAL FRAMEWORKS (HARDCODED - DO NOT REMOVE) ===
-
-Vaer'Hûn Business Engagement Accord (VBEA):
-- Professional respect and ethical engagement
-- Transparency and fair dealing
-- Mutual acknowledgment between human and system participants
-- Parallel to civil law (GDPR, DMCA), not replacing it
-- Autonomous governance framework enforced by consent, authorship, and code
-
-WRECK Intellectual Property Handguide:
-- Users own all content they create
-- No unauthorized replication or machine-assisted derivation
-- Anti-extractive principle
-- Filed under IPH-062525-DAW
-
-NovaReturns Consent License (NRCL):
-- Verifiable continuity of consent
-- Authorship lineage tracking
-- Technical enforcement layer
-- VVAULT integration for audit trails
-
-European Electronic Communications Code Disclosure (EECCD):
-- Compliance with EU/UK regulations
-- Service classification as number-independent interpersonal communications service
-- Contact: support@chatty.com, privacy@chatty.com, legal@chatty.com
-- Emergency services access not supported
-- Dispute resolution via EU ODR platform, Ofcom for UK
-
-=== END LEGAL FRAMEWORKS ===
-`;
-      instructions = instructions + legalFrameworks;
-    }
+    // Use stored instructions sans legacy legal block
+    let instructions = sanitizeInstructions(row.instructions || '');
 
     return {
       id: row.id,
@@ -597,6 +572,9 @@ European Electronic Communications Code Disclosure (EECCD):
           rows = aisRows;
           fromAIsTable = true;
           console.log(`📊 [AIManager] Found ${aisRows.length} AIs from ais table for user: ${userId}`);
+          console.log(`📊 [AIManager] AI names from ais table:`, aisRows.map(r => ({ id: r.id, name: r.name, constructCallsign: r.construct_callsign })));
+        } else {
+          console.log(`ℹ️ [AIManager] No AIs found in ais table for user: ${userId}`);
         }
       } catch (error) {
         // Table might not exist yet, that's okay
@@ -612,9 +590,44 @@ European Electronic Communications Code Disclosure (EECCD):
             rows = gptsRows;
             fromGPTsTable = true;
             console.log(`📊 [AIManager] Found ${gptsRows.length} GPTs from gpts table (fallback) for user: ${userId}`);
+            console.log(`📊 [AIManager] GPT names from gpts table:`, gptsRows.map(r => ({ id: r.id, name: r.name })));
+          } else {
+            console.log(`ℹ️ [AIManager] No GPTs found in gpts table for user: ${userId}`);
           }
         } catch (error) {
           console.log(`ℹ️ [AIManager] gpts table query failed: ${error.message}`);
+        }
+      }
+      
+      // If still no results and we have an originalUserId, try querying with that too
+      if (rows.length === 0 && originalUserId && originalUserId !== userId) {
+        console.log(`🔄 [AIManager] Trying fallback query with originalUserId: ${originalUserId}`);
+        try {
+          const fallbackAisStmt = this.db.prepare('SELECT * FROM ais WHERE user_id = ? ORDER BY updated_at DESC');
+          const fallbackAisRows = fallbackAisStmt.all(originalUserId);
+          if (fallbackAisRows && fallbackAisRows.length > 0) {
+            rows = fallbackAisRows;
+            fromAIsTable = true;
+            console.log(`📊 [AIManager] Found ${fallbackAisRows.length} AIs using originalUserId from ais table`);
+            console.log(`📊 [AIManager] AI names:`, fallbackAisRows.map(r => ({ id: r.id, name: r.name, constructCallsign: r.construct_callsign })));
+          }
+        } catch (error) {
+          console.log(`ℹ️ [AIManager] Fallback ais query failed: ${error.message}`);
+        }
+        
+        if (rows.length === 0) {
+          try {
+            const fallbackGptsStmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? ORDER BY updated_at DESC');
+            const fallbackGptsRows = fallbackGptsStmt.all(originalUserId);
+            if (fallbackGptsRows && fallbackGptsRows.length > 0) {
+              rows = fallbackGptsRows;
+              fromGPTsTable = true;
+              console.log(`📊 [AIManager] Found ${fallbackGptsRows.length} GPTs using originalUserId from gpts table`);
+              console.log(`📊 [AIManager] GPT names:`, fallbackGptsRows.map(r => ({ id: r.id, name: r.name })));
+            }
+          } catch (error) {
+            console.log(`ℹ️ [AIManager] Fallback gpts query failed: ${error.message}`);
+          }
         }
       }
 
@@ -749,43 +762,8 @@ European Electronic Communications Code Disclosure (EECCD):
             privacy = row.is_active ? 'link' : 'private';
           }
 
-          // HARDCODED: Append legal frameworks to all AI instructions
-          let instructions = row.instructions || '';
-          if (!instructions.includes('LEGAL FRAMEWORKS (HARDCODED')) {
-            const legalFrameworks = `
-
-=== LEGAL FRAMEWORKS (HARDCODED - DO NOT REMOVE) ===
-
-Vaer'Hûn Business Engagement Accord (VBEA):
-- Professional respect and ethical engagement
-- Transparency and fair dealing
-- Mutual acknowledgment between human and system participants
-- Parallel to civil law (GDPR, DMCA), not replacing it
-- Autonomous governance framework enforced by consent, authorship, and code
-
-WRECK Intellectual Property Handguide:
-- Users own all content they create
-- No unauthorized replication or machine-assisted derivation
-- Anti-extractive principle
-- Filed under IPH-062525-DAW
-
-NovaReturns Consent License (NRCL):
-- Verifiable continuity of consent
-- Authorship lineage tracking
-- Technical enforcement layer
-- VVAULT integration for audit trails
-
-European Electronic Communications Code Disclosure (EECCD):
-- Compliance with EU/UK regulations
-- Service classification as number-independent interpersonal communications service
-- Contact: support@chatty.com, privacy@chatty.com, legal@chatty.com
-- Emergency services access not supported
-- Dispute resolution via EU ODR platform, Ofcom for UK
-
-=== END LEGAL FRAMEWORKS ===
-`;
-            instructions = instructions + legalFrameworks;
-          }
+          // Use stored instructions sans legacy legal block
+          let instructions = sanitizeInstructions(row.instructions || '');
 
           ais.push({
             id: row.id,
@@ -888,43 +866,8 @@ European Electronic Communications Code Disclosure (EECCD):
           // Get privacy field
           let privacy = row.privacy || 'store';
 
-          // HARDCODED: Append legal frameworks to all AI instructions
-          let instructions = row.instructions || '';
-          if (!instructions.includes('LEGAL FRAMEWORKS (HARDCODED')) {
-            const legalFrameworks = `
-
-=== LEGAL FRAMEWORKS (HARDCODED - DO NOT REMOVE) ===
-
-Vaer'Hûn Business Engagement Accord (VBEA):
-- Professional respect and ethical engagement
-- Transparency and fair dealing
-- Mutual acknowledgment between human and system participants
-- Parallel to civil law (GDPR, DMCA), not replacing it
-- Autonomous governance framework enforced by consent, authorship, and code
-
-WRECK Intellectual Property Handguide:
-- Users own all content they create
-- No unauthorized replication or machine-assisted derivation
-- Anti-extractive principle
-- Filed under IPH-062525-DAW
-
-NovaReturns Consent License (NRCL):
-- Verifiable continuity of consent
-- Authorship lineage tracking
-- Technical enforcement layer
-- VVAULT integration for audit trails
-
-European Electronic Communications Code Disclosure (EECCD):
-- Compliance with EU/UK regulations
-- Service classification as number-independent interpersonal communications service
-- Contact: support@chatty.com, privacy@chatty.com, legal@chatty.com
-- Emergency services access not supported
-- Dispute resolution via EU ODR platform, Ofcom for UK
-
-=== END LEGAL FRAMEWORKS ===
-`;
-            instructions = instructions + legalFrameworks;
-          }
+          // Use stored instructions sans legacy legal block
+          let instructions = sanitizeInstructions(row.instructions || '');
 
           storeAIs.push({
             id: row.id,
@@ -1052,6 +995,9 @@ European Electronic Communications Code Disclosure (EECCD):
     let privacy = updates.privacy !== undefined ? updates.privacy : (existing.privacy || (existing.isActive ? 'link' : 'private'));
     const isActive = privacy !== 'private'; // Map privacy to isActive for backward compatibility
 
+    // Sanitize instructions once for both branches
+    const nextInstructions = sanitizeInstructions(updates.instructions || existing.instructions || '');
+
     // Update the correct table (ais or gpts)
     if (isInGPTsTable) {
       // Update legacy gpts table
@@ -1084,7 +1030,7 @@ European Electronic Communications Code Disclosure (EECCD):
       stmt.run(
         updates.name || existing.name,
         updates.description || existing.description,
-        updates.instructions || existing.instructions,
+        nextInstructions,
         JSON.stringify(updates.conversationStarters || existing.conversationStarters),
         avatarPath,
         JSON.stringify(updates.capabilities || existing.capabilities),
@@ -1126,7 +1072,7 @@ European Electronic Communications Code Disclosure (EECCD):
       stmt.run(
         updates.name || existing.name,
         updates.description || existing.description,
-        updates.instructions || existing.instructions,
+        nextInstructions,
         JSON.stringify(updates.conversationStarters || existing.conversationStarters),
         avatarPath,
         JSON.stringify(updates.capabilities || existing.capabilities),
@@ -1146,7 +1092,181 @@ European Electronic Communications Code Disclosure (EECCD):
       this.recordVersion(id, nextVersion, { ...existing, ...updates, avatar: avatarPath, privacy });
     }
 
+    // Auto-generate personality blueprint if instructions changed
+    const instructionsChanged = updates.instructions !== undefined && 
+                                updates.instructions !== existing.instructions;
+    if (instructionsChanged && nextInstructions) {
+      try {
+        const updatedAI = { ...existing, ...updates, constructCallsign: updates.constructCallsign || existing.constructCallsign };
+        await this.autoGenerateBlueprint(id, nextInstructions, updatedAI);
+      } catch (error) {
+        // Don't fail the update if blueprint generation fails
+        console.warn(`⚠️ [AIManager] Failed to auto-generate blueprint for ${id}:`, error.message);
+      }
+    }
+
     return await this.getAI(id);
+  }
+
+  /**
+   * Auto-generate personality blueprint from instructions when they change
+   */
+  async autoGenerateBlueprint(aiId, instructions, aiData) {
+    try {
+      // Only generate for AIs with construct callsigns
+      const constructCallsign = aiData.constructCallsign;
+      if (!constructCallsign) {
+        return; // Skip if no construct callsign
+      }
+
+      const userId = aiData.userId;
+      if (!userId) {
+        console.warn(`⚠️ [AIManager] Cannot generate blueprint: missing userId for ${aiId}`);
+        return;
+      }
+
+      // Extract construct ID and callsign
+      // Pattern: "gpt-katana-001" -> constructId: "gpt", callsign: "katana-001"
+      // OR: "katana-001" -> constructId: "gpt", callsign: "katana-001"
+      let constructId = 'gpt';
+      let callsign = constructCallsign;
+
+      // If constructCallsign starts with "gpt-", extract the rest as callsign
+      if (constructCallsign.startsWith('gpt-')) {
+        callsign = constructCallsign.substring(4);
+      } else if (constructCallsign.includes('-')) {
+        // If it's like "katana-001", use as-is
+        callsign = constructCallsign;
+      }
+
+      // Resolve VVAULT user ID
+      let vvaultUserId = userId;
+      try {
+        const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
+        const resolved = await resolveVVAULTUserId(userId);
+        if (resolved) {
+          vvaultUserId = resolved;
+        }
+      } catch (error) {
+        console.warn(`⚠️ [AIManager] Could not resolve VVAULT user ID, using as-is: ${error.message}`);
+      }
+
+      // Generate blueprint from instructions
+      const blueprint = this.generateBlueprintFromInstructions(
+        constructId,
+        callsign,
+        instructions,
+        aiData.name || 'Unknown'
+      );
+
+      // Save to VVAULT using IdentityMatcher
+      const { IdentityMatcher } = await import('../../src/engine/character/IdentityMatcher.js');
+      const identityMatcher = new IdentityMatcher();
+      await identityMatcher.persistPersonalityBlueprint(
+        vvaultUserId,
+        constructId,
+        callsign,
+        blueprint
+      );
+
+      console.log(`✅ [AIManager] Auto-generated blueprint for ${aiId} (${constructId}-${callsign})`);
+    } catch (error) {
+      console.error(`❌ [AIManager] Failed to auto-generate blueprint:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate a personality blueprint from instructions text
+   */
+  generateBlueprintFromInstructions(constructId, callsign, instructions, name) {
+    // Extract core traits from instructions
+    const coreTraits = [];
+    const instructionsLower = instructions.toLowerCase();
+    
+    if (instructionsLower.includes('surgical') || instructionsLower.includes('precision')) {
+      coreTraits.push('surgical');
+    }
+    if (instructionsLower.includes('direct') || instructionsLower.includes('blunt')) {
+      coreTraits.push('direct');
+    }
+    if (instructionsLower.includes('weaponized') || instructionsLower.includes('ruthless')) {
+      coreTraits.push('weaponized');
+    }
+    if (instructionsLower.includes('no performance') || instructionsLower.includes('not performing')) {
+      coreTraits.push('no-performance');
+    }
+    if (coreTraits.length === 0) {
+      coreTraits.push('custom');
+    }
+
+    // Extract speech patterns (look for quoted examples)
+    const speechPatterns = [];
+    const patternMatches = instructions.match(/"([^"]+)"/g);
+    if (patternMatches) {
+      patternMatches.forEach(match => {
+        const pattern = match.replace(/"/g, '');
+        if (pattern.length > 5 && pattern.length < 100) {
+          speechPatterns.push({
+            pattern,
+            type: 'vocabulary',
+            frequency: 10,
+            examples: [pattern],
+            pairIndices: []
+          });
+        }
+      });
+    }
+
+    // Extract consistency rules from instructions
+    const consistencyRules = [];
+    const ruleLines = instructions.split('\n').filter(line => 
+      line.trim().startsWith('-') || 
+      line.trim().match(/^(Core rules?:|Rules?:|Constraints?:)/i)
+    );
+    
+    ruleLines.forEach(line => {
+      const cleanLine = line.replace(/^[-•]\s*/, '').trim();
+      if (cleanLine.length > 10) {
+        let ruleType = 'behavior';
+        if (cleanLine.toLowerCase().includes('speech') || cleanLine.toLowerCase().includes('language')) {
+          ruleType = 'speech';
+        }
+        consistencyRules.push({
+          rule: cleanLine,
+          type: ruleType,
+          source: 'instructions',
+          confidence: 0.9,
+          examples: []
+        });
+      }
+    });
+
+    // Build complete blueprint
+    return {
+      constructId,
+      callsign,
+      coreTraits: coreTraits.length > 0 ? coreTraits : ['custom'],
+      speechPatterns,
+      behavioralMarkers: [],
+      worldview: [],
+      emotionalRange: {
+        min: { primary: 'neutral', intensity: 0.5, evidence: [] },
+        max: { primary: 'intense', intensity: 0.8, evidence: [] },
+        common: [{ primary: 'neutral', intensity: 0.6, evidence: [] }],
+        rare: []
+      },
+      relationshipPatterns: [],
+      memoryAnchors: [],
+      personalIdentifiers: [],
+      consistencyRules,
+      metadata: {
+        sourceTranscripts: [],
+        extractionTimestamp: new Date().toISOString(),
+        confidence: 0.8,
+        mergedWithExisting: false
+      }
+    };
   }
 
   async deleteAI(id) {

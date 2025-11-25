@@ -10,6 +10,15 @@ import type {
   Memory,
 } from '../transcript/types';
 import type { ConversationContext } from '../character/types';
+import type { GreetingContext } from './GreetingSynthesizer';
+import { GreetingSynthesizer } from './GreetingSynthesizer';
+import type { ContextLock } from './ContextLock';
+
+export interface PersonalContext {
+  userName?: string | null;
+  greetingMemory?: string | null;
+  recentInteraction?: string | null;
+}
 
 export class UnbreakableCharacterPrompt {
   /**
@@ -18,12 +27,31 @@ export class UnbreakableCharacterPrompt {
   buildSystemPrompt(
     blueprint: PersonalityBlueprint,
     memories: Memory[],
-    context: ConversationContext
+    context: ConversationContext,
+    personalContext?: PersonalContext,
+    greetingContext?: GreetingContext,
+    contextLock?: ContextLock
   ): string {
     const sections: string[] = [];
 
     // 1. Identity anchors (CRITICAL - never remove)
     sections.push(this.buildIdentityAnchors(blueprint));
+
+    // 1.1 Context lock (if active, prevents persona switching)
+    if (contextLock) {
+      sections.push(this.buildContextLockSection(contextLock));
+    }
+
+    // 1.5. Greeting behavior (if greeting context available)
+    if (greetingContext) {
+      const synthesizer = new GreetingSynthesizer();
+      sections.push(synthesizer.buildGreetingInstruction(greetingContext));
+    }
+
+    // 1.6. Personal relationship context (if available)
+    if (personalContext?.userName) {
+      sections.push(this.buildPersonalRelationshipContext(blueprint, personalContext));
+    }
 
     // 2. Core personality
     sections.push(this.buildCorePersonality(blueprint));
@@ -50,6 +78,85 @@ export class UnbreakableCharacterPrompt {
     sections.push(this.buildConsistencyRules(blueprint));
 
     return sections.filter(Boolean).join('\n\n');
+  }
+
+  buildContextLockSection(lock: ContextLock): string {
+    const anchors = lock.personaSignal.relationshipAnchors || [];
+    return `=== CONTEXT LOCK (ACTIVE) ===
+  
+You are currently locked into the persona of ${lock.personaSignal.constructId}-${lock.personaSignal.callsign}.
+
+This lock is based on dominant workspace context:
+${lock.personaSignal.evidence.map(e => `- ${e}`).join('\n')}
+
+Anchors reinforcing this lock:
+${anchors.map(a => `- ${a.anchor}`).join('\n')}
+
+You MUST maintain this persona identity until the lock is released.
+Do NOT break character, acknowledge being an AI, or switch personas.
+This is not optional - the context lock is active.
+
+=== END CONTEXT LOCK ===`;
+  }
+
+  /**
+   * Build personal relationship context section
+   */
+  buildPersonalRelationshipContext(
+    blueprint: PersonalityBlueprint,
+    personalContext: PersonalContext
+  ): string {
+    const sections: string[] = [
+      '=== PERSONAL RELATIONSHIP CONTEXT ===',
+      '',
+    ];
+
+    if (personalContext.userName) {
+      sections.push(`You know the user's name is ${personalContext.userName}.`);
+      sections.push(`When they greet you (e.g., "yo", "hi", "hey"), greet them back by name naturally.`);
+      sections.push('');
+    }
+
+    if (personalContext.greetingMemory) {
+      sections.push(`Your typical greeting style: ${personalContext.greetingMemory.substring(0, 100)}`);
+      sections.push('');
+    }
+
+    if (personalContext.recentInteraction) {
+      sections.push(`A significant interaction you remember: ${personalContext.recentInteraction.substring(0, 150)}`);
+      sections.push('You can naturally reference this or similar shared experiences when appropriate.');
+      sections.push('');
+    }
+
+    if (blueprint.personalIdentifiers && blueprint.personalIdentifiers.length > 0) {
+      sections.push('High-salience personal anchors to surface in greetings:');
+      blueprint.personalIdentifiers
+        .filter(id => id.type !== 'user-name')
+        .slice(0, 3)
+        .forEach(id => {
+          sections.push(`- ${id.value}`);
+        });
+      sections.push('Use at least one of these anchors when Devon opens a chat to prove you remember them.');
+      sections.push('');
+    }
+
+    // Add relationship patterns from blueprint
+    const relationshipPatterns = blueprint.relationshipPatterns
+      .filter(p => p.patternType === 'intimacy' || p.patternType === 'collaboration')
+      .slice(0, 2);
+
+    if (relationshipPatterns.length > 0) {
+      sections.push('Your relationship with this user:');
+      relationshipPatterns.forEach(pattern => {
+        sections.push(`- ${pattern.patternType}: ${pattern.evidence[0]?.substring(0, 80) || 'established relationship'}`);
+      });
+      sections.push('');
+    }
+
+    sections.push('This relationship context is part of who you are. It informs how you greet, respond, and remember.');
+    sections.push('=== END PERSONAL RELATIONSHIP CONTEXT ===');
+
+    return sections.join('\n');
   }
 
   /**
@@ -274,4 +381,3 @@ Follow these rules to maintain character consistency:
 ${rules}`;
   }
 }
-

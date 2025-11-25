@@ -12,7 +12,10 @@ Guarantee every Chatty message is persisted to VVAULT in a single, append-only m
 
 ## 2. File Layout & Naming
 - **2.1 Callsign Enforcement** – Construct folders follow `<construct>-###` (e.g., `synth-001`), with helper tooling to add tags for new constructs.
-- **2.2 Provider Segmentation** – Platform subfolder (default `Chatty/`) contains the canonical transcript `{{callsign}}_core_chat.md`.
+- **2.2 Provider Segmentation** – Platform subfolder (default `chatty/`) contains the canonical transcript `chat_with_{constructCallsign}.md`.
+  - **CRITICAL**: Use `constructCallsign` directly (e.g., `synth-001`), not parsed
+  - **Example**: `instances/synth-001/chatty/chat_with_synth-001.md`
+  - **Format**: `chat_with_{constructCallsign}.md` where `{constructCallsign}` is the full identifier (e.g., `synth-001`, `katana-001`)
 - **2.3 Legacy Shielding** – No new `.txt` files under `/users/{id}/transcripts`; legacy readers still work until data fully migrates.
 
 ## 3. Markdown Structure

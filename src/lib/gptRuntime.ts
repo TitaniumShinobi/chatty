@@ -1,10 +1,12 @@
 // GPT Runtime Service - Integrates GPTs with AI Service
 import { GPTManager, GPTConfig, GPTRuntime } from './gptManager.js';
 import { AIService } from './aiService.js';
-import { buildLegalFrameworkSection } from './legalFrameworks.js';
 import { detectTone } from './toneDetector.js';
 import { VVAULTRetrievalWrapper } from './vvaultRetrieval.js';
 import { buildKatanaPrompt } from './katanaPromptBuilder.js';
+import { routePersona } from './personaRouter.js';
+import { buildContextLayers } from './contextBuilder.js';
+import { applyEmotionOverride, type Emotion } from './emotionOverride.js';
 // import { PersonaBrain } from '../engine/memory/PersonaBrain.js';
 // import { MemoryStore } from '../engine/memory/MemoryStore.js';
 
@@ -137,18 +139,37 @@ export class GPTRuntimeService {
   }
 
   private async buildSystemPrompt(
-    config: GPTConfig,
-    context: string,
-    history: GPTMessage[],
+    config: GPTConfig & { personaLock?: { constructId: string; remaining: number }; personaSystemPrompt?: string; userId?: string; constructId?: string },
+    _context: string,
+    _history: GPTMessage[],
     oneWordMode: boolean,
     incomingMessage: string,
     gptId: string
   ): Promise<string> {
-    const parts: string[] = [];
+    const devDiagnostics = process.env.CHATTY_DEV_DIAGNOSTICS === 'true';
 
-    // Katana-specialized prompt building: use persona instructions + memories + tone.
+    // Hard lock enforcement: if lock is active, require orchestrator system prompt and matching construct
+    if (config.personaLock?.constructId) {
+      const expectedConstruct = config.personaLock.constructId;
+      const providedConstruct = config.constructId || gptId;
+      if (providedConstruct !== expectedConstruct && !gptId.includes(expectedConstruct)) {
+        throw new Error(`Lock violation: expected ${expectedConstruct}, got ${providedConstruct}`);
+      }
+      if (!config.personaSystemPrompt) {
+        throw new Error(`Lock active for ${expectedConstruct} but no systemPrompt provided`);
+      }
+      return config.personaSystemPrompt;
+    }
+
+    // If no lock, only support Katana via blueprint-first path; otherwise use legacy builder
     if (config.name?.toLowerCase().includes('katana')) {
       const tone = detectTone({ text: incomingMessage });
+      const personaRoute = routePersona({
+        intentTags: this.deriveIntentTags(incomingMessage),
+        tone: tone?.tone,
+        message: incomingMessage,
+      });
+
       const memories = await this.vvaultRetrieval.retrieveMemories({
         constructCallsign: gptId,
         semanticQuery: 'katana continuity memory',
@@ -156,67 +177,146 @@ export class GPTRuntimeService {
         limit: 5,
       });
 
-      return buildKatanaPrompt({
-        personaManifest: config.instructions || config.description || 'You are Katana.',
+      // Load capsule (hardlock into GPT)
+      let capsule = undefined;
+      try {
+        const response = await fetch(
+          `/api/vvault/capsules/load?constructCallsign=${encodeURIComponent(gptId)}`,
+          { credentials: 'include' }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data?.ok && data.capsule) {
+            // Wrap capsule data in object structure expected by buildKatanaPrompt
+            capsule = { data: data.capsule };
+            console.log(`✅ [gptRuntime] Loaded capsule for ${gptId}`, {
+              hasTraits: !!data.capsule.traits,
+              hasPersonality: !!data.capsule.personality,
+              hasMemory: !!data.capsule.memory
+            });
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ [gptRuntime] Failed to load capsule:`, error);
+      }
+
+      let blueprint = undefined;
+      try {
+        const { IdentityMatcher } = await import('../engine/character/IdentityMatcher.js');
+        const identityMatcher = new IdentityMatcher();
+        const constructId = config.constructId || 'gpt';
+        const callsign = gptId.includes('katana-001') ? 'katana-001' : gptId;
+        const userId = config.userId || 'anonymous';
+        blueprint = await identityMatcher.loadPersonalityBlueprint(userId, constructId, callsign);
+      } catch (error) {
+        console.warn(`⚠️ [gptRuntime] Failed to load blueprint for Katana:`, error);
+      }
+
+      // MANDATORY: Persona context validation - require capsule OR blueprint
+      if (!capsule && !blueprint) {
+        throw new Error(
+          `[gptRuntime] Persona context required for ${gptId} but neither capsule nor blueprint found. ` +
+          `Cannot generate response without full persona context. Upload transcripts to create capsule/blueprint.`
+        );
+      }
+      
+      // If capsule exists, it takes precedence (hardlock)
+      if (capsule) {
+        console.log(`🔒 [gptRuntime] Capsule hardlocked for ${gptId} - using capsule data`);
+      } else if (blueprint) {
+        // Validate blueprint has required fields
+        if (!blueprint.constructId || !blueprint.callsign) {
+          throw new Error(
+            `[gptRuntime] Invalid blueprint for ${gptId}: missing constructId or callsign. Cannot proceed.`
+          );
+        }
+      }
+
+      const layeredContext = buildContextLayers({
+        selfContext: config.instructions || config.description || 'You are Katana.',
+        userContext: '',
+        topicContext: _context,
+      });
+
+      const emotion = this.mapToneToEmotion(tone?.tone);
+      const personaWithEmotion = applyEmotionOverride({
+        emotion,
+        baseInstructions: layeredContext.combined,
+      });
+
+      const crisisNote = personaRoute.crisis
+        ? `\n\n=== CRISIS_HOOK ${personaRoute.crisis.code} ===\n${personaRoute.crisis.reason}\n`
+        : '';
+
+      if (devDiagnostics) {
+        console.info('[Katana Diagnostics]', {
+          persona: personaRoute.persona,
+          intentTags: this.deriveIntentTags(incomingMessage),
+          crisis: personaRoute.crisis?.code || 'none',
+          tone: tone?.tone || 'neutral',
+          memories: memories.memories.length,
+          emotion,
+        });
+      }
+
+      return await buildKatanaPrompt({
+        personaManifest: personaWithEmotion.instructions + crisisNote,
         incomingMessage,
         tone,
         memories: memories.memories,
         callSign: gptId,
-        includeLegalSection: true,
+        includeLegalSection: false,
         maxMemorySnippets: 5,
         oneWordCue: oneWordMode,
+        blueprint,
+        capsule, // Pass capsule for hardlock injection
       });
     }
 
-    // GPT Identity
-    parts.push(`You are ${config.name}, ${config.description}`);
-    
-    // Instructions
-    if (config.instructions) {
-      parts.push(`\nInstructions:\n${config.instructions}`);
-    }
+    throw new Error('[gptRuntime] Non-Katana prompts must come from orchestrator when locks are enforced');
+  }
 
-    // HARDCODED: Legal frameworks (cannot be removed)
-    parts.push(buildLegalFrameworkSection());
+  private deriveIntentTags(message: string): string[] {
+    const m = message.toLowerCase();
+    const tags: string[] = [];
+    if (m.includes('why') || m.includes('how') || m.includes('explain')) tags.push('reflect');
+    if (m.includes('angry') || m.includes('rage') || m.includes('escalate')) tags.push('escalate');
+    if (m.includes('calm') || m.includes('deescalate') || m.includes('organize')) tags.push('deescalate');
+    if (tags.length === 0) tags.push('default');
+    return tags;
+  }
 
-    if (oneWordMode) {
-      parts.push(`\nConstraint: Respond in exactly one word. No punctuation, no preamble.`);
-    }
-
-    // Context from files
-    if (context) {
-      parts.push(`\nContext:\n${context}`);
-    }
-
-    // Recent conversation history
-    if (history.length > 0) {
-      const recentHistory = history.slice(-10); // Last 10 messages
-      const historyText = recentHistory.map(msg => 
-        `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
-      ).join('\n');
-      parts.push(`\nRecent conversation:\n${historyText}`);
-    }
-
-    // Capabilities
-    const capabilities = [];
-    if (config.capabilities.webSearch) capabilities.push('web search');
-    if (config.capabilities.codeInterpreter) capabilities.push('code interpretation');
-    if (config.capabilities.imageGeneration) capabilities.push('image generation');
-    if (config.capabilities.canvas) capabilities.push('canvas drawing');
-    
-    if (capabilities.length > 0) {
-      parts.push(`\nAvailable capabilities: ${capabilities.join(', ')}`);
-    }
-
-    return parts.join('\n');
+  private mapToneToEmotion(tone?: string): Emotion {
+    if (!tone) return 'neutral';
+    if (tone === 'feral' || tone === 'urgent' || tone === 'sarcastic') return 'agitation';
+    if (tone === 'protective') return 'calm';
+    return 'neutral';
   }
 
   /**
    * Store the latest user/assistant exchange in VVAULT for downstream retrieval.
    * Scoped to Katana/LIN constructs (identified by name/callsign containing "katana").
+   * Includes brevity metadata for ultra-brief GPTs.
    */
   private async persistTurnToVvault(gptId: string, userMessage: string, assistantMessage: string): Promise<void> {
     if (!gptId.toLowerCase().includes('katana')) return;
+
+    // Calculate brevity metrics
+    const wordCount = assistantMessage.trim().split(/\s+/).filter(w => w.length > 0).length;
+    const oneWordResponse = wordCount === 1;
+    const brevityScore = this.calculateBrevityScore(assistantMessage, wordCount);
+    const analyticalSharpness = this.calculateAnalyticalSharpness(assistantMessage);
+
+    // Determine brevity tags
+    const tags: string[] = [];
+    if (oneWordResponse) {
+      tags.push('brevity:one-word');
+    }
+    if (brevityScore >= 0.9) {
+      tags.push('brevity:ultra-brief');
+    } else if (brevityScore >= 0.7) {
+      tags.push('brevity:brief');
+    }
 
     const timestamp = new Date().toISOString();
     const payload = {
@@ -228,6 +328,12 @@ export class GPTRuntimeService {
         source: 'gptRuntime',
         memoryType: 'long-term',
         threadId: gptId,
+        // Brevity metadata
+        brevityScore,
+        wordCount,
+        oneWordResponse,
+        analyticalSharpness,
+        tags,
       },
     };
 
@@ -242,6 +348,89 @@ export class GPTRuntimeService {
       const errText = await res.text();
       throw new Error(`VVAULT store failed: ${res.status} ${errText}`);
     }
+  }
+
+  /**
+   * Calculate brevity score (0-1) based on response characteristics
+   */
+  private calculateBrevityScore(response: string, wordCount: number): number {
+    // Base score from word count (fewer words = higher score)
+    let score = Math.max(0, 1 - (wordCount - 1) / 20); // 1 word = 1.0, 21+ words = 0.0
+    
+    // Penalize filler words
+    const fillerPatterns = [
+      /\b(um|uh|er|ah|well|actually|basically|literally|obviously|clearly)\b/gi,
+      /\b(as an AI|I'm an AI|I am an AI|I'm here to|I can help|let me)\b/gi,
+      /\b(I think|I believe|I feel|in my opinion|from my perspective)\b/gi,
+    ];
+    
+    let fillerCount = 0;
+    fillerPatterns.forEach(pattern => {
+      const matches = response.match(pattern);
+      if (matches) fillerCount += matches.length;
+    });
+    
+    score -= fillerCount * 0.1;
+    
+    // Penalize preambles (sentences before the main point)
+    const sentences = response.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    if (sentences.length > 2) {
+      score -= 0.1; // Multiple sentences suggest verbosity
+    }
+    
+    return Math.max(0, Math.min(1, score));
+  }
+
+  /**
+   * Calculate analytical sharpness score (0-1) based on response characteristics
+   */
+  private calculateAnalyticalSharpness(response: string): number {
+    let score = 0.5; // Base score
+    
+    // Reward flaw-leading language
+    const flawPatterns = [
+      /\b(problem|issue|flaw|weakness|failure|mistake|error|wrong)\b/gi,
+      /\b(cost|consequence|impact|result|outcome)\b/gi,
+      /\b(admit|own|take responsibility|accountable)\b/gi,
+    ];
+    
+    let flawMatches = 0;
+    flawPatterns.forEach(pattern => {
+      const matches = response.match(pattern);
+      if (matches) flawMatches += matches.length;
+    });
+    
+    score += Math.min(0.3, flawMatches * 0.05);
+    
+    // Penalize therapy-lite language
+    const therapyPatterns = [
+      /\b(I understand|I hear you|that must be|it's okay|you're valid)\b/gi,
+      /\b(you're not alone|it's normal|everyone feels|don't worry)\b/gi,
+    ];
+    
+    let therapyMatches = 0;
+    therapyPatterns.forEach(pattern => {
+      const matches = response.match(pattern);
+      if (matches) therapyMatches += matches.length;
+    });
+    
+    score -= therapyMatches * 0.2;
+    
+    // Penalize inspiration porn
+    const inspirationPatterns = [
+      /\b(you've got this|you can do it|believe in yourself|never give up)\b/gi,
+      /\b(inspirational|motivational|uplifting|encouraging)\b/gi,
+    ];
+    
+    let inspirationMatches = 0;
+    inspirationPatterns.forEach(pattern => {
+      const matches = response.match(pattern);
+      if (matches) inspirationMatches += matches.length;
+    });
+    
+    score -= inspirationMatches * 0.15;
+    
+    return Math.max(0, Math.min(1, score));
   }
 
   private async processWithModel(modelId: string, systemPrompt: string, userMessage: string): Promise<string> {
@@ -269,13 +458,30 @@ export class GPTRuntimeService {
   }
 
   private detectOneWordCue(userMessage: string): boolean {
-    const cues = [
+    const trimmed = userMessage.trim();
+    
+    // Explicit cues
+    const explicitCues = [
       /^verdict:/i,
       /^diagnosis:/i,
       /one[-\s]?word verdict/i,
       /\b(one[-\s]?word)\b/i
     ];
-    return cues.some(re => re.test(userMessage.trim()));
+    if (explicitCues.some(re => re.test(trimmed))) {
+      return true;
+    }
+    
+    // Natural brevity detection: very short messages (1-2 words) suggest brevity preference
+    // Examples: "yo", "what", "why", "how", "yes", "no", "ok", "sure"
+    const wordCount = trimmed.split(/\s+/).filter(w => w.length > 0).length;
+    const isVeryBrief = wordCount <= 2 && trimmed.length <= 20;
+    const isSingleWord = wordCount === 1;
+    
+    // For Katana specifically, brief user messages suggest one-word responses are appropriate
+    // This is handled by the ultra-brevity layer in the prompt, not enforced here
+    // We only enforce strict one-word mode for explicit cues
+    
+    return false; // Only enforce strict one-word for explicit cues; brevity layer handles natural brevity
   }
 
   private forceOneWord(response: string): string {

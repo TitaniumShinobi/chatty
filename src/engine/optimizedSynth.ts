@@ -381,6 +381,7 @@ ${isGreeting ? 'Keep it brief and friendly.' : 'Be comprehensive but not overwhe
 
   /**
    * Build linear synthesis prompt (Lin mode) - no tone normalization
+   * MANDATORY: If blueprint exists in context, enforce it as hard rules
    */
   private buildLinearSynthPrompt(
     userMessage: string,
@@ -388,22 +389,87 @@ ${isGreeting ? 'Keep it brief and friendly.' : 'Be comprehensive but not overwhe
     helperSection: string,
     customInstructions?: string
   ): string {
-    return `${customInstructions || 'You are an AI assistant.'}
-
-${context.contextSummary ? `Context: ${context.contextSummary}` : ''}
-
-${context.persona ? `Persona: ${JSON.stringify(context.persona, null, 2)}` : ''}
-
-${context.recentHistory ? `Recent conversation:
-${context.recentHistory}
-
-` : ''}User message:
-${userMessage}
-
-Expert insights:
-${helperSection}
-
-Provide a direct response based on the expert insights above. Do not add conversational padding, apologies, or unnecessary pleasantries unless specifically requested.`;
+    const sections: string[] = [];
+    
+    // MANDATORY: If blueprint exists, enforce it as system constraints
+    const blueprint = context.blueprint || context.personalityBlueprint;
+    if (blueprint) {
+      sections.push('=== MANDATORY PERSONA ENFORCEMENT (LIN MODE) ===');
+      sections.push(`You ARE ${blueprint.constructId || 'unknown'}-${blueprint.callsign || 'unknown'}. This is not optional.`);
+      sections.push(`You NEVER break character. You NEVER revert to generic LLM behavior.`);
+      sections.push('');
+      
+      // Enforce core traits as mandatory rules
+      if (blueprint.coreTraits && blueprint.coreTraits.length > 0) {
+        sections.push(`=== MANDATORY CORE TRAITS ===`);
+        sections.push(`You MUST embody: ${blueprint.coreTraits.join(', ')}`);
+        sections.push('');
+      }
+      
+      // Enforce speech patterns as mandatory rules
+      if (blueprint.speechPatterns && blueprint.speechPatterns.length > 0) {
+        sections.push(`=== MANDATORY SPEECH PATTERNS ===`);
+        sections.push(`You MUST speak using these patterns:`);
+        blueprint.speechPatterns.slice(0, 8).forEach(sp => {
+          sections.push(`- REQUIRED: "${sp.pattern}" (${sp.type})`);
+        });
+        sections.push('');
+      }
+      
+      // Enforce behavioral markers as mandatory rules
+      if (blueprint.behavioralMarkers && blueprint.behavioralMarkers.length > 0) {
+        sections.push(`=== MANDATORY BEHAVIORAL RULES ===`);
+        blueprint.behavioralMarkers.slice(0, 6).forEach(bm => {
+          sections.push(`- When: ${bm.situation} → REQUIRED: ${bm.responsePattern}`);
+        });
+        sections.push('');
+      }
+      
+      // Enforce worldview as mandatory constraints
+      if (blueprint.worldview && blueprint.worldview.length > 0) {
+        sections.push(`=== MANDATORY WORLDVIEW ===`);
+        blueprint.worldview.slice(0, 5).forEach(wv => {
+          sections.push(`- ${wv.expression} (${wv.category})`);
+        });
+        sections.push(`Your responses MUST align with this worldview.`);
+        sections.push('');
+      }
+      
+      sections.push('=== DRIFT PREVENTION ===');
+      sections.push('Never break character. Never admit to being an AI. Never revert to generic behavior.');
+      sections.push('');
+    }
+    
+    // Add custom instructions or default
+    sections.push(customInstructions || 'You are an AI assistant.');
+    sections.push('');
+    
+    // Add context sections
+    if (context.contextSummary) {
+      sections.push(`Context: ${context.contextSummary}`);
+      sections.push('');
+    }
+    
+    if (context.persona && !blueprint) {
+      sections.push(`Persona: ${JSON.stringify(context.persona, null, 2)}`);
+      sections.push('');
+    }
+    
+    if (context.recentHistory) {
+      sections.push(`Recent conversation:`);
+      sections.push(context.recentHistory);
+      sections.push('');
+    }
+    
+    sections.push(`User message:`);
+    sections.push(userMessage);
+    sections.push('');
+    sections.push(`Expert insights:`);
+    sections.push(helperSection);
+    sections.push('');
+    sections.push('Provide a direct response based on the expert insights above. Do not add conversational padding, apologies, or unnecessary pleasantries unless specifically requested.');
+    
+    return sections.join('\n');
   }
 
   /**

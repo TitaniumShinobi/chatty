@@ -17,11 +17,30 @@ const router = express.Router();
 router.use(requireAuth);
 
 export async function handleChatRequest(req, res) {
-  const { message, constructId = "synth", fingerprint, metadata = {}, actingConstructId } =
+  // CRITICAL: Always use constructCallsign format (e.g., "synth-001"), never just "synth"
+  // Per rubric: instances/{constructCallsign}/ - must include callsign
+  const { message, constructId = "synth-001", fingerprint, metadata = {}, actingConstructId, personaLock, personaSystemPrompt } =
     req.body || {};
 
   if (!message || typeof message !== "string") {
     return res.status(400).json({ ok: false, error: "Missing message content" });
+  }
+
+  // STEP 3: Validate persona lock if present
+  if (personaLock) {
+    const { validatePersonaLock } = await import('../lib/personaLockValidator.js');
+    const validation = validatePersonaLock({ personaLock, constructId, personaSystemPrompt });
+    
+    if (!validation.valid) {
+      console.error(`❌ [Chat API] Persona lock validation failed: ${validation.error}`);
+      return res.status(403).json({ 
+        ok: false, 
+        error: validation.error,
+        code: 'PERSONA_LOCK_VIOLATION'
+      });
+    }
+    
+    console.log(`✅ [Chat API] Persona lock validated for ${personaLock.constructId}`);
   }
 
   const validation = enforcementService.validateIncomingMessage({

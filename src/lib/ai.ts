@@ -116,7 +116,12 @@ fetchUserData(123).then(data => console.log(data));
 \`\`\``
   };
 
-  static generateResponse(userMessage: string, conversationHistory: any[] = []): string {
+  static generateResponse(userMessage: string, conversationHistory: any[] = [], options?: { personaLock?: any; personaSystemPrompt?: string }): string {
+    // STEP 3: Reject if persona lock is active - this legacy builder should not be used
+    if (options?.personaLock) {
+      throw new Error('[AIService] Persona lock active - legacy response generator cannot be used. Must use orchestrator systemPrompt.');
+    }
+    
     const message = userMessage.toLowerCase();
     
     // Analyze the conversation context

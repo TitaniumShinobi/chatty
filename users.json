@@ -1,0 +1,16 @@
+{
+  "users": {
+    "devon_woodson_1762969514958": {
+      "user_id": "devon_woodson_1762969514958",
+      "email": "dwoodson92@gmail.com",
+      "name": "Devon Woodson",
+      "created_at": "2025-11-24T20:54:12.676Z",
+      "last_seen": "2025-11-24T22:31:50.710Z",
+      "shard": "shard_0000",
+      "vvault_linked": true,
+      "vvault_user_id": "devon_woodson_1762969514958"
+    }
+  },
+  "nextUserId": 1,
+  "totalUsers": 1
+}

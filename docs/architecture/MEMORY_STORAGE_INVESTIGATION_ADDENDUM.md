@@ -88,3 +88,6 @@ This memory storage issue is **separate from** the missing optimizations (native
 - **Architecture Doc**: `chatty/docs/architecture/VVAULT_CHATTY_DATABASE_SEPARATION.md`
 
 
+
+
+

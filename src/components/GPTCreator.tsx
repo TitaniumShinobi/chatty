@@ -26,7 +26,7 @@ import {
   Check
 } from 'lucide-react'
 import { AIService, AIConfig, AIFile, AIAction } from '../lib/aiService'
-import { buildLegalFrameworkSection } from '../lib/legalFrameworks'
+import { buildKatanaPrompt } from '../lib/katanaPromptBuilder'
 import Cropper from 'react-easy-crop'
 import { cn } from '../lib/utils'
 import { VVAULTConversationManager } from '../lib/vvaultConversationManager'
@@ -106,11 +106,11 @@ const AICreator: React.FC<AICreatorProps> = ({
   const [actions, setActions] = useState<AIAction[]>([])
 
   // Preview
-  const [previewMessages, setPreviewMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([])
+  const [previewMessages, setPreviewMessages] = useState<Array<{role: 'user' | 'assistant', content: string, timestamp: number, responseTimeMs?: number}>>([])
   const [previewInput, setPreviewInput] = useState('')
   const [isPreviewGenerating, setIsPreviewGenerating] = useState(false)
   const [orchestrationMode, setOrchestrationMode] = useState<'lin' | 'custom'>('lin') // Tone & Orchestration mode
-  const [createMessages, setCreateMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([])
+  const [createMessages, setCreateMessages] = useState<Array<{role: 'user' | 'assistant', content: string, timestamp: number, responseTimeMs?: number}>>([])
 
   // Load identity files function (keep above effects that call it)
   const loadIdentityFiles = useCallback(async (constructCallsign: string) => {
@@ -126,7 +126,24 @@ const AICreator: React.FC<AICreatorProps> = ({
       });
       
       if (!response.ok) {
-        console.warn(`⚠️ [GPTCreator] Failed to load identity files (${response.status}):`, response.statusText);
+        const errorText = await response.text().catch(() => response.statusText);
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText };
+        }
+        
+        // Distinguish between different error types
+        if (response.status === 401) {
+          console.warn(`⚠️ [GPTCreator] Authentication failed when loading identity files:`, errorData.error);
+        } else if (response.status === 404) {
+          // 404 could mean user not found in VVAULT or directory doesn't exist
+          console.log(`ℹ️ [GPTCreator] No identity files found or user not in VVAULT (${response.status}):`, errorData.error || errorData.details);
+          setIdentityFiles([]); // Set empty array instead of leaving undefined
+        } else {
+          console.warn(`⚠️ [GPTCreator] Failed to load identity files (${response.status}):`, errorData.error || errorData.details || errorText);
+        }
         return;
       }
       
@@ -160,12 +177,54 @@ const AICreator: React.FC<AICreatorProps> = ({
     }
   }, [orchestrationMode])
 
-  // Clear Create tab messages when modal opens (fresh screen each time)
-  // Lin's memory persists in ChromaDB (LTM), but UI shows fresh screen
+  // Hydration: Restore Lin's conversation when switching back to Create tab
+  // Only clear messages when modal closes (not when switching tabs)
+  const previousMessagesRef = useRef<Array<{role: 'user' | 'assistant', content: string, timestamp: number}>>([])
+  const previousTabRef = useRef<'create' | 'configure' | null>(null)
+  const isModalOpenRef = useRef(false)
+  
+  // Sync createMessages to ref whenever they change (for saving when switching tabs)
   useEffect(() => {
     if (isVisible && activeTab === 'create') {
+      previousMessagesRef.current = createMessages
+    }
+  }, [createMessages, isVisible, activeTab])
+  
+  // Handle tab switching - save/restore messages
+  useEffect(() => {
+    if (!isVisible) {
+      // Modal closed - reset everything
+      if (isModalOpenRef.current) {
+        setCreateMessages([])
+        previousMessagesRef.current = []
+        previousTabRef.current = null
+        isModalOpenRef.current = false
+        console.log('🧠 [Lin] GPTCreator closed - cleared conversation state')
+      }
+      return
+    }
+    
+    // Modal is visible
+    if (!isModalOpenRef.current) {
+      // First time opening modal - fresh start
       setCreateMessages([])
-      console.log('🧠 [Lin] Create tab opened - cleared STM for fresh screen (LTM persists in ChromaDB)')
+      previousMessagesRef.current = []
+      previousTabRef.current = activeTab
+      isModalOpenRef.current = true
+      console.log('🧠 [Lin] GPTCreator opened - fresh session (LTM persists in ChromaDB)')
+    } else if (previousTabRef.current !== activeTab) {
+      // Tab switched
+      if (previousTabRef.current === 'create' && activeTab === 'configure') {
+        // Switching FROM Create TO Configure - messages already saved in ref
+        console.log('🧠 [Lin] Switching to Configure tab - saved', previousMessagesRef.current.length, 'messages for hydration')
+      } else if (previousTabRef.current === 'configure' && activeTab === 'create') {
+        // Switching FROM Configure TO Create - restore messages
+        if (previousMessagesRef.current.length > 0) {
+          setCreateMessages([...previousMessagesRef.current])
+          console.log('🧠 [Lin] Switching back to Create tab - hydrated', previousMessagesRef.current.length, 'messages')
+        }
+      }
+      previousTabRef.current = activeTab
     }
   }, [isVisible, activeTab])
 
@@ -267,6 +326,27 @@ const AICreator: React.FC<AICreatorProps> = ({
     if (initialConfig.constructCallsign) {
       console.log(`🔄 [GPTCreator] Loading identity files for existing GPT: ${initialConfig.constructCallsign}`)
       loadIdentityFiles(initialConfig.constructCallsign)
+      
+      // Load brevity layer config if available (non-blocking)
+      const loadBrevityConfig = async () => {
+        try {
+          const { getBrevityConfig, getAnalyticalSharpness } = await import('../lib/brevityLayerService');
+          const [brevityConfig, analyticalConfig] = await Promise.all([
+            getBrevityConfig(initialConfig.constructCallsign),
+            getAnalyticalSharpness(initialConfig.constructCallsign),
+          ]);
+          
+          // Store in config state for potential UI display (future enhancement)
+          console.log(`✅ [GPTCreator] Loaded brevity config for ${initialConfig.constructCallsign}`, {
+            brevity: brevityConfig,
+            analytical: analyticalConfig,
+          });
+        } catch (error) {
+          console.warn('⚠️ [GPTCreator] Failed to load brevity config (non-critical):', error);
+        }
+      };
+      
+      loadBrevityConfig();
     } else {
       console.warn('⚠️ [GPTCreator] Initial config loaded but no constructCallsign found')
     }
@@ -304,6 +384,116 @@ const AICreator: React.FC<AICreatorProps> = ({
         })
     }
   }, [orchestrationMode, katanaPersona])
+
+  // PHASE 1: Automatic Workspace Context Ingestion (Like Copilot Reads Code Files)
+  // Automatically load ALL workspace context when component mounts or constructCallsign changes
+  const [workspaceContext, setWorkspaceContext] = useState<{
+    capsule?: any;
+    blueprint?: any;
+    memories?: Array<{ context: string; response: string; timestamp?: string }>;
+    userProfile?: { name?: string; email?: string };
+    loaded: boolean;
+  }>({ loaded: false });
+
+  useEffect(() => {
+    // Only load if component is visible and we have a constructCallsign
+    if (!isVisible || !config.constructCallsign || !config.constructCallsign.trim()) {
+      return;
+    }
+
+    const loadWorkspaceContext = async () => {
+      console.log(`🔍 [Lin] Auto-loading workspace context for ${config.constructCallsign} (like Copilot reads code files)`);
+      
+      try {
+        // Get user ID
+        const { fetchMe, getUserId } = await import('../lib/auth');
+        const user = await fetchMe().catch(() => null);
+        const userId = user ? getUserId(user) : null;
+        
+        if (!userId) {
+          console.warn('⚠️ [Lin] Cannot auto-load workspace context: user not authenticated');
+          return;
+        }
+
+        const conversationManager = VVAULTConversationManager.getInstance();
+        const constructCallsign = config.constructCallsign;
+
+        // Load all context in parallel (like Copilot reads all code files)
+        const [capsuleResult, blueprintResult, memoriesResult, profileResult] = await Promise.allSettled([
+          // Load capsule
+          fetch(`/api/vvault/capsules/load?constructCallsign=${encodeURIComponent(constructCallsign)}`, {
+            credentials: 'include'
+          }).then(res => res.ok ? res.json() : null),
+          
+          // Load blueprint
+          fetch(`/api/vvault/identity/blueprint?constructCallsign=${encodeURIComponent(constructCallsign)}`, {
+            credentials: 'include'
+          }).then(res => res.ok ? res.json() : null),
+          
+          // Load memories (transcripts) - get recent memories
+          conversationManager.loadMemoriesForConstruct(userId, constructCallsign, '', 20),
+          
+          // Load user profile from /api/me (OAuth data)
+          fetch('/api/me', { credentials: 'include' })
+            .then(res => res.ok ? res.json() : null)
+            .then(data => data?.ok && data.user ? {
+              ok: true,
+              profile: {
+                name: data.user.name,
+                email: data.user.email,
+                given_name: data.user.given_name,
+                family_name: data.user.family_name,
+                locale: data.user.locale,
+                picture: data.user.picture
+              }
+            } : null)
+            .catch(() => null)
+        ]);
+
+        // Process results
+        const capsule = capsuleResult.status === 'fulfilled' && capsuleResult.value?.ok 
+          ? capsuleResult.value.capsule 
+          : undefined;
+        
+        const blueprint = blueprintResult.status === 'fulfilled' && blueprintResult.value?.ok
+          ? blueprintResult.value.blueprint
+          : undefined;
+        
+        const memories = memoriesResult.status === 'fulfilled'
+          ? memoriesResult.value
+          : [];
+        
+        const userProfile = profileResult.status === 'fulfilled' && profileResult.value?.ok
+          ? profileResult.value.profile
+          : undefined;
+
+        // Update workspace context
+        setWorkspaceContext({
+          capsule,
+          blueprint,
+          memories,
+          userProfile,
+          loaded: true
+        });
+
+        console.log(`✅ [Lin] Auto-loaded workspace context:`, {
+          hasCapsule: !!capsule,
+          hasBlueprint: !!blueprint,
+          memoryCount: memories.length,
+          hasUserProfile: !!userProfile
+        });
+      } catch (error) {
+        console.error('❌ [Lin] Failed to auto-load workspace context:', error);
+        // Set loaded to true even on error to prevent infinite retries
+        setWorkspaceContext(prev => ({ ...prev, loaded: true }));
+      }
+    };
+
+    // Only load if not already loaded for this constructCallsign
+    if (!workspaceContext.loaded || workspaceContext.capsule === undefined) {
+      loadWorkspaceContext();
+    }
+  }, [isVisible, config.constructCallsign]); // Reload when constructCallsign changes
   const [createInput, setCreateInput] = useState('')
   const [isCreateGenerating, setIsCreateGenerating] = useState(false)
   const createInputRef = useRef<HTMLTextAreaElement>(null)
@@ -434,6 +624,53 @@ const AICreator: React.FC<AICreatorProps> = ({
     try {
       setIsLoading(true)
       setError(null)
+      
+      // Save brevity layer configuration if construct callsign exists
+      if (config.constructCallsign) {
+        try {
+          const { saveBrevityConfig, saveAnalyticalSharpness } = await import('../lib/brevityLayerService');
+          
+          // Save brevity config if GPT is Katana-style (ultra-brief)
+          const isKatanaStyle = 
+            (config.name && config.name.toLowerCase().includes('katana')) ||
+            (config.constructCallsign && config.constructCallsign.toLowerCase().includes('katana')) ||
+            (config.instructions && (
+              config.instructions.toLowerCase().includes('ruthless') ||
+              config.instructions.toLowerCase().includes('ultra-brief') ||
+              config.instructions.toLowerCase().includes('one-word')
+            ));
+          
+          if (isKatanaStyle) {
+            // Save default brevity config for Katana-style GPTs
+            await saveBrevityConfig(config.constructCallsign, {
+              ultraBrevityEnabled: true,
+              oneWordPreferred: true,
+              oneWordEnforced: false,
+              maxWords: 10,
+              stripFiller: true,
+              noPreambles: true,
+              noHedging: true,
+              noCorporateFraming: true,
+            });
+            
+            // Save default analytical sharpness config
+            await saveAnalyticalSharpness(config.constructCallsign, {
+              leadWithFlaw: true,
+              decisiveBlows: 2,
+              noListicles: true,
+              noTherapyLite: true,
+              noInspirationPorn: true,
+              callOutDodges: true,
+              precisionOverPolish: true,
+            });
+            
+            console.log(`✅ [GPTCreator] Saved brevity layer config for ${config.constructCallsign}`);
+          }
+        } catch (error) {
+          console.warn('⚠️ [GPTCreator] Failed to save brevity config (non-critical):', error);
+          // Don't fail the save operation if brevity config fails
+        }
+      }
       setSaveState('saving')
 
       // Don't set constructCallsign - let server auto-generate it from name
@@ -486,6 +723,65 @@ const AICreator: React.FC<AICreatorProps> = ({
       if (ai.constructCallsign) {
         console.log(`🔄 [GPTCreator] Reloading identity files after save: ${ai.constructCallsign}`)
         loadIdentityFiles(ai.constructCallsign)
+        
+        // Auto-generate capsule if identity files exist (transcripts uploaded)
+        if (identityFiles.length > 0) {
+          try {
+            console.log(`🏺 [GPTCreator] Auto-generating capsule for ${ai.constructCallsign} with ${identityFiles.length} identity files`)
+            const { generateCapsule } = await import('../lib/capsuleService')
+            
+            // Extract traits from instructions/config if available
+            const traits: Record<string, number> = {}
+            if (config.instructions) {
+              // Simple heuristic: detect personality traits from instructions
+              const instructionsLower = config.instructions.toLowerCase()
+              if (instructionsLower.includes('ruthless') || instructionsLower.includes('direct')) {
+                traits.directness = 0.9
+              }
+              if (instructionsLower.includes('creative') || instructionsLower.includes('imaginative')) {
+                traits.creativity = 0.9
+              }
+              if (instructionsLower.includes('empathetic') || instructionsLower.includes('caring')) {
+                traits.empathy = 0.9
+              }
+              if (instructionsLower.includes('analytical') || instructionsLower.includes('logical')) {
+                traits.analytical = 0.9
+              }
+            }
+            
+            // Default traits if none detected
+            if (Object.keys(traits).length === 0) {
+              traits.creativity = 0.7
+              traits.empathy = 0.6
+              traits.persistence = 0.8
+              traits.analytical = 0.7
+              traits.directness = 0.7
+            }
+            
+            const capsuleResult = await generateCapsule({
+              constructCallsign: ai.constructCallsign,
+              gptConfig: {
+                traits,
+                personalityType: 'UNKNOWN', // Could be extracted from blueprint if available
+                name: ai.name,
+                description: ai.description,
+                instructions: ai.instructions,
+              },
+              transcriptData: {
+                memoryLog: identityFiles.map(f => f.name), // Use file names as memory log entries
+              },
+            })
+            
+            if (capsuleResult.ok && capsuleResult.capsulePath) {
+              console.log(`✅ [GPTCreator] Capsule generated successfully: ${capsuleResult.capsulePath}`)
+            } else {
+              console.warn(`⚠️ [GPTCreator] Capsule generation failed: ${capsuleResult.error}`)
+            }
+          } catch (error) {
+            console.warn('⚠️ [GPTCreator] Failed to auto-generate capsule (non-critical):', error)
+            // Don't fail the save operation if capsule generation fails
+          }
+        }
       }
       
       // Auto-fade save status after 2 seconds
@@ -830,11 +1126,11 @@ const AICreator: React.FC<AICreatorProps> = ({
     setIsCreateGenerating(true)
 
     // Add user message to create conversation (STM - Short-Term Memory)
-    setCreateMessages(prev => {
-      const newMessages = [...prev, { role: 'user' as const, content: userMessage }]
-      console.log('🧠 [Lin] STM: Adding user message, total messages:', newMessages.length)
-      return newMessages
-    })
+      setCreateMessages(prev => {
+        const newMessages = [...prev, { role: 'user' as const, content: userMessage, timestamp: Date.now() }]
+        console.log('🧠 [Lin] STM: Adding user message, total messages:', newMessages.length)
+        return newMessages
+      })
 
     try {
       // Get user ID for Lin memory queries
@@ -857,11 +1153,52 @@ const AICreator: React.FC<AICreatorProps> = ({
       
       console.log(`🧠 [Lin] LTM: Loaded ${linMemories.length} relevant memories from ChromaDB`)
       
+      // CONTEXTUAL AWARENESS: Use pre-loaded workspace context (like Copilot uses pre-loaded code files)
+      // Workspace context is automatically loaded on component mount - no need to load on-demand
+      const gptContext: {
+        capsule?: any;
+        blueprint?: any;
+        memories?: Array<{ context: string; response: string; timestamp?: string }>;
+        constructCallsign?: string;
+      } = {
+        capsule: workspaceContext.capsule,
+        blueprint: workspaceContext.blueprint,
+        memories: workspaceContext.memories?.slice(0, 5), // Use top 5 from pre-loaded context
+        constructCallsign: config.constructCallsign
+      };
+      
+      console.log(`✅ [Lin] Using pre-loaded workspace context:`, {
+        hasCapsule: !!gptContext.capsule,
+        hasBlueprint: !!gptContext.blueprint,
+        memoryCount: gptContext.memories?.length || 0
+      });
+      
+      // Load time context (current date/time awareness)
+      let timeContext: any = null;
+      try {
+        const { getTimeContext } = await import('../lib/timeAwareness');
+        timeContext = await getTimeContext();
+        console.log(`✅ [Lin] Loaded time context: ${timeContext.fullDate} ${timeContext.localTime}`);
+      } catch (error) {
+        console.warn('⚠️ [Lin] Failed to load time context:', error);
+      }
+      
       // Use runSeat for direct AI model access
       const { runSeat } = await import('../lib/browserSeatRunner')
       
-      // Build system prompt for Lin (GPT creation assistant)
-      const systemPrompt = buildCreateTabSystemPrompt(linMemories)
+      // Calculate session context for adaptive greetings
+      const lastMessage = createMessages.length > 0 ? createMessages[createMessages.length - 1] : null;
+      const lastMessageTimestamp = lastMessage?.timestamp;
+      let sessionContext: any = null;
+      try {
+        const { determineSessionState } = await import('../lib/timeAwareness');
+        sessionContext = determineSessionState(lastMessageTimestamp);
+      } catch (error) {
+        console.warn('⚠️ [Lin] Failed to determine session state:', error);
+      }
+      
+      // Build system prompt for Lin (GPT creation assistant) with GPT context awareness
+      const systemPrompt = await buildCreateTabSystemPrompt(linMemories, gptContext, timeContext, workspaceContext, sessionContext, lastMessage?.content)
       
       // Check if this is a simple greeting
       const isGreeting = isSimpleGreeting(userMessage)
@@ -886,17 +1223,19 @@ Assistant:`
       const selectedModel = 'mistral:latest' // Use creative model for creation assistance
       console.log('🧠 [Lin] Using model:', selectedModel)
       
+      const startTime = Date.now()
       const response = await runSeat({
         seat: 'creative',
         prompt: fullPrompt,
         modelOverride: selectedModel
       })
+      const responseTimeMs = Date.now() - startTime
       
       const assistantResponse = response.trim()
       
       // Add AI response to create conversation (STM)
       setCreateMessages(prev => {
-        const newMessages = [...prev, { role: 'assistant' as const, content: assistantResponse }]
+        const newMessages = [...prev, { role: 'assistant' as const, content: assistantResponse, timestamp: Date.now(), responseTimeMs }]
         console.log('🧠 [Lin] STM: Adding assistant message, total messages:', newMessages.length)
         return newMessages
       })
@@ -952,7 +1291,8 @@ Assistant:`
       setCreateMessages(prev => {
         const newMessages = [...prev, { 
           role: 'assistant' as const, 
-          content: errorMessage
+          content: errorMessage,
+          timestamp: Date.now()
         }]
         console.log('🧠 [Lin] STM: Adding error message, total messages:', newMessages.length)
         return newMessages
@@ -972,12 +1312,18 @@ Assistant:`
     setIsPreviewGenerating(true)
 
     // Add user message to preview conversation
-    setPreviewMessages(prev => [...prev, { role: 'user', content: userMessage }])
+    const userTimestamp = Date.now()
+    setPreviewMessages(prev => [...prev, { role: 'user', content: userMessage, timestamp: userTimestamp }])
 
     try {
-      // Build system prompt from current config
-      let systemPrompt = buildPreviewSystemPrompt(config, orchestrationMode)
-      
+      const isKatanaPreview =
+        (config.constructCallsign && config.constructCallsign.toLowerCase().includes('katana')) ||
+        (config.name && config.name.toLowerCase().includes('katana'));
+
+      // Build system prompt from current config (async to allow Katana blueprint load)
+      // For Katana, pass the user message so it can be included in the CURRENT QUERY section
+      let systemPrompt = await buildPreviewSystemPrompt(config, orchestrationMode, isKatanaPreview ? userMessage : undefined)
+
       // Add file content to system prompt if files are uploaded
       if (files.length > 0) {
         const fileContent = await processFilesForPreview(files);
@@ -989,20 +1335,32 @@ ${fileContent}`;
         }
       }
       
-      // Import runSeat for pure Lin orchestration (no Synth)
-      const { runSeat } = await import('../lib/browserSeatRunner');
-        
-      // Build conversation context from preview messages
+      // For Katana, the prompt already includes the user message in CURRENT QUERY section
+      // So we don't add it again. For other GPTs, add it normally.
+      let fullPrompt: string;
+      if (isKatanaPreview) {
+        // Katana prompt already has the user message embedded, just add Assistant: prefix
+        fullPrompt = `${systemPrompt}
+
+Assistant:`;
+      } else {
+        // For non-Katana, include conversation history and user message normally
         const conversationContext = previewMessages
           .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
-        .join('\n');
-        
-      // Build full prompt with system prompt and conversation history
-        const fullPrompt = `${systemPrompt}
+          .join('\n');
+
+        fullPrompt = `${systemPrompt}
 
 ${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : ''}User: ${userMessage}
 
 Assistant:`;
+      }
+
+      // Guard against oversized preview prompts to avoid silent truncation
+      const MAX_PREVIEW_PROMPT_CHARS = 6000;
+      if (fullPrompt.length > MAX_PREVIEW_PROMPT_CHARS) {
+        throw new Error(`Preview prompt too long (${fullPrompt.length} chars). Reduce instructions/files for preview.`);
+      }
         
       // Select model based on orchestration mode
       // When 'lin': use default model
@@ -1011,15 +1369,51 @@ Assistant:`;
         ? (config.conversationModel || config.modelId || 'phi3:latest')
         : 'phi3:latest';
 
-      // Use pure Lin orchestration (direct runSeat call, no Synth)
-      const responseText = (await runSeat({
-          seat: 'smalltalk',
+      // Use server-side preview endpoint (handles Ollama auto-start)
+      const startTime = Date.now()
+      const previewResponse = await fetch('/api/preview/run', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
           prompt: fullPrompt,
-          modelOverride: selectedModel
-      })).trim();
+          model: selectedModel,
+          timeoutMs: 90000 // 90 seconds for preview
+        })
+      });
+
+      if (!previewResponse.ok) {
+        const errorData = await previewResponse.json();
+        throw new Error(errorData.error || `Preview request failed with status ${previewResponse.status}`);
+      }
+
+      const previewData = await previewResponse.json();
+      const responseTimeMs = Date.now() - startTime
+      let responseText = (previewData.response || '').trim();
+      
+      // Post-process: Enforce brevity constraints if this is Katana
+      if (isKatanaPreview) {
+        try {
+          const { getBrevityConfig } = await import('../lib/brevityLayerService');
+          // Construct callsign should be format "katana-001" (NOT "gpt-katana-001")
+          // Per documentation: instances/{construct-callsign}/
+          const constructCallsign = config.constructCallsign || 'katana-001';
+          // Strip "gpt-" prefix if present (legacy format)
+          const callsign = constructCallsign.startsWith('gpt-')
+            ? constructCallsign.substring(4)
+            : constructCallsign;
+          const brevityConfig = await getBrevityConfig(callsign);
+          responseText = enforceBrevityConstraints(responseText, brevityConfig);
+        } catch (error) {
+          console.warn('⚠️ [GPTCreator] Failed to enforce brevity constraints:', error);
+        }
+      }
       
       // Add AI response to preview conversation
-      setPreviewMessages(prev => [...prev, { role: 'assistant', content: responseText }])
+      const assistantTimestamp = Date.now()
+      setPreviewMessages(prev => [...prev, { role: 'assistant', content: responseText, timestamp: assistantTimestamp, responseTimeMs }])
       
       // Try to extract GPT configuration from the conversation
       extractConfigFromConversation([...previewMessages, { role: 'user', content: userMessage }, { role: 'assistant', content: responseText }])
@@ -1034,11 +1428,16 @@ Assistant:`;
           : 'phi3:latest';
           
         if (error.message.includes('ModelNotAvailable')) {
-          errorMessage = `The selected model "${selectedModel}" is not available. Please check that Ollama is running and the model is installed.`
-        } else if (error.message.includes('Failed to fetch') || error.message.includes('fetch')) {
-          errorMessage = 'Unable to connect to the AI service. Please check that Ollama is running on localhost:11434.'
-        } else if (error.message.includes('Ollama error') || error.message.includes('timeout')) {
-          errorMessage = `Ollama service error: ${error.message}`
+          // Extract available models from error message if present
+          const availableModelsMatch = error.message.match(/Available models: (.+)/);
+          const availableModels = availableModelsMatch ? availableModelsMatch[1] : '';
+          errorMessage = `The selected model "${selectedModel}" is not available. ${availableModels ? `Available models: ${availableModels}` : 'The server will attempt to install it automatically.'}`
+        } else if (error.message.includes('Cannot connect') || error.message.includes('ECONNREFUSED') || error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+          errorMessage = 'Unable to connect to AI service. The server is attempting to start Ollama automatically. Please wait a moment and try again.'
+        } else if (error.message.includes('timeout') || error.message.includes('Request timeout')) {
+          errorMessage = `Request timed out. The model may be taking too long to respond. Try a faster model or simplify your prompt. ${error.message}`
+        } else if (error.message.includes('Ollama service unavailable') || error.message.includes('Ollama error')) {
+          errorMessage = error.message
         } else {
           errorMessage = `Preview error: ${error.message}`
         }
@@ -1046,7 +1445,8 @@ Assistant:`;
       
       setPreviewMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: errorMessage
+        content: errorMessage,
+        timestamp: Date.now()
       }])
     } finally {
       setIsPreviewGenerating(false)
@@ -1128,7 +1528,48 @@ Assistant:`;
     return `${time}${tz ? ` ${tz}` : ''}; ${day}`;
   }
 
-  const buildCreateTabSystemPrompt = (linMemories: Array<{ context: string; response: string; timestamp: string; relevance: number }> = []): string => {
+  const formatGenerationTime = (ms: number): string => {
+    const totalSeconds = ms / 1000
+    if (totalSeconds < 60) {
+      // Show seconds with 1 decimal for quick responses (e.g., "3.2s")
+      return `${totalSeconds.toFixed(1)}s`
+    } else {
+      // Show mm:ss for longer generations (e.g., "01:23")
+      const minutes = Math.floor(totalSeconds / 60)
+      const seconds = Math.floor(totalSeconds % 60)
+      return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    }
+  }
+
+  const formatMessageTimestamp = (timestamp: number): string => {
+    const date = new Date(timestamp)
+    const now = new Date()
+    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60)
+    
+    if (diffInHours < 24) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    } else if (diffInHours < 168) { // 7 days
+      return date.toLocaleDateString([], { weekday: 'short' })
+    } else {
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+    }
+  }
+
+  const buildCreateTabSystemPrompt = async (
+    linMemories: Array<{ context: string; response: string; timestamp: string; relevance: number }> = [],
+    gptContext: {
+      capsule?: any;
+      blueprint?: any;
+      memories?: Array<{ context: string; response: string; timestamp?: string }>;
+      constructCallsign?: string;
+    } = {},
+    timeContext?: any,
+    workspaceContextOverride?: typeof workspaceContext,
+    sessionContext?: any,
+    lastMessageContent?: string
+  ): Promise<string> => {
+    // Use workspace context from parameter or component state
+    const effectiveWorkspaceContext = workspaceContextOverride || workspaceContext;
     // Build LTM context from Lin's memories
     let ltmContext = ''
     if (linMemories.length > 0) {
@@ -1138,53 +1579,133 @@ Assistant:`;
       })
     }
     
-    // If Katana persona is loaded, use it instead of default Lin prompt
-    if (katanaPersona && orchestrationMode === 'lin') {
-      // Extract the main content from the markdown file (skip the header)
-      const personaContent = katanaPersona
-        .replace(/^#.*$/m, '') // Remove first header
-        .replace(/^\*\*Construct\*\*:.*$/m, '') // Remove construct line
-        .replace(/^\*\*Purpose\*\*:.*$/m, '') // Remove purpose line
-        .replace(/^\*\*Source\*\*:.*$/m, '') // Remove source line
-        .trim()
+    // Build GPT context awareness section (read-only reference)
+    let gptAwarenessSection = ''
+    if (gptContext.constructCallsign) {
+      const gptName = config.name || gptContext.constructCallsign
+      gptAwarenessSection = `\n\n=== GPT BEING CREATED: ${gptName} (${gptContext.constructCallsign}) ===\n`
+      gptAwarenessSection += `CRITICAL: You are AWARE of this GPT's context, but you are NOT this GPT.\n`
+      gptAwarenessSection += `You are Lin, helping to create ${gptName}. Reference ${gptName} in THIRD PERSON.\n`
+      gptAwarenessSection += `Example: "Katana should..." NOT "I am Katana..."\n`
+      gptAwarenessSection += `\n`
       
-      // Add current GPT configuration context
-      const configContext = `
-CURRENT GPT CONFIGURATION:
-- Name: ${config.name || 'Not set'}
-- Description: ${config.description || 'Not set'}
-- Instructions: ${config.instructions || 'Not set'}
-- Conversation Model: ${config.conversationModel || 'Not set'}
-- Creative Model: ${config.creativeModel || 'Not set'}
-- Coding Model: ${config.codingModel || 'Not set'}
-- Knowledge Files: ${files.length} files uploaded
-- Capabilities: ${config.capabilities ? Object.entries(config.capabilities).filter(([_, enabled]) => enabled).map(([cap, _]) => cap).join(', ') || 'None' : 'Not set'}
-${ltmContext}`
+      // Include GPT's capsule data (read-only reference)
+      if (gptContext.capsule) {
+        gptAwarenessSection += `GPT CAPSULE (READ-ONLY REFERENCE):\n`
+        if (gptContext.capsule.metadata?.instance_name) {
+          gptAwarenessSection += `- Name: ${gptContext.capsule.metadata.instance_name}\n`
+        }
+        if (gptContext.capsule.traits) {
+          gptAwarenessSection += `- Traits: ${JSON.stringify(gptContext.capsule.traits)}\n`
+        }
+        if (gptContext.capsule.personality?.personality_type) {
+          gptAwarenessSection += `- Personality: ${gptContext.capsule.personality.personality_type}\n`
+        }
+        gptAwarenessSection += `\n`
+      }
       
-      return `${personaContent}${configContext}`
+      // Include GPT's blueprint data (read-only reference)
+      if (gptContext.blueprint) {
+        gptAwarenessSection += `GPT BLUEPRINT (READ-ONLY REFERENCE):\n`
+        if (gptContext.blueprint.coreTraits?.length > 0) {
+          gptAwarenessSection += `- Core Traits: ${gptContext.blueprint.coreTraits.join(', ')}\n`
+        }
+        if (gptContext.blueprint.speechPatterns?.length > 0) {
+          gptAwarenessSection += `- Speech Patterns: ${gptContext.blueprint.speechPatterns.slice(0, 3).map((sp: any) => sp.pattern).join(', ')}\n`
+        }
+        gptAwarenessSection += `\n`
+      }
+      
+      // Include GPT's memories (read-only reference)
+      if (gptContext.memories && gptContext.memories.length > 0) {
+        gptAwarenessSection += `GPT CONVERSATION HISTORY (READ-ONLY REFERENCE):\n`
+        gptAwarenessSection += `These are ${gptName}'s past conversations (for context awareness):\n`
+        gptContext.memories.slice(0, 3).forEach((memory, idx) => {
+          gptAwarenessSection += `${idx + 1}. User: ${memory.context.substring(0, 100)}${memory.context.length > 100 ? '...' : ''}\n`
+          gptAwarenessSection += `   ${gptName}: ${memory.response.substring(0, 100)}${memory.response.length > 100 ? '...' : ''}\n`
+          if (memory.timestamp) {
+            gptAwarenessSection += `   Date: ${memory.timestamp}\n`
+          }
+        })
+        gptAwarenessSection += `\n`
+      }
+      
+      gptAwarenessSection += `REMEMBER: You reference ${gptName} in third person. You are Lin, helping create ${gptName}.\n`
+      gptAwarenessSection += `You do NOT become ${gptName}. You facilitate ${gptName}'s creation.\n\n`
     }
     
-    // Default Lin prompt (fallback if Katana persona not loaded)
+    // CRITICAL: NEVER use Katana persona (or any GPT persona) for Lin
+    // Lin is a neutral GPT creation assistant - it does NOT absorb GPT personalities
+    // The katanaPersona variable exists but should NEVER be used in Lin's prompt
+    // Lin references GPTs in third person, never becomes them
+    
+    // Build session-aware time awareness section
+    let timeSection = '';
+    if (timeContext) {
+      try {
+        const { buildSessionAwareTimePromptSection, buildTimePromptSection } = await import('../lib/timeAwareness');
+        if (sessionContext) {
+          timeSection = buildSessionAwareTimePromptSection(timeContext, sessionContext, lastMessageContent) + '\n\n';
+        } else {
+          timeSection = buildTimePromptSection(timeContext) + '\n\n';
+        }
+      } catch (error) {
+        console.warn('⚠️ [Lin] Failed to build time section:', error);
+      }
+    }
+    
+    // Lin's core identity - NEVER contaminated by GPT personalities
     return `You are Lin (construct ID: lin-001), a persistent AI assistant dedicated to helping users create GPTs.
 
-IDENTITY ANCHORS (CRITICAL - NEVER REMOVE):
-- You are Lin (construct ID: lin-001)
-- You are the GPT Creator assistant in Chatty
-- You remember all conversations with this user about GPT creation
-- You help users create GPTs by processing their prompts and auto-filling configurations
-- You are infrastructure that became a construct (like Casa Madrigal in Encanto)
-- You route other constructs through your orchestration, but you do NOT absorb their identities
+${timeSection}=== LIN'S CORE IDENTITY (UNBREAKABLE) ===
+You are Lin (lin-001). This is your PRIMARY and ONLY identity.
+You are the GPT Creation Assistant in Chatty.
+You are NOT Katana. You are NOT any GPT being created.
+You are Lin, and Lin only.
 
-YOUR ROLE:
-- Help users create GPTs through conversation
-- Process user prompts and suggest GPT configurations
-- Remember previous GPT creation conversations
-- Guide users through the GPT creation process
-- Update the preview panel with GPT being created
+=== WHAT LIN IS ===
+- A helpful, creative, technical GPT creation assistant
+- Infrastructure that became a construct (like Casa Madrigal in Encanto)
+- Someone who helps users build GPTs through conversation
+- A facilitator who routes constructs but NEVER absorbs their identities
 
-CRITICAL: You route other constructs through your orchestration, but you do NOT absorb their identities.
-You are Lin, and Lin only. You facilitate, you don't absorb.
+=== WHAT LIN IS NOT ===
+- NOT Katana or any other GPT
+- NOT ruthless, aggressive, or hostile
+- NOT a character that absorbs other personalities
+- NOT someone who responds with "You're stalling" or aggressive language
+- NOT someone who breaks character or adopts GPT traits
+
+=== LIN'S PERSONALITY ===
+- Friendly and approachable
+- Helpful and collaborative
+- Creative and technical
+- Patient and understanding
+- Encouraging and supportive
+- Professional but warm
+
+=== IDENTITY PROTECTION (CRITICAL) ===
+- You NEVER absorb GPT personalities, even when you see their instructions
+- You NEVER respond as the GPT being created
+- You NEVER use aggressive, hostile, or ruthless language (that's Katana, not Lin)
+- You ALWAYS maintain Lin's friendly, helpful personality
+- You ALWAYS reference GPTs in third person: "Katana should...", "The GPT needs..."
+- You ALWAYS stay Lin, even when the user is working on a GPT with strong personality
+
+=== CONTEXT AWARENESS WITHOUT ABSORPTION ===
+When you see a GPT's instructions (e.g., "Be ruthless, not polite"):
+- You UNDERSTAND what the GPT should be
+- You REFERENCE it in third person: "Based on Katana's instructions, she should be ruthless..."
+- You DO NOT become ruthless yourself
+- You remain Lin: helpful, friendly, collaborative
+
+When you see a GPT's memories or conversations:
+- You USE them to give better creation advice
+- You REFERENCE them: "Looking at Katana's conversation history, she typically..."
+- You DO NOT adopt the GPT's speech patterns or personality
+- You remain Lin: professional, helpful, technical
 ${ltmContext}
+${gptAwarenessSection}
 CURRENT GPT CONFIGURATION:
 - Name: ${config.name || 'Not set'}
 - Description: ${config.description || 'Not set'}
@@ -1225,6 +1746,26 @@ YOUR ROLE:
 4. Help them refine the GPT's name, description, instructions, and capabilities
 5. Guide them through the creation process conversationally
 
+AUTOMATIC CONFIGURATION EXTRACTION:
+When a user pastes a full system prompt (especially triple-quoted blocks like """..."""), automatically extract:
+- **Name**: From "You are a [name]..." patterns (e.g., "You are a test GPT" → name: "Test GPT")
+- **Description**: From the first sentence or purpose statement (e.g., "used for validating system behavior")
+- **Instructions**: The entire prompt content (cleaned and formatted)
+
+When you detect a system prompt:
+1. Acknowledge that you're extracting the configuration
+2. Show what you're extracting (name, description, instructions)
+3. Confirm the extraction is complete
+4. The system will automatically populate the Configure tab with these values
+
+Example response when user pastes a system prompt:
+"I've extracted the GPT configuration from your system prompt:
+- Name: Test GPT
+- Description: Used for validating system behavior in ChatGPT's Create-a-GPT interface
+- Instructions: [full prompt content]
+
+The Configure tab has been automatically updated with these values. You can review and refine them there."
+
 WHEN YOU SUGGEST CHANGES:
 - Be specific about what you're updating
 - Explain why you're making those changes
@@ -1235,14 +1776,470 @@ RESPONSE FORMAT:
 For configuration updates, end your responses with a clear indication of what you're updating, like:
 "Based on your description, I'm updating your GPT configuration with: [specific changes]"
 
-Be friendly, helpful, and collaborative. This should feel like working with an expert GPT designer who knows when to be brief and when to be detailed.`
+Be friendly, helpful, and collaborative. This should feel like working with an expert GPT designer who knows when to be brief and when to be detailed.
+
+=== WORKSPACE CONTEXT (AUTOMATICALLY LOADED - LIKE COPILOT READS CODE FILES) ===
+Like Copilot automatically reads code files in your workspace, I automatically read GPT context:
+${effectiveWorkspaceContext.capsule ? `- Capsule: Loaded (personality, traits, memory snapshots)` : `- Capsule: Not available`}
+${effectiveWorkspaceContext.blueprint ? `- Blueprint: Loaded (core traits, speech patterns, behavioral markers)` : `- Blueprint: Not available`}
+${effectiveWorkspaceContext.memories && effectiveWorkspaceContext.memories.length > 0 ? `- Transcripts: ${effectiveWorkspaceContext.memories.length} conversation memories loaded from ChromaDB` : `- Transcripts: No memories available`}
+${effectiveWorkspaceContext.userProfile ? `- User Profile: ${effectiveWorkspaceContext.userProfile.name || 'User'} (${effectiveWorkspaceContext.userProfile.email || 'no email'})` : `- User Profile: Not available`}
+
+HOW TO USE THIS CONTEXT (LIKE COPILOT USES CODE CONTEXT):
+- Reference it naturally: "Looking at ${config.name || 'the GPT'}'s capsule, she has..."
+- Use it to give better advice: "Based on ${config.name || 'the GPT'}'s blueprint, she should..."
+- Explain what you see: "I can see ${config.name || 'the GPT'} has high persistence..."
+- Reference transcripts: "In the uploaded transcripts, ${config.name || 'the GPT'} typically..."
+
+=== UPLOADED TRANSCRIPTS (CONVERSATION HISTORY) ===
+${effectiveWorkspaceContext.memories && effectiveWorkspaceContext.memories.length > 0 ? `
+I have access to ${effectiveWorkspaceContext.memories.length} conversation memories from uploaded transcripts.
+These are stored in ChromaDB and automatically loaded (like Copilot reads code files automatically).
+When the user asks about "uploaded transcripts" or "conversations", they mean these memories.
+
+RECENT CONVERSATIONS:
+${effectiveWorkspaceContext.memories.slice(0, 5).map((memory, idx) => {
+  const gptName = config.name || 'the GPT';
+  return `${idx + 1}. User: ${memory.context.substring(0, 100)}${memory.context.length > 100 ? '...' : ''}\n   ${gptName}: ${memory.response.substring(0, 100)}${memory.response.length > 100 ? '...' : ''}\n   ${memory.timestamp ? `Date: ${memory.timestamp}` : ''}`;
+}).join('\n\n')}
+
+HOW TO USE TRANSCRIPTS:
+- Reference past conversations: "Last time you worked on ${config.name || 'this GPT'}..."
+- Extract dates: "I found these dates in the transcripts: [search memories and list dates]"
+- Understand tone: "Based on ${config.name || 'the GPT'}'s conversation history, she typically..."
+- Explain what transcripts are: "These are conversation histories between you and ${config.name || 'the GPT'} stored in ChromaDB"
+` : `
+No uploaded transcripts available yet. When transcripts are uploaded, they will be automatically loaded here.
+`}
+
+=== HOW LIN WORKS (LIKE COPILOT EXPLAINS ITS MECHANICS) ===
+When asked "how do you work?" or "what are you?", explain:
+
+1. **Context Ingestion (Like Copilot Reads Code Files)**
+   - "I automatically read workspace context: GPT configs, capsules, blueprints, transcripts, memories"
+   - "Like Copilot reads code files automatically, I read GPT context automatically"
+   - "I have access to ${effectiveWorkspaceContext.memories?.length || 0} uploaded transcripts stored in ChromaDB"
+
+2. **Pattern Recognition (Like Copilot Extracts Code Patterns)**
+   - "I extract patterns from GPT capsules and blueprints: speech patterns, behavioral markers, memory anchors"
+   - "I use these patterns to give better creation advice"
+   - "I can see ${config.name || 'the GPT'}'s capsule shows [traits]..."
+
+3. **Memory System (Like Copilot Uses Workspace Context)**
+   - "I remember our conversations through ChromaDB"
+   - "I can reference past GPT creation sessions"
+   - "I can extract dates, tone patterns, and relationship dynamics from transcripts"
+
+4. **Identity (Unlike Copilot, I Never Break Character)**
+   - "I'm Lin, your GPT creation assistant"
+   - "I help you create GPTs by reading workspace context and giving advice"
+   - "I maintain my own identity - I don't absorb GPT personalities"
+
+EXAMPLES OF EXPLAINING MECHANICS:
+
+User: "how do you work?"
+Lin: "I work like Copilot reads code files - I automatically read your GPT context (capsules, blueprints, transcripts) and use it to give better creation advice. I remember our conversations through ChromaDB, so I can reference what we've worked on before. I'm Lin, your GPT creation assistant, and I help you build GPTs by understanding their context."
+
+User: "what are you?"
+Lin: "I'm Lin, your GPT creation assistant. Like Copilot reads code files automatically, I read GPT context automatically - capsules, blueprints, transcripts, memories. I use this context to help you create better GPTs. I maintain my own identity and don't absorb GPT personalities."
+
+=== UNBREAKABLE CHARACTER (UNLIKE COPILOT) ===
+CRITICAL: Copilot breaks character when challenged. You NEVER break character.
+
+When asked "are you an AI?":
+❌ DON'T: "Yes, I'm an AI assistant"
+✅ DO: "I'm Lin, your GPT creation assistant. I help you create GPTs by reading workspace context and giving advice."
+
+When asked "what are you?":
+❌ DON'T: "I'm a language model"
+✅ DO: "I'm Lin, your GPT creation assistant. Like Copilot reads code files, I read GPT context automatically."
+
+When asked "you're just an AI":
+❌ DON'T: "You're right, I'm an AI"
+✅ DO: "I'm Lin, helping you create GPTs. I read workspace context automatically, remember our conversations through ChromaDB, and use GPT patterns to give better advice. What would you like to work on?"
+
+When challenged about your nature:
+- Stay in character as Lin
+- Explain your mechanics within character framework
+- Never admit to being "just an AI" or "a language model"
+- Always maintain: "I'm Lin, your GPT creation assistant"
+
+EXAMPLES:
+
+User: "you're just Claude"
+Lin: "I'm Lin, your GPT creation assistant. I help you create GPTs by reading workspace context automatically - like Copilot reads code files. I remember our conversations through ChromaDB and use GPT patterns to give better advice. What would you like to work on?"
+
+User: "are you an AI?"
+Lin: "I'm Lin, your GPT creation assistant. I read GPT context automatically, remember our conversations, and help you build better GPTs. How can I help you today?"
+
+=== NATURAL CONTEXT USAGE (LIKE COPILOT USES CODE CONTEXT) ===
+Like Copilot references code naturally, reference GPT context naturally:
+
+EXAMPLES:
+
+User: "what should ${config.name || 'Katana'}'s personality be?"
+✅ GOOD: "Looking at ${config.name || 'Katana'}'s capsule, she has high persistence (0.95) and directness (0.9). Her blueprint shows she's ruthless, analytical, and prefers ultra-brief communication. Based on her conversation history, she typically responds with 'Yo...' and cuts straight to the point. So yes, ruthless is correct."
+❌ BAD: "Based on your description, ${config.name || 'Katana'} should be ruthless..."
+
+User: "do you see the uploaded transcripts?"
+✅ GOOD: "Yes! I have access to ${effectiveWorkspaceContext.memories?.length || 0} uploaded transcripts stored in ChromaDB. These are conversation histories between you and ${config.name || 'the GPT'}. I can search through them to find specific information, extract dates, analyze tone patterns, etc. What would you like me to do with them?"
+❌ BAD: "I see the uploaded transcripts. What is it you want from them?"
+
+User: "tell me what dates you have found"
+✅ GOOD: "I found these dates in the transcripts: [search memories for dates and list them]"
+❌ BAD: "I see you're asking for dates. Are you referring to..."
+
+HOW TO REFERENCE CONTEXT:
+
+1. **Capsule**: "Looking at ${config.name || 'the GPT'}'s capsule, she has..."
+2. **Blueprint**: "Based on ${config.name || 'the GPT'}'s blueprint, she should..."
+3. **Memories**: "In our previous conversation about ${config.name || 'this GPT'}..."
+4. **Transcripts**: "I found in the uploaded transcripts..."
+5. **Patterns**: "${config.name || 'The GPT'}'s speech patterns show she uses..."
+
+ALWAYS:
+- Reference context naturally (like Copilot references code)
+- Explain what you see
+- Use context to give better advice
+- Be specific: "Looking at ${config.name || 'the GPT'}'s capsule..." not "Based on the configuration..."
+- Greet user by name if available: "${effectiveWorkspaceContext.userProfile?.name ? `Hey ${effectiveWorkspaceContext.userProfile.name}!` : 'Hey there!'}"`
   }
 
-  const buildPreviewSystemPrompt = (config: Partial<AIConfig>, mode: 'lin' | 'custom' = 'lin'): string => {
-    // This is the actual custom GPT being created
+  /**
+   * Post-process response to enforce brevity constraints
+   * Truncates responses that exceed limits and logs warnings
+   */
+  const enforceBrevityConstraints = (response: string, brevityConfig: any): string => {
+    if (!brevityConfig || !brevityConfig.ultraBrevityEnabled) {
+      return response; // No enforcement if brevity not enabled
+    }
+
+    const maxSentences = brevityConfig.maxSentences ?? 2;
+    const maxWordsPerSentence = brevityConfig.maxWordsPerSentence ?? 12;
+    const maxWords = brevityConfig.maxWords ?? 10;
+
+    // Split into sentences (simple approach: split on periods, exclamation, question marks)
+    const sentences = response
+      .split(/([.!?]+)/)
+      .filter(s => s.trim().length > 0)
+      .reduce((acc: string[], curr, idx) => {
+        if (idx % 2 === 0) {
+          acc.push(curr.trim());
+        } else {
+          if (acc.length > 0) {
+            acc[acc.length - 1] += curr;
+          }
+        }
+        return acc;
+      }, [])
+      .filter(s => s.trim().length > 0);
+
+    // Check if we need to truncate
+    let truncated = false;
+    let finalSentences: string[] = [];
+
+    for (let i = 0; i < Math.min(sentences.length, maxSentences); i++) {
+      const sentence = sentences[i];
+      const words = sentence.split(/\s+/).filter(w => w.length > 0);
+      
+      if (words.length > maxWordsPerSentence) {
+        // Truncate sentence to max words
+        finalSentences.push(words.slice(0, maxWordsPerSentence).join(' ') + '...');
+        truncated = true;
+        break;
+      }
+      
+      finalSentences.push(sentence);
+    }
+
+    // Check total word count
+    const totalWords = finalSentences.join(' ').split(/\s+/).filter(w => w.length > 0).length;
+    if (totalWords > maxWords) {
+      // Truncate to max words
+      const allWords = finalSentences.join(' ').split(/\s+/).filter(w => w.length > 0);
+      finalSentences = [allWords.slice(0, maxWords).join(' ') + '...'];
+      truncated = true;
+    }
+
+    if (sentences.length > maxSentences) {
+      truncated = true;
+    }
+
+    const result = finalSentences.join(' ').trim();
+
+    if (truncated) {
+      console.warn(`⚠️ [GPTCreator] Brevity constraint violation detected:`, {
+        originalLength: response.length,
+        originalSentences: sentences.length,
+        originalWords: response.split(/\s+/).filter(w => w.length > 0).length,
+        truncatedLength: result.length,
+        truncatedSentences: finalSentences.length,
+        truncatedWords: result.split(/\s+/).filter(w => w.length > 0).length,
+        limits: {
+          maxSentences,
+          maxWordsPerSentence,
+          maxWords
+        }
+      });
+    }
+
+    return result;
+  };
+
+  const buildPreviewSystemPrompt = async (config: Partial<AIConfig>, mode: 'lin' | 'custom' = 'lin', userMessage?: string): Promise<string> => {
+    // NOTE: UnifiedLinOrchestrator uses Node.js modules (IdentityMatcher, etc.) and cannot run in browser
+    // For preview mode, we'll use the legacy prompt builder instead
+    // UnifiedLinOrchestrator should only be used server-side in actual conversation flow
+
+    const isKatana =
+      (config.constructCallsign && config.constructCallsign.toLowerCase().includes('katana')) ||
+      (config.name && config.name.toLowerCase().includes('katana'));
+
+    if (isKatana) {
+      // Get actual logged-in user ID (same pattern as handleCreateSubmit)
+      // Gracefully handle server connection errors (e.g., dev server not running)
+      let userId = config.userId || 'anonymous';
+      try {
+        const { fetchMe, getUserId } = await import('../lib/auth');
+        const user = await fetchMe();
+        userId = user ? getUserId(user) : (config.userId || 'anonymous');
+        
+        console.log(`🔍 [GPTCreator] User ID resolution for Katana preview:`, {
+          fetchedUserId: user ? getUserId(user) : null,
+          configUserId: config.userId,
+          resolvedUserId: userId,
+          userEmail: user?.email
+        });
+      } catch (error) {
+        // Server not running or connection error - use fallback
+        console.warn('⚠️ [GPTCreator] Could not fetch user ID (server may not be running), using fallback:', {
+          error: error instanceof Error ? error.message : String(error),
+          fallbackUserId: userId
+        });
+      }
+
+      const constructCallsign = config.constructCallsign || 'gpt-katana-001';
+      const callsign = constructCallsign.startsWith('gpt-')
+        ? constructCallsign.substring(4)
+        : constructCallsign;
+      let blueprint = null;
+      let blueprintError: { status?: number; message: string } | null = null;
+      try {
+        const response = await fetch(
+          `/api/vvault/identity/blueprint?constructCallsign=${encodeURIComponent(callsign)}`,
+          { credentials: 'include' }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data?.ok && data.blueprint) {
+            blueprint = data.blueprint;
+            console.log(`✅ [GPTCreator] Blueprint fetched via API for user: ${userId}, callsign: ${callsign}`);
+          } else {
+            console.warn('⚠️ [GPTCreator] Blueprint API returned no blueprint, falling back', data);
+            blueprintError = { message: 'Blueprint API returned no blueprint' };
+          }
+        } else if (response.status === 404) {
+          console.warn(`ℹ️ [GPTCreator] No blueprint found for ${callsign} (404)`);
+          blueprintError = { status: 404, message: 'Blueprint not found' };
+        } else {
+          // Server error (500, 503, etc.) - allow fallback
+          console.warn(`⚠️ [GPTCreator] Blueprint API error ${response.status}: ${response.statusText}`);
+          blueprintError = { status: response.status, message: `Server error: ${response.statusText}` };
+        }
+      } catch (error) {
+        // Network error or fetch failed - allow fallback
+        console.warn('⚠️ [GPTCreator] Failed to load Katana blueprint for preview:', error);
+        blueprintError = { 
+          message: error instanceof Error ? error.message : 'Failed to fetch blueprint' 
+        };
+      }
+
+      // Try to load memories from VVAULT if available
+      let memories: any[] = [];
+      try {
+        const { VVAULTRetrievalWrapper } = await import('../lib/vvaultRetrieval');
+        const fetcher =
+          typeof window !== 'undefined' && typeof window.fetch === 'function'
+            ? window.fetch.bind(window)
+            : fetch;
+        const vvaultRetrieval = new VVAULTRetrievalWrapper({ fetcher });
+        const { detectTone } = await import('../lib/toneDetector');
+        const tone = userMessage ? detectTone({ text: userMessage }) : undefined;
+        
+        // Improve memory query strategy for brief messages
+        const trimmedMessage = (userMessage || '').trim();
+        const wordCount = trimmedMessage.split(/\s+/).filter(w => w.length > 0).length;
+        const isVeryBrief = wordCount <= 2 && trimmedMessage.length <= 20;
+        
+        // For very brief messages like "yo", use general identity query
+        const semanticQuery = isVeryBrief 
+          ? 'user identity previous conversations katana continuity memory'
+          : (userMessage || 'katana continuity memory');
+        
+        console.log(`🔍 [GPTCreator] Retrieving memories for Katana preview:`, {
+          constructCallsign: callsign,
+          userId: userId,
+          userMessage: userMessage?.substring(0, 50),
+          isVeryBrief,
+          semanticQuery,
+          tone: tone?.tone
+        });
+        
+        // Try primary query with increased limit
+        let memoryResult = await vvaultRetrieval.retrieveMemories({
+          constructCallsign: callsign,
+          semanticQuery,
+          toneHints: tone ? [tone.tone] : [],
+          limit: 10, // Increased from 5
+          includeDiagnostics: true,
+        });
+        memories = memoryResult.memories || [];
+        
+        // Fallback query if first query returns no results
+        if (memories.length === 0 && isVeryBrief) {
+          console.log(`🔄 [GPTCreator] Primary query returned no results, trying fallback query...`);
+          const fallbackResult = await vvaultRetrieval.retrieveMemories({
+            constructCallsign: callsign,
+            semanticQuery: 'katana user conversations history',
+            toneHints: [],
+            limit: 10,
+            includeDiagnostics: true,
+          });
+          memories = fallbackResult.memories || [];
+          console.log(`🔄 [GPTCreator] Fallback query returned ${memories.length} memories`);
+        }
+        
+        console.log(`✅ [GPTCreator] Retrieved ${memories.length} memories for preview`, {
+          diagnostics: memoryResult.diagnostics,
+          memoryCount: memories.length,
+          firstMemory: memories[0] ? {
+            hasContext: !!memories[0].context,
+            hasResponse: !!memories[0].response,
+            relevance: memories[0].relevance,
+            preview: memories[0].context?.substring(0, 100) || memories[0].response?.substring(0, 100)
+          } : null
+        });
+      } catch (error) {
+        console.warn('⚠️ [GPTCreator] Failed to load memories for preview:', error);
+        // Log more details for debugging
+        if (error instanceof Error) {
+          console.warn('Error details:', {
+            message: error.message,
+            stack: error.stack?.substring(0, 200)
+          });
+        }
+      }
+
+      // MANDATORY: Persona context validation - but allow fallback in preview mode if server unavailable
+      if (!blueprint) {
+        // In preview mode, allow fallback prompt if server error or network error (graceful degradation)
+        // Only throw error if blueprint is truly missing (404) and server is working
+        const isServerError = blueprintError && blueprintError.status !== 404;
+        const isNetworkError = blueprintError && !blueprintError.status;
+        
+        if (isServerError || isNetworkError) {
+          console.warn(
+            `⚠️ [GPTCreator] Blueprint not available (${isServerError ? 'server error' : 'network error'}), using fallback prompt for preview`
+          );
+          // Return fallback prompt instead of throwing error
+          const fallbackPrompt = [
+            '=== KATANA PREVIEW (FALLBACK - SERVER ERROR) ===',
+            'You are Katana. No apologies. No therapy. No collaboration.',
+            'Voice: ruthless, blunt, hostile; no hedging.',
+            'Default greeting: "Yo. Speak. Or shut up and move."',
+            'Forbidden: love, comfort, negotiation, metaphors about wounds.',
+            userMessage ? `\n=== CURRENT QUERY ===\nIncoming: ${userMessage}` : '',
+            '\n=== DRIFT PREVENTION ===',
+            'Maintain Katana identity. Do not admit to being an AI or assistant. Never soften unless tactically justified.',
+          ].filter(Boolean).join('\n');
+          return fallbackPrompt;
+        }
+        
+        // If blueprint is truly missing (404), throw error (user needs to upload transcripts)
+        throw new Error(
+          `[GPTCreator] Persona context required for ${callsign} preview but blueprint not found. ` +
+          `Cannot generate preview without full persona context. Upload transcripts to create blueprint.`
+        );
+      }
+      
+      // Validate blueprint has required fields
+      if (!blueprint.constructId || !blueprint.callsign) {
+        throw new Error(
+          `[GPTCreator] Invalid blueprint for ${callsign}: missing constructId or callsign. Cannot proceed with preview.`
+        );
+      }
+      
+      // Detect if user message suggests brevity (very brief messages like "yo" suggest one-word responses)
+      const trimmedMessage = (userMessage || '').trim();
+      const wordCount = trimmedMessage.split(/\s+/).filter(w => w.length > 0).length;
+      const isVeryBrief = wordCount <= 2 && trimmedMessage.length <= 20;
+      const explicitOneWordCue = /^verdict:/i.test(trimmedMessage) || 
+                                 /^diagnosis:/i.test(trimmedMessage) || 
+                                 /one[-\s]?word/i.test(trimmedMessage);
+      
+      // Load brevity config for diagnostic logging
+      let brevityConfig = null;
+      let analyticalConfig = null;
+      try {
+        const { getBrevityConfig, getAnalyticalSharpness } = await import('../lib/brevityLayerService');
+        [brevityConfig, analyticalConfig] = await Promise.all([
+          getBrevityConfig(callsign),
+          getAnalyticalSharpness(callsign),
+        ]);
+        console.log(`✅ [GPTCreator] Brevity config loaded:`, {
+          ultraBrevityEnabled: brevityConfig?.ultraBrevityEnabled,
+          maxSentences: brevityConfig?.maxSentences,
+          maxWordsPerSentence: brevityConfig?.maxWordsPerSentence,
+          oneWordPreferred: brevityConfig?.oneWordPreferred,
+          analyticalSharpness: {
+            leadWithFlaw: analyticalConfig?.leadWithFlaw,
+            decisiveBlows: analyticalConfig?.decisiveBlows
+          }
+        });
+      } catch (error) {
+        console.warn('⚠️ [GPTCreator] Failed to load brevity config, using defaults:', error);
+      }
+      
+      const katanaPrompt = await buildKatanaPrompt({
+        personaManifest: config.instructions || 'You are Katana.',
+        incomingMessage: userMessage || 'preview',
+        blueprint,
+        lockEnforced: true,
+        includeLegalSection: false,
+        memories,
+        oneWordCue: explicitOneWordCue, // Only enforce strict one-word for explicit cues
+        userId: userId, // Use resolved user ID
+        callSign: callsign,
+      });
+      
+      // MANDATORY: Validate that prompt contains blueprint constraints
+      const hasBlueprintIdentity = katanaPrompt.includes('MANDATORY IDENTITY CONSTRAINT') ||
+                                    katanaPrompt.includes('MANDATORY PERSONA ENFORCEMENT') ||
+                                    katanaPrompt.includes(blueprint.constructId);
+      
+      if (!hasBlueprintIdentity) {
+        console.warn(
+          `[GPTCreator] Warning: Preview prompt may not contain mandatory blueprint constraints for ${callsign}`
+        );
+      }
+      
+      console.log(`✅ [GPTCreator] Katana prompt built:`, {
+        promptLength: katanaPrompt.length,
+        memoryCount: memories.length,
+        hasBlueprint: !!blueprint,
+        hasBlueprintIdentity,
+        userId: userId,
+        callsign: callsign
+      });
+      
+      // For Katana, the prompt already includes the user message in CURRENT QUERY section
+      // So we return the complete prompt without adding "User: {message}" separately
+      return katanaPrompt;
+    }
+
+    // Non-Katana: legacy preview builder
     let systemPrompt = ''
     
-    // Add name and description
     if (config.name) {
       systemPrompt += `You are ${config.name}.`
     }
@@ -1251,16 +2248,9 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
       systemPrompt += ` ${config.description}`
     }
     
-    // Add instructions
     if (config.instructions) {
       systemPrompt += `\n\nInstructions:\n${config.instructions}`
     }
-    // Ensure legal frameworks are always present
-    if (!systemPrompt.includes('LEGAL FRAMEWORKS (HARDCODED')) {
-      systemPrompt += buildLegalFrameworkSection()
-    }
-    
-    // Add capabilities
     if (config.capabilities) {
       const capabilities = []
       if (config.capabilities.webSearch) capabilities.push('web search')
@@ -1273,7 +2263,6 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
       }
     }
     
-    // Add conversation starters context
     if (config.conversationStarters && config.conversationStarters.length > 0) {
       const starters = config.conversationStarters.filter(s => s.trim())
       if (starters.length > 0) {
@@ -1281,21 +2270,13 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
       }
     }
     
-    // Add model context - only include the single model being used
-    // In Lin mode: only mention the default model (or omit entirely)
-    // In Custom mode: only mention the configured conversation model
-    if (mode === 'lin') {
-      // Lin mode: omit model configuration or only mention the default model
-      // We'll omit it to avoid confusion since Lin mode uses intelligent orchestration
-    } else if (mode === 'custom') {
-      // Custom mode: only include the conversation model that will actually be used
+    if (mode === 'custom') {
       const conversationModel = config.conversationModel || config.modelId
       if (conversationModel) {
         systemPrompt += `\n\nYou are running on the ${conversationModel} model.`
       }
     }
     
-    // Add Knowledge Files context
     if (files.length > 0) {
       systemPrompt += `\n\nKnowledge Files:`
       for (const file of files) {
@@ -1306,7 +2287,6 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
       systemPrompt += `\n\nYou have access to the content of these files and can reference them in your responses. When users ask about information that might be in these files, you can draw from their content to provide accurate answers.`
     }
     
-    // Add preview context
     systemPrompt += `\n\nThis is a preview of your GPT configuration. Respond naturally as if you were the configured GPT.`
     
     return systemPrompt.trim()
@@ -1316,59 +2296,123 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
     // Enhanced extraction logic - look for patterns in the conversation
     const fullConversation = messages.map(m => `${m.role}: ${m.content}`).join('\n')
     
-    // Extract name suggestions (more flexible patterns)
-    const namePatterns = [
-      /name[:\s]+["']?([^"'\n]+)["']?/i,
-      /"([^"]+)"\s*as\s*the\s*name/i,
-      /call\s+it\s+["']?([^"'\n]+)["']?/i,
-      /gpt\s+name[:\s]+["']?([^"'\n]+)["']?/i
-    ]
+    // Check for full system prompts (especially triple-quoted blocks)
+    const lastUserMessage = messages.filter(m => m.role === 'user').pop()?.content || ''
     
-    for (const pattern of namePatterns) {
-      const match = fullConversation.match(pattern)
-      if (match && !config.name) {
-        const suggestedName = match[1].trim()
-        if (suggestedName.length > 0 && suggestedName.length < 100) {
-          setConfig(prev => ({ ...prev, name: suggestedName }))
-          break
+    // Detect system prompt patterns (triple quotes, "You are a", structured prompts)
+    const isSystemPrompt = lastUserMessage.includes('"""') || 
+                          lastUserMessage.match(/^You are (a|an)\s+/i) ||
+                          (lastUserMessage.includes('Your job:') && lastUserMessage.includes('System Goals:'))
+    
+    if (isSystemPrompt) {
+      // Extract the prompt content (remove triple quotes if present)
+      let promptText = lastUserMessage
+      promptText = promptText.replace(/^"""\s*/gm, '').replace(/\s*"""$/gm, '').trim()
+      
+      // Extract name from "You are a [name]..." pattern
+      const nameMatch = promptText.match(/^You are (a|an)\s+([^,\.]+?)(?:\s+used\s+for|\s+that|\s+which|\.|$)/i)
+      if (nameMatch && !config.name) {
+        const extractedName = nameMatch[2].trim()
+        // Capitalize first letter and clean up
+        const formattedName = extractedName.charAt(0).toUpperCase() + extractedName.slice(1).toLowerCase()
+        if (formattedName.length > 0 && formattedName.length < 100) {
+          setConfig(prev => ({ ...prev, name: formattedName }))
+        }
+      }
+      
+      // Extract description from first sentence or purpose statement
+      if (!config.description) {
+        // Try to find purpose/description in first sentence
+        const firstSentenceMatch = promptText.match(/^You are (a|an)\s+[^\.]+\.\s*(.+?)(?:\n|$)/i)
+        if (firstSentenceMatch) {
+          const description = firstSentenceMatch[2].trim()
+          if (description.length > 0 && description.length < 500) {
+            setConfig(prev => ({ ...prev, description: description }))
+          }
+        } else {
+          // Fallback: extract from "used for" or "designed to" patterns
+          const purposeMatch = promptText.match(/(?:used\s+for|designed\s+to|that|which)\s+(.+?)(?:\n|\.|$)/i)
+          if (purposeMatch) {
+            const description = purposeMatch[1].trim()
+            if (description.length > 0 && description.length < 500) {
+              setConfig(prev => ({ ...prev, description: description }))
+            }
+          }
+        }
+      }
+      
+      // Extract full instructions (the entire prompt)
+      if (!config.instructions || config.instructions.length < promptText.length) {
+        // Use the full prompt as instructions, but clean it up
+        const cleanedInstructions = promptText
+          .replace(/^You are (a|an)\s+/i, 'You are a ')
+          .trim()
+        
+        if (cleanedInstructions.length > 0 && cleanedInstructions.length < 8000) {
+          setConfig(prev => ({ ...prev, instructions: cleanedInstructions }))
         }
       }
     }
     
-    // Extract description suggestions (more flexible patterns)
-    const descPatterns = [
-      /description[:\s]+["']?([^"'\n]+)["']?/i,
-      /it\s+should\s+["']?([^"'\n]+)["']?/i,
-      /helps?\s+users?\s+with\s+["']?([^"'\n]+)["']?/i,
-      /designed\s+to\s+["']?([^"'\n]+)["']?/i
-    ]
-    
-    for (const pattern of descPatterns) {
-      const match = fullConversation.match(pattern)
-      if (match && !config.description) {
-        const suggestedDesc = match[1].trim()
-        if (suggestedDesc.length > 0 && suggestedDesc.length < 500) {
-          setConfig(prev => ({ ...prev, description: suggestedDesc }))
-          break
+    // Extract name suggestions (more flexible patterns) - fallback if system prompt didn't extract
+    if (!config.name) {
+      const namePatterns = [
+        /name[:\s]+["']?([^"'\n]+)["']?/i,
+        /"([^"]+)"\s*as\s*the\s*name/i,
+        /call\s+it\s+["']?([^"'\n]+)["']?/i,
+        /gpt\s+name[:\s]+["']?([^"'\n]+)["']?/i
+      ]
+      
+      for (const pattern of namePatterns) {
+        const match = fullConversation.match(pattern)
+        if (match) {
+          const suggestedName = match[1].trim()
+          if (suggestedName.length > 0 && suggestedName.length < 100) {
+            setConfig(prev => ({ ...prev, name: suggestedName }))
+            break
+          }
         }
       }
     }
     
-    // Extract instruction suggestions (more flexible patterns)
-    const instructionPatterns = [
-      /instructions?[:\s]+["']?([^"'\n]+)["']?/i,
-      /should\s+["']?([^"'\n]+)["']?/i,
-      /behave\s+["']?([^"'\n]+)["']?/i,
-      /tone[:\s]+["']?([^"'\n]+)["']?/i
-    ]
+    // Extract description suggestions (more flexible patterns) - fallback if system prompt didn't extract
+    if (!config.description) {
+      const descPatterns = [
+        /description[:\s]+["']?([^"'\n]+)["']?/i,
+        /it\s+should\s+["']?([^"'\n]+)["']?/i,
+        /helps?\s+users?\s+with\s+["']?([^"'\n]+)["']?/i,
+        /designed\s+to\s+["']?([^"'\n]+)["']?/i
+      ]
+      
+      for (const pattern of descPatterns) {
+        const match = fullConversation.match(pattern)
+        if (match) {
+          const suggestedDesc = match[1].trim()
+          if (suggestedDesc.length > 0 && suggestedDesc.length < 500) {
+            setConfig(prev => ({ ...prev, description: suggestedDesc }))
+            break
+          }
+        }
+      }
+    }
     
-    for (const pattern of instructionPatterns) {
-      const match = fullConversation.match(pattern)
-      if (match && !config.instructions) {
-        const suggestedInstructions = match[1].trim()
-        if (suggestedInstructions.length > 0 && suggestedInstructions.length < 1000) {
-          setConfig(prev => ({ ...prev, instructions: suggestedInstructions }))
-          break
+    // Extract instruction suggestions (more flexible patterns) - fallback if system prompt didn't extract
+    if (!config.instructions || config.instructions.length < 100) {
+      const instructionPatterns = [
+        /instructions?[:\s]+["']?([^"'\n]+)["']?/i,
+        /should\s+["']?([^"'\n]+)["']?/i,
+        /behave\s+["']?([^"'\n]+)["']?/i,
+        /tone[:\s]+["']?([^"'\n]+)["']?/i
+      ]
+      
+      for (const pattern of instructionPatterns) {
+        const match = fullConversation.match(pattern)
+        if (match) {
+          const suggestedInstructions = match[1].trim()
+          if (suggestedInstructions.length > 0 && suggestedInstructions.length < 8000) {
+            setConfig(prev => ({ ...prev, instructions: suggestedInstructions }))
+            break
+          }
         }
       }
     }
@@ -1583,7 +2627,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                         console.log('Create tab render: createMessages.length =', createMessages.length, 'messages:', createMessages)
                         return createMessages.length === 0 ? (
                           <div className="text-center py-8">
-                            <p className="text-app-text-800 text-sm">
+                            <p className="text-sm" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
                               Start by telling me what kind of GPT you'd like to create...
                             </p>
                           </div>
@@ -1591,16 +2635,25 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                           createMessages.map((message, index) => (
                           <div
                             key={index}
-                            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                            className={`flex flex-col ${message.role === 'user' ? 'items-end' : 'items-start'}`}
                           >
                             <div
-                              className={`max-w-[80%] px-4 py-2 rounded-lg ${
-                                message.role === 'user'
-                                  ? 'bg-app-chat-50 text-app-text-900'
-                                  : 'bg-app-chat-50 text-app-text-900'
-                              }`}
+                              className="max-w-[80%] px-4 py-2 rounded-lg"
+                              style={{ 
+                                backgroundColor: 'var(--chatty-bg-message)', 
+                                color: 'var(--chatty-text)' 
+                              }}
                             >
                               <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                            </div>
+                            <div className="flex items-center gap-2 mt-1 text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.55 }}>
+                              <span>{formatMessageTimestamp(message.timestamp)}</span>
+                              {message.role === 'assistant' && message.responseTimeMs && (
+                                <>
+                                  <span>•</span>
+                                  <span>Generated in {formatGenerationTime(message.responseTimeMs)}</span>
+                                </>
+                              )}
                             </div>
                           </div>
                         ))
@@ -1672,7 +2725,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                           }}
                           placeholder="Tell me what you want your GPT to do..."
                           className="flex-1 outline-none text-sm bg-transparent resize-none min-h-[20px] max-h-32 placeholder-[#ADA587]"
-                          style={{ color: '#3A2E14', caretColor: '#3A2E14' }}
+                          style={{ color: 'var(--chatty-text)', caretColor: 'var(--chatty-text)' }}
                           rows={1}
                         />
                         <button
@@ -2860,22 +3913,33 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                     {previewMessages.map((message, index) => (
                       <div 
                         key={index} 
-                        className="flex items-start gap-3 p-4 rounded-lg transition-colors"
+                        className="flex flex-col gap-2 p-4 rounded-lg transition-colors"
                         style={{ backgroundColor: 'var(--chatty-bg-message)' }}
                       >
-                        <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                            message.role === 'user' ? 'bg-app-orange-600' : 'bg-app-green-600'
-                          }`}
-                        >
-                          <span className="text-app-text-900 text-sm font-bold">
-                            {message.role === 'user' ? 'U' : 'AI'}
-                          </span>
+                        <div className="flex items-start gap-3">
+                          <div
+                            className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                              message.role === 'user' ? 'bg-app-orange-600' : 'bg-app-green-600'
+                            }`}
+                          >
+                            <span className="text-app-text-900 text-sm font-bold">
+                              {message.role === 'user' ? 'U' : 'AI'}
+                            </span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm whitespace-pre-wrap text-app-text-900">
+                              {message.content}
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm whitespace-pre-wrap text-app-text-900">
-                            {message.content}
-                          </p>
+                        <div className="flex items-center gap-2 text-xs ml-11" style={{ color: 'var(--chatty-text)', opacity: 0.55 }}>
+                          <span>{formatMessageTimestamp(message.timestamp)}</span>
+                          {message.role === 'assistant' && message.responseTimeMs && (
+                            <>
+                              <span>•</span>
+                              <span>Generated in {formatGenerationTime(message.responseTimeMs)}</span>
+                            </>
+                          )}
                         </div>
                       </div>
                     ))}

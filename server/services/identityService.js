@@ -152,6 +152,13 @@ class IdentityService {
     try {
       await this.initialize();
 
+      // Check if ChromaDB is available (graceful degradation)
+      if (!this.initialized || !this.client) {
+        console.warn('⚠️ [IdentityService] ChromaDB not available. Skipping memory storage. Run "chroma run" to enable persistent memory.');
+        // Return success but mark as skipped (don't fail the conversation)
+        return { success: true, skipped: true, reason: 'ChromaDB not available' };
+      }
+
       // Resolve user ID to VVAULT format
       const vvaultUserId = await this.resolveUserId(userId, metadata.email);
 
@@ -226,8 +233,14 @@ class IdentityService {
    * @param {string} constructCallsign - Construct-callsign (e.g., "luna-001")
    * @param {string|string[]} query - Query text(s)
    * @param {number} limit - Maximum number of results
+   * @param {object} options - Additional query options
+   * @param {string} options.queryMode - 'semantic' (default) or 'anchor' for anchor-based queries
+   * @param {string[]} options.anchorTypes - Filter by anchor types: 'claim', 'vow', 'boundary', 'core-statement', 'defining-moment', 'relationship-marker'
+   * @param {number} options.minSignificance - Minimum significance score for anchors (0-1)
+   * @param {string[]} options.relationshipPatterns - Filter by relationship pattern types
+   * @param {string} options.emotionalState - Filter by emotional state
    */
-  async queryIdentities(userId, constructCallsign, query, limit = 10) {
+  async queryIdentities(userId, constructCallsign, query, limit = 10, options = {}) {
     try {
       await this.initialize();
 
@@ -236,6 +249,28 @@ class IdentityService {
 
       const queryTexts = Array.isArray(query) ? query : [query];
       const results = [];
+      const queryMode = options.queryMode || 'semantic';
+      const anchorTypes = options.anchorTypes || [];
+      const minSignificance = options.minSignificance || 0;
+      const relationshipPatterns = options.relationshipPatterns || [];
+      const emotionalState = options.emotionalState;
+
+      // Build metadata filter for anchor-based queries
+      const whereFilter = {};
+      if (queryMode === 'anchor') {
+        if (anchorTypes.length > 0) {
+          whereFilter.anchorType = { $in: anchorTypes };
+        }
+        if (minSignificance > 0) {
+          whereFilter.significance = { $gte: minSignificance };
+        }
+        if (relationshipPatterns.length > 0) {
+          whereFilter.relationshipPattern = { $in: relationshipPatterns };
+        }
+        if (emotionalState) {
+          whereFilter.emotionalState = emotionalState;
+        }
+      }
 
       // Query both short-term and long-term collections (user-scoped)
       for (const memoryType of ['short-term', 'long-term']) {
@@ -245,7 +280,7 @@ class IdentityService {
           const queryResult = await collection.query({
             queryTexts,
             nResults: Math.ceil(limit / 2), // Split limit between ST and LT
-            where: {} // Can add session_id filter here if needed (metadata filter)
+            where: Object.keys(whereFilter).length > 0 ? whereFilter : {} // Use metadata filter for anchor queries
           });
 
           // Process results
@@ -262,12 +297,26 @@ class IdentityService {
 
               try {
                 const content = typeof docStr === 'string' ? JSON.parse(docStr) : docStr;
+                
+                // For anchor-based queries, prioritize by significance if available
+                const significance = metadata.significance || content.significance || (queryMode === 'anchor' ? 0.8 : 0.5);
+                const relevance = queryMode === 'anchor' && significance > 0
+                  ? significance // Use significance for anchor queries
+                  : (distance > 0 ? 1 - Math.min(distance, 1) : 1); // Use distance for semantic queries
+                
                 results.push({
                   context: content.context || '',
                   response: content.response || '',
                   timestamp: content.timestamp || metadata.timestamp || new Date().toISOString(),
-                  relevance: distance > 0 ? 1 - Math.min(distance, 1) : 1, // Convert distance to relevance score (0-1)
-                  memoryType: content.memory_type || memoryType
+                  relevance,
+                  memoryType: content.memory_type || memoryType,
+                  metadata: {
+                    ...metadata,
+                    anchorType: metadata.anchorType || content.anchorType,
+                    significance: significance,
+                    relationshipPattern: metadata.relationshipPattern || content.relationshipPattern,
+                    emotionalState: metadata.emotionalState || content.emotionalState,
+                  }
                 });
               } catch (parseError) {
                 console.warn('⚠️ [IdentityService] Failed to parse identity document:', parseError);
@@ -280,8 +329,21 @@ class IdentityService {
         }
       }
 
-      // Sort by relevance and limit
-      results.sort((a, b) => b.relevance - a.relevance);
+      // Sort by relevance (or significance for anchor queries) and limit
+      if (queryMode === 'anchor') {
+        // For anchor queries, prioritize by significance, then relevance
+        results.sort((a, b) => {
+          const aSig = a.metadata?.significance || 0;
+          const bSig = b.metadata?.significance || 0;
+          if (Math.abs(aSig - bSig) > 0.1) {
+            return bSig - aSig; // Sort by significance first
+          }
+          return b.relevance - a.relevance; // Then by relevance
+        });
+      } else {
+        // For semantic queries, sort by relevance
+        results.sort((a, b) => b.relevance - a.relevance);
+      }
       return results.slice(0, limit);
     } catch (error) {
       console.error('❌ [IdentityService] Failed to query identities:', error);

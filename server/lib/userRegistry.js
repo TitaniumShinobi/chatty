@@ -9,6 +9,34 @@ const PROJECT_ROOT = path.resolve(__dirname, '../..');
 const REGISTRY_FILE = path.join(PROJECT_ROOT, 'users.json');
 
 /**
+ * Generate LIFE format user ID (same as VVAULT)
+ * Format: {normalized_name}_{timestamp}
+ * Example: devon_woodson_1762969514958
+ * 
+ * @param {string} name - User name (from OAuth)
+ * @param {string} email - User email (fallback if name not available)
+ * @param {number} timestamp - Optional timestamp (defaults to Date.now())
+ * @returns {string} LIFE format user ID
+ */
+function generateLIFEUserId(name, email = null, timestamp = null) {
+  const ts = timestamp || Date.now();
+  let userName = 'user';
+  
+  if (name) {
+    // Use OAuth name, normalize to lowercase with underscores
+    userName = name.replace(/[^a-z0-9]/gi, '_').toLowerCase().replace(/_+/g, '_').replace(/^_|_$/g, '');
+  } else if (email) {
+    // Extract name from email (e.g., "devon.woodson@example.com" -> "devon_woodson")
+    const emailName = email.split('@')[0].replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    if (emailName && emailName.length > 0) {
+      userName = emailName;
+    }
+  }
+  
+  return `${userName}_${ts}`;
+}
+
+/**
  * Load user registry from disk
  * @returns {Promise<Object>} Registry object
  */
@@ -40,54 +68,71 @@ async function saveRegistry(registry) {
 
 /**
  * Get or create user in registry
- * @param {string} userId - User ID (from MongoDB or generated)
+ * CRITICAL: Uses LIFE format user ID (same as VVAULT): {name}_{timestamp}
+ * 
+ * @param {string} userId - Legacy user ID (MongoDB ObjectId or Google sub) - will be converted to LIFE format
  * @param {string} email - User email
  * @param {string} name - User name
- * @returns {Promise<Object>} User profile
+ * @returns {Promise<Object>} User profile with LIFE format user_id
  */
 export async function getOrCreateUser(userId, email, name) {
   const registry = await loadRegistry();
   
-  // Check if user already exists
-  if (registry.users[userId]) {
-    const user = registry.users[userId];
+  // CRITICAL: Generate LIFE format user ID (same as VVAULT)
+  // Check if userId is already LIFE format (contains underscore and ends with timestamp)
+  let lifeUserId = userId;
+  if (!userId.includes('_') || /^[0-9a-fA-F]{24}$/.test(userId) || /^\d+$/.test(userId)) {
+    // Not LIFE format - generate it from name/email
+    // Try to find existing user by email first (for migration)
+    const existingUser = Object.values(registry.users).find(u => u.email === email);
+    if (existingUser) {
+      lifeUserId = existingUser.user_id; // Use existing LIFE format ID
+    } else {
+      // Generate new LIFE format ID
+      lifeUserId = generateLIFEUserId(name, email);
+    }
+  }
+  
+  // Check if user already exists by LIFE format ID
+  if (registry.users[lifeUserId]) {
+    const user = registry.users[lifeUserId];
     // Update last_seen
     user.last_seen = new Date().toISOString();
     await saveRegistry(registry);
     return user;
   }
   
-  // Create new user
-  const shard = getUserShard(userId, registry.totalUsers);
+  // Create new user with LIFE format ID
+  const shard = getUserShard(lifeUserId, registry.totalUsers);
   const userProfile = {
-    user_id: userId,
+    user_id: lifeUserId, // LIFE format: devon_woodson_1762969514958
     email: email || '',
     name: name || '',
     created_at: new Date().toISOString(),
     last_seen: new Date().toISOString(),
     shard: shard,
     vvault_linked: false,
-    vvault_user_id: null
+    vvault_user_id: lifeUserId // Same as user_id (LIFE format)
   };
   
   // Add to registry
-  registry.users[userId] = userProfile;
+  registry.users[lifeUserId] = userProfile;
   registry.totalUsers = Object.keys(registry.users).length;
   await saveRegistry(registry);
   
   // Create user directory structure
-  await ensureUserDirectory(userId, shard);
+  await ensureUserDirectory(lifeUserId, shard);
   
   // Create profile.json
-  const profilePath = getUserPath(userId, shard, 'identity', 'profile.json');
+  const profilePath = getUserPath(lifeUserId, shard, 'identity', 'profile.json');
   await fs.writeFile(profilePath, JSON.stringify(userProfile, null, 2), 'utf8');
   
   // Migrate persona files from global location (if they exist)
   try {
-    await migratePersonaFilesForUser(userId, shard);
+    await migratePersonaFilesForUser(lifeUserId, shard);
   } catch (error) {
     // Non-critical - migration will happen on next access
-    console.warn(`⚠️ [User Registry] Failed to migrate persona files for ${userId}:`, error.message);
+    console.warn(`⚠️ [User Registry] Failed to migrate persona files for ${lifeUserId}:`, error.message);
   }
   
   return userProfile;

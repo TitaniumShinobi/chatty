@@ -1,5 +1,5 @@
 import express from "express";
-import { buildRuntimeAwareness } from "../services/awarenessService.js";
+import { buildRuntimeAwareness, getTimeContext } from "../services/awarenessService.js";
 
 const router = express.Router();
 
@@ -13,6 +13,20 @@ router.get("/awareness", async (req, res) => {
     res.status(500).json({
       ok: false,
       error: "Failed to construct runtime awareness snapshot",
+    });
+  }
+});
+
+// Time context endpoint for Lin and GPTs
+router.get("/time", async (req, res) => {
+  try {
+    const timeContext = getTimeContext({ req });
+    res.json(timeContext);
+  } catch (error) {
+    console.error("Time context error:", error);
+    res.status(500).json({
+      ok: false,
+      error: "Failed to get time context",
     });
   }
 });

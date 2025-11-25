@@ -74,7 +74,7 @@ interface GenerateOptions {
 }
 
 export async function runSeat(opts: GenerateOptions): Promise<string> {
-  const timeout = opts.timeout ?? 30000; // 30 second default timeout
+  const timeout = opts.timeout ?? 60000; // 60 second default timeout (increased from 30s)
   const maxRetries = opts.retries ?? 2; // 2 retries max
   
   // Use Vite proxy for Ollama to avoid CORS issues
@@ -82,6 +82,7 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
   const model = await resolveModel(opts.seat, opts.modelOverride);
 
   let lastError: Error | null = null;
+  let ollamaAvailable = false;
 
   // Retry loop with exponential backoff
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -91,32 +92,52 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
         const tagsURL = `${baseURL}/api/tags`;
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s for availability check
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s for availability check (increased from 5s)
           
           const tagsResponse = await fetch(tagsURL, { signal: controller.signal });
           clearTimeout(timeoutId);
           
           if (tagsResponse.ok) {
+            ollamaAvailable = true;
             const tagsJson = await tagsResponse.json();
             if (Array.isArray(tagsJson.models)) {
               const found = tagsJson.models.some((m: any) => m.name?.startsWith(model.split(":")[0]));
-              if (!found) throw new Error(`ModelNotAvailable:${model}`);
+              if (!found) {
+                const availableModels = tagsJson.models.map((m: any) => m.name).join(', ');
+                throw new Error(`ModelNotAvailable:${model}. Available models: ${availableModels || 'none'}`);
+              }
             }
+          } else {
+            throw new Error(`Ollama service unavailable (status ${tagsResponse.status}). Make sure Ollama is running on localhost:11434.`);
           }
         } catch (error: any) {
-          // Don't fail on availability check errors, but log them
+          // Handle availability check errors
           if (error.name === 'AbortError') {
-            console.warn(`Model availability check timeout for ${model}`);
+            throw new Error(`Ollama service timeout. Make sure Ollama is running on localhost:11434 and accessible.`);
           } else if (error.message?.includes('ModelNotAvailable')) {
             throw error; // Re-throw model not available errors
+          } else if (error.message?.includes('Ollama service unavailable')) {
+            throw error; // Re-throw service unavailable errors
+          } else if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+            throw new Error(`Cannot connect to Ollama service. Make sure Ollama is running on localhost:11434. Error: ${error.message}`);
           } else {
             console.warn('Model availability check failed, proceeding anyway:', error);
+            // Don't fail completely, but note that Ollama might not be available
           }
         }
       }
 
       const url = `${baseURL}/api/generate`;
-      const body = JSON.stringify({ model, prompt: opts.prompt, stream: false });
+      const body = JSON.stringify({ 
+        model, 
+        prompt: opts.prompt, 
+        stream: false,
+        options: {
+          temperature: 0.7,
+          top_p: 0.9,
+          num_predict: 2000 // Limit response length
+        }
+      });
 
       // Create AbortController for timeout
       const controller = new AbortController();
@@ -135,18 +156,35 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
         clearTimeout(timeoutId);
 
         if (!response.ok) {
-          throw new Error(`Ollama error ${response.status}: ${await response.text()}`);
+          const errorText = await response.text();
+          let errorMessage = `Ollama error ${response.status}`;
+          try {
+            const errorJson = JSON.parse(errorText);
+            errorMessage = errorJson.error || errorMessage;
+          } catch {
+            errorMessage = errorText || errorMessage;
+          }
+          throw new Error(errorMessage);
         }
 
         const data = await response.json();
-        return data.response ?? '';
+        if (!data.response) {
+          throw new Error('Empty response from Ollama. The model may not be responding correctly.');
+        }
+        return data.response;
       } catch (error: any) {
         clearTimeout(timeoutId);
         
-        // Handle abort/timeout
+        // Handle abort/timeout with better error message
         if (error.name === 'AbortError') {
-          throw new Error(`Request timeout after ${timeout}ms`);
+          throw new Error(`Request timeout after ${timeout}ms. The model may be taking too long to respond. Try a faster model or increase timeout.`);
         }
+        
+        // Handle network errors
+        if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+          throw new Error(`Cannot connect to Ollama service. Make sure Ollama is running on localhost:11434.`);
+        }
+        
         throw error;
       }
     } catch (error: any) {

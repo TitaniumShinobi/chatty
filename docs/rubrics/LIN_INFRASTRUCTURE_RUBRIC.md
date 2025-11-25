@@ -59,7 +59,66 @@ Like Casa Madrigal in Encanto, Lin started as the foundation that supports every
 - **System prompts should NOT describe the routing mechanism** - Routing is implementation detail, not user-facing
 - **System prompts should NOT list all available models** - This causes models to generate multi-model response format
 
-### 4. System Prompt Generation
+### 4. Ultra-Brevity and Analytical Sharpness Layers
+
+**For GPTs with ultra-brief, analytical personalities (e.g., Katana):**
+
+Lin infrastructure supports specialized layers for GPTs that require maximum brevity and analytical precision:
+
+#### Ultra-Brevity Layer
+
+- **Default to maximum brevity**: One-word responses are welcomed and preferred when they capture the essence
+- **Multi-word only when necessary**: Use more words only when required for precision or tactical impact
+- **Strip all filler**: No preambles, no hedging, no corporate framing, no "as an AI" disclaimers
+- **Every word must cut**: If a word doesn't cut, delete it
+- **One-word response protocol**: One-word responses are welcomed when they capture the essence. Default to brevity unless precision requires more
+
+#### Analytical Sharpness Layer
+
+- **Lead with the flaw**: Name it, show its cost, demand ownership
+- **Analytical precision**: Identify the core issue in 1-2 decisive blows
+- **No listicles, no therapy-lite, no inspiration porn**: Strip language down to muscle and bone
+- **Call out dodges**: If the user dodges, call the dodge and cut it down
+- **Precision over polish**: Use precision, not polish. Muscle and bone, not fluff
+
+#### Implementation
+
+These layers are injected into the system prompt via `buildKatanaPrompt()` when:
+- GPT name or construct callsign contains "katana"
+- GPT instructions specify ultra-brevity or analytical sharpness
+- One-word response protocol is enabled
+
+**Example prompt structure:**
+```
+=== ULTRA-BREVITY LAYER ===
+Default to maximum brevity. One-word responses are welcomed and preferred when they capture the essence.
+Multi-word responses only when necessary for precision or tactical impact.
+Strip all filler: no preambles, no hedging, no corporate framing, no "as an AI" disclaimers.
+Every word must cut. If it doesn't cut, delete it.
+
+=== ANALYTICAL SHARPNESS ===
+Lead with the flaw. Name it, show its cost, demand ownership.
+Analytical precision: identify the core issue in 1-2 decisive blows.
+No listicles, no therapy-lite, no inspiration porn.
+If the user dodges, call the dodge and cut it down.
+Precision over polish. Muscle and bone, not fluff.
+
+=== ONE-WORD RESPONSE PROTOCOL ===
+One-word responses are welcomed when they capture the essence. Default to brevity unless precision requires more.
+Examples of acceptable one-word responses: "Yes.", "No.", "Stalling.", "Weak.", "Fix.", "Truth."
+When one word suffices, use it. When more is needed, use the minimum required for surgical precision.
+```
+
+#### One-Word Cue Detection
+
+Lin infrastructure detects one-word cues in user messages:
+- Patterns: `/^verdict:/i`, `/^diagnosis:/i`, `/one[-\s]?word verdict/i`, `/\b(one[-\s]?word)\b/i`
+- When detected, response is strictly enforced to one token
+- When not detected, one-word responses are still welcomed but not enforced
+
+**For billion-user scale**: These layers ensure GPTs like Katana maintain ultra-brief, analytical responses that cut through noise without verbose explanations.
+
+### 5. System Prompt Generation
 
 **Critical Rule**: System prompts must be carefully constructed to avoid multi-model response format.
 
@@ -121,7 +180,7 @@ const buildPreviewSystemPrompt = (
 - **Solution**: Only mention the single model being used, or omit model configuration entirely
 - **Model routing happens at code level**: The `runSeat` call with `modelOverride` handles routing; system prompt doesn't need to describe it
 
-### 5. Separation from Synth
+### 6. Separation from Synth
 
 - **Synth is the primary construct** - Chatty's official representative, uses synth runtime
 - **Lin is infrastructure** - Supports GPTs, uses Lin infrastructure
@@ -129,7 +188,7 @@ const buildPreviewSystemPrompt = (
 - Synth stays Synth; GPTs route through Lin
 - Synth is not relevant to GPT discussion - Synth is primary, Lin is infrastructure
 
-### 6. Preview Orchestration
+### 7. Preview Orchestration
 
 **Preview uses pure Lin orchestration** - No Synth processing involved.
 
@@ -177,7 +236,7 @@ Single unified response (no multi-model format)
 - Faster response times
 - Simpler debugging
 
-### 7. Lin's Territory
+### 8. Lin's Territory
 
 - **GPT Creator Create tab** is Lin's native interface
 - Users talk to Lin directly in the Create tab
@@ -444,6 +503,10 @@ codingModel: 'phi3:latest' // Can be same as conversation
 - ✅ Memory collections are user-scoped (no cross-user memory leakage)
 - ✅ Memory recall respects user isolation (matches `/instances/` structure)
 - ✅ ChromaDB collections follow pattern: `{vvaultUserId}_{constructCallsign}_{memoryType}_identity`
+- ✅ Ultra-brevity layers injected for GPTs like Katana
+- ✅ Analytical sharpness layers enforce precision over polish
+- ✅ One-word responses welcomed and preferred when appropriate
+- ✅ One-word cue detection works for explicit requests
 
 ## Summary
 
@@ -467,4 +530,6 @@ codingModel: 'phi3:latest' // Can be same as conversation
 - **Never list multiple models in system prompts** - causes multi-model response format
 - **Use pure Lin orchestration (direct `runSeat`) for preview** - no Synth processing
 - **Only mention single model in system prompt** (or omit entirely in Lin mode)
+- **For ultra-brief GPTs**: Ultra-brevity and analytical sharpness layers are automatically injected
+- **One-word responses**: Welcomed and preferred when they capture the essence; enforced when cue detected
 

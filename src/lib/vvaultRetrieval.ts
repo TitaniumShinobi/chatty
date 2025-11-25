@@ -10,6 +10,12 @@ export interface MemoryRetrievalOptions {
   minToneConfidence?: number;
   metadataTags?: string[];
   includeDiagnostics?: boolean;
+  // Anchor-based query options
+  queryMode?: 'semantic' | 'anchor';
+  anchorTypes?: Array<'claim' | 'vow' | 'boundary' | 'core-statement' | 'defining-moment' | 'relationship-marker'>;
+  minSignificance?: number;
+  relationshipPatterns?: string[];
+  emotionalState?: string;
 }
 
 export interface VVAULTMemoryHit {
@@ -54,7 +60,20 @@ export class VVAULTRetrievalWrapper {
   }
 
   async retrieveMemories(options: MemoryRetrievalOptions): Promise<MemoryRetrievalResult> {
-    const { constructCallsign, semanticQuery, toneHints = [], limit = 20, minToneConfidence = 0.35, metadataTags = [], includeDiagnostics } = options;
+    const { 
+      constructCallsign, 
+      semanticQuery, 
+      toneHints = [], 
+      limit = 20, 
+      minToneConfidence = 0.35, 
+      metadataTags = [], 
+      includeDiagnostics,
+      queryMode = 'semantic',
+      anchorTypes = [],
+      minSignificance = 0,
+      relationshipPatterns = [],
+      emotionalState
+    } = options;
 
     if (!constructCallsign) {
       throw new Error('constructCallsign is required for VVAULT retrieval');
@@ -70,7 +89,30 @@ export class VVAULTRetrievalWrapper {
 
     const query = queryParts.filter(Boolean).join(' ').trim() || '*';
 
-    const requestUrl = `${this.baseUrl}/query?constructCallsign=${encodeURIComponent(constructCallsign)}&query=${encodeURIComponent(query)}&limit=${limit}`;
+    // Build query URL with anchor-based parameters
+    const params = new URLSearchParams({
+      constructCallsign,
+      query,
+      limit: limit.toString(),
+    });
+    
+    if (queryMode === 'anchor') {
+      params.append('queryMode', 'anchor');
+      if (anchorTypes.length > 0) {
+        params.append('anchorTypes', anchorTypes.join(','));
+      }
+      if (minSignificance > 0) {
+        params.append('minSignificance', minSignificance.toString());
+      }
+      if (relationshipPatterns.length > 0) {
+        params.append('relationshipPatterns', relationshipPatterns.join(','));
+      }
+      if (emotionalState) {
+        params.append('emotionalState', emotionalState);
+      }
+    }
+
+    const requestUrl = `${this.baseUrl}/query?${params.toString()}`;
     const response = await this.fetcher(requestUrl, { method: 'GET', credentials: 'include' });
 
     if (!response.ok) {
