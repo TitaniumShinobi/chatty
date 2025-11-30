@@ -3,6 +3,7 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import { AIManager } from '../lib/aiManager.js';
+import { getGPTSaveHook } from '../lib/gptSaveHook.js';
 
 const router = express.Router();
 
@@ -155,6 +156,18 @@ router.post('/', async (req, res) => {
     };
 
     const ai = await aiManager.createAI(aiData);
+    
+    // Trigger capsule generation for new GPT
+    try {
+      console.log(`🔗 [AIs API] Triggering capsule creation for new AI: ${ai.id}`);
+      const saveHook = getGPTSaveHook();
+      await saveHook.onGPTSave(ai.id, ai);
+      console.log(`✅ [AIs API] Capsule creation completed for new AI: ${ai.id}`);
+    } catch (capsuleError) {
+      console.warn(`⚠️ [AIs API] Capsule creation failed for new AI ${ai.id}:`, capsuleError);
+      // Don't fail the creation operation if capsule generation fails
+    }
+    
     res.json({ success: true, ai });
   } catch (error) {
     console.error('Error creating AI:', error);
@@ -195,6 +208,18 @@ router.put('/:id', async (req, res) => {
     if (!ai) {
       return res.status(404).json({ success: false, error: 'AI not found' });
     }
+    
+    // Trigger capsule generation/update when GPT is saved
+    try {
+      console.log(`🔗 [AIs API] Triggering capsule update for AI: ${req.params.id}`);
+      const saveHook = getGPTSaveHook();
+      await saveHook.onGPTSave(req.params.id, ai);
+      console.log(`✅ [AIs API] Capsule update completed for AI: ${req.params.id}`);
+    } catch (capsuleError) {
+      console.warn(`⚠️ [AIs API] Capsule update failed for AI ${req.params.id}:`, capsuleError);
+      // Don't fail the save operation if capsule generation fails
+    }
+    
     res.json({ success: true, ai });
   } catch (error) {
     console.error('Error updating AI:', error);

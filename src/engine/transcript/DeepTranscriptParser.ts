@@ -533,14 +533,18 @@ Only respond with valid JSON array, no other text.`;
 
       const jsonMatch = response.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return parsed.map((e: any) => ({
-          expression: e.expression ?? '',
-          category: e.category ?? 'belief',
-          confidence: e.confidence ?? 0.5,
-          evidence: e.evidence ?? [],
-          pairIndex: e.pairIndex ?? 0,
-        }));
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          return parsed.map((e: any) => ({
+            expression: e.expression ?? '',
+            category: e.category ?? 'belief',
+            confidence: e.confidence ?? 0.5,
+            evidence: e.evidence ?? [],
+            pairIndex: e.pairIndex ?? 0,
+          }));
+        } catch (parseError) {
+          console.warn('[DeepTranscriptParser] JSON parse error in worldview analysis:', parseError);
+        }
       }
     } catch (error) {
       console.warn('[DeepTranscriptParser] LLM worldview analysis failed:', error);
@@ -888,16 +892,20 @@ Only respond with valid JSON array, no other text.`;
 
       const jsonMatch = response.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return parsed.map((a: any) => ({
-          anchor: a.anchor ?? '',
-          type: a.type ?? 'defining-moment',
-          significance: a.significance ?? 0.5,
-          timestamp: a.timestamp || pairs[a.pairIndex || 0]?.timestamp || new Date().toISOString(),
-          pairIndex: a.pairIndex ?? 0,
-          context: a.context ?? '',
-          relatedAnchors: a.relatedAnchors ?? [],
-        }));
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          return parsed.map((a: any) => ({
+            anchor: a.anchor ?? '',
+            type: a.type ?? 'defining-moment',
+            significance: a.significance ?? 0.5,
+            timestamp: a.timestamp || pairs[a.pairIndex || 0]?.timestamp || new Date().toISOString(),
+            pairIndex: a.pairIndex ?? 0,
+            context: a.context ?? '',
+            relatedAnchors: a.relatedAnchors ?? [],
+          }));
+        } catch (parseError) {
+          console.warn('[DeepTranscriptParser] JSON parse error in memory anchor analysis:', parseError);
+        }
       }
     } catch (error) {
       console.warn('[DeepTranscriptParser] LLM memory anchor analysis failed:', error);

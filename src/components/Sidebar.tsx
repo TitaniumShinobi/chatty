@@ -29,7 +29,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onOpenLibrary,
   onOpenSearch,
   onOpenProjects,
-  onShowRuntimeDashboard,
+  // onShowRuntimeDashboard removed - using automatic runtime orchestration
   collapsed = false,
   onToggleCollapsed,
   currentUser,
@@ -148,13 +148,12 @@ const Sidebar: React.FC<SidebarProps> = ({
             </button>
 
             <div className="flex items-center gap-2 ml-auto">
+              {/* Runtime dashboard button removed - using automatic orchestration */}
               <button
-                onClick={onShowRuntimeDashboard}
-                className="p-2 rounded transition-colors"
+                onClick={() => {}} // Placeholder - runtime dashboard removed
+                className="p-2 rounded transition-colors opacity-50 cursor-not-allowed"
                 style={{ color: 'var(--chatty-text)' }}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = hoverColor }}
-                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
-                aria-label="Open runtime dashboard"
+                aria-label="Runtime auto-managed"
               >
                 <Gauge size={16} />
               </button>
@@ -469,12 +468,12 @@ const Sidebar: React.FC<SidebarProps> = ({
       <div className={cn('mt-auto space-y-3', collapsed ? 'px-3 pb-3 pt-0' : 'p-4')}>
         {collapsed && (
           <>
+            {/* Runtime dashboard button removed - using automatic orchestration */}
             <button
-              onClick={onShowRuntimeDashboard}
-              className="w-full rounded-md transition-colors flex items-center gap-2 p-2 justify-center"
+              onClick={() => {}} // Placeholder - runtime dashboard removed
+              className="w-full rounded-md transition-colors flex items-center gap-2 p-2 justify-center opacity-50 cursor-not-allowed"
               style={{ color: 'var(--chatty-text)' }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = hoverColor }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+              aria-label="Runtime auto-managed"
             >
               <Gauge size={16} />
             </button>

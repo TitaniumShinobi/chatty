@@ -70,8 +70,23 @@ export function attachGoogleProfileImage() {
 }
 
 export function loginWithGoogle() {
+  // Check OAuth health before attempting login
+  fetch("/api/auth/google/health")
+    .then(r => r.json())
+    .then(health => {
+      if (!health.oauth_configured) {
+        console.error('❌ [Auth] OAuth not properly configured:', health);
+        alert('Google authentication is not properly configured. Please contact support.');
+        return;
+      }
   // hard navigate so cookies flow through; rely on server redirect back
   window.location.href = "/api/auth/google";
+    })
+    .catch(error => {
+      console.error('❌ [Auth] Failed to check OAuth health:', error);
+      // Proceed anyway - might be a temporary network issue
+      window.location.href = "/api/auth/google";
+    });
 }
 
 export function loginWithMicrosoft() {

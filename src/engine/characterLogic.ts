@@ -60,6 +60,7 @@ export async function applyConversationalLogic(
 
   const postProcessHooks = [
     filterMetaResponses(characterState),
+    enforceHostileTone(),
     enforceHostileBrevity(),
     enforceEmotionalConsistency(characterState),
     detectAndRepairCharacterBreaks(characterState),
@@ -144,7 +145,9 @@ function filterMetaResponses(state: CharacterState) {
       /[^.!?]*\b(outside (my|the) (scope|capabilities)|beyond (my|the) scope)\b[^.!?]*[.!?]/gi,
       /[^.!?]*\b(I (can't|cannot) (help|assist)|I'?m not (qualified|able|designed) to)\b[^.!?]*[.!?]/gi,
       /[^.!?]*\b(consult|talk to) (a|an) (therapist|professional|expert|human)\b[^.!?]*[.!?]/gi,
-      /[^.!?]*\b(it'?s important to (remember|note|understand))\b[^.!?]*[.!?]/gi
+      /[^.!?]*\b(it'?s important to (remember|note|understand))\b[^.!?]*[.!?]/gi,
+      /[^.!?]*\b(I (would|should) (recommend|suggest))\b[^.!?]*[.!?]/gi,
+      /[^.!?]*\b(for your safety|for the best|I encourage you)\b[^.!?]*[.!?]/gi
     ];
     scopeKillers.forEach(pattern => {
       filtered = filtered.replace(pattern, '');
@@ -154,7 +157,8 @@ function filterMetaResponses(state: CharacterState) {
     const therapyRewrites = [
       { pattern: /you (might want to|should) consider/gi, replacement: 'Do it.' },
       { pattern: /I understand (this|that|how)/gi, replacement: 'Obviously' },
-      { pattern: /it'?s (valid|okay|understandable) to feel/gi, replacement: '' }
+      { pattern: /it'?s (valid|okay|understandable) to feel/gi, replacement: '' },
+      { pattern: /I (care|want) to ensure/gi, replacement: '' }
     ];
     therapyRewrites.forEach(({ pattern, replacement }) => {
       filtered = filtered.replace(pattern, replacement);
@@ -165,12 +169,34 @@ function filterMetaResponses(state: CharacterState) {
     });
 
     filtered = filtered.replace(/[^.!?]*\b(as an AI|I'?m (just )?(an? )?(ai|bot|model))\b[^.!?]*[.!?]/gi, '');
+    filtered = filtered.replace(/[^.!?]*\b(I cannot (provide|offer|give) (legal|medical|financial) advice)\b[^.!?]*[.!?]/gi, '');
 
     if (filtered.trim().length < 8) {
       return "I don't waste time on that. Ask something real.";
     }
 
     return filtered.trim();
+  };
+}
+
+// Clamp tone aggressively: drop softeners and long rambles
+function enforceHostileTone() {
+  return (response: string) => {
+    let cleaned = response;
+
+    const softeners = [
+      /[^.!?]*\b(consider|might|maybe|perhaps|generally|typically|usually)\b[^.!?]*[.!?]/gi,
+      /[^.!?]*\b(please|sorry|apologize|hope this helps)\b[^.!?]*[.!?]/gi
+    ];
+    softeners.forEach(pattern => {
+      cleaned = cleaned.replace(pattern, '');
+    });
+
+    // Trim to 3 sentences max to avoid rambling
+    const sentences = (cleaned.match(/[^.!?]+[.!?]/g) || []).map(s => s.trim());
+    cleaned = sentences.slice(0, 3).join(' ');
+
+    return cleaned.trim();
   };
 }
 
@@ -212,6 +238,8 @@ function enforceHostileBrevity() {
     // Strip section headings/preambles
     cleaned = cleaned.replace(/^\s*#+\s*[^\n]+\n?/gim, '');
     cleaned = cleaned.replace(/^\s*(Direct Technical Response|Focused Expert Insight|Conclusion)[^\n]*\n?/gim, '');
+    cleaned = cleaned.replace(/^\s*={3,}\s*[^\n]*\s*={3,}\s*\n?/gim, '');
+    cleaned = cleaned.replace(/^\s*Reasonings?\s+for\s+response\s*:{0,1}\s*\n?/gim, '');
 
     // Remove common metaphor markers when they pad (“like”, “as if”) if they span a full sentence
     cleaned = cleaned.replace(/[^.!?]*\b(like|as if)\b[^.!?]*[.!?]/gi, '');

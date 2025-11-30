@@ -11,13 +11,15 @@ import Sidebar from './Sidebar'
 import SettingsModal from './SettingsModal'
 import ProjectsModal from './ProjectsModal'
 import ShareConversationModal from './ShareConversationModal'
-import RuntimeDashboard, { type RuntimeDashboardOption } from './RuntimeDashboard'
+// RuntimeDashboard removed - using automatic runtime orchestration
 import SynthGuidance from './SynthGuidance'
 import { useSynthGuidance } from '../hooks/useSynthGuidance'
 import { AIService } from '../lib/aiService'
 import type { UIContextSnapshot, Message as ChatMessage } from '../types'
 import { WorkspaceContextBuilder } from '../engine/context/WorkspaceContextBuilder'
 import { DynamicPersonaOrchestrator } from '../engine/orchestration/DynamicPersonaOrchestrator'
+import { AutomaticRuntimeOrchestrator } from '../lib/automaticRuntimeOrchestrator'
+import { RuntimeContextManager } from '../lib/runtimeContextManager'
 
 type Message = {
   id: string
@@ -124,7 +126,7 @@ export default function Layout() {
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [isProjectsOpen, setIsProjectsOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [showRuntimeDashboard, setShowRuntimeDashboard] = useState(false)
+  // Manual runtime dashboard removed - using automatic orchestration
   const [shareConversationId, setShareConversationId] = useState<string | null>(null)
   const [isBackendUnavailable, setIsBackendUnavailable] = useState(false)
   const pendingStarterRef = useRef<{ threadId: string; starter: string; files: File[] } | null>(null)
@@ -157,7 +159,6 @@ export default function Layout() {
     isSearchOpen ||
     isProjectsOpen ||
     isSettingsOpen ||
-    showRuntimeDashboard ||
     Boolean(shareConversation) ||
     Boolean(storageFailureInfo)
 
@@ -167,11 +168,10 @@ export default function Layout() {
       isSearchOpen,
       isProjectsOpen,
       isSettingsOpen,
-      showRuntimeDashboard,
       shareConversation: Boolean(shareConversation),
       storageFailureInfo: Boolean(storageFailureInfo)
     });
-  }, [hasBlockingOverlay, isSearchOpen, isProjectsOpen, isSettingsOpen, showRuntimeDashboard, shareConversation, storageFailureInfo])
+  }, [hasBlockingOverlay, isSearchOpen, isProjectsOpen, isSettingsOpen, shareConversation, storageFailureInfo])
 
   function createThread(title = 'New conversation'): Thread {
     const timestamp = Date.now()
@@ -763,8 +763,21 @@ export default function Layout() {
         return null;
       }
 
-      // New conversations use 'lin' runtime (everything except synth uses lin)
-      const newConversation = await conversationManager.createConversation(userId, initialTitle, undefined, 'lin');
+      // Automatically determine optimal runtime for new conversation
+      const automaticRuntimeOrchestrator = AutomaticRuntimeOrchestrator.getInstance();
+      const runtimeContextManager = RuntimeContextManager.getInstance();
+      
+      // Analyze conversation context to determine optimal runtime
+      const runtimeAssignment = await automaticRuntimeOrchestrator.determineOptimalRuntime({
+        conversationContent: starterTrimmed || initialTitle,
+        userMessage: starterTrimmed,
+        userId,
+        threadId: '', // Will be set after conversation creation
+      });
+      
+      console.log(`[Layout.tsx] Auto-selected runtime: ${runtimeAssignment.constructId} (confidence: ${Math.round(runtimeAssignment.confidence * 100)}%) - ${runtimeAssignment.reasoning}`);
+      
+      const newConversation = await conversationManager.createConversation(userId, initialTitle, undefined, runtimeAssignment.constructId);
       
       // Convert VVAULT conversation to Thread format
       const thread: Thread = {
@@ -775,6 +788,13 @@ export default function Layout() {
         updatedAt: newConversation.updatedAt,
         archived: newConversation.archived || false
       };
+
+      // Assign runtime to the newly created thread
+      await runtimeContextManager.assignRuntimeToThread(
+        thread.id,
+        { ...runtimeAssignment, runtimeId: `${runtimeAssignment.constructId}-${thread.id}` },
+        userId
+      );
 
       setThreads(prev => [thread, ...prev])
       navigate(`/app/chat/${thread.id}`)
@@ -1381,13 +1401,7 @@ export default function Layout() {
     setIsProjectsOpen(true)
   }
 
-  function handleShowRuntimeDashboard() {
-    setShowRuntimeDashboard(true)
-  }
-
-  function handleCloseRuntimeDashboard() {
-    setShowRuntimeDashboard(false)
-  }
+  // Manual runtime dashboard functions removed - using automatic orchestration
 
   function handleSearchResultClick(threadId: string, messageId: string) {
     const targetId = preferCanonicalThreadId(threadId, threads) || threadId
@@ -1410,8 +1424,8 @@ export default function Layout() {
         className="flex h-screen bg-[var(--chatty-bg-main)] text-[var(--chatty-text)] relative"
         style={{ isolation: 'isolate' }} // Ensure proper stacking context for children
       >
-        {/* Sidebar - hide when runtime dashboard is open */}
-        {!showRuntimeDashboard && (
+        {/* Sidebar */}
+        {(
           <Sidebar
             conversations={synthAddressBookThreads as any}
             threads={threads as any}
@@ -1436,7 +1450,6 @@ export default function Layout() {
           currentUser={user}
           onLogout={handleLogout}
           onShowSettings={() => setIsSettingsOpen(true)}
-          onShowRuntimeDashboard={handleShowRuntimeDashboard}
           collapsed={collapsed}
           onToggleCollapsed={toggleSidebar}
           hasBlockingOverlay={hasBlockingOverlay}
@@ -1489,17 +1502,7 @@ export default function Layout() {
           currentStepIndex={currentStepIndex}
           totalSteps={totalSteps}
         />
-        {showRuntimeDashboard && (
-          <RuntimeDashboard
-            runtimes={[]} // TODO: Load actual runtimes from imported data
-            onSelect={(runtime) => {
-              console.log('Selected runtime:', runtime)
-              // TODO: Navigate to runtime or show details
-              handleCloseRuntimeDashboard()
-            }}
-            onDismiss={handleCloseRuntimeDashboard}
-          />
-        )}
+        {/* Manual runtime dashboard removed - using automatic runtime orchestration */}
       </div>
     </ThemeProvider>
   )

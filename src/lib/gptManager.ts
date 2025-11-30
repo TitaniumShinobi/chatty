@@ -63,15 +63,29 @@ export class GPTManager {
   private db: Database.Database;
   private runtimeGPTs: Map<string, GPTRuntime> = new Map();
   private uploadDir: string;
+  private readonly isBrowserEnvironment: boolean;
 
   private constructor() {
+    this.isBrowserEnvironment =
+      typeof window !== 'undefined' && typeof window.document !== 'undefined';
+    
+    // Prevent instantiation in browser environment
+    if (this.isBrowserEnvironment) {
+      throw new Error('[GPTManager] Cannot instantiate GPTManager in browser environment. Use gptManagerFactory.createGPTManager() instead.');
+    }
+    
     this.db = new Database('chatty.db');
     this.uploadDir = path.join(process.cwd(), 'gpt-uploads');
     this.initializeDatabase();
-    this.ensureUploadDir();
+      this.ensureUploadDir();
   }
 
   static getInstance(): GPTManager {
+    // Prevent instantiation in browser environment
+    if (typeof window !== 'undefined' && typeof window.document !== 'undefined') {
+      throw new Error('[GPTManager] Cannot instantiate GPTManager in browser environment. Use gptManagerFactory.createGPTManager() instead.');
+    }
+    
     if (!GPTManager.instance) {
       GPTManager.instance = new GPTManager();
     }

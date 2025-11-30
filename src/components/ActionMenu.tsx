@@ -39,6 +39,7 @@ const ActionMenu: React.FC<ActionMenuProps> = ({ onAction, disabled = false }) =
   const [selectedAction, setSelectedAction] = useState<ActionItem | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const actions: ActionItem[] = [
     {

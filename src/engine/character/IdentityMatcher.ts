@@ -8,6 +8,8 @@
 import type {
   DeepTranscriptAnalysis,
   PersonalityBlueprint,
+  MemoryAnchor,
+  ConsistencyRule,
 } from '../transcript/types';
 import type { Construct } from '../../types';
 
@@ -36,6 +38,97 @@ export class IdentityMatcher {
 
   constructor(vvaultRoot: string = process.env.VVAULT_ROOT || '/vvault') {
     this.vvaultRoot = vvaultRoot;
+  }
+
+  /**
+   * Lightweight enrichment from stored transcripts.
+   * Parses chatgpt/*.md for lines like "Katana said:" and adds phrasing to the blueprint.
+   */
+  private async enrichBlueprintFromTranscripts(
+    userId: string,
+    callsign: string,
+    blueprint: PersonalityBlueprint
+  ): Promise<PersonalityBlueprint> {
+    if (isBrowserEnv()) return blueprint;
+
+    const fs = await dynamicNodeImport('fs/promises');
+    const path = await dynamicNodeImport('path');
+
+    try {
+      const vvaultUserId = await this.resolveVVAULTUserId(userId);
+      const shardId = 'shard_0000';
+      const transcriptsDir = path.join(
+        this.vvaultRoot,
+        'users',
+        shardId,
+        vvaultUserId,
+        'instances',
+        callsign,
+        'chatgpt'
+      );
+
+      const entries = await fs.readdir(transcriptsDir).catch(() => []);
+      const speechPhrases: string[] = [];
+      const behavioral: { situation: string; response: string }[] = [];
+
+      for (const entry of entries) {
+        if (!entry.endsWith('.md')) continue;
+        const filePath = path.join(transcriptsDir, entry);
+        const content = await fs.readFile(filePath, 'utf-8').catch(() => '');
+        if (!content) continue;
+
+        const lines = content.split(/\r?\n/);
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim();
+          const katanaSaid = line.match(/^\s*(Katana|ChatGPT)\s+said:/i);
+          if (katanaSaid) {
+            const next = (lines[i + 1] || '').trim();
+            const sentence = next.replace(/^[-*]\s*/, '').trim();
+            if (sentence.length >= 8 && sentence.length <= 240) {
+              speechPhrases.push(sentence);
+              behavioral.push({
+                situation: 'conversation follow-up',
+                response: sentence
+              });
+            }
+          }
+        }
+      }
+
+      const dedup = <T>(arr: T[]) => Array.from(new Set(arr));
+      const mergedSpeech = dedup([
+        ...blueprint.speechPatterns.map(p => p.pattern),
+        ...speechPhrases
+      ]).slice(0, 20);
+
+      const speechPatterns = mergedSpeech.map(pattern => ({
+        pattern,
+        type: 'vocabulary' as const,
+        frequency: 1,
+        examples: [pattern],
+        pairIndices: []
+      }));
+
+      const mergedBehavioral = [
+        ...blueprint.behavioralMarkers,
+        ...behavioral.slice(0, 10).map(b => ({
+          situation: b.situation,
+          responsePattern: b.response,
+          frequency: 1,
+          examples: [],
+          pairIndices: []
+        }))
+      ].slice(0, 15);
+
+      return {
+        ...blueprint,
+        speechPatterns,
+        behavioralMarkers: mergedBehavioral
+      };
+    } catch (err) {
+      console.warn('[IdentityMatcher] Transcript enrichment skipped:', err);
+      return blueprint;
+    }
   }
 
   /**
@@ -192,7 +285,7 @@ export class IdentityMatcher {
       ? this.mergeBlueprints(existingBlueprint, blueprint)
       : blueprint;
 
-    // Write blueprint
+    // Write blueprint to primary location
     await fs.writeFile(
       personalityPath,
       JSON.stringify(finalBlueprint, null, 2),
@@ -200,6 +293,23 @@ export class IdentityMatcher {
     );
 
     console.log(`✅ [IdentityMatcher] Persisted personality blueprint: ${personalityPath}`);
+    
+    // Also save to identity/ folder for compatibility
+    const identityDir = path.join(instanceDir, 'identity');
+    try {
+      await fs.mkdir(identityDir, { recursive: true });
+      const identityBlueprintPath = path.join(identityDir, 'personality.json');
+      await fs.writeFile(
+        identityBlueprintPath,
+        JSON.stringify(finalBlueprint, null, 2),
+        'utf-8'
+      );
+      console.log(`✅ [IdentityMatcher] Also saved blueprint to identity folder: ${identityBlueprintPath}`);
+    } catch (identityError) {
+      // Non-critical - identity folder might not be needed
+      console.warn(`⚠️ [IdentityMatcher] Failed to save blueprint to identity folder (non-critical):`, identityError);
+    }
+    
     return personalityPath;
   }
 
@@ -222,25 +332,64 @@ export class IdentityMatcher {
     try {
       const vvaultUserId = await this.resolveVVAULTUserId(userId);
       const shardId = 'shard_0000';
-
-      const personalityPath = path.join(
+      const instancesBase = path.join(
         this.vvaultRoot,
         'users',
         shardId,
         vvaultUserId,
-        'instances',
-        `${constructId}-${callsign}`,
-        'personality.json'
+        'instances'
       );
 
-      const content = await fs.readFile(personalityPath, 'utf-8');
-      const blueprint = JSON.parse(content) as PersonalityBlueprint;
-      if (!blueprint.personalIdentifiers) {
-        blueprint.personalIdentifiers = [];
+      // Try multiple location patterns (in order of preference)
+      // 1. Full callsign format: instances/{constructId}-{callsign}/personality.json
+      // 2. Callsign-only format: instances/{callsign}/personality.json (for katana-001)
+      // 3. Identity folder: instances/{callsign}/identity/personality.json
+      // 4. Legacy gpt- prefix: instances/gpt-{callsign}/personality.json
+      const candidatePaths = [
+        path.join(instancesBase, `${constructId}-${callsign}`, 'personality.json'),
+        path.join(instancesBase, callsign, 'personality.json'), // e.g., instances/katana-001/personality.json
+        path.join(instancesBase, callsign, 'identity', 'personality.json'), // e.g., instances/katana-001/identity/personality.json
+        path.join(instancesBase, `gpt-${callsign}`, 'personality.json'), // e.g., instances/gpt-katana-001/personality.json
+        path.join(instancesBase, `gpt-${callsign}`, 'identity', 'personality.json'),
+      ];
+
+      // Also try if callsign already includes constructId (e.g., "katana-001" passed as callsign)
+      if (callsign.includes('-')) {
+        candidatePaths.unshift(
+          path.join(instancesBase, callsign, 'personality.json'), // Already added, but prioritize
+          path.join(instancesBase, callsign, 'identity', 'personality.json')
+        );
       }
 
-      console.log(`✅ [IdentityMatcher] Loaded personality blueprint: ${personalityPath}`);
-      return blueprint;
+      for (const personalityPath of candidatePaths) {
+        try {
+          const content = await fs.readFile(personalityPath, 'utf-8');
+          let blueprint = JSON.parse(content) as PersonalityBlueprint;
+          if (!blueprint.personalIdentifiers) {
+            blueprint.personalIdentifiers = [];
+          }
+
+          // Merge capsule metadata + signatures/memories into blueprint
+          const capsuleData = await this.loadCapsuleData(userId, constructId, callsign);
+          if (capsuleData) {
+            blueprint = this.mergeCapsuleDataIntoBlueprint(blueprint, capsuleData);
+          }
+
+          // Enrich from transcripts if available to give the validator more real phrasing
+          blueprint = await this.enrichBlueprintFromTranscripts(vvaultUserId, callsign, blueprint);
+
+          console.log(`✅ [IdentityMatcher] Loaded personality blueprint: ${personalityPath}`);
+          return blueprint;
+        } catch (error) {
+          // File doesn't exist at this location, try next
+          continue;
+        }
+      }
+
+      // None found
+      console.warn(`⚠️ [IdentityMatcher] Personality blueprint not found in any location for ${constructId}-${callsign}`);
+      console.warn(`⚠️ [IdentityMatcher] Tried paths:`, candidatePaths);
+      return null;
     } catch (error) {
       console.warn(`⚠️ [IdentityMatcher] Failed to load personality blueprint:`, error);
       return null;
@@ -324,6 +473,138 @@ export class IdentityMatcher {
   }
 
   /**
+   * Merge capsule metadata, signatures, and memories into blueprint.
+   */
+  private mergeCapsuleDataIntoBlueprint(
+    blueprint: PersonalityBlueprint,
+    capsule: any
+  ): PersonalityBlueprint {
+    const updated: PersonalityBlueprint = {
+      ...blueprint,
+      speechPatterns: [...blueprint.speechPatterns],
+      memoryAnchors: [...blueprint.memoryAnchors],
+      consistencyRules: [...blueprint.consistencyRules],
+      personalIdentifiers: [...(blueprint.personalIdentifiers || [])],
+      metadata: {
+        ...blueprint.metadata,
+        instance_name: capsule?.metadata?.instance_name || blueprint.metadata.instance_name,
+        capsuleEnvironment: capsule?.environment || blueprint.metadata.capsuleEnvironment,
+        lexicalSignatures: capsule?.additional_data?.lexical_signatures || blueprint.metadata.lexicalSignatures,
+        detectionRubric: capsule?.additional_data?.detection_rubric || blueprint.metadata.detectionRubric
+      }
+    };
+
+    const addSpeechPattern = (pattern?: string) => {
+      const normalized = (pattern || '').trim();
+      if (!normalized) return;
+      const exists = updated.speechPatterns.some(
+        sp => sp.pattern.toLowerCase() === normalized.toLowerCase()
+      );
+      if (!exists) {
+        updated.speechPatterns.unshift({
+          pattern: normalized,
+          type: 'vocabulary',
+          frequency: 1,
+          examples: [normalized],
+          pairIndices: []
+        });
+      }
+    };
+
+    const addMemoryAnchor = (
+      anchor?: string,
+      type: MemoryAnchor['type'] = 'defining-moment',
+      context: string = 'capsule',
+      significance = 0.85
+    ) => {
+      const normalized = (anchor || '').trim();
+      if (!normalized) return;
+      updated.memoryAnchors.unshift({
+        anchor: normalized,
+        type,
+        significance,
+        timestamp: new Date().toISOString(),
+        pairIndex: updated.memoryAnchors.length,
+        context
+      });
+    };
+
+    const addConsistencyRule = (
+      rule?: string,
+      type: ConsistencyRule['type'] = 'behavior',
+      examples: string[] = []
+    ) => {
+      const normalized = (rule || '').trim();
+      if (!normalized) return;
+      const exists = updated.consistencyRules.some(
+        r => r.rule.toLowerCase() === normalized.toLowerCase()
+      );
+      if (!exists) {
+        updated.consistencyRules.unshift({
+          rule: normalized,
+          type,
+          source: 'capsule',
+          confidence: 0.95,
+          examples
+        });
+      }
+    };
+
+    const addSelfIdentifier = (value?: string) => {
+      const normalized = (value || '').trim();
+      if (!normalized) return;
+      const exists = updated.personalIdentifiers.some(
+        id => id.type === 'self-name' && id.value.toLowerCase() === normalized.toLowerCase()
+      );
+      if (!exists) {
+        updated.personalIdentifiers.unshift({
+          type: 'self-name',
+          value: normalized,
+          salience: 0.99,
+          evidence: ['capsule-metadata'],
+          lastSeen: new Date().toISOString()
+        });
+      }
+    };
+
+    addSelfIdentifier(updated.metadata.instance_name);
+
+    if (capsule?.signatures?.linguistic_sigil) {
+      addSpeechPattern(capsule.signatures.linguistic_sigil.signature_phrase);
+      (capsule.signatures.linguistic_sigil.common_phrases || []).forEach(phrase => addSpeechPattern(phrase));
+    }
+    (capsule?.additional_data?.lexical_signatures || []).forEach((phrase: string) => addSpeechPattern(phrase));
+
+    const memory = capsule?.memory || {};
+    (memory.short_term_memories || []).forEach((entry: string) =>
+      addMemoryAnchor(entry, 'defining-moment', 'capsule:short-term', 0.82)
+    );
+    (memory.long_term_memories || []).forEach((entry: string) =>
+      addMemoryAnchor(entry, 'core-statement', 'capsule:long-term', 0.9)
+    );
+    (memory.emotional_memories || []).forEach((entry: string) =>
+      addMemoryAnchor(entry, 'relationship-marker', 'capsule:emotional', 0.87)
+    );
+    (memory.episodic_memories || []).forEach((entry: string) =>
+      addMemoryAnchor(entry, 'defining-moment', 'capsule:episodic', 0.8)
+    );
+
+    (memory.procedural_memories || []).forEach((entry: string) =>
+      addConsistencyRule(entry, 'behavior')
+    );
+
+    const rubricClasses = capsule?.additional_data?.detection_rubric?.classes;
+    if (rubricClasses) {
+      Object.entries(rubricClasses).forEach(([className, details]) => {
+        const detailText = Array.isArray(details) ? details.join(', ') : JSON.stringify(details);
+        addConsistencyRule(`Detection rubric for ${className}: ${detailText}`, 'identity');
+      });
+    }
+
+    return updated;
+  }
+
+  /**
    * Resolve VVAULT user ID from Chatty user ID
    */
   private async resolveVVAULTUserId(userId: string): Promise<string> {
@@ -344,5 +625,52 @@ export class IdentityMatcher {
     
     // Fallback: assume userId is vvaultUserId
     return userId;
+  }
+
+  private async loadCapsuleData(userId: string, constructId: string, callsign: string): Promise<any | null> {
+    try {
+      const fs = await dynamicNodeImport('fs/promises');
+      const path = await dynamicNodeImport('path');
+      const vvaultUserId = await this.resolveVVAULTUserId(userId);
+      const capsuleDir = path.join(
+        this.vvaultRoot,
+        'users',
+        'shard_0000',
+        vvaultUserId,
+        'capsules'
+      );
+
+      const normalizedCallsign = (callsign || '').toString().trim();
+      const normalizedConstruct = (constructId || '').toString().trim();
+      const candidates = new Set<string>();
+
+      if (normalizedCallsign) {
+        candidates.add(normalizedCallsign);
+      }
+      if (normalizedConstruct && normalizedCallsign) {
+        const joined = normalizedCallsign.includes('-')
+          ? normalizedCallsign
+          : `${normalizedConstruct.replace(/-$/, '')}-${normalizedCallsign.replace(/^-/, '')}`;
+        candidates.add(joined);
+      }
+      if (normalizedConstruct) {
+        candidates.add(normalizedConstruct);
+      }
+
+      for (const candidate of Array.from(candidates)) {
+        const capsulePath = path.join(capsuleDir, `${candidate}.capsule`);
+        try {
+          const raw = await fs.readFile(capsulePath, 'utf-8');
+          const capsule = JSON.parse(raw);
+          return capsule;
+        } catch {
+          continue;
+        }
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
   }
 }

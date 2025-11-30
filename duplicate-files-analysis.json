@@ -3974,23 +3974,17 @@
       "hash": "677ef90b0070c14156ec18f722024aedb2fb8ea74ff36076a797d165ca261b43"
     },
     {
-      "duplicatePath": "/Users/devonwoodson/Documents/GitHub/chatty/src/engine/orchestration/SynthMemoryOrchestrator 2.ts",
-      "duplicateName": "SynthMemoryOrchestrator 2.ts",
       "originalPath": "/Users/devonwoodson/Documents/GitHub/chatty/src/engine/orchestration/SynthMemoryOrchestrator.ts",
       "originalName": "SynthMemoryOrchestrator.ts",
       "number": "2",
-      "relativePath": "src/engine/orchestration/SynthMemoryOrchestrator 2.ts",
       "originalRelativePath": "src/engine/orchestration/SynthMemoryOrchestrator.ts",
       "size": 13285,
       "hash": "7a53ab013579892e7af061406b6b9757f7a53dc77adb59150ccd7a407a8931f6"
     },
     {
-      "duplicatePath": "/Users/devonwoodson/Documents/GitHub/chatty/src/engine/orchestration/types 2.ts",
-      "duplicateName": "types 2.ts",
       "originalPath": "/Users/devonwoodson/Documents/GitHub/chatty/src/engine/orchestration/types.ts",
       "originalName": "types.ts",
       "number": "2",
-      "relativePath": "src/engine/orchestration/types 2.ts",
       "originalRelativePath": "src/engine/orchestration/types.ts",
       "size": 1431,
       "hash": "a7adde4c0c0d7c2a1cb9419b9e200fd8cb7e71037d9d0f2061db14a8c6244f5d"

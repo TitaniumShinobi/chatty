@@ -188,7 +188,7 @@ export class VVAULTConversationManager {
     userId: string,
     sessionOrTitle: string,
     titleOverride?: string,
-    constructId = 'lin'  // Default to 'lin' - only 'synth' conversations use 'synth'
+    constructId: string  // Required - no default, must be determined by orchestration
   ): Promise<ConversationThread> {
     await this.initializeVVAULT();
 

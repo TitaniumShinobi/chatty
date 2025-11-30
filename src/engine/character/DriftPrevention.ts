@@ -10,6 +10,7 @@ import type { PersonalityBlueprint } from '../transcript/types';
 import type { ConversationContext } from '../character/types';
 import { detectTone, detectToneEnhanced } from '../../lib/toneDetector';
 import { runSeat } from '../seatRunner';
+import { GreetingSynthesizer } from './GreetingSynthesizer';
 
 export interface DriftDetection {
   detected: boolean;
@@ -49,7 +50,7 @@ export class DriftPrevention {
     }
 
     // 2. Check vocabulary consistency
-    const vocabDrift = this.checkVocabularyDrift(response, blueprint);
+    const vocabDrift = this.checkVocabularyDrift(response, blueprint, context);
     if (vocabDrift) {
       indicators.push(vocabDrift);
     }
@@ -128,7 +129,8 @@ export class DriftPrevention {
    */
   private checkVocabularyDrift(
     response: string,
-    blueprint: PersonalityBlueprint
+    blueprint: PersonalityBlueprint,
+    context?: ConversationContext
   ): DriftIndicator | null {
     const responseWords = new Set(
       response.toLowerCase().match(/\b\w+\b/g) || []
@@ -145,13 +147,20 @@ export class DriftPrevention {
 
     // Check if response contains expected vocabulary
     let foundExpectedVocab = false;
+    let matchedPattern = '';
     for (const pattern of vocabularyPatterns.slice(0, 5)) {
-      const patternWords = pattern.pattern.toLowerCase().split(/[,\s]+/);
-      if (patternWords.some(word => responseWords.has(word))) {
+      const patternWords = pattern.pattern.toLowerCase().split(/[,\s]+/).filter(Boolean);
+      const overlap = patternWords.filter(word => responseWords.has(word)).length;
+      if (overlap >= Math.max(1, Math.ceil(patternWords.length * 0.5))) {
         foundExpectedVocab = true;
+        matchedPattern = pattern.pattern;
         break;
       }
     }
+
+    const isGreeting = context?.userMessage
+      ? new GreetingSynthesizer().isGreetingOrOpener(context.userMessage)
+      : false;
 
     // If we have strong vocabulary patterns but response doesn't use them, it's a drift
     if (!foundExpectedVocab && vocabularyPatterns.length > 0) {
@@ -160,8 +169,22 @@ export class DriftPrevention {
         type: 'vocabulary-change',
         description: `Response doesn't use expected vocabulary patterns (e.g., "${topPattern.pattern}")`,
         evidence: response.substring(0, 100),
-        severity: 'low',
+        severity: isGreeting ? 'high' : 'medium',
       };
+    }
+
+    // Extra guard: greeting with casual slang instead of blueprint vocabulary
+    if (isGreeting) {
+      const casualPatterns = [/\byo\b/i, /\bhey\b/i, /\bhi\b/i, /\bwhat's up\b/i];
+      const usesCasual = casualPatterns.some(p => p.test(response));
+      if (usesCasual && (!matchedPattern || !response.includes(matchedPattern))) {
+        return {
+          type: 'vocabulary-change',
+          description: 'Greeting response used casual slang instead of blueprint vocabulary',
+          evidence: response.substring(0, 100),
+          severity: 'high',
+        };
+      }
     }
 
     return null;
@@ -520,4 +543,3 @@ Corrected Response (maintain same meaning but fix personality drift):`;
     return blueprint;
   }
 }
-

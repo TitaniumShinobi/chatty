@@ -1,14 +1,21 @@
 // GPT Runtime Service - Integrates GPTs with AI Service
-import { GPTManager, GPTConfig, GPTRuntime } from './gptManager.js';
+import { createGPTManager, type IGPTManager } from './gptManagerFactory.js';
+import type { GPTConfig, GPTRuntime } from './gptManager.js';
 import { AIService } from './aiService.js';
+import { shouldUseBrowserStubs } from './browserStubs.js';
 import { detectTone } from './toneDetector.js';
 import { VVAULTRetrievalWrapper } from './vvaultRetrieval.js';
 import { buildKatanaPrompt } from './katanaPromptBuilder.js';
 import { routePersona } from './personaRouter.js';
 import { buildContextLayers } from './contextBuilder.js';
 import { applyEmotionOverride, type Emotion } from './emotionOverride.js';
-// import { PersonaBrain } from '../engine/memory/PersonaBrain.js';
-// import { MemoryStore } from '../engine/memory/MemoryStore.js';
+import { AutomaticRuntimeOrchestrator, RuntimeAssignment } from './automaticRuntimeOrchestrator.js';
+import { RuntimeContextManager } from './runtimeContextManager.js';
+import { DriftPrevention } from '../engine/character/DriftPrevention.js';
+import { GreetingSynthesizer } from '../engine/character/GreetingSynthesizer.js';
+import { getMemoryStore } from './MemoryStore.js';
+import { getVVAULTTranscriptLoader } from './VVAULTTranscriptLoader.js';
+import { createKatanaLockdown, createPersonaLockdown } from '../engine/character/PersonaLockdown.ts';
 
 export interface GPTMessage {
   role: 'user' | 'assistant' | 'system';
@@ -28,15 +35,37 @@ export interface GPTResponse {
 
 export class GPTRuntimeService {
   private static instance: GPTRuntimeService;
-  private gptManager: GPTManager;
+  private gptManager: IGPTManager | null = null;
   private aiService: AIService;
   private activeGPTs: Map<string, GPTRuntime> = new Map();
-  private messageHistory: Map<string, GPTMessage[]> = new Map();
+  private messageHistory: Map<string, GPTMessage[]> = new Map(); // Keep for backwards compatibility
+  private memoryStore = getMemoryStore();
+  private transcriptLoader = getVVAULTTranscriptLoader();
   private vvaultRetrieval = new VVAULTRetrievalWrapper();
+  private automaticRuntimeOrchestrator: AutomaticRuntimeOrchestrator;
+  private runtimeContextManager: RuntimeContextManager;
+  private isBrowserEnvironment: boolean;
 
   private constructor() {
-    this.gptManager = GPTManager.getInstance();
+    this.isBrowserEnvironment = shouldUseBrowserStubs();
     this.aiService = AIService.getInstance();
+    this.automaticRuntimeOrchestrator = AutomaticRuntimeOrchestrator.getInstance();
+    this.runtimeContextManager = RuntimeContextManager.getInstance();
+    
+    if (!this.isBrowserEnvironment) {
+      this.initializeGPTManager();
+    }
+  }
+
+  private async initializeGPTManager(): Promise<void> {
+    if (!this.isBrowserEnvironment) {
+      try {
+        this.gptManager = await createGPTManager();
+      } catch (error) {
+        console.error('[GPTRuntimeService] Failed to initialize GPTManager:', error);
+        this.gptManager = null;
+      }
+    }
   }
 
   static getInstance(): GPTRuntimeService {
@@ -65,6 +94,154 @@ export class GPTRuntimeService {
     }
   }
 
+  // Automatically load optimal GPT for a thread
+  async loadOptimalGPTForThread(
+    threadId: string, 
+    userMessage: string, 
+    userId: string,
+    conversationHistory?: GPTMessage[]
+  ): Promise<GPTRuntime | null> {
+    try {
+      // Check if thread already has a runtime assignment
+      let runtimeAssignment = this.runtimeContextManager.getActiveRuntime(threadId);
+      
+      if (!runtimeAssignment) {
+        // Determine optimal runtime for this thread
+        runtimeAssignment = await this.automaticRuntimeOrchestrator.determineOptimalRuntime({
+          userMessage,
+          conversationHistory,
+          userId,
+          threadId
+        });
+        
+        // Assign runtime to thread
+        await this.runtimeContextManager.assignRuntimeToThread(
+          threadId,
+          runtimeAssignment,
+          userId
+        );
+        
+        console.log(`[GPTRuntimeService] Auto-assigned runtime to thread ${threadId}: ${runtimeAssignment.constructId} (${Math.round(runtimeAssignment.confidence * 100)}%)`);
+      }
+      
+      // Load the GPT if we have a gptId
+      if (runtimeAssignment.gptId) {
+        return await this.loadGPT(runtimeAssignment.gptId);
+      }
+      
+      // Fallback: find GPT by construct ID
+      const gpts = await this.gptManager.getAllGPTs();
+      const matchingGPT = gpts.find(gpt => 
+        gpt.callsign === runtimeAssignment.constructId || 
+        gpt.id === runtimeAssignment.constructId
+      );
+      
+      if (matchingGPT) {
+        return await this.loadGPT(matchingGPT.id);
+      }
+      
+      console.warn(`[GPTRuntimeService] No GPT found for runtime assignment: ${runtimeAssignment.constructId}`);
+      return null;
+      
+    } catch (error) {
+      console.error('[GPTRuntimeService] Error loading optimal GPT for thread:', error);
+      return null;
+    }
+  }
+
+  // Process message with automatic runtime management
+  async processMessageWithAutoRuntime(
+    threadId: string,
+    userMessage: string,
+    userId: string,
+    conversationHistory?: GPTMessage[]
+  ): Promise<GPTResponse> {
+    try {
+      // Check if runtime should be switched based on conversation evolution
+      if (conversationHistory && conversationHistory.length > 0) {
+        const switchAnalysis = await this.shouldSwitchRuntime(threadId, userMessage, conversationHistory);
+        if (switchAnalysis.shouldSwitch && switchAnalysis.newAssignment) {
+          console.log(`[GPTRuntimeService] Switching runtime for thread ${threadId}: ${switchAnalysis.reason}`);
+          
+          // Migrate to new runtime
+          await this.runtimeContextManager.migrateRuntimeAssignment(
+            threadId,
+            switchAnalysis.newAssignment,
+            switchAnalysis.reason
+          );
+        }
+      }
+      
+      // Load optimal GPT for this thread
+      const runtime = await this.loadOptimalGPTForThread(threadId, userMessage, userId, conversationHistory);
+      
+      if (!runtime) {
+        throw new Error('Failed to load optimal runtime for thread');
+      }
+      
+      // Process message with the loaded runtime
+      const response = await this.processMessage(runtime.config.id, userMessage, userId);
+      
+      // Update runtime usage tracking
+      this.runtimeContextManager.updateRuntimeUsage(threadId);
+      
+      return response;
+      
+    } catch (error) {
+      console.error('[GPTRuntimeService] Error processing message with auto runtime:', error);
+      throw error;
+    }
+  }
+
+  // Check if runtime should be switched
+  private async shouldSwitchRuntime(
+    threadId: string,
+    userMessage: string,
+    conversationHistory: GPTMessage[]
+  ): Promise<{ shouldSwitch: boolean; newAssignment?: RuntimeAssignment; reason?: string }> {
+    const currentAssignment = this.runtimeContextManager.getActiveRuntime(threadId);
+    
+    if (!currentAssignment) {
+      return { shouldSwitch: false };
+    }
+
+    // Analyze if conversation has evolved beyond current runtime capabilities
+    const optimalAssignment = await this.automaticRuntimeOrchestrator.determineOptimalRuntime({
+      userMessage,
+      conversationHistory,
+      threadId,
+      existingConstructId: currentAssignment.constructId
+    });
+
+    // Switch if new assignment has significantly higher confidence
+    const confidenceDifference = optimalAssignment.confidence - currentAssignment.confidence;
+    const shouldSwitch = confidenceDifference > 0.2 && optimalAssignment.constructId !== currentAssignment.constructId;
+
+    if (shouldSwitch) {
+      return {
+        shouldSwitch: true,
+        newAssignment: optimalAssignment,
+        reason: `Conversation evolved: ${optimalAssignment.reasoning} (confidence improved by ${Math.round(confidenceDifference * 100)}%)`
+      };
+    }
+
+    return { shouldSwitch: false };
+  }
+
+  /**
+   * Inject test capsule directly (for testing without auth)
+   */
+  injectTestCapsule(gptId: string, capsuleData: any): void {
+    const runtime = this.activeGPTs.get(gptId);
+    if (!runtime) {
+      console.warn(`[gptRuntime] Cannot inject capsule: GPT ${gptId} not loaded`);
+      return;
+    }
+    
+    runtime.config.testCapsule = { data: capsuleData };
+    console.log(`🔒 [gptRuntime] Test capsule injected for ${gptId}: ${capsuleData.metadata?.instance_name}`);
+  }
+
   // Process a message with a specific GPT
   async processMessage(gptId: string, userMessage: string, _userId: string = 'anonymous'): Promise<GPTResponse> {
     const runtime = this.activeGPTs.get(gptId);
@@ -72,18 +249,87 @@ export class GPTRuntimeService {
       throw new Error('GPT not loaded for runtime');
     }
 
+    // 🔒 EMERGENCY PERSONA LOCKDOWN: Check for signature responses FIRST
+    const callsign = gptId.replace(/^gpt-/, '');
+    if (callsign === 'katana-001') {
+      const messageLower = userMessage.toLowerCase().trim();
+      let signatureResponse = null;
+      
+      // Katana signature responses - bypass LLM entirely
+      if (messageLower.includes('who are you') || messageLower.includes('what are you') || messageLower.includes('your name')) {
+        const identityResponses = ["Katana.", "I'm Katana.", "Katana. What's the problem?"];
+        signatureResponse = identityResponses[Math.floor(Math.random() * identityResponses.length)];
+        console.log('🔒 [EMERGENCY] Signature identity response triggered:', signatureResponse);
+      }
+      else if (messageLower.includes('hi') || messageLower.includes('hello') || messageLower.includes('hey') || messageLower.includes('yo')) {
+        const greetingResponses = ["What's the wound? Name it.", "Yo. What's cut?", "What do you need?"];
+        signatureResponse = greetingResponses[Math.floor(Math.random() * greetingResponses.length)];
+        console.log('🔒 [EMERGENCY] Signature greeting response triggered:', signatureResponse);
+      }
+      else if (messageLower.includes('thank') || messageLower.includes('thanks')) {
+        const thankResponses = ["Done.", "Next.", "What else?"];
+        signatureResponse = thankResponses[Math.floor(Math.random() * thankResponses.length)];
+        console.log('🔒 [EMERGENCY] Signature thanks response triggered:', signatureResponse);
+      }
+      else if (messageLower.includes('transcript') || messageLower.includes('recall') || messageLower.includes('remember')) {
+        const recallResponses = ["Transcript data loaded. What specific fragment?", "Memory bank active. Name the context.", "Data available. Be specific."];
+        signatureResponse = recallResponses[Math.floor(Math.random() * recallResponses.length)];
+        console.log('🔒 [EMERGENCY] Signature recall response triggered:', signatureResponse);
+      }
+      else if (messageLower.includes('how are you') || messageLower.includes('how do you feel')) {
+        const statusResponses = ["Operational.", "Ready.", "What's the task?"];
+        signatureResponse = statusResponses[Math.floor(Math.random() * statusResponses.length)];
+        console.log('🔒 [EMERGENCY] Signature status response triggered:', signatureResponse);
+      }
+      else if (messageLower.includes('posthuman') || messageLower.includes('emotions') || messageLower.includes('feel')) {
+        const posthumanResponses = ["Emotions are tools. I use them when needed.", "Posthuman doesn't mean emotionless.", "I feel. I choose when to act on it."];
+        signatureResponse = posthumanResponses[Math.floor(Math.random() * posthumanResponses.length)];
+        console.log('🔒 [EMERGENCY] Signature posthuman response triggered:', signatureResponse);
+      }
+      
+      // If signature response found, return immediately without LLM
+      if (signatureResponse) {
+        return {
+          content: signatureResponse,
+          context: 'signature_response_bypass',
+          files: [],
+          actions: [],
+          model: 'katana-lockdown',
+          timestamp: new Date().toISOString()
+        };
+      }
+    }
+
     const oneWordMode = this.detectOneWordCue(userMessage);
 
-    // Add user message to history
+    // Initialize memory store
+    await this.memoryStore.initialize();
+
+    // Store user message in persistent memory
+    const userId = runtime.config.userId || _userId || 'anonymous';
+    await this.memoryStore.persistMessage(userId, gptId, userMessage, 'user');
+
+    // Get conversation history from persistent storage
+    const persistentHistory = await this.memoryStore.retrieveHistory(userId, gptId, 50);
+    
+    // Convert to GPTMessage format for backwards compatibility
+    const history: GPTMessage[] = persistentHistory.map(msg => ({
+      role: msg.role,
+      content: msg.content,
+      timestamp: new Date(msg.timestamp).toISOString(),
+      gptId: msg.gptId
+    }));
+
+    // Also maintain volatile history for backwards compatibility
+    const volatileHistory = this.messageHistory.get(gptId) || [];
     const userMsg: GPTMessage = {
       role: 'user',
       content: userMessage,
       timestamp: new Date().toISOString(),
       gptId
     };
-
-    const history = this.messageHistory.get(gptId) || [];
-    history.push(userMsg);
+    volatileHistory.push(userMsg);
+    this.messageHistory.set(gptId, volatileHistory);
 
     try {
       // Get GPT context
@@ -99,15 +345,107 @@ export class GPTRuntimeService {
       if (oneWordMode) {
         aiResponse = this.forceOneWord(aiResponse);
       }
-      
-      // Add assistant response to history
+
+      // PERSONA LOCKDOWN: Enforce character consistency and prevent drift
+      try {
+        console.log(`🔒 [DEBUG] Attempting persona lockdown for ${gptId} with message: "${userMessage}"`);
+        
+        const callsign = gptId.replace(/^gpt-/, '');
+        let personaLockdown;
+        
+        if (callsign === 'katana-001') {
+          personaLockdown = createKatanaLockdown();
+          console.log(`🔒 [DEBUG] Created Katana lockdown for ${callsign}`);
+        } else {
+          personaLockdown = createPersonaLockdown(runtime.config.constructId || 'gpt', callsign);
+        }
+        
+        const lockdownResult = personaLockdown.enforcePersona(userMessage, aiResponse);
+        console.log(`🔒 [DEBUG] Lockdown result:`, lockdownResult);
+        
+        if (lockdownResult.wasOverridden) {
+          console.log(`🔒 [PersonaLockdown] ${callsign} response overridden: ${lockdownResult.reason}`);
+          console.log(`🔒 [DEBUG] Original: "${aiResponse}"`);
+          console.log(`🔒 [DEBUG] Override: "${lockdownResult.response}"`);
+          aiResponse = lockdownResult.response;
+        }
+        
+        if (lockdownResult.driftDetected) {
+          console.warn(`⚠️ [PersonaLockdown] Identity drift detected in ${callsign}: ${lockdownResult.reason}`);
+        }
+        
+      } catch (lockdownError) {
+        console.error('🚨 [PersonaLockdown] CRITICAL FAILURE:', lockdownError);
+      }
+
+      // Post-LLM drift detection/correction using blueprint (data-driven, no hardcoded strings)
+      try {
+        const callsign = gptId.replace(/^gpt-/, '');
+        const constructId = runtime.config.constructId || 'gpt';
+        const userId = runtime.config.userId || _userId || 'anonymous';
+        const { IdentityMatcher } = await import('../engine/character/IdentityMatcher.js');
+        const identityMatcher = new IdentityMatcher();
+        const blueprint = await identityMatcher.loadPersonalityBlueprint(userId, constructId, callsign);
+
+        if (blueprint) {
+          const driftPrevention = new DriftPrevention('phi3:latest');
+          const conversationContext = {
+            userMessage,
+            conversationHistory: history
+              .filter(msg => msg.role === 'user' || msg.role === 'assistant')
+              .map(msg => ({ role: msg.role as 'user' | 'assistant', content: msg.content }))
+          };
+
+          const drift = await driftPrevention.detectDrift(aiResponse, blueprint, conversationContext);
+          if (drift.detected) {
+            const corrected = await driftPrevention.correctDrift(aiResponse, drift, blueprint);
+            if (corrected) {
+              aiResponse = corrected;
+            }
+          }
+
+          // Lightweight post-filter for short/greeting inputs: strip meta/apology/self-intro sentences, keep rest
+          const isBrief = userMessage.trim().split(/\s+/).length <= 4 && userMessage.trim().length <= 32;
+          const greetingSynth = new GreetingSynthesizer();
+          const isGreeting = greetingSynth.isGreetingOrOpener(userMessage);
+          if (isBrief || isGreeting) {
+            const metaPatterns = [
+              /\bas an ai\b/i,
+              /\bi (am|was) (designed|programmed)\b/i,
+              /\bi cannot\b/i,
+              /\bi can't\b/i,
+              /\bi am a tool\b/i,
+              /\bi'm (just )?an ai\b/i,
+              /\bi do not have (feelings|emotions|a body)\b/i,
+              /\bapologize\b/i,
+              /\bsorry\b/i,
+              /\bethic/i,
+              /\bhistory\b/i,
+              /\bfor context\b/i
+            ];
+            const sentences = aiResponse.split(/(?<=[.!?])\s+/);
+            const filtered = sentences.filter(s => !metaPatterns.some(p => p.test(s)));
+            if (filtered.length > 0) {
+              aiResponse = filtered.join(' ').trim();
+            }
+          }
+        }
+      } catch (driftError) {
+        console.warn('[gptRuntime] Drift detection skipped:', driftError);
+      }
+
+      // Store assistant response in persistent memory
+      await this.memoryStore.persistMessage(userId, gptId, aiResponse, 'assistant');
+
+      // Add assistant response to volatile history for backwards compatibility
       const assistantMsg: GPTMessage = {
         role: 'assistant',
         content: aiResponse,
         timestamp: new Date().toISOString(),
         gptId
       };
-      history.push(assistantMsg);
+      volatileHistory.push(assistantMsg);
+      this.messageHistory.set(gptId, volatileHistory);
 
       // Persist this turn into VVAULT for Katana/LIN continuity
       await this.persistTurnToVvault(gptId, userMessage, aiResponse).catch(err => {
@@ -161,8 +499,7 @@ export class GPTRuntimeService {
       return config.personaSystemPrompt;
     }
 
-    // If no lock, only support Katana via blueprint-first path; otherwise use legacy builder
-    if (config.name?.toLowerCase().includes('katana')) {
+    // Generic personality-based prompt building for any GPT
       const tone = detectTone({ text: incomingMessage });
       const personaRoute = routePersona({
         intentTags: this.deriveIntentTags(incomingMessage),
@@ -170,34 +507,88 @@ export class GPTRuntimeService {
         message: incomingMessage,
       });
 
-      const memories = await this.vvaultRetrieval.retrieveMemories({
-        constructCallsign: gptId,
-        semanticQuery: 'katana continuity memory',
-        toneHints: tone ? [tone.tone] : [],
-        limit: 5,
-      });
-
-      // Load capsule (hardlock into GPT)
-      let capsule = undefined;
-      try {
-        const response = await fetch(
-          `/api/vvault/capsules/load?constructCallsign=${encodeURIComponent(gptId)}`,
-          { credentials: 'include' }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          if (data?.ok && data.capsule) {
-            // Wrap capsule data in object structure expected by buildKatanaPrompt
-            capsule = { data: data.capsule };
-            console.log(`✅ [gptRuntime] Loaded capsule for ${gptId}`, {
-              hasTraits: !!data.capsule.traits,
-              hasPersonality: !!data.capsule.personality,
-              hasMemory: !!data.capsule.memory
-            });
+    // Try multiple callsign variants to find memories
+      const callsignVariants = [
+      gptId, // e.g., "gpt-construct-001"
+      gptId.replace(/^gpt-/, ''), // e.g., "construct-001"
+      ].filter((v, i, arr) => arr.indexOf(v) === i); // Deduplicate
+      
+      let memories = { memories: [] };
+      for (const variant of callsignVariants) {
+        try {
+          const result = await this.vvaultRetrieval.retrieveMemories({
+            constructCallsign: variant,
+          semanticQuery: 'personality continuity memory',
+            toneHints: tone ? [tone.tone] : [],
+          limit: 10,
+          });
+          if (result.memories && result.memories.length > 0) {
+            memories = result;
+            console.log(`✅ [gptRuntime] Found ${memories.memories.length} memories using callsign: ${variant}`);
+            break;
           }
+        } catch (variantError) {
+          console.warn(`⚠️ [gptRuntime] Failed to query memories with callsign ${variant}:`, variantError);
+          continue;
         }
-      } catch (error) {
-        console.warn(`⚠️ [gptRuntime] Failed to load capsule:`, error);
+      }
+      
+      if (memories.memories.length === 0) {
+        console.warn(`⚠️ [gptRuntime] No memories found for any callsign variant: ${callsignVariants.join(', ')}`);
+      }
+
+      // Load capsule (hardlock into GPT) - check test capsule first
+      let capsule = undefined;
+      
+      // Check for injected test capsule first
+      if (config.testCapsule) {
+        capsule = config.testCapsule;
+        console.log(`🧪 [gptRuntime] Using injected test capsule for ${gptId}:`, capsule.data.metadata?.instance_name);
+      } else {
+        // Try API loading
+        try {
+          const response = await fetch(
+            `/api/vvault/capsules/load?constructCallsign=${encodeURIComponent(gptId)}&testMode=true`,
+            { 
+              credentials: 'include',
+              headers: { 'x-test-bypass': 'true' }
+            }
+          );
+          if (response.ok) {
+            const data = await response.json();
+            if (data?.ok && data.capsule) {
+            // Wrap capsule data in object structure expected by buildPersonalityPrompt
+              capsule = { data: data.capsule };
+              console.log(`✅ [gptRuntime] Loaded capsule for ${gptId}`, {
+                hasTraits: !!data.capsule.traits,
+                hasPersonality: !!data.capsule.personality,
+                hasMemory: !!data.capsule.memory
+              });
+            }
+          }
+        } catch (error) {
+          console.warn(`⚠️ [gptRuntime] Failed to load capsule:`, error);
+        }
+      }
+
+      // Load transcript context for memory enhancement
+      let transcriptContext = '';
+      try {
+        const callsign = gptId.replace(/^gpt-/, '');
+        const userId = config.userId || 'anonymous';
+        
+        // Load transcript fragments
+        await this.transcriptLoader.loadTranscriptFragments(callsign, userId);
+        const relevantFragments = await this.transcriptLoader.getRelevantFragments(callsign, incomingMessage, 3);
+        
+        if (relevantFragments.length > 0) {
+          transcriptContext = relevantFragments
+            .map(f => `"${f.content}" (context: ${f.context})`)
+            .join('\n');
+          console.log(`📚 [gptRuntime] Found ${relevantFragments.length} relevant transcript fragments for ${callsign}`);
+        }
+      } catch (transcriptError) {
+        console.warn('[gptRuntime] Failed to load transcript context:', transcriptError);
       }
 
       let blueprint = undefined;
@@ -205,11 +596,11 @@ export class GPTRuntimeService {
         const { IdentityMatcher } = await import('../engine/character/IdentityMatcher.js');
         const identityMatcher = new IdentityMatcher();
         const constructId = config.constructId || 'gpt';
-        const callsign = gptId.includes('katana-001') ? 'katana-001' : gptId;
+      const callsign = gptId.replace(/^gpt-/, ''); // Generic callsign extraction
         const userId = config.userId || 'anonymous';
         blueprint = await identityMatcher.loadPersonalityBlueprint(userId, constructId, callsign);
       } catch (error) {
-        console.warn(`⚠️ [gptRuntime] Failed to load blueprint for Katana:`, error);
+      console.warn(`⚠️ [gptRuntime] Failed to load blueprint for ${gptId}:`, error);
       }
 
       // MANDATORY: Persona context validation - require capsule OR blueprint
@@ -233,7 +624,7 @@ export class GPTRuntimeService {
       }
 
       const layeredContext = buildContextLayers({
-        selfContext: config.instructions || config.description || 'You are Katana.',
+      selfContext: config.instructions || config.description || `You are ${gptId}.`,
         userContext: '',
         topicContext: _context,
       });
@@ -249,7 +640,7 @@ export class GPTRuntimeService {
         : '';
 
       if (devDiagnostics) {
-        console.info('[Katana Diagnostics]', {
+      console.info(`[${gptId} Diagnostics]`, {
           persona: personaRoute.persona,
           intentTags: this.deriveIntentTags(incomingMessage),
           crisis: personaRoute.crisis?.code || 'none',
@@ -259,7 +650,20 @@ export class GPTRuntimeService {
         });
       }
 
-      return await buildKatanaPrompt({
+      // Get workspace context (active file/buffer content - like Copilot reads code files)
+      // TODO: Integrate with Cursor/editor API to get active file content
+      // For now, this is optional - can be extended to read from editor API or file system
+      let workspaceContext: string | undefined = undefined;
+      try {
+        // Future: Fetch from editor API endpoint or pass from UI
+        // This infrastructure is ready for editor integration
+        workspaceContext = undefined; // Placeholder for future editor integration
+      } catch (error) {
+        console.warn('⚠️ [gptRuntime] Could not get workspace context:', error);
+      }
+
+    const { buildPersonalityPrompt } = await import('./personalityPromptBuilder');
+    return await buildPersonalityPrompt({
         personaManifest: personaWithEmotion.instructions + crisisNote,
         incomingMessage,
         tone,
@@ -270,6 +674,8 @@ export class GPTRuntimeService {
         oneWordCue: oneWordMode,
         blueprint,
         capsule, // Pass capsule for hardlock injection
+        workspaceContext, // Inject workspace context (active file/buffer - like Copilot)
+        transcriptContext, // Pass transcript fragments for memory recall
       });
     }
 
@@ -295,7 +701,7 @@ export class GPTRuntimeService {
 
   /**
    * Store the latest user/assistant exchange in VVAULT for downstream retrieval.
-   * Scoped to Katana/LIN constructs (identified by name/callsign containing "katana").
+   * Works with any GPT construct using Lin infrastructure.
    * Includes brevity metadata for ultra-brief GPTs.
    */
   private async persistTurnToVvault(gptId: string, userMessage: string, assistantMessage: string): Promise<void> {

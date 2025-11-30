@@ -52,7 +52,7 @@
     "@typescript-eslint/parser": "^6.0.0",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.16",
-    "better-sqlite3": "^12.3.0",
+    "better-sqlite3": "^12.4.6",
     "concurrently": "^8.2.2",
     "eslint": "^8.55.0",
     "eslint-plugin-react": "^7.33.2",

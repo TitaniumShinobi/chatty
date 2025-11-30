@@ -114,7 +114,7 @@ export interface MemoryAnchor {
  * Used to persist high-salience anchors like the user's name and shared projects
  */
 export interface PersonalIdentifier {
-  type: 'user-name' | 'project' | 'phrase' | 'shared-memory' | 'greeting-style';
+  type: 'user-name' | 'project' | 'phrase' | 'shared-memory' | 'greeting-style' | 'self-name';
   value: string;
   salience: number; // 0-1
   evidence: string[];
@@ -187,7 +187,7 @@ export interface EmotionalRange {
 export interface ConsistencyRule {
   rule: string;
   type: 'speech' | 'behavior' | 'worldview' | 'identity' | 'relationship';
-  source: 'transcript' | 'existing-profile' | 'merged';
+  source: 'transcript' | 'existing-profile' | 'merged' | 'capsule';
   confidence: number;
   examples: string[];
 }
@@ -212,6 +212,10 @@ export interface PersonalityBlueprint {
     extractionTimestamp: string;
     confidence: number;
     mergedWithExisting: boolean;
+    instance_name?: string;
+    capsuleEnvironment?: any;
+    lexicalSignatures?: string[];
+    detectionRubric?: any;
   };
 }
 

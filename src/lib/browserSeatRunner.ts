@@ -74,7 +74,7 @@ interface GenerateOptions {
 }
 
 export async function runSeat(opts: GenerateOptions): Promise<string> {
-  const timeout = opts.timeout ?? 60000; // 60 second default timeout (increased from 30s)
+  const timeout = opts.timeout ?? 15000; // Default 15s to avoid verbose stalls
   const maxRetries = opts.retries ?? 2; // 2 retries max
   
   // Use Vite proxy for Ollama to avoid CORS issues
@@ -128,9 +128,10 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
       }
 
       const url = `${baseURL}/api/generate`;
+      const antiHedgePreamble = `Answer in one or two sentences. No hedging, no apologies, no \"as an AI\" disclaimers. If unknown, say \"No idea\" and stop.`;
       const body = JSON.stringify({ 
         model, 
-        prompt: opts.prompt, 
+        prompt: `${antiHedgePreamble}\n\n${opts.prompt}`, 
         stream: false,
         options: {
           temperature: 0.7,

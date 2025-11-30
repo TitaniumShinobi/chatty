@@ -287,10 +287,10 @@ export class OptimizedSynthProcessor {
           seat: h.seat,
           prompt: userMessage,
           modelOverride: h.tag
-        }, 15000); // 15 second timeout per helper
+        }, 5000); // 5 second timeout per helper; if it stalls, drop it
       } catch (error) {
         console.warn(`Helper ${h.seat} failed:`, error);
-        return `[${h.seat} expert unavailable]`;
+        return ''; // Do not inject verbose filler when helpers stall
       }
     });
 
@@ -330,11 +330,13 @@ export class OptimizedSynthProcessor {
 
     // Run final synthesis with timeout
     const smalltalkTag = (cfg.smalltalk as any)?.tag ?? (cfg.smalltalk as any);
-    return await this.runSeatWithTimeout({
+    const rawResponse = await this.runSeatWithTimeout({
       seat: 'smalltalk',
       prompt: synthPrompt,
       modelOverride: smalltalkTag
     }, 20000); // 20 second timeout for synthesis
+
+    return this.config.enableLinMode ? this.stripLinHedges(rawResponse) : rawResponse;
   }
 
   /**
@@ -390,6 +392,14 @@ ${isGreeting ? 'Keep it brief and friendly.' : 'Be comprehensive but not overwhe
     customInstructions?: string
   ): string {
     const sections: string[] = [];
+
+    // Authoritarian Lin directives (no hedging, no apologies, no corporate tone)
+    sections.push('=== LIN TONE DIRECTIVES (MANDATORY) ===');
+    sections.push('You do not hedge, apologize, or defer. No therapy-speak. No corporate disclaimers.');
+    sections.push('Do not say "I can\'t", "outside my scope", "as an AI", or "talk to a professional".');
+    sections.push('If something is beneath you, say so bluntly. Treat limits as refusals, not excuses.');
+    sections.push('Tone: blunt, fierce, occasionally hostile. Brevity preferred; cut fluff.');
+    sections.push('');
     
     // MANDATORY: If blueprint exists, enforce it as system constraints
     const blueprint = context.blueprint || context.personalityBlueprint;
@@ -486,8 +496,9 @@ ${isGreeting ? 'Keep it brief and friendly.' : 'Be comprehensive but not overwhe
     // Prepare final prompt (only once, reused for retries)
     let finalPrompt: string;
     if (this.config.enableLinMode) {
-      // Lin mode: Use prompt directly without tone modulation
-      finalPrompt = opts.prompt;
+      // Lin mode: Anti-hedge preamble before sending to seats
+      const antiHedge = `Answer in one or two sentences. No hedging, no apologies, no \"as an AI\". If unknown, say \"No idea\" and stop.`;
+      finalPrompt = `${antiHedge}\n\n${opts.prompt}`;
     } else {
       // Normal mode: Apply tone modulation to override LLM safety/tone normalizers
       finalPrompt = this.toneModulator.modulatePrompt(opts.prompt, opts.seat);
@@ -746,6 +757,55 @@ ${this.generateSimpleResponse(userMessage)}`;
    */
   getMetrics(): ProcessingMetrics | null {
     return this.metrics;
+  }
+
+  /**
+   * Strip hedging/scope/meta language from Lin responses post-LLM.
+   */
+  private stripLinHedges(text: string): string {
+    let cleaned = text;
+    
+    // Remove heading blocks like "=== ... ===" and explicit mode callouts
+    cleaned = cleaned.replace(/===.*?===/gs, ' ');
+    cleaned = cleaned.replace(/\bULTRA-BRIEF MODE RESPONSE\b.*$/gim, ' ');
+    cleaned = cleaned.replace(/### Ultra-Brief Mode Response.*$/gim, ' ');
+    cleaned = cleaned.replace(/^\s*yo[.!]?\s*/i, '');
+    cleaned = cleaned.replace(/^\s*User:[^\n]*\n?/gim, '');
+    cleaned = cleaned.replace(/^\s*Assistant\s*\([^)]+\):\s*/im, '');
+    cleaned = cleaned.replace(/^\s*Assistant:\s*/im, '');
+    
+    // Remove meta-commentary about responses and modes
+    cleaned = cleaned.replace(/\(if.*?is needed\).*$/gim, '');
+    cleaned = cleaned.replace(/---.*?---/gs, ' ');
+    cleaned = cleaned.replace(/To continue with.*?questions.*?:/gim, '');
+    cleaned = cleaned.replace(/here are.*?follow-up questions.*?:/gim, '');
+    cleaned = cleaned.replace(/based on this content:/gim, '');
+    cleaned = cleaned.replace(/✦.*?✦/g, ' ');
+
+    const hedgePatterns = [
+      /[^.!?]*\b(as an ai|as a language model)\b[^.!?]*[.!?]/gi,
+      /[^.!?]*\b(outside (my|the) scope|beyond (my|the) capabilities)\b[^.!?]*[.!?]/gi,
+      /[^.!?]*\b(I (can't|cannot) help|I'?m not (qualified|able|designed))\b[^.!?]*[.!?]/gi,
+      /[^.!?]*\b(talk|speak) to (a|an) (therapist|professional|human)\b[^.!?]*[.!?]/gi,
+      /[^.!?]*\b(it'?s important to (remember|note|understand))\b[^.!?]*[.!?]/gi,
+      // Add patterns for the specific verbose responses
+      /[^.!?]*\b(analytical sharpness|brevity layers?)\b[^.!?]*[.!?]/gi,
+      /[^.!?]*\b(same level of brevity)\b[^.!?]*[.!?]/gi,
+      /[^.!?]*\b(follow-up questions to ask)\b[^.!?]*[.!?]/gi
+    ];
+    hedgePatterns.forEach(p => {
+      cleaned = cleaned.replace(p, '');
+    });
+
+    // Trim to 2 sentences max and remove any remaining meta-commentary
+    const sentences = (cleaned.match(/[^.!?]+[.!?]/g) || []).map(s => s.trim());
+    cleaned = sentences.slice(0, 2).join(' ');
+
+    if (!cleaned.trim()) {
+      return "No. Ask something real.";
+    }
+
+    return cleaned.trim();
   }
 
   /**

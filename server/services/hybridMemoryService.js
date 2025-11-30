@@ -45,6 +45,7 @@ class HybridMemoryService {
       await this.initialize();
       
       console.log(`📦 [HybridMemoryService] Auto-indexing transcript: ${transcriptPath}`);
+      console.log(`📦 [HybridMemoryService] Construct: ${constructCallsign}, User: ${userId}`);
       
       // Import transcript as ChromaDB memories (immediate indexing)
       const result = await this.identityService.importTranscriptAsIdentity(
@@ -54,6 +55,9 @@ class HybridMemoryService {
       );
       
       console.log(`✅ [HybridMemoryService] Auto-indexed ${result.importedCount} memories from transcript`);
+      if (result.anchorsExtracted && result.anchorsExtracted > 0) {
+        console.log(`🔍 [HybridMemoryService] Extracted ${result.anchorsExtracted} memory anchors`);
+      }
       return result;
     } catch (error) {
       console.error('❌ [HybridMemoryService] Failed to auto-index transcript:', error);

@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -10,12 +11,12 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      // Exclude Node.js modules from browser bundle
-      'better-sqlite3': false,
-      'fs': false,
-      'path': false,
-      'crypto': false,
-      'util': false,
+      // Redirect Node.js-only modules to browser-friendly stubs
+      'better-sqlite3': path.resolve(__dirname, 'src/lib/browserShims/betterSqlite3Stub.ts'),
+      fs: path.resolve(__dirname, 'src/lib/browserShims/nodeFsStub.ts'),
+      path: path.resolve(__dirname, 'src/lib/browserShims/nodePathStub.ts'),
+      crypto: path.resolve(__dirname, 'src/lib/browserShims/nodeCryptoStub.ts'),
+      util: path.resolve(__dirname, 'src/lib/browserShims/nodeUtilStub.ts'),
     }
   },
   server: {

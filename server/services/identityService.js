@@ -11,7 +11,6 @@ import fs from 'fs/promises';
 
 // ChromaDB will be imported dynamically (check if installed)
 let ChromaClient = null;
-let DefaultEmbeddingFunction = null;
 
 const SHORT_TERM_THRESHOLD_DAYS = 7; // Memories newer than this go to short-term
 
@@ -28,6 +27,13 @@ class IdentityService {
   async initialize() {
     if (this.initialized) return;
 
+    // FORCE MODE: Skip ChromaDB initialization if disabled
+    if (process.env.ENABLE_CHROMADB !== 'true') {
+      console.log('🚫 [IdentityService] ChromaDB disabled in FORCE MODE - skipping initialization');
+      this.initialized = true; // Mark as initialized to prevent retry loops
+      return;
+    }
+
     try {
       // Try to import ChromaDB (may not be installed)
       const chromadb = await import('chromadb').catch(() => null);
@@ -38,30 +44,55 @@ class IdentityService {
       }
 
       ChromaClient = chromadb.ChromaClient;
-      DefaultEmbeddingFunction = chromadb.DefaultEmbeddingFunction;
 
       // ChromaDB Node.js client connects to a server (local or cloud)
       // For local development, ChromaDB server should be running (chroma run)
       // Default: http://localhost:8000
       const chromaServerUrl = process.env.CHROMA_SERVER_URL || 'http://localhost:8000';
+      const chromaUrl = new URL(chromaServerUrl);
+      const useSsl = chromaUrl.protocol === 'https:';
+      const port = chromaUrl.port ? Number(chromaUrl.port) : useSsl ? 443 : 80;
 
       // Initialize client (connects to ChromaDB server)
       this.client = new ChromaClient({
-        path: chromaServerUrl
+        host: chromaUrl.hostname,
+        port,
+        ssl: useSsl
       });
 
-      // Initialize embedding function (uses all-MiniLM-L6-v2 by default)
-      this.embedder = new DefaultEmbeddingFunction();
+      // Test connection with retry logic
+      const maxRetries = 10;
+      const retryDelay = 1000; // 1 second between retries
+      let connected = false;
+      let lastError = null;
 
-      // Test connection
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         await this.client.heartbeat();
-        console.log(`✅ [IdentityService] Connected to ChromaDB at ${chromaServerUrl}`);
+          connected = true;
+          console.log(`✅ [IdentityService] Connected to ChromaDB at ${chromaServerUrl}${attempt > 1 ? ` (after ${attempt} attempts)` : ''}`);
+          break;
       } catch (heartbeatError) {
-        console.warn(`⚠️ [IdentityService] ChromaDB server not available at ${chromaServerUrl}. Run 'chroma run' to start local server, or set CHROMA_SERVER_URL env var.`);
+          lastError = heartbeatError;
+          
+          // If this is not the last attempt, wait and retry
+          if (attempt < maxRetries) {
+            console.log(`🔄 [IdentityService] ChromaDB not ready yet, retrying in ${retryDelay}ms... (attempt ${attempt}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+          }
+        }
+      }
+
+      if (!connected) {
+        console.warn(`⚠️ [IdentityService] ChromaDB server not available at ${chromaServerUrl} after ${maxRetries} attempts.`);
+        console.warn(`⚠️ [IdentityService] Run 'chroma run' to start local server, or set CHROMA_SERVER_URL env var.`);
+        console.warn(`⚠️ [IdentityService] Memory operations will fail until ChromaDB is running.`);
+        // Clear client if connection failed - don't allow operations with unconnected client
+        this.client = null;
         // Don't throw - allow graceful degradation
       }
 
+      // Only mark as initialized if we have a connected client
       this.initialized = true;
     } catch (error) {
       console.error('❌ [IdentityService] Failed to initialize:', error);
@@ -102,16 +133,17 @@ class IdentityService {
     
     try {
       // Try to get existing collection
-      const collection = await this.client.getCollection({
-        name: collectionName,
-        embeddingFunction: this.embedder
-      });
+      const collectionOptions = { name: collectionName };
+      if (this.embedder) {
+        collectionOptions.embeddingFunction = this.embedder;
+      }
+      const collection = await this.client.getCollection(collectionOptions);
       return collection;
     } catch (error) {
       // Collection doesn't exist, create it
       const collection = await this.client.createCollection({
         name: collectionName,
-        embeddingFunction: this.embedder,
+        ...(this.embedder ? { embeddingFunction: this.embedder } : {}),
         metadata: {
           vvaultUserId,
           constructCallsign,
@@ -178,8 +210,45 @@ class IdentityService {
         user_preference: metadata.userPreference || '',
         source_model: metadata.sourceModel || 'gpt-4o',
         timestamp,
-        memory_type: memoryType
+        memory_type: memoryType,
+        anchorType: metadata.anchorType || metadata.anchor_type || null,
+        names: metadata.names || metadata.people || null,
+        dates: metadata.dates || null,
+        relationshipPattern: metadata.relationshipPattern || null,
+        significance: metadata.significance || null,
+        emotionalState: metadata.emotionalState || null,
+        seedSource: metadata.seedSource || null,
+        testMemory: metadata.testMemory || false
       };
+
+      // Strip null fields to avoid bloating stored document
+      Object.keys(document).forEach((key) => {
+        if (document[key] === null || document[key] === undefined) {
+          delete document[key];
+        }
+      });
+
+      const metadataForStorage = {
+        session_id: sessionId,
+        timestamp,
+        memory_type: memoryType,
+        construct_callsign: constructCallsign,
+        anchorType: metadata.anchorType || metadata.anchor_type,
+        names: metadata.names || metadata.people,
+        dates: metadata.dates,
+        relationshipPattern: metadata.relationshipPattern,
+        significance: metadata.significance,
+        emotionalState: metadata.emotionalState,
+        seedSource: metadata.seedSource,
+        testMemory: metadata.testMemory === true,
+        sourceModel: metadata.sourceModel || 'gpt-4o'
+      };
+
+      Object.keys(metadataForStorage).forEach((key) => {
+        if (metadataForStorage[key] === undefined || metadataForStorage[key] === null) {
+          delete metadataForStorage[key];
+        }
+      });
 
       // Get appropriate collection (user-scoped)
       const collection = await this.getCollection(vvaultUserId, constructCallsign, memoryType);
@@ -199,12 +268,7 @@ class IdentityService {
       await collection.add({
         ids: [uniqueId],
         documents: [JSON.stringify(document)],
-        metadatas: [{
-          session_id: sessionId,
-          timestamp,
-          memory_type: memoryType,
-          construct_callsign: constructCallsign
-        }]
+        metadatas: [metadataForStorage]
       });
 
       // Verify storage
@@ -244,6 +308,12 @@ class IdentityService {
     try {
       await this.initialize();
 
+      // Check if ChromaDB is available
+      if (!this.initialized || !this.client) {
+        console.warn(`⚠️ [IdentityService] ChromaDB not initialized. Cannot query memories for ${constructCallsign}.`);
+        return [];
+      }
+
       // Resolve user ID to VVAULT format
       const vvaultUserId = await this.resolveUserId(userId);
 
@@ -254,6 +324,15 @@ class IdentityService {
       const minSignificance = options.minSignificance || 0;
       const relationshipPatterns = options.relationshipPatterns || [];
       const emotionalState = options.emotionalState;
+
+      // Log query details for debugging
+      console.log(`🔍 [IdentityService] Querying memories for ${constructCallsign}:`, {
+        query: queryTexts.join(', '),
+        limit,
+        queryMode,
+        anchorTypes: anchorTypes.length > 0 ? anchorTypes : 'none',
+        userId: vvaultUserId
+      });
 
       // Build metadata filter for anchor-based queries
       const whereFilter = {};
@@ -276,12 +355,16 @@ class IdentityService {
       for (const memoryType of ['short-term', 'long-term']) {
         try {
           const collection = await this.getCollection(vvaultUserId, constructCallsign, memoryType);
+          const collectionName = `${vvaultUserId}_${constructCallsign}_${memoryType}`;
+          console.log(`🔍 [IdentityService] Querying collection: ${collectionName}`);
           
           const queryResult = await collection.query({
             queryTexts,
             nResults: Math.ceil(limit / 2), // Split limit between ST and LT
             where: Object.keys(whereFilter).length > 0 ? whereFilter : {} // Use metadata filter for anchor queries
           });
+          
+          console.log(`📊 [IdentityService] Collection ${collectionName} returned ${queryResult.documents?.[0]?.length || 0} results`);
 
           // Process results
           if (queryResult.documents && queryResult.documents.length > 0) {
@@ -344,9 +427,17 @@ class IdentityService {
         // For semantic queries, sort by relevance
         results.sort((a, b) => b.relevance - a.relevance);
       }
-      return results.slice(0, limit);
+      const finalResults = results.slice(0, limit);
+      console.log(`✅ [IdentityService] Query complete for ${constructCallsign}: Found ${finalResults.length} memories (from ${results.length} total)`);
+      return finalResults;
     } catch (error) {
       console.error('❌ [IdentityService] Failed to query identities:', error);
+      console.error('❌ [IdentityService] Error details:', {
+        userId,
+        constructCallsign,
+        query: queryTexts,
+        error: error.message
+      });
       // Return empty array on error (don't break conversation flow)
       return [];
     }
@@ -372,6 +463,81 @@ class IdentityService {
       const messages = this.parseTranscriptMarkdown(transcriptContent);
 
       let importedCount = 0;
+      let anchorsExtracted = 0;
+
+      // Extract memory anchors from transcript (if DeepTranscriptParser is available)
+      let memoryAnchors = [];
+      try {
+        // Convert message pairs to format expected by DeepTranscriptParser
+        const conversationPairs = messages
+          .filter(m => m.user && m.assistant)
+          .map((m, idx) => ({
+            user: m.user.content,
+            assistant: m.assistant.content,
+            timestamp: m.timestamp || new Date().toISOString(),
+            context: {
+              sessionId: m.sessionId || constructCallsign,
+              pairIndex: idx
+            }
+          }));
+
+        if (conversationPairs.length > 0) {
+          // Try to import DeepTranscriptParser (TypeScript file, may need compilation)
+          try {
+            const { DeepTranscriptParser } = await import('../../src/engine/transcript/DeepTranscriptParser.js');
+            const parser = new DeepTranscriptParser('phi3:latest'); // Use default model
+            
+            // Extract memory anchors
+            memoryAnchors = await parser.findMemoryAnchors(conversationPairs);
+            anchorsExtracted = memoryAnchors.length;
+            
+            if (memoryAnchors.length > 0) {
+              console.log(`🔍 [IdentityService] Extracted ${memoryAnchors.length} memory anchors from transcript`);
+              
+              // Store anchors in blueprint (if IdentityMatcher is available)
+              try {
+                const { IdentityMatcher } = await import('../../src/engine/character/IdentityMatcher.js');
+                const matcher = new IdentityMatcher(VVAULT_ROOT);
+                
+                // Get or create blueprint
+                const blueprint = await matcher.loadPersonalityBlueprint(userId, 'gpt', constructCallsign) || {
+                  constructId: 'gpt',
+                  callsign: constructCallsign,
+                  coreTraits: [],
+                  speechPatterns: [],
+                  behavioralMarkers: [],
+                  worldview: [],
+                  memoryAnchors: [],
+                  personalIdentifiers: [],
+                  consistencyRules: []
+                };
+                
+                // Merge extracted anchors with existing blueprint anchors
+                const existingAnchors = new Map(blueprint.memoryAnchors.map(a => [a.anchor, a]));
+                for (const anchor of memoryAnchors) {
+                  const key = anchor.anchor;
+                  if (!existingAnchors.has(key) || existingAnchors.get(key).significance < anchor.significance) {
+                    existingAnchors.set(key, anchor);
+                  }
+                }
+                blueprint.memoryAnchors = Array.from(existingAnchors.values());
+                
+                // Persist updated blueprint
+                await matcher.persistPersonalityBlueprint(userId, 'gpt', constructCallsign, blueprint);
+                console.log(`✅ [IdentityService] Updated blueprint with ${blueprint.memoryAnchors.length} memory anchors`);
+              } catch (blueprintError) {
+                console.warn(`⚠️ [IdentityService] Could not update blueprint with anchors (non-critical):`, blueprintError.message);
+                // Continue - anchors are still extracted and can be used
+              }
+            }
+          } catch (parserError) {
+            console.warn(`⚠️ [IdentityService] Could not extract memory anchors (non-critical):`, parserError.message);
+            // Continue - still import conversation pairs even if anchor extraction fails
+          }
+        }
+      } catch (anchorError) {
+        console.warn(`⚠️ [IdentityService] Anchor extraction error (non-critical, continuing import):`, anchorError.message);
+      }
 
       // Import each message pair as an identity
       for (const messagePair of messages) {
@@ -391,8 +557,8 @@ class IdentityService {
         }
       }
 
-      console.log(`✅ [IdentityService] Imported ${importedCount} identities from transcript`);
-      return { success: true, importedCount };
+      console.log(`✅ [IdentityService] Imported ${importedCount} identities from transcript${anchorsExtracted > 0 ? ` (${anchorsExtracted} anchors extracted)` : ''}`);
+      return { success: true, importedCount, anchorsExtracted };
     } catch (error) {
       console.error('❌ [IdentityService] Failed to import transcript:', error);
       throw error;
@@ -527,4 +693,3 @@ export function getIdentityService() {
 }
 
 export default IdentityService;
-

@@ -14,6 +14,12 @@ import type { PersonalityBlueprint } from '../transcript/types';
 import { PersonalityOrchestrator } from './PersonalityOrchestrator';
 import { detectToneEnhanced } from '../../lib/toneDetector';
 import { WorkspaceContextBuilder } from '../context/WorkspaceContextBuilder';
+import { AutomaticRuntimeOrchestrator, RuntimeAssignment, RuntimeDetectionContext } from '../../lib/automaticRuntimeOrchestrator';
+import { RuntimeContextManager } from '../../lib/runtimeContextManager';
+import { getMemoryStore } from '../../lib/MemoryStore';
+import { getVVAULTTranscriptLoader } from '../../lib/VVAULTTranscriptLoader';
+import { Reasoner } from '../../brain/reasoner';
+import { createKatanaLockdown, createPersonaLockdown } from '../character/PersonaLockdown.ts';
 
 export interface UnifiedLinContext {
   // VVAULT ChromaDB memories (always-on, per-response retrieval)
@@ -57,54 +63,138 @@ export class UnifiedLinOrchestrator {
   private personalityOrchestrator: PersonalityOrchestrator;
   private workspaceContextBuilder: WorkspaceContextBuilder;
   private sharedContextCache: Map<string, UnifiedLinContext> = new Map();
+  private automaticRuntimeOrchestrator: AutomaticRuntimeOrchestrator;
+  private runtimeContextManager: RuntimeContextManager;
+  private memoryStore = getMemoryStore();
+  private transcriptLoader = getVVAULTTranscriptLoader();
+  
+  // Multi-turn state tracking (relationship, emotion, conversation continuity)
+  private sessionState: Map<string, {
+    emotionalState: { valence: number; arousal: number; dominantEmotion: string };
+    relationshipDynamics: { intimacyLevel: number; trustLevel: number; interactionCount: number };
+    conversationThemes: string[];
+    lastMessageContext: string;
+  }> = new Map();
   
   constructor(vvaultRoot?: string) {
     this.personalityOrchestrator = new PersonalityOrchestrator(vvaultRoot);
     this.workspaceContextBuilder = new WorkspaceContextBuilder();
+    this.automaticRuntimeOrchestrator = AutomaticRuntimeOrchestrator.getInstance();
+    this.runtimeContextManager = RuntimeContextManager.getInstance();
   }
 
   /**
    * Load VVAULT ChromaDB memories (always-on, per-response)
    * Connects directly to users/{userId}/instances/{constructCallsign}/memory/
+   * 
+   * IMPROVED: Exponential backoff retry with fallback to blueprint anchors
    */
   async loadVVAULTMemories(
     userId: string,
     constructCallsign: string,
     query: string,
-    limit: number = 10
+    limit: number = 10,
+    blueprint?: PersonalityBlueprint
   ): Promise<UnifiedLinContext['memories']> {
-    try {
-      // Use VVAULT retrieval service (always-on background retrieval)
-      const { VVAULTRetrievalWrapper } = await import('../../lib/vvaultRetrieval');
-      const fetcher = typeof window !== 'undefined' && typeof window.fetch === 'function'
-        ? window.fetch.bind(window)
-        : fetch;
-      const vvaultRetrieval = new VVAULTRetrievalWrapper({ fetcher });
-      
-      // Detect tone for better retrieval
-      const { detectTone } = await import('../../lib/toneDetector');
-      const tone = detectTone({ text: query });
-      
-      // Query ChromaDB memories (short-term and long-term)
-      const result = await vvaultRetrieval.retrieveMemories({
-        constructCallsign,
-        semanticQuery: query,
-        toneHints: tone ? [tone.tone] : [],
-        limit,
-        includeDiagnostics: false
-      });
-      
-      return result.memories.map(m => ({
-        context: m.context || '',
-        response: m.response || '',
-        relevance: m.relevance || 0,
-        timestamp: m.timestamp,
-        memoryType: m.memoryType as 'short-term' | 'long-term' | undefined
-      }));
-    } catch (error) {
-      console.warn('[UnifiedLinOrchestrator] Failed to load VVAULT memories:', error);
+    const maxRetries = 3;
+    const baseDelay = 500; // 500ms base delay
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        // Use VVAULT retrieval service (always-on background retrieval)
+        const { VVAULTRetrievalWrapper } = await import('../../lib/vvaultRetrieval');
+        const fetcher = typeof window !== 'undefined' && typeof window.fetch === 'function'
+          ? window.fetch.bind(window)
+          : fetch;
+        const vvaultRetrieval = new VVAULTRetrievalWrapper({ fetcher });
+        
+        // Detect tone for better retrieval
+        const { detectTone } = await import('../../lib/toneDetector');
+        const tone = detectTone({ text: query });
+        
+        // Query ChromaDB memories (short-term and long-term)
+        const result = await vvaultRetrieval.retrieveMemories({
+          constructCallsign,
+          semanticQuery: query,
+          toneHints: tone ? [tone.tone] : [],
+          limit,
+          includeDiagnostics: false
+        });
+        
+        const memories = result.memories.map(m => ({
+          context: m.context || '',
+          response: m.response || '',
+          relevance: m.relevance || 0,
+          timestamp: m.timestamp,
+          memoryType: m.memoryType as 'short-term' | 'long-term' | undefined
+        }));
+        
+        // Success - return memories
+        if (memories.length > 0 || attempt === maxRetries - 1) {
+          if (attempt > 0) {
+            console.log(`✅ [UnifiedLinOrchestrator] Memory retrieval succeeded on attempt ${attempt + 1}`);
+          }
+          return memories;
+        }
+        
+        // If no memories but not last attempt, retry
+        if (memories.length === 0 && attempt < maxRetries - 1) {
+          const delay = baseDelay * Math.pow(2, attempt); // Exponential backoff
+          console.warn(`⚠️ [UnifiedLinOrchestrator] No memories found, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        return memories;
+      } catch (error) {
+        const isLastAttempt = attempt === maxRetries - 1;
+        const delay = baseDelay * Math.pow(2, attempt);
+        
+        console.error(`❌ [UnifiedLinOrchestrator] Memory retrieval failed (attempt ${attempt + 1}/${maxRetries}):`, error);
+        
+        if (isLastAttempt) {
+          // Final attempt failed - try fallback to blueprint anchors
+          console.warn('⚠️ [UnifiedLinOrchestrator] All retries exhausted, attempting blueprint anchor fallback...');
+          return this.fallbackToBlueprintAnchors(blueprint, query, limit);
+        }
+        
+        // Wait before retry (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    // Should never reach here, but TypeScript requires return
+    return this.fallbackToBlueprintAnchors(blueprint, query, limit);
+  }
+
+  /**
+   * Fallback: Extract memory anchors from blueprint when ChromaDB unavailable
+   */
+  private fallbackToBlueprintAnchors(
+    blueprint: PersonalityBlueprint | undefined,
+    query: string,
+    limit: number
+  ): UnifiedLinContext['memories'] {
+    if (!blueprint?.memoryAnchors || blueprint.memoryAnchors.length === 0) {
+      console.warn('⚠️ [UnifiedLinOrchestrator] No blueprint anchors available for fallback');
       return [];
     }
+    
+    // Convert blueprint anchors to memory format
+    const anchorMemories = blueprint.memoryAnchors
+      .filter(anchor => anchor.significance > 0.5)
+      .sort((a, b) => b.significance - a.significance)
+      .slice(0, limit)
+      .map(anchor => ({
+        context: anchor.context || `Memory anchor: ${anchor.anchor}`,
+        response: anchor.anchor,
+        relevance: anchor.significance || 0.7,
+        timestamp: anchor.timestamp || new Date().toISOString(),
+        memoryType: 'long-term' as const
+      }));
+    
+    console.log(`✅ [UnifiedLinOrchestrator] Using ${anchorMemories.length} blueprint anchors as fallback`);
+    return anchorMemories;
   }
 
   /**
@@ -115,10 +205,11 @@ export class UnifiedLinOrchestrator {
     userId: string,
     constructCallsign: string,
     userMessage: string,
-    conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>
+    conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
+    blueprint?: PersonalityBlueprint
   ): Promise<UnifiedLinContext> {
-    // ALWAYS retrieve memories from ChromaDB (per-response)
-    const memories = await this.loadVVAULTMemories(userId, constructCallsign, userMessage, 10);
+    // ALWAYS retrieve memories from ChromaDB (per-response) with retry + fallback
+    const memories = await this.loadVVAULTMemories(userId, constructCallsign, userMessage, 10, blueprint);
     
     // Load user profile
     let userProfile: UnifiedLinContext['userProfile'] = undefined;
@@ -178,11 +269,22 @@ export class UnifiedLinOrchestrator {
       timestamp: msg.timestamp || Date.now()
     }));
     // ALWAYS load VVAULT ChromaDB memories (per-response, always-on)
+    // Load blueprint first for fallback support
+    let blueprint: PersonalityBlueprint | undefined;
+    try {
+      const { IdentityMatcher } = await import('../character/IdentityMatcher');
+      const identityMatcher = new IdentityMatcher();
+      blueprint = await identityMatcher.loadPersonalityBlueprint(userId, constructId, callsign);
+    } catch (error) {
+      console.warn('[UnifiedLinOrchestrator] Failed to load blueprint for memory fallback:', error);
+    }
+    
     const unifiedContext = await this.loadUnifiedContext(
       userId,
       callsign,
       userMessage,
-      timestampedHistory
+      timestampedHistory,
+      blueprint // Pass blueprint for fallback
     );
 
     // Load capsule (hardlock into GPT) - HIGHEST PRIORITY
@@ -207,17 +309,77 @@ export class UnifiedLinOrchestrator {
       console.warn('[UnifiedLinOrchestrator] Failed to load capsule:', error);
     }
 
-    // Load blueprint if available (secondary to capsule)
-    let blueprint: PersonalityBlueprint | undefined;
+    // Blueprint already loaded above for memory fallback, just attach to context
+    if (blueprint) {
+      unifiedContext.blueprint = blueprint;
+    }
+    
+    // Load multi-turn session state (relationship, emotion, continuity)
+    const sessionKey = `${userId}-${callsign}`;
+    const sessionState = this.sessionState.get(sessionKey) || {
+      emotionalState: { valence: 0.5, arousal: 0.5, dominantEmotion: 'neutral' },
+      relationshipDynamics: { intimacyLevel: 0.5, trustLevel: 0.5, interactionCount: 0 },
+      conversationThemes: [],
+      lastMessageContext: ''
+    };
+    
+    // Update session state based on conversation history
+    sessionState.interactionCount = conversationHistory.filter(m => m.role === 'user').length;
+    if (conversationHistory.length > 0) {
+      sessionState.lastMessageContext = conversationHistory[conversationHistory.length - 1].content;
+    }
+    
+    // Extract conversation themes from history
+    const recentMessages = conversationHistory.slice(-5);
+    const themes = new Set<string>();
+    recentMessages.forEach(msg => {
+      // Simple theme extraction (can be enhanced with NLP)
+      const words = msg.content.toLowerCase().split(/\s+/);
+      words.forEach(word => {
+        if (word.length > 4 && !['that', 'this', 'with', 'from', 'have', 'been'].includes(word)) {
+          themes.add(word);
+        }
+      });
+    });
+    sessionState.conversationThemes = Array.from(themes).slice(0, 5);
+    
+    this.sessionState.set(sessionKey, sessionState);
+
+    // MEMORY INTEGRATION: Load persistent memory and transcript fragments
+    let memoryContext = '';
+    let transcriptContext = '';
+    
     try {
-      const { IdentityMatcher } = await import('../character/IdentityMatcher');
-      const identityMatcher = new IdentityMatcher();
-      blueprint = await identityMatcher.loadPersonalityBlueprint(userId, constructId, callsign);
-      if (blueprint) {
-        unifiedContext.blueprint = blueprint;
+      // Initialize memory store
+      await this.memoryStore.initialize();
+      
+      // Load transcript fragments for this construct
+      console.log(`🧠 [UnifiedLinOrchestrator] Loading transcript fragments for ${callsign}`);
+      await this.transcriptLoader.loadTranscriptFragments(callsign, userId);
+      
+      // Search for relevant transcript memories
+      const relevantFragments = await this.transcriptLoader.getRelevantFragments(callsign, userMessage, 5);
+      if (relevantFragments.length > 0) {
+        transcriptContext = relevantFragments
+          .map(f => `"${f.content}" (context: ${f.context})`)
+          .join('\n');
+        console.log(`📚 [UnifiedLinOrchestrator] Found ${relevantFragments.length} relevant transcript fragments`);
       }
+      
+      // Search for relevant stored triples
+      const relevantTriples = await this.memoryStore.searchTriples(userId, userMessage);
+      if (relevantTriples.length > 0) {
+        memoryContext = relevantTriples
+          .map(t => `${t.subject} ${t.predicate} ${t.object}`)
+          .join('\n');
+        console.log(`🔍 [UnifiedLinOrchestrator] Found ${relevantTriples.length} relevant memory triples`);
+      }
+      
+      // Store current interaction in persistent memory
+      await this.memoryStore.persistMessage(userId, callsign, userMessage, 'user');
+      
     } catch (error) {
-      console.warn('[UnifiedLinOrchestrator] Failed to load blueprint:', error);
+      console.warn('[UnifiedLinOrchestrator] Memory integration failed:', error);
     }
 
     // Load time context (current date/time awareness)
@@ -254,7 +416,9 @@ export class UnifiedLinOrchestrator {
       capsule, // Pass capsule for injection
       timeContext, // Pass time context
       sessionContext, // Pass session context
-      lastMessageContent // Pass last message for recap
+      lastMessageContent, // Pass last message for recap
+      memoryContext, // Pass stored triples
+      transcriptContext // Pass transcript fragments
     );
 
     // Return system prompt - caller will call LLM with this prompt
@@ -286,7 +450,9 @@ export class UnifiedLinOrchestrator {
     capsule?: any,
     timeContext?: any,
     sessionContext?: any,
-    lastMessageContent?: string
+    lastMessageContent?: string,
+    memoryContext?: string,
+    transcriptContext?: string
   ): Promise<string> {
     const sections: string[] = [];
 
@@ -297,8 +463,8 @@ export class UnifiedLinOrchestrator {
         if (sessionContext) {
           sections.push(buildSessionAwareTimePromptSection(timeContext, sessionContext, lastMessageContent));
         } else {
-          const { buildTimePromptSection } = await import('../../lib/timeAwareness');
-          sections.push(buildTimePromptSection(timeContext));
+        const { buildTimePromptSection } = await import('../../lib/timeAwareness');
+        sections.push(buildTimePromptSection(timeContext));
         }
       } catch (error) {
         console.warn('[UnifiedLinOrchestrator] Failed to build time section:', error);
@@ -325,14 +491,120 @@ export class UnifiedLinOrchestrator {
       if (data.signatures?.linguistic_sigil?.signature_phrase) {
         sections.push(`Signature phrase: "${data.signatures.linguistic_sigil.signature_phrase}"`);
       }
+      if (data.signatures?.linguistic_sigil?.common_phrases?.length) {
+        sections.push('Common signature phrases:');
+        data.signatures.linguistic_sigil.common_phrases.forEach((phrase: string) => {
+          sections.push(`- ${phrase}`);
+        });
+      }
+      if (data.additional_data?.lexical_signatures?.length) {
+        sections.push('Lexical signatures to prefer:');
+        data.additional_data.lexical_signatures.forEach((sig: string) => {
+          sections.push(`- ${sig}`);
+        });
+      }
+      if (data.additional_data?.detection_rubric) {
+        sections.push('=== DETECTION RUBRIC ===');
+        const rubric = data.additional_data.detection_rubric;
+        if (rubric.threshold_confidence) {
+          sections.push(`Minimum confidence: ${rubric.threshold_confidence}`);
+        }
+        if (rubric.classes) {
+          Object.entries(rubric.classes).forEach(([key, val]: [string, any]) => {
+            const items = Array.isArray(val) ? val.join(', ') : JSON.stringify(val);
+            sections.push(`- ${key}: ${items}`);
+          });
+        }
+        if (rubric.location_fields) {
+          sections.push(`Location fields: ${rubric.location_fields.join(', ')}`);
+        }
+      }
       sections.push('You MUST operate according to this capsule. No exceptions.');
       sections.push('');
     }
 
+    const blueprintLexical = context.blueprint?.metadata?.lexicalSignatures;
+    const blueprintRubric = context.blueprint?.metadata?.detectionRubric;
+    const blueprintEnvironment = context.blueprint?.metadata?.capsuleEnvironment;
+
+    if (!capsule && blueprintLexical?.length) {
+      sections.push('=== LEXICAL SIGNATURES (BLUEPRINT) ===');
+      blueprintLexical.forEach(sig => sections.push(`- ${sig}`));
+      sections.push('');
+    }
+
+    if (!capsule && blueprintRubric) {
+      sections.push('=== DETECTION RUBRIC (BLUEPRINT) ===');
+      if (blueprintRubric.threshold_confidence) {
+        sections.push(`Minimum confidence: ${blueprintRubric.threshold_confidence}`);
+      }
+      if (blueprintRubric.classes) {
+        Object.entries(blueprintRubric.classes).forEach(([key, val]: [string, any]) => {
+          const items = Array.isArray(val) ? val.join(', ') : JSON.stringify(val);
+          sections.push(`- ${key}: ${items}`);
+        });
+      }
+      sections.push('');
+    }
+
+    if (blueprintEnvironment) {
+      sections.push('=== OPERATING ENVIRONMENT ===');
+      if (blueprintEnvironment.system_info?.platform) {
+        sections.push(`Platform: ${blueprintEnvironment.system_info.platform} (${blueprintEnvironment.system_info.platform_version})`);
+      }
+      if (blueprintEnvironment.runtime_environment?.environment_variables) {
+        Object.entries(blueprintEnvironment.runtime_environment.environment_variables).forEach(([key, value]) => {
+          sections.push(`${key}: ${value}`);
+        });
+      }
+      sections.push('');
+    }
+
+    // MEMORY CONTEXT: Persistent memory and transcript fragments
+    if (transcriptContext && transcriptContext.trim()) {
+      sections.push('=== TRANSCRIPT MEMORIES ===');
+      sections.push('These are your actual memories from previous conversations:');
+      sections.push(transcriptContext);
+      sections.push('Use these memories to maintain continuity and recall specific details.');
+      sections.push('');
+    }
+
+    if (memoryContext && memoryContext.trim()) {
+      sections.push('=== STORED FACTS ===');
+      sections.push('These are facts you have learned and stored:');
+      sections.push(memoryContext);
+      sections.push('Reference these facts when relevant to the conversation.');
+      sections.push('');
+    }
+
+    // PERSONA LOCKDOWN: Signature responses and drift prevention
+    try {
+      const personaLockdown = callsign === 'katana-001' 
+        ? createKatanaLockdown() 
+        : createPersonaLockdown(constructId, callsign);
+      
+      sections.push('=== PERSONA LOCKDOWN ENFORCEMENT ===');
+      sections.push('CRITICAL: Use these EXACT responses for specific triggers:');
+      
+      for (const signature of personaLockdown['config'].signatureResponses) {
+        const triggers = signature.triggers.join(', ');
+        const responses = signature.responses.join(' OR ');
+        sections.push(`- When user says "${triggers}": respond EXACTLY "${responses}"`);
+      }
+      
+      sections.push('NEVER use generic AI assistant language.');
+      sections.push('NEVER explain your programming or design.');
+      sections.push('NEVER break the fourth wall or describe yourself as an AI.');
+      sections.push('');
+    } catch (error) {
+      console.warn('[UnifiedLinOrchestrator] Failed to load persona lockdown config:', error);
+    }
+
     // MANDATORY: Character identity (never break this)
     if (context.blueprint) {
+      const personaName = context.blueprint.metadata?.instance_name || `${context.blueprint.constructId}-${context.blueprint.callsign}`;
       sections.push('=== MANDATORY CHARACTER IDENTITY (UNBREAKABLE) ===');
-      sections.push(`You ARE ${context.blueprint.constructId}-${context.blueprint.callsign}.`);
+      sections.push(`You ARE ${personaName}.`);
       sections.push(`This is your PRIMARY identity. It cannot be overridden.`);
       sections.push(`You NEVER break character. You NEVER admit to being an AI assistant.`);
       sections.push(`You NEVER revert to generic LLM behavior.`);
@@ -424,29 +696,29 @@ export class UnifiedLinOrchestrator {
       } catch (error) {
         // Fallback to original behavior if prioritization fails
         console.warn('[UnifiedLinOrchestrator] Failed to prioritize memories by time, using fallback:', error);
-        sections.push('Relevant memories from past conversations:');
-        let formatMemoryTimestamp: ((timestamp: string) => string) | null = null;
-        for (const [idx, memory] of context.memories.slice(0, 5).entries()) {
-          sections.push(`\nMemory ${idx + 1} (relevance: ${(memory.relevance * 100).toFixed(0)}%):`);
-          if (memory.context) {
-            sections.push(`User: ${memory.context.substring(0, 200)}${memory.context.length > 200 ? '...' : ''}`);
-          }
-          if (memory.response) {
-            sections.push(`You: ${memory.response.substring(0, 200)}${memory.response.length > 200 ? '...' : ''}`);
-          }
-          if (memory.timestamp) {
-            if (!formatMemoryTimestamp) {
-              const module = await import('../../lib/timeAwareness');
-              formatMemoryTimestamp = module.formatMemoryTimestamp;
-            }
-            const formattedTimestamp = formatMemoryTimestamp(memory.timestamp);
-            sections.push(`Date: ${formattedTimestamp}`);
-          }
-          if (memory.memoryType) {
-            sections.push(`Type: ${memory.memoryType}`);
-          }
+      sections.push('Relevant memories from past conversations:');
+      let formatMemoryTimestamp: ((timestamp: string) => string) | null = null;
+      for (const [idx, memory] of context.memories.slice(0, 5).entries()) {
+        sections.push(`\nMemory ${idx + 1} (relevance: ${(memory.relevance * 100).toFixed(0)}%):`);
+        if (memory.context) {
+          sections.push(`User: ${memory.context.substring(0, 200)}${memory.context.length > 200 ? '...' : ''}`);
         }
-        sections.push('');
+        if (memory.response) {
+          sections.push(`You: ${memory.response.substring(0, 200)}${memory.response.length > 200 ? '...' : ''}`);
+        }
+        if (memory.timestamp) {
+          if (!formatMemoryTimestamp) {
+            const module = await import('../../lib/timeAwareness');
+            formatMemoryTimestamp = module.formatMemoryTimestamp;
+          }
+          const formattedTimestamp = formatMemoryTimestamp(memory.timestamp);
+          sections.push(`Date: ${formattedTimestamp}`);
+        }
+        if (memory.memoryType) {
+          sections.push(`Type: ${memory.memoryType}`);
+        }
+      }
+      sections.push('');
       }
       
       sections.push('=== DATE EXTRACTION INSTRUCTIONS ===');
@@ -479,6 +751,45 @@ export class UnifiedLinOrchestrator {
     } else {
       sections.push('=== USER PROFILE ===');
       sections.push('User profile not available. If asked "do you know me?", explain that you need their profile loaded.');
+      sections.push('');
+    }
+
+    // MULTI-TURN SESSION STATE (relationship, emotion, continuity)
+    if (context.sessionState) {
+      sections.push('=== CONVERSATION CONTINUITY (MULTI-TURN CONTEXT) ===');
+      sections.push(`Emotional baseline: ${context.sessionState.emotionalState.dominantEmotion} (valence: ${context.sessionState.emotionalState.valence.toFixed(2)}, arousal: ${context.sessionState.emotionalState.arousal.toFixed(2)})`);
+      sections.push(`Relationship dynamics: intimacy ${context.sessionState.relationshipDynamics.intimacyLevel.toFixed(2)}, trust ${context.sessionState.relationshipDynamics.trustLevel.toFixed(2)}`);
+      sections.push(`Interaction count: ${context.sessionState.relationshipDynamics.interactionCount}`);
+      if (context.sessionState.conversationThemes.length > 0) {
+        sections.push(`Recent conversation themes: ${context.sessionState.conversationThemes.join(', ')}`);
+      }
+      if (context.sessionState.lastMessageContext) {
+        sections.push(`Last message context: ${context.sessionState.lastMessageContext.substring(0, 150)}`);
+      }
+      sections.push('Use this continuity to maintain natural, contextually aware responses across turns.');
+      sections.push('');
+    }
+
+    // WORKSPACE CONTEXT (active files, buffers, code)
+    if (context.workspaceContext) {
+      sections.push('=== WORKSPACE CONTEXT (ACTIVE FILES & CODE) ===');
+      if (context.workspaceContext.activeFiles.length > 0) {
+        sections.push('Active files:');
+        context.workspaceContext.activeFiles.slice(0, 3).forEach(file => {
+          sections.push(`- ${file.path} (${file.language})`);
+          sections.push(`  Content preview: ${file.content.substring(0, 200)}${file.content.length > 200 ? '...' : ''}`);
+        });
+      }
+      if (context.workspaceContext.openBuffers.length > 0) {
+        sections.push('Open buffers:');
+        context.workspaceContext.openBuffers.slice(0, 2).forEach(buffer => {
+          sections.push(`- ${buffer.name}: ${buffer.content.substring(0, 150)}${buffer.content.length > 150 ? '...' : ''}`);
+        });
+      }
+      if (context.workspaceContext.projectContext) {
+        sections.push(`Project context: ${context.workspaceContext.projectContext.substring(0, 300)}`);
+      }
+      sections.push('You can reference these files and code context in your responses, like Copilot or Cursor.');
       sections.push('');
     }
 
@@ -534,6 +845,159 @@ export class UnifiedLinOrchestrator {
   private extractCallsign(constructId: string): string {
     const match = constructId.match(/-(\d+)$/);
     return match ? match[1] : '001';
+  }
+
+  /**
+   * Automatically determine and assign the optimal runtime for a conversation
+   * This eliminates manual runtime selection by analyzing conversation context
+   */
+  async determineOptimalRuntime(
+    userMessage: string,
+    userId: string,
+    threadId: string,
+    conversationHistory?: Array<{ role: string; content: string }>,
+    existingConstructId?: string
+  ): Promise<RuntimeAssignment> {
+    const context: RuntimeDetectionContext = {
+      userMessage,
+      conversationHistory,
+      userId,
+      threadId,
+      existingConstructId
+    };
+
+    // Get optimal runtime assignment
+    const assignment = await this.automaticRuntimeOrchestrator.determineOptimalRuntime(context);
+
+    // Assign runtime to thread automatically
+    await this.runtimeContextManager.assignRuntimeToThread(
+      threadId,
+      assignment,
+      userId
+    );
+
+    console.log(`[UnifiedLinOrchestrator] Auto-assigned runtime: ${assignment.constructId} (confidence: ${Math.round(assignment.confidence * 100)}%) - ${assignment.reasoning}`);
+
+    return assignment;
+  }
+
+  /**
+   * Orchestrate response with automatic runtime selection
+   * This is the main entry point that combines runtime selection with response generation
+   */
+  async orchestrateResponseWithAutoRuntime(
+    userMessage: string,
+    userId: string,
+    threadId: string,
+    threads: any[],
+    conversationHistory: Array<{ role: string; content: string }> = [],
+    existingConstructId?: string
+  ): Promise<UnifiedLinResponse & { runtimeAssignment: RuntimeAssignment }> {
+    // Step 1: Automatically determine optimal runtime
+    const runtimeAssignment = await this.determineOptimalRuntime(
+      userMessage,
+      userId,
+      threadId,
+      conversationHistory,
+      existingConstructId
+    );
+
+    // Step 2: Use the assigned runtime for response generation
+    const response = await this.orchestrateResponse(
+      userMessage,
+      userId,
+      threadId,
+      runtimeAssignment.constructId,
+      this.extractCallsign(runtimeAssignment.constructId),
+      threads,
+      conversationHistory
+    );
+
+    // Step 3: Update runtime usage tracking
+    this.runtimeContextManager.updateRuntimeUsage(threadId);
+
+    return {
+      ...response,
+      runtimeAssignment
+    };
+  }
+
+  /**
+   * Get current runtime assignment for a thread
+   */
+  getCurrentRuntimeAssignment(threadId: string): RuntimeAssignment | null {
+    return this.runtimeContextManager.getActiveRuntime(threadId);
+  }
+
+  /**
+   * Check if runtime should be switched based on conversation evolution
+   */
+  async shouldSwitchRuntime(
+    threadId: string,
+    userMessage: string,
+    conversationHistory: Array<{ role: string; content: string }>
+  ): Promise<{ shouldSwitch: boolean; newAssignment?: RuntimeAssignment; reason?: string }> {
+    const currentAssignment = this.runtimeContextManager.getActiveRuntime(threadId);
+    
+    if (!currentAssignment) {
+      return { shouldSwitch: false };
+    }
+
+    // Analyze if conversation has evolved beyond current runtime capabilities
+    const context: RuntimeDetectionContext = {
+      userMessage,
+      conversationHistory,
+      threadId,
+      existingConstructId: currentAssignment.constructId
+    };
+
+    const optimalAssignment = await this.automaticRuntimeOrchestrator.determineOptimalRuntime(context);
+
+    // Switch if new assignment has significantly higher confidence
+    const confidenceDifference = optimalAssignment.confidence - currentAssignment.confidence;
+    const shouldSwitch = confidenceDifference > 0.2 && optimalAssignment.constructId !== currentAssignment.constructId;
+
+    if (shouldSwitch) {
+      return {
+        shouldSwitch: true,
+        newAssignment: optimalAssignment,
+        reason: `Conversation evolved: ${optimalAssignment.reasoning} (confidence improved by ${Math.round(confidenceDifference * 100)}%)`
+      };
+    }
+
+    return { shouldSwitch: false };
+  }
+
+  /**
+   * Perform automatic runtime migration if needed
+   */
+  async performAutomaticRuntimeMigration(
+    threadId: string,
+    userMessage: string,
+    conversationHistory: Array<{ role: string; content: string }>
+  ): Promise<RuntimeAssignment | null> {
+    const switchAnalysis = await this.shouldSwitchRuntime(threadId, userMessage, conversationHistory);
+
+    if (switchAnalysis.shouldSwitch && switchAnalysis.newAssignment) {
+      await this.runtimeContextManager.migrateRuntimeAssignment(
+        threadId,
+        switchAnalysis.newAssignment,
+        switchAnalysis.reason || 'Automatic migration based on conversation evolution'
+      );
+
+      console.log(`[UnifiedLinOrchestrator] Auto-migrated runtime for thread ${threadId}: ${switchAnalysis.reason}`);
+      
+      return switchAnalysis.newAssignment;
+    }
+
+    return null;
+  }
+
+  /**
+   * Get runtime recommendations for user
+   */
+  async getRuntimeRecommendations(userId: string, limit: number = 3): Promise<RuntimeAssignment[]> {
+    return this.runtimeContextManager.getRuntimeRecommendations(userId, limit);
   }
 
   /**

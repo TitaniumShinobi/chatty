@@ -1,4 +1,6 @@
 // AI Service - Frontend API client for AI Creator
+import { AutomaticDependencyResolver } from './automaticDependencyResolver';
+import { shouldUseBrowserStubs, createBrowserSafeDependencyResolver } from './browserStubs';
 export interface AIFile {
   id: string;
   aiId: string;
@@ -67,9 +69,19 @@ export interface AIResponse {
 export class AIService {
   private static instance: AIService;
   private baseUrl: string;
+  private dependencyResolver: AutomaticDependencyResolver | any;
+  private isBrowserEnvironment: boolean;
 
   private constructor() {
     this.baseUrl = '/api/ais';
+    this.isBrowserEnvironment = shouldUseBrowserStubs();
+    
+    if (this.isBrowserEnvironment) {
+      console.log('[AIService] Running in browser mode with limited dependency resolution');
+      this.dependencyResolver = createBrowserSafeDependencyResolver();
+    } else {
+      this.dependencyResolver = AutomaticDependencyResolver.getInstance();
+    }
   }
 
   static getInstance(): AIService {
@@ -399,5 +411,63 @@ export class AIService {
     }
     
     return errors;
+  }
+
+  /**
+   * Set runtime for a thread automatically (called by RuntimeContextManager)
+   */
+  async setRuntimeForThread(threadId: string, runtimeAssignment: any): Promise<void> {
+    try {
+      console.log(`[AIService] Runtime assigned to thread ${threadId}: ${runtimeAssignment.constructId}`);
+      
+      if (this.isBrowserEnvironment) {
+        console.log('[AIService] Browser mode: Runtime assignment logged locally');
+        return;
+      }
+      
+      // This method is called by the RuntimeContextManager to notify AIService
+      // of runtime assignments. The actual runtime switching is handled by
+      // the GPTRuntimeService and orchestration layer.
+    } catch (error) {
+      console.warn('[AIService] Failed to set runtime for thread:', error);
+    }
+  }
+
+  /**
+   * Process message with automatic dependency resolution
+   */
+  async processMessageWithAutoDependencies(
+    threadId: string,
+    userMessage: string,
+    userId: string,
+    conversationHistory?: Array<{ role: string; content: string }>
+  ): Promise<any> {
+    try {
+      // Resolve all dependencies automatically
+      const resolvedDependencies = await this.dependencyResolver.resolveDependencies({
+        threadId,
+        userId,
+        userMessage,
+        conversationHistory
+      });
+
+      console.log(`[AIService] Auto-resolved dependencies for ${threadId}:`, {
+        runtime: resolvedDependencies.runtimeAssignment.constructId,
+        model: resolvedDependencies.modelConfiguration.modelId,
+        confidence: Math.round(resolvedDependencies.runtimeAssignment.confidence * 100) + '%'
+      });
+
+      // Process message with resolved dependencies
+      // This would integrate with the existing message processing pipeline
+      return {
+        success: true,
+        dependencies: resolvedDependencies,
+        message: 'Dependencies resolved automatically'
+      };
+
+    } catch (error) {
+      console.error('[AIService] Failed to process message with auto dependencies:', error);
+      throw error;
+    }
   }
 }

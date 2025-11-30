@@ -2,6 +2,7 @@ import { constructRegistry } from '../../state/constructs';
 import { threadManager } from '../../core/thread/SingletonThreadManager';
 import { stmBuffer, type MessagePacket } from '../../core/memory/STMBuffer';
 import { shouldLog } from '../../lib/verbosity';
+import { VaultStore, createVaultStore } from '../../core/vault/VaultStore';
 import type {
   SynthMemoryContext,
   STMContextEntry,
@@ -70,6 +71,7 @@ export class SynthMemoryOrchestrator {
   private readonly leaseDurationMs: number;
   private initializationPromise: Promise<void> | null = null;
   private availabilityNotes: string[] = [];
+  private readonly vaultStore: VaultStore;
 
   constructor(options: SynthMemoryOrchestratorOptions = {}) {
     this.constructId = options.constructId ?? 'default-construct';
@@ -81,6 +83,7 @@ export class SynthMemoryOrchestrator {
     this.maxLtmEntries = options.maxLtmEntries ?? 32;
     this.maxSummaries = options.maxSummaries ?? 4;
     this.leaseDurationMs = options.leaseDurationMs ?? 5 * 60 * 1000;
+    this.vaultStore = createVaultStore(this.constructId);
   }
 
   /**
@@ -119,10 +122,20 @@ export class SynthMemoryOrchestrator {
       this.logWarning('Failed to append message to STM buffer', error);
     }
 
-    // Store LTM via VVAULT API directly
-      try {
-      await this.storeLTMToVVAULT(role, content, timestamp, threadId, metadata);
-      } catch (error) {
+    // Store LTM via VaultStore
+    try {
+      await this.vaultStore.saveMessage(threadId, {
+        role,
+        content,
+        timestamp,
+        metadata: {
+          source: 'synth-memory-orchestrator',
+          memoryType: 'long-term',
+          orchestrator: 'synth-memory',
+          ...metadata
+        }
+      });
+    } catch (error) {
       this.logWarning('Failed to persist message to VVAULT API', error);
     }
 
@@ -255,166 +268,80 @@ export class SynthMemoryOrchestrator {
 
   private async loadLTMEntries(limit: number): Promise<LTMContextEntry[]> {
     try {
-      // Query VVAULT API for LTM entries
-      const queryResponse = await fetch(
-        `/api/vvault/identity/query?constructCallsign=${encodeURIComponent(this.constructId)}&query=long-term memory&limit=${limit}`,
-        {
-          method: 'GET',
-          credentials: 'include',
-        }
-      );
+      // Query VaultStore for LTM entries
+      const entries = await this.vaultStore.search({
+        constructId: this.constructId,
+        threadId: this.threadId || undefined,
+        kind: 'LTM',
+        limit
+      });
 
-      if (!queryResponse.ok) {
-        this.logWarning('Failed to load LTM entries from VVAULT API', new Error(queryResponse.statusText));
-        // Fall back to VVAULT transcripts if available
-        if (this.vvaultConnector?.readMemories) {
-          return this.loadMemoriesFromVvault(limit);
+      // Map VaultEntry[] to LTMContextEntry[]
+      const ltmEntries: LTMContextEntry[] = entries.map((entry) => ({
+        id: entry.id,
+        kind: entry.kind,
+        content: entry.payload?.response || entry.payload?.context || (typeof entry.payload === 'string' ? entry.payload : JSON.stringify(entry.payload)),
+        relevanceScore: entry.relevanceScore,
+        timestamp: entry.timestamp,
+        metadata: {
+          context: entry.payload?.context,
+          response: entry.payload?.response,
+          sessionId: this.threadId,
+          ...entry.metadata
         }
-        return [];
-      }
-
-      const result = await queryResponse.json();
-      if (!result.ok || !result.memories) {
-        // Fall back to VVAULT transcripts if available
-        if (this.vvaultConnector?.readMemories) {
-          return this.loadMemoriesFromVvault(limit);
-        }
-        return [];
-      }
-
-      // Filter for long-term memories and convert to LTMContextEntry format
-      const ltmEntries = result.memories
-        .filter((m: any) => m.memoryType === 'long-term' || !m.memoryType)
-        .slice(0, limit)
-        .map((memory: any, index: number) => ({
-          id: index,
-          kind: 'LTM',
-          content: memory.response || memory.context || '',
-          relevanceScore: memory.relevance || 1.0,
-          timestamp: memory.timestamp ? new Date(memory.timestamp).getTime() : Date.now(),
-          metadata: {
-            context: memory.context,
-            response: memory.response,
-            sessionId: this.threadId,
-            ...memory.metadata
-          }
-        }));
+      }));
 
       if (ltmEntries.length > 0) {
         return ltmEntries;
       }
 
       // Fall back to VVAULT transcripts if no LTM entries found
-    if (this.vvaultConnector?.readMemories) {
-      return this.loadMemoriesFromVvault(limit);
-    }
+      if (this.vvaultConnector?.readMemories) {
+        return this.loadMemoriesFromVvault(limit);
+      }
 
       return [];
     } catch (error) {
-      this.logWarning('Failed to load LTM entries from VVAULT API', error);
+      this.logWarning('Failed to load LTM entries from VaultStore', error);
       // Fall back to VVAULT transcripts if available
       if (this.vvaultConnector?.readMemories) {
         return this.loadMemoriesFromVvault(limit);
       }
-    return [];
+      return [];
     }
   }
 
   private async loadSummaries(limit: number): Promise<SummaryContextEntry[]> {
     try {
-      // Query VVAULT API for summary/checkpoint entries
-      const queryResponse = await fetch(
-        `/api/vvault/identity/query?constructCallsign=${encodeURIComponent(this.constructId)}&query=checkpoint summary&limit=${limit}`,
-        {
-          method: 'GET',
-          credentials: 'include',
-        }
-      );
+      // Query VaultStore for summary metadata
+      const summaries = await this.vaultStore.getVaultSummaryMeta();
 
-      if (!queryResponse.ok) {
-        return [];
-      }
-
-      const result = await queryResponse.json();
-      if (!result.ok || !result.memories) {
-      return [];
-    }
-
-      // Filter for summary/checkpoint entries and convert format
-      return result.memories
-        .filter((m: any) => m.metadata?.kind?.includes('SUMMARY') || m.metadata?.kind?.includes('CHECKPOINT'))
+      // Map VaultSummary[] to SummaryContextEntry[] and apply limit
+      return summaries
         .slice(0, limit)
-        .map((memory: any, index: number) => {
-          const metadata = memory.metadata || {};
-          return {
-            id: index,
-            constructId: this.constructId,
-            threadId: metadata.sessionId || this.threadId,
-            summaryType: metadata.kind?.replace('SUMMARY_', '') as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'MANUAL' || 'MANUAL',
-            content: memory.response || memory.context,
-            startTs: metadata.startTs || (memory.timestamp ? new Date(memory.timestamp).getTime() : Date.now()),
-            endTs: metadata.endTs || (memory.timestamp ? new Date(memory.timestamp).getTime() : Date.now()),
-            createdAt: memory.timestamp ? new Date(memory.timestamp).getTime() : Date.now()
-          };
-        });
+        .map((summary) => ({
+          id: summary.id,
+          summaryType: summary.summaryType,
+          content: summary.content,
+          startTs: summary.startTs,
+          endTs: summary.endTs,
+          createdAt: summary.createdAt
+        }));
     } catch (error) {
-      this.logWarning('Failed to load vault summaries from VVAULT API', error);
+      this.logWarning('Failed to load vault summaries from VaultStore', error);
       return [];
     }
   }
 
   private async loadVaultStats(): Promise<SynthMemoryContext['vaultStats'] | undefined> {
     try {
-      // Query VVAULT API for all memories to compute stats
-      const queryResponse = await fetch(
-        `/api/vvault/identity/query?constructCallsign=${encodeURIComponent(this.constructId)}&query=*&limit=1000`,
-        {
-          method: 'GET',
-          credentials: 'include',
-        }
-      );
-
-      if (!queryResponse.ok) {
-        return undefined;
-      }
-
-      const result = await queryResponse.json();
-      if (!result.ok || !result.memories) {
-      return undefined;
-    }
-
-      const memories = result.memories;
-      const entriesByKind: Record<string, number> = {};
-      let oldestEntry: number | undefined;
-      let newestEntry: number | undefined;
-      let totalSummaries = 0;
-
-      memories.forEach((memory: any) => {
-        const kind = memory.metadata?.kind || 'LTM';
-        entriesByKind[kind] = (entriesByKind[kind] || 0) + 1;
-
-        if (memory.metadata?.kind?.includes('SUMMARY')) {
-          totalSummaries++;
-        }
-
-        const ts = memory.timestamp ? new Date(memory.timestamp).getTime() : Date.now();
-        if (!oldestEntry || ts < oldestEntry) {
-          oldestEntry = ts;
-        }
-        if (!newestEntry || ts > newestEntry) {
-          newestEntry = ts;
-        }
-      });
-
-      return {
-        totalEntries: memories.length,
-        entriesByKind,
-        totalSummaries,
-        oldestEntry,
-        newestEntry
-      };
+      // Query VaultStore for statistics
+      const stats = await this.vaultStore.getStats();
+      
+      // VaultStore.getStats() returns the exact format needed
+      return stats;
     } catch (error) {
-      this.logWarning('Failed to load vault statistics from VVAULT API', error);
+      this.logWarning('Failed to load vault statistics from VaultStore', error);
       return undefined;
     }
   }
@@ -520,50 +447,5 @@ export class SynthMemoryOrchestrator {
 
   private noteIfMissing(note: string): void {
     this.availabilityNotes.push(note);
-  }
-
-  /**
-   * Store LTM to VVAULT API directly
-   */
-  private async storeLTMToVVAULT(
-    role: MemoryRole,
-    content: string,
-    timestamp: number,
-    threadId: string,
-    metadata: Record<string, unknown>
-  ): Promise<void> {
-    // For LTM storage, we need context/response pairs
-    // If this is a user message, store it with empty response (will be updated when assistant responds)
-    // If this is an assistant message, try to pair it with the previous user message
-    
-    const context = role === 'user' ? content : '';
-    const response = role === 'assistant' ? content : '';
-
-    const storeResponse = await fetch('/api/vvault/identity/store', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        constructCallsign: this.constructId,
-        context: context || `Message ${role}`,
-        response: response || context,
-        metadata: {
-          timestamp: new Date(timestamp).toISOString(),
-          sessionId: threadId,
-          source: 'synth-memory-orchestrator',
-          memoryType: 'long-term', // Explicitly set as LTM
-          role,
-          orchestrator: 'synth-memory',
-          ...metadata
-        }
-      })
-    });
-
-    if (!storeResponse.ok) {
-      const errorText = await storeResponse.text();
-      throw new Error(`VVAULT API error: ${storeResponse.status} ${errorText}`);
-    }
   }
 }

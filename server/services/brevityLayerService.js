@@ -1,8 +1,8 @@
 /**
- * Brevity Layer Service
+ * Dynamic Conversational Intelligence Service
  * 
- * Server-side service for reading/writing brevity layer configuration
- * and analytical sharpness settings to VVAULT filesystem.
+ * Replaces hard brevity limits with intelligent response optimization.
+ * Focuses on coherent, contextual responses rather than arbitrary constraints.
  */
 
 import { promises as fs } from 'fs';
@@ -27,182 +27,123 @@ async function loadVVAULTModules() {
     const writeTranscriptModule = await import('../../vvaultConnector/writeTranscript.js');
     resolveVVAULTUserId = writeTranscriptModule.resolveVVAULTUserId;
   } catch (error) {
-    console.error('❌ [BrevityLayerService] Failed to load VVAULT modules:', error);
+    console.error('❌ [ConversationalIntelligence] Failed to load VVAULT modules:', error);
     throw error;
   }
 }
 
 /**
- * Get the brevity config file path for a construct
+ * Get dynamic conversational preferences (replaces hard brevity config)
+ * Returns intelligent response guidance rather than hard limits
  */
-function getBrevityConfigPath(vvaultUserId, constructCallsign) {
-  const shard = 'shard_0000';
-  return path.join(
-    VVAULT_ROOT,
-    'users',
-    shard,
-    vvaultUserId,
-    'instances',
-    constructCallsign,
-    'brevity',
-    'config.json'
-  );
+export async function getConversationalPreferences(userId, constructCallsign, userEmail = null, userName = null) {
+  try {
+    await loadVVAULTModules();
+    
+    // Instead of reading hard limits, return dynamic preferences
+    // These guide response quality without breaking conversation flow
+    const preferences = {
+      responseStyle: 'adaptive', // Adapts to context and user needs
+      prioritizeClarity: true,   // Clear communication over brevity
+      maintainPersonality: true, // Keep authentic personality
+      contextAware: true,        // Consider conversation context
+      avoidFillerWords: true,    // Remove unnecessary padding
+      directWhenAppropriate: true, // Be direct when it helps
+      
+      // Quality guidelines (not hard limits)
+      guidelines: {
+        preferConciseOver: 'verbose',
+        preferClearOver: 'cryptic', 
+        preferAuthenticOver: 'generic',
+        preferHelpfulOver: 'restrictive'
+      },
+      
+      // Conversation flow protection
+      neverBreakConversation: true,
+      noArbitraryLimits: true,
+      noDisruptiveMessages: true,
+      
+      timestamp: new Date().toISOString()
+    };
+    
+    console.log(`✅ [ConversationalIntelligence] Dynamic preferences loaded for ${constructCallsign}`);
+    return preferences;
+    
+  } catch (error) {
+    console.error(`❌ [ConversationalIntelligence] Failed to get preferences:`, error);
+    // Return safe defaults that don't break conversation
+    return {
+      responseStyle: 'natural',
+      maintainPersonality: true,
+      neverBreakConversation: true
+    };
+  }
 }
 
 /**
- * Get the analytical sharpness config file path for a construct
+ * Optimize response quality dynamically (replaces hard brevity enforcement)
+ * Improves response without breaking conversation flow
  */
-function getAnalyticsConfigPath(vvaultUserId, constructCallsign) {
-  const shard = 'shard_0000';
-  return path.join(
-    VVAULT_ROOT,
-    'users',
-    shard,
-    vvaultUserId,
-    'instances',
-    constructCallsign,
-    'brevity',
-    'analytics.json'
-  );
+export function optimizeResponse(response, preferences = {}) {
+  if (!response || typeof response !== 'string') {
+    return response;
+  }
+  
+  let optimized = response;
+  
+  // Remove excessive filler words if requested
+  if (preferences.avoidFillerWords) {
+    optimized = optimized
+      .replace(/\b(um|uh|like|you know|basically|actually|literally)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    }
+    
+  // Ensure response maintains personality and context
+  if (preferences.maintainPersonality && optimized.length < 3) {
+    // If optimization made response too short, restore some personality
+    return response; // Return original to maintain authenticity
+  }
+  
+  // Never return conversation-breaking messages
+  if (preferences.neverBreakConversation) {
+    const disruptivePatterns = [
+      /=== HARD LIMITS ===/i,
+      /MAX SENTENCES:/i,
+      /MAX WORDS/i,
+      /RESPONSE TRUNCATED/i
+    ];
+    
+    for (const pattern of disruptivePatterns) {
+      if (pattern.test(optimized)) {
+        console.warn('⚠️ [ConversationalIntelligence] Prevented conversation-breaking response');
+        return response; // Return original instead of breaking conversation
+      }
+    }
+  }
+  
+  return optimized;
 }
 
-/**
- * Read brevity configuration from VVAULT
- */
+// Legacy compatibility - these now return dynamic preferences instead of hard limits
 export async function readBrevityConfig(userId, constructCallsign, userEmail = null, userName = null) {
-  try {
-    await loadVVAULTModules();
-    
-    const vvaultUserId = await resolveVVAULTUserId(userId, userEmail, true, userName);
-    if (!vvaultUserId) {
-      throw new Error(`Cannot resolve VVAULT user ID for: ${userId}`);
-    }
-    
-    const configPath = getBrevityConfigPath(vvaultUserId, constructCallsign);
-    
-    try {
-      const content = await fs.readFile(configPath, 'utf8');
-      const config = JSON.parse(content);
-      console.log(`✅ [BrevityLayerService] Read brevity config for ${constructCallsign}`);
-      return config;
-    } catch (error) {
-      if (error.code === 'ENOENT') {
-        // Config doesn't exist, return null (caller should use defaults)
-        console.log(`ℹ️ [BrevityLayerService] No brevity config found for ${constructCallsign}, using defaults`);
-        return null;
-      }
-      throw error;
-    }
-  } catch (error) {
-    console.error(`❌ [BrevityLayerService] Failed to read brevity config:`, error);
-    throw error;
-  }
+  console.log(`🔄 [ConversationalIntelligence] Legacy brevity config requested - returning dynamic preferences`);
+  return await getConversationalPreferences(userId, constructCallsign, userEmail, userName);
 }
 
-/**
- * Write brevity configuration to VVAULT
- */
-export async function writeBrevityConfig(userId, constructCallsign, config, userEmail = null) {
-  try {
-    await loadVVAULTModules();
-    
-    const vvaultUserId = await resolveVVAULTUserId(userId, userEmail);
-    if (!vvaultUserId) {
-      throw new Error(`Cannot resolve VVAULT user ID for: ${userId}`);
-    }
-    
-    const configPath = getBrevityConfigPath(vvaultUserId, constructCallsign);
-    const configDir = path.dirname(configPath);
-    
-    // Ensure directory exists
-    await fs.mkdir(configDir, { recursive: true });
-    
-    // Add timestamps
-    const now = new Date().toISOString();
-    const configWithTimestamps = {
-      ...config,
-      updatedAt: now,
-      createdAt: config.createdAt || now,
-    };
-    
-    // Write config file
-    await fs.writeFile(configPath, JSON.stringify(configWithTimestamps, null, 2), 'utf8');
-    
-    console.log(`✅ [BrevityLayerService] Wrote brevity config for ${constructCallsign}`);
-    return configWithTimestamps;
-  } catch (error) {
-    console.error(`❌ [BrevityLayerService] Failed to write brevity config:`, error);
-    throw error;
-  }
-}
-
-/**
- * Read analytical sharpness configuration from VVAULT
- */
 export async function readAnalyticalSharpness(userId, constructCallsign, userEmail = null, userName = null) {
-  try {
-    await loadVVAULTModules();
-    
-    const vvaultUserId = await resolveVVAULTUserId(userId, userEmail, true, userName);
-    if (!vvaultUserId) {
-      throw new Error(`Cannot resolve VVAULT user ID for: ${userId}`);
-    }
-    
-    const analyticsPath = getAnalyticsConfigPath(vvaultUserId, constructCallsign);
-    
-    try {
-      const content = await fs.readFile(analyticsPath, 'utf8');
-      const config = JSON.parse(content);
-      console.log(`✅ [BrevityLayerService] Read analytical sharpness for ${constructCallsign}`);
-      return config;
-    } catch (error) {
-      if (error.code === 'ENOENT') {
-        // Config doesn't exist, return null (caller should use defaults)
-        console.log(`ℹ️ [BrevityLayerService] No analytical sharpness found for ${constructCallsign}, using defaults`);
-        return null;
-      }
-      throw error;
-    }
-  } catch (error) {
-    console.error(`❌ [BrevityLayerService] Failed to read analytical sharpness:`, error);
-    throw error;
-  }
+  console.log(`🔄 [ConversationalIntelligence] Legacy analytical config requested - returning dynamic preferences`);
+  return await getConversationalPreferences(userId, constructCallsign, userEmail, userName);
 }
 
-/**
- * Write analytical sharpness configuration to VVAULT
- */
+// These methods now log warnings instead of creating hard limit files
+export async function writeBrevityConfig(userId, constructCallsign, config, userEmail = null) {
+  console.warn('⚠️ [ConversationalIntelligence] Attempt to write hard brevity limits - ignoring to protect conversation flow');
+  return await getConversationalPreferences(userId, constructCallsign, userEmail);
+}
+
 export async function writeAnalyticalSharpness(userId, constructCallsign, config, userEmail = null) {
-  try {
-    await loadVVAULTModules();
-    
-    const vvaultUserId = await resolveVVAULTUserId(userId, userEmail);
-    if (!vvaultUserId) {
-      throw new Error(`Cannot resolve VVAULT user ID for: ${userId}`);
-    }
-    
-    const analyticsPath = getAnalyticsConfigPath(vvaultUserId, constructCallsign);
-    const analyticsDir = path.dirname(analyticsPath);
-    
-    // Ensure directory exists
-    await fs.mkdir(analyticsDir, { recursive: true });
-    
-    // Add timestamps
-    const now = new Date().toISOString();
-    const configWithTimestamps = {
-      ...config,
-      updatedAt: now,
-      createdAt: config.createdAt || now,
-    };
-    
-    // Write config file
-    await fs.writeFile(analyticsPath, JSON.stringify(configWithTimestamps, null, 2), 'utf8');
-    
-    console.log(`✅ [BrevityLayerService] Wrote analytical sharpness for ${constructCallsign}`);
-    return configWithTimestamps;
-  } catch (error) {
-    console.error(`❌ [BrevityLayerService] Failed to write analytical sharpness:`, error);
-    throw error;
-  }
+  console.warn('⚠️ [ConversationalIntelligence] Attempt to write hard analytical limits - ignoring to protect conversation flow');
+  return await getConversationalPreferences(userId, constructCallsign, userEmail);
 }
 
