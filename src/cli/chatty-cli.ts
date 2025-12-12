@@ -13,7 +13,7 @@ import { PersonaBrain } from '../engine/memory/PersonaBrain.js';
 // Import file operations commands
 import { FileOpsCommands } from './fileOpsCommands.js';
 // Import optimized synth processor
-import { OptimizedSynthProcessor } from '../engine/optimizedSynth.js';
+import { OptimizedZenProcessor } from '../engine/optimizedZen.js';
 import { AdaptiveMemoryManager } from '../engine/adaptiveMemoryManager.js';
 // Import conversation manager
 import { ConversationManager } from './conversationManager.js';
@@ -63,7 +63,7 @@ class CLIAIService {
   private readonly modelName: string;
   private currentModel: string;
   private brain: PersonaBrain; // Enhanced persona support
-  public optimizedSynth: OptimizedSynthProcessor;
+  public optimizedZen: OptimizedZenProcessor;
   public memoryManager: AdaptiveMemoryManager;
 
   constructor(useFallback = false, addTimestamps = true, modelName = 'AI') {
@@ -85,7 +85,7 @@ class CLIAIService {
     this.brain = new PersonaBrain(persistentMemory);
     
     // Initialize optimized synth processor and memory manager
-    this.optimizedSynth = new OptimizedSynthProcessor(this.brain, {
+    this.optimizedZen = new OptimizedZenProcessor(this.brain, {
       maxContextLength: 8000,
       maxHistoryMessages: 20,
       timeoutMs: 45000,
@@ -179,9 +179,9 @@ class CLIAIService {
     }
 
     try {
-      if (this.currentModel === 'synth') {
-        // Use optimized synth processor for better performance
-        const { response, metrics } = await this.optimizedSynth.processMessage(
+      if (this.currentModel === 'zen') {
+        // Use optimized zen processor for better performance
+        const { response, metrics } = await this.optimizedZen.processMessage(
           userMessage,
           this.conversationHistory,
           'cli'
@@ -889,10 +889,10 @@ Be thoughtful, wise, and supportive.`;
 
     // Persona commands
     if (message === '/personas') {
-      const personas = ai.optimizedSynth.getAvailablePersonas();
+      const personas = ai.optimizedZen.getAvailablePersonas();
       console.log(colorize('🎭 Available LLM Personas:', 'cyan'));
       personas.forEach(persona => {
-        const current = ai.optimizedSynth.getCurrentPersona().id === persona.id ? ' (current)' : '';
+        const current = ai.optimizedZen.getCurrentPersona().id === persona.id ? '极客 (current)' : '';
         console.log(colorize(`  • ${persona.id} - ${persona.name}${current}`, 'white'));
         console.log(colorize(`    ${persona.description}`, 'gray'));
       });
@@ -909,9 +909,9 @@ Be thoughtful, wise, and supportive.`;
       }
       
       const personaId = parts[1];
-      const success = ai.optimizedSynth.setPersona(personaId);
+      const success = ai.optimizedZen.setPersona(personaId);
       if (success) {
-        const persona = ai.optimizedSynth.getCurrentPersona();
+        const persona = ai.optimizedZen.getCurrentPersona();
         console.log(colorize(`🎭 Switched to ${persona.name} persona`, 'green'));
         console.log(colorize(`   ${persona.description}`, 'gray'));
       } else {
@@ -922,19 +922,19 @@ Be thoughtful, wise, and supportive.`;
     }
 
     if (message === '/models') {
-      if (ai.getModel() === 'synth') {
+      if (ai.getModel() === 'zen') {
         try {
           const cfg = loadSeatConfig();
           const codingModel = (cfg.coding as any)?.tag ?? (cfg.coding as any) ?? 'deepseek-coder';
           const creativeModel = (cfg.creative as any)?.tag ?? (cfg.creative as any) ?? 'mistral';
           const smalltalkModel = (cfg.smalltalk as any)?.tag ?? (cfg.smalltalk as any) ?? 'phi3';
           
-          console.log(colorize(`🧠 Current Synth Pipeline Models:\n  • Coding: ${codingModel}\n  • Creative: ${creativeModel}\n  • Smalltalk: ${smalltalkModel}`, 'cyan'));
+          console.log(colorize(`🧠 Current Zen Pipeline Models:\n  • Coding: ${codingModel}\n  • Creative: ${creativeModel}\n  • Smalltalk: ${smalltalkModel}`, 'cyan'));
         } catch (error) {
-          console.log(colorize('🧠 Synth mode active, but could not load model configuration', 'yellow'));
+          console.log(colorize('🧠 Zen mode active, but could not load model configuration', 'yellow'));
         }
       } else {
-        console.log(colorize(`Current mode: ${ai.getModel()} (not synth mode)`, 'yellow'));
+        console.log(colorize(`Current mode: ${ai.getModel()} (not zen mode)`, 'yellow'));
       }
       rl.prompt();
       return;
@@ -967,7 +967,7 @@ Be thoughtful, wise, and supportive.`;
     }
 
     if (message === '/performance') {
-      const metrics = ai.optimizedSynth?.getMetrics();
+      const metrics = ai.optimizedZen?.getMetrics();
       const memoryHealth = ai.memoryManager?.getMemoryHealth();
       
       if (metrics) {

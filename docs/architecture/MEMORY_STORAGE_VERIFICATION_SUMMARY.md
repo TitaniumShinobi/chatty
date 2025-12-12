@@ -46,7 +46,7 @@ const stmt = db.prepare(`
 ```
 
 **Impact**: 
-- SynthMemoryOrchestrator uses VaultStore → writes to Chatty DB
+- ZenMemoryOrchestrator uses VaultStore → writes to Chatty DB
 - useThread hook uses VaultStore → writes to Chatty DB
 - All LTM storage violates VVAULT boundary
 
@@ -123,7 +123,7 @@ if (db.stmBuffer) {
 1. **VaultStore.saveMessage()** → SQLite `vault_entries`
 2. **STMBuffer.persistToDatabase()** → SQLite `stm_buffer`
 3. **BrowserSTMBuffer.saveToStorage()** → localStorage
-4. **SynthMemoryOrchestrator.captureMessage()** → VaultStore → SQLite
+极客时间4. **ZenMemoryOrchestrator.captureMessage()** → VaultStore → SQLite
 
 ### Memory Read Paths (WRONG - Read from Chatty DB)
 
@@ -147,7 +147,7 @@ if (db.stmBuffer) {
 1. `chatty/src/core/vault/VaultStore.ts` - Replace SQLite with VVAULT API
 2. `chatty/src/core/memory/STMBuffer.ts` - Remove SQLite persistence
 3. `chatty/src/core/memory/BrowserSTMBuffer.ts` - Replace localStorage with VVAULT API
-4. `chatty/src/engine/orchestration/SynthMemoryOrchestrator.ts` - Use VVAULT API directly
+4. `chatty/src/极客时间engine/orchestration/ZenMemoryOrchestrator.ts` - Use VVAULT API directly
 
 ### High Priority
 
@@ -183,6 +183,21 @@ if (db.stmBuffer) {
 - **Architecture Doc**: `chatty/docs/architecture/VVAULT_CHATTY_DATABASE_SEPARATION.md`
 - **Detailed Verification**: `chatty/docs/architecture/VVAULT_CHATTY_MEMORY_STORAGE_VERIFICATION.md`
 - **Source Conversation**: `codex_conversations/codex_hello.txt` (lines 158-209)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

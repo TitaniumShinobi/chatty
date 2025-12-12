@@ -12,7 +12,7 @@
 /vvault/users/shard_0000/{user_id}/instances/
 ```
 
-**Note**: Using `instances/` (not `constructs/`) per user preference.
+**Note**: Using `instances/` as the official VVAULT specification.
 
 ---
 

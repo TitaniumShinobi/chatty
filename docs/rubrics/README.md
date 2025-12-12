@@ -19,7 +19,7 @@ This directory contains design rubrics and standards for Chatty. Rubrics define 
 
 ### **Construct Rubrics**
 - `CONSTRUCT_FORMATTING_RUBRIC.md` - Construct formatting standards
-- `SYNTH_PRIMARY_CONSTRUCT_RUBRIC.md` - Synth as primary construct rules
+- `ZEN_PRIMARY_CONSTRUCT_RUBRIC.md` - Zen as primary construct rules
 - `LIN_INFRASTRUCTURE_RUBRIC.md` - Lin as infrastructure for GPTs (a house that is alive)
 - `STAR_TOGGLE_RUBRIC.md` - Star toggle functionality standards
 

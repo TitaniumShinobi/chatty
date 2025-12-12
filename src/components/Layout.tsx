@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { fetchMe, logout, getUserId, type User } from '../lib/auth'
 import { VVAULTConversationManager, type ConversationThread } from '../lib/vvaultConversationManager'
@@ -12,8 +12,8 @@ import SettingsModal from './SettingsModal'
 import ProjectsModal from './ProjectsModal'
 import ShareConversationModal from './ShareConversationModal'
 // RuntimeDashboard removed - using automatic runtime orchestration
-import SynthGuidance from './SynthGuidance'
-import { useSynthGuidance } from '../hooks/useSynthGuidance'
+import ZenGuidance from './ZenGuidance'
+import { useZenGuidance } from '../hooks/useZenGuidance'
 import { AIService } from '../lib/aiService'
 import type { UIContextSnapshot, Message as ChatMessage } from '../types'
 import { WorkspaceContextBuilder } from '../engine/context/WorkspaceContextBuilder'
@@ -52,9 +52,9 @@ type Thread = {
 }
 
 const VVAULT_FILESYSTEM_ROOT = '/Users/devonwoodson/Documents/GitHub/vvault';
-const DEFAULT_SYNTH_CANONICAL_SESSION_ID = 'synth-001_chat_with_synth-001';
-const DEFAULT_SYNTH_CANONICAL_CONSTRUCT_ID = 'synth-001';
-const DEFAULT_SYNTH_RUNTIME_ID = 'synth-001';
+const DEFAULT_ZEN_CANONICAL_SESSION_ID = 'zen-001_chat_with_zen-001';
+const DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID = 'zen-001';
+const DEFAULT_ZEN_RUNTIME_ID = 'zen-001';
 
 function mapChatMessageToThreadMessage(message: ChatMessage): Message | null {
   const parsedTs = message.timestamp ? Date.parse(message.timestamp) : NaN
@@ -113,7 +113,7 @@ export default function Layout() {
     nextStep,
     previousStep,
     hide: hideGuidance
-  } = useSynthGuidance()
+  } = useZenGuidance()
   
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -135,22 +135,31 @@ export default function Layout() {
   
   useEffect(() => {
     console.log('📚 [Layout.tsx] Threads updated (length):', threads.length);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:137',message:'Layout: threads updated',data:{threadCount:threads.length,threadIds:threads.map(t=>t.id),threadTitles:threads.map(t=>t.title)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
   }, [threads])
   
-  const activeId = useMemo(() => {
+        const activeId = useMemo(() => {
     const match = location.pathname.match(/^\/app\/chat\/(.+)$/)
     return match ? match[1] : null
   }, [location.pathname])
   const activeRuntimeId = (location.state as any)?.activeRuntimeId || null
+  
+  // #region agent log
+  useEffect(() => {
+    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:147',message:'Layout: activeRuntimeId state',data:{activeRuntimeId,pathname:location.pathname,state:location.state},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'F'})}).catch(()=>{});
+  }, [activeRuntimeId, location.pathname, location.state]);
+  // #endregion
   const shareConversation = useMemo(
     () => threads.find(thread => thread.id === shareConversationId) || null,
     [threads, shareConversationId]
   )
   const synthAddressBookThreads = useMemo(() => {
     const canonical =
-      threads.find(t => t.id === DEFAULT_SYNTH_CANONICAL_SESSION_ID) ||
-      threads.find(t => t.constructId === DEFAULT_SYNTH_CANONICAL_CONSTRUCT_ID) ||
-      threads.find(t => t.runtimeId === DEFAULT_SYNTH_RUNTIME_ID && t.isPrimary);
+      threads.find(t => t.id === DEFAULT_ZEN_CANONICAL_SESSION_ID) ||
+      threads.find(t => t.constructId === DEFAULT_ZEN_C极客时间ANONICAL_CONSTRUCT_ID) ||
+      threads.find(t => t.runtimeId === DEFAULT_ZEN_RUNTIME_ID && t.isPrimary);
     return canonical ? [canonical] : [];
   }, [threads])
 
@@ -242,8 +251,8 @@ export default function Layout() {
       runtimeHint
     ])
     if (!canonical) {
-      if (runtimeHint === DEFAULT_SYNTH_RUNTIME_ID) {
-        return DEFAULT_SYNTH_CANONICAL_SESSION_ID;
+      if (runtimeHint === DEFAULT_ZEN_RUNTIME_ID) {
+        return DEFAULT_ZEN_CANONICAL_SESSION_ID;
       }
       return threadId;
     }
@@ -281,14 +290,30 @@ export default function Layout() {
   }
 
   function filterByActiveRuntime(threadList: Thread[], activeRuntimeId?: string | null) {
-    if (!activeRuntimeId) return threadList
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:286',message:'filterByActiveRuntime: entry',data:{activeRuntimeId,threadCount:threadList.length,threadIds:threadList.map(t=>t.id),threadConstructIds:threadList.map(t=>t.constructId),threadRuntimeIds:threadList.map(t=>t.runtimeId)},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'G'})}).catch(()=>{});
+    // #endregion
+    if (!activeRuntimeId) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:287',message:'filterByActiveRuntime: no activeRuntimeId, returning all',data:{threadCount:threadList.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'G'})}).catch(()=>{});
+      // #endregion
+      return threadList
+    }
     const target = activeRuntimeId.toLowerCase()
-    return threadList.filter(thread => {
+    const filtered = threadList.filter(thread => {
       const construct = (thread.constructId || '').toLowerCase()
       const runtime = (thread.runtimeId || '').toLowerCase()
       const idHint = extractRuntimeKeyFromThreadId(thread.id)?.toLowerCase()
-      return construct === target || runtime === target || idHint === target
+      const matches = construct === target || runtime === target || idHint === target
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:293',message:'filterByActiveRuntime: thread check',data:{threadId:thread.id,threadTitle:thread.title,construct,runtime,idHint,target,matches},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'G'})}).catch(()=>{});
+      // #endregion
+      return matches
     })
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:295',message:'filterByActiveRuntime: result',data:{target,filteredCount:filtered.length,filteredIds:filtered.map(t=>t.id),originalCount:threadList.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'G'})}).catch(()=>{});
+    // #endregion
+    return filtered
   }
 
   function routeIdForThread(threadId: string, threadList: Thread[]) {
@@ -385,6 +410,9 @@ export default function Layout() {
         let vvaultConversations: any[] = [];
         let backendUnavailable = false;
         try {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:413',message:'Layout: calling loadAllConversations',data:{vvaultUserId,userId:me.email||userId},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'I'})}).catch(()=>{});
+          // #endregion
           const vvaultPromise = conversationManager.loadAllConversations(vvaultUserId);
           
           // Use Promise.race but track which one won
@@ -396,6 +424,9 @@ export default function Layout() {
           
           try {
             vvaultConversations = await vvaultPromise;
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:423',message:'Layout: loadAllConversations completed',data:{count:vvaultConversations.length,conversationIds:vvaultConversations.map(c=>c.sessionId),conversationTitles:vvaultConversations.map(c=>c.title)},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'I'})}).catch(()=>{});
+            // #endregion
             clearTimeout(timeoutId); // Cancel timeout if promise resolves first
             if (timeoutFired) {
               console.log('✅ [Layout.tsx] VVAULT loading completed after timeout warning');
@@ -417,13 +448,23 @@ export default function Layout() {
         setIsBackendUnavailable(backendUnavailable);
         console.log('📚 [Layout.tsx] VVAULT returned:', vvaultConversations);
         
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:418',message:'Layout: VVAULT conversations received',data:{count:vvaultConversations.length,conversations:vvaultConversations.map(c=>({sessionId:c.sessionId,title:c.title,constructId:c.constructId}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
+        
         const loadedThreads: Thread[] = vvaultConversations.map(conv => {
           // Normalize title: strip "Chat with " prefix and callsigns for address book display
-          let normalizedTitle = conv.title || 'Synth';
+          let normalizedTitle = conv.title || 'Zen';
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:422',message:'Layout: title before normalization',data:{originalTitle:conv.title,sessionId:conv.sessionId,constructId:conv.constructId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
           // Remove "Chat with " prefix if present
           normalizedTitle = normalizedTitle.replace(/^Chat with /i, '');
           // Extract construct name (remove callsigns like "-001")
           normalizedTitle = normalizedTitle.replace(/-\d{3,}$/i, '');
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:426',message:'Layout: title after normalization',data:{normalizedTitle,originalTitle:conv.title,sessionId:conv.sessionId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
           
           const constructId =
             conv.constructId ||
@@ -477,34 +518,43 @@ export default function Layout() {
         const hasUrlThread = preferredUrlThreadId && loadedThreads.some(t => t.id === preferredUrlThreadId);
 
         let filteredThreads = filterThreadsWithCanonicalPreference(loadedThreads);
-        const synthCanonicalThread = getCanonicalThreadForKeys(loadedThreads, ['synth', 'synth-001']);
-        const synthCanonicalHasMessages = Boolean(synthCanonicalThread && (synthCanonicalThread.messages?.length ?? 0) > 0);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:492',message:'Layout: after filterThreadsWithCanonicalPreference',data:{filteredCount:filteredThreads.length,filteredIds:filteredThreads.map(t=>t.id),filteredTitles:filteredThreads.map(t=>t.title),loadedCount:loadedThreads.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'G'})}).catch(()=>{});
+        // #endregion
+        const zenCanonicalThread = getCanonicalThreadForKeys(loadedThreads, ['zen', 'zen-001']);
+        const zenCanonicalHasMessages = Boolean(zenCanonicalThread && (zenCanonicalThread.messages?.length ?? 0) > 0);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:494',message:'Layout: before filterByActiveRuntime',data:{activeRuntimeId,filteredCount:filteredThreads.length,zenCanonicalThread:zenCanonicalThread?.id,zenHasMessages:zenCanonicalHasMessages},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'G'})}).catch(()=>{});
+        // #endregion
         let runtimeScopedThreads = filterByActiveRuntime(filteredThreads, activeRuntimeId);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:495',message:'Layout: after filterByActiveRuntime',data:{runtimeScopedCount:runtimeScopedThreads.length,runtimeScopedIds:runtimeScopedThreads.map(t=>t.id),runtimeScopedTitles:runtimeScopedThreads.map(t=>t.title),activeRuntimeId},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'G'})}).catch(()=>{});
+        // #endregion
         const backendDown = backendUnavailable || isBackendUnavailable;
         let fallbackThread: Thread | null = null;
         
-        // Guard clause: Skip thread creation if canonical Synth thread exists with messages
-        if (synthCanonicalHasMessages) {
-          console.log('✅ [Layout.tsx] Canonical Synth thread exists with messages - skipping thread creation');
+        // Guard clause: Skip thread creation if canonical Zen thread exists with messages
+        if (zenCanonicalHasMessages) {
+          console.log('✅ [Layout.tsx] Canonical Zen thread exists with messages - skipping thread creation');
         } else if (filteredThreads.length === 0 && !hasUrlThread) {
         // Only create a new welcome thread if:
         // 1. No conversations loaded from VVAULT
         // 2. AND no thread ID in URL (or URL thread doesn't exist in loaded conversations)
           // 3. AND canonical thread doesn't exist or is empty
-          console.log('🎯 [Layout.tsx] No conversations and no URL thread - creating Synth-001');
+          console.log('🎯 [Layout.tsx] No conversations and no URL thread - creating Zen-001');
           const urlRuntimeHint = extractRuntimeKeyFromThreadId(preferredUrlThreadId || urlThreadId);
-          const shouldForceCanonicalSynth =
+          const shouldForceCanonicalZen =
             !preferredUrlThreadId &&
-            !synthCanonicalThread?.id &&
-            urlRuntimeHint === DEFAULT_SYNTH_RUNTIME_ID;
+            !zenCanonicalThread?.id &&
+            urlRuntimeHint === DEFAULT_ZEN_RUNTIME_ID;
 
           const defaultThreadId =
             preferredUrlThreadId ||
-            synthCanonicalThread?.id ||
-            (shouldForceCanonicalSynth ? DEFAULT_SYNTH_CANONICAL_SESSION_ID : `synth_${Date.now()}`);
-          const synthConstructId =
-            synthCanonicalThread?.constructId ||
-            (defaultThreadId === DEFAULT_SYNTH_CANONICAL_SESSION_ID ? DEFAULT_SYNTH_CANONICAL_CONSTRUCT_ID : DEFAULT_SYNTH_CANONICAL_CONSTRUCT_ID);
+            zenCanonicalThread?.id ||
+            (shouldForceCanonicalZen ? DEFAULT_ZEN_CANONICAL_SESSION_ID : `zen_${Date.now()}`);
+          const zenConstructId =
+            zenCanonicalThread?.constructId ||
+            (defaultThreadId === DEFAULT_ZEN_CANONICAL_SESSION_ID ? DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID : DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID);
           const welcomeTimestamp = Date.now();
           const localNow = new Date();
           const hour = localNow.getHours();
@@ -514,19 +564,19 @@ export default function Layout() {
           else if (hour < 21) greeting = 'Good evening';
           const timeString = localNow.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
           const weekday = localNow.toLocaleDateString('en-US', { weekday: 'long' });
-          const welcomeText = `${greeting}! I'm Synth, your main AI companion in Chatty. It's ${timeString} on ${weekday}, so let me know what I can help you with today.`;
-          const canonicalConstructId = synthCanonicalThread?.constructId || DEFAULT_SYNTH_CANONICAL_CONSTRUCT_ID;
-          const finalConstructId = canonicalConstructId === 'synth' ? DEFAULT_SYNTH_CANONICAL_CONSTRUCT_ID : canonicalConstructId;
+          const welcomeText = `${greeting}! I'm Zen, your main AI companion in Chatty. It's ${timeString} on ${weekday}, so let me know what I can help you with today.`;
+          const canonicalConstructId = zenCanonicalThread?.constructId || DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID;
+          const finalConstructId = canonicalConstructId === 'zen' ? DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID : zenConstructId;
           
           const defaultThread: Thread = {
             id: defaultThreadId,
-            title: 'Synth',
+            title: 'Zen',
             messages: [],
             createdAt: welcomeTimestamp,
             updatedAt: welcomeTimestamp,
             archived: false,
             constructId: finalConstructId,
-            runtimeId: DEFAULT_SYNTH_RUNTIME_ID,
+            runtimeId: DEFAULT_ZEN_RUNTIME_ID,
             isPrimary: true,
             isFallback: backendDown
           };
@@ -538,17 +588,17 @@ export default function Layout() {
           
           // Guard clause: Skip createConversation if canonical thread exists with messages
           if (backendDown) {
-            console.log('⚠️ [Layout.tsx] Backend unavailable; created local Synth fallback without VVAULT save');
-          } else if (synthCanonicalHasMessages) {
-            console.log('✅ [Layout.tsx] Canonical Synth thread exists with messages - skipping createConversation');
+            console.log('⚠️ [Layout.tsx] Backend unavailable; created local Zen fallback without VVAULT save');
+          } else if (zenCanonicalHasMessages) {
+            console.log('✅ [Layout.tsx] Canonical Zen thread exists with messages - skipping createConversation');
           } else {
-          console.log('💾 [Layout.tsx] Creating Synth-001 in VVAULT...');
+          console.log('💾 [Layout.ts极客x] Creating Zen-001 in VVAULT...');
           try {
-              await conversationManager.createConversation(userId, defaultThreadId, 'Synth', finalConstructId);
-            console.log('✅ [Layout.tsx] Synth conversation structure created');
-              console.log('🔍 [Layout.tsx] Verify at: /vvault/users/shard_0000/{userId}/instances/synth-001/chatty/chat_with_synth-001.md');
+              await conversationManager.createConversation(userId, defaultThreadId, 'Zen', finalConstructId);
+            console.log('✅ [Layout.tsx] Zen conversation structure created');
+              console.log('🔍 [Layout.tsx] Verify at: /vvault/users/shard_0000/{userId}/instances/zen-001/chatty/chat_with_zen-001.md');
           } catch (error) {
-            console.error('❌ [Layout.tsx] Failed to create Synth conversation in VVAULT:', error);
+            console.error('❌ [Layout.tsx] Failed to create Zen conversation in VVAULT:', error);
             }
           }
         } else if (hasUrlThread) {
@@ -582,6 +632,9 @@ export default function Layout() {
         }
         
         console.log('🔄 [Layout.tsx] Setting threads in state...');
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:629',message:'Layout: setThreads called',data:{sortedThreadsCount:sortedThreads.length,sortedThreadsIds:sortedThreads.map(t=>t.id),sortedThreadsTitles:sortedThreads.map(t=>t.title),sortedThreadsConstructIds:sortedThreads.map(t=>t.constructId)},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'H'})}).catch(()=>{});
+        // #endregion
         setThreads(sortedThreads);
 
         const urlRuntimeHint = extractRuntimeKeyFromThreadId(urlThreadId);
@@ -644,11 +697,11 @@ export default function Layout() {
             console.error('❌ [Layout.tsx] Error stack:', error.stack);
           }
           
-          // === EMERGENCY FALLBACK - CREATE SYNTH CONVERSATION WITH WELCOME MESSAGE ===
-          console.log('🚨 [Layout.tsx] Creating emergency Synth conversation with welcome message');
-          const emergencyThreadId = `synth_emergency_${Date.now()}`;
+          // === EMERGENCY FALLBACK - CREATE ZEN CONVERSATION WITH WELCOME MESSAGE ===
+          console.log('🚨 [Layout.tsx] Creating emergency Zen conversation with welcome message');
+          const emergencyThreadId = `zen_emergency_${Date.now()}`;
           const emergencyTimestamp = Date.now();
-          const emergencyText = "Hey! I'm Synth. It looks like there was an issue loading conversations, but I'm here now. What can I help you with?";
+          const emergencyText = "Hey! I'm Zen. It looks like there was an issue loading conversations, but I'm here now. What can I help you with?";
           
           const emergencyWelcomeMessage: Message = {
             id: `msg_emergency_welcome_${emergencyTimestamp}`,
@@ -663,7 +716,7 @@ export default function Layout() {
           
           const emergencyThread: Thread = {
             id: emergencyThreadId,
-            title: 'Synth',
+            title: 'Zen',
             messages: [emergencyWelcomeMessage],
             createdAt: emergencyTimestamp,
             updatedAt: emergencyTimestamp,
@@ -732,6 +785,105 @@ export default function Layout() {
       return fixed;
     });
   }, [user])
+
+  // Force refresh conversations from VVAULT (bypasses cache)
+  const forceRefreshConversations = useCallback(async () => {
+    if (!user) return;
+    
+    console.log('🔄 [Layout.tsx] Force refreshing conversations from VVAULT...');
+    const conversationManager = VVAULTConversationManager.getInstance();
+    const userId = getUserId(user);
+    const vvaultUserId = user.email || userId;
+    
+    // Clear cache to force fresh load
+    conversationManager.clearCacheForUser(vvaultUserId);
+    
+    // Reset auth ref to allow reload
+    hasAuthenticatedRef.current = false;
+    
+    // Reload conversations
+    try {
+      const vvaultConversations = await conversationManager.loadAllConversations(vvaultUserId, true);
+      console.log(`✅ [Layout.tsx] Force refreshed: ${vvaultConversations.length} conversations`);
+      
+      // Convert and set threads (same logic as auth effect)
+      const loadedThreads: Thread[] = vvaultConversations.map(conv => {
+        let normalizedTitle = conv.title || 'Zen';
+        normalizedTitle = normalizedTitle.replace(/^Chat with /i, '');
+        normalizedTitle = normalizedTitle.replace(/-\d{3,}$/i, '');
+        
+        const constructId =
+          conv.constructId ||
+          conv.importMetadata?.constructId ||
+          conv.importMetadata?.connectedConstructId ||
+          conv.constructFolder ||
+          null;
+        const runtimeId =
+          conv.runtimeId ||
+          conv.importMetadata?.runtimeId ||
+          (constructId ? constructId.replace(/-001$/, '') : null) ||
+          null;
+        const isPrimary =
+          typeof conv.isPrimary === 'boolean'
+            ? conv.isPrimary
+            : typeof conv.importMetadata?.isPrimary === 'boolean'
+              ? conv.importMetadata.isPrimary
+              : typeof conv.importMetadata?.isPrimary === 'string'
+                ? conv.importMetadata.isPrimary.toLowerCase() === 'true'
+                : false;
+        
+        return {
+          id: conv.sessionId,
+          title: normalizedTitle,
+          messages: conv.messages.map((msg: any) => ({
+            id: msg.id,
+            role: msg.role,
+            text: msg.content,
+            packets: msg.role === 'assistant' ? [{ op: 'answer.v1', payload: { content: msg.content } }] : undefined,
+            ts: new Date(msg.timestamp).getTime(),
+            metadata: msg.metadata || undefined,
+            responseTimeMs: msg.metadata?.responseTimeMs,
+            thinkingLog: msg.metadata?.thinkingLog
+          })),
+          createdAt: conv.messages.length > 0 ? new Date(conv.messages[0].timestamp).getTime() : Date.now(),
+          updatedAt: conv.messages.length > 0 ? new Date(conv.messages[conv.messages.length - 1].timestamp).getTime() : Date.now(),
+          archived: false,
+          importMetadata: (conv as any).importMetadata || null,
+          constructId,
+          runtimeId,
+          isPrimary,
+          canonicalForRuntime: isPrimary && constructId ? runtimeId || constructId : null
+        };
+      });
+      
+      const filteredThreads = filterThreadsWithCanonicalPreference(loadedThreads);
+      const runtimeScopedThreads = filterByActiveRuntime(filteredThreads, activeRuntimeId);
+      const canonicalThreads = runtimeScopedThreads.filter(thread => thread.isPrimary && thread.constructId);
+      const nonCanonical = runtimeScopedThreads.filter(thread => !canonicalThreads.includes(thread));
+      const sortedThreads = [
+        ...canonicalThreads,
+        ...nonCanonical.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+      ];
+      
+      setThreads(sortedThreads);
+      console.log(`✅ [Layout.tsx] Force refresh complete: ${sortedThreads.length} threads`);
+    } catch (error) {
+      console.error('❌ [Layout.tsx] Force refresh failed:', error);
+    }
+  }, [user, activeRuntimeId]);
+
+  // Keyboard shortcut: Cmd/Ctrl + Shift + R to force refresh conversations
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'R') {
+        e.preventDefault();
+        forceRefreshConversations();
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [forceRefreshConversations]);
 
   type ThreadInitOptions = {
     title?: string
@@ -1064,7 +1216,7 @@ export default function Layout() {
         shareOpen: Boolean(shareConversationId)
       },
       composer: { attachments: files ? files.length : 0 },
-      synthMode: aiService.getSynthMode() ? 'synth' : 'lin'
+      zenMode: 'zen'
     }
     if (!baseUiContext.activePanel) {
       if (isSearchOpen) {
@@ -1493,7 +1645,7 @@ export default function Layout() {
           conversation={shareConversation}
           onClose={closeShareModal}
         />
-        <SynthGuidance
+        <ZenGuidance
           isVisible={isGuidanceVisible}
           step={currentStep}
           onClose={hideGuidance}

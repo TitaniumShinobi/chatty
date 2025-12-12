@@ -18,7 +18,7 @@ This directory contains organized documentation for the Chatty system. Documenta
 ### **architecture/**
 Core architectural documents:
 - `IDENTITY_ENFORCEMENT_ARCHITECTURE.md` - Identity system preventing LLM absorption
-- `SYNTH_CANONICAL_IMPLEMENTATION.md` - Synth's canonical entity pattern
+- `ZEN_CANONICAL_IMPLEMENTATION.md` - Zen's canonical entity pattern
 - `LIN_ARCHITECTURE.md` - Lin's dual role (construct + infrastructure)
 - `LLM_GPT_EQUALITY_ARCHITECTURE.md` - Core philosophy: LLM = GPT equality
 - `RUNTIME_ARCHITECTURE_RUBRIC.md` - Runtime architecture principles

@@ -74,7 +74,7 @@ export interface ChattySettings {
   enableFileProcessing: boolean;
   enableNarrativeSynthesis: boolean;
   enableLargeFileIntelligence: boolean;
-  enableSynthMode: boolean;
+  enableZenMode: boolean;
   theme: 'night' | 'light';
   maxHistory: number;
   autoSave: boolean;

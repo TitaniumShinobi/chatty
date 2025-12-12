@@ -201,13 +201,13 @@ This document analyzes overlapping topics across Chatty's documentation, identif
 - `docs/rubrics/RUNTIME_ARCHITECTURE_RUBRIC.md` (may reference instances/)
 - Code files: `htmlMarkdownImporter.ts`, `writeTranscript.js`
 
-**Official Spec**: `constructs/` (per `VVAULT_FILE_STRUCTURE_SPEC.md`)
+**Official Spec**: `instances/` (per updated VVAULT specification)
 
 **Resolution Status**:
 - ✅ Documented in `VVAULT_COMPLETE_GUIDE.md`
-- ✅ Documentation updated: `RUNTIME_IMPORT_PROCESSING_EXPLANATION.md` now uses `constructs/`
-- ✅ Documentation updated: `RUNTIME_ARCHITECTURE_RUBRIC.md` now uses `constructs/`
-- ⚠️ Needs code migration (htmlMarkdownImporter.ts, writeTranscript.js)
+- ✅ Documentation updated: `RUNTIME_IMPORT_PROCESSING_EXPLANATION.md` now uses `instances/`
+- ✅ Documentation updated: `RUNTIME_ARCHITECTURE_RUBRIC.md` now uses `instances/`
+- ✅ Code uses `instances/` as per official specification
 
 ---
 

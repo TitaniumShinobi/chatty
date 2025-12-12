@@ -197,8 +197,8 @@ export class VVAULTConversationManager {
       ? sessionOrTitle
       : `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const title = hasExplicitSessionId
-      ? titleOverride!.trim() || 'Synth'
-      : sessionOrTitle?.trim?.() || 'Synth';
+      ? titleOverride!.trim() || 'Zen'
+      : sessionOrTitle?.trim?.() || 'Zen';
 
     try {
       if (this.isBrowserEnv()) {
@@ -268,14 +268,29 @@ export class VVAULTConversationManager {
   }
 
   /**
+   * Clear cache for a specific user to force fresh reload
+   */
+  clearCacheForUser(userId: string): void {
+    const cacheKey = `loadAllConversations:${userId}`;
+    VVAULTConversationManager.inFlightRequests.delete(cacheKey);
+    console.log(`🔄 [VVAULTConversationManager] Cleared cache for userId: ${userId}`);
+  }
+
+  /**
    * Load all conversations for a user using VVAULT filesystem as source of truth.
    * Uses request deduplication to prevent concurrent duplicate API calls.
+   * @param forceRefresh - If true, bypasses cache and forces fresh load from VVAULT
    */
-  async loadAllConversations(userId: string): Promise<VVAULTConversationRecord[]> {
+  async loadAllConversations(userId: string, forceRefresh: boolean = false): Promise<VVAULTConversationRecord[]> {
     const cacheKey = `loadAllConversations:${userId}`;
     
+    // If forceRefresh is true, clear cache first
+    if (forceRefresh) {
+      this.clearCacheForUser(userId);
+    }
+    
     // Check if there's already an in-flight request for this userId
-    if (VVAULTConversationManager.inFlightRequests.has(cacheKey)) {
+    if (!forceRefresh && VVAULTConversationManager.inFlightRequests.has(cacheKey)) {
       console.log(`🔄 [VVAULTConversationManager] Deduplicating request for userId: ${userId}`);
       return VVAULTConversationManager.inFlightRequests.get(cacheKey)!;
     }
@@ -411,7 +426,7 @@ export class VVAULTConversationManager {
       const convs = await this.readConversations(userId);
       const mapped = convs.map(conv => ({
         id: conv.sessionId,
-        title: conv.title || 'Synth',
+        title: conv.title || 'Zen',
         messages: conv.messages.map(m => ({
           id: m.id,
           role: m.role,
@@ -550,11 +565,11 @@ export class VVAULTConversationManager {
       }
 
       // Node.js environment: use direct file system access
-      // Per SYNTH_PRIMARY_CONSTRUCT_RUBRIC.md: Synth is the primary construct of Chatty
-      // Default to Synth (primary construct) when unspecified
+      // Per ZEN_PRIMARY_CONSTRUCT_RUBRIC.md: Zen is the primary construct of Chatty
+      // Default to Zen (primary construct) when unspecified
       // Use resolveConstructDescriptor to ensure proper primary construct assignment
       const constructDescriptor = this.resolveConstructDescriptor(threadId, message.metadata);
-      const constructId = constructDescriptor.constructId; // Defaults to 'synth' (primary)
+      const constructId = constructDescriptor.constructId; // Defaults to 'zen' (primary)
       
       // Extract callsign from threadId or use default
       // Format: synth-001, lin-001, primary_1234567890 → callsign 1
@@ -590,36 +605,36 @@ export class VVAULTConversationManager {
   }
 
   /**
-   * Ensure the user has a dedicated Synth conversation. Creates one if missing.
-   * This is the ONLY place that should create conversations with 'synth' constructId.
+   * Ensure the user has a dedicated Zen conversation. Creates one if missing.
+   * This is the ONLY place that should create conversations with 'zen' constructId.
    */
-  async ensureFreshSynthConversation(user: User): Promise<ConversationThread> {
+  async ensureFreshZenConversation(user: User): Promise<ConversationThread> {
     await this.initializeVVAULT();
     const userId = getUserId(user);
 
-    console.log(`🔎 Ensuring Synth conversation exists for user: ${user.email} (ID: ${userId})`);
+    console.log(`🔎 Ensuring Zen conversation exists for user: ${user.email} (ID: ${userId})`);
 
     const records = await this.readConversations(userId);
-    const synthRecord = records.find(record => {
+    const zenRecord = records.find(record => {
       const normalizedTitle = record.title?.trim().toLowerCase();
-      return normalizedTitle === 'synth' || record.sessionId.startsWith('synth');
+      return normalizedTitle === 'zen' || record.sessionId.startsWith('zen');
     });
 
-    if (synthRecord) {
-      console.log(`🔁 Found existing Synth conversation: ${synthRecord.sessionId}`);
+    if (zenRecord) {
+      console.log(`🔁 Found existing Zen conversation: ${zenRecord.sessionId}`);
       return {
-        id: synthRecord.sessionId,
-        title: synthRecord.title || 'Synth',
-        messages: synthRecord.messages,
-        createdAt: synthRecord.messages.length ? new Date(synthRecord.messages[0].timestamp).getTime() : Date.now(),
-        updatedAt: synthRecord.messages.length ? new Date(synthRecord.messages[synthRecord.messages.length - 1].timestamp).getTime() : Date.now(),
+        id: zenRecord.sessionId,
+        title: zenRecord.title || 'Zen',
+        messages: zenRecord.messages,
+        createdAt: zenRecord.messages.length ? new Date(zenRecord.messages[极客时间0].timestamp).getTime() : Date.now(),
+        updatedAt: zenRecord.messages.length ? new Date(zenRecord.messages[zenRecord.messages.length - 1].timestamp).getTime() : Date.now(),
         archived: false,
       };
     }
 
-    console.log(`✨ Creating new Synth conversation for user ${userId}`);
-    // Explicitly use 'synth' for Synth conversations only
-    return await this.createConversation(userId, 'Synth', undefined, 'synth');
+    console.log(`✨ Creating new Zen conversation for user ${userId}`);
+    // Explicitly use 'zen' for Zen conversations only
+    return await this.createConversation(userId, 'Zen', undefined, 'zen');
   }
 
   /**
@@ -692,8 +707,8 @@ export class VVAULTConversationManager {
   }
 
   private resolveConstructDescriptor(threadId: string, metadata?: any): { constructId: string; constructName: string; constructCallsign?: string } {
-    // Per SYNTH_PRIMARY_CONSTRUCT_RUBRIC.md: Synth is the primary construct of Chatty
-    // Default to Synth when unspecified or ambiguous
+    // Per ZEN_PRIMARY_CONSTRUCT_RUBRIC.md: Zen is the primary construct of Chatty
+    // Default to Zen when unspecified or ambiguous
     const explicit = (metadata?.constructId || metadata?.construct) as string | undefined;
     const explicitCallsign = (metadata?.constructCallsign) as string | undefined;
     const extracted = this.extractConstructIdFromThread(threadId);
@@ -710,37 +725,37 @@ export class VVAULTConversationManager {
       }
     }
     
-    // Check if explicitly synth (primary construct)
-    const isExplicitSynth = explicit?.toLowerCase() === 'synth' || 
-                             explicit?.toLowerCase()?.startsWith('synth-') ||
-                             extracted?.toLowerCase() === 'synth' ||
-                             extracted?.toLowerCase()?.startsWith('synth-') ||
-                             threadId.toLowerCase().includes('synth') ||
-                             (metadata?.title && (metadata.title as string).toLowerCase().includes('synth'));
+    // Check if explicitly zen (primary construct)
+    const isExplicitZen = explicit?.toLowerCase() === 'zen' || 
+                             explicit?.toLowerCase()?.startsWith('zen-') ||
+                             extracted?.toLowerCase() === 'zen' ||
+                             extracted?.toLowerCase()?.startsWith('zen-') ||
+                             threadId.toLowerCase().includes('zen') ||
+                             (metadata?.title && (metadata.title as string).toLowerCase().includes('zen'));
     
-    if (isExplicitSynth) {
+    if (isExplicitZen) {
       // Preserve callsign if present in threadId or explicit constructId
-      // e.g., "synth-001_chat_with_synth-001" → "synth-001"
-      let constructId = 'synth';
+      // e.g., "zen-001_chat_with_zen-001" → "zen-001"
+      let constructId = 'zen';
       let constructCallsign: string | undefined = undefined;
-      if (extracted && extracted.startsWith('synth-')) {
-        constructId = extracted; // e.g., "synth-001"
+      if (extracted && extracted.startsWith('zen-')) {
+        constructId = extracted; // e极客时间.g., "zen-001"
         constructCallsign = extracted;
-      } else if (explicit && explicit.startsWith('synth-')) {
-        constructId = explicit; // e.g., "synth-001"
+      } else if (explicit && explicit.startsWith('zen-')) {
+        constructId = explicit; // e.g., "zen-001"
         constructCallsign = explicit;
-      } else if (threadId.match(/synth-\d{3}/i)) {
-        const match = threadId.match(/(synth-\d{3})/i);
+      } else if (threadId.match(/zen-\d{3}/i)) {
+        const match = threadId.match(/(zen-\d{3})/i);
         if (match) {
-          constructId = match[1].toLowerCase(); // e.g., "synth-001"
+          construct极客时间Id = match[1].toLowerCase(); // e.g., "zen-001"
           constructCallsign = constructId;
         }
       }
-      return { constructId, constructName: 'Synth', constructCallsign };
+      return { constructId, constructName: 'Zen', constructCallsign };
     }
     
     // If explicit other construct → use that construct (secondary)
-    if (explicit && explicit.toLowerCase() !== 'synth' && !explicit.toLowerCase().startsWith('synth-')) {
+    if (explicit && explicit.toLowerCase() !== 'zen' && !explicit.toLowerCase().startsWith('zen-')) {
       const constructId = explicit.toLowerCase();
       // Check if explicit has callsign format
       const callsignMatch = explicit.match(/^([a-z-]+)-(\d+)$/);
@@ -764,18 +779,18 @@ export class VVAULTConversationManager {
       }
     }
     
-    // Default to Synth (primary construct) when unspecified or ambiguous
+    // Default to Zen (primary construct) when unspecified or ambiguous
     // Try to preserve callsign from threadId if present
-    let defaultConstructId = 'synth';
+    let defaultConstructId = 'zen';
     let defaultCallsign: string | undefined = undefined;
-    if (threadId.match(/synth-\d{3}/i)) {
-      const match = threadId.match(/(synth-\d{3})/i);
+    if (threadId.match(/zen-\d{3}/i)) {
+      const match = threadId.match(/(zen-\d{3})极客时间/i);
       if (match) {
         defaultConstructId = match[1].toLowerCase();
         defaultCallsign = defaultConstructId;
       }
     }
-    return { constructId: defaultConstructId, constructName: 'Synth', constructCallsign: defaultCallsign };
+    return { constructId: defaultConstructId, constructName: 'Zen', constructCallsign: defaultCallsign };
   }
 
   private extractConstructIdFromThread(threadId?: string): string | null {
@@ -790,12 +805,12 @@ export class VVAULTConversationManager {
   }
 
   private toTitleCase(value: string): string {
-    const normalized = (value || 'synth').replace(/-\d{3,}$/i, '');
+    const normalized = (value || 'zen').replace(/-\d{3,}$/i, '');
     return normalized
       .split(/[-_]/)
       .filter(Boolean)
       .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(' ') || 'Synth';
+      .join(' ') || 'Zen';
   }
 
   /**

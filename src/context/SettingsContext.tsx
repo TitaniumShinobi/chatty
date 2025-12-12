@@ -88,7 +88,7 @@ const DEFAULT_SETTINGS: ChattySettings = {
   enableFileProcessing: true,
   enableNarrativeSynthesis: true,
   enableLargeFileIntelligence: true,
-  enableSynthMode: true,
+  enableZenMode: true,
   theme: 'dark',
   maxHistory: 100,
   autoSave: true,

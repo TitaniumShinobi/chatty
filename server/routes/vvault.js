@@ -264,7 +264,7 @@ router.get("/conversations", async (req, res) => {
 
   const email = req.user?.email ?? '(no req.user.email)';
   console.log(`📚 [VVAULT API] Reading conversations for user: ${email} (Chatty ID: ${userId})`);
-  
+
   // Attempt to pull a linked VVAULT identifier (best effort, Mongo may be disabled locally)
   let linkedVvaultUserId = req.user?.vvaultUserId;
   try {
@@ -275,7 +275,7 @@ router.get("/conversations", async (req, res) => {
   } catch (lookupError) {
     console.warn('⚠️ [VVAULT API] Could not load user record for VVAULT lookup:', lookupError.message);
   }
-  
+
   try {
     // Lazy load VVAULT modules with detailed error handling
     console.log(`🔄 [VVAULT API] Loading VVAULT modules...`);
@@ -293,8 +293,27 @@ router.get("/conversations", async (req, res) => {
       throw new Error(`VVAULT module loading failed: ${loadError.message}. Stack: ${loadError.stack}`);
     }
 
-    // PER USER_REGISTRY_ENFORCEMENT_RUBRIC: User ID is REQUIRED, no fallback searches
-    const lookupId = email !== '(no req.user.email)' ? email : userId;
+    // CRITICAL FIX: Resolve email/Chatty ID to VVAULT user ID before reading
+    // This ensures we read from the correct user directory (canonical account)
+    let lookupId = linkedVvaultUserId;
+    if (!lookupId) {
+      // Import resolveVVAULTUserId from writeTranscript
+      const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript 3.js");
+      try {
+        lookupId = await resolveVVAULTUserId(userId, email, false); // false = don't auto-create
+        if (lookupId) {
+          console.log(`✅ [VVAULT API] Resolved VVAULT user ID: ${lookupId} for email: ${email}`);
+        }
+      } catch (resolveError) {
+        console.warn(`⚠️ [VVAULT API] Failed to resolve VVAULT user ID:`, resolveError.message);
+      }
+    }
+    
+    // Fallback to email if resolution failed (but this should rarely happen)
+    if (!lookupId) {
+      lookupId = email !== '(no req.user.email)' ? email : userId;
+      console.warn(`⚠️ [VVAULT API] Using fallback lookupId: ${lookupId}`);
+    }
     
     if (!lookupId || lookupId === '(no req.user.email)') {
       throw new Error('User ID is required. Cannot read conversations without user identity.');
@@ -303,7 +322,17 @@ router.get("/conversations", async (req, res) => {
     let conversations = [];
     try {
       console.log(`🔍 [VVAULT API] Calling readConversations with lookupId: ${lookupId}`);
+       // #region agent log
+      const fs = require('fs');
+      const logPath = '/Users/devonwoodson/Documents/GitHub/.cursor/debug.log';
+      const logEntry = JSON.stringify({location:'vvault.js:306',message:'VVAULT API: calling readConversations',data:{lookupId,email:req.user?.email,userId},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'I'}) + '\n';
+      fs.appendFileSync(logPath, logEntry);
+      // #endregion
       conversations = await readConversations(lookupId);
+      // #region agent log
+      const logEntry2 = JSON.stringify({location:'vvault.js:307',message:'VVAULT API: readConversations returned',data:{count:conversations.length,conversationIds:conversations.map(c=>c.sessionId),conversationTitles:conversations.map(c=>c.title)},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'I'}) + '\n';
+      fs.appendFileSync(logPath, logEntry2);
+      // #endregion
       console.log(`📥 [VVAULT API] readConversations returned ${Array.isArray(conversations) ? conversations.length : 'non-array'} conversations`);
     } catch (error) {
       console.error(`❌ [VVAULT API] Failed to read conversations for user ${lookupId}:`, error.message);

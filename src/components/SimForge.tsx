@@ -664,7 +664,7 @@ const SimForge: React.FC<SimForgeProps> = ({
 
     try {
       // Use Lin synthesis for custom GPT previews (bypasses Chatty tone normalization)
-      const { OptimizedSynthProcessor } = await import('../engine/optimizedSynth')
+      const { OptimizedZenProcessor } = await import('../engine/optimizedZen')
       const { PersonaBrain } = await import('../engine/memory/PersonaBrain')
       const { MemoryStore } = await import('../engine/memory/MemoryStore')
       

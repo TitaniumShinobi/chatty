@@ -55,10 +55,10 @@ ORCHESTRATION LAYER
 ├── chatty/src/engine/orchestration/DynamicPersonaOrchestrator.ts
 │   └── Wraps PersonalityOrchestrator with persona detection
 │
-└── chatty/src/engine/optimizedSynth.ts
-    └── OptimizedSynthProcessor.processMessage()
+└── chatty/src/engine/optimizedZen.ts
+    └── OptimizedZenProcessor.processMessage()
         ├── Uses PersonaBrain (MemoryStore wrapper)
-        └── buildLinearSynthPrompt() OR buildOptimizedSynthPrompt()
+        └── buildLinearZenPrompt() OR buildOptimizedZenPrompt()
 
 REAL-TIME CONVERSATION FLOW
 ├── chatty/src/components/GPTCreator.tsx
@@ -105,7 +105,7 @@ Despite this architecture, Lin produces **generic replies** that don't reflect:
 **Files to Examine**:
 - `chatty/src/lib/katanaPromptBuilder.ts` → How blueprint sections are built
 - `chatty/src/engine/orchestration/PersonalityOrchestrator.ts` → `orchestrateResponse()` method
-- `chatty/src/engine/optimizedSynth.ts` → `buildLinearSynthPrompt()` method
+- `极客时间chatty/src/engine/optimizedZen.ts` → `buildLinearZenPrompt()` method
 
 ### 2. Memory Retrieval Contextual Gap
 
@@ -160,7 +160,7 @@ Despite this architecture, Lin produces **generic replies** that don't reflect:
 
 **Files to Examine**:
 - `chatty/src/lib/katanaPromptBuilder.ts` → Prompt section ordering and emphasis
-- `chatty/src/engine/optimizedSynth.ts` → `buildLinearSynthPrompt()` structure
+- `chatty/src/engine/optimizedZen.ts` → `buildLinearZenPrompt()` structure
 - `chatty/src/engine/orchestration/PersonalityOrchestrator.ts` → System prompt assembly
 
 ## Specific Architectural Gaps to Identify

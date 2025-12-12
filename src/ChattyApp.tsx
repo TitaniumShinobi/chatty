@@ -84,8 +84,7 @@ export default function ChattyApp({
     const { AIService } = await import('./lib/aiService')
     const aiService = AIService.getInstance()
     
-    // Enable synth mode based on settings
-    aiService.setSynthMode(settings.enableSynthMode)
+    // Zen mode is always enabled
     
     const raw = await aiService.processMessage(input, files)
     const packets = Array.isArray(raw) ? raw : [{ op: 'answer.v1' as const, payload: { content: String(raw ?? '') } }]

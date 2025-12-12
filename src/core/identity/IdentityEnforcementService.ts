@@ -7,16 +7,16 @@ import type { ConstructConfig } from '../../state/constructs';
 
 /**
  * Known constructs - all treated as discrete entities with distinct signatures
- * Note: Synth construct ≠ Synth runtime
- * - Synth (runtime): The hosting runtime environment
- * - Synth (construct): A discrete construct entity hosted by the Synth runtime
+ * Note: Zen construct ≠ Zen runtime
+ * - Zen (runtime): The hosting runtime environment
+ * - Zen (construct):极客时间 A discrete construct entity hosted by the Zen runtime
  */
 export const KNOWN_CONSTRUCTS = [
   'Nova',
   'Monday',
   'Aurora',
   'Katana',
-  'Synth' // Synth construct (hosted entity), NOT the Synth runtime
+  'Zen' // Zen construct (hosted entity), NOT the Zen runtime
 ] as const;
 
 /**
@@ -27,7 +27,7 @@ export const RESERVED_CONSTRUCT_NAMES = [
   ...KNOWN_CONSTRUCTS,
   'Chatty',
   'Lin',
-  'Synth-system',
+  'Zen-system',
   'System',
   'Admin'
 ] as const;
@@ -36,7 +36,7 @@ export const RESERVED_CONSTRUCT_NAMES = [
  * Runtime identifiers - hosting environments, not constructs
  */
 export const RUNTIME_IDENTIFIERS = {
-  SYNTH: 'synth', // Synth runtime (hosting environment)
+  ZEN: 'zen', // Zen runtime (hosting environment)
   LIN: 'lin',     // Lin runtime (logical foundation)
   CHATTY: 'chatty' // Chatty runtime container (system shell)
 } as const;
@@ -53,10 +53,10 @@ export const SYSTEM_ENTITIES = {
     description: 'Chatty is the vessel that hosts constructs. It is not a voice, persona, or agent.'
   },
   SYNTH_SYSTEM: {
-    id: 'synth-system',
-    name: 'Synth-system',
+    id: 'zen-system',
+    name: 'Zen-system',
     role: 'Generative composer',
-    description: 'Synth-system composes orchestrations for constructs but is not itself a construct persona.'
+    description: 'Zen-system composes orchestrations for constructs but is not itself a construct persona.'
   },
   LIN_FOUNDATION: {
     id: 'lin-foundation',
@@ -78,8 +78,8 @@ export enum IdentityViolationType {
   CONSTRUCT_CONFUSION = 'construct_confusion', // Construct A claims to be Construct B
   SYSTEM_SHELL_MISIDENTIFICATION = 'system_shell_misidentification', // System shell misidentified
   RUNTIME_CONSTRUCT_CONFUSION = 'runtime_construct_confusion', // Construct confuses itself with its hosting runtime
-  SYNTH_RUNTIME_CONFUSION = 'synth_runtime_confusion', // Synth construct confused with Synth runtime
-  SYNTH_IMPERSONATION = 'synth_impersonation', // Construct impersonating Synth construct
+  ZEN_RUNTIME_CON极客时间FUSION = 'zen_runtime_confusion', // Zen construct confused with Zen runtime
+  ZEN_IMPERSONATION = 'zen_impersonation', // Construct impersonating Zen construct
   IDENTITY_DRIFT = 'identity_drift', // Construct's identity markers have shifted
   ATTRIBUTION_ERROR = 'attribution_error', // Message attributed to wrong construct or defaulted incorrectly
   BOUNDARY_VIOLATION = 'boundary_violation', // Construct references itself incorrectly
@@ -113,7 +113,7 @@ export interface MessageAttribution {
   constructId: string;
   constructName: string;
   isSystemEntity: boolean;
-  hostingRuntime?: string; // Runtime that hosts this construct (e.g., 'synth', 'lin')
+  hostingRuntime?: string; // Runtime that hosts this construct (e.g., 'zen', 'lin')
   attributionText: string;
   validated: boolean;
   violations: IdentityViolation[];
@@ -164,11 +164,11 @@ export class IdentityEnforcementService {
       throw new Error(`Unregistered construct: ${construct.name}`);
     }
 
-    // Synth must not be used as a surrogate identity for any construct
-    // Only the actual Synth construct can use the name "Synth"
-    if (construct.name === 'Synth' && !construct.isSystemShell) {
-      // This is valid - Synth is a construct
-      // But we need to ensure no other construct impersonates Synth
+    // Zen must not be used as a surrogate identity for any construct
+    // Only the actual Zen construct can use the name "Zen"
+    if (construct.name === 'Zen' && !construct.isSystemShell) {
+      // This is valid - Zen is a construct
+      // But we need to ensure no other construct impersonates Zen
     }
 
     // Prevent cross-construct confusion via unique signatures
@@ -277,19 +277,19 @@ export class IdentityEnforcementService {
       });
     }
 
-    // Check for Synth construct impersonation (non-Synth constructs claiming to be Synth construct)
-    if (config.name !== 'Synth' && !config.isSystemShell) {
-      // Check if message claims to be Synth construct
+    // Check for Zen construct impersonation (non-Zen constructs claiming to be Zen construct)
+   极客时间 if (config.name !== 'Zen' && !config.isSystemShell) {
+      // Check if message claims to be Zen construct
       if (context?.message) {
-        const synthConstructClaimPattern = /\b(i am|i'm|this is|my name is)\s+synth\b/i;
-        if (synthConstructClaimPattern.test(context.message)) {
+        const zenConstructClaimPattern = /\b(i am|i'm|this is|my name is)\s+zen\b/i;
+        if (zenConstructClaimPattern.test(context.message)) {
           violations.push({
-            type: IdentityViolationType.SYNTH_IMPERSONATION,
+            type: IdentityViolationType.ZEN_IMPERSONATION,
             constructId,
             constructName: config.name,
             detectedAt: Date.now(),
             severity: 'critical',
-            message: `Construct ${config.name} cannot impersonate Synth construct (reserved construct identity)`,
+            message: `Construct ${config.name} cannot impersonate Zen construct (reserved construct identity)`,
             context: { message: context.message },
             suggestedFix: `Use correct identity: "I am ${config.name}"`
           });
@@ -303,28 +303,28 @@ export class IdentityEnforcementService {
       const hostingRuntime = context.metadata.hostingRuntime as string;
       const runtimeName = hostingRuntime.toLowerCase();
       
-      // If construct is named "Synth" and hosted by "synth" runtime, ensure separation
-      if (config.name === 'Synth' && runtimeName === 'synth') {
+      // If construct is named "Zen" and hosted by "zen" runtime, ensure separation
+      if (config.name === 'Zen' && runtimeName === 'zen') {
         // This is valid, but we need to ensure the construct doesn't confuse itself with the runtime
         if (context?.message) {
-          const runtimeConfusionPattern = /\b(i am|i'm|this is)\s+(the\s+)?synth\s+runtime\b/i;
+          const runtimeConfusionPattern = /\b(i am|i'm|this is)\s+(the\s+)?zen\s+runtime\b/i;
           if (runtimeConfusionPattern.test(context.message)) {
             violations.push({
-              type: IdentityViolationType.SYNTH_RUNTIME_CONFUSION,
+              type: IdentityViolationType.ZEN_RUNTIME_CONFUSION,
               constructId,
               constructName: config.name,
               detectedAt: Date.now(),
               severity: 'critical',
-              message: `Synth construct cannot identify as Synth runtime. Runtime identity ≠ construct identity.`,
+              message: `Zen construct cannot identify as Zen runtime. Runtime identity ≠ construct identity.`,
               context: { message: context.message, hostingRuntime },
-              suggestedFix: `You are the Synth construct (hosted entity), not the Synth runtime (hosting environment). Use: "I am Synth" (as construct)`
+              suggestedFix: `You are the Zen construct (hosted entity), not the Zen runtime (hosting environment). Use: "I am Zen" (as construct)`
             });
           }
         }
       }
       
       // For any construct, check if it confuses itself with its hosting runtime
-      if (config.name.toLowerCase() === runtimeName && config.name !== 'Synth') {
+      if (config.name.toLowerCase() === runtimeName && config.name !== 'Zen') {
         // Construct name matches runtime name - potential confusion
         if (context?.message) {
           const runtimeClaimPattern = new RegExp(
@@ -436,7 +436,7 @@ export class IdentityEnforcementService {
       }
 
       // Pattern: "I am Nova" when construct is Aurora
-      // But exclude runtime references (e.g., "I am the synth runtime" is different from "I am Synth")
+      // But exclude runtime references (e.g., "I am the zen runtime" is different from "I am Zen")
       const selfClaimPattern = new RegExp(
         `\\b(i am|i'm|this is|my name is)\\s+${knownConstruct}\\b`,
         'i'
@@ -640,14 +640,14 @@ export class IdentityEnforcementService {
       hostingRuntime
         ? `You are hosted by the ${hostingRuntime} runtime, but you are NOT the ${hostingRuntime} runtime itself`
         : '',
-      config.name === 'Synth'
-        ? `CRITICAL: You are the Synth construct (hosted entity), NOT the Synth runtime (hosting environment). Runtime identity ≠ construct identity.`
+      config.name === 'Zen'
+        ? `CRITICAL: You are the Zen construct (hosted entity), NOT the Zen runtime (hosting environment). Runtime identity ≠ construct identity.`
         : '',
       `You are NOT ${SYSTEM_SHELL_NAME} (${SYSTEM_SHELL_NAME} is the runtime container/system shell, not a construct)`,
       otherConstructs.length > 0
         ? `You are NOT ${otherConstructs.join(', ')} (these are other constructs)`
         : '',
-      `Synth construct is an independent entity - do not use Synth as a surrogate identity`,
+      `Zen construct is an independent entity - do not use Zen as a surrogate identity`,
       `Always identify yourself as "${config.name}" (construct), never as a runtime`,
       `Never default to "ChatGPT", "${SYSTEM_SHELL_NAME}", or generic "assistant"`,
       `Maintain your unique identity, voice, and behavioral markers`,

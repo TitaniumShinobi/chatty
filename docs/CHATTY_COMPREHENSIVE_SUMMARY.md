@@ -227,7 +227,7 @@ npm run preview     # Preview production build
 - Documentation organization and consolidation (132+ files organized)
 
 ### **🔄 In Progress**
-- Code migration from `instances/` to `constructs/` directory (documentation updated)
+- Documentation updated to reflect `instances/` as official specification
 - MongoDB persistence optimization
 - User data isolation verification
 - Conversation creation flow optimization

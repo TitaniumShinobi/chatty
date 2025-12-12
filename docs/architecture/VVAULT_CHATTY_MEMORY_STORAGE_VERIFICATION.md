@@ -53,9 +53,9 @@ This `db` is from `chatty/src/lib/db.ts` which is the Chatty SQLite database.
 
 ---
 
-### ⚠️ ISSUE: SynthMemoryOrchestrator Mixed Storage
+### ⚠️ ISSUE: ZenMemoryOrchestrator Mixed Storage
 
-**Location**: `chatty/src/engine/orchestration/SynthMemoryOrchestrator.ts` (lines 124-147)
+**Location**: `chatty/src/engine/orchestration/ZenMemoryOrchestrator.ts` (lines 124-147)
 
 **Current Implementation**:
 - ❌ Uses `vaultStore` (SQLite Chatty DB) for LTM storage via VaultStore
@@ -67,7 +67,7 @@ This `db` is from `chatty/src/lib/db.ts` which is the Chatty SQLite database.
 2. ❌ SQLite `vault_entries` table: `chatty/chatty.db` (via VaultStore - WRONG)
 
 **Required Fix**: 
-- Remove VaultStore dependency from SynthMemoryOrchestrator
+- Remove VaultStore dependency from ZenMemoryOrchestrator
 - Use VVAULT ChromaDB API directly for LTM storage
 - Keep VVAULT transcript writes (those are correct)
 
@@ -177,8 +177,8 @@ if (db.stmBuffer) {
    - File: `chatty/src/utils/fingerprint.ts`
    - Change: Replace `vault_entries` queries with VVAULT API
 
-5. **Update SynthMemoryOrchestrator** to remove VaultStore dependency
-   - File: `chatty/src/engine/orchestration/SynthMemoryOrchestrator.ts`
+5. **Update ZenMemoryOrchestrator** to remove VaultStore dependency
+   - File: `chatty/src/engine/orchestration/ZenMemoryOrchestrator.ts`
    - Change: Use VVAULT API directly instead of VaultStore
 
 ### Priority 3: Cleanup

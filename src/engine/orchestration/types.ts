@@ -1,4 +1,4 @@
-// Shared types for Synth memory orchestration
+// Shared types for Zen memory orchestration
 // Aligns with VVAULT integration where STM (short-term memory) windows
 // collaborate with LTM (vault) retrieval for prompt construction.
 
@@ -33,7 +33,7 @@ export interface SummaryContextEntry {
 import type { RuntimeAwarenessSnapshot } from '../../lib/runtimeAwareness';
 import type { CharacterContext, CharacterMemoryEntry } from '../character/types';
 
-export interface SynthMemoryContext {
+export interface ZenMemoryContext {
   constructId: string;
   threadId: string;
   leaseToken?: string | null;

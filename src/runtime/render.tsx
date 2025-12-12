@@ -250,7 +250,6 @@ const RENDERERS: Record<string, (pl: any) => React.ReactNode> = {
     return (
       <MarkdownErrorBoundary content={content}>
         <ReactMarkdown 
-          linkTarget="_blank" 
           components={markdownComponents}
           className="prose prose-invert max-w-none"
         >

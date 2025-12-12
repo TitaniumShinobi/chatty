@@ -71,9 +71,9 @@ export function ModeToggle({ mode, onToggle, className = '' }: ModeToggleProps) 
               Narrative
             </span>
           )}
-          {settings.enableSynthMode && (
+          {settings.enableZenMode && (
             <span className="px-2 py-1 bg-indigo-600 text-white rounded-full">
-              Synth
+              Zen
             </span>
           )}
         </div>
@@ -187,11 +187,11 @@ export function SettingsPanel({ isVisible, onClose }: SettingsPanelProps) {
               </div>
               
               <div className="flex items-center justify-between">
-                <label className="text-white">Enable Synth Mode</label>
+                <label className="text-white">Enable Zen Mode</label>
                 <input
                   type="checkbox"
-                  checked={settings.enableSynthMode}
-                  onChange={(e) => update({ enableSynthMode: e.target.checked })}
+                  checked={settings.enableZenMode}
+                  onChange={(e) => update({ enableZenMode: e.target.checked })}
                   className="w-4 h-4 text-blue-600 bg-app-orange-700 border-app-orange-600 rounded focus:ring-blue-500"
                 />
               </div>

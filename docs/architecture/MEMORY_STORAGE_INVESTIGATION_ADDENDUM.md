@@ -37,8 +37,8 @@ During the investigation of missing Synth/Lin optimizations, a critical boundary
    - File: `chatty/src/core/memory/BrowserSTMBuffer.ts`
    - Impact: Browser STM storage violates boundary
 
-4. **SynthMemoryOrchestrator**: ❌ Uses VaultStore (SQLite) for LTM
-   - File: `chatty/src/engine/orchestration/SynthMemoryOrchestrator.ts`
+4. **ZenMemoryOrchestr极客ator**: ❌ Uses VaultStore (SQLite) for LTM
+   - File: `chatty/src/engine/orchestration/ZenMemoryOrchestrator.ts`
    - Impact: Synth's LTM goes to Chatty DB instead of VVAULT
 
 5. **Fingerprint Utils**: ❌ Queries SQLite for LTM
@@ -59,14 +59,14 @@ During the investigation of missing Synth/Lin optimizations, a critical boundary
 - VaultStore uses SQLite Chatty DB for LTM
 - STMBuffer uses SQLite Chatty DB for STM
 - BrowserSTMBuffer uses localStorage
-- SynthMemoryOrchestrator routes through VaultStore (SQLite)
+- ZenMemoryOrchestrator routes through VaultStore (SQLite)
 - Fingerprint utils query SQLite for LTM
 
 **Files Requiring Fix**:
 - `chatty/src/core/vault/VaultStore.ts` - Replace SQLite with VVAULT API
 - `chatty/src/core/memory/STMBuffer.ts` - Remove SQLite persistence
 - `chatty/src/core/memory/BrowserSTMBuffer.ts` - Replace localStorage with VVAULT API
-- `chatty/src/engine/orchestration/SynthMemoryOrchestrator.ts` - Use VVAULT API directly
+- `chatty/src/engine/orchestration/ZenMemoryOrchestrator.ts` - Use VVAULT API directly
 - `chatty/src/utils/fingerprint.ts` - Replace SQLite queries with VVAULT API
 
 **Priority**: **HIGH** (Boundary violation - breaks sovereign construct model)
@@ -86,6 +86,21 @@ This memory storage issue is **separate from** the missing optimizations (native
 - **Detailed Verification**: `chatty/docs/architecture/VVAULT_CHATTY_MEMORY_STORAGE_VERIFICATION.md`
 - **Verification Summary**: `chatty/docs/architecture/MEMORY_STORAGE_VERIFICATION_SUMMARY.md`
 - **Architecture Doc**: `chatty/docs/architecture/VVAULT_CHATTY_DATABASE_SEPARATION.md`
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -33,7 +33,7 @@ Per `vvault/analysis-summaries/VVAULT_FILE_STRUCTURE_SPEC.md`, the official stru
 │   ├── shard_0000/              # Shard 0 (for scalability)
 │   │   ├── {user_id}/           # User-specific directory
 │   │   │   ├── identity/         # User identity files
-│   │   │   ├── constructs/       # User's constructs ⭐ OFFICIAL
+│   │   │   ├── instances/        # User's constructs ⭐ OFFICIAL
 │   │   │   ├── capsules/         # User's capsules
 │   │   │   └── sessions/         # Cross-construct sessions
 │   │   └── ...
@@ -43,11 +43,11 @@ Per `vvault/analysis-summaries/VVAULT_FILE_STRUCTURE_SPEC.md`, the official stru
 
 ### Construct Storage (Official Spec)
 
-**Location**: `users/{shard_XX}/{user_id}/constructs/{construct-callsign}-001/`
+**Location**: `users/{shard_XX}/{user_id}/instances/{construct-callsign}-001/`
 
 **Structure**:
 ```
-constructs/{construct}-001/
+instances/{construct}-001/
 ├── chatty/                       # Chatty conversation transcripts
 │   └── chat_with_{construct}-001.md
 ├── chatgpt/                      # ChatGPT conversation exports
@@ -59,25 +59,25 @@ constructs/{construct}-001/
 └── config/                       # Construct configuration
 ```
 
-### ⚠️ Known Contradiction: `instances/` vs `constructs/`
+### ✅ Official Specification: `instances/`
 
-**Official Spec**: Uses `constructs/` directory  
-**Some Code**: Uses `instances/` directory  
+**Official Spec**: Uses `instances/` directory  
+**Implementation**: All code uses `instances/` directory  
 
-**Resolution**: All code should use `constructs/` per the official VVAULT specification. See migration checklist in original `VVAULT_FILE_STRUCTURE.md`.
+**Status**: Consistent implementation across the system.
 
 ### Default Constructs
 
 Every new user automatically receives two default constructs:
 
-1. **`synth-001`**: Main conversation construct
+1. **`zen-001`**: Main conversation construct
    - **Territory**: Main conversation window in Chatty
-   - **Storage**: `users/{shard}/{user_id}/constructs/synth-001/`
+   - **Storage**: `users/{shard}/{user_id}/instances/zen-001/`
    - **Type**: Standalone construct (not Lin-based)
 
 2. **`lin-001`**: GPT Creator assistant construct
    - **Territory**: GPT Creator Create tab
-   - **Storage**: `users/{shard}/{user_id}/constructs/lin-001/`
+   - **Storage**: `users/{shard}/{user_id}/instances/lin-001/`
    - **Type**: Construct with backend orchestration capabilities
 
 ### Sharding Architecture
@@ -278,9 +278,9 @@ Imported conversations should be stored in VVAULT under the user's constructs di
 **Location**: `users/{shard}/{user_id}/constructs/{construct}-{callsign}/{provider}/`
 
 **Per Spec**:
-- **ChatGPT imports**: `constructs/{construct}-001/chatgpt/{year}/{year}-{month}_conversations.json`
-- **Gemini imports**: `constructs/{construct}-001/gemini/{year}/`
-- **Claude imports**: `constructs/{construct}-001/claude/{year}/`
+- **ChatGPT imports**: `instances/{construct}-001/chatgpt/{year}/{year}-{month}_conversations.json`
+- **Gemini imports**: `instances/{construct}-001/gemini/{year}/`
+- **Claude imports**: `instances/{construct}-001/claude/{year}/`
 
 **Current Implementation** (may need update):
 - **All imports**: `constructs/{construct}-{callsign}/chatty/chat_with_{construct}-{callsign}.md`
@@ -320,8 +320,8 @@ Imported conversations use markdown format with import metadata:
 **Note**: The `imports/` folder is NOT mentioned in `VVAULT_FILE_STRUCTURE_SPEC.md`. 
 
 **Recommendation**: Media files should likely go under the construct directory:
-- `constructs/{construct}-001/chatgpt/media/` or
-- `constructs/{construct}-001/media/`
+- `instances/{construct}-001/chatgpt/media/` or
+- `instances/{construct}-001/media/`
 
 ---
 
