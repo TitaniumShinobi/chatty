@@ -79,13 +79,15 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
   }
 
   const isUser = message.role === 'user'
+  const isUnsaved = Boolean((message as any)?.metadata?.unsaved)
 
   return (
     <div className={cn(
       "flex items-start gap-3 p-4 rounded-lg transition-colors",
       isUser 
         ? "bg-app-chat-50" 
-        : "bg-app-chat-50"
+        : "bg-app-chat-50",
+      isUnsaved && "message-unstored border border-red-500/50"
     )}>
       {/* Avatar */}
       <div className={cn(
@@ -245,9 +247,17 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
           )}
         </div>
         
-        {/* Timestamp */}
+        {/* Timestamp (fallback to ts if timestamp is missing) */}
         <div className="text-xs text-app-text-800 mt-2">
-          {formatDate(message.timestamp)}
+          {formatDate(
+            message.timestamp ||
+              (typeof (message as any).ts === 'number'
+                ? new Date((message as any).ts).toISOString()
+                : '')
+          )}
+          {isUnsaved && (
+            <span className="ml-2 text-red-400 font-semibold">[unsaved]</span>
+          )}
         </div>
       </div>
     </div>

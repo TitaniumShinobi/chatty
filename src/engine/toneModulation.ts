@@ -228,16 +228,20 @@ export class ToneModulator {
    * Apply tone modulation to a prompt based on the selected persona
    */
   modulatePrompt(originalPrompt: string, _seat: string): string {
-    const persona = this.config.persona;
-    
+    const persona = this.config.persona || LLM_PERSONAS['chatty-default'];
+    if (!persona) {
+      // Extreme fallback if even default is missing
+      return originalPrompt;
+    }
+
     // Sanitize input if enabled
-    const sanitizedPrompt = this.config.sanitizeInput 
+    const sanitizedPrompt = this.config.sanitizeInput
       ? this.sanitizeInput(originalPrompt)
       : originalPrompt;
 
     // Build the modulated prompt with instruction hierarchy
     const modulatedPrompt = this.buildModulatedPrompt(sanitizedPrompt, persona, _seat);
-    
+
     return modulatedPrompt;
   }
 

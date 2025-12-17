@@ -2,6 +2,24 @@
 import { browserStmBuffer } from '../../core/memory/BrowserSTMBuffer';
 import { browserConstructRegistry } from '../../state/BrowserConstructs';
 
+// Mock localStorage for Node.js environment
+const localStorageMock = (() => {
+  let store: { [key: string]: string } = {};
+  return {
+    getItem: (key: string) => store[key] || null,
+    setItem: (key: string, value: string) => { store[key] = value.toString(); },
+    removeItem: (key: string) => { delete store[key]; },
+    clear: () => { store = {}; },
+    get length() { return Object.keys(store).length; },
+    key: (index: number) => Object.keys(store)[index] || null
+  };
+})();
+
+// Set up localStorage mock if not available (Node.js environment)
+if (typeof global.localStorage === 'undefined') {
+  (global as any).localStorage = localStorageMock;
+}
+
 describe('Browser Memory System', () => {
   beforeEach(() => {
     // Clear localStorage before each test

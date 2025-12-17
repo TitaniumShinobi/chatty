@@ -37,7 +37,7 @@ export class CapsuleIntegration {
 
   /**
    * Load a capsule for a specific construct
-   * @param {string} constructId - The construct ID (e.g., 'katana-001')
+   * @param {string} constructId - The construct ID (e.g., 'example-construct-001')
    * @returns {Object|null} Capsule data or null if not found
    */
   async loadCapsule(constructId) {
@@ -177,7 +177,7 @@ export class CapsuleIntegration {
   /**
    * Warm cache by preloading frequently used constructs
    */
-  async warmCache(constructIds = ['katana-001']) {
+  async warmCache(constructIds = ['example-construct-001']) {
     console.log(`🔥 [CapsuleIntegration] Warming cache for ${constructIds.length} constructs...`);
     const startTime = Date.now();
     
@@ -215,7 +215,7 @@ export class CapsuleIntegration {
         // Not found in instance directory, continue to check user capsules directory
       }
       
-      // Extract construct name (e.g., 'katana-001' -> 'katana')
+      // Extract construct name (e.g., 'example-construct-001' -> 'example-construct')
       const constructName = constructId.split('-')[0];
       
       // Look for capsule files in the user's capsules directory (fallback)
@@ -232,7 +232,7 @@ export class CapsuleIntegration {
         return null;
       }
 
-      // Sort by version number (katana-001.capsule, katana-002.capsule, etc.)
+      // Sort by version number (example-construct-001.capsule, example-construct-002.capsule, etc.)
       capsuleFiles.sort((a, b) => {
         const aVersion = parseInt(a.name.match(/-(\d+)\.capsule$/)?.[1] || '0');
         const bVersion = parseInt(b.name.match(/-(\d+)\.capsule$/)?.[1] || '0');
@@ -334,34 +334,66 @@ export class CapsuleIntegration {
       console.log(`💾 [CapsuleIntegration] Saving capsule for ${constructId}...`);
 
       // Load existing capsule or create new one
-      let capsule = await this.loadCapsule(constructId) || this.createBaseCapsule(constructId, gptData);
+      const originalCapsule = await this.loadCapsule(constructId);
+      let capsule = originalCapsule || this.createBaseCapsule(constructId, gptData);
       
-      // Update capsule with ALL GPT configuration data
+      // Preserve immutable fields if updating existing capsule
+      const {
+        extractImmutableFields,
+        restoreImmutableFields,
+        validateBeforeWrite,
+        recalculateFingerprint,
+        contentChanged
+      } = require('./capsuleIntegrityValidator.js');
+      
+      const immutableFields = originalCapsule ? extractImmutableFields(originalCapsule) : null;
+      
+      // Update capsule with GPT configuration data (but preserve immutable fields)
       await this.updateCapsuleFromGPTConfig(capsule, gptData);
+      
+      // Restore immutable fields (in case updateCapsuleFromGPTConfig tried to modify them)
+      if (immutableFields) {
+        restoreImmutableFields(capsule, immutableFields);
+      }
       
       // Update memory log with recent conversations
       if (conversationHistory.length > 0) {
-        capsule.memory_log = capsule.memory_log || [];
+        capsule.memory = capsule.memory || {};
+        capsule.memory.memory_log = capsule.memory.memory_log || [];
         
         // Add new conversations to memory log
         conversationHistory.forEach(msg => {
           if (msg.role === 'user' || msg.role === 'assistant') {
-            capsule.memory_log.push(`${msg.role}: ${msg.content}`);
+            capsule.memory.memory_log.push(`${msg.role}: ${msg.content}`);
           }
         });
         
         // Keep only last 50 entries to prevent bloat
-        if (capsule.memory_log.length > 50) {
-          capsule.memory_log = capsule.memory_log.slice(-50);
+        if (capsule.memory.memory_log.length > 50) {
+          capsule.memory.memory_log = capsule.memory.memory_log.slice(-50);
         }
+        
+        capsule.memory.last_memory_timestamp = new Date().toISOString();
       }
 
       // Update timestamp
       capsule.metadata.timestamp = new Date().toISOString();
       
+      // Recalculate fingerprint if content changed
+      if (originalCapsule && contentChanged(originalCapsule, capsule)) {
+        capsule.metadata.fingerprint_hash = recalculateFingerprint(capsule);
+        console.log(`🔄 [CapsuleIntegration] Content changed, recalculated fingerprint`);
+      }
+      
       // Save to instance identity directory (preferred location)
       const instanceIdentityDir = path.join(USER_INSTANCES_DIR, constructId, 'identity');
       const instanceCapsulePath = path.join(instanceIdentityDir, `${constructId}.capsule`);
+      
+      // Validate before write
+      const validation = await validateBeforeWrite(instanceCapsulePath, capsule);
+      if (!validation.valid) {
+        throw new Error(`Capsule integrity validation failed: ${validation.error}`);
+      }
       
       try {
         await fs.mkdir(instanceIdentityDir, { recursive: true });
@@ -415,7 +447,7 @@ export class CapsuleIntegration {
         creativity: 0.7,
         drift: 0.05,
         persistence: 0.8,
-        empathy: constructName === 'katana' ? 0.3 : 0.6, // Katana is less empathetic
+        empathy: 0.6, // Default empathy level
         curiosity: 0.7,
         anxiety: 0.1,
         happiness: 0.5,
@@ -506,15 +538,15 @@ export class CapsuleIntegration {
   async updateCapsuleFromGPTConfig(capsule, gptData) {
     console.log(`🔄 [CapsuleIntegration] Updating capsule from GPT config...`);
     
-    // Update basic metadata
-    if (gptData.name) {
-      capsule.metadata.instance_name = gptData.name;
-    }
+    // NOTE: Do NOT update instance_name - it's an immutable field
+    // Only update mutable fields like configuration, traits (if allowed), etc.
     
     // Extract personality traits from instructions/system prompt
+    // NOTE: Traits are immutable, but we can update configuration that references them
     if (gptData.instructions) {
+      // Don't modify capsule.traits directly (immutable)
+      // Instead, extract traits for reference and store in configuration
       const extractedTraits = this.extractTraitsFromInstructions(gptData.instructions);
-      capsule.traits = { ...capsule.traits, ...extractedTraits };
       
       // Store the full instructions
       capsule.configuration = capsule.configuration || {};
@@ -1067,7 +1099,7 @@ export class CapsuleIntegration {
         currentAssistant = '';
         isUserTurn = true;
         isAssistantTurn = false;
-      } else if (trimmed === 'ChatGPT said:' || trimmed === 'Katana said:') {
+      } else if (trimmed === 'ChatGPT said:' || trimmed === 'The GPT said:') {
         isUserTurn = false;
         isAssistantTurn = true;
       } else if (trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('**')) {

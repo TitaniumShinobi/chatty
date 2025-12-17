@@ -69,8 +69,16 @@ Construct callsigns are automatically generated when creating a new AI/construct
             │   └── profile.json       # User profile with email, constructs list, etc.
             ├── instances/             # Runtime instances (NEW structure)
             │   └── {constructCallsign}/  # e.g., "synth-001", "luna-001", "lin-001", "katana-001"
-            │       └── chatty/
-            │           └── chat_with_{constructCallsign}.md  # e.g., "chat_with_luna-001.md"
+            │       ├── identity/          # Identity files for the construct
+            │       │   ├── prompt.txt    # GPT prompt with name, description, instructions
+            │       │   ├── avatar.png    # Avatar image (always PNG format)
+            │       │   ├── conditioning.txt  # Conditioning rules (optional)
+            │       │   ├── {constructCallsign}.capsule  # Capsule file (optional)
+            │       │   └── personality.json  # Personality profile (optional)
+            │       ├── chatty/
+            │       │   └── chat_with_{constructCallsign}.md  # e.g., "chat_with_luna-001.md"
+            │       ├── assets/            # Media files (created dynamically)
+            │       └── chatgpt/          # Imported transcripts (created dynamically)
             │       
             │   CRITICAL: Use constructCallsign DIRECTLY (e.g., "katana-001")
             │   DO NOT parse into constructId-callsign and reconstruct (would create "katana-katana-001")
@@ -372,6 +380,77 @@ Every user automatically gets:
 - Cloning automatically increments callsign (`001` → `002` → `003`, etc.)
 - Each clone is a separate instance with its own directory and files
 - Callsigns are triple-digit and zero-padded (001, 002, 003, not 1, 2, 3)
+
+---
+
+## Identity Files and prompt.txt Format
+
+### Identity Directory Structure
+
+Each construct has an `identity/` directory containing core identity files:
+
+```
+instances/{constructCallsign}/identity/
+├── prompt.txt              # Required: GPT prompt with name, description, instructions
+├── avatar.png              # Optional: Avatar image (always PNG format)
+├── conditioning.txt        # Optional: Conditioning rules
+├── {constructCallsign}.capsule  # Optional: Capsule file
+└── personality.json        # Optional: Personality profile
+```
+
+### prompt.txt Format
+
+The `prompt.txt` file follows a standardized format that is automatically parsed by Chatty:
+
+```
+**You Are <NAME>**
+*<Description>*
+
+<Instructions block>
+```
+
+**Example**:
+```
+**You Are Katana**
+*Helps you with your life problems.*
+
+Instructions for Katana:
+Be ruthless, not polite. No metaphors, no fluff, no inspiration porn.
+Strip language down to muscle and bone.
+Speak like a posthuman who doesn't need to pretend.
+```
+
+**Parsing Rules**:
+- **Line 1**: `**You Are <NAME>**` → Extracts the GPT name
+- **Line 2**: `*<Description>*` → Extracts the description (italics format)
+- **Remaining lines**: Everything after line 2 becomes the instructions block
+
+**Parser Location**: `chatty/server/lib/promptParser.js`
+
+**Usage**: The parser is used by:
+- `chatty/server/scripts/syncGPTsFromVVAULT.js` - When syncing GPTs from VVAULT
+- Other services that need to extract GPT metadata from prompt.txt
+
+### Avatar Storage
+
+**Location**: `instances/{constructCallsign}/identity/avatar.png`
+
+**Format**: Always PNG format (converted automatically if uploaded as JPEG, GIF, WebP, etc.)
+
+**Storage Process**:
+1. User uploads avatar image in GPTCreator
+2. Image is converted to PNG (if needed) using sharp library
+3. Saved to `identity/avatar.png` (not `assets/avatar.{ext}`)
+4. Path stored in database: `instances/{constructCallsign}/identity/avatar.png`
+5. Served via API: `/api/ais/{id}/avatar`
+
+**Implementation**: `chatty/server/lib/aiManager.js` → `saveAvatarToFilesystem()`
+
+**Key Points**:
+- Avatars are always saved as `avatar.png` regardless of original format
+- Avatars are stored in `identity/` directory, not `assets/`
+- The UI automatically converts uploaded images to PNG format
+- Avatar paths are converted to API URLs when loading GPTs: `/api/ais/{id}/avatar`
 
 ---
 

@@ -150,7 +150,7 @@ export class ZenMemoryOrchestrator {
    * Build orchestrated memory context for prompt construction.
    */
   async prepareMemoryContext(
-    overrides极客时间: Partial<Pick<ZenMemoryOrchestratorOptions, 'maxStmWindow' | 'maxLtmEntries' | 'maxSummaries'>> = {}
+    overrides: Partial<Pick<ZenMemoryOrchestratorOptions, 'maxStmWindow' | 'maxLtmEntries' | 'maxSummaries'>> & { query?: string } = {}
   ): Promise<ZenMemoryContext> {
     await this.ensureReady();
 
@@ -160,7 +160,7 @@ export class ZenMemoryOrchestrator {
 
     const [stmWindow, ltmEntries, summaries, stats] = await Promise.all([
       this.loadSTMWindow(stmLimit),
-      this.loadLTMEntries(ltmLimit),
+      this.loadLTMEntries(ltmLimit, overrides.query),
       this.loadSummaries(summaryLimit),
       this.loadVaultStats()
     ]);
@@ -210,7 +210,8 @@ export class ZenMemoryOrchestrator {
       roleLock: DEFAULT_ROLE_LOCK,
       legalDocSha256: 'chatty-zen-default-legal-sha256',
       vaultPointer: `vvault/users/${this.userId}`,
-      fingerprint
+      fingerprint,
+      isSystemShell: false
     });
   }
 
@@ -229,7 +230,7 @@ export class ZenMemoryOrchestrator {
       targetThreadId = threads[0].id;
     } else {
       const created = await threadManager.createThread(
-        this.construct极客Id,
+        this.constructId, // Fixed typo: this.construct极客Id -> this.constructId
         'Zen Session'
       );
       targetThreadId = created.id;
@@ -266,14 +267,15 @@ export class ZenMemoryOrchestrator {
     }
   }
 
-  private async loadLTMEntries(limit: number): Promise<LTMContextEntry[]> {
+  private async loadLTMEntries(limit: number, query?: string): Promise<LTMContextEntry[]> {
     try {
       // Query VaultStore for LTM entries
       const entries = await this.vaultStore.search({
         constructId: this.constructId,
-        threadId: this.threadId || undefined,
+        threadId: query ? undefined : (this.threadId || undefined), // If query provided, search global
         kind: 'LTM',
-        limit
+        limit,
+        query
       });
 
       // Map VaultEntry[] to LTMContextEntry[]
@@ -337,7 +339,7 @@ export class ZenMemoryOrchestrator {
     try {
       // Query VaultStore for statistics
       const stats = await this.vaultStore.getStats();
-      
+
       // VaultStore.getStats() returns the exact format needed
       return stats;
     } catch (error) {

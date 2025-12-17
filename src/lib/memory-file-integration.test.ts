@@ -48,17 +48,17 @@ describe('Memory and File Integration System', () => {
   beforeEach(async () => {
     memoryManager = new MemoryManager(TEST_CONFIG);
     memoryLedger = (memoryManager as any).memoryLedger;
-    
+
     // Initialize vector store and semantic retrieval
     vectorStore = new MemoryVectorStore();
     await vectorStore.initialize();
     semanticRetrieval = new SemanticRetrievalService(vectorStore);
     await semanticRetrieval.initialize();
-    
+
     // Initialize large file intelligence with memory integration
     largeFileIntelligence = new LargeFileIntelligence(LFI_TEST_CONFIG, memoryLedger);
     await largeFileIntelligence.initialize();
-    
+
     // Initialize unified retrieval
     unifiedRetrieval = new UnifiedSemanticRetrieval(
       memoryLedger,
@@ -612,12 +612,12 @@ describe('Memory and File Integration System', () => {
   });
 
   describe('Error Handling', () => {
-    it('should handle missing memory ledger gracefully', () => {
+    it('should handle missing memory ledger gracefully', async () => {
       const lfiWithoutMemory = new LargeFileIntelligence(LFI_TEST_CONFIG);
-      
-      expect(() => {
-        lfiWithoutMemory.unifiedSearch('test', 'user1', 'session1');
-      }).toThrow('Unified retrieval not enabled - memory ledger required');
+
+      await expect(
+        lfiWithoutMemory.unifiedSearch('test', 'user1', 'session1')
+      ).rejects.toThrow('Unified retrieval not enabled - memory ledger required');
     });
 
     it('should handle file context queries without file memories', () => {

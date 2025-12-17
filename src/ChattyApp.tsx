@@ -1,8 +1,9 @@
- // src/ChattyApp.tsx
+// src/ChattyApp.tsx
 import { useEffect, useMemo, useState } from 'react'
 import type { User } from './lib/auth'
 import { R } from './runtime/render'
 import { useSettings } from './hooks/useSettings'
+import { useLocation } from 'react-router-dom'
 
 type Message = {
   id: string
@@ -22,6 +23,7 @@ export default function ChattyApp({
   onLogout: () => void
 }) {
   const { settings } = useSettings()
+  const location = useLocation()
   const [threads, setThreads] = useState<Thread[]>(() => {
     try { return JSON.parse(localStorage.getItem('chatty:threads') || '[]') } catch { return [] }
   })
@@ -84,9 +86,10 @@ export default function ChattyApp({
     const { AIService } = await import('./lib/aiService')
     const aiService = AIService.getInstance()
     
-    // Zen mode is always enabled
+    // Ensure Zen mode is scoped to the sidebar
+    const isZenModeEnabled = location.pathname.includes('/sidebar')
     
-    const raw = await aiService.processMessage(input, files)
+    const raw = await aiService.processMessage(input, files, { zenMode: isZenModeEnabled })
     const packets = Array.isArray(raw) ? raw : [{ op: 'answer.v1' as const, payload: { content: String(raw ?? '') } }]
     
     const aiMsg: Message = {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useOutletContext } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
 import { R } from '../runtime/render'
 
 type Message = {
@@ -19,25 +20,159 @@ interface LayoutContext {
   sendMessage: (threadId: string, text: string, files: File[]) => void
   renameThread: (threadId: string, title: string) => void
   newThread: () => void
+  reloadThreadMessages?: (threadId: string) => Promise<void>
 }
 
 export default function Chat() {
-  const { threads, sendMessage: onSendMessage } = useOutletContext<LayoutContext>()
+  const { threads, sendMessage: onSendMessage, reloadThreadMessages } = useOutletContext<LayoutContext>()
   const { threadId } = useParams<{ threadId: string }>()
   const navigate = useNavigate()
   const [text, setText] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [isFocused, setIsFocused] = useState(false)
+  const [isReloading, setIsReloading] = useState(false)
+  const [reloadAttempted, setReloadAttempted] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [zenMarkdown, setZenMarkdown] = useState<string | null>(null)
+  const [zenMarkdownError, setZenMarkdownError] = useState<string | null>(null)
+  const [isZenMarkdownLoading, setIsZenMarkdownLoading] = useState(false)
 
-  const thread = threads.find(t => t.id === threadId)
+  const thread = threads.find(t => t.id === threadId) || 
+                 threads.find(t => {
+                   // Handle transformed IDs from routeIdForThread
+                   if (t.isPrimary && t.constructId) {
+                     const transformedId = `${t.constructId}_chat_with_${t.constructId}`;
+                     return transformedId === threadId;
+                   }
+                   return false;
+                 });
+
+  const isZenSessionThread = Boolean(threadId && threadId.startsWith('zen-001_chat_with_'));
+
+  // Debug: Log thread details when found
+  if (thread) {
+    console.log('📋 [Chat] Thread found with details:', {
+      id: thread.id,
+      title: thread.title,
+      messageCount: thread.messages?.length || 0,
+      messages: thread.messages?.map((m, i) => ({
+        index: i,
+        id: m.id,
+        role: m.role,
+        hasText: !!m.text,
+        textLength: m.text?.length || 0,
+        hasPackets: !!m.packets,
+        packetsCount: m.packets?.length || 0,
+        textPreview: m.text ? m.text.substring(0, 100) : (m.packets?.[0]?.payload?.content?.substring(0, 100) || 'no content')
+      })) || []
+    });
+  }
 
   useEffect(() => {
+    console.log('🔍 [Chat] Thread lookup:', {
+      threadId,
+      found: !!thread,
+      threadIds: threads.map(t => t.id),
+      threadConstructIds: threads.map(t => t.constructId),
+      messageCount: thread?.messages?.length || 0,
+      messages: thread?.messages?.map(m => ({
+        id: m.id,
+        role: m.role,
+        textPreview: (m.text || '').substring(0, 50)
+      })) || []
+    });
+    
     if (!thread && threadId) {
-      // Thread not found, redirect to home
-      navigate('/app')
+      if (isZenSessionThread) {
+        console.warn('⚠️ [Chat] Zen thread not found yet - loading transcript fallback', { threadId });
+        return;
+      }
+      console.warn('⚠️ [Chat] Thread not found, redirecting');
+      navigate('/app');
     }
-  }, [thread, threadId, navigate])
+  }, [thread, threadId, navigate, threads, isZenSessionThread])
+
+  useEffect(() => {
+    if (thread || !threadId || !isZenSessionThread) return
+
+    let cancelled = false
+
+    const loadZenTranscript = async () => {
+      setIsZenMarkdownLoading(true)
+      setZenMarkdown(null)
+      setZenMarkdownError(null)
+
+      try {
+        const response = await fetch(`http://localhost:5000/api/vvault/chat/${encodeURIComponent(threadId)}`, {
+          credentials: 'include'
+        })
+        const data = await response.json()
+
+        if (!response.ok || !data.ok) {
+          throw new Error(data?.error || response.statusText || 'Failed to load Zen transcript')
+        }
+
+        if (!cancelled) {
+          setZenMarkdown(data.content || '')
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setZenMarkdownError(error instanceof Error ? error.message : String(error))
+        }
+      } finally {
+        if (!cancelled) {
+          setIsZenMarkdownLoading(false)
+        }
+      }
+    }
+
+    loadZenTranscript()
+    return () => {
+      cancelled = true
+    }
+  }, [thread, threadId, isZenSessionThread])
+
+  // Hydration check: If thread has no messages, attempt to reload
+  useEffect(() => {
+    if (!thread || !threadId || !reloadThreadMessages) return;
+    
+    // If thread has no messages, attempt to reload (only once per threadId)
+    if (thread.messages.length === 0 && !isReloading && !reloadAttempted) {
+      console.log('⚠️ [Chat] Thread has no messages, attempting reload...', {
+        threadId: thread.id,
+        urlThreadId: threadId,
+        title: thread.title,
+        constructId: thread.constructId,
+        threadsCount: threads.length,
+        allThreadIds: threads.map(t => t.id)
+      });
+      setIsReloading(true);
+      setReloadAttempted(true);
+      
+      // Add timeout to prevent infinite loading
+      const timeoutId = setTimeout(() => {
+        console.warn('⏱️ [Chat] Reload timeout after 10s - resetting loading state');
+        setIsReloading(false);
+      }, 10000); // 10 second timeout
+      
+      reloadThreadMessages(threadId)
+        .then(() => {
+          clearTimeout(timeoutId);
+          console.log('✅ [Chat] Reload function completed');
+          // Don't set isReloading to false immediately - let React re-render with updated threads
+          // The thread will update and messages.length > 0 will prevent this from running again
+        })
+        .catch((error) => {
+          clearTimeout(timeoutId);
+          console.error('❌ [Chat] Failed to reload thread messages:', error);
+          setIsReloading(false);
+        });
+    } else if (thread.messages.length > 0 && isReloading) {
+      // If messages are now present, clear loading state
+      console.log(`✅ [Chat] Messages now present (${thread.messages.length}), clearing loading state`);
+      setIsReloading(false);
+    }
+  }, [thread?.id, thread?.messages.length, threadId, reloadThreadMessages, threads.length, isReloading, reloadAttempted]) // Watch threads.length to detect updates
 
   // Auto-resize textarea
   const adjustTextareaHeight = () => {
@@ -68,6 +203,86 @@ export default function Chat() {
   const handleBlur = () => setIsFocused(false)
 
   if (!thread) {
+    if (isZenSessionThread) {
+      if (isZenMarkdownLoading) {
+        return (
+          <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
+            <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
+              <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--chatty-text)' }}>Loading Zen transcript…</h2>
+              <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Fetching the saved markdown from VVAULT.</p>
+            </div>
+          </div>
+        )
+      }
+
+      if (zenMarkdownError) {
+        return (
+          <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
+            <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
+              <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--chatty-text)' }}>Unable to load Zen transcript</h2>
+              <p className="mb-4" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>{zenMarkdownError}</p>
+              <button 
+                className="px-4 py-2 rounded-lg transition-colors"
+                style={{ 
+                  backgroundColor: 'var(--chatty-button)',
+                  color: 'var(--chatty-text-inverse, #ffffeb)',
+                  border: '1px solid var(--chatty-line)'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--chatty-hover)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--chatty-button)'
+                }}
+                onClick={() => navigate('/app')}
+              >
+                Go Home
+              </button>
+            </div>
+          </div>
+        )
+      }
+
+      if (zenMarkdown) {
+        return (
+          <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
+            <div className="flex-1 overflow-auto p-6">
+              <h2 className="text-2xl font-semibold mb-4" style={{ color: 'var(--chatty-text)' }}>Zen transcript</h2>
+              <div className="prose max-w-none break-words" style={{ color: 'var(--chatty-text)', lineHeight: 1.7 }}>
+                <ReactMarkdown>{zenMarkdown}</ReactMarkdown>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      return (
+        <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
+          <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
+            <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--chatty-text)' }}>Zen transcript unavailable</h2>
+            <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>We couldn't render the saved transcript right now.</p>
+            <button 
+              className="px-4 py-2 rounded-lg transition-colors"
+              style={{ 
+                backgroundColor: 'var(--chatty-button)',
+                color: 'var(--chatty-text-inverse, #ffffeb)',
+                border: '1px solid var(--chatty-line)'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--chatty-hover)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--chatty-button)'
+              }}
+              onClick={() => navigate('/app')}
+            >
+              Go Home
+            </button>
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
         <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
@@ -126,7 +341,22 @@ export default function Chat() {
           )}
         </div>
 
-        {thread.messages.map(m => {
+        {/* Fallback UI for empty messages */}
+        {thread.messages.length === 0 && !isReloading && (
+          <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
+            <p className="text-lg mb-2" style={{ color: 'var(--chatty-text)' }}>Zen is listening.</p>
+            <p className="text-sm" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Say something to begin.</p>
+          </div>
+        )}
+
+        {/* Loading state while reloading */}
+        {isReloading && (
+          <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
+            <p className="text-sm" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Loading conversation...</p>
+          </div>
+        )}
+
+        {thread.messages.length > 0 && thread.messages.map(m => {
           const user = isUser(m.role)
           
           // User messages: right-aligned with iMessage-style bubble
@@ -293,4 +523,3 @@ export default function Chat() {
     </div>
   )
 }
-

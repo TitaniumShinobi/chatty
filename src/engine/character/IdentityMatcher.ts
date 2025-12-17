@@ -36,7 +36,30 @@ async function dynamicNodeImport(specifier: string): Promise<any> {
 export class IdentityMatcher {
   private readonly vvaultRoot: string;
 
-  constructor(vvaultRoot: string = process.env.VVAULT_ROOT || '/vvault') {
+  constructor(vvaultRoot: string = (typeof process !== 'undefined' && process.env?.VVAULT_ROOT) || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_VVAULT_ROOT) || '/vvault') {
+    // #region agent log
+    const logData = {
+      location: 'IdentityMatcher.ts:39',
+      message: 'IdentityMatcher: constructor called',
+      data: {
+        vvaultRoot,
+        hasProcess: typeof process !== 'undefined',
+        hasImportMeta: typeof import.meta !== 'undefined',
+        processEnvValue: typeof process !== 'undefined' ? process.env?.VVAULT_ROOT : undefined,
+        importMetaEnvValue: typeof import.meta !== 'undefined' ? import.meta.env?.VITE_VVAULT_ROOT : undefined
+      },
+      timestamp: Date.now(),
+      sessionId: 'debug-session',
+      runId: 'fix-identity-matcher',
+      hypothesisId: 'E'
+    };
+    // Fire and forget - constructors cannot be async
+    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(logData)
+    }).catch(() => {});
+    // #endregion
     this.vvaultRoot = vvaultRoot;
   }
 

@@ -74,6 +74,14 @@ export abstract class CloudStorageProvider {
 export class LocalStorageProvider extends CloudStorageProvider {
   private storage: Map<string, { content: string | ArrayBuffer; metadata: StorageMetadata }> = new Map();
   private jobs: Map<string, ProcessingJob> = new Map();
+  private safeLocalStorage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> =
+    typeof localStorage !== 'undefined'
+      ? localStorage
+      : {
+          getItem: () => null,
+          setItem: () => {},
+          removeItem: () => {}
+        };
 
   constructor(config?: Partial<CloudStorageConfig>) {
     super({
@@ -89,7 +97,7 @@ export class LocalStorageProvider extends CloudStorageProvider {
   async initialize(): Promise<void> {
     // Load from localStorage if available
     try {
-      const stored = localStorage.getItem('chatty_documents');
+      const stored = this.safeLocalStorage.getItem('chatty_documents');
       if (stored) {
         const parsed = JSON.parse(stored);
         for (const [key, value] of Object.entries(parsed)) {
@@ -234,7 +242,7 @@ export class LocalStorageProvider extends CloudStorageProvider {
       for (const [key, value] of this.storage.entries()) {
         data[key] = value;
       }
-      localStorage.setItem('chatty_documents', JSON.stringify(data));
+      this.safeLocalStorage.setItem('chatty_documents', JSON.stringify(data));
     } catch (error) {
       console.warn('Failed to persist to localStorage:', error);
     }

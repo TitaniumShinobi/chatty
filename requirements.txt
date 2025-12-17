@@ -1,2 +1,5 @@
 # Chatty Python helper scripts use only Python standard library.
 # No external packages are required.
+
+# Orchestration framework for multi-agent orchestration (Agent Gateway)
+orchestration-framework>=1.1.1

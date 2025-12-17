@@ -56,16 +56,16 @@ const DEFAULT_CONSTRUCTS = [
     created: '2023-04-05T00:00:00.000Z',
   },
   {
-    id: 'katana',
-    name: 'Katana',
+    id: 'lin',
+    name: 'Lin',
     callsign: '001',
     isSystemShell: false,
     persona: {
-      description: 'Direct, sharp construct for critical reasoning.',
-      keywords: ['katana', 'precision', 'direct', 'analysis'],
+      description: 'Undertone identity capsule for system-wide emotional continuity.',
+      keywords: ['lin', 'undertone', 'continuity', 'memory'],
     },
     fingerprint: null,
-    created: '2023-05-20T00:00:00.000Z',
+    created: '2025-12-16T00:00:00.000Z',
   },
 ];
 

@@ -36,6 +36,7 @@ export interface VaultSearchOptions {
   minRelevanceScore?: number;
   startTime?: number;
   endTime?: number;
+  query?: string;
 }
 
 export interface VaultSummary {
@@ -50,7 +51,7 @@ export interface VaultSummary {
 }
 
 export class VaultStore {
-  constructor(private constructId: string) {}
+  constructor(private constructId: string) { }
 
   /**
    * Save a message to the LTM vault via VVAULT API
@@ -58,11 +59,11 @@ export class VaultStore {
   async saveMessage(threadId: string, message: any): Promise<void> {
     try {
       // Extract user and assistant messages from the message payload
-      const context = message.role === 'user' ? message.content : 
-                     (message.payload?.role === 'user' ? message.payload.content : 
-                     (typeof message === 'string' ? message : JSON.stringify(message)));
+      const context = message.role === 'user' ? message.content :
+        (message.payload?.role === 'user' ? message.payload.content :
+          (typeof message === 'string' ? message : JSON.stringify(message)));
       const response = message.role === 'assistant' ? message.content :
-                      (message.payload?.role === 'assistant' ? message.payload.content : '');
+        (message.payload?.role === 'assistant' ? message.payload.content : '');
 
       // If we don't have a proper context/response pair, create one from the message
       const finalContext = context || (message.content || JSON.stringify(message));
@@ -110,7 +111,7 @@ export class VaultStore {
   async saveCheckpoint(kind: string, payload: any, threadId?: string): Promise<void> {
     try {
       const checkpointContent = typeof payload === 'string' ? payload : JSON.stringify(payload);
-      
+
       // Store checkpoint as a memory entry
       const storeResponse = await fetch('/api/vvault/identity/store', {
         method: 'POST',
@@ -126,7 +127,7 @@ export class VaultStore {
             timestamp: new Date().toISOString(),
             sessionId: threadId || this.constructId,
             source: 'checkpoint',
-        kind,
+            kind,
             memoryType: 'long-term'
           }
         })
@@ -199,12 +200,12 @@ export class VaultStore {
   async search(options: VaultSearchOptions): Promise<VaultEntry[]> {
     try {
       // Build query string from options
-      const queryText = options.threadId 
+      const queryText = options.query || (options.threadId
         ? `thread ${options.threadId} ${options.kind || ''}`
-        : (options.kind || 'memory');
+        : (options.kind || 'memory'));
 
       const limit = options.limit || 10;
-      
+
       // Query VVAULT API
       const queryResponse = await fetch(
         `/api/vvault/identity/query?constructCallsign=${encodeURIComponent(this.constructId)}&query=${encodeURIComponent(queryText)}&limit=${limit}`,
@@ -217,7 +218,7 @@ export class VaultStore {
       if (!queryResponse.ok) {
         if (shouldLog('error')) {
           console.error('Failed to search VVAULT:', queryResponse.statusText);
-      }
+        }
         return [];
       }
 
@@ -228,26 +229,26 @@ export class VaultStore {
 
       // Filter and convert results
       let memories = result.memories;
-      
+
       // Apply filters that can be done client-side
       if (options.minRelevanceScore !== undefined) {
         memories = memories.filter((m: any) => (m.relevance || 1.0) >= options.minRelevanceScore!);
       }
-      
+
       if (options.startTime) {
         memories = memories.filter((m: any) => {
           const ts = m.timestamp ? new Date(m.timestamp).getTime() : 0;
           return ts >= options.startTime!;
         });
       }
-      
+
       if (options.endTime) {
         memories = memories.filter((m: any) => {
           const ts = m.timestamp ? new Date(m.timestamp).getTime() : 0;
           return ts <= options.endTime!;
         });
       }
-      
+
       // Convert to VaultEntry format
       return memories.map((memory: any, index: number) => ({
         id: index, // VVAULT doesn't return numeric IDs, use index
@@ -317,7 +318,7 @@ export class VaultStore {
             createdAt: memory.timestamp ? new Date(memory.timestamp).getTime() : Date.now()
           };
         })
-        .sort((a, b) => b.createdAt - a.createdAt); // Most recent first
+        .sort((a: any, b: any) => b.createdAt - a.createdAt); // Most recent first
     } catch (error) {
       if (shouldLog('error')) {
         console.error('Failed to get vault summary metadata from VVAULT:', error);
@@ -353,8 +354,8 @@ export class VaultStore {
             sessionId: threadId || this.constructId,
             source: 'summary',
             kind: `SUMMARY_${summaryType}`,
-        startTs,
-        endTs,
+            startTs,
+            endTs,
             memoryType: 'long-term'
           }
         })
@@ -449,7 +450,7 @@ export class VaultStore {
           newestEntry = ts;
         }
       });
-      
+
       return {
         totalEntries: memories.length,
         entriesByKind,

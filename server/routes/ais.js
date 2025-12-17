@@ -108,11 +108,67 @@ router.get('/', async (req, res) => {
 
 // Get all store/public AIs (for SimForge)
 router.get('/store', async (req, res) => {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'routes/ais.js:110',message:'GET /store entry',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+  // #endregion
   try {
     const storeAIs = await aiManager.getStoreAIs();
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'routes/ais.js:113',message:'getStoreAIs returned',data:{count:storeAIs.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion
     res.json({ success: true, ais: storeAIs });
   } catch (error) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'routes/ais.js:115',message:'GET /store error',data:{error:error.message,stack:error.stack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+    // #endregion
     console.error('Error fetching store AIs:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Sync GPTs from VVAULT file system to database
+router.post('/sync-from-vvault', async (req, res) => {
+  try {
+    const chattyUserId = req.user?.id || req.user?.uid || req.user?.sub || req.user?.email || 'anonymous';
+    console.log(`🔄 [AIs API] Sync request from user: ${chattyUserId}`);
+    
+    // Resolve to VVAULT user ID format
+    let userId = chattyUserId;
+    try {
+      const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
+      const vvaultUserId = await resolveVVAULTUserId(chattyUserId, req.user?.email, true, req.user?.name);
+      if (vvaultUserId) {
+        userId = vvaultUserId;
+        console.log(`✅ [AIs API] Resolved user ID for sync: ${chattyUserId} → ${vvaultUserId}`);
+      } else {
+        console.warn(`⚠️ [AIs API] Could not resolve VVAULT user ID for: ${chattyUserId}, using as-is`);
+      }
+    } catch (error) {
+      console.warn(`⚠️ [AIs API] User ID resolution failed during sync: ${error.message}`);
+    }
+    
+    // Import and run sync function
+    const { syncGPTsToDatabase } = await import('../scripts/syncGPTsFromVVAULT.js');
+    const result = await syncGPTsToDatabase(userId);
+    
+    console.log(`✅ [AIs API] Sync completed: ${result.synced.length} synced, ${result.skipped.length} skipped, ${result.errors.length} errors`);
+    
+    res.json({
+      success: true,
+      result: {
+        synced: result.synced.length,
+        skipped: result.skipped.length,
+        errors: result.errors.length,
+        total: result.total,
+        details: {
+          synced: result.synced,
+          skipped: result.skipped,
+          errors: result.errors
+        }
+      }
+    });
+  } catch (error) {
+    console.error('❌ [AIs API] Error syncing from VVAULT:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -156,6 +212,25 @@ router.post('/', async (req, res) => {
     };
 
     const ai = await aiManager.createAI(aiData);
+    
+    // Ensure all required files are created in VVAULT
+    try {
+      const { FileManagementAutomation } = await import('../lib/fileManagementAutomation.js');
+      const constructCallsign = ai.constructCallsign || ai.id.replace(/^(ai-|gpt-)/, '');
+      if (constructCallsign) {
+        const fileManager = new FileManagementAutomation(userId);
+        // Ensure files exist (creates if missing)
+        await fileManager.ensureGPTCreationFiles(constructCallsign, ai);
+        // Update prompt.txt with current form data (name, description, instructions)
+        await fileManager.updateGPTPrompt(constructCallsign, ai);
+        console.log(`✅ [AIs API] Created and updated all required files for ${ai.id} (${constructCallsign})`);
+      } else {
+        console.warn(`⚠️ [AIs API] No constructCallsign for ${ai.id}, skipping file creation`);
+      }
+    } catch (fileError) {
+      console.warn(`⚠️ [AIs API] File creation failed for ${ai.id}:`, fileError);
+      // Don't fail the creation operation if file creation fails
+    }
     
     // Trigger capsule generation for new GPT
     try {
@@ -209,6 +284,35 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ success: false, error: 'AI not found' });
     }
     
+    // Ensure all required files are still present in VVAULT (in case constructCallsign changed)
+    try {
+      const chattyUserId = req.user?.id || req.user?.uid || req.user?.sub || req.user?.email || 'anonymous';
+      let userId = chattyUserId;
+      try {
+        const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
+        const vvaultUserId = await resolveVVAULTUserId(chattyUserId, req.user?.email);
+        if (vvaultUserId) {
+          userId = vvaultUserId;
+        }
+      } catch (error) {
+        console.warn(`⚠️ [AIs API] User ID resolution failed during update: ${error.message}`);
+      }
+      
+      const { FileManagementAutomation } = await import('../lib/fileManagementAutomation.js');
+      const constructCallsign = ai.constructCallsign || req.params.id.replace(/^(ai-|gpt-)/, '');
+      if (constructCallsign) {
+        const fileManager = new FileManagementAutomation(userId);
+        // Ensure files exist (creates if missing)
+        await fileManager.ensureGPTCreationFiles(constructCallsign, ai);
+        // Update prompt.txt with current form data (name, description, instructions)
+        await fileManager.updateGPTPrompt(constructCallsign, ai);
+        console.log(`✅ [AIs API] Ensured and updated files for ${req.params.id} (${constructCallsign})`);
+      }
+    } catch (fileError) {
+      console.warn(`⚠️ [AIs API] File creation failed during update for ${req.params.id}:`, fileError);
+      // Don't fail the update operation if file creation fails
+    }
+    
     // Trigger capsule generation/update when GPT is saved
     try {
       console.log(`🔗 [AIs API] Triggering capsule update for AI: ${req.params.id}`);
@@ -230,10 +334,55 @@ router.put('/:id', async (req, res) => {
 // Delete an AI
 router.delete('/:id', async (req, res) => {
   try {
+    // Get AI info before deleting (to get constructCallsign and userId)
+    const ai = await aiManager.getAI(req.params.id);
+    if (!ai) {
+      return res.status(404).json({ success: false, error: 'AI not found' });
+    }
+
+    const constructCallsign = ai.constructCallsign;
+    const userId = ai.userId;
+
+    // Check VSI protection before deletion (VSIs are independent entities in intelligences/)
+    if (constructCallsign) {
+      const { checkDeletionProtection } = await import('../lib/vsiProtection.js');
+      const protection = await checkDeletionProtection(constructCallsign, userId);
+      
+      if (protection.blocked) {
+        console.warn(`🚫 [AIs API] Deletion blocked for ${constructCallsign}: VSI protection active`);
+        return res.status(403).json({ 
+          success: false, 
+          error: '⚠️ Deletion blocked: This GPT is protected under VSI safeguards and cannot be removed without sovereign override.',
+          vsi_protected: true
+        });
+      }
+    }
+
+    // Delete from database first
     const success = await aiManager.deleteAI(req.params.id);
     if (!success) {
       return res.status(404).json({ success: false, error: 'AI not found' });
     }
+
+    // Delete all files from VVAULT if constructCallsign exists
+    if (constructCallsign && userId) {
+      try {
+        const { FileManagementAutomation } = await import('../lib/fileManagementAutomation.js');
+        const fileManager = new FileManagementAutomation(userId);
+        
+        // Permanently delete (not archive) - user explicitly requested permanent deletion
+        console.log(`🗑️ [AIs API] Permanently deleting GPT files for ${constructCallsign} from VVAULT`);
+        await fileManager.deleteGPT(constructCallsign, false); // false = permanent delete, not archive
+        console.log(`✅ [AIs API] Successfully deleted all files for ${constructCallsign} from VVAULT`);
+      } catch (fileError) {
+        console.error(`⚠️ [AIs API] Failed to delete files from VVAULT for ${constructCallsign}:`, fileError);
+        // Don't fail the delete operation if file deletion fails - database entry is already deleted
+        // Log the error but continue
+      }
+    } else {
+      console.warn(`⚠️ [AIs API] Cannot delete VVAULT files: missing constructCallsign (${constructCallsign}) or userId (${userId})`);
+    }
+
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting AI:', error);

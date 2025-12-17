@@ -205,7 +205,7 @@ export class AIManager {
   /**
    * Resolve VVAULT path for user's instance assets directory
    * @param {string} userId - VVAULT user ID (LIFE format)
-   * @param {string} constructCallsign - Construct callsign (e.g., "katana-001")
+   * @param {string} constructCallsign - Construct callsign (e.g., "example-construct-001")
    * @returns {Promise<string>} - Absolute path to assets directory
    */
   async resolveVVAULTAssetsPath(userId, constructCallsign) {
@@ -237,12 +237,46 @@ export class AIManager {
   }
 
   /**
+   * Resolve VVAULT identity directory path for a construct
+   * @param {string} userId - VVAULT user ID (LIFE format)
+   * @param {string} constructCallsign - Construct callsign (e.g., "example-construct-001")
+   * @returns {Promise<string>} - Full path to identity directory
+   */
+  async resolveVVAULTIdentityPath(userId, constructCallsign) {
+    // Import VVAULT_ROOT dynamically to avoid circular dependencies
+    let VVAULT_ROOT;
+    try {
+      const config = await import('../../vvaultConnector/config.js');
+      VVAULT_ROOT = config.VVAULT_ROOT || process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+    } catch (error) {
+      VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+      console.warn(`⚠️ [AIManager] Could not load VVAULT_ROOT from config, using: ${VVAULT_ROOT}`);
+    }
+
+    const shard = 'shard_0000'; // Per user preference for sequential sharding
+    const identityPath = path.join(
+      VVAULT_ROOT,
+      'users',
+      shard,
+      userId,
+      'instances',
+      constructCallsign,
+      'identity'
+    );
+
+    // Ensure directory exists
+    await fs.mkdir(identityPath, { recursive: true });
+    
+    return identityPath;
+  }
+
+  /**
    * Save avatar to VVAULT filesystem
    * @param {string} aiId - AI ID
-   * @param {string} constructCallsign - Construct callsign (e.g., "katana-001")
+   * @param {string} constructCallsign - Construct callsign (e.g., "example-construct-001")
    * @param {string} avatarData - Base64 data URL (e.g., "data:image/png;base64,...")
    * @param {string} userId - VVAULT user ID (LIFE format)
-   * @returns {Promise<string>} - VVAULT-relative path (e.g., "instances/katana-001/assets/avatar.png")
+   * @returns {Promise<string>} - VVAULT-relative path (e.g., "instances/example-construct-001/identity/avatar.png")
    */
   async saveAvatarToFilesystem(aiId, constructCallsign, avatarData, userId) {
     if (!avatarData || !avatarData.startsWith('data:image/')) {
@@ -267,32 +301,35 @@ export class AIManager {
       const mimeType = dataUrlMatch[1];
       const base64Data = dataUrlMatch[2];
 
-      // Map mime types to file extensions
-      const extensionMap = {
-        'png': 'png',
-        'jpeg': 'jpg',
-        'jpg': 'jpg',
-        'gif': 'gif',
-        'webp': 'webp',
-        'svg+xml': 'svg',
-        'svg': 'svg'
-      };
-
-      const extension = extensionMap[mimeType] || 'png';
-      const filename = `avatar.${extension}`;
-
-      // Resolve VVAULT assets directory
-      const assetsDir = await this.resolveVVAULTAssetsPath(userId, constructCallsign);
-      const filePath = path.join(assetsDir, filename);
-
       // Convert base64 to buffer
-      const buffer = Buffer.from(base64Data, 'base64');
+      let buffer = Buffer.from(base64Data, 'base64');
+
+      // Convert non-PNG images to PNG if sharp is available
+      // Otherwise, keep as-is (will save as PNG filename but may have format issues)
+      if (mimeType !== 'png') {
+        try {
+          const sharp = require('sharp');
+          buffer = await sharp(buffer).png().toBuffer();
+          console.log(`🔄 [AIManager] Converted ${mimeType} image to PNG`);
+        } catch (sharpError) {
+          // Sharp not available or conversion failed - keep original buffer
+          // Note: This may cause issues if the file is saved as .png but contains non-PNG data
+          console.warn(`⚠️ [AIManager] Could not convert ${mimeType} to PNG (sharp not available), saving as-is`);
+        }
+      }
+
+      // Always save as avatar.png in identity directory
+      const filename = 'avatar.png';
+
+      // Resolve VVAULT identity directory
+      const identityDir = await this.resolveVVAULTIdentityPath(userId, constructCallsign);
+      const filePath = path.join(identityDir, filename);
 
       // Write file
       await fs.writeFile(filePath, buffer);
 
       // Return VVAULT-relative path
-      const relativePath = `instances/${constructCallsign}/assets/${filename}`;
+      const relativePath = `instances/${constructCallsign}/identity/${filename}`;
       
       console.log(`✅ [AIManager] Saved avatar to filesystem: ${filePath} (relative: ${relativePath})`);
       
@@ -305,11 +342,11 @@ export class AIManager {
 
   /**
    * Generate constructCallsign from AI name with sequential numbering
-   * Example: "Katana" → "katana-001", "Katana" (second one) → "katana-002"
+   * Example: "Example Construct" → "example-construct-001", "Example Construct" (second one) → "example-construct-002"
    * 
-   * @param {string} name - AI name (e.g., "Katana", "Luna")
+   * @param {string} name - AI name (e.g., "Example Construct", "Luna")
    * @param {string} userId - User ID to scope the search
-   * @returns {Promise<string>} - Construct callsign (e.g., "katana-001")
+   * @returns {Promise<string>} - Construct callsign (e.g., "example-construct-001")
    */
   async generateConstructCallsign(name, userId) {
     if (!name || !name.trim()) {
@@ -524,6 +561,20 @@ export class AIManager {
     // Use stored instructions sans legacy legal block
     let instructions = sanitizeInstructions(row.instructions || '');
 
+    // Check VSI protection status (VSIs are independent entities in intelligences/)
+    let vsiProtected = false;
+    let vsiStatus = false;
+    if (row.construct_callsign) {
+      try {
+        const { checkVSIStatus } = await import('./vsiProtection.js');
+        const vsiCheck = await checkVSIStatus(row.user_id, row.construct_callsign);
+        vsiProtected = vsiCheck.isVSI;
+        vsiStatus = vsiCheck.isVSI;
+      } catch (error) {
+        console.warn(`⚠️ [AIManager] Failed to check VSI status for ${row.construct_callsign}:`, error.message);
+      }
+    }
+
     return {
       id: row.id,
       name: row.name,
@@ -544,7 +595,113 @@ export class AIManager {
       privacy,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-      userId: row.user_id
+      userId: row.user_id,
+      vsiProtected,
+      vsiStatus
+    };
+  }
+
+  /**
+   * Get AI by construct callsign
+   * @param {string} constructCallsign - Construct callsign (e.g., "example-construct-001")
+   * @param {string} userId - User ID
+   * @returns {Promise<Object|null>} AI config or null if not found
+   */
+  async getAIByCallsign(constructCallsign, userId) {
+    if (!constructCallsign || !userId) {
+      return null;
+    }
+
+    // DUAL-TABLE SUPPORT: Check both ais and gpts tables
+    let row = null;
+    let fromGPTsTable = false;
+
+    // First try ais table
+    try {
+      const aisStmt = this.db.prepare('SELECT * FROM ais WHERE construct_callsign = ? AND user_id = ?');
+      row = aisStmt.get(constructCallsign, userId);
+      if (row) {
+        console.log(`📊 [AIManager] Found AI with callsign ${constructCallsign} in ais table`);
+      }
+    } catch (error) {
+      console.log(`ℹ️ [AIManager] ais table query failed for callsign ${constructCallsign}: ${error.message}`);
+    }
+
+    // Fallback to gpts table if not found in ais
+    if (!row) {
+      try {
+        const gptsStmt = this.db.prepare('SELECT * FROM gpts WHERE construct_callsign = ? AND user_id = ?');
+        row = gptsStmt.get(constructCallsign, userId);
+        if (row) {
+          fromGPTsTable = true;
+          console.log(`📊 [AIManager] Found AI with callsign ${constructCallsign} in gpts table (legacy)`);
+        }
+      } catch (error) {
+        console.log(`ℹ️ [AIManager] gpts table query failed for callsign ${constructCallsign}: ${error.message}`);
+      }
+    }
+
+    if (!row) {
+      return null;
+    }
+
+    // Use appropriate file/action getters based on which table the row came from
+    const files = fromGPTsTable ? await this.getAIFilesFromGPTsTable(row.id) : await this.getAIFiles(row.id);
+    const actions = fromGPTsTable ? await this.getAIActionsFromGPTsTable(row.id) : await this.getAIActions(row.id);
+
+    // Process avatar: if it's a filesystem path (not data URL), return API URL
+    let avatarUrl = row.avatar;
+    if (avatarUrl && !avatarUrl.startsWith('data:image/') && avatarUrl.startsWith('instances/')) {
+      // It's a filesystem path, return API URL
+      avatarUrl = `/api/ais/${row.id}/avatar`;
+    }
+
+    // Get privacy field, default to 'private' if not set
+    let privacy = row.privacy;
+    if (!privacy) {
+      privacy = row.is_active ? 'link' : 'private';
+    }
+
+    // Use stored instructions sans legacy legal block
+    let instructions = sanitizeInstructions(row.instructions || '');
+
+    // Check VSI protection status (VSIs are independent entities in intelligences/)
+    let vsiProtected = false;
+    let vsiStatus = false;
+    if (row.construct_callsign) {
+      try {
+        const { checkVSIStatus } = await import('./vsiProtection.js');
+        const vsiCheck = await checkVSIStatus(row.user_id, row.construct_callsign);
+        vsiProtected = vsiCheck.isVSI;
+        vsiStatus = vsiCheck.isVSI;
+      } catch (error) {
+        console.warn(`⚠️ [AIManager] Failed to check VSI status for ${row.construct_callsign}:`, error.message);
+      }
+    }
+
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      instructions: instructions,
+      conversationStarters: JSON.parse(row.conversation_starters || '[]'),
+      avatar: avatarUrl,
+      capabilities: JSON.parse(row.capabilities || '{}'),
+      constructCallsign: row.construct_callsign,
+      modelId: row.model_id,
+      conversationModel: row.conversation_model,
+      creativeModel: row.creative_model,
+      codingModel: row.coding_model,
+      orchestrationMode: row.orchestration_mode || 'lin',
+      files,
+      actions,
+      isActive: Boolean(row.is_active),
+      privacy,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      userId: row.user_id,
+      vsiProtected,
+      vsiStatus
     };
   }
 
@@ -765,6 +922,20 @@ export class AIManager {
           // Use stored instructions sans legacy legal block
           let instructions = sanitizeInstructions(row.instructions || '');
 
+          // Check VSI protection status
+          let vsiProtected = false;
+          let vsiStatus = false;
+          if (row.construct_callsign && row.user_id) {
+            try {
+              const { checkVSIStatus } = await import('./vsiProtection.js');
+              const vsiCheck = await checkVSIStatus(row.user_id, row.construct_callsign);
+              vsiProtected = vsiCheck.isVSI;
+              vsiStatus = vsiCheck.isVSI;
+            } catch (error) {
+              console.warn(`⚠️ [AIManager] Failed to check VSI status for ${row.construct_callsign}:`, error.message);
+            }
+          }
+
           ais.push({
             id: row.id,
             name: row.name,
@@ -786,7 +957,9 @@ export class AIManager {
             privacy,
             createdAt: row.created_at,
             updatedAt: row.updated_at,
-            userId: row.user_id
+            userId: row.user_id,
+            vsiProtected,
+            vsiStatus
           });
         } catch (rowError) {
           console.error(`❌ [AIManager] Error processing AI row ${row.id}:`, rowError);
@@ -804,8 +977,14 @@ export class AIManager {
 
   // Get all AIs with privacy='store' (for SimForge/public store)
   async getStoreAIs() {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiManager.js:894',message:'getStoreAIs entry',data:{hasDb:!!this.db},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
+    // #endregion
     try {
       if (!this.db) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiManager.js:897',message:'database not initialized',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
+        // #endregion
         throw new Error('Database not initialized');
       }
 
@@ -816,6 +995,16 @@ export class AIManager {
         ORDER BY updated_at DESC
       `);
       const aisRows = aisStmt.all();
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiManager.js:906',message:'ais query result',data:{count:aisRows.length,ids:aisRows.map(r=>r.id),privacyValues:aisRows.map(r=>r.privacy),rows:aisRows.map(r=>({id:r.id,name:r.name,privacy:r.privacy}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
+      
+      // Debug: Also check total count and privacy distribution
+      const totalAIs = this.db.prepare('SELECT COUNT(*) as count FROM ais').get();
+      const privacyDist = this.db.prepare('SELECT privacy, COUNT(*) as count FROM ais GROUP BY privacy').all();
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiManager.js:918',message:'database stats',data:{totalAIs:totalAIs.count,privacyDist},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
 
       const gptsStmt = this.db.prepare(`
         SELECT * FROM gpts 
@@ -825,13 +1014,22 @@ export class AIManager {
       let gptsRows = [];
       try {
         gptsRows = gptsStmt.all();
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiManager.js:915',message:'gpts query result',data:{count:gptsRows.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+        // #endregion
       } catch (error) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiManager.js:917',message:'gpts query error',data:{error:error.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
+        // #endregion
         // gpts table might not exist or might not have privacy column yet
         console.log(`ℹ️ [AIManager] Could not query gpts table for store AIs: ${error.message}`);
       }
 
       // Combine results
       const allRows = [...aisRows, ...gptsRows];
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiManager.js:922',message:'combined rows',data:{totalCount:allRows.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
 
       const storeAIs = [];
       for (const row of allRows) {
@@ -869,6 +1067,20 @@ export class AIManager {
           // Use stored instructions sans legacy legal block
           let instructions = sanitizeInstructions(row.instructions || '');
 
+          // Check VSI protection status
+          let vsiProtected = false;
+          let vsiStatus = false;
+          if (row.construct_callsign && row.user_id) {
+            try {
+              const { checkVSIStatus } = await import('./vsiProtection.js');
+              const vsiCheck = await checkVSIStatus(row.user_id, row.construct_callsign);
+              vsiProtected = vsiCheck.isVSI;
+              vsiStatus = vsiCheck.isVSI;
+            } catch (error) {
+              console.warn(`⚠️ [AIManager] Failed to check VSI status for ${row.construct_callsign}:`, error.message);
+            }
+          }
+
           storeAIs.push({
             id: row.id,
             name: row.name,
@@ -889,16 +1101,24 @@ export class AIManager {
             privacy,
             createdAt: row.created_at,
             updatedAt: row.updated_at,
-            userId: row.user_id
+            userId: row.user_id,
+            vsiProtected,
+            vsiStatus
           });
         } catch (error) {
           console.error(`❌ [AIManager] Error processing store AI ${row.id}:`, error);
         }
       }
 
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiManager.js:987',message:'getStoreAIs success',data:{count:storeAIs.length,ids:storeAIs.map(a=>a.id)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
       console.log(`📊 [AIManager] Found ${storeAIs.length} store AIs`);
       return storeAIs;
     } catch (error) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiManager.js:990',message:'getStoreAIs exception',data:{error:error.message,stack:error.stack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion
       console.error('❌ [AIManager] Error fetching store AIs:', error);
       throw error;
     }
@@ -1126,8 +1346,8 @@ export class AIManager {
       }
 
       // Extract construct ID and callsign
-      // Pattern: "gpt-katana-001" -> constructId: "gpt", callsign: "katana-001"
-      // OR: "katana-001" -> constructId: "gpt", callsign: "katana-001"
+      // Pattern: "gpt-example-construct-001" -> constructId: "gpt", callsign: "example-construct-001"
+      // OR: "example-construct-001" -> constructId: "gpt", callsign: "example-construct-001"
       let constructId = 'gpt';
       let callsign = constructCallsign;
 
@@ -1135,7 +1355,7 @@ export class AIManager {
       if (constructCallsign.startsWith('gpt-')) {
         callsign = constructCallsign.substring(4);
       } else if (constructCallsign.includes('-')) {
-        // If it's like "katana-001", use as-is
+        // If it's like "example-construct-001", use as-is
         callsign = constructCallsign;
       }
 

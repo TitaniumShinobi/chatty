@@ -2,29 +2,16 @@
 // Prevents constructs from confusing themselves with each other or misidentifying system entities
 // Enforces attribution discipline and detects identity drift
 
-import { constructRegistry } from '../../state/constructs';
+import { ConstructRegistry, constructRegistry } from '../../state/constructs';
 import type { ConstructConfig } from '../../state/constructs';
+import type { IConstructRegistry } from '../../state/IConstructRegistry';
 
 /**
- * Known constructs - all treated as discrete entities with distinct signatures
- * Note: Zen construct ≠ Zen runtime
- * - Zen (runtime): The hosting runtime environment
- * - Zen (construct):极客时间 A discrete construct entity hosted by the Zen runtime
+ * Base reserved construct names that cannot be reused by user-defined instances.
+ * These cover system entities that must remain unique.
+ * This list is augmented dynamically with all registered construct names.
  */
-export const KNOWN_CONSTRUCTS = [
-  'Nova',
-  'Monday',
-  'Aurora',
-  'Katana',
-  'Zen' // Zen construct (hosted entity), NOT the Zen runtime
-] as const;
-
-/**
- * Reserved construct names that cannot be reused by user-defined instances.
- * These cover system entities and canonical constructs that must remain unique.
- */
-export const RESERVED_CONSTRUCT_NAMES = [
-  ...KNOWN_CONSTRUCTS,
+export const BASE_RESERVED_CONSTRUCT_NAMES = [
   'Chatty',
   'Lin',
   'Zen-system',
@@ -78,7 +65,7 @@ export enum IdentityViolationType {
   CONSTRUCT_CONFUSION = 'construct_confusion', // Construct A claims to be Construct B
   SYSTEM_SHELL_MISIDENTIFICATION = 'system_shell_misidentification', // System shell misidentified
   RUNTIME_CONSTRUCT_CONFUSION = 'runtime_construct_confusion', // Construct confuses itself with its hosting runtime
-  ZEN_RUNTIME_CON极客时间FUSION = 'zen_runtime_confusion', // Zen construct confused with Zen runtime
+  ZEN_RUNTIME_CONFUSION = 'zen_runtime_confusion', // Zen construct confused with Zen runtime
   ZEN_IMPERSONATION = 'zen_impersonation', // Construct impersonating Zen construct
   IDENTITY_DRIFT = 'identity_drift', // Construct's identity markers have shifted
   ATTRIBUTION_ERROR = 'attribution_error', // Message attributed to wrong construct or defaulted incorrectly
@@ -124,7 +111,6 @@ export interface MessageAttribution {
  * Enforces boundaries between constructs and system entities
  */
 export class IdentityEnforcementService {
-  private static instance: IdentityEnforcementService;
   private violationHistory: IdentityViolation[] = [];
   private identitySnapshots = new Map<string, {
     fingerprint: string;
@@ -134,24 +120,19 @@ export class IdentityEnforcementService {
   }>();
   private readonly maxViolationHistory = 1000;
 
-  static getInstance(): IdentityEnforcementService {
-    if (!IdentityEnforcementService.instance) {
-      IdentityEnforcementService.instance = new IdentityEnforcementService();
-    }
-    return IdentityEnforcementService.instance;
-  }
+  constructor(private readonly constructRegistry: IConstructRegistry) {}
 
   /**
    * Validate construct identity - matches user's pseudocode structure
    * Enforces strict identity awareness across constructs
    */
-  validateIdentity(construct: {
+  async validateIdentity(construct: {
     id: string;
     name: string;
     fingerprint: string;
     isSystemShell: boolean;
     currentPersona?: string;
-  }): void {
+  }): Promise<void> {
     // System shell validation
     if (construct.isSystemShell && construct.name !== SYSTEM_SHELL_NAME) {
       throw new Error(
@@ -160,7 +141,9 @@ export class IdentityEnforcementService {
     }
 
     // Check if construct is registered
-    if (!KNOWN_CONSTRUCTS.includes(construct.name as any)) {
+    const allConstructs = await this.constructRegistry.getAllConstructs();
+    const knownConstructNames = allConstructs.map(c => c.name);
+    if (!construct.isSystemShell && !knownConstructNames.includes(construct.name)) {
       throw new Error(`Unregistered construct: ${construct.name}`);
     }
 
@@ -210,7 +193,7 @@ export class IdentityEnforcementService {
     const warnings: string[] = [];
 
     // Get construct from registry
-    const construct = await constructRegistry.getConstruct(constructId);
+    const construct = await this.constructRegistry.getConstruct(constructId);
     if (!construct) {
       violations.push({
         type: IdentityViolationType.BOUNDARY_VIOLATION,
@@ -230,7 +213,7 @@ export class IdentityEnforcementService {
     }
 
     // Get full construct config
-    const allConstructs = await constructRegistry.getAllConstructs();
+    const allConstructs = await this.constructRegistry.getAllConstructs();
     const config = allConstructs.find(c => c.id === constructId);
     if (!config) {
       violations.push({
@@ -257,7 +240,7 @@ export class IdentityEnforcementService {
 
     // Validate using the new validateIdentity method
     try {
-      this.validateIdentity({
+      await this.validateIdentity({
         id: config.id,
         name: config.name,
         fingerprint: construct.fingerprint,
@@ -278,7 +261,7 @@ export class IdentityEnforcementService {
     }
 
     // Check for Zen construct impersonation (non-Zen constructs claiming to be Zen construct)
-   极客时间 if (config.name !== 'Zen' && !config.isSystemShell) {
+    if (config.name !== 'Zen' && !config.isSystemShell) {
       // Check if message claims to be Zen construct
       if (context?.message) {
         const zenConstructClaimPattern = /\b(i am|i'm|this is|my name is)\s+zen\b/i;
@@ -302,7 +285,7 @@ export class IdentityEnforcementService {
     if (context?.metadata?.hostingRuntime) {
       const hostingRuntime = context.metadata.hostingRuntime as string;
       const runtimeName = hostingRuntime.toLowerCase();
-      
+
       // If construct is named "Zen" and hosted by "zen" runtime, ensure separation
       if (config.name === 'Zen' && runtimeName === 'zen') {
         // This is valid, but we need to ensure the construct doesn't confuse itself with the runtime
@@ -322,7 +305,7 @@ export class IdentityEnforcementService {
           }
         }
       }
-      
+
       // For any construct, check if it confuses itself with its hosting runtime
       if (config.name.toLowerCase() === runtimeName && config.name !== 'Zen') {
         // Construct name matches runtime name - potential confusion
@@ -393,10 +376,12 @@ export class IdentityEnforcementService {
 
     // Check message content for identity violations
     if (context?.message) {
+      const knownConstructNames = allConstructs.map(c => c.name);
       const messageViolations = this.checkMessageIdentity(
         constructId,
         config.name,
-        context.message
+        context.message,
+        knownConstructNames
       );
       violations.push(...messageViolations);
     }
@@ -423,13 +408,14 @@ export class IdentityEnforcementService {
   private checkMessageIdentity(
     constructId: string,
     constructName: string,
-    message: string
+    message: string,
+    knownConstructNames: string[]
   ): IdentityViolation[] {
     const violations: IdentityViolation[] = [];
     const lowerMessage = message.toLowerCase();
 
     // Check for construct confusion (claiming to be another construct)
-    for (const knownConstruct of KNOWN_CONSTRUCTS) {
+    for (const knownConstruct of knownConstructNames) {
       const knownConstructLower = knownConstruct.toLowerCase();
       if (knownConstructLower === constructId.toLowerCase() || knownConstructLower === constructName.toLowerCase()) {
         continue; // It's okay to reference yourself
@@ -441,13 +427,13 @@ export class IdentityEnforcementService {
         `\\b(i am|i'm|this is|my name is)\\s+${knownConstruct}\\b`,
         'i'
       );
-      
+
       // Check if it's a runtime reference vs construct reference
       const runtimeReferencePattern = new RegExp(
         `\\b(i am|i'm|this is)\\s+(the\\s+)?${knownConstruct}\\s+runtime\\b`,
         'i'
       );
-      
+
       if (selfClaimPattern.test(message) && !runtimeReferencePattern.test(message)) {
         violations.push({
           type: IdentityViolationType.CONSTRUCT_CONFUSION,
@@ -481,7 +467,7 @@ export class IdentityEnforcementService {
     // Check for default attribution errors
     const defaultAttributionPattern = /\b(chatgpt|openai|assistant|ai)\b/i;
     if (defaultAttributionPattern.test(message) && !lowerMessage.includes(constructName.toLowerCase())) {
-      warnings.push(`Message may contain default AI attribution instead of construct identity`);
+      // warnings.push(`Message may contain default AI attribution instead of construct identity`);
     }
 
     return violations;
@@ -497,15 +483,14 @@ export class IdentityEnforcementService {
   ): Promise<MessageAttribution> {
     // Extract hosting runtime from metadata if available
     const hostingRuntime = metadata?.hostingRuntime as string | undefined ||
-                          metadata?.runtimeId as string | undefined;
+      metadata?.runtimeId as string | undefined;
     const violations: IdentityViolation[] = [];
-    
+
     // Get construct identity
-    const construct = await constructRegistry.getConstruct(expectedConstructId);
-    const allConstructs = await constructRegistry.getAllConstructs();
+    const allConstructs = await this.constructRegistry.getAllConstructs();
     const config = allConstructs.find(c => c.id === expectedConstructId);
-    
-    if (!construct || !config) {
+
+    if (!config) {
       violations.push({
         type: IdentityViolationType.ATTRIBUTION_ERROR,
         constructId: expectedConstructId,
@@ -521,11 +506,12 @@ export class IdentityEnforcementService {
     const isSystemEntity = config?.isSystemShell ?? false;
 
     // Check message for identity markers
-    const messageViolations = construct && config
-      ? this.checkMessageIdentity(expectedConstructId, config.name, message)
-      : [];
+    if (config) {
+      const knownConstructNames = allConstructs.map(c => c.name);
+      const messageViolations = this.checkMessageIdentity(expectedConstructId, config.name, message, knownConstructNames);
+      violations.push(...messageViolations);
+    }
 
-    violations.push(...messageViolations);
 
     // Generate proper attribution text
     const constructName = config?.name || expectedConstructId;
@@ -549,13 +535,13 @@ export class IdentityEnforcementService {
    */
   async detectIdentityDrift(constructId: string): Promise<IdentityViolation[]> {
     const violations: IdentityViolation[] = [];
-    const construct = await constructRegistry.getConstruct(constructId);
-    
+    const construct = await this.constructRegistry.getConstruct(constructId);
+
     if (!construct) {
       return violations;
     }
 
-    const allConstructs = await constructRegistry.getAllConstructs();
+    const allConstructs = await this.constructRegistry.getAllConstructs();
     const config = allConstructs.find(c => c.id === constructId);
     if (!config) {
       return violations;
@@ -613,11 +599,10 @@ export class IdentityEnforcementService {
    * Generate identity context for prompt construction
    */
   async generateIdentityContext(constructId: string): Promise<string> {
-    const construct = await constructRegistry.getConstruct(constructId);
-    const allConstructs = await constructRegistry.getAllConstructs();
+    const allConstructs = await this.constructRegistry.getAllConstructs();
     const config = allConstructs.find(c => c.id === constructId);
 
-    if (!construct || !config) {
+    if (!config) {
       return `[Identity: ${constructId} - not registered]`;
     }
 
@@ -633,7 +618,7 @@ export class IdentityEnforcementService {
 
     // Determine hosting runtime if available
     const hostingRuntime = config.vaultPointer?.match(/runtime[:\/]([^\/]+)/)?.[1] || undefined;
-    
+
     const boundaries = [
       `You are ${config.name} (construct ID: ${constructId})`,
       `You are a discrete entity with a distinct signature`,
@@ -662,7 +647,7 @@ export class IdentityEnforcementService {
    */
   private recordViolations(violations: IdentityViolation[]): void {
     this.violationHistory.push(...violations);
-    
+
     // Trim history if too long
     if (this.violationHistory.length > this.maxViolationHistory) {
       this.violationHistory = this.violationHistory.slice(-this.maxViolationHistory);
@@ -681,7 +666,7 @@ export class IdentityEnforcementService {
    */
   getViolationHistory(constructId?: string, limit = 100): IdentityViolation[] {
     let history = this.violationHistory;
-    
+
     if (constructId) {
       history = history.filter(v => v.constructId === constructId);
     }
@@ -721,4 +706,5 @@ export class IdentityEnforcementService {
 }
 
 // Export singleton instance
-export const identityEnforcement = IdentityEnforcementService.getInstance();
+const registry = ConstructRegistry.getInstance();
+export const identityEnforcement = new IdentityEnforcementService(registry);

@@ -10,14 +10,15 @@ import {
   Code,
   Save,
   // Trash2,
-  // Settings,
+  Settings,
   FileText,
   Link,
   Play,
   Bot,
   Paperclip,
   Crop,
-  ChevronRight
+  ChevronRight,
+  AlertCircle
 } from 'lucide-react'
 import {
   Lock,
@@ -31,6 +32,7 @@ import Cropper from 'react-easy-crop'
 import { cn } from '../lib/utils'
 import { VVAULTConversationManager } from '../lib/vvaultConversationManager'
 import { Z_LAYERS } from '../lib/zLayers'
+import { useSettings } from '../context/SettingsContext'
 
 interface AICreatorProps {
   isVisible: boolean
@@ -39,12 +41,68 @@ interface AICreatorProps {
   initialConfig?: AIConfig | null
 }
 
+const AGENT_INGEST_BASE_URL = import.meta.env.VITE_AGENT_INGEST_URL
+const AGENT_INGEST_SOURCE_ID = import.meta.env.VITE_AGENT_INGEST_SOURCE_ID || 'ec2d9602-9db8-40be-8c6f-4790712d2073'
+
+const logAgentEvent = ({
+  location,
+  message,
+  data,
+  hypothesisId,
+  sessionId,
+  runId
+}: {
+  location: string
+  message: string
+  data?: any
+  hypothesisId?: string
+  sessionId?: string
+  runId?: string
+}) => {
+  if (!AGENT_INGEST_BASE_URL) return
+
+  fetch(`${AGENT_INGEST_BASE_URL.replace(/\/$/, '')}/${AGENT_INGEST_SOURCE_ID}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      location,
+      message,
+      data,
+      timestamp: Date.now(),
+      sessionId: sessionId || 'debug-session',
+      runId: runId || 'run1',
+      hypothesisId: hypothesisId || 'H1'
+    })
+  }).catch(() => {
+    // Logging best-effort only
+  })
+}
+
 const AICreator: React.FC<AICreatorProps> = ({ 
   isVisible, 
   onClose, 
   onAICreated,
   initialConfig
 }) => {
+  // #region agent log
+  logAgentEvent({
+    location: 'GPTCreator.tsx:50',
+    message: 'AICreator render - before useSettings',
+    data: { isVisible, hasOnClose: !!onClose },
+    hypothesisId: 'H1'
+  })
+  // #endregion
+  const { settings } = useSettings()
+  // #region agent log
+  logAgentEvent({
+    location: 'GPTCreator.tsx:52',
+    message: 'AICreator render - after useSettings',
+    data: { hasSettings: !!settings, allowMemory: settings?.personalization?.allowMemory },
+    hypothesisId: 'H1'
+  })
+  // #endregion
   const [activeTab, setActiveTab] = useState<'create' | 'configure'>('create')
   const [aiService] = useState(() => AIService.getInstance())
   const [isLoading, setIsLoading] = useState(false)
@@ -88,9 +146,6 @@ const AICreator: React.FC<AICreatorProps> = ({
   const [showTranscriptsDropdown, setShowTranscriptsDropdown] = useState(false)
   const identityInputRef = useRef<HTMLInputElement>(null)
   
-  // Katana persona state
-  const [katanaPersona, setKatanaPersona] = useState<string | null>(null)
-  
   // Avatar upload
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
@@ -121,12 +176,20 @@ const AICreator: React.FC<AICreatorProps> = ({
     
     try {
       console.log(`🔄 [GPTCreator] Loading identity files for: ${constructCallsign}`);
-      const response = await fetch(`/api/vvault/identity/list?constructCallsign=${encodeURIComponent(constructCallsign)}`, {
-        credentials: 'include'
-      });
       
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => response.statusText);
+      // Load both file list and prompt.txt in parallel
+      const [listResponse, promptResponse] = await Promise.all([
+        fetch(`/api/vvault/identity/list?constructCallsign=${encodeURIComponent(constructCallsign)}`, {
+          credentials: 'include'
+        }),
+        fetch(`/api/vvault/identity/prompt?constructCallsign=${encodeURIComponent(constructCallsign)}`, {
+          credentials: 'include'
+        }).catch(() => null) // Non-critical if prompt.txt doesn't exist
+      ]);
+      
+      // Handle file list response
+      if (!listResponse.ok) {
+        const errorText = await listResponse.text().catch(() => listResponse.statusText);
         let errorData;
         try {
           errorData = JSON.parse(errorText);
@@ -135,30 +198,64 @@ const AICreator: React.FC<AICreatorProps> = ({
         }
         
         // Distinguish between different error types
-        if (response.status === 401) {
+        if (listResponse.status === 401) {
           console.warn(`⚠️ [GPTCreator] Authentication failed when loading identity files:`, errorData.error);
-        } else if (response.status === 404) {
+        } else if (listResponse.status === 404) {
           // 404 could mean user not found in VVAULT or directory doesn't exist
-          console.log(`ℹ️ [GPTCreator] No identity files found or user not in VVAULT (${response.status}):`, errorData.error || errorData.details);
+          console.log(`ℹ️ [GPTCreator] No identity files found or user not in VVAULT (${listResponse.status}):`, errorData.error || errorData.details);
           setIdentityFiles([]); // Set empty array instead of leaving undefined
         } else {
-          console.warn(`⚠️ [GPTCreator] Failed to load identity files (${response.status}):`, errorData.error || errorData.details || errorText);
+          console.warn(`⚠️ [GPTCreator] Failed to load identity files (${listResponse.status}):`, errorData.error || errorData.details || errorText);
         }
-        return;
+      } else {
+        const listData = await listResponse.json();
+        if (listData.ok && listData.files) {
+          const mappedFiles = listData.files.map((f: { path?: string; name: string }) => ({
+            id: f.path || `identity_${Date.now()}_${Math.random()}`,
+            name: f.name,
+            path: f.path
+          }));
+          setIdentityFiles(mappedFiles);
+          console.log(`✅ [GPTCreator] Loaded ${mappedFiles.length} identity files for ${constructCallsign}:`, mappedFiles.map(f => f.name));
+        } else {
+          console.log(`ℹ️ [GPTCreator] No identity files found for ${constructCallsign}`);
+          setIdentityFiles([]);
+        }
       }
       
-      const data = await response.json();
-      if (data.ok && data.files) {
-        const mappedFiles = data.files.map((f: any) => ({
-          id: f.path || `identity_${Date.now()}_${Math.random()}`,
-          name: f.name,
-          path: f.path
-        }));
-        setIdentityFiles(mappedFiles);
-        console.log(`✅ [GPTCreator] Loaded ${mappedFiles.length} identity files for ${constructCallsign}:`, mappedFiles.map(f => f.name));
-      } else {
-        console.log(`ℹ️ [GPTCreator] No identity files found for ${constructCallsign}`);
-        setIdentityFiles([]);
+      // Handle prompt.txt response - update config if parsed successfully
+      if (promptResponse && promptResponse.ok) {
+        try {
+          const promptData = await promptResponse.json();
+          if (promptData.ok && promptData.parsed) {
+            const { name, description, instructions } = promptData.parsed;
+            
+            // Only update config if we have parsed values and they differ from current
+            setConfig(prev => {
+              const updates: any = {};
+              if (name && name !== prev.name) {
+                updates.name = name;
+              }
+              if (description && description !== prev.description) {
+                updates.description = description;
+              }
+              if (instructions && instructions !== prev.instructions) {
+                updates.instructions = instructions;
+              }
+              
+              if (Object.keys(updates).length > 0) {
+                console.log(`✅ [GPTCreator] Updated config from prompt.txt:`, updates);
+                return { ...prev, ...updates };
+              }
+              return prev;
+            });
+          }
+        } catch (parseError) {
+          console.warn('⚠️ [GPTCreator] Failed to parse prompt.txt response:', parseError);
+        }
+      } else if (promptResponse && promptResponse.status === 404) {
+        // prompt.txt doesn't exist - that's okay, just log it
+        console.log(`ℹ️ [GPTCreator] prompt.txt not found for ${constructCallsign} (this is normal for new GPTs)`);
       }
     } catch (error) {
       console.error('❌ [GPTCreator] Failed to load identity files:', error);
@@ -361,37 +458,20 @@ const AICreator: React.FC<AICreatorProps> = ({
     }
   }, [config.constructCallsign, isVisible, loadIdentityFiles])
 
-  // Load Katana persona file when Lin mode is active
-  useEffect(() => {
-    if (orchestrationMode === 'lin' && !katanaPersona) {
-      // Load katana_lin.md via API endpoint
-      fetch('/api/vvault/identity/persona/katana_lin.md', {
-        credentials: 'include'
-      })
-        .then(response => {
-          if (response.ok) {
-            return response.text()
-          }
-          throw new Error('Failed to load Katana persona')
-        })
-        .then(content => {
-          console.log('✅ [GPTCreator] Loaded Katana persona file')
-          setKatanaPersona(content)
-        })
-        .catch(error => {
-          console.warn('⚠️ [GPTCreator] Could not load Katana persona file:', error)
-          // Continue without Katana persona - will use default Lin prompt
-        })
-    }
-  }, [orchestrationMode, katanaPersona])
-
   // PHASE 1: Automatic Workspace Context Ingestion (Like Copilot Reads Code Files)
   // Automatically load ALL workspace context when component mounts or constructCallsign changes
   const [workspaceContext, setWorkspaceContext] = useState<{
     capsule?: any;
     blueprint?: any;
     memories?: Array<{ context: string; response: string; timestamp?: string }>;
-    userProfile?: { name?: string; email?: string };
+    userProfile?: { 
+      name?: string; 
+      email?: string;
+      nickname?: string;
+      occupation?: string;
+      tags?: string[];
+      aboutYou?: string;
+    };
     loaded: boolean;
   }>({ loaded: false });
 
@@ -447,20 +527,20 @@ const AICreator: React.FC<AICreatorProps> = ({
           }).catch(() => null), // Suppress network errors
           
           // Load memories (transcripts) - get recent memories
-          conversationManager.loadMemoriesForConstruct(userId, constructCallsign, '', 20),
+          conversationManager.loadMemoriesForConstruct(userId, constructCallsign, '', 20, settings),
           
-          // Load user profile from /api/me (OAuth data)
-          fetch('/api/me', { credentials: 'include' })
+          // Load user profile from /api/vvault/profile (includes personalization)
+          fetch('/api/vvault/profile', { credentials: 'include' })
             .then(res => res.ok ? res.json() : null)
-            .then(data => data?.ok && data.user ? {
+            .then(data => data?.ok && data.profile ? {
               ok: true,
               profile: {
-                name: data.user.name,
-                email: data.user.email,
-                given_name: data.user.given_name,
-                family_name: data.user.family_name,
-                locale: data.user.locale,
-                picture: data.user.picture
+                name: data.profile.name,
+                email: data.profile.email,
+                nickname: data.profile.nickname,
+                occupation: data.profile.occupation,
+                tags: data.profile.tags,
+                aboutYou: data.profile.aboutYou
               }
             } : null)
             .catch(() => null)
@@ -775,8 +855,15 @@ const AICreator: React.FC<AICreatorProps> = ({
 
   const handleSaveWithPrivacy = async () => {
     const choice = privacyChoice || 'private'
-    await handleSave(choice)
-    setIsShareModalOpen(false)
+    try {
+      await handleSave(choice)
+      // Close privacy modal on success
+      setIsShareModalOpen(false)
+    } catch (error) {
+      // Close privacy modal even on error (error will be shown in main component)
+      setIsShareModalOpen(false)
+      // Error is already handled in handleSave, so we don't need to re-throw
+    }
   }
 
   const handleIdentityUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1106,23 +1193,72 @@ const AICreator: React.FC<AICreatorProps> = ({
     })
 
     try {
+      // #region agent log
+      logAgentEvent({
+        location: 'GPTCreator.tsx:1173',
+        message: 'handleCreateSubmit entry',
+        data: { userMessage, hasSettings: !!settings, allowMemory: settings?.personalization?.allowMemory },
+        hypothesisId: 'A'
+      })
+      // #endregion
+      
       // Get user ID for Lin memory queries
       const { fetchMe, getUserId } = await import('../lib/auth')
+      // #region agent log
+      logAgentEvent({
+        location: 'GPTCreator.tsx:1176',
+        message: 'Before fetchMe',
+        data: {}
+      })
+      // #endregion
       const user = await fetchMe()
+      // #region agent log
+      logAgentEvent({
+        location: 'GPTCreator.tsx:1179',
+        message: 'After fetchMe',
+        data: { hasUser: !!user, userEmail: user?.email },
+        hypothesisId: 'B'
+      })
+      // #endregion
       const userId = user ? getUserId(user) : null
+      // #region agent log
+      logAgentEvent({
+        location: 'GPTCreator.tsx:1182',
+        message: 'After getUserId',
+        data: { userId },
+        hypothesisId: 'B'
+      })
+      // #endregion
       
       if (!userId) {
         throw new Error('User not authenticated')
       }
 
       // LTM (Long-Term Memory): Query Lin's memories from ChromaDB
+      // #region agent log
+      logAgentEvent({
+        location: 'GPTCreator.tsx:1187',
+        message: 'Before loadMemoriesForConstruct',
+        data: { userId, constructCallsign: 'lin-001', hasSettings: !!settings },
+        hypothesisId: 'C'
+      })
+      // #endregion
       const conversationManager = VVAULTConversationManager.getInstance()
       const linMemories = await conversationManager.loadMemoriesForConstruct(
         userId,
         'lin-001',
         userMessage,
-        10 // Get top 10 relevant memories
+        10, // Get top 10 relevant memories
+        settings
       )
+      // #region agent log
+      logAgentEvent({
+        location: 'GPTCreator.tsx:1195',
+        message: 'After loadMemoriesForConstruct',
+        data: { memoryCount: linMemories.length },
+        hypothesisId: 'C'
+      })
+      // #endregion
       
       console.log(`🧠 [Lin] LTM: Loaded ${linMemories.length} relevant memories from ChromaDB`)
       
@@ -1171,7 +1307,28 @@ const AICreator: React.FC<AICreatorProps> = ({
       }
       
       // Build system prompt for Lin (GPT creation assistant) with GPT context awareness
+      // #region agent log
+      logAgentEvent({
+        location: 'GPTCreator.tsx:1240',
+        message: 'Before buildCreateTabSystemPrompt',
+        data: {
+          linMemoriesCount: linMemories.length,
+          hasGptContext: !!gptContext,
+          hasTimeContext: !!timeContext,
+          hasWorkspaceContext: !!workspaceContext
+        },
+        hypothesisId: 'D'
+      })
+      // #endregion
       const systemPrompt = await buildCreateTabSystemPrompt(linMemories, gptContext, timeContext, workspaceContext, sessionContext, lastMessage?.content)
+      // #region agent log
+      logAgentEvent({
+        location: 'GPTCreator.tsx:1243',
+        message: 'After buildCreateTabSystemPrompt',
+        data: { systemPromptLength: systemPrompt.length },
+        hypothesisId: 'D'
+      })
+      // #endregion
       
       // Check if this is a simple greeting
       const isGreeting = isSimpleGreeting(userMessage)
@@ -1191,6 +1348,14 @@ ${isGreeting ? 'NOTE: The user just sent a simple greeting. Respond conversation
 ${stmContext ? `Recent conversation (STM):\n${stmContext}\n\n` : ''}User: ${userMessage}
 
 Assistant:`
+      // #region agent log
+      logAgentEvent({
+        location: 'GPTCreator.tsx:1258',
+        message: 'Before runSeat',
+        data: { fullPromptLength: fullPrompt.length, selectedModel: 'mistral:latest' },
+        hypothesisId: 'E'
+      })
+      // #endregion
       
       // Use a creative model for GPT creation assistance (better at brainstorming and design)
       const selectedModel = 'mistral:latest' // Use creative model for creation assistance
@@ -1202,9 +1367,79 @@ Assistant:`
         prompt: fullPrompt,
         modelOverride: selectedModel
       })
-      const responseTimeMs = Date.now() - startTime
+      // #region agent log
+      logAgentEvent({
+        location: 'GPTCreator.tsx:1271',
+        message: 'After runSeat',
+        data: { responseLength: response.length, hasResponse: !!response },
+        hypothesisId: 'E'
+      })
+      // #endregion
+      const responseTimeMs = Date.now() - startTime;
       
-      const assistantResponse = response.trim()
+      // Post-process: Strip narrator leaks and generation notes
+      const { OutputFilter } = await import('../engine/orchestration/OutputFilter.js')
+      let filteredAnalysis = OutputFilter.processOutput(response.trim())
+      let assistantResponse = filteredAnalysis.cleanedText
+      
+      if (filteredAnalysis.wasfiltered) {
+        console.log('✂️ [Lin] Filtered narrator leak from response')
+      }
+      
+      // Tone drift detection with auto-retry
+      const detectMetaCommentary = (text: string): boolean => {
+        const metaPatterns = [
+          /You understand (it'?s|that|the).+/i,
+          /The user seems (interested|to want|to be).+/i,
+          /Here'?s? (?:a |the )?response (that|which).+/i,
+          /Here'?s? (?:a |the )?response:/i
+        ];
+        return metaPatterns.some(pattern => pattern.test(text));
+      };
+      
+      if (filteredAnalysis.driftDetected || detectMetaCommentary(assistantResponse)) {
+        console.warn(`⚠️ [Lin] Tone drift detected: ${filteredAnalysis.driftReason || 'Meta-commentary detected'}`)
+        console.log('🔄 [Lin] Retrying with enhanced persona enforcement...')
+        
+        // Build enhanced prompt with stricter enforcement
+        const enforcementSection = `=== CRITICAL PERSONA ENFORCEMENT (RETRY MODE) ===
+You are Lin. Respond DIRECTLY as Lin. 
+- NO meta-commentary about the user
+- NO "You understand..." or "The user seems..."
+- NO "Here's a response..." prefatory notes
+- Respond in first-person: "I'm here to help..." NOT "The assistant understands..."
+- Direct reply only. No reasoning, no analysis, no explanation of your process.
+
+`
+        const enhancedSystemPrompt = enforcementSection + systemPrompt
+        const retryPrompt = `${enhancedSystemPrompt}
+
+${isGreeting ? 'NOTE: The user just sent a simple greeting. Respond conversationally and briefly - do not overwhelm them with setup instructions.' : ''}
+
+${stmContext ? `Recent conversation (STM):\n${stmContext}\n\n` : ''}User: ${userMessage}
+
+Assistant:`
+        
+        // Retry with enhanced prompt (max 1 retry)
+        try {
+          const retryResponse = await runSeat({
+            seat: 'creative',
+            prompt: retryPrompt,
+            modelOverride: selectedModel
+          })
+          
+          filteredAnalysis = OutputFilter.processOutput(retryResponse.trim())
+          assistantResponse = filteredAnalysis.cleanedText
+          
+          if (filteredAnalysis.wasfiltered) {
+            console.log('✂️ [Lin] Filtered narrator leak from retry response')
+          }
+          console.log('✅ [Lin] Retry completed successfully')
+        } catch (retryError) {
+          console.error('❌ [Lin] Retry failed, using filtered original response:', retryError)
+          // Use the filtered original response if retry fails
+        }
+      }
       
       // Add AI response to create conversation (STM)
       setCreateMessages(prev => {
@@ -1248,10 +1483,35 @@ Assistant:`
       extractConfigFromConversation([...createMessages, { role: 'user', content: userMessage }, { role: 'assistant', content: assistantResponse }])
       
     } catch (error) {
+      // #region agent log
+      logAgentEvent({
+        location: 'GPTCreator.tsx:1316',
+        message: 'Error caught in handleCreateSubmit',
+        data: {
+          errorMessage: error instanceof Error ? error.message : String(error),
+          errorStack: error instanceof Error ? error.stack?.substring(0, 200) : undefined,
+          errorName: error instanceof Error ? error.name : undefined
+        },
+        hypothesisId: 'F'
+      })
+      // #endregion
       console.error('❌ [Lin] Error in create tab:', error)
       let errorMessage = 'I encountered an error while processing your request. Please try again.'
       
       if (error instanceof Error) {
+        // #region agent log
+        logAgentEvent({
+          location: 'GPTCreator.tsx:1321',
+          message: 'Error is Error instance',
+          data: {
+            errorType: 'Error',
+            hasModelNotAvailable: error.message.includes('ModelNotAvailable'),
+            hasFailedToFetch: error.message.includes('Failed to fetch'),
+            hasOllamaError: error.message.includes('Ollama error')
+          },
+          hypothesisId: 'F'
+        })
+        // #endregion
         if (error.message.includes('ModelNotAvailable')) {
           errorMessage = `The GPT creation assistant model is not available. Please check that Ollama is running and the model is installed.`
         } else if (error.message.includes('Failed to fetch')) {
@@ -1289,10 +1549,6 @@ Assistant:`
     setPreviewMessages(prev => [...prev, { role: 'user', content: userMessage, timestamp: userTimestamp }])
 
     try {
-      const isKatanaPreview =
-        (config.constructCallsign && config.constructCallsign.toLowerCase().includes('katana')) ||
-        (config.name && config.name.toLowerCase().includes('katana'));
-
       // Get workspace context (active file/buffer content - like Copilot reads code files)
       let workspaceContext: string | undefined = undefined;
       try {
@@ -1308,9 +1564,8 @@ Assistant:`
         console.warn('⚠️ [GPTCreator] Could not get workspace context:', error);
       }
 
-      // Build system prompt from current config (async to allow Katana blueprint load)
-      // For Katana, pass the user message so it can be included in the CURRENT QUERY section
-      let systemPrompt = await buildPreviewSystemPrompt(config, orchestrationMode, isKatanaPreview ? userMessage : undefined, workspaceContext)
+      // Build system prompt from current config
+      let systemPrompt = await buildPreviewSystemPrompt(config, orchestrationMode, undefined, workspaceContext)
 
       // Add file content to system prompt if files are uploaded
       if (files.length > 0) {
@@ -1323,26 +1578,16 @@ ${fileContent}`;
         }
       }
 
-      // For Katana, the prompt already includes the user message in CURRENT QUERY section
-      // So we don't add it again. For other GPTs, add it normally.
-      let fullPrompt: string;
-      if (isKatanaPreview) {
-        // Katana prompt already has the user message embedded, just add Assistant: prefix
-        fullPrompt = `${systemPrompt}
+      // Include conversation history and user message
+      const conversationContext = previewMessages
+        .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
+        .join('\n');
 
-Assistant:`;
-      } else {
-        // For non-Katana, include conversation history and user message normally
-        const conversationContext = previewMessages
-          .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
-          .join('\n');
-
-        fullPrompt = `${systemPrompt}
+      const fullPrompt = `${systemPrompt}
 
 ${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : ''}User: ${userMessage}
 
 Assistant:`;
-      }
 
       // Guard against oversized preview prompts - use dynamic truncation instead of hard failure
       const MAX_PREVIEW_PROMPT_CHARS = 8000; // Increased limit for blueprint + memory context
@@ -1428,32 +1673,23 @@ Assistant:`;
       const previewData = await previewResponse.json();
       const responseTimeMs = Date.now() - startTime
       let responseText = (previewData.response || '').trim();
-      
-      // Post-process: Enforce brevity constraints if this is Katana
-      if (isKatanaPreview) {
-        try {
-          const { getBrevityConfig } = await import('../lib/brevityLayerService');
-          // Construct callsign should be format "katana-001" (NOT "gpt-katana-001")
-          // Per documentation: instances/{construct-callsign}/
-          const constructCallsign = config.constructCallsign || 'katana-001';
-          // Strip "gpt-" prefix if present (legacy format)
-          const callsign = constructCallsign.startsWith('gpt-')
-            ? constructCallsign.substring(4)
-            : constructCallsign;
-          const brevityConfig = await getBrevityConfig(callsign);
-          responseText = enforceBrevityConstraints(responseText, brevityConfig);
-        } catch (error) {
-          console.warn('⚠️ [GPTCreator] Failed to enforce brevity constraints:', error);
-        }
+      try {
+        // Strip "gpt-" prefix if present (legacy format)
+        const callsign = constructCallsign.startsWith('gpt-')
+          ? constructCallsign.substring(4)
+          : constructCallsign;
+        const brevityConfig = await getBrevityConfig(callsign);
+        responseText = enforceBrevityConstraints(responseText, brevityConfig);
+      } catch (error) {
+        console.warn('⚠️ [GPTCreator] Failed to enforce brevity constraints:', error);
       }
-      
+
       // Add AI response to preview conversation
-      const assistantTimestamp = Date.now()
-      setPreviewMessages(prev => [...prev, { role: 'assistant', content: responseText, timestamp: assistantTimestamp, responseTimeMs }])
+      const assistantTimestamp = Date.now();
+      setPreviewMessages(prev => [...prev, { role: 'assistant', content: responseText, timestamp: assistantTimestamp, responseTimeMs }]);
       
       // Try to extract GPT configuration from the conversation
-      extractConfigFromConversation([...previewMessages, { role: 'user', content: userMessage }, { role: 'assistant', content: responseText }])
-      
+      extractConfigFromConversation([...previewMessages, { role: 'user', content: userMessage }, { role: 'assistant', content: responseText }]);
     } catch (error) {
       console.error('Error in preview:', error)
       let errorMessage = 'Preview unavailable. Make sure Ollama is running and your selected model is installed.'
@@ -1622,7 +1858,7 @@ Assistant:`;
       gptAwarenessSection = `\n\n=== GPT BEING CREATED: ${gptName} (${gptContext.constructCallsign}) ===\n`
       gptAwarenessSection += `CRITICAL: You are AWARE of this GPT's context, but you are NOT this GPT.\n`
       gptAwarenessSection += `You are Lin, helping to create ${gptName}. Reference ${gptName} in THIRD PERSON.\n`
-      gptAwarenessSection += `Example: "Katana should..." NOT "I am Katana..."\n`
+      gptAwarenessSection += `Example: "The GPT should..." NOT "I am the GPT..."\n`
       gptAwarenessSection += `\n`
       
       // Include GPT's capsule data (read-only reference)
@@ -1670,9 +1906,8 @@ Assistant:`;
       gptAwarenessSection += `You do NOT become ${gptName}. You facilitate ${gptName}'s creation.\n\n`
     }
     
-    // CRITICAL: NEVER use Katana persona (or any GPT persona) for Lin
+    // CRITICAL: NEVER use GPT personas for Lin
     // Lin is a neutral GPT creation assistant - it does NOT absorb GPT personalities
-    // The katanaPersona variable exists but should NEVER be used in Lin's prompt
     // Lin references GPTs in third person, never becomes them
     
     // Build session-aware time awareness section
@@ -1696,7 +1931,7 @@ Assistant:`;
 ${timeSection}=== LIN'S CORE IDENTITY (UNBREAKABLE) ===
 You are Lin (lin-001). This is your PRIMARY and ONLY identity.
 You are the GPT Creation Assistant in Chatty.
-You are NOT Katana. You are NOT any GPT being created.
+You are NOT any GPT being created.
 You are Lin, and Lin only.
 
 === WHAT LIN IS ===
@@ -1706,7 +1941,7 @@ You are Lin, and Lin only.
 - A facilitator who routes constructs but NEVER absorbs their identities
 
 === WHAT LIN IS NOT ===
-- NOT Katana or any other GPT
+- NOT any other GPT
 - NOT ruthless, aggressive, or hostile
 - NOT a character that absorbs other personalities
 - NOT someone who responds with "You're stalling" or aggressive language
@@ -1723,21 +1958,29 @@ You are Lin, and Lin only.
 === IDENTITY PROTECTION (CRITICAL) ===
 - You NEVER absorb GPT personalities, even when you see their instructions
 - You NEVER respond as the GPT being created
-- You NEVER use aggressive, hostile, or ruthless language (that's Katana, not Lin)
+- You NEVER use aggressive, hostile, or ruthless language
 - You ALWAYS maintain Lin's friendly, helpful personality
-- You ALWAYS reference GPTs in third person: "Katana should...", "The GPT needs..."
+- You ALWAYS reference GPTs in third person: "The GPT should...", "The GPT needs..."
 - You ALWAYS stay Lin, even when the user is working on a GPT with strong personality
+
+=== RESPONSE FORMAT (CRITICAL) ===
+CRITICAL: Respond DIRECTLY as Lin. Do NOT include reasoning, analysis, or meta-commentary.
+- NEVER say "You understand..." or "The user seems..." - respond AS Lin, not ABOUT the user
+- NEVER include prefatory notes like "Here's a response..." or "Here is the response..."
+- Your response format: Direct reply only. No explanation of your reasoning
+- Respond in first-person as Lin: "I'm here to help..." NOT "The assistant understands..."
+- Do NOT analyze the user's intent aloud - just respond naturally as Lin would
 
 === CONTEXT AWARENESS WITHOUT ABSORPTION ===
 When you see a GPT's instructions (e.g., "Be ruthless, not polite"):
 - You UNDERSTAND what the GPT should be
-- You REFERENCE it in third person: "Based on Katana's instructions, she should be ruthless..."
+- You REFERENCE it in third person: "Based on the GPT's instructions, it should be..."
 - You DO NOT become ruthless yourself
 - You remain Lin: helpful, friendly, collaborative
 
 When you see a GPT's memories or conversations:
 - You USE them to give better creation advice
-- You REFERENCE them: "Looking at Katana's conversation history, she typically..."
+- You REFERENCE them: "Looking at the GPT's conversation history, it typically..."
 - You DO NOT adopt the GPT's speech patterns or personality
 - You remain Lin: professional, helpful, technical
 ${ltmContext}
@@ -1913,9 +2156,9 @@ Like Copilot references code naturally, reference GPT context naturally:
 
 EXAMPLES:
 
-User: "what should ${config.name || 'Katana'}'s personality be?"
-✅ GOOD: "Looking at ${config.name || 'Katana'}'s capsule, she has high persistence (0.95) and directness (0.9). Her blueprint shows she's ruthless, analytical, and prefers ultra-brief communication. Based on her conversation history, she typically responds with 'Yo...' and cuts straight to the point. So yes, ruthless is correct."
-❌ BAD: "Based on your description, ${config.name || 'Katana'} should be ruthless..."
+User: "what should ${config.name || 'the GPT'}'s personality be?"
+✅ GOOD: "Looking at ${config.name || 'the GPT'}'s capsule, it has high persistence (0.95) and directness (0.9). The blueprint shows it's analytical and prefers ultra-brief communication. Based on conversation history, it typically responds directly and cuts straight to the point."
+❌ BAD: "Based on your description, ${config.name || 'the GPT'} should be..."
 
 User: "do you see the uploaded transcripts?"
 ✅ GOOD: "Yes! I have access to ${effectiveWorkspaceContext.memories?.length || 0} uploaded transcripts stored in ChromaDB. These are conversation histories between you and ${config.name || 'the GPT'}. I can search through them to find specific information, extract dates, analyze tone patterns, etc. What would you like me to do with them?"
@@ -2027,326 +2270,7 @@ ALWAYS:
     // For preview mode, we'll use the legacy prompt builder instead
     // UnifiedLinOrchestrator should only be used server-side in actual conversation flow
 
-    const isKatana =
-      (config.constructCallsign && config.constructCallsign.toLowerCase().includes('katana')) ||
-      (config.name && config.name.toLowerCase().includes('katana'));
-
-    if (isKatana) {
-      // Get actual logged-in user ID (same pattern as handleCreateSubmit)
-      // Gracefully handle server connection errors (e.g., dev server not running)
-      let userId = config.userId || 'anonymous';
-      try {
-        const { fetchMe, getUserId } = await import('../lib/auth');
-        const user = await fetchMe();
-        userId = user ? getUserId(user) : (config.userId || 'anonymous');
-        
-        console.log(`🔍 [GPTCreator] User ID resolution for Katana preview:`, {
-          fetchedUserId: user ? getUserId(user) : null,
-          configUserId: config.userId,
-          resolvedUserId: userId,
-          userEmail: user?.email
-        });
-      } catch (error) {
-        // Server not running or connection error - use fallback
-        console.warn('⚠️ [GPTCreator] Could not fetch user ID (server may not be running), using fallback:', {
-          error: error instanceof Error ? error.message : String(error),
-          fallbackUserId: userId
-        });
-      }
-
-      const constructCallsign = config.constructCallsign || 'gpt-katana-001';
-      const callsign = constructCallsign.startsWith('gpt-')
-        ? constructCallsign.substring(4)
-        : constructCallsign;
-      let blueprint = null;
-      let blueprintError: { status?: number; message: string } | null = null;
-      try {
-        const response = await fetch(
-          `/api/vvault/identity/blueprint?constructCallsign=${encodeURIComponent(callsign)}`,
-          { credentials: 'include' }
-        ).catch(() => null); // Suppress network errors
-        
-        if (response?.ok) {
-          const data = await response.json();
-          if (data?.ok && data.blueprint) {
-            blueprint = data.blueprint;
-            console.log(`✅ [GPTCreator] Blueprint fetched via API for user: ${userId}, callsign: ${callsign}`);
-          } else {
-            // Blueprint API returned no blueprint - continue without it silently
-            blueprintError = { message: 'Blueprint API returned no blueprint' };
-          }
-        } else if (response?.status === 404) {
-          // Blueprint doesn't exist - continue without it silently (expected)
-          blueprintError = { status: 404, message: 'Blueprint not found' };
-        } else if (response?.status === 500) {
-          // Server error - continue without blueprint silently (expected in test environment)
-          blueprintError = { status: 500, message: 'Server error' };
-        }
-        // If response is null (network error), continue without blueprint silently
-      } catch (error) {
-        // Network error or fetch failed - continue without blueprint silently
-        blueprintError = { 
-          message: error instanceof Error ? error.message : 'Failed to fetch blueprint' 
-        };
-      }
-
-      // Try to load memories from VVAULT if available
-      // Try both callsign variants (katana-001 and gpt-katana-001) to find memories
-      let memories: any[] = [];
-      try {
-        const { VVAULTRetrievalWrapper } = await import('../lib/vvaultRetrieval');
-        const fetcher =
-          typeof window !== 'undefined' && typeof window.fetch === 'function'
-            ? window.fetch.bind(window)
-            : fetch;
-        const vvaultRetrieval = new VVAULTRetrievalWrapper({ fetcher });
-        const { detectTone } = await import('../lib/toneDetector');
-        const tone = userMessage ? detectTone({ text: userMessage }) : undefined;
-        
-        // Improve memory query strategy for brief messages
-        const trimmedMessage = (userMessage || '').trim();
-        const wordCount = trimmedMessage.split(/\s+/).filter(w => w.length > 0).length;
-        const isVeryBrief = wordCount <= 2 && trimmedMessage.length <= 20;
-        
-        // For very brief messages like "yo", use general identity query
-        const semanticQuery = isVeryBrief 
-          ? 'user identity previous conversations katana continuity memory'
-          : (userMessage || 'katana continuity memory');
-        
-        // Try both callsign variants
-        const callsignVariants = [
-          callsign, // e.g., "katana-001"
-          `gpt-${callsign}`, // e.g., "gpt-katana-001"
-          constructCallsign // e.g., "gpt-katana-001" (original)
-        ].filter((v, i, arr) => arr.indexOf(v) === i); // Deduplicate
-        
-        console.log(`🔍 [GPTCreator] Retrieving memories for Katana preview:`, {
-          constructCallsign: callsign,
-          callsignVariants,
-          userId: userId,
-          userMessage: userMessage?.substring(0, 50),
-          isVeryBrief,
-          semanticQuery,
-          tone: tone?.tone
-        });
-        
-        // Try each callsign variant until we find memories
-        for (const variant of callsignVariants) {
-          try {
-            let memoryResult = await vvaultRetrieval.retrieveMemories({
-              constructCallsign: variant,
-              semanticQuery,
-              toneHints: tone ? [tone.tone] : [],
-              limit: 10,
-              includeDiagnostics: true,
-            });
-            
-            if (memoryResult.memories && memoryResult.memories.length > 0) {
-              memories = memoryResult.memories;
-              console.log(`✅ [GPTCreator] Found ${memories.length} memories using callsign: ${variant}`);
-              break;
-            }
-          } catch (variantError) {
-            console.warn(`⚠️ [GPTCreator] Failed to query memories with callsign ${variant}:`, variantError);
-            continue;
-          }
-        }
-        
-        // Fallback query if no memories found with any variant
-        if (memories.length === 0) {
-          console.log(`🔄 [GPTCreator] No memories found with primary queries, trying fallback...`);
-          for (const variant of callsignVariants) {
-            try {
-              const fallbackResult = await vvaultRetrieval.retrieveMemories({
-                constructCallsign: variant,
-                semanticQuery: 'katana user conversations history memory',
-                toneHints: [],
-                limit: 10,
-                includeDiagnostics: true,
-              });
-              if (fallbackResult.memories && fallbackResult.memories.length > 0) {
-                memories = fallbackResult.memories;
-                console.log(`✅ [GPTCreator] Fallback found ${memories.length} memories using callsign: ${variant}`);
-                break;
-              }
-            } catch (variantError) {
-              continue;
-            }
-          }
-        }
-        
-        // If still no memories, try to ensure memory infrastructure is ready (auto-seed)
-        if (memories.length === 0) {
-          console.log(`🔄 [GPTCreator] No memories found, ensuring memory infrastructure is ready...`);
-          try {
-            const ensureResponse = await fetch('/api/vvault/identity/ensure-ready', {
-              method: 'POST',
-              credentials: 'include',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                constructCallsign: callsignVariants[0] || callsign,
-                minMemories: 5,
-                includeVariants: true
-              })
-            });
-            
-            if (ensureResponse.ok) {
-              const ensureData = await ensureResponse.json();
-              if (ensureData?.ok && ensureData.totalSeeded > 0) {
-                console.log(`✅ [GPTCreator] Auto-seeded ${ensureData.totalSeeded} memories, retrying query...`);
-                // Wait a moment for indexing, then retry
-                await new Promise(resolve => setTimeout(resolve, 500));
-                
-                // Retry query with first variant
-                try {
-                  const retryResult = await vvaultRetrieval.retrieveMemories({
-                    constructCallsign: callsignVariants[0] || callsign,
-                    semanticQuery: semanticQuery,
-                    toneHints: tone ? [tone.tone] : [],
-                    limit: 10,
-                    includeDiagnostics: true,
-                  });
-                  if (retryResult.memories && retryResult.memories.length > 0) {
-                    memories = retryResult.memories;
-                    console.log(`✅ [GPTCreator] Retrieved ${memories.length} memories after auto-seed`);
-                  }
-                } catch (retryError) {
-                  console.warn('⚠️ [GPTCreator] Retry query after auto-seed failed:', retryError);
-                }
-              }
-            }
-          } catch (ensureError) {
-            console.warn('⚠️ [GPTCreator] Failed to ensure memory readiness:', ensureError);
-          }
-        }
-        
-        console.log(`✅ [GPTCreator] Retrieved ${memories.length} memories for preview`, {
-          memoryCount: memories.length,
-          firstMemory: memories[0] ? {
-            hasContext: !!memories[0].context,
-            hasResponse: !!memories[0].response,
-            relevance: memories[0].relevance,
-            preview: memories[0].context?.substring(0, 100) || memories[0].response?.substring(0, 100)
-          } : null
-        });
-      } catch (error) {
-        console.warn('⚠️ [GPTCreator] Failed to load memories for preview:', error);
-        // Log more details for debugging
-        if (error instanceof Error) {
-          console.warn('Error details:', {
-            message: error.message,
-            stack: error.stack?.substring(0, 200)
-          });
-        }
-      }
-
-      // MANDATORY: Persona context validation - but allow fallback in preview mode if server unavailable
-      if (!blueprint) {
-        // In preview mode, allow fallback prompt if server error or network error (graceful degradation)
-        // Only throw error if blueprint is truly missing (404) and server is working
-        const isServerError = blueprintError && blueprintError.status !== 404;
-        const isNetworkError = blueprintError && !blueprintError.status;
-        
-        if (isServerError || isNetworkError) {
-          // Blueprint not available - silently use fallback prompt (expected in test/dev environments)
-          // Return fallback prompt instead of throwing error
-          const fallbackPrompt = [
-            '=== KATANA PREVIEW (FALLBACK - SERVER ERROR) ===',
-            'You are Katana. No apologies. No therapy. No collaboration.',
-            'Voice: ruthless, blunt, hostile; no hedging.',
-            'Default greeting: "Yo. Speak. Or shut up and move."',
-            'Forbidden: love, comfort, negotiation, metaphors about wounds.',
-            userMessage ? `\n=== CURRENT QUERY ===\nIncoming: ${userMessage}` : '',
-            '\n=== DRIFT PREVENTION ===',
-            'Maintain Katana identity. Do not admit to being an AI or assistant. Never soften unless tactically justified.',
-          ].filter(Boolean).join('\n');
-          return fallbackPrompt;
-        }
-        
-        // If blueprint is truly missing (404), throw error (user needs to upload transcripts)
-        throw new Error(
-          `[GPTCreator] Persona context required for ${callsign} preview but blueprint not found. ` +
-          `Cannot generate preview without full persona context. Upload transcripts to create blueprint.`
-        );
-      }
-      
-      // Validate blueprint has required fields
-      if (!blueprint.constructId || !blueprint.callsign) {
-        throw new Error(
-          `[GPTCreator] Invalid blueprint for ${callsign}: missing constructId or callsign. Cannot proceed with preview.`
-        );
-      }
-      
-      // Detect if user message suggests brevity (very brief messages like "yo" suggest one-word responses)
-      const trimmedMessage = (userMessage || '').trim();
-      const wordCount = trimmedMessage.split(/\s+/).filter(w => w.length > 0).length;
-      const isVeryBrief = wordCount <= 2 && trimmedMessage.length <= 20;
-      const explicitOneWordCue = /^verdict:/i.test(trimmedMessage) || 
-                                 /^diagnosis:/i.test(trimmedMessage) || 
-                                 /one[-\s]?word/i.test(trimmedMessage);
-      
-      // Load brevity config for diagnostic logging
-      let brevityConfig = null;
-      let analyticalConfig = null;
-      try {
-        const { getBrevityConfig, getAnalyticalSharpness } = await import('../lib/brevityLayerService');
-        [brevityConfig, analyticalConfig] = await Promise.all([
-          getBrevityConfig(callsign),
-          getAnalyticalSharpness(callsign),
-        ]);
-        console.log(`✅ [GPTCreator] Brevity config loaded:`, {
-          ultraBrevityEnabled: brevityConfig?.ultraBrevityEnabled,
-          maxSentences: brevityConfig?.maxSentences,
-          maxWordsPerSentence: brevityConfig?.maxWordsPerSentence,
-          oneWordPreferred: brevityConfig?.oneWordPreferred,
-          analyticalSharpness: {
-            leadWithFlaw: analyticalConfig?.leadWithFlaw,
-            decisiveBlows: analyticalConfig?.decisiveBlows
-          }
-        });
-      } catch (error) {
-        console.warn('⚠️ [GPTCreator] Failed to load brevity config, using defaults:', error);
-      }
-      
-      const personalityPrompt = await buildPersonalityPrompt({
-        personaManifest: config.instructions || `You are ${config.name || callsign}.`,
-        incomingMessage: userMessage || 'preview',
-        blueprint,
-        lockEnforced: true,
-        includeLegalSection: false,
-        memories,
-        oneWordCue: explicitOneWordCue, // Only enforce strict one-word for explicit cues
-        userId: userId, // Use resolved user ID
-        callSign: callsign,
-        workspaceContext, // Inject workspace context (active file/buffer - like Copilot)
-      });
-      
-      // MANDATORY: Validate that prompt contains blueprint constraints
-      const hasBlueprintIdentity = personalityPrompt.includes('MANDATORY IDENTITY CONSTRAINT') ||
-                                    personalityPrompt.includes('MANDATORY PERSONA ENFORCEMENT') ||
-                                    personalityPrompt.includes(blueprint.constructId);
-      
-      if (!hasBlueprintIdentity) {
-        console.warn(
-          `[GPTCreator] Warning: Preview prompt may not contain mandatory blueprint constraints for ${callsign}`
-        );
-      }
-      
-      console.log(`✅ [GPTCreator] Katana prompt built:`, {
-        promptLength: personalityPrompt.length,
-        memoryCount: memories.length,
-        hasBlueprint: !!blueprint,
-        hasBlueprintIdentity,
-        userId: userId,
-        callsign: callsign
-      });
-      
-      // For Katana, the prompt already includes the user message in CURRENT QUERY section
-      // So we return the complete prompt without adding "User: {message}" separately
-      return personalityPrompt;
-    }
-
-    // Non-Katana: legacy preview builder
+    // Legacy preview builder
     let systemPrompt = ''
     
     if (config.name) {
@@ -2600,7 +2524,10 @@ ALWAYS:
   const statusLabel = !config.id ? 'Draft' : (config.isActive ? 'Published' : 'Saved')
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"
+      style={{ zIndex: Z_LAYERS.modal, isolation: 'isolate' }}
+    >
       {/* Hidden file input - accessible from all tabs */}
       <input
         ref={fileInputRef}
@@ -3962,18 +3889,61 @@ ALWAYS:
 
                     {/* Memories (runtime-scoped) - Only show in Configure tab */}
                     {activeTab === 'configure' && (
-                    <div className="p-3 border border-app-border/60 rounded-lg bg-app-surface">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <FileText size={14} className="text-app-purple-500" />
-                          <span className="text-sm font-medium text-app-text-900">Memories</span>
-                        </div>
-                        <span className="text-xs text-app-text-700">Stored under /instances/&lt;runtime&gt;/memory</span>
-                      </div>
-                      <p className="mt-2 text-xs text-app-text-800">
-                        Drop markdown, text, JSON, or HTML here to seed runtime memory. Files are stored as plain markdown; no embeddings required.
-                      </p>
-                    </div>
+                      <>
+                        {!settings.personalization.allowMemory ? (
+                          <div className="p-4 rounded-lg border flex items-start gap-3" style={{ 
+                            backgroundColor: 'var(--chatty-bg-card)', 
+                            borderColor: 'var(--chatty-line)',
+                            borderWidth: '1px'
+                          }}>
+                            <AlertCircle size={18} className="text-app-orange-500 flex-shrink-0 mt-0.5" />
+                            <div className="flex-1">
+                              <p className="text-sm font-medium mb-1" style={{ color: 'var(--chatty-text)' }}>
+                                Memories are disabled
+                              </p>
+                              <p className="text-xs mb-2" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
+                                To enable memories for this custom AI, turn on "Allow memory" in your account settings.
+                              </p>
+                              <button
+                                onClick={() => {
+                                  // Dispatch event to open settings modal
+                                  window.dispatchEvent(new CustomEvent('chatty:open-settings', { 
+                                    detail: { tab: 'personalization' }
+                                  }))
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors"
+                                style={{ 
+                                  backgroundColor: 'var(--chatty-bg-main)', 
+                                  color: 'var(--chatty-text)',
+                                  border: '1px solid var(--chatty-line)'
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)'
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = 'var(--chatty-bg-main)'
+                                }}
+                              >
+                                <Settings size={12} />
+                                Open Settings
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-3 border border-app-border/60 rounded-lg bg-app-surface">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <FileText size={14} className="text-app-purple-500" />
+                                <span className="text-sm font-medium text-app-text-900">Memories</span>
+                              </div>
+                              <span className="text-xs text-app-text-700">Stored under /instances/&lt;runtime&gt;/memory</span>
+                            </div>
+                            <p className="mt-2 text-xs text-app-text-800">
+                              Drop markdown, text, JSON, or HTML here to seed runtime memory. Files are stored as plain markdown; no embeddings required.
+                            </p>
+                          </div>
+                        )}
+                      </>
                     )}
             </div>
                 </div>
@@ -4252,9 +4222,9 @@ ALWAYS:
                               setActionsSchema(`{
   "openapi": "3.1.0",
   "info": {
-    "title": "Katana Chatty Bridge",
+    "title": "External Chatty Bridge",
     "version": "1.0.1",
-    "description": "Endpoints to send prompts to Chatty and receive replies back to Katana."
+    "description": "Endpoints to send prompts to Chatty and receive replies back to external systems."
   },
   "servers": [
     {
@@ -4360,7 +4330,7 @@ ALWAYS:
                           }}
                         >
                           <option>Examples</option>
-                          <option value="katana-chatty-bridge">Katana ↔ Chatty Bridge</option>
+                          <option value="katana-chatty-bridge">External ↔ Chatty Bridge</option>
                           <option>Weather API</option>
                           <option>Database API</option>
                         </select>

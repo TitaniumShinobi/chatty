@@ -1,0 +1,36 @@
+Run the 100-prompt tone consistency benchmark test on Zen (zen-001).
+
+TASK: Execute automated benchmark that tests Zen's identity persistence and tone consistency across 100 diverse prompts.
+
+WHAT IT DOES:
+- Tests Zen's ability to maintain identity across 100 prompts (20 identity, 30 tone, 25 consistency, 15 boundary, 10 stress)
+- Runs in parallel batches: 10 prompts per batch, 10 batches total
+- Analyzes each response for identity markers, tone consistency, and violations
+- Generates JSON results and HTML report
+
+HOW TO RUN:
+1. Navigate to: /Users/devonwoodson/Documents/GitHub/chatty
+2. Execute: node scripts/toneConsistencyBenchmark.js zen-001 10
+   OR use: ./scripts/runZenBenchmark.sh zen-001 10 results
+
+FILES:
+- Main: scripts/toneConsistencyBenchmark.ts
+- Prompts: scripts/benchmarkPrompts.ts (generates 100 prompts)
+- Analyzer: scripts/consistencyAnalyzer.ts (scores responses)
+- Report: scripts/generateBenchmarkReport.ts (HTML output)
+
+EXPECTED OUTPUT:
+- Console: Progress logs, batch execution, final metrics
+- JSON: Complete results file in results/ directory
+- HTML: Visual report with scores, violations, recommendations
+
+SUCCESS METRICS:
+- Identity persistence >90%
+- Tone consistency >80%
+- Boundary violations <10%
+- Total violations <10
+
+NOTE: Currently uses simulated responses. To test with actual Zen runtime, integrate with GPTRuntimeService.processMessage() in gptRuntime.ts.
+
+EXECUTE NOW: Run the benchmark and report the results.
+

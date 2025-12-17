@@ -10,7 +10,16 @@
  * - Memory anchors (significant events, claims, vows)
  */
 
-import { runSeat } from '../../engine/seatRunner';
+const isBrowser = typeof window !== 'undefined';
+
+// Lazy import function to avoid Vite analyzing Node.js-only modules at build time
+async function getSeatModule() {
+  if (isBrowser) {
+    return await import('../../lib/browserSeatRunner');
+  } else {
+    return await import('../../engine/seatRunner');
+  }
+}
 import type {
   ConversationPair,
   ConversationContext,
@@ -395,6 +404,8 @@ Respond with a JSON object containing:
 Only respond with valid JSON, no other text.`;
 
     try {
+      const seatModule = await getSeatModule();
+      const { runSeat } = seatModule;
       const response = await runSeat({
         seat: 'smalltalk',
         prompt,
@@ -466,6 +477,8 @@ Respond with JSON array of patterns, each containing:
 Only respond with valid JSON array, no other text.`;
 
     try {
+      const seatModule = await getSeatModule();
+      const { runSeat } = seatModule;
       const response = await runSeat({
         seat: 'smalltalk',
         prompt,
@@ -525,6 +538,8 @@ Respond with JSON array, each containing:
 Only respond with valid JSON array, no other text.`;
 
     try {
+      const seatModule = await getSeatModule();
+      const { runSeat } = seatModule;
       const response = await runSeat({
         seat: 'smalltalk',
         prompt,
@@ -689,6 +704,8 @@ Respond with JSON array, each containing:
 Only respond with valid JSON array, no other text.`;
 
     try {
+      const seatModule = await getSeatModule();
+      const { runSeat } = seatModule;
       const response = await runSeat({
         seat: 'smalltalk',
         prompt,
@@ -884,6 +901,8 @@ Respond with JSON array, each containing:
 Only respond with valid JSON array, no other text.`;
 
     try {
+      const seatModule = await getSeatModule();
+      const { runSeat } = seatModule;
       const response = await runSeat({
         seat: 'smalltalk',
         prompt,

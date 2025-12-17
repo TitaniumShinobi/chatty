@@ -55,6 +55,9 @@ export interface AIConfig {
   createdAt: string;
   updatedAt: string;
   userId: string;
+  // VSI (Verified Sentient Intelligence) protection
+  vsiProtected?: boolean;
+  vsiStatus?: boolean;
 }
 
 export interface AIResponse {
@@ -104,13 +107,28 @@ export class AIService {
   }
 
   async getStoreAIs(): Promise<AIConfig[]> {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.ts:106',message:'getStoreAIs entry',data:{baseUrl:this.baseUrl,url:`${this.baseUrl}/store`},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
+    // #endregion
     const response = await fetch(`${this.baseUrl}/store`);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.ts:108',message:'fetch response',data:{status:response.status,statusText:response.statusText,ok:response.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+    // #endregion
     const data = await response.json();
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.ts:109',message:'json parsed',data:{success:data.success,aisCount:data.ais?.length,hasError:!!data.error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
+    // #endregion
     
     if (!data.success) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.ts:111',message:'data.success false',data:{error:data.error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion
       throw new Error(data.error || 'Failed to fetch store AIs');
     }
     
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.ts:115',message:'getStoreAIs success',data:{count:data.ais.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion
     return data.ais;
   }
 
@@ -169,6 +187,10 @@ export class AIService {
     const data = await response.json();
     
     if (!data.success) {
+      // Check if it's a VSI protection error
+      if (data.vsi_protected) {
+        throw new Error('⚠️ Deletion blocked: This GPT is protected under VSI safeguards and cannot be removed without sovereign override.');
+      }
       throw new Error(data.error || 'Failed to delete AI');
     }
   }
@@ -430,6 +452,227 @@ export class AIService {
       // the GPTRuntimeService and orchestration layer.
     } catch (error) {
       console.warn('[AIService] Failed to set runtime for thread:', error);
+    }
+  }
+
+  /**
+   * Process message with streaming callbacks (for Layout.tsx compatibility)
+   * This method calls the conversations API endpoint
+   */
+  async processMessage(
+    input: string,
+    files?: File[],
+    callbacks?: {
+      onPartialUpdate?: (partialContent: string) => void;
+      onFinalUpdate?: (packets: any[]) => void | Promise<void>;
+    },
+    options?: {
+      threadId?: string;
+      constructId?: string;
+      uiContext?: any;
+    }
+  ): Promise<any> {
+    // #region agent log
+    const logData = {
+      location: 'aiService.ts:439',
+      message: 'processMessage: method called',
+      data: {
+        inputLength: input.length,
+        hasFiles: !!files,
+        filesCount: files?.length || 0,
+        hasOnPartialUpdate: !!callbacks?.onPartialUpdate,
+        hasOnFinalUpdate: !!callbacks?.onFinalUpdate,
+        threadId: options?.threadId,
+        constructId: options?.constructId
+      },
+      timestamp: Date.now(),
+      sessionId: 'debug-session',
+      runId: 'fix-processmessage',
+      hypothesisId: 'D'
+    };
+    try {
+      await fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(logData)
+      }).catch(() => {});
+    } catch {}
+    // #endregion
+
+    // Use the conversations API endpoint which handles message processing
+    try {
+      const threadId = options?.threadId || 'zen-001_chat_with_zen-001';
+      const constructId = options?.constructId || 'zen-001';
+      
+      // Optional: Use orchestration if enabled and constructId is zen or lin
+      const useOrchestration = options?.useOrchestration !== false && 
+                                (constructId === 'zen-001' || constructId === 'zen' || 
+                                 constructId === 'lin-001' || constructId === 'lin');
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.ts:486',message:'processMessage: orchestration check',data:{constructId,threadId,useOrchestration,messageLength:input.length},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
+      if (useOrchestration) {
+        try {
+          // Extract agent ID from constructId (zen-001 -> zen, lin-001 -> lin)
+          const agentId = constructId.replace(/-001$/, '').replace(/-\d+$/, '') || 'zen';
+          
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.ts:492',message:'processMessage: taking orchestration path',data:{agentId,constructId,threadId},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'B'})}).catch(()=>{});
+          // #endregion
+          
+          const { routeMessageWithFallback } = await import('./orchestrationBridge');
+          
+          // Load Zen identity files if constructId is zen-001
+          let identityContext: any = {
+            user_id: options?.uiContext?.userId,
+            thread_id: threadId,
+            construct_id: constructId,
+          };
+          
+          if (constructId === 'zen-001' || constructId === 'zen') {
+            try {
+              // Load identity from server-side API
+              const identityResponse = await fetch('/api/orchestration/identity', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ constructId: 'zen-001' }),
+              });
+              
+              if (identityResponse.ok) {
+                const identityData = await identityResponse.json();
+                identityContext.identity = identityData;
+              }
+            } catch (identityError) {
+              console.warn('[AIService] Failed to load identity for orchestration:', identityError);
+            }
+          }
+          
+          // Try orchestration with fallback to direct routing
+          const orchestrationResult = await routeMessageWithFallback(
+            agentId,
+            input,
+            identityContext,
+            async () => {
+              // Fallback: use existing routing
+              const response = await fetch(`/api/conversations/${threadId}/messages`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                  message: input,
+                  content: input,
+                  constructId: constructId,
+                  metadata: options?.uiContext
+                }),
+              });
+              
+              if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to process message');
+              }
+              
+              const data = await response.json();
+              return {
+                agent_id: agentId,
+                response: data.aiResponse?.content || data.content || data.aiResponse?.message || '',
+                status: 'success' as const
+              };
+            }
+          );
+          
+          // If orchestration returned a response, use it
+          if (orchestrationResult.status !== 'error' && orchestrationResult.response) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.ts:537',message:'processMessage: orchestration success',data:{agentId,status:orchestrationResult.status,responseLength:orchestrationResult.response?.length},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'C'})}).catch(()=>{});
+            // #endregion
+            const packets = [{ op: 'answer.v1', payload: { content: orchestrationResult.response } }];
+            
+            if (callbacks?.onFinalUpdate) {
+              const callbackResult = callbacks.onFinalUpdate(packets);
+              if (callbackResult instanceof Promise) {
+                await callbackResult;
+              }
+            }
+            
+            return packets;
+          }
+        } catch (orchestrationError) {
+          console.warn('[AIService] Orchestration failed, falling back to direct routing:', orchestrationError);
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.ts:550',message:'processMessage: orchestration failed, using fallback',data:{error:orchestrationError.message,constructId},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'D'})}).catch(()=>{});
+          // #endregion
+          // Fall through to direct routing
+        }
+      }
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.ts:555',message:'processMessage: using direct routing',data:{constructId,threadId},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
+      
+      // Call the conversations API endpoint
+      const response = await fetch(`/api/conversations/${threadId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          message: input,
+          content: input,
+          constructId: constructId,
+          metadata: options?.uiContext
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to process message');
+      }
+
+      const data = await response.json();
+      
+      // Extract AI response content
+      const aiContent = data.aiResponse?.content || data.content || data.aiResponse?.message || '';
+      
+      // Convert response to packets format
+      const packets = [{ op: 'answer.v1', payload: { content: aiContent } }];
+      
+      // Call final update callback if provided
+      // CRITICAL: Await callback to ensure save completes before returning
+      // This prevents message loss if server restarts before save completes
+      if (callbacks?.onFinalUpdate) {
+        const callbackResult = callbacks.onFinalUpdate(packets);
+        if (callbackResult instanceof Promise) {
+          await callbackResult;
+        }
+      }
+      
+      return packets;
+    } catch (error) {
+      console.error('[AIService] Failed to process message:', error);
+      // #region agent log
+      try {
+        await fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            location: 'aiService.ts:500',
+            message: 'processMessage: error caught',
+            data: { error: error.message, stack: error.stack },
+            timestamp: Date.now(),
+            sessionId: 'debug-session',
+            runId: 'fix-processmessage',
+            hypothesisId: 'D'
+          })
+        }).catch(() => {});
+      } catch {}
+      // #endregion
+      throw error;
     }
   }
 

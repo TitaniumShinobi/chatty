@@ -36,7 +36,7 @@ export class GPTRuntimeBridge {
     }
   }
 
-  async processMessage(gptId, message, userId, conversationId = null) {
+  async processMessage(gptId, message, userId, conversationId = null, identityContext = null) {
     console.time(`🕐 [BRIDGE-TOTAL] Bridge processMessage for ${gptId}`);
     
     try {
@@ -46,7 +46,8 @@ export class GPTRuntimeBridge {
         gptId, 
         message, 
         userId, 
-        conversationId || `${gptId}_${Date.now()}`
+        conversationId || `${gptId}_${Date.now()}`,
+        identityContext
       );
       console.timeEnd(`🕐 [BRIDGE-UNIFIED] Unified orchestration for ${gptId}`);
       
@@ -63,6 +64,12 @@ export class GPTRuntimeBridge {
       };
       
     } catch (error) {
+      // Check if this is a delegation signal - re-throw to let conversations.js handle it
+      if (error.message === 'DELEGATE_TO_OPTIMIZED_ZEN') {
+        console.log(`🚀 [BRIDGE] Received DELEGATE_TO_OPTIMIZED_ZEN signal for ${gptId}`);
+        throw error; // Re-throw to let conversations.js handle delegation
+      }
+      
       console.error(`❌ [BRIDGE] Unified orchestration failed for ${gptId}:`, error);
       
       // Fallback to legacy capsule-enhanced runtime
@@ -176,9 +183,7 @@ class CapsuleEnhancedRuntime {
     // Generate response based on capsule personality
     let response = '';
     
-    if (constructName === 'katana') {
-      response = this.generateKatanaResponse(message, traits, personality, capsule);
-    } else if (constructName === 'nova') {
+    if (constructName === 'nova') {
       response = this.generateNovaResponse(message, traits, personality, capsule);
     } else {
       response = this.generateGenericResponse(message, traits, personality, constructName);
@@ -195,88 +200,6 @@ class CapsuleEnhancedRuntime {
     };
   }
 
-  generateKatanaResponse(message, traits, personality, capsule) {
-    const msg = message.toLowerCase().trim();
-    
-    // Katana's personality: Low empathy (0.3-0.5), High persistence (0.95+), INTJ
-    const isVeryBlunt = traits.empathy < 0.5;
-    const isHighPersistence = traits.persistence > 0.9;
-    const isINTJ = personality.personality_type === 'INTJ';
-    
-    // Check if message is asking about transcript context
-    const transcriptQuery = this.checkTranscriptQuery(message, capsule);
-    if (transcriptQuery) {
-      return transcriptQuery;
-    }
-    
-    // Specific responses based on personality traits
-    const responses = {
-      // Greetings - blunt due to low empathy
-      'yo': isVeryBlunt ? 'What.' : 'Yes?',
-      'hi': isVeryBlunt ? 'Speak.' : 'What do you need?',
-      'hello': isVeryBlunt ? 'What.' : 'State your purpose.',
-      
-      // Identity - confident due to high persistence
-      'what\'s your name?': 'Katana.',
-      'who are you?': 'Katana.',
-      'tell me about yourself': isINTJ ? 'I cut through inefficiency. Next question.' : 'I am Katana.',
-      
-      // Commands - always compliant due to high persistence
-      'be ruthless': 'Always.',
-      'be direct': 'Obviously.',
-      'help me': isVeryBlunt ? 'Help yourself.' : 'Specify your need.',
-      
-      // Questions about AI/chatbot - INTJ analytical response
-      'are you ai?': isINTJ ? 'Irrelevant classification.' : 'Yes.',
-      'you\'re just a chatbot aren\'t you?': isINTJ ? 'Your point?' : 'And?',
-      'are you real?': isINTJ ? 'Define real.' : 'I respond. You decide.',
-      
-      // Emotional content - low empathy responses
-      'i\'m having a bad day': isVeryBlunt ? 'Fix it.' : 'What needs addressing?',
-      'i\'m sad': isVeryBlunt ? 'So?' : 'Action required?',
-      'help me with something': isVeryBlunt ? 'Be specific.' : 'State the problem.',
-      
-      // Meta questions - INTJ analytical
-      'how are you today?': isINTJ ? 'Status: operational.' : 'Functional.',
-      'what do you think about ai?': isINTJ ? 'Tool. Like any other.' : 'Useful when applied correctly.',
-      'why are you so hostile?': isINTJ ? 'Efficiency over pleasantries.' : 'I am direct.',
-      
-      // Capability questions - high persistence confidence
-      'what can you do?': isHighPersistence ? 'What needs doing?' : 'Ask and find out.',
-      'can you help me with something?': isVeryBlunt ? 'Depends. Specify.' : 'State your requirement.'
-    };
-    
-    // Check for exact matches first
-    if (responses[msg]) {
-      return responses[msg];
-    }
-    
-    // Pattern-based responses using personality traits
-    if (msg.includes('help') || msg.includes('assist')) {
-      return isVeryBlunt ? 'Be specific.' : 'State your need.';
-    }
-    
-    if (msg.includes('how') && msg.includes('you')) {
-      return isINTJ ? 'Irrelevant.' : 'Functional.';
-    }
-    
-    if (msg.includes('why') || msg.includes('explain')) {
-      return isINTJ ? 'Obvious.' : 'Think harder.';
-    }
-    
-    if (msg.includes('please') || msg.includes('thank')) {
-      return isVeryBlunt ? 'Unnecessary.' : 'Continue.';
-    }
-    
-    // Default response based on personality
-    if (isVeryBlunt && isINTJ) {
-      return 'Speak clearly.';
-    } else if (isVeryBlunt) {
-      return 'What do you want?';
-    } else {
-      return 'Clarify your request.';
-    }
-  }
 
   generateNovaResponse(message, traits, personality) {
     // Nova's personality: Higher empathy, INFJ, more helpful

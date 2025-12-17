@@ -446,6 +446,9 @@ export class RuntimeContextManager {
   }
 
   private initializeFromStorage(): void {
+    if (!this.isBrowserEnvironment) {
+      return;
+    }
     try {
       const stored = localStorage.getItem('runtimeContextManager');
       if (stored) {
@@ -478,6 +481,9 @@ export class RuntimeContextManager {
   }
 
   private saveToStorage(): void {
+    if (!this.isBrowserEnvironment) {
+      return;
+    }
     try {
       const data = {
         userDefaultRuntimes: Array.from(this.userDefaultRuntimes.entries()),

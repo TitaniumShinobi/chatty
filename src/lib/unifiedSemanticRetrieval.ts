@@ -167,7 +167,7 @@ export class UnifiedSemanticRetrieval {
         const memoryResults = await this.searchMemories(query);
         results.memories = memoryResults;
         results.breakdown.memoryCount = memoryResults.length;
-        
+
         if (memoryResults.length > 0) {
           const avgRelevance = memoryResults.reduce((sum, m) => sum + m.metadata.relevance, 0) / memoryResults.length;
           results.breakdown.averageMemoryRelevance = avgRelevance;
@@ -179,7 +179,7 @@ export class UnifiedSemanticRetrieval {
         const chunkResults = await this.searchChunks(query);
         results.chunks = chunkResults;
         results.breakdown.chunkCount = chunkResults.length;
-        
+
         if (chunkResults.length > 0) {
           const avgRelevance = chunkResults.reduce((sum, c) => sum + (c.metadata.semanticScore || 0), 0) / chunkResults.length;
           results.breakdown.averageChunkRelevance = avgRelevance;
@@ -228,7 +228,7 @@ export class UnifiedSemanticRetrieval {
       results.searchTime = Date.now() - startTime;
 
       // Emit search completion packet
-      this.emitPacket(pkt(lex.semanticSearchComplete, {
+      this.emitPacket(pkt('semantic_search_complete', {
         query: query.query,
         totalFound: results.totalFound,
         memoryCount: results.breakdown.memoryCount,
@@ -305,21 +305,21 @@ export class UnifiedSemanticRetrieval {
     };
 
     const retrievalResult = await this.semanticRetrieval.search(semanticQuery);
-    
+
     // Convert ContextMatch to Chunk format
     const chunks: Chunk[] = retrievalResult.matches.map(match => ({
-      id: match.chunkId,
-      content: match.content,
+      id: match.chunk.id,
+      content: match.chunk.content,
       startIndex: 0,
-      endIndex: match.content.length,
+      endIndex: match.chunk.content.length,
       metadata: {
-        wordCount: match.content.split(/\s+/).length,
-        characterCount: match.content.length,
-        keywords: match.keywords || [],
+        wordCount: match.chunk.metadata.wordCount,
+        characterCount: match.chunk.content.length,
+        keywords: match.chunk.metadata.keywords || [],
         semanticScore: match.similarity,
-        documentId: match.documentId,
-        fileName: match.fileName,
-        fileType: match.fileType
+        documentId: match.chunk.metadata.documentId,
+        fileName: match.chunk.metadata.fileName,
+        fileType: match.chunk.metadata.fileType
       },
       context: {}
     }));
@@ -649,7 +649,7 @@ export class UnifiedSemanticRetrieval {
     }
 
     // Emit file processing event
-    this.emitPacket(pkt(lex.memoryCreated, {
+    this.emitPacket(pkt('memory_created', {
       documentId,
       fileName,
       insightsCount: insights.length,
@@ -767,11 +767,11 @@ export class UnifiedSemanticRetrieval {
     // Extract potential motifs (repeated phrases, concepts)
     for (const chunk of chunks) {
       const phrases = this.extractKeyPhrases(chunk.content);
-      
+
       for (const phrase of phrases) {
         if (phrase.length > 3 && phrase.length < 50) {
           const key = phrase.toLowerCase();
-          
+
           if (!motifMap.has(key)) {
             motifMap.set(key, {
               motif: phrase,
@@ -813,10 +813,10 @@ export class UnifiedSemanticRetrieval {
     for (const sentence of sentences) {
       // Look for noun phrases, technical terms, etc.
       const words = sentence.split(/\s+/);
-      
+
       for (let i = 0; i < words.length - 1; i++) {
         const phrase = `${words[i]} ${words[i + 1]}`.toLowerCase();
-        
+
         // Filter out common words and short phrases
         if (phrase.length > 5 && !this.isCommonWord(phrase)) {
           phrases.push(phrase);
@@ -836,7 +836,7 @@ export class UnifiedSemanticRetrieval {
 
     const start = Math.max(0, index - contextLength);
     const end = Math.min(text.length, index + match.length + contextLength);
-    
+
     return text.substring(start, end).trim();
   }
 
@@ -859,11 +859,11 @@ export class UnifiedSemanticRetrieval {
     // Simple semantic relevance calculation - in production, use embeddings
     const textWords = text.toLowerCase().split(/\s+/);
     const queryWords = query.toLowerCase().split(/\s+/);
-    
-    const matches = queryWords.filter(word => 
+
+    const matches = queryWords.filter(word =>
       textWords.some(textWord => textWord.includes(word) || word.includes(textWord))
     );
-    
+
     return Math.min(1, matches.length / queryWords.length);
   }
 
@@ -881,12 +881,12 @@ export class UnifiedSemanticRetrieval {
    */
   getLinkedMemories(chunkId: string): MemoryChunkLink[] {
     const links: MemoryChunkLink[] = [];
-    
+
     for (const [memoryId, memoryLinks] of this.memoryChunkLinks.entries()) {
       const chunkLinks = memoryLinks.filter(link => link.chunkId === chunkId);
       links.push(...chunkLinks);
     }
-    
+
     return links;
   }
 

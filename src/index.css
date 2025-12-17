@@ -243,7 +243,7 @@
     width: 50%;
     height: 50%;
     opacity: 0;
-    z-index: 2;
+    z-index: 10; /* Increased z-index for proper layering */
     transition: opacity 0.3s ease;
   }
 
@@ -262,17 +262,7 @@
     width: 90%;
     height: 90%;
     opacity: 0;
-    z-index: 0;
-  }
-
-  .chatty-starburst-nova-left {
-    animation: chatty-starburst-ccw 28s linear infinite;
-    transform: rotate(0deg);
-  }
-
-  .chatty-starburst-nova-right {
-    animation: chatty-starburst-cw 28s linear infinite;
-    transform: rotate(45deg);
+    z-index: 5; /* Adjusted z-index for nova elements */
   }
 
   .chatty-starburst-ray-left,
@@ -280,17 +270,7 @@
     width: 90%;
     height: 90%;
     opacity: 0;
-    z-index: 1;
-  }
-
-  .chatty-starburst-ray-left {
-    animation: chatty-starburst-ccw 14s linear infinite;
-    transform: rotate(0deg);
-  }
-
-  .chatty-starburst-ray-right {
-    animation: chatty-starburst-cw 14s linear infinite;
-    transform: rotate(45deg);
+    z-index: 8; /* Adjusted z-index for ray elements */
   }
 
   .chatty-star-wrapper:hover .chatty-star {
@@ -328,4 +308,5 @@
       transform: rotate(-360deg);
     }
   }
+
 }

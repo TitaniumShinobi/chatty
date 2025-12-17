@@ -47,8 +47,18 @@ def generate_capsule(data_json):
         additional_data = data.get('additional_data', {})
         vault_path = data.get('vault_path', None)
         instance_path = data.get('instance_path', None)  # New: instance directory path
+        capsule_type = data.get('capsule_type', 'standard')  # New: capsule type
         
         # Initialize CapsuleForge with instance path (saves directly in instance directory)
+        # For undertone_capsule, output to chatty/identity/lin-001/ instead of vvault path
+        if capsule_type == 'undertone_capsule':
+            # Determine chatty root (go up from server/services to chatty root)
+            script_dir = Path(__file__).resolve().parent
+            chatty_root = script_dir.parent.parent  # server -> chatty
+            identity_path = chatty_root / 'identity' / instance_name
+            os.makedirs(identity_path, exist_ok=True)
+            instance_path = str(identity_path)
+        
         forge = CapsuleForge(vault_path=vault_path, instance_path=instance_path)
         
         # Generate capsule
@@ -57,15 +67,34 @@ def generate_capsule(data_json):
             traits=traits,
             memory_log=memory_log,
             personality_type=personality_type,
-            additional_data=additional_data if additional_data else None
+            additional_data=additional_data if additional_data else None,
+            capsule_type=capsule_type
         )
         
-        # Return result as JSON
+        # For undertone_capsule, return list of generated files
+        if capsule_type == 'undertone_capsule':
+            generated_files = []
+            if os.path.exists(capsule_path):
+                for filename in ['capsule.json', 'memory_sources.json', 'scoring_weights.json']:
+                    filepath = os.path.join(capsule_path, filename)
+                    if os.path.exists(filepath):
+                        generated_files.append(filepath)
+            
+            result = {
+                "success": True,
+                "capsuleType": "undertone_capsule",
+                "identityDirectory": capsule_path,
+                "generatedFiles": generated_files,
+                "instanceName": instance_name
+            }
+        else:
+            # Standard capsule - return single file path
         result = {
             "success": True,
             "capsulePath": capsule_path,
             "instanceName": instance_name
         }
+        
         print(json.dumps(result))
         return 0
         

@@ -42,7 +42,12 @@ export class PersonalityOrchestrator {
     this.driftPrevention = new DriftPrevention(model);
     this.promptBuilder = new UnbreakableCharacterPrompt();
     this.greetingSynthesizer = new GreetingSynthesizer();
-    const parsedThreshold = parseFloat(process.env.PERSONA_CONFIDENCE_THRESHOLD || '');
+    // Browser-safe environment variable access (no direct process reference)
+    const envValue =
+      (typeof globalThis !== 'undefined' && (globalThis as any).process?.env?.PERSONA_CONFIDENCE_THRESHOLD) ||
+      (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_PERSONA_CONFIDENCE_THRESHOLD) ||
+      undefined;
+    const parsedThreshold = parseFloat(envValue || '');
     this.confidenceThreshold = Number.isFinite(parsedThreshold) ? parsedThreshold : 0.7;
   }
 
@@ -72,10 +77,9 @@ export class PersonalityOrchestrator {
       if (contextLock) {
         throw new Error('[PersonalityOrchestrator] Context lock active but no personality blueprint loaded');
       }
-      // For constructs that should have blueprints (e.g., Katana), refuse generic fallback
-      // Only allow empty blueprint for constructs that don't require personality persistence
-      const requiresBlueprint = constructId.toLowerCase().includes('katana') || 
-                                 constructId.toLowerCase().includes('lin') ||
+      // REMOVED: Katana-specific check - Katana is a user-created GPT, not a core construct
+      // Only core constructs (Lin, Nova) require blueprints
+      const requiresBlueprint = constructId.toLowerCase().includes('lin') ||
                                  constructId.toLowerCase().includes('nova');
       
       if (requiresBlueprint) {

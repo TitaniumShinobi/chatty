@@ -5,8 +5,10 @@
     "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
     "noEmit": false,
-    "outDir": "./dist"
+    "outDir": "./dist",
+    "rootDir": "../",
+    "allowImportingTsExtensions": false
   },
-  "include": ["*.ts"],
+  "include": ["*.ts", "../src/engine/optimizedZen.ts", "../src/engine/toneModulation.ts"],
   "exclude": ["node_modules", "dist"]
 }

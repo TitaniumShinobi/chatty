@@ -17,6 +17,7 @@ import { cn } from '../lib/utils'
 import { GPTCreator } from '../lib/gptCreator'
 import { ThemeToggleButton } from './ThemeToggleButton'
 import { useTheme } from '../lib/ThemeContext'
+import { Z_LAYERS } from '../lib/zLayers'
 
 const Sidebar: React.FC<SidebarProps> = ({
   conversations,
@@ -33,7 +34,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   collapsed = false,
   onToggleCollapsed,
   currentUser,
-  onShowSettings
+  onShowSettings,
+  hasBlockingOverlay = false
 }) => {
   const [gptCreator] = useState(() => GPTCreator.getInstance())
   const navigate = useNavigate()
@@ -86,7 +88,12 @@ const Sidebar: React.FC<SidebarProps> = ({
         'flex flex-col h-full transition-all duration-200 overflow-hidden',
         collapsed ? 'w-16' : 'w-72'
       )}
-      style={{ backgroundColor: 'var(--chatty-bg-sidebar)', color: 'var(--chatty-text)' }}
+      style={{ 
+        backgroundColor: 'var(--chatty-bg-sidebar)', 
+        color: 'var(--chatty-text)',
+        isolation: 'isolate',
+        position: 'relative'
+      }}
     >
       {/* Top Section - Logo and Collapse */}
       <div className={collapsed ? 'px-3 pt-3 pb-2' : 'p-4'}>
@@ -396,7 +403,26 @@ const Sidebar: React.FC<SidebarProps> = ({
           {conversations.map((conversation) => (
             <button
               key={conversation.id}
-              onClick={() => onConversationSelect(conversation.id)}
+              onClick={(e) => {
+                console.log('🔵 [Sidebar] Button clicked:', {
+                  conversationId: conversation.id,
+                  conversationTitle: conversation.title,
+                  hasHandler: !!onConversationSelect
+                });
+                e.preventDefault();
+                e.stopPropagation();
+                if (onConversationSelect) {
+                  console.log('🟢 [Sidebar] Calling onConversationSelect with:', conversation.id);
+                  try {
+                    onConversationSelect(conversation.id);
+                    console.log('✅ [Sidebar] onConversationSelect completed');
+                  } catch (error) {
+                    console.error('❌ [Sidebar] Error in onConversationSelect:', error);
+                  }
+                } else {
+                  console.error('❌ [Sidebar] onConversationSelect is not defined!');
+                }
+              }}
               className={cn(
                 "flex items-center justify-between w-full px-3 py-2 text-left text-sm rounded-md transition-colors group",
                 conversation.id === currentConversationId && "text-[var(--chatty-text-inverse, #ffffeb)]"
@@ -407,7 +433,11 @@ const Sidebar: React.FC<SidebarProps> = ({
                 color:
                   conversation.id === currentConversationId
                     ? 'var(--chatty-text-inverse, #ffffeb)'
-                    : 'var(--chatty-text)'
+                    : 'var(--chatty-text)',
+                pointerEvents: 'auto',
+                cursor: 'pointer',
+                position: 'relative',
+                zIndex: 1
               }}
               onMouseEnter={(e) => {
                 if (conversation.id !== currentConversationId) {
@@ -535,6 +565,16 @@ const Sidebar: React.FC<SidebarProps> = ({
           </button>
         )}
       </div>
+
+      {/* Ensure Zen is only visible in the sidebar */}
+        {currentConversationId === 'zen' && (
+          <div
+            className="zen-sidebar-item"
+            style={{ zIndex: 1, position: 'relative' }}
+          >
+            Zen
+          </div>
+        )}
     </div>
   )
 }

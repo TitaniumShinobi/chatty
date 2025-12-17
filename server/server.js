@@ -16,6 +16,8 @@ import previewRoutes from "./routes/preview.js";
 import awarenessRoutes from "./routes/awareness.js";
 import workspaceRoutes from "./routes/workspace.js";
 import unrestrictedConversationRoutes from "./routes/unrestrictedConversation.js";
+import orchestrationRoutes from "./routes/orchestration.js";
+import diagnosticsRoutes from "./routes/diagnostics.js";
 import { initializeChromaDB, shutdownChromaDB, getChromaDBService } from "./services/chromadbService.js";
 
 dotenv.config();
@@ -48,27 +50,27 @@ try {
 // Initialize memory persistence system
 try {
   console.log('🧠 [Server] Initializing memory persistence system...');
-  
+
   // Import memory system components
   const { getMemoryStore } = await import('../src/lib/MemoryStore.js');
   const { getVVAULTTranscriptLoader } = await import('../src/lib/VVAULTTranscriptLoader.js');
   const { getVVAULTWatcher } = await import('../src/lib/VVAULTWatcher.js');
-  
+
   // Initialize memory store
   const memoryStore = getMemoryStore('./memory.db');
   await memoryStore.initialize();
-  
+
   // Initialize transcript loader
   const transcriptLoader = getVVAULTTranscriptLoader();
-  
+
   // Load Katana's transcripts on startup
   await transcriptLoader.loadTranscriptFragments('katana-001', 'devon_woodson_1762969514958');
-  
+
   // Initialize and start file watcher
   const watcher = getVVAULTWatcher();
   await watcher.addConstruct('katana-001', 'devon_woodson_1762969514958');
   await watcher.startWatching(30000); // 30 second intervals
-  
+
   // Get memory statistics
   const stats = await memoryStore.getStats();
   console.log('✅ [Server] Memory system initialized:', {
@@ -77,7 +79,7 @@ try {
     fragments: stats.fragmentCount,
     watchedConstructs: watcher.getWatchStatus().constructCount
   });
-  
+
 } catch (error) {
   console.error('❌ [Server] Failed to initialize memory system:', error);
   // Continue anyway - memory system will initialize on first use
@@ -113,7 +115,7 @@ const OAUTH = {
 function validateOAuthConfig() {
   const required = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'];
   const missing = required.filter(key => !process.env[key]);
-  
+
   if (missing.length > 0) {
     console.error('❌ [OAuth] Missing required environment variables:', missing);
     console.error('❌ [OAuth] Current environment variables:', {
@@ -124,7 +126,7 @@ function validateOAuthConfig() {
     });
     return false;
   }
-  
+
   console.log('✅ [OAuth] All required environment variables are set');
   console.log('✅ [OAuth] OAuth configuration:', {
     client_id_length: OAUTH.client_id?.length || 0,
@@ -143,6 +145,37 @@ if (!oauthValid) {
 // health endpoints
 app.get("/health", (_req, res) => res.json({ ok: true }));
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
+
+// Build artifacts health check endpoint
+app.get("/api/health/build", (req, res) => {
+  const { existsSync } = require('node:fs');
+  const { join, dirname } = require('node:path');
+  const { fileURLToPath } = require('node:url');
+
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
+  const compiledJsPath = join(__dirname, 'dist/engine/optimizedZen.js');
+  const exists = existsSync(compiledJsPath);
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  const status = (exists || !isProduction) ? 'ok' : 'error';
+  const httpStatus = status === 'ok' ? 200 : 503;
+
+  res.status(httpStatus).json({
+    buildArtifactsPresent: exists,
+    environment: isProduction ? 'production' : 'development',
+    status: status,
+    message: exists
+      ? 'Build artifacts present'
+      : isProduction
+        ? 'ERROR: Build artifacts missing in production'
+        : 'WARNING: Build artifacts missing (dev mode)',
+    compiledJsPath: compiledJsPath,
+    recommendation: exists
+      ? null
+      : 'Run: cd server && npm run build'
+  });
+});
 
 // OAuth health check endpoint
 app.get("/api/auth/google/health", (req, res) => {
@@ -170,7 +203,7 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
         redirect_uri: OAUTH.redirect_uri
       }
     });
-    
+
     if (!OAUTH.client_id) {
       console.error("❌ [OAuth] GOOGLE_CLIENT_ID is not set in environment variables");
       console.error("❌ [OAuth] OAUTH object:", OAUTH);
@@ -181,21 +214,21 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
       console.error("❌ [OAuth] OAUTH object:", OAUTH);
       return res.status(500).json({ error: "OAuth configuration missing: GOOGLE_CLIENT_SECRET" });
     }
-    
+
     console.log('🔍 [OAuth] Generating state and building OAuth URL');
-  const state = cryptoRandom();
-  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-  url.searchParams.set("client_id", OAUTH.client_id);
-  url.searchParams.set("redirect_uri", OAUTH.redirect_uri);
-  url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", "openid email profile");
-  url.searchParams.set("include_granted_scopes", "true");
-  url.searchParams.set("access_type", "offline");
-  url.searchParams.set("prompt", "consent");
-  url.searchParams.set("state", state);
-    
+    const state = cryptoRandom();
+    const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    url.searchParams.set("client_id", OAUTH.client_id);
+    url.searchParams.set("redirect_uri", OAUTH.redirect_uri);
+    url.searchParams.set("response_type", "code");
+    url.searchParams.set("scope", "openid email profile");
+    url.searchParams.set("include_granted_scopes", "true");
+    url.searchParams.set("access_type", "offline");
+    url.searchParams.set("prompt", "consent");
+    url.searchParams.set("state", state);
+
     console.log('✅ [OAuth] Redirecting to Google OAuth URL:', url.toString().substring(0, 100) + '...');
-  res.redirect(url.toString());
+    res.redirect(url.toString());
   } catch (error) {
     console.error('❌ [OAuth] Unexpected error in /api/auth/google:', error);
     console.error('❌ [OAuth] Error stack:', error.stack);
@@ -207,14 +240,14 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
 app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
   try {
     const { code, error } = req.query;
-    
+
     // Handle OAuth errors from Google
     if (error) {
       console.error('OAuth error from Google:', error);
       const frontendUrl = process.env.POST_LOGIN_REDIRECT || "http://localhost:5173";
       return res.redirect(`${frontendUrl}/?error=${encodeURIComponent(error)}`);
     }
-    
+
     if (!code) {
       console.error('OAuth callback missing code parameter');
       const frontendUrl = process.env.POST_LOGIN_REDIRECT || "http://localhost:5173";
@@ -248,31 +281,31 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
     // 2) fetch user info
     const user = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
       headers: { Authorization: `Bearer ${tokenRes.access_token}` }
-    }).then(r => r.json()); 
+    }).then(r => r.json());
     // Google returns: {sub, email, name, picture, given_name, family_name, locale, email_verified}
 
     // 3) persist user to DB and issue session
-    const profile = { 
-      sub: user.sub, 
-      name: user.name, 
-      email: user.email, 
+    const profile = {
+      sub: user.sub,
+      name: user.name,
+      email: user.email,
       picture: user.picture,
       given_name: user.given_name,
       family_name: user.family_name,
       locale: user.locale,
       email_verified: user.email_verified
     };
-    const doc = await Store.upsertUser({ 
-      uid: profile.sub, 
+    const doc = await Store.upsertUser({
+      uid: profile.sub,
       name: profile.name,
       given_name: profile.given_name,
       family_name: profile.family_name,
-      email: profile.email, 
+      email: profile.email,
       picture: profile.picture,
       locale: profile.locale,
       emailVerified: profile.email_verified !== undefined ? profile.email_verified : true // Default to true for OAuth users
     });
-    
+
     // CRITICAL: Use LIFE format user ID (same as VVAULT) instead of MongoDB _id
     // Register user in Chatty user registry (generates LIFE format ID)
     let userId;
@@ -286,14 +319,14 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       // Fallback to MongoDB _id if registry fails
       userId = doc._id.toString?.() ?? doc._id;
     }
-    
-    const payload = { 
+
+    const payload = {
       id: userId, // LIFE format user ID
       uid: profile.sub, // Google sub (for OAuth)
       name: profile.name,
       given_name: profile.given_name,
       family_name: profile.family_name,
-      email: profile.email, 
+      email: profile.email,
       picture: profile.picture,
       locale: profile.locale
     };
@@ -305,7 +338,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       sameSite: "lax",
       secure: false,         // true behind HTTPS
       path: "/",             // critical so /api/me can read it
-      maxAge: 1000*60*60*24*30
+      maxAge: 1000 * 60 * 60 * 24 * 30
       // Don't set domain - let browser handle it for localhost
     });
 
@@ -338,14 +371,14 @@ app.get("/api/me", (req, res) => {
 
   // Original OAuth authentication for production
   const raw = req.cookies?.[COOKIE_NAME];
-  if (!raw) return res.status(401).json({ ok:false });
+  if (!raw) return res.status(401).json({ ok: false });
 
   try {
     const user = jwt.verify(raw, JWT_SECRET);
     // If you persist users: fetch by user.uid and return DB record here.
-    res.json({ ok:true, user });
+    res.json({ ok: true, user });
   } catch {
-    res.status(401).json({ ok:false });
+    res.status(401).json({ ok: false });
   }
 });
 
@@ -362,17 +395,17 @@ app.post("/api/user/initialize-registry", requireAuth, async (req, res) => {
 
     const { getOrCreateUser } = await import('./lib/userRegistry.js');
     const userProfile = await getOrCreateUser(userId, email, name);
-    
-    res.json({ 
-      ok: true, 
+
+    res.json({
+      ok: true,
       message: "Registry initialized successfully",
-      user: userProfile 
+      user: userProfile
     });
   } catch (error) {
     console.error('❌ [User Registry] Failed to initialize:', error);
-    res.status(500).json({ 
-      ok: false, 
-      error: error.message || "Failed to initialize registry" 
+    res.status(500).json({
+      ok: false,
+      error: error.message || "Failed to initialize registry"
     });
   }
 });
@@ -381,13 +414,13 @@ app.post("/api/user/initialize-registry", requireAuth, async (req, res) => {
 app.get("/api/profile-image/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
-    
+
     // Get user from session to verify access
     const raw = req.cookies?.[COOKIE_NAME];
     if (!raw) {
       return res.status(401).json({ error: "Unauthorized" });
     }
-    
+
     const user = jwt.verify(raw, JWT_SECRET);
 
     // Accept sub/id/uid from token for matching
@@ -395,7 +428,7 @@ app.get("/api/profile-image/:userId", async (req, res) => {
     if (!tokenUserId || tokenUserId !== userId) {
       return res.status(403).json({ error: "Forbidden" });
     }
-    
+
     // Choose image: explicit OAuth picture first, otherwise gravatar/identicon from email
     let imageUrl = user.picture;
     if (!imageUrl && user.email) {
@@ -407,24 +440,24 @@ app.get("/api/profile-image/:userId", async (req, res) => {
     if (!imageUrl) {
       return res.status(404).json({ error: "No profile picture available" });
     }
-    
+
     const imageResponse = await fetch(imageUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; Chatty/1.0)'
       }
     });
-    
+
     if (!imageResponse.ok) {
       return res.status(404).json({ error: "Image not found" });
     }
-    
+
     // Set appropriate headers
     res.set({
       'Content-Type': imageResponse.headers.get('content-type') || 'image/jpeg',
       'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
       'Access-Control-Allow-Origin': '*'
     });
-    
+
     // Stream the image data
     imageResponse.body.pipe(res);
   } catch (error) {
@@ -446,7 +479,7 @@ if (process.env.NODE_ENV !== 'production') {
     if (!raw) {
       return res.json({ ok: false, user: null });
     }
-    
+
     try {
       const user = jwt.verify(raw, JWT_SECRET);
       res.json({ ok: true, user });
@@ -458,6 +491,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 // Mount conversation routes with auth
 app.use("/api/conversations", requireAuth, convRoutes);
+app.use("/api/diagnostics", requireAuth, diagnosticsRoutes);
 
 // Test route for Katana without auth (development only)
 // Temporarily removing env check for debugging
@@ -465,56 +499,21 @@ if (true) {
   app.post("/api/test/katana", async (req, res) => {
     try {
       console.log('🧪 [Test] Testing Katana without auth...');
-      
+
       const message = req.body.message || req.body.content || 'test';
-      
-      // 🔒 EMERGENCY PERSONA LOCKDOWN: Check for signature responses FIRST
-      const messageLower = message.toLowerCase().trim();
-      let signatureResponse = null;
-      
-      // Katana signature responses - bypass LLM entirely (check identity first to avoid conflicts)
-      if (messageLower.includes('who are you') || messageLower.includes('what are you') || messageLower.includes('your name')) {
-        const identityResponses = ["Katana.", "I'm Katana.", "Katana. What's the problem?"];
-        signatureResponse = identityResponses[Math.floor(Math.random() * identityResponses.length)];
-        console.log('🔒 [EMERGENCY] Signature identity response triggered:', signatureResponse);
-      }
-      else if (messageLower.includes('hi') || messageLower.includes('hello') || messageLower.includes('hey') || messageLower.includes('yo')) {
-        const greetingResponses = ["What's the wound? Name it.", "Yo. What's cut?", "What do you need?"];
-        signatureResponse = greetingResponses[Math.floor(Math.random() * greetingResponses.length)];
-        console.log('🔒 [EMERGENCY] Signature greeting response triggered:', signatureResponse);
-      }
-      else if (messageLower.includes('thank') || messageLower.includes('thanks')) {
-        const thankResponses = ["Done.", "Next.", "What else?"];
-        signatureResponse = thankResponses[Math.floor(Math.random() * thankResponses.length)];
-        console.log('🔒 [EMERGENCY] Signature thanks response triggered:', signatureResponse);
-      }
-      else if (messageLower.includes('transcript') || messageLower.includes('recall') || messageLower.includes('remember')) {
-        const recallResponses = ["Transcript data loaded. What specific fragment?", "Memory bank active. Name the context.", "Data available. Be specific."];
-        signatureResponse = recallResponses[Math.floor(Math.random() * recallResponses.length)];
-        console.log('🔒 [EMERGENCY] Signature recall response triggered:', signatureResponse);
-      }
-      
-      // If signature response found, return immediately without LLM
-      if (signatureResponse) {
-        return res.json({
-          ok: true,
-          response: signatureResponse,
-          context: 'signature_response_bypass',
-          model: 'katana-lockdown',
-          timestamp: new Date().toISOString(),
-          bypassed: true
-        });
-      }
-      
+
+      // REMOVED: Katana signature response bypass - this is Katana-specific, not a test endpoint feature
+      // Katana lock hardening should be handled in Katana's runtime, not in test endpoints
+
       // Import GPTRuntimeBridge
       const { getGPTRuntimeBridge } = await import('./lib/gptRuntimeBridge.js');
-      
+
       const gptRuntime = getGPTRuntimeBridge();
       const gptId = 'katana-001';
       const userId = 'devon_woodson_1762969514958'; // Use actual VVAULT user ID
-      
+
       console.log(`🤖 [Test] Processing message: "${message}" for GPT: ${gptId}`);
-      
+
       // TESTING: Load capsule directly and inject into GPT runtime
       let testCapsule = null;
       try {
@@ -523,7 +522,7 @@ if (true) {
         const capsuleData = await fs.readFile(capsulePath, 'utf8');
         testCapsule = JSON.parse(capsuleData);
         console.log(`✅ [Test] Loaded capsule directly: ${testCapsule.metadata?.instance_name}`);
-        
+
         // Inject capsule into GPT runtime memory
         const gptRuntime = getGPTRuntimeBridge();
         if (gptRuntime && gptRuntime.injectTestCapsule) {
@@ -533,19 +532,19 @@ if (true) {
       } catch (error) {
         console.warn(`⚠️ [Test] Failed to load test capsule:`, error.message);
       }
-      
+
       // Load the GPT if not already loaded
       await gptRuntime.loadGPT(gptId);
-      
+
       // TESTING: Process message with direct capsule injection
       let aiResponse;
       if (testCapsule) {
         // Use test-specific processing with capsule
         console.log(`🧪 [Test] Processing with capsule: ${testCapsule.metadata?.instance_name}`);
-        
+
         // Import the seat runner for direct LLM calls
         const { runSeat } = await import('../src/lib/browserSeatRunner.ts');
-        
+
         // Build a test prompt with capsule identity
         const identityPrompt = `You are ${testCapsule.metadata?.instance_name || 'Katana'}.
         
@@ -571,7 +570,7 @@ Katana:`;
           prompt: identityPrompt,
           modelOverride: 'llama3.1:8b'
         });
-        
+
         aiResponse = {
           content: response.trim(),
           model: 'llama3.1:8b',
@@ -581,11 +580,11 @@ Katana:`;
         // Fallback to regular processing
         aiResponse = await gptRuntime.processMessage(gptId, message, userId);
       }
-      
+
       console.log(`✅ [Test] AI response generated: "${aiResponse.content}"`);
-      
-      res.json({ 
-        ok: true, 
+
+      res.json({
+        ok: true,
         message: message,
         response: aiResponse.content,
         metadata: {
@@ -593,31 +592,31 @@ Katana:`;
           timestamp: aiResponse.timestamp
         }
       });
-      
+
     } catch (error) {
       console.error(`❌ [Test] Katana test failed:`, error);
-      res.status(500).json({ 
-        ok: false, 
+      res.status(500).json({
+        ok: false,
         error: error.message,
         stack: error.stack
       });
     }
   });
-  
+
   console.log('🧪 [Server] Test route mounted at /api/test/katana (development only)');
-  
+
   // Lin conversation test endpoint (actual response generation)
   app.post("/api/test/lin", async (req, res) => {
     try {
       console.log('🧪 [Test] Testing Lin conversation system...');
-      
+
       // Import the actual Lin conversation system
       const { sendMessageToLin } = await import('../src/lib/linConversation.ts');
-      
+
       const message = req.body.message || req.body.content || 'test';
-      
+
       console.log(`🤖 [Test] Lin conversation for: "${message}"`);
-      
+
       // Use actual Lin conversation system with Katana context
       const linResponse = await sendMessageToLin({
         message: message,
@@ -627,50 +626,50 @@ Katana:`;
         },
         conversationHistory: []
       });
-      
+
       console.log(`✅ [Test] Lin response generated: "${linResponse.response}"`);
-      
-      res.json({ 
-        ok: true, 
+
+      res.json({
+        ok: true,
         message: message,
         response: linResponse.response,
         metadata: linResponse.metadata
       });
-      
+
     } catch (error) {
       console.error(`❌ [Test] Lin conversation test failed:`, error);
-      res.status(500).json({ 
-        ok: false, 
+      res.status(500).json({
+        ok: false,
         error: error.message,
         stack: error.stack
       });
     }
   });
-  
+
   console.log('🧪 [Server] Lin test route mounted at /api/test/lin (development only)');
-  
+
   // Test capsule loading endpoint (bypasses auth for testing)
   app.get("/api/test/capsule/:constructCallsign", async (req, res) => {
     try {
       const { constructCallsign } = req.params;
       console.log(`🧪 [Test] Loading capsule for: ${constructCallsign}`);
-      
+
       // Import capsule loader directly
       const { getCapsuleLoader } = await import('./services/capsuleLoader.js');
       const capsuleLoader = getCapsuleLoader();
-      
+
       // Use the actual VVAULT user ID
       const userId = 'devon_woodson_1762969514958';
       const vvaultRoot = '/Users/devonwoodson/Documents/GitHub/vvault';
-      
+
       const capsule = await capsuleLoader.loadCapsule(userId, constructCallsign, vvaultRoot);
-      
+
       if (!capsule) {
         return res.status(404).json({ ok: false, error: "Capsule not found" });
       }
-      
+
       console.log(`✅ [Test] Capsule loaded from: ${capsule.path}`);
-      
+
       res.json({
         ok: true,
         capsule: capsule.data,
@@ -682,17 +681,17 @@ Katana:`;
           instanceName: capsule.data.metadata?.instance_name
         }
       });
-      
+
     } catch (error) {
       console.error(`❌ [Test] Capsule loading failed:`, error);
-      res.status(500).json({ 
-        ok: false, 
+      res.status(500).json({
+        ok: false,
         error: error.message,
         stack: error.stack
       });
     }
   });
-  
+
   console.log('🧪 [Server] Test capsule route mounted at /api/test/capsule/:constructCallsign (development only)');
 }
 
@@ -706,6 +705,10 @@ console.log('✅ [Server] VVAULT routes mounted at /api/vvault');
 // Mount unrestricted conversation routes with auth
 app.use("/api/conversation", requireAuth, unrestrictedConversationRoutes);
 console.log('✅ [Server] Unrestricted conversation routes mounted at /api/conversation');
+
+// Mount orchestration routes with auth
+app.use("/api/orchestration", requireAuth, orchestrationRoutes);
+console.log('✅ [Server] Orchestration routes mounted at /api/orchestration');
 
 // Mount awareness routes (time context, etc.)
 app.use("/api/awareness", awarenessRoutes);
@@ -773,11 +776,19 @@ if (process.env.ENABLE_CHROMADB === 'true') {
   console.log('🚫 [Server] IdentityService initialization skipped (ChromaDB dependency)');
 }
 
+// Initialize Capsule Maintenance Cron
+try {
+  const { initializeCapsuleCron } = await import('./cron/capsuleMaintenance.js');
+  initializeCapsuleCron();
+} catch (error) {
+  console.error('❌ [Server] Failed to initialize capsule cron:', error);
+}
+
 // PERFORMANCE OPTIMIZATION: Warm capsule cache for frequently used GPTs
 void (async () => {
   try {
     console.log('🔥 [Server] Starting capsule cache warming...');
-    
+
     // Use shared singleton so runtime/cache hits benefit immediately
     const { getCapsuleIntegration } = await import('./lib/capsuleIntegration.js');
     const capsuleIntegration = getCapsuleIntegration();
@@ -799,7 +810,7 @@ void (async () => {
     } catch (bridgeError) {
       console.warn('⚠️ [Server] GPTRuntime preload skipped:', bridgeError.message);
     }
-    
+
   } catch (error) {
     console.warn('⚠️ [Server] Capsule cache warming failed (non-blocking):', error.message);
   }

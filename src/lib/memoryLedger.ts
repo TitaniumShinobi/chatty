@@ -3,6 +3,8 @@
 // // Memory Ledger System - Multi-User, Multi-Session Continuity
 // Ledger-based architecture for persistent memory with symbolic continuity hooks
 
+import { checkMemoryPermission } from './memoryPermission';
+
 export interface MemoryEntry {
   id: string;
   userId: string;
@@ -198,8 +200,14 @@ export class MemoryLedger {
       // File-specific options
       fileContext?: MemoryEntry['metadata']['fileContext'];
       fileRelationships?: MemoryEntry['relationships']['fileRelationships'];
+      // Settings for memory permission check
+      settings?: { personalization?: { allowMemory?: boolean } };
     }
-  ): MemoryEntry {
+  ): MemoryEntry | null {
+    // Check if memory is allowed
+    if (!checkMemoryPermission(options?.settings, 'createMemory')) {
+      return null; // Return null when memory is disabled
+    }
     const id = crypto.randomUUID();
     const timestamp = Date.now();
     const semanticHash = this.generateSemanticHash(content);
@@ -241,16 +249,16 @@ export class MemoryLedger {
 
     // Store the memory
     this.entries.set(id, memory);
-    
+
     // Update indexes
     this.updateUserSessionIndex(userId, sessionId);
     this.updateSemanticIndex(semanticHash, id);
-    
+
     // Update file-specific indexes
     if (options?.fileContext) {
       this.updateFileIndexes(options.fileContext, id);
     }
-    
+
     // Update parent relationship if specified
     if (options?.parentId) {
       this.updateParentChildRelationship(options.parentId, id);
@@ -292,7 +300,7 @@ export class MemoryLedger {
       const newSemanticHash = this.generateSemanticHash(updates.content);
       updatedMemory.metadata.semanticHash = newSemanticHash;
       updatedMemory.metadata.tokenCount = this.estimateTokenCount(updates.content);
-      
+
       // Update semantic index
       this.updateSemanticIndex(newSemanticHash, memoryId);
     }
@@ -312,7 +320,7 @@ export class MemoryLedger {
 
     // Remove from indexes
     this.removeFromSemanticIndex(memory.metadata.semanticHash, memoryId);
-    
+
     // Update parent relationships
     if (memory.relationships.parentId) {
       const parent = this.entries.get(memory.relationships.parentId);
@@ -361,7 +369,7 @@ export class MemoryLedger {
 
     // Filter by tags
     if (query.tags && query.tags.length > 0) {
-      results = results.filter(memory => 
+      results = results.filter(memory =>
         query.tags!.some(tag => memory.metadata.tags.includes(tag))
       );
     }
@@ -452,7 +460,8 @@ export class MemoryLedger {
         priority: options?.priority ?? 0.5,
         isActive: true,
         lastTriggered: 0,
-        triggerCount: 0
+        triggerCount: 0,
+        ...options
       }
     };
 
@@ -625,7 +634,7 @@ export class MemoryLedger {
       confidence: number;
     }>
   ): MemoryEntry[] {
-    return anchors.map(anchor => 
+    return anchors.map(anchor =>
       this.createFileMemory(
         userId,
         sessionId,
@@ -661,7 +670,7 @@ export class MemoryLedger {
       confidence: number;
     }>
   ): MemoryEntry[] {
-    return motifs.map(motif => 
+    return motifs.map(motif =>
       this.createFileMemory(
         userId,
         sessionId,
@@ -699,7 +708,7 @@ export class MemoryLedger {
     // Query relevant memories
     const queryOptions: MemoryQuery = {
       userId,
-      sessionId,
+      // Do not restrict to current session for injection - we want cross-session continuity
       minRelevance: 0.3,
       limit: 50
     };
@@ -746,7 +755,7 @@ export class MemoryLedger {
     // Separate file memories from regular memories
     const fileMemories = selectedMemories.filter(m => m.metadata.fileContext);
     const regularMemories = selectedMemories.filter(m => !m.metadata.fileContext);
-    
+
     const fileTokens = fileMemories.reduce((sum, m) => sum + m.metadata.tokenCount, 0);
     const documentIds = [...new Set(fileMemories.map(m => m.metadata.fileContext?.documentId).filter(Boolean))];
     const chunkIds = [...new Set(fileMemories.map(m => m.metadata.fileContext?.chunkId).filter(Boolean))];
@@ -790,7 +799,7 @@ export class MemoryLedger {
     const fileMemories = entries.filter(e => e.metadata.fileContext);
     const documents = new Set(fileMemories.map(e => e.metadata.fileContext!.documentId));
     const chunks = new Set(fileMemories.map(e => e.metadata.fileContext!.chunkId).filter(Boolean));
-    
+
     const fileTypeDistribution = fileMemories.reduce((acc, memory) => {
       const fileType = memory.metadata.fileContext!.fileType;
       acc[fileType] = (acc[fileType] || 0) + 1;
@@ -883,27 +892,28 @@ export class MemoryLedger {
 
   private shouldTriggerHook(hook: ContinuityHook, context: any): boolean {
     const { trigger } = hook;
-    
+
     switch (trigger.type) {
       case 'keyword':
-        const pattern = typeof trigger.pattern === 'string' 
-          ? new RegExp(trigger.pattern, 'i') 
+      case 'file_content':
+        const pattern = typeof trigger.pattern === 'string'
+          ? new RegExp(trigger.pattern, 'i')
           : trigger.pattern;
         return pattern.test(context.userInput);
-      
+
       case 'context':
         return this.evaluateContextConditions(trigger.conditions, context);
-      
+
       case 'time':
         // Time-based triggers (e.g., daily reminders)
         return this.evaluateTimeConditions(trigger.conditions, context.currentTime);
-      
+
       case 'session_start':
         return context.sessionId && !hook.metadata.lastTriggered;
-      
+
       case 'conversation_topic':
         return context.topic && trigger.pattern.test(context.topic);
-      
+
       default:
         return false;
     }
@@ -911,26 +921,26 @@ export class MemoryLedger {
 
   private shouldExecuteRitual(ritual: MemoryRitual, currentTime: number): boolean {
     const { schedule } = ritual;
-    
+
     switch (schedule.type) {
       case 'daily':
         const dayInMs = 24 * 60 * 60 * 1000;
         return currentTime - schedule.lastExecuted >= dayInMs;
-      
+
       case 'weekly':
         const weekInMs = 7 * 24 * 60 * 60 * 1000;
         return currentTime - schedule.lastExecuted >= weekInMs;
-      
+
       case 'monthly':
         const monthInMs = 30 * 24 * 60 * 60 * 1000;
         return currentTime - schedule.lastExecuted >= monthInMs;
-      
+
       case 'session_start':
         return schedule.lastExecuted === 0;
-      
+
       case 'manual':
         return false; // Manual execution only
-      
+
       default:
         return false;
     }
@@ -938,30 +948,30 @@ export class MemoryLedger {
 
   private executeRitual(ritual: MemoryRitual): void {
     const startTime = Date.now();
-    
+
     for (const action of ritual.actions) {
       switch (action.type) {
         case 'cleanup_old_memories':
           this.cleanupOldMemories(ritual.userId, action.parameters);
           break;
-        
+
         case 'consolidate_memories':
           this.consolidateMemories(ritual.userId, action.parameters);
           break;
-        
+
         case 'update_relevance':
           this.updateMemoryRelevance(ritual.userId, action.parameters);
           break;
-        
+
         case 'create_summary':
           this.createMemorySummary(ritual.userId, action.parameters);
           break;
       }
     }
-    
+
     const duration = Date.now() - startTime;
-    ritual.metadata.averageDuration = 
-      (ritual.metadata.averageDuration * (ritual.metadata.executionCount - 1) + duration) / 
+    ritual.metadata.averageDuration =
+      (ritual.metadata.averageDuration * (ritual.metadata.executionCount - 1) + duration) /
       ritual.metadata.executionCount;
   }
 
@@ -970,7 +980,7 @@ export class MemoryLedger {
     const topicMatch = memory.content.toLowerCase().includes(context.topic.toLowerCase()) ? 0.3 : 0;
     const intentMatch = memory.content.toLowerCase().includes(context.userIntent.toLowerCase()) ? 0.3 : 0;
     const baseRelevance = memory.metadata.relevance * 0.4;
-    
+
     return Math.min(1, topicMatch + intentMatch + baseRelevance);
   }
 
@@ -989,7 +999,7 @@ export class MemoryLedger {
   private cleanupOldMemories(userId: string, parameters: Record<string, any>): void {
     const maxAge = parameters.maxAge || 30 * 24 * 60 * 60 * 1000; // 30 days default
     const cutoffTime = Date.now() - maxAge;
-    
+
     const oldMemories = this.queryMemories({
       userId,
       maxAge,
@@ -1011,13 +1021,13 @@ export class MemoryLedger {
   private updateMemoryRelevance(userId: string, parameters: Record<string, any>): void {
     // Update relevance scores based on usage patterns
     const memories = this.queryMemories({ userId });
-    
+
     memories.forEach(memory => {
       const timeDecay = Math.exp(-(Date.now() - memory.timestamp) / (30 * 24 * 60 * 60 * 1000));
       const usageBoost = Math.min(1, memory.metadata.accessCount / 10);
-      
+
       const newRelevance = Math.min(1, memory.metadata.relevance * timeDecay + usageBoost * 0.2);
-      
+
       this.updateMemory(memory.id, {
         metadata: { ...memory.metadata, relevance: newRelevance }
       });
@@ -1051,8 +1061,8 @@ export class MemoryLedger {
         motifIndex: Array.from(this.motifIndex.entries()),
         timestamp: Date.now()
       };
-      
-      localStorage.setItem('chatty-memory-ledger', JSON.stringify(data));
+
+      safeLocalStorage.setItem('chatty-memory-ledger', JSON.stringify(data));
     } catch (error) {
       console.error('Failed to save memory ledger:', error);
     }
@@ -1060,10 +1070,10 @@ export class MemoryLedger {
 
   private loadFromStorage(): void {
     try {
-      const stored = localStorage.getItem('chatty-memory-ledger');
+      const stored = safeLocalStorage.getItem('chatty-memory-ledger');
       if (stored) {
         const data = JSON.parse(stored);
-        
+
         this.entries = new Map(data.entries || []);
         this.continuityHooks = new Map(data.hooks || []);
         this.rituals = new Map(data.rituals || []);
@@ -1079,3 +1089,12 @@ export class MemoryLedger {
     }
   }
 }
+// Provide a safe localStorage fallback for non-browser (tests/Node) environments
+const safeLocalStorage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> =
+  typeof localStorage !== 'undefined'
+    ? localStorage
+    : {
+      getItem: () => null,
+      setItem: () => { },
+      removeItem: () => { }
+    };

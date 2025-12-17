@@ -23,10 +23,10 @@ import { SettingsManager } from './settingsManager.js';
 import { TurnTakingSystem } from './turnTakingSystem.js';
 import { EmotionalWatchdog } from './emotionalWatchdog.js';
 // Import containment manager
-import { 
-  triggerContainment, 
-  isUserInContainment, 
-  resolveContainment, 
+import {
+  triggerContainment,
+  isUserInContainment,
+  resolveContainment,
   getContainmentStatus,
   getContainmentHistory,
   getAllActiveContainments,
@@ -83,7 +83,7 @@ class CLIAIService {
     // Initialize enhanced persona support with persistent memory
     const persistentMemory = new PersistentMemoryStore('cli');
     this.brain = new PersonaBrain(persistentMemory);
-    
+
     // Initialize optimized synth processor and memory manager
     this.optimizedZen = new OptimizedZenProcessor(this.brain, {
       maxContextLength: 8000,
@@ -93,7 +93,7 @@ class CLIAIService {
       enableFastSummary: true,
       enableTimeoutFallback: true
     });
-    
+
     this.memoryManager = new AdaptiveMemoryManager(persistentMemory, this.brain, {
       maxContextLength: 8000,
       maxHistoryMessages: 20,
@@ -172,7 +172,7 @@ class CLIAIService {
   async processMessage(userMessage: string) {
     // Add to conversation history
     this.conversationHistory.push({ text: userMessage, timestamp: new Date().toLocaleString() });
-    
+
     // Trim history if too long
     if (this.conversationHistory.length > this.context.settings.maxHistory) {
       this.conversationHistory = this.conversationHistory.slice(-this.context.settings.maxHistory);
@@ -186,7 +186,7 @@ class CLIAIService {
           this.conversationHistory,
           'cli'
         );
-        
+
         // Log performance metrics for debugging
         if (metrics.processingTime > 30000) { // Log if processing took more than 30 seconds
           console.warn(colorize(`⚠️  Slow processing detected: ${metrics.processingTime}ms`, 'yellow'));
@@ -197,7 +197,7 @@ class CLIAIService {
             console.warn(colorize('⚠️  Memory was pruned to improve performance', 'yellow'));
           }
         }
-        
+
         const ts = this.addTimestamps ? `[${new Date().toLocaleString()}] ` : '';
         const display = 'synth';
         return `${display}> ${ts}${response.trim()}`;
@@ -212,8 +212,8 @@ class CLIAIService {
       // default phi3 with ConversationCore
       if (this.core) {
         const sanitized = this.conversationHistory
-            .filter(item => !/^you are\s/i.test(item.text.trim()))
-            .slice(-6);
+          .filter(item => !/^you are\s/i.test(item.text.trim()))
+          .slice(-6);
         const ctx = { history: sanitized } as any;
         const packets = await this.core.process(userMessage, ctx);
         if (packets && packets.length > 0) {
@@ -232,13 +232,15 @@ class CLIAIService {
 
   generateFallbackPackets(message: string) {
     const lower = message.toLowerCase();
-    
+
     if (lower.includes('hello') || lower.includes('hi')) {
       return [{ op: "answer.v1", payload: { content: "Hello! I'm Chatty, your AI assistant. I'm running in terminal mode with advanced capabilities. How can I help you today?" } }];
     }
-    
+
     if (lower.includes('help')) {
-      return [{ op: "answer.v1", payload: { content: `I'm Chatty Advanced CLI with these capabilities:
+      return [{
+        op: "answer.v1", payload: {
+          content: `I'm Chatty Advanced CLI with these capabilities:
 
 🧠 AI Features:
   • Memory System - I remember our conversations
@@ -278,19 +280,24 @@ class CLIAIService {
   /export <id> - Export conversation (json, txt, md)
   /exit        - Exit Chatty
 
-🎯 Just type your message to chat!` } }];
+🎯 Just type your message to chat!` }
+      }];
     }
-    
+
     if (lower.includes('memory')) {
       return [{ op: "answer.v1", payload: { content: `Memory Status:\n  • Conversations stored: ${this.conversationHistory.length}\n  • Memory enabled: ${this.context.settings.enableMemory ? 'Yes' : 'No'}\n  • Max history: ${this.context.settings.maxHistory}` } }];
     }
-    
+
     if (lower.includes('settings')) {
-      return [{ op: "answer.v1", payload: { content: `Current Settings:
+      return [{
+        op: "answer.v1", payload: {
+          content: `Current Settings:
   • Memory: ${this.context.settings.enableMemory ? 'Enabled' : 'Disabled'}
   • Reasoning: ${this.context.settings.enableReasoning ? 'Enabled' : 'Disabled'}
   • File Processing: ${this.context.settings.enableFileProcessing ? 'Enabled' : 'Disabled'}
-  • Max History: ${this.context.settings.maxHistory}` } }];
+  • Max History: ${this.context.settings.maxHistory}`
+        }
+      }];
     }
 
     return [{ op: 'answer.v1', payload: { content: "I'm not sure how to help with that just yet." } }];
@@ -424,10 +431,10 @@ async function main() {
   if (!localModel) {
     const host = process.env.OLLAMA_HOST || 'http://localhost';
     // Suppress logs when in JSON mode to avoid polluting stdout
-    const { child, port } = await ensurePhi3({ 
-      preferredPort: 8003, 
-      host, 
-      silent: jsonOut 
+    const { child, port } = await ensurePhi3({
+      preferredPort: 8003,
+      host,
+      silent: jsonOut
     });
     phiChild = child;
     process.env.OLLAMA_PORT = String(port);
@@ -475,7 +482,7 @@ async function main() {
       " `---' `-' `-'`-'  `-' `-'    `-'   `--'  "
     ].join("\n")
   ];
-  
+
   const readlineMod = await import('readline');
   const BOX_WIDTH = 60;
   function center(s: string) {
@@ -517,7 +524,7 @@ async function main() {
   });
 
   if (!onceMode) {
-  console.log(colorize(`
+    console.log(colorize(`
 🧠 Chatty CLI - Terminal AI Assistant
 =====================================
 
@@ -534,7 +541,7 @@ Type /help to see all available commands.
 
   const ai = new CLIAIService(useFallback, !noTimestamp, modelName);
   if (seatOverride) ai.setModel(seatOverride);
-  
+
   // Initialize file operations commands
   const fileOps = new FileOpsCommands();
   const conversationManager = new ConversationManager();
@@ -554,8 +561,8 @@ Type /help to see all available commands.
           prompt = obj.prompt ?? '';
           if (obj.seat) ai.setModel(obj.seat);
         }
-        
-        
+
+
         const answer = await ai.processMessage(prompt);
         const out = jsonOut ? { answer, model: ai.getModel() } : answer;
         process.stdout.write(JSON.stringify(out));
@@ -565,7 +572,7 @@ Type /help to see all available commands.
       }
       return;
     }
-    
+
     // Handle stdin input for once mode
     let stdinData = '';
     process.stdin.on('data', chunk => (stdinData += chunk));
@@ -577,11 +584,11 @@ Type /help to see all available commands.
           prompt = obj.prompt ?? '';
           if (obj.seat) ai.setModel(obj.seat);
         }
-        
+
         const answer = await ai.processMessage(prompt);
         const out = jsonOut ? { answer, model: ai.getModel() } : answer;
         process.stdout.write(JSON.stringify(out));
-      } catch (err:any) {
+      } catch (err: any) {
         process.stderr.write(String(err));
         process.exit(1);
       }
@@ -593,13 +600,13 @@ Type /help to see all available commands.
   // --- Conversation management -------------------------------------------
   let lastSender: string | null = null;
   let lastSenderAt = 0; // epoch ms
-  const messageQueue: Array<{msg: any, priority: number, timestamp: number}> = [];
+  const messageQueue: Array<{ msg: any, priority: number, timestamp: number }> = [];
   const MAX_QUEUE_SIZE = 3;
   const PROCESSING_COOLDOWN = 5000; // 5 seconds between processing messages
   let isProcessing = false;
 
   // use readlineMod for CLI prompt setup
-  
+
   // Use current OS username for a personalized prompt: "{username}> "
   const os = await import('os');
   const who = os.userInfo().username || process.env.USER || 'user';
@@ -614,23 +621,23 @@ Type /help to see all available commands.
   // Queue processing function
   async function processMessageQueue() {
     if (isProcessing || messageQueue.length === 0) return;
-    
+
     isProcessing = true;
-    
+
     // Sort by priority (higher number = higher priority)
     messageQueue.sort((a, b) => b.priority - a.priority);
-    
+
     // Process up to 2 messages at once
     const toProcess = messageQueue.splice(0, 2);
-    
-    for (const {msg} of toProcess) {
+
+    for (const { msg } of toProcess) {
       await processExternalMessage(msg);
       // Small delay between messages to prevent overwhelming
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
-    
+
     isProcessing = false;
-    
+
     // Process remaining queue after cooldown
     if (messageQueue.length > 0) {
       setTimeout(processMessageQueue, PROCESSING_COOLDOWN);
@@ -652,7 +659,7 @@ Type /help to see all available commands.
 
     // Analyze message with emotional watchdog
     const emotionalAnalysis = emotionalWatchdog.analyzeMessage(msg.text);
-    
+
     // Check if user should be contained
     const userId = msg.sender.toLowerCase();
     if (shouldTriggerContainment(emotionalAnalysis.crisisLevel, emotionalAnalysis.emotionalWeight, userId)) {
@@ -670,14 +677,14 @@ Type /help to see all available commands.
       if (containmentStatus.isContained && containmentStatus.record) {
         const duration = formatContainmentDuration(containmentStatus.duration || 0);
         console.log(colorize(`🚫 User ${msg.sender} is in containment (${duration}) - Reason: ${containmentStatus.record.trigger_reason}`, 'red'));
-        
+
         // Provide limited response for contained users
         console.log(colorize("I'm here to support you, but I need to ensure your safety first. Please reach out to a crisis helpline or trusted person.", 'yellow'));
         rl.prompt();
         return;
       }
     }
-    
+
     // Process turn with turn-taking system
     const turnResult = turnTakingSystem.processTurn(msg.sender, msg.text);
 
@@ -691,7 +698,7 @@ Type /help to see all available commands.
     // Check for crisis situation
     if (emotionalAnalysis.crisisLevel === 'critical') {
       console.log(colorize('🚨 CRISIS DETECTED - Activating emergency response protocol', 'red'));
-      
+
       if (emotionalAnalysis.recommendedResponse) {
         console.log(colorize(`Emergency Response: ${emotionalAnalysis.recommendedResponse.message}`, 'red'));
         if (emotionalAnalysis.recommendedResponse.followUp.length > 0) {
@@ -700,7 +707,7 @@ Type /help to see all available commands.
           });
         }
       }
-      
+
       // Don't process further in crisis mode - focus on safety
       rl.prompt();
       return;
@@ -748,20 +755,20 @@ Be thoughtful, wise, and supportive.`;
     try {
       const resp = await ai.processMessage(responsePrompt);
       console.log(resp);
-      
+
       // Send reply back to external system if it's Katana
       if (turnResult.speaker.id === 'katana') {
         await sendReplyToKatana(resp, ai.getModel(), msg.sender);
       }
     } catch (error: any) {
       console.log(colorize(`Error processing response: ${error.message}`, 'red'));
-      
+
       // Provide fallback response in crisis situations
       if (emotionalAnalysis.crisisLevel === 'high') {
         console.log(colorize("I'm here with you. You're not alone in this. Please reach out to someone you trust or a crisis helpline.", 'yellow'));
       }
     }
-    
+
     // Restore the user prompt after processing external message
     rl.prompt();
   }
@@ -769,7 +776,7 @@ Be thoughtful, wise, and supportive.`;
   // Send reply to Katana with retry logic
   async function sendReplyToKatana(response: string, model: string, fromSender: string): Promise<void> {
     const KATANA_ENDPOINT = process.env.KATANA_ENDPOINT || 'https://venues-favors-confidentiality-worked.trycloudflare.com/chatty';
-    
+
     async function postWithRetry(payload: any, attempts = 3, delayMs = 1000): Promise<void> {
       for (let i = 0; i < attempts; i++) {
         try {
@@ -788,7 +795,7 @@ Be thoughtful, wise, and supportive.`;
         }
       }
     }
-    
+
     await postWithRetry({
       answer: response,
       model: model,
@@ -805,32 +812,32 @@ Be thoughtful, wise, and supportive.`;
   chatQueue.on('prompt', async (msg: { sender: string; text: string; seat?: string }) => {
     const now = Date.now();
     const senderLower = msg.sender.toLowerCase();
-    
+
     // Determine priority (higher number = higher priority)
     let priority = 1; // default for unknown entities
     if (!senderLower.includes('ai') && !senderLower.includes('bot')) priority = 5; // human users - highest priority
     else if (senderLower === 'katana') priority = 4; // Katana - high priority
     else if (['assistant', 'claude', 'gpt', 'copilot'].includes(senderLower)) priority = 3; // known AIs - medium priority
-    
+
     // Check if queue is full
     if (messageQueue.length >= MAX_QUEUE_SIZE) {
       console.log(colorize(`[Chatty] Queue full! Dropping message from ${msg.sender}`, 'red'));
       return;
     }
-    
+
     // Add to queue
-    messageQueue.push({msg, priority, timestamp: now});
-    
+    messageQueue.push({ msg, priority, timestamp: now });
+
     // Start processing if not already processing
     if (!isProcessing) {
       setTimeout(processMessageQueue, 1000); // 1 second delay before starting
     }
   });
-  
+
 
   rl.on('line', async (input: string) => {
     const message = input.trim();
-    
+
     // Slash commands handled before AI processing
     if (message.startsWith('/ts')) {
       ai.addTimestamps = !ai.addTimestamps;
@@ -844,13 +851,13 @@ Be thoughtful, wise, and supportive.`;
       const parts = message.split(/\s+/);
       const command = parts[1];
       const args = parts.slice(2);
-      
+
       if (!command) {
         console.log(fileOps.showHelp());
         rl.prompt();
         return;
       }
-      
+
       try {
         const result = await fileOps.handleCommand(command, args);
         console.log(result);
@@ -907,7 +914,7 @@ Be thoughtful, wise, and supportive.`;
         rl.prompt();
         return;
       }
-      
+
       const personaId = parts[1];
       const success = ai.optimizedZen.setPersona(personaId);
       if (success) {
@@ -924,11 +931,11 @@ Be thoughtful, wise, and supportive.`;
     if (message === '/models') {
       if (ai.getModel() === 'zen') {
         try {
-          const cfg = loadSeatConfig();
+          const cfg = await loadSeatConfig();
           const codingModel = (cfg.coding as any)?.tag ?? (cfg.coding as any) ?? 'deepseek-coder';
           const creativeModel = (cfg.creative as any)?.tag ?? (cfg.creative as any) ?? 'mistral';
           const smalltalkModel = (cfg.smalltalk as any)?.tag ?? (cfg.smalltalk as any) ?? 'phi3';
-          
+
           console.log(colorize(`🧠 Current Zen Pipeline Models:\n  • Coding: ${codingModel}\n  • Creative: ${creativeModel}\n  • Smalltalk: ${smalltalkModel}`, 'cyan'));
         } catch (error) {
           console.log(colorize('🧠 Zen mode active, but could not load model configuration', 'yellow'));
@@ -954,13 +961,13 @@ Be thoughtful, wise, and supportive.`;
     if (message === '/status') {
       const ctx: any = ai.getContext();
       const memoryCount = ctx.history.length;
-      
+
       let memoryInfo = `Messages in history: ${memoryCount}`;
       if (ai.core && ai.core.getMemoryStore() && typeof (ai.core.getMemoryStore() as any).getStats === 'function') {
         const stats = (ai.core.getMemoryStore() as any).getStats('cli');
         memoryInfo = `Persistent SQLite Memory:\n  • Messages: ${stats.messageCount}\n  • Triples: ${stats.tripleCount}\n  • Persona keys: ${stats.personaKeys}`;
       }
-      
+
       console.log(colorize(`🩺 Status Report:\n  • ${memoryInfo}\n  • Active model: ${ai.getModel()}`, 'cyan'));
       rl.prompt();
       return;
@@ -969,11 +976,11 @@ Be thoughtful, wise, and supportive.`;
     if (message === '/performance') {
       const metrics = ai.optimizedZen?.getMetrics();
       const memoryHealth = ai.memoryManager?.getMemoryHealth();
-      
+
       if (metrics) {
         console.log(colorize(`⚡ Performance Metrics:\n  • Last processing time: ${metrics.processingTime}ms\n  • Context length: ${metrics.contextLength} chars\n  • History length: ${metrics.historyLength} messages\n  • Fallback used: ${metrics.fallbackUsed ? 'Yes' : 'No'}\n  • Memory pruned: ${metrics.memoryPruned ? 'Yes' : 'No'}`, 'cyan'));
       }
-      
+
       if (memoryHealth) {
         const statusColor = memoryHealth.status === 'healthy' ? 'green' : memoryHealth.status === 'warning' ? 'yellow' : 'red';
         console.log(colorize(`🧠 Memory Health: ${memoryHealth.status.toUpperCase()}`, statusColor));
@@ -984,7 +991,7 @@ Be thoughtful, wise, and supportive.`;
           console.log(colorize(`  Recommendations: ${memoryHealth.recommendations.join(', ')}`, 'blue'));
         }
       }
-      
+
       rl.prompt();
       return;
     }
@@ -1002,37 +1009,37 @@ Be thoughtful, wise, and supportive.`;
       const parts = message.split(/\s+/);
       const key = parts[1];
       const value = parts[2];
-      
+
       if (!key || value === undefined) {
         console.log(colorize('Usage: /set <setting_key> <value>', 'yellow'));
         console.log(colorize('Use /settings to see all available settings', 'yellow'));
         rl.prompt();
         return;
       }
-      
+
       try {
         // Parse value based on type
         let parsedValue: any = value;
-        
+
         // Try to parse as boolean
         if (value.toLowerCase() === 'true') parsedValue = true;
         else if (value.toLowerCase() === 'false') parsedValue = false;
         // Try to parse as number
         else if (!isNaN(Number(value))) parsedValue = Number(value);
-        
+
         // Validate setting
         if (!settingsManager.validateSetting(key as any, parsedValue)) {
           console.log(colorize(`Invalid value for setting '${key}': ${value}`, 'red'));
           rl.prompt();
           return;
         }
-        
+
         await settingsManager.set(key as any, parsedValue);
         console.log(colorize(`✅ Setting '${key}' updated to: ${parsedValue}`, 'green'));
       } catch (error: any) {
         console.log(colorize(`Error updating setting: ${error.message}`, 'red'));
       }
-      
+
       rl.prompt();
       return;
     }
@@ -1045,7 +1052,7 @@ Be thoughtful, wise, and supportive.`;
       } catch (error: any) {
         console.log(colorize(`Error resetting settings: ${error.message}`, 'red'));
       }
-      
+
       rl.prompt();
       return;
     }
@@ -1054,16 +1061,16 @@ Be thoughtful, wise, and supportive.`;
     if (message === '/emotional-state') {
       const emotionalState = emotionalWatchdog.getEmotionalState();
       const turnContext = turnTakingSystem.getTurnContext();
-      
+
       console.log(colorize('🧠 Emotional & Turn-Taking Status:', 'cyan'));
-      console.log(colorize(`  Emotional State: ${emotionalState.current} (${emotionalState.trend})`, 
-        emotionalState.current === 'crisis' ? 'red' : 
-        emotionalState.current === 'overwhelmed' ? 'yellow' : 'green'));
+      console.log(colorize(`  Emotional State: ${emotionalState.current} (${emotionalState.trend})`,
+        emotionalState.current === 'crisis' ? 'red' :
+          emotionalState.current === 'overwhelmed' ? 'yellow' : 'green'));
       console.log(colorize(`  Conversation Flow: ${turnContext.conversationFlow}`, 'cyan'));
       console.log(colorize(`  Response Mode: ${turnContext.responseMode}`, 'cyan'));
       console.log(colorize(`  Current Speaker: ${turnContext.currentSpeaker?.name || 'none'}`, 'cyan'));
       console.log(colorize(`  Triggers: ${emotionalState.triggers.join(', ') || 'none'}`, 'cyan'));
-      
+
       if (emotionalWatchdog.isInCrisisMode()) {
         console.log(colorize('  ⚠️  CRISIS MODE ACTIVE', 'red'));
         const suggestions = emotionalWatchdog.getCrisisRecoverySuggestions();
@@ -1074,7 +1081,7 @@ Be thoughtful, wise, and supportive.`;
           });
         }
       }
-      
+
       rl.prompt();
       return;
     }
@@ -1082,19 +1089,19 @@ Be thoughtful, wise, and supportive.`;
     // Speaker stats command
     if (message === '/speakers') {
       const speakerStats = turnTakingSystem.getSpeakerStats();
-      
+
       console.log(colorize('👥 Active Speakers:', 'cyan'));
       if (speakerStats.length === 0) {
         console.log(colorize('  No active speakers', 'dim'));
       } else {
         speakerStats.forEach(stat => {
-          const color = stat.speaker.type === 'human' ? 'green' : 
-                       stat.speaker.type === 'ai' ? 'blue' : 'yellow';
+          const color = stat.speaker.type === 'human' ? 'green' :
+            stat.speaker.type === 'ai' ? 'blue' : 'yellow';
           console.log(colorize(`  ${stat.speaker.name} (${stat.speaker.type})`, color));
           console.log(colorize(`    Messages: ${stat.messageCount} | Last: ${stat.lastMessage}`, 'dim'));
         });
       }
-      
+
       rl.prompt();
       return;
     }
@@ -1103,22 +1110,22 @@ Be thoughtful, wise, and supportive.`;
     if (message === '/crisis-recovery') {
       if (emotionalWatchdog.isInCrisisMode()) {
         console.log(colorize('🆘 Crisis Recovery Mode Activated', 'red'));
-        
+
         const strategies = turnTakingSystem.getGroundingStrategies();
         console.log(colorize('Grounding Strategies:', 'yellow'));
         strategies.forEach((strategy, index) => {
           console.log(colorize(`  ${index + 1}. ${strategy}`, 'yellow'));
         });
-        
+
         // Reset emotional state
         emotionalWatchdog.resetEmotionalState();
         turnTakingSystem.resetTurnContext();
-        
+
         console.log(colorize('✅ Emotional state reset to stable', 'green'));
       } else {
         console.log(colorize('ℹ️  System is not in crisis mode', 'cyan'));
       }
-      
+
       rl.prompt();
       return;
     }
@@ -1127,13 +1134,13 @@ Be thoughtful, wise, and supportive.`;
     if (message === '/containment') {
       const stats = getContainmentStats();
       const activeContainments = getAllActiveContainments();
-      
+
       console.log(colorize('🚨 Containment Status:', 'cyan'));
       console.log(colorize(`  Total Containments: ${stats.totalContainments}`, 'white'));
       console.log(colorize(`  Active: ${stats.activeContainments}`, 'red'));
       console.log(colorize(`  Resolved: ${stats.resolvedContainments}`, 'green'));
       console.log(colorize(`  Average Duration: ${formatContainmentDuration(stats.averageDuration)}`, 'cyan'));
-      
+
       if (activeContainments.length > 0) {
         console.log(colorize('\n  Active Containments:', 'red'));
         activeContainments.forEach(containment => {
@@ -1141,7 +1148,7 @@ Be thoughtful, wise, and supportive.`;
           console.log(colorize(`    ${containment.user_id}: ${duration} - ${containment.trigger_reason}`, 'yellow'));
         });
       }
-      
+
       rl.prompt();
       return;
     }
@@ -1150,13 +1157,13 @@ Be thoughtful, wise, and supportive.`;
     if (message.startsWith('/containment-check')) {
       const parts = message.split(/\s+/);
       const userId = parts[1];
-      
+
       if (!userId) {
         console.log(colorize('Usage: /containment-check <user_id>', 'yellow'));
         rl.prompt();
         return;
       }
-      
+
       const status = getContainmentStatus(userId);
       if (status.isContained && status.record) {
         const duration = formatContainmentDuration(status.duration || 0);
@@ -1167,7 +1174,7 @@ Be thoughtful, wise, and supportive.`;
       } else {
         console.log(colorize(`✅ User ${userId} is not in containment`, 'green'));
       }
-      
+
       rl.prompt();
       return;
     }
@@ -1176,20 +1183,20 @@ Be thoughtful, wise, and supportive.`;
     if (message.startsWith('/containment-resolve')) {
       const parts = message.split(/\s+/);
       const userId = parts[1];
-      
+
       if (!userId) {
         console.log(colorize('Usage: /containment-resolve <user_id>', 'yellow'));
         rl.prompt();
         return;
       }
-      
+
       try {
         resolveContainment(userId);
         console.log(colorize(`✅ Containment resolved for user ${userId}`, 'green'));
       } catch (error: any) {
         console.log(colorize(`Error resolving containment: ${error.message}`, 'red'));
       }
-      
+
       rl.prompt();
       return;
     }
@@ -1199,13 +1206,13 @@ Be thoughtful, wise, and supportive.`;
       const parts = message.split(/\s+/);
       const userId = parts[1];
       const limit = parseInt(parts[2]) || 5;
-      
+
       if (!userId) {
         console.log(colorize('Usage: /containment-history <user_id> [limit]', 'yellow'));
         rl.prompt();
         return;
       }
-      
+
       const history = getContainmentHistory(userId, limit);
       if (history.length === 0) {
         console.log(colorize(`No containment history found for user ${userId}`, 'cyan'));
@@ -1214,10 +1221,10 @@ Be thoughtful, wise, and supportive.`;
         history.forEach((record, index) => {
           const status = record.active ? 'ACTIVE' : 'RESOLVED';
           const statusColor = record.active ? 'red' : 'green';
-          const duration = record.resolved_at ? 
+          const duration = record.resolved_at ?
             formatContainmentDuration(new Date(record.resolved_at).getTime() - new Date(record.triggered_at).getTime()) :
             formatContainmentDuration(Date.now() - new Date(record.triggered_at).getTime());
-          
+
           console.log(colorize(`  ${index + 1}. [${status}] ${duration}`, statusColor));
           console.log(colorize(`     Reason: ${record.trigger_reason}`, 'yellow'));
           console.log(colorize(`     Triggered: ${record.triggered_at}`, 'dim'));
@@ -1227,7 +1234,7 @@ Be thoughtful, wise, and supportive.`;
           console.log('');
         });
       }
-      
+
       rl.prompt();
       return;
     }
@@ -1236,17 +1243,17 @@ Be thoughtful, wise, and supportive.`;
     if (message.startsWith('/save')) {
       const parts = message.split(/\s+/);
       const filename = parts[1];
-      
+
       if (!filename) {
         console.log(colorize('Usage: /save <filename> [title] [description]', 'yellow'));
         rl.prompt();
         return;
       }
-      
+
       try {
         const title = parts[2] || `Conversation ${new Date().toLocaleDateString()}`;
         const description = parts.slice(3).join(' ') || 'Saved conversation from Chatty CLI';
-        
+
         const conversationId = await conversationManager.saveConversation(
           ai.getConversationHistory(),
           {
@@ -1255,7 +1262,7 @@ Be thoughtful, wise, and supportive.`;
             model: ai.getModel()
           }
         );
-        
+
         console.log(colorize(`💾 Conversation saved successfully!`, 'green'));
         console.log(colorize(`   ID: ${conversationId}`, 'cyan'));
         console.log(colorize(`   Title: ${title}`, 'cyan'));
@@ -1263,7 +1270,7 @@ Be thoughtful, wise, and supportive.`;
       } catch (error: any) {
         console.log(colorize(`Error saving conversation: ${error.message}`, 'red'));
       }
-      
+
       rl.prompt();
       return;
     }
@@ -1272,20 +1279,20 @@ Be thoughtful, wise, and supportive.`;
     if (message.startsWith('/load')) {
       const parts = message.split(/\s+/);
       const identifier = parts[1];
-      
+
       if (!identifier) {
         console.log(colorize('Usage: /load <conversation_id_or_filename>', 'yellow'));
         console.log(colorize('Use /list to see available conversations', 'yellow'));
         rl.prompt();
         return;
       }
-      
+
       try {
         const conversation = await conversationManager.loadConversation(identifier);
-        
+
         // Clear current conversation
         ai.clearHistory();
-        
+
         // Load conversation messages
         for (const msg of conversation.messages) {
           ai.getConversationHistory().push({
@@ -1293,13 +1300,13 @@ Be thoughtful, wise, and supportive.`;
             timestamp: msg.timestamp
           });
         }
-        
+
         console.log(colorize(`📂 Conversation loaded successfully!`, 'green'));
         console.log(colorize(`   Title: ${conversation.title}`, 'cyan'));
         console.log(colorize(`   Messages: ${conversation.messages.length}`, 'cyan'));
         console.log(colorize(`   Model: ${conversation.metadata.model}`, 'cyan'));
         console.log(colorize(`   Created: ${conversation.createdAt}`, 'cyan'));
-        
+
         // Switch to the model used in the conversation if different
         if (conversation.metadata.model !== ai.getModel()) {
           ai.setModel(conversation.metadata.model);
@@ -1308,7 +1315,7 @@ Be thoughtful, wise, and supportive.`;
       } catch (error: any) {
         console.log(colorize(`Error loading conversation: ${error.message}`, 'red'));
       }
-      
+
       rl.prompt();
       return;
     }
@@ -1317,13 +1324,13 @@ Be thoughtful, wise, and supportive.`;
     if (message === '/list') {
       try {
         const conversations = await conversationManager.listConversations();
-        
+
         if (conversations.length === 0) {
           console.log(colorize('📂 No saved conversations found.', 'yellow'));
         } else {
           console.log(colorize(`📂 Saved Conversations (${conversations.length}):`, 'cyan'));
           console.log('');
-          
+
           for (const conv of conversations.slice(0, 10)) { // Show first 10
             const date = new Date(conv.lastModified).toLocaleDateString();
             console.log(colorize(`  ${conv.id}`, 'green'));
@@ -1334,7 +1341,7 @@ Be thoughtful, wise, and supportive.`;
             }
             console.log('');
           }
-          
+
           if (conversations.length > 10) {
             console.log(colorize(`  ... and ${conversations.length - 10} more conversations`, 'dim'));
           }
@@ -1342,7 +1349,7 @@ Be thoughtful, wise, and supportive.`;
       } catch (error: any) {
         console.log(colorize(`Error listing conversations: ${error.message}`, 'red'));
       }
-      
+
       rl.prompt();
       return;
     }
@@ -1351,20 +1358,20 @@ Be thoughtful, wise, and supportive.`;
     if (message.startsWith('/delete')) {
       const parts = message.split(/\s+/);
       const identifier = parts[1];
-      
+
       if (!identifier) {
         console.log(colorize('Usage: /delete <conversation_id_or_filename>', 'yellow'));
         rl.prompt();
         return;
       }
-      
+
       try {
         await conversationManager.deleteConversation(identifier);
         console.log(colorize(`🗑️  Conversation deleted successfully!`, 'green'));
       } catch (error: any) {
         console.log(colorize(`Error deleting conversation: ${error.message}`, 'red'));
       }
-      
+
       rl.prompt();
       return;
     }
@@ -1374,29 +1381,29 @@ Be thoughtful, wise, and supportive.`;
       const parts = message.split(/\s+/);
       const identifier = parts[1];
       const format = parts[2] || 'json';
-      
+
       if (!identifier) {
         console.log(colorize('Usage: /export <conversation_id> [format]', 'yellow'));
         console.log(colorize('Formats: json, txt, md', 'yellow'));
         rl.prompt();
         return;
       }
-      
+
       try {
         const content = await conversationManager.exportConversation(identifier, format as any);
         const filename = `${identifier}.${format}`;
-        
+
         // Write to current directory
         const fs = await import('node:fs');
         await fs.promises.writeFile(filename, content);
-        
+
         console.log(colorize(`📤 Conversation exported successfully!`, 'green'));
         console.log(colorize(`   File: ${filename}`, 'cyan'));
         console.log(colorize(`   Format: ${format}`, 'cyan'));
       } catch (error: any) {
         console.log(colorize(`Error exporting conversation: ${error.message}`, 'red'));
       }
-      
+
       rl.prompt();
       return;
     }
@@ -1406,7 +1413,7 @@ Be thoughtful, wise, and supportive.`;
       rl.close();
       return;
     }
-    
+
     if (message === '/help') {
       console.log(colorize(`I'm Chatty Advanced CLI with these capabilities:
 
@@ -1459,21 +1466,21 @@ Be thoughtful, wise, and supportive.`;
       rl.prompt();
       return;
     }
-    
+
     if (message === '') {
       rl.prompt();
       return;
     }
-    
+
     console.log(colorize('🤔 Processing...', 'blue'));
-    
+
     try {
       const response = await ai.processMessage(message);
       console.log(response);
     } catch (error: any) {
       console.error(colorize(`Error: ${error?.message || error}`, 'red'));
     }
-    
+
     rl.prompt();
   });
 

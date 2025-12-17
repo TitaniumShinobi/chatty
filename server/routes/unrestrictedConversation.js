@@ -37,7 +37,8 @@ router.post('/unrestricted', async (req, res) => {
       constructCallsign,
       message,
       req.user.id,
-      conversationId || `${constructCallsign}_${Date.now()}`
+      conversationId || `${constructCallsign}_${Date.now()}`,
+      metadata.identity || null
     );
 
     console.timeEnd(`🧠 [API] Unrestricted conversation for ${constructCallsign}`);
@@ -406,7 +407,8 @@ router.post('/test', async (req, res) => {
           constructCallsign,
           query,
           req.user.id,
-          `test_${Date.now()}`
+          `test_${Date.now()}`,
+          null
         );
 
         results.push({

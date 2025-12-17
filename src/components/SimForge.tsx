@@ -2699,7 +2699,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                           }}
                         >
                           <option>Examples</option>
-                          <option value="katana-chatty-bridge">Katana ↔ Chatty Bridge</option>
+                          <option value="katana-chatty-bridge">External ↔ Chatty Bridge</option>
                           <option>Weather API</option>
                           <option>Database API</option>
                         </select>

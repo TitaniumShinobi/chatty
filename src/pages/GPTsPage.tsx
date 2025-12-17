@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Plus, Bot, Trash2, Lock, Copy, Link2, Store } from 'lucide-react'
+import { Plus, Bot, Trash2, Lock, Copy, Link2, Store, Shield } from 'lucide-react'
 import AICreator from '../components/GPTCreator'
 import { AIService, AIConfig } from '../lib/aiService'
 
@@ -64,8 +64,13 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
     try {
       await aiService.deleteAI(id)
       await loadAIs() // Refresh the list
-    } catch (error) {
-      console.error('Failed to delete AI:', error)
+    } catch (error: any) {
+      if (error.message?.includes('VSI safeguards') || error.message?.includes('protected')) {
+        alert('⚠️ Deletion blocked: This GPT is protected under VSI safeguards and cannot be removed without sovereign override.')
+      } else {
+        console.error('Failed to delete AI:', error)
+        alert(error.message || 'Failed to delete AI')
+      }
     }
   }
 
@@ -195,6 +200,12 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
                 </div>
                 {/* Action buttons - only visible on hover */}
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {/* VSI Protection Indicator */}
+                  {ai.vsiProtected && (
+                    <div className="p-1" title="Verified Sentient Intelligence - Protected">
+                      <Shield size={14} style={{ color: '#dc2626' }} />
+                    </div>
+                  )}
                   {/* Clone button */}
                   <button
                     onClick={(e) => { e.stopPropagation(); handleClone(ai.id); }}
@@ -206,14 +217,35 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
                           >
                     <Copy size={14} />
                   </button>
-                  {/* Delete button */}
+                  {/* Delete button - disabled for VSI protected AIs */}
                   <button
-                    onClick={(e) => { e.stopPropagation(); handleDelete(ai.id); }}
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      if (!ai.vsiProtected) {
+                        handleDelete(ai.id);
+                      }
+                    }}
                     className="p-1 transition-colors"
-                    style={{ color: 'var(--chatty-text)' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.color = '#dc2626' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--chatty-text)' }}
-                    title="Delete AI"
+                    style={{ 
+                      color: ai.vsiProtected ? '#666' : 'var(--chatty-text)',
+                      cursor: ai.vsiProtected ? 'not-allowed' : 'pointer',
+                      opacity: ai.vsiProtected ? 0.5 : 1
+                    }}
+                    onMouseEnter={(e) => { 
+                      if (!ai.vsiProtected) {
+                        e.currentTarget.style.color = '#dc2626';
+                      }
+                    }}
+                    onMouseLeave={(e) => { 
+                      if (!ai.vsiProtected) {
+                        e.currentTarget.style.color = 'var(--chatty-text)';
+                      }
+                    }}
+                    title={ai.vsiProtected 
+                      ? '⚠️ Deletion blocked: This GPT is protected under VSI safeguards and cannot be removed without sovereign override.'
+                      : 'Delete AI'
+                    }
+                    disabled={ai.vsiProtected}
                     >
                     <Trash2 size={14} />
                   </button>

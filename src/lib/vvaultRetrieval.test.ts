@@ -1,12 +1,12 @@
 import { VVAULTRetrievalWrapper } from './vvaultRetrieval';
 
 const buildResponse = (body: any, ok = true, status = 200): Response =>
-  ({
-    ok,
-    status,
-    json: async () => body,
-    text: async () => JSON.stringify(body),
-  } as unknown as Response);
+({
+  ok,
+  status,
+  json: async () => body,
+  text: async () => JSON.stringify(body),
+} as unknown as Response);
 
 describe('VVAULTRetrievalWrapper', () => {
   it('builds query with tone hints and tags', async () => {
@@ -28,8 +28,8 @@ describe('VVAULTRetrievalWrapper', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const calledUrl = fetchMock.mock.calls[0][0] as string;
-    expect(calledUrl).toContain('tone%20feral');
-    expect(calledUrl).toContain('tags%20devon');
+    expect(calledUrl).toContain('tone+feral');
+    expect(calledUrl).toContain('tags+devon');
   });
 
   it('filters results using metadata tone tags', async () => {

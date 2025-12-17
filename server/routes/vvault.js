@@ -6,6 +6,17 @@ import User from "../models/User.js";
 import { createPrimaryConversationFile } from "../services/importService.js";
 import multer from "multer";
 
+// Timestamp all console output from this module
+const patchConsoleWithTimestamp = () => {
+  if (console.__tsPatched) return;
+  const withTs = (fn) => (...args) => fn(new Date().toISOString(), ...args);
+  console.log = withTs(console.log.bind(console));
+  console.error = withTs(console.error.bind(console));
+  console.warn = withTs(console.warn.bind(console));
+  console.__tsPatched = true;
+};
+patchConsoleWithTimestamp();
+
 const require = createRequire(import.meta.url);
 const router = express.Router();
 
@@ -36,20 +47,20 @@ let modulesLoaded = false;
 
 async function loadVVAULTModules() {
   if (modulesLoaded) return;
-  
+
   try {
     const readConv = require("../../vvaultConnector/readConversations.js");
     readConversations = readConv.readConversations;
-    
+
     const readChar = require("../../vvaultConnector/readCharacterProfile.js");
     readCharacterProfile = readChar.readCharacterProfile;
-    
+
     const connector = require("../../vvaultConnector/index.js");
     VVAULTConnector = connector.VVAULTConnector;
-    
+
     const config = require("../../vvaultConnector/config.js");
     VVAULT_ROOT = config.VVAULT_ROOT;
-    
+
     modulesLoaded = true;
   } catch (error) {
     console.error('❌ [VVAULT] Failed to load modules:', error);
@@ -137,7 +148,7 @@ function buildTestMemoryFixtures() {
       }
     },
     {
-      context: "I vow to always be direct and honest with you, Katana. No sugar-coating, no fluff.",
+      context: "I vow to always be direct and honest with you. No sugar-coating, no fluff.",
       response: "I appreciate that vow. Directness is what I value most. I'll hold you to it.",
       timestamp: isoDaysAgo(10),
       metadata: {
@@ -215,7 +226,7 @@ function normalizeConstructCallsigns(rawCallsign = '') {
   const callsigns = new Set();
   const trimmed = (rawCallsign || '').trim();
   if (!trimmed) {
-    return ['katana-001', 'gpt-katana-001'];
+    return [];
   }
   callsigns.add(trimmed);
   if (trimmed.startsWith('gpt-')) {
@@ -283,7 +294,7 @@ router.get("/conversations", async (req, res) => {
       await loadVVAULTModules();
       console.log(`✅ [VVAULT API] VVAULT modules loaded successfully`);
       console.log(`📚 [VVAULT API] VVAULT_ROOT = ${VVAULT_ROOT}`);
-      
+
       if (!readConversations) {
         throw new Error('readConversations function not loaded after module load');
       }
@@ -308,13 +319,13 @@ router.get("/conversations", async (req, res) => {
         console.warn(`⚠️ [VVAULT API] Failed to resolve VVAULT user ID:`, resolveError.message);
       }
     }
-    
+
     // Fallback to email if resolution failed (but this should rarely happen)
     if (!lookupId) {
       lookupId = email !== '(no req.user.email)' ? email : userId;
       console.warn(`⚠️ [VVAULT API] Using fallback lookupId: ${lookupId}`);
     }
-    
+
     if (!lookupId || lookupId === '(no req.user.email)') {
       throw new Error('User ID is required. Cannot read conversations without user identity.');
     }
@@ -322,15 +333,15 @@ router.get("/conversations", async (req, res) => {
     let conversations = [];
     try {
       console.log(`🔍 [VVAULT API] Calling readConversations with lookupId: ${lookupId}`);
-       // #region agent log
+      // #region agent log
       const fs = require('fs');
       const logPath = '/Users/devonwoodson/Documents/GitHub/.cursor/debug.log';
-      const logEntry = JSON.stringify({location:'vvault.js:306',message:'VVAULT API: calling readConversations',data:{lookupId,email:req.user?.email,userId},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'I'}) + '\n';
+      const logEntry = JSON.stringify({ location: 'vvault.js:306', message: 'VVAULT API: calling readConversations', data: { lookupId, email: req.user?.email, userId }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run2', hypothesisId: 'I' }) + '\n';
       fs.appendFileSync(logPath, logEntry);
       // #endregion
       conversations = await readConversations(lookupId);
       // #region agent log
-      const logEntry2 = JSON.stringify({location:'vvault.js:307',message:'VVAULT API: readConversations returned',data:{count:conversations.length,conversationIds:conversations.map(c=>c.sessionId),conversationTitles:conversations.map(c=>c.title)},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'I'}) + '\n';
+      const logEntry2 = JSON.stringify({ location: 'vvault.js:307', message: 'VVAULT API: readConversations returned', data: { count: conversations.length, conversationIds: conversations.map(c => c.sessionId), conversationTitles: conversations.map(c => c.title) }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run2', hypothesisId: 'I' }) + '\n';
       fs.appendFileSync(logPath, logEntry2);
       // #endregion
       console.log(`📥 [VVAULT API] readConversations returned ${Array.isArray(conversations) ? conversations.length : 'non-array'} conversations`);
@@ -350,12 +361,12 @@ router.get("/conversations", async (req, res) => {
     console.error("❌ [VVAULT API] Error message:", error?.message);
     console.error("❌ [VVAULT API] Error name:", error?.name);
     console.error("❌ [VVAULT API] User info:", { userId, email: req.user?.email, linkedVvaultUserId });
-    
+
     // In development, return detailed error for debugging
     // In production, return empty conversations so app can still function
     if (process.env.NODE_ENV === 'development') {
-      res.status(500).json({ 
-        ok: false, 
+      res.status(500).json({
+        ok: false,
         error: "Failed to read VVAULT conversations",
         details: error?.message || 'Unknown error',
         name: error?.name,
@@ -458,26 +469,26 @@ router.post("/conversations", async (req, res) => {
   console.log(`🔍 [VVAULT API] Request body:`, req.body);
   console.log(`🔍 [VVAULT API] Auth status - req.user:`, req.user ? 'present' : 'missing');
   console.log(`🔍 [VVAULT API] req.user details:`, req.user ? { id: req.user.id || req.user.sub, email: req.user.email } : 'none');
-  
+
   // Check if auth middleware passed
   if (!req.user) {
     console.log(`❌ [VVAULT API] POST /conversations - req.user is missing, auth middleware may have failed`);
     return res.status(401).json({ ok: false, error: "Authentication required" });
   }
-  
+
   const userId = validateUser(res, req.user);
   if (!userId) {
     console.log(`❌ [VVAULT API] POST /conversations - validateUser returned null, response already sent`);
     return;
   }
-  
+
   console.log(`✅ [VVAULT API] POST /conversations - User validated: ${userId}`);
 
   // CRITICAL: Always use constructCallsign format (e.g., "synth-001"), never just "synth"
   // Per rubric: instances/{constructCallsign}/ - must include callsign
   const { sessionId, title = "Chat with Synth", constructId = "synth-001" } = req.body || {};
   const session = sessionId || `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-  
+
   console.log(`🔍 [VVAULT API] Creating conversation with:`, { sessionId: session, title, constructId, userId, email: req.user?.email });
 
   try {
@@ -491,7 +502,7 @@ router.post("/conversations", async (req, res) => {
       console.error(`❌ [VVAULT API] Connector error stack:`, connectorError.stack);
       throw new Error(`Failed to initialize VVAULT connector: ${connectorError.message}`);
     }
-    
+
     console.log(`🔍 [VVAULT API] Writing transcript for conversation creation...`);
     try {
       await connector.writeTranscript({
@@ -504,7 +515,7 @@ router.post("/conversations", async (req, res) => {
         title,
         constructId: constructId || 'synth-001', // Must use callsign format
         constructName: title,
-        constructCallsign: constructId // constructId may already be in callsign format (e.g., "katana-001")
+        constructCallsign: constructId // constructId may already be in callsign format (e.g., "example-construct-001")
       });
       console.log(`✅ [VVAULT API] Transcript written successfully for session: ${session}`);
     } catch (writeError) {
@@ -533,9 +544,9 @@ router.post("/conversations", async (req, res) => {
       sessionId: session,
       constructId
     });
-    
-    res.status(500).json({ 
-      ok: false, 
+
+    res.status(500).json({
+      ok: false,
       error: "Failed to create VVAULT conversation",
       details: error.message || 'Unknown error',
       code: error.code || 'UNKNOWN_ERROR'
@@ -558,11 +569,15 @@ router.post("/conversations/:sessionId/messages", async (req, res) => {
   // Extract content from packets if content is empty but packets exist
   let finalContent = content;
   if ((!finalContent || finalContent.trim() === '') && Array.isArray(packets)) {
+    console.log('📦 [VVAULT API] Extracting content from packets...');
+    console.log(`📦 [VVAULT API] Packets array length: ${packets.length}`);
     finalContent = packets
       .map(packet => {
         if (!packet) return '';
         if (packet.op === 'answer.v1' && packet.payload?.content) {
-          return packet.payload.content;
+          const extracted = packet.payload.content;
+          console.log(`✅ [VVAULT API] Extracted content from packet: ${extracted.substring(0, 50)}${extracted.length > 50 ? '...' : ''}`);
+          return extracted;
         }
         try {
           return JSON.stringify(packet.payload ?? packet);
@@ -572,6 +587,7 @@ router.post("/conversations/:sessionId/messages", async (req, res) => {
       })
       .filter(Boolean)
       .join('\n\n');
+    console.log(`📝 [VVAULT API] Final extracted content length: ${finalContent.length}`);
   }
 
   if (!finalContent || finalContent.trim() === '') {
@@ -584,7 +600,7 @@ router.post("/conversations/:sessionId/messages", async (req, res) => {
     // CRITICAL: Always use constructCallsign format (e.g., "synth-001"), never just "synth"
     const actualConstructId = constructId || metadata?.constructId || 'synth-001';
     const actualConstructCallsign = metadata?.constructCallsign || constructId || metadata?.constructId;
-    
+
     await connector.writeTranscript({
       userId, // Will be resolved to VVAULT user ID in writeTranscript.js
       userEmail: req.user?.email, // Pass email for VVAULT user ID resolution
@@ -610,9 +626,9 @@ router.get("/identity/query", async (req, res) => {
   const userId = validateUser(res, req.user);
   if (!userId) return;
 
-  const { 
-    constructCallsign, 
-    query, 
+  const {
+    constructCallsign,
+    query,
     limit = 10,
     queryMode = 'semantic',
     anchorTypes,
@@ -620,7 +636,7 @@ router.get("/identity/query", async (req, res) => {
     relationshipPatterns,
     emotionalState
   } = req.query || {};
-  
+
   if (!constructCallsign || !query) {
     return res.status(400).json({ ok: false, error: "Missing constructCallsign or query" });
   }
@@ -629,38 +645,38 @@ router.get("/identity/query", async (req, res) => {
     // FORCE MODE: Use capsule-based memory instead of ChromaDB
     if (process.env.ENABLE_CHROMADB !== 'true') {
       console.log('🔄 [VVAULT API] ChromaDB disabled - using capsule-based memory for', constructCallsign);
-      
+
       try {
         // Import capsule integration to get transcript-based memories
         const { getCapsuleIntegration } = await import('../lib/capsuleIntegration.js');
         const capsuleIntegration = getCapsuleIntegration();
-        
+
         // Normalize construct ID (remove 'gpt-' prefix if present)
-        const normalizedConstructId = constructCallsign.startsWith('gpt-') 
-          ? constructCallsign.substring(4) 
+        const normalizedConstructId = constructCallsign.startsWith('gpt-')
+          ? constructCallsign.substring(4)
           : constructCallsign;
-        
+
         console.log(`🔍 [VVAULT API] Normalized ${constructCallsign} → ${normalizedConstructId}`);
-        
+
         // Load capsule for the construct
         const capsule = await capsuleIntegration.loadCapsule(normalizedConstructId);
-        
+
         if (capsule && capsule.transcript_data) {
           console.log(`📊 [VVAULT API] Capsule loaded with ${capsule.transcript_data.topics?.length || 0} topics, ${capsule.transcript_data.entities?.length || 0} entities`);
-          
+
           // Search through capsule transcript data for relevant memories
           const memories = [];
           const queryLower = query.toLowerCase();
-          
+
           console.log(`🔍 [VVAULT API] Searching for: "${queryLower}"`);
-          
+
           // Search through topics for relevant matches
           if (capsule.transcript_data.topics) {
             for (const topic of capsule.transcript_data.topics.slice(0, parseInt(limit))) {
-              if (topic.topic && typeof topic.topic === 'string' && 
-                  (topic.topic.toLowerCase().includes(queryLower) || 
-                   queryLower.includes(topic.topic.toLowerCase()))) {
-                
+              if (topic.topic && typeof topic.topic === 'string' &&
+                (topic.topic.toLowerCase().includes(queryLower) ||
+                  queryLower.includes(topic.topic.toLowerCase()))) {
+
                 // Add examples from this topic as memories
                 if (topic.examples && topic.examples.length > 0) {
                   for (const example of topic.examples.slice(0, 2)) {
@@ -675,14 +691,14 @@ router.get("/identity/query", async (req, res) => {
               }
             }
           }
-          
+
           // Search through entities for relevant matches
           if (capsule.transcript_data.entities && memories.length < parseInt(limit)) {
             for (const entity of capsule.transcript_data.entities) {
-              if (entity.name && typeof entity.name === 'string' && 
-                  (entity.name.toLowerCase().includes(queryLower) || 
-                   queryLower.includes(entity.name.toLowerCase()))) {
-                
+              if (entity.name && typeof entity.name === 'string' &&
+                (entity.name.toLowerCase().includes(queryLower) ||
+                  queryLower.includes(entity.name.toLowerCase()))) {
+
                 // Add context from this entity as memories
                 if (entity.context && entity.context.length > 0) {
                   for (const context of entity.context.slice(0, 1)) {
@@ -697,7 +713,7 @@ router.get("/identity/query", async (req, res) => {
               }
             }
           }
-          
+
           console.log(`✅ [VVAULT API] Found ${memories.length} capsule-based memories for "${query}"`);
           return res.json({
             ok: true,
@@ -706,7 +722,7 @@ router.get("/identity/query", async (req, res) => {
           });
         } else {
           console.log(`⚠️ [VVAULT API] Capsule structure: ${capsule ? 'exists' : 'null'}, transcript_data: ${capsule?.transcript_data ? 'exists' : 'missing'}`);
-          
+
           // Final fallback: return empty but don't break the conversation
           console.log('🚫 [VVAULT API] No capsule memories found - returning empty result');
           return res.json({
@@ -718,7 +734,7 @@ router.get("/identity/query", async (req, res) => {
       } catch (capsuleError) {
         console.warn('⚠️ [VVAULT API] Capsule memory fallback failed:', capsuleError.message);
       }
-      
+
       // Final fallback: return empty but don't break the conversation
       console.log('🚫 [VVAULT API] No capsule memories found - returning empty result');
       return res.json({
@@ -730,7 +746,7 @@ router.get("/identity/query", async (req, res) => {
 
     const { getIdentityService } = await import('../services/identityService.js');
     const identityService = getIdentityService();
-    
+
     // Parse anchor-based query options
     const options = {
       queryMode: queryMode === 'anchor' ? 'anchor' : 'semantic',
@@ -739,11 +755,11 @@ router.get("/identity/query", async (req, res) => {
       relationshipPatterns: relationshipPatterns ? relationshipPatterns.split(',').filter(Boolean) : [],
       emotionalState: emotionalState || undefined,
     };
-    
-    // Try both callsign variants (e.g., "katana-001" and "gpt-katana-001")
+
+    // Try both callsign variants (e.g., "example-construct-001" and "gpt-example-construct-001")
     const callsignVariants = normalizeConstructCallsigns(constructCallsign);
     let identities = [];
-    
+
     for (const variant of callsignVariants) {
       try {
         const results = await identityService.queryIdentities(
@@ -753,7 +769,7 @@ router.get("/identity/query", async (req, res) => {
           parseInt(limit, 10),
           options
         );
-        
+
         if (results && results.length > 0) {
           identities = results;
           console.log(`✅ [VVAULT API] Found ${identities.length} memories using callsign: ${variant}`);
@@ -764,7 +780,7 @@ router.get("/identity/query", async (req, res) => {
         continue;
       }
     }
-    
+
     if (identities.length === 0) {
       console.log(`ℹ️ [VVAULT API] No memories found for any callsign variant: ${callsignVariants.join(', ')}`);
     }
@@ -785,7 +801,7 @@ router.get("/chromadb/status", async (req, res) => {
     const { getChromaDBService } = await import('../services/chromadbService.js');
     const chromaService = getChromaDBService();
     const status = await chromaService.getStatus();
-    
+
     res.json({
       ok: true,
       chromaDB: status
@@ -802,7 +818,7 @@ router.post("/identity/reindex", requireAuth, async (req, res) => {
   if (!userId) return;
 
   const { constructCallsign } = req.body || {};
-  
+
   if (!constructCallsign) {
     return res.status(400).json({ ok: false, error: "Missing constructCallsign" });
   }
@@ -843,15 +859,15 @@ router.post("/identity/reindex", requireAuth, async (req, res) => {
 
     // Load VVAULT modules to get VVAULT_ROOT
     await loadVVAULTModules();
-    
-    // Try both callsign variants (katana-001 and gpt-katana-001)
+
+    // Try both callsign variants (example-construct-001 and gpt-example-construct-001)
     const callsignVariants = normalizeConstructCallsigns(constructCallsign);
-    
+
     // Find all transcript files in VVAULT for this construct (try all variants)
     const fs = require('fs').promises;
     const path = require('path');
     const transcriptPaths = [];
-    
+
     for (const variant of callsignVariants) {
       const instancePath = path.join(VVAULT_ROOT, 'users', 'shard_0000', vvaultUserId, 'instances', variant);
       const identityPath = path.join(instancePath, 'identity');
@@ -960,14 +976,38 @@ router.post("/identity/reindex", requireAuth, async (req, res) => {
   }
 });
 
-// Manual ChromaDB start endpoint (for recovery)
-router.post("/chromadb/start", async (req, res) => {
+router.post("/capsules/maintain", async (req, res) => {
+  const userId = validateUser(res, req.user);
+  if (!userId) return;
+
+  const { force = false, dryRun = false } = req.body;
+
+  try {
+    const { CapsuleMaintenanceService } = await import('../lib/capsuleMaintenance.js');
+
+    // Lazy load config to get VVAULT_ROOT
+    await loadVVAULTModules();
+
+    const service = new CapsuleMaintenanceService(VVAULT_ROOT);
+    const result = await service.runMaintenance({ force, dryRun });
+
+    res.json({
+      ok: true,
+      result
+    });
+  } catch (error) {
+    console.error('❌ [VVAULT API] Failed to run capsule maintenance:', error);
+    res.status(500).json({ ok: false, error: 'Capsule maintenance failed' });
+  }
+});
+
+router.post("/capsules/generate", async (req, res) => {
   try {
     const { initializeChromaDB, getChromaDBService } = await import('../services/chromadbService.js');
-    
+
     console.log('🔄 [chromadb/start] Manual start requested...');
     const started = await initializeChromaDB();
-    
+
     if (!started) {
       const chromaService = getChromaDBService();
       const status = await chromaService.getStatus();
@@ -978,11 +1018,11 @@ router.post("/chromadb/start", async (req, res) => {
         status
       });
     }
-    
+
     const chromaService = getChromaDBService();
     const ready = await chromaService.waitForReady(60000);
     const status = await chromaService.getStatus();
-    
+
     if (!ready) {
       return res.status(503).json({
         ok: false,
@@ -991,10 +1031,56 @@ router.post("/chromadb/start", async (req, res) => {
         status
       });
     }
-    
+
     // Ensure health monitor is running
     chromaService.startHealthMonitor();
-    
+
+    res.json({
+      ok: true,
+      message: "ChromaDB started and ready",
+      status
+    });
+  } catch (error) {
+    console.error("❌ [VVAULT API] Failed to start ChromaDB:", error);
+    res.status(500).json({ ok: false, error: "Failed to start ChromaDB", details: error.message });
+  }
+});
+
+// Manual ChromaDB start endpoint (for recovery)
+router.post("/chromadb/start", async (req, res) => {
+  try {
+    const { initializeChromaDB, getChromaDBService } = await import('../services/chromadbService.js');
+
+    console.log('🔄 [chromadb/start] Manual start requested...');
+    const started = await initializeChromaDB();
+
+    if (!started) {
+      const chromaService = getChromaDBService();
+      const status = await chromaService.getStatus();
+      return res.status(503).json({
+        ok: false,
+        error: "ChromaDB failed to start",
+        details: status.lastError || "Startup failed",
+        status
+      });
+    }
+
+    const chromaService = getChromaDBService();
+    const ready = await chromaService.waitForReady(60000);
+    const status = await chromaService.getStatus();
+
+    if (!ready) {
+      return res.status(503).json({
+        ok: false,
+        error: "ChromaDB started but not ready",
+        details: status.lastError || "Failed to report heartbeat within 60s",
+        status
+      });
+    }
+
+    // Ensure health monitor is running
+    chromaService.startHealthMonitor();
+
     res.json({
       ok: true,
       message: "ChromaDB started and ready",
@@ -1012,7 +1098,7 @@ router.get("/identity/diagnostic", async (req, res) => {
   if (!userId) return;
 
   const { constructCallsign } = req.query || {};
-  
+
   if (!constructCallsign) {
     return res.status(400).json({ ok: false, error: "Missing constructCallsign" });
   }
@@ -1021,26 +1107,26 @@ router.get("/identity/diagnostic", async (req, res) => {
     const { getChromaDBService } = await import('../services/chromadbService.js');
     const chromaService = getChromaDBService();
     const chromaStatus = await chromaService.getStatus();
-    
+
     const { getIdentityService } = await import('../services/identityService.js');
     const identityService = getIdentityService();
-    
+
     // Check ChromaDB initialization
     const isInitialized = identityService.initialized;
     const hasClient = !!identityService.client;
-    
+
     // Try to get collection info
     let shortTermCount = 0;
     let longTermCount = 0;
     let shortTermCollection = null;
     let longTermCollection = null;
     let sampleMemories = [];
-    
+
     if (isInitialized && hasClient) {
       try {
         const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
         const vvaultUserId = await resolveVVAULTUserId(userId, req.user?.email);
-        
+
         if (vvaultUserId) {
           // Try to get collections
           try {
@@ -1052,7 +1138,7 @@ router.get("/identity/diagnostic", async (req, res) => {
             // Collection doesn't exist yet
             console.log(`📊 [Diagnostic] Short-term collection doesn't exist yet`);
           }
-          
+
           try {
             longTermCollection = await identityService.getCollection(vvaultUserId, constructCallsign, 'long-term');
             const longTermData = await longTermCollection.get();
@@ -1062,7 +1148,7 @@ router.get("/identity/diagnostic", async (req, res) => {
             // Collection doesn't exist yet
             console.log(`📊 [Diagnostic] Long-term collection doesn't exist yet`);
           }
-          
+
           // Get sample memories
           try {
             sampleMemories = await identityService.queryIdentities(
@@ -1079,7 +1165,7 @@ router.get("/identity/diagnostic", async (req, res) => {
         // Error getting collections
       }
     }
-    
+
     // Test ChromaDB heartbeat
     let chromaDbAvailable = false;
     let chromaDbUrl = process.env.CHROMA_SERVER_URL || 'http://localhost:8000';
@@ -1091,7 +1177,7 @@ router.get("/identity/diagnostic", async (req, res) => {
         chromaDbAvailable = false;
       }
     }
-    
+
     res.json({
       ok: true,
       diagnostic: {
@@ -1127,7 +1213,7 @@ router.post("/identity/ensure-ready", async (req, res) => {
   if (!userId) return;
 
   const {
-    constructCallsign = 'katana-001',
+    constructCallsign = 'example-construct-001',
     minMemories = 10,
     forceSeed = false,
     includeVariants = true
@@ -1184,7 +1270,7 @@ router.post("/identity/ensure-ready", async (req, res) => {
         }
       });
     }
-    
+
     console.log('✅ [ensure-ready] ChromaDB confirmed ready');
 
     const identityService = getIdentityService();
@@ -1258,7 +1344,7 @@ router.post("/identity/store", requireAuth, async (req, res) => {
 
   const { constructCallsign, context, response, metadata = {} } = req.body || {};
   const providedTimestamp = req.body?.timestamp;
-  
+
   if (!constructCallsign || !context || !response) {
     return res.status(400).json({ ok: false, error: "Missing constructCallsign, context, or response" });
   }
@@ -1277,14 +1363,14 @@ router.post("/identity/store", requireAuth, async (req, res) => {
 
     const { getIdentityService } = await import('../services/identityService.js');
     const identityService = getIdentityService();
-    
+
     // Resolve VVAULT user ID (with auto-create if needed)
     const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
     const vvaultUserId = await resolveVVAULTUserId(userId, req.user?.email, true, req.user?.name);
     if (!vvaultUserId) {
       throw new Error(`Cannot resolve VVAULT user ID for: ${userId}`);
     }
-    
+
     const result = await identityService.addIdentity(
       userId,
       constructCallsign,
@@ -1315,8 +1401,8 @@ router.post("/identity/store", requireAuth, async (req, res) => {
       contextLength: context?.length,
       responseLength: response?.length
     });
-    res.status(500).json({ 
-      ok: false, 
+    res.status(500).json({
+      ok: false,
       error: "Failed to store identity",
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -1330,35 +1416,35 @@ router.get("/identity/list", async (req, res) => {
   console.log(`🔍 [VVAULT API] Query params:`, req.query);
   console.log(`🔍 [VVAULT API] Auth status - req.user:`, req.user ? 'present' : 'missing');
   console.log(`🔍 [VVAULT API] req.user details:`, req.user ? { id: req.user.id || req.user.sub, email: req.user.email } : 'none');
-  
+
   // Check if auth middleware passed
   if (!req.user) {
     console.log(`❌ [VVAULT API] /identity/list - req.user is missing, auth middleware may have failed`);
     return res.status(401).json({ ok: false, error: "Authentication required" });
   }
-  
+
   const userId = validateUser(res, req.user);
   if (!userId) {
     console.log(`❌ [VVAULT API] /identity/list - validateUser returned null, response already sent`);
     return;
   }
-  
+
   console.log(`✅ [VVAULT API] /identity/list - User validated: ${userId}`);
 
   const { constructCallsign } = req.query || {};
-  
+
   if (!constructCallsign) {
     console.log(`❌ [VVAULT API] /identity/list - Missing constructCallsign in query params`);
     return res.status(400).json({ ok: false, error: "Missing constructCallsign" });
   }
-  
+
   console.log(`📋 [VVAULT API] Listing identity files for construct: ${constructCallsign}, user: ${userId}`);
 
   try {
     console.log(`🔍 [VVAULT API] Loading VVAULT modules...`);
     await loadVVAULTModules();
     console.log(`✅ [VVAULT API] VVAULT modules loaded`);
-    
+
     const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
     const fs = require('fs').promises;
     const path = require('path');
@@ -1370,17 +1456,17 @@ router.get("/identity/list", async (req, res) => {
       vvaultUserId = await resolveVVAULTUserId(userId, req.user?.email, false, req.user?.name);
     } catch (resolveError) {
       console.error(`❌ [VVAULT API] Error resolving VVAULT user ID:`, resolveError);
-      return res.status(500).json({ 
-        ok: false, 
+      return res.status(500).json({
+        ok: false,
         error: "Failed to resolve VVAULT user ID",
-        details: resolveError.message 
+        details: resolveError.message
       });
     }
-    
+
     if (!vvaultUserId) {
       console.log(`❌ [VVAULT API] Failed to resolve VVAULT user ID for: ${userId} (returned null/undefined)`);
-      return res.status(404).json({ 
-        ok: false, 
+      return res.status(404).json({
+        ok: false,
         error: "User not found in VVAULT",
         userId: userId,
         email: req.user?.email
@@ -1398,7 +1484,7 @@ router.get("/identity/list", async (req, res) => {
       'instances',
       constructCallsign
     );
-    
+
     console.log(`🔍 [VVAULT API] Instance base path: ${instanceBasePath}`);
     console.log(`🔍 [VVAULT API] VVAULT_ROOT: ${VVAULT_ROOT}`);
 
@@ -1409,7 +1495,7 @@ router.get("/identity/list", async (req, res) => {
     for (const dirName of directoriesToCheck) {
       const dirPath = path.join(instanceBasePath, dirName);
       console.log(`🔍 [VVAULT API] Checking directory: ${dirPath}`);
-      
+
       // Check if directory exists
       try {
         await fs.access(dirPath);
@@ -1429,7 +1515,7 @@ router.get("/identity/list", async (req, res) => {
           if (file.isFile()) {
             const filePath = path.join(dirPath, file.name);
             const ext = path.extname(file.name).toLowerCase();
-            
+
             // Only include supported file types
             if (['.md', '.txt', '.pdf', '.doc', '.docx', '.csv', '.json'].includes(ext)) {
               try {
@@ -1466,30 +1552,77 @@ router.get("/identity/list", async (req, res) => {
   } catch (error) {
     console.error("❌ [VVAULT API] Failed to list identity files:", error);
     console.error("❌ [VVAULT API] Error stack:", error.stack);
-    
+
     // Distinguish between different error types
     if (error.code === 'ENOENT') {
-      return res.status(404).json({ 
-        ok: false, 
+      return res.status(404).json({
+        ok: false,
         error: "Directory not found in VVAULT",
         constructCallsign: constructCallsign,
-        details: error.message 
+        details: error.message
       });
     }
-    
+
     if (error.message && error.message.includes('VVAULT')) {
-      return res.status(500).json({ 
-        ok: false, 
+      return res.status(500).json({
+        ok: false,
         error: "VVAULT system error",
-        details: error.message 
+        details: error.message
       });
     }
-    
-    res.status(500).json({ 
-      ok: false, 
-      error: "Failed to list identity files", 
+
+    res.status(500).json({
+      ok: false,
+      error: "Failed to list identity files",
       details: error.message,
       code: error.code || 'UNKNOWN_ERROR'
+    });
+  }
+});
+
+// Get and parse prompt.txt for a construct
+router.get("/identity/prompt", requireAuth, async (req, res) => {
+  const userId = validateUser(res, req.user);
+  if (!userId) return;
+
+  const { constructCallsign } = req.query || {};
+
+  if (!constructCallsign) {
+    return res.status(400).json({ ok: false, error: "Missing constructCallsign" });
+  }
+
+  try {
+    const { loadIdentityFiles } = await import('../lib/identityLoader.js');
+    const identity = await loadIdentityFiles(userId, constructCallsign, false);
+
+    if (!identity || !identity.prompt) {
+      return res.status(404).json({ 
+        ok: false, 
+        error: "prompt.txt not found",
+        constructCallsign 
+      });
+    }
+
+    // Parse prompt.txt using the parser utility
+    const { parsePromptTxt } = await import('../lib/promptParser.js');
+    const parsed = parsePromptTxt(identity.prompt);
+
+    res.json({
+      ok: true,
+      prompt: identity.prompt,
+      parsed: {
+        name: parsed.name,
+        description: parsed.description,
+        instructions: parsed.instructions
+      },
+      constructCallsign
+    });
+  } catch (error) {
+    console.error("❌ [VVAULT API] Failed to load prompt.txt:", error);
+    res.status(500).json({
+      ok: false,
+      error: "Failed to load prompt.txt",
+      details: error.message
     });
   }
 });
@@ -1510,8 +1643,8 @@ router.get("/identity/blueprint", requireAuth, async (req, res) => {
     callsign = parsed.callsign;
   } catch (parseError) {
     console.error("❌ [VVAULT API] Failed to parse constructCallsign:", parseError);
-    return res.status(400).json({ 
-      ok: false, 
+    return res.status(400).json({
+      ok: false,
       error: "Invalid constructCallsign format",
       details: process.env.NODE_ENV === 'development' ? parseError.message : undefined
     });
@@ -1534,10 +1667,10 @@ router.get("/identity/blueprint", requireAuth, async (req, res) => {
         IdentityMatcher = module.IdentityMatcher;
       } catch (tsError) {
         // Fallback to .js extension
-      const module = await import('../../src/engine/character/IdentityMatcher.js');
-      IdentityMatcher = module.IdentityMatcher;
+        const module = await import('../../src/engine/character/IdentityMatcher.js');
+        IdentityMatcher = module.IdentityMatcher;
       }
-      
+
       if (!IdentityMatcher) {
         throw new Error('IdentityMatcher not exported from module');
       }
@@ -1546,7 +1679,7 @@ router.get("/identity/blueprint", requireAuth, async (req, res) => {
       console.log(`ℹ️ [VVAULT API] IdentityMatcher not available, blueprint not found for user: ${userId}, construct: ${constructId}-${callsign}`);
       return res.status(404).json({ ok: false, error: "Blueprint not found" });
     }
-    
+
     // Instantiate IdentityMatcher with error handling
     let matcher;
     try {
@@ -1556,13 +1689,13 @@ router.get("/identity/blueprint", requireAuth, async (req, res) => {
       console.log(`ℹ️ [VVAULT API] IdentityMatcher constructor failed, blueprint not found for user: ${userId}, construct: ${constructId}-${callsign}`);
       return res.status(404).json({ ok: false, error: "Blueprint not found" });
     }
-    
+
     // loadPersonalityBlueprint returns null on error, doesn't throw
     // Try with parsed constructId/callsign first, then try with full callsign if that fails
     let blueprint;
     try {
       blueprint = await matcher.loadPersonalityBlueprint('' + userId, constructId, callsign);
-      
+
       if (!blueprint) {
         console.log(`🔄 [VVAULT API] Blueprint not found using parsed identifiers for ${constructCallsign}. Trying additional variants...`);
         const normalized = constructCallsign.replace(/^gpt-/i, '');
@@ -1575,7 +1708,7 @@ router.get("/identity/blueprint", requireAuth, async (req, res) => {
           blueprint = await matcher.loadPersonalityBlueprint('' + userId, altConstruct, altCallsign);
         }
 
-        // Try with constructId 'gpt' and the full constructCallsign (covers instances/gpt-katana-001)
+        // Try with constructId 'gpt' and the full constructCallsign (covers instances/gpt-example-construct-001)
         if (!blueprint) {
           blueprint = await matcher.loadPersonalityBlueprint('' + userId, 'gpt', constructCallsign);
         }
@@ -1609,9 +1742,9 @@ router.get("/identity/blueprint", requireAuth, async (req, res) => {
       errorName: error.name,
       errorCode: error.code
     });
-    
-    res.status(500).json({ 
-      ok: false, 
+
+    res.status(500).json({
+      ok: false,
       error: "Failed to load blueprint",
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -1628,7 +1761,7 @@ router.get("/memories/query", async (req, res) => {
 /**
  * Parse transcript text to extract conversation pairs (user/assistant messages)
  * Handles multiple formats:
- * - "You said:" / "Katana said:" format
+ * - "You said:" / "The GPT said:" format
  * - "User:" / "Assistant:" format  
  * - Timestamped format: **TIME - Name**: content
  * - Plain text with role indicators
@@ -1685,31 +1818,31 @@ async function triggerPersonalityExtraction(
 function parseTranscriptForConversationPairs(text, filename) {
   const pairs = [];
   const lines = text.split('\n');
-  
+
   let currentUser = null;
   let currentAssistant = null;
   let currentUserLines = [];
   let currentAssistantLines = [];
   let inUserMessage = false;
   let inAssistantMessage = false;
-  
-  // Normalize construct name from filename (e.g., "Katana" from "katana-001")
+
+  // Normalize construct name from filename (e.g., "Example Construct" from "example-construct-001")
   const constructNameMatch = filename.match(/([a-z]+)-?\d*/i);
   const constructName = constructNameMatch ? constructNameMatch[1].charAt(0).toUpperCase() + constructNameMatch[1].slice(1).toLowerCase() : 'Assistant';
-  
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
-    
+
     // Skip empty lines and metadata
-    if (!trimmed || trimmed.startsWith('<!--') || trimmed.startsWith('**Source File') || 
-        trimmed.startsWith('**Converted') || trimmed.startsWith('**Word Count') ||
-        trimmed.startsWith('**File Category') || trimmed.startsWith('# ') ||
-        trimmed === '---' || trimmed === 'Skip to content') {
+    if (!trimmed || trimmed.startsWith('<!--') || trimmed.startsWith('**Source File') ||
+      trimmed.startsWith('**Converted') || trimmed.startsWith('**Word Count') ||
+      trimmed.startsWith('**File Category') || trimmed.startsWith('# ') ||
+      trimmed === '---' || trimmed === 'Skip to content') {
       continue;
     }
-    
-    // Pattern 1: "You said:" / "Katana said:" format
+
+    // Pattern 1: "You said:" / "The GPT said:" format
     const youSaidMatch = trimmed.match(/^You said:\s*(.*)$/i);
     if (youSaidMatch) {
       // Save previous pair if exists
@@ -1729,7 +1862,7 @@ function parseTranscriptForConversationPairs(text, filename) {
       inAssistantMessage = false;
       continue;
     }
-    
+
     const constructSaidMatch = trimmed.match(new RegExp(`^${constructName} said:\\s*(.*)$`, 'i'));
     if (constructSaidMatch) {
       // Save previous pair if exists (user message complete)
@@ -1747,7 +1880,7 @@ function parseTranscriptForConversationPairs(text, filename) {
       inAssistantMessage = true;
       continue;
     }
-    
+
     // Pattern 2: "User:" / "Assistant:" format
     const userMatch = trimmed.match(/^(?:User|You):\s*(.*)$/i);
     if (userMatch) {
@@ -1766,7 +1899,7 @@ function parseTranscriptForConversationPairs(text, filename) {
       inAssistantMessage = false;
       continue;
     }
-    
+
     const assistantMatch = trimmed.match(/^(?:Assistant|AI|ChatGPT|Bot|${constructName}):\s*(.*)$/i);
     if (assistantMatch) {
       currentAssistant = assistantMatch[1] || '';
@@ -1775,18 +1908,18 @@ function parseTranscriptForConversationPairs(text, filename) {
       inAssistantMessage = true;
       continue;
     }
-    
+
     // Pattern 3: Timestamped format **TIME - Name**: content
     const timestampedMatch = trimmed.match(/^\*\*([^*]+)\s*-\s*([^*]+)\*\*:\s*(.+)$/);
     if (timestampedMatch) {
       const [, time, name, content] = timestampedMatch;
       const normalizedName = name.toLowerCase().trim();
-      
+
       // Check if it's a construct name
       const isConstruct = ['katana', 'synth', 'lin', 'nova', 'assistant', 'ai', 'chatgpt', 'bot'].some(
         c => normalizedName.includes(c)
       );
-      
+
       if (!isConstruct) {
         // User message
         if (currentUser && currentAssistant) {
@@ -1807,7 +1940,7 @@ function parseTranscriptForConversationPairs(text, filename) {
       }
       continue;
     }
-    
+
     // Continue collecting multi-line messages
     // Only collect if we're in a message state and line is not empty (or allow empty lines within messages)
     if (inUserMessage) {
@@ -1823,7 +1956,7 @@ function parseTranscriptForConversationPairs(text, filename) {
       }
     }
   }
-  
+
   // Save last pair if exists
   if (currentUser && currentAssistant) {
     pairs.push({
@@ -1832,7 +1965,7 @@ function parseTranscriptForConversationPairs(text, filename) {
       timestamp: new Date().toISOString()
     });
   }
-  
+
   return pairs;
 }
 
@@ -1873,7 +2006,7 @@ router.post("/identity/upload", requireAuth, (req, res) => {
           // path is now imported at the top
           const fs = await import('fs/promises');
           const { VVAULT_ROOT } = require('../../vvaultConnector/config.js');
-          
+
           // Parse file to extract text
           const { ServerFileParser } = await import('../lib/serverFileParser.js');
           const parsed = await ServerFileParser.parseFile(file, {
@@ -1886,7 +2019,7 @@ router.post("/identity/upload", requireAuth, (req, res) => {
           const convertTextToMarkdown = (text, filename, metadata) => {
             const timestamp = new Date().toISOString();
             const title = path.basename(filename, path.extname(filename));
-            
+
             return `# ${title}
 
 **Source File**: ${filename}
@@ -1930,7 +2063,7 @@ ${text}
             constructCallsign,
             'identity'
           );
-          
+
           await fs.mkdir(identityDir, { recursive: true });
           const filePath = path.join(identityDir, `${hashedFilename}.md`);
 
@@ -1962,17 +2095,17 @@ ${text}
           try {
             const { getHybridMemoryService } = require('../services/hybridMemoryService.js');
             const hybridMemoryService = getHybridMemoryService();
-            
+
             console.log(`📦 [VVAULT API] Starting auto-index for transcript: ${filePath}`);
             console.log(`📦 [VVAULT API] Construct: ${constructCallsign}, User: ${userId}`);
-            
+
             // Auto-index transcript to ChromaDB (zero downtime, background process)
             const indexResult = await hybridMemoryService.autoIndexTranscript(
               userId,
               constructCallsign,
               filePath
             );
-            
+
             if (indexResult.success) {
               console.log(`✅ [VVAULT API] Auto-indexed ${indexResult.importedCount} memories to ChromaDB`);
               if (indexResult.anchorsExtracted && indexResult.anchorsExtracted > 0) {
@@ -1990,10 +2123,10 @@ ${text}
           try {
             const { getIdentityService } = await import('../services/identityService.js');
             const identityService = getIdentityService();
-            
+
             // Try to parse as transcript with conversation pairs
             const conversationPairs = parseTranscriptForConversationPairs(parsed.extractedText, file.originalname || file.name);
-            
+
             if (conversationPairs.length > 0) {
               // Import each conversation pair as a separate identity entry
               let importedCount = 0;
@@ -2003,7 +2136,7 @@ ${text}
                   if (!pair.user || !pair.assistant || !pair.user.trim() || !pair.assistant.trim()) {
                     continue;
                   }
-                  
+
                   await identityService.addIdentity(
                     userId,
                     constructCallsign,
@@ -2144,8 +2277,8 @@ router.post("/conversations/:sessionId/connect-construct", async (req, res) => {
  */
 router.get("/account/status", async (req, res) => {
   try {
-  const userId = validateUser(res, req.user);
-  if (!userId) return;
+    const userId = validateUser(res, req.user);
+    if (!userId) return;
 
     console.log(`🔍 [VVAULT API] Checking account status for userId: ${userId}, email: ${req.user?.email}`);
 
@@ -2157,7 +2290,7 @@ router.get("/account/status", async (req, res) => {
     } catch (err) {
       console.log(`⚠️ [VVAULT API] Query by id failed:`, err.message);
     }
-    
+
     // Fallback to email if id query fails
     if (!user && req.user?.email) {
       try {
@@ -2167,7 +2300,7 @@ router.get("/account/status", async (req, res) => {
         console.log(`⚠️ [VVAULT API] Query by email failed:`, err.message);
       }
     }
-    
+
     // Fallback to _id if it's a MongoDB ObjectId
     if (!user && userId && typeof userId === 'string' && /^[0-9a-fA-F]{24}$/.test(userId)) {
       try {
@@ -2177,16 +2310,16 @@ router.get("/account/status", async (req, res) => {
         console.log(`⚠️ [VVAULT API] Query by _id failed:`, err.message);
       }
     }
-    
+
     if (!user) {
       console.error(`❌ [VVAULT API] User not found for userId: ${userId}, email: ${req.user?.email}`);
       return res.status(404).json({ ok: false, error: "User not found" });
     }
 
     const isLinked = !!(user.vvaultPath && user.vvaultUserId);
-    
+
     console.log(`✅ [VVAULT API] Account status: linked=${isLinked}, vvaultUserId=${user.vvaultUserId || 'null'}`);
-    
+
     res.json({
       ok: true,
       linked: isLinked,
@@ -2198,8 +2331,8 @@ router.get("/account/status", async (req, res) => {
   } catch (error) {
     console.error("❌ [VVAULT API] Failed to check account status:", error);
     console.error("❌ [VVAULT API] Error stack:", error.stack);
-    res.status(500).json({ 
-      ok: false, 
+    res.status(500).json({
+      ok: false,
       error: "Failed to check VVAULT account status",
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -2218,26 +2351,26 @@ router.post("/account/link", async (req, res) => {
   const { vvaultUserId, vvaultPath } = req.body || {};
 
   if (!vvaultUserId || !vvaultPath) {
-    return res.status(400).json({ 
-      ok: false, 
-      error: "Missing vvaultUserId or vvaultPath" 
+    return res.status(400).json({
+      ok: false,
+      error: "Missing vvaultUserId or vvaultPath"
     });
   }
 
   try {
     // Try multiple query strategies since userId could be sub, id, uid, or _id
     let user = await User.findOne({ id: userId });
-    
+
     // Fallback to email if id query fails
     if (!user && req.user?.email) {
       user = await User.findOne({ email: req.user.email });
     }
-    
+
     // Fallback to _id if it's a MongoDB ObjectId
     if (!user && userId.match(/^[0-9a-fA-F]{24}$/)) {
       user = await User.findById(userId);
     }
-    
+
     if (!user) {
       console.error(`❌ [VVAULT API] User not found for userId: ${userId}, email: ${req.user?.email}`);
       return res.status(404).json({ ok: false, error: "User not found" });
@@ -2247,7 +2380,7 @@ router.post("/account/link", async (req, res) => {
     user.vvaultUserId = vvaultUserId;
     user.vvaultPath = vvaultPath;
     user.vvaultLinkedAt = new Date();
-    
+
     await user.save();
 
     console.log(`✅ [VVAULT API] Linked VVAULT account ${vvaultUserId} to Chatty user ${userId}`);
@@ -2276,17 +2409,17 @@ router.post("/account/unlink", async (req, res) => {
   try {
     // Try multiple query strategies since userId could be sub, id, uid, or _id
     let user = await User.findOne({ id: userId });
-    
+
     // Fallback to email if id query fails
     if (!user && req.user?.email) {
       user = await User.findOne({ email: req.user.email });
     }
-    
+
     // Fallback to _id if it's a MongoDB ObjectId
     if (!user && userId.match(/^[0-9a-fA-F]{24}$/)) {
       user = await User.findById(userId);
     }
-    
+
     if (!user) {
       console.error(`❌ [VVAULT API] User not found for userId: ${userId}, email: ${req.user?.email}`);
       return res.status(404).json({ ok: false, error: "User not found" });
@@ -2296,7 +2429,7 @@ router.post("/account/unlink", async (req, res) => {
     user.vvaultUserId = null;
     user.vvaultPath = null;
     user.vvaultLinkedAt = null;
-    
+
     await user.save();
 
     console.log(`✅ [VVAULT API] Unlinked VVAULT account from Chatty user ${userId}`);
@@ -2318,16 +2451,16 @@ if (process.env.NODE_ENV !== 'production') {
       console.log(`🧪 [VVAULT Debug] Starting test read...`);
       await loadVVAULTModules();
       console.log(`🧪 [VVAULT Debug] Modules loaded, VVAULT_ROOT: ${VVAULT_ROOT}`);
-      
+
       const testEmail = req.query.email || 'dwoodson92@gmail.com';
       console.log(`🧪 [VVAULT Debug] Testing readConversations with email: ${testEmail}`);
-      
+
       if (!readConversations) {
         throw new Error('readConversations function not available');
       }
-      
+
       const conversations = await readConversations(testEmail);
-      
+
       res.json({
         ok: true,
         vvaultRoot: VVAULT_ROOT,
@@ -2350,7 +2483,7 @@ if (process.env.NODE_ENV !== 'production') {
       });
     }
   });
-  
+
   // Health check endpoint to test module loading
   router.get("/debug/test-modules", async (req, res) => {
     try {
@@ -2384,31 +2517,31 @@ router.get("/identity/persona/:filename", requireAuth, async (req, res) => {
     if (!userId) return;
 
     const { filename } = req.params;
-    
+
     // Security: prevent path traversal
     if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
       return res.status(403).json({ ok: false, error: 'Invalid filename' });
     }
-    
+
     // Only allow .md files
     if (!filename.endsWith('.md')) {
       return res.status(403).json({ ok: false, error: 'Only markdown files allowed' });
     }
-    
+
     // path is now imported at the top
     const fs = await import('fs/promises');
     const { getUserPersonaDirectory } = await import('../lib/userRegistry.js');
-    
+
     try {
       // Get user's persona directory
       const personaDir = await getUserPersonaDirectory(userId);
       const personaPath = path.join(personaDir, filename);
-      
+
       // Security: verify path is within user's directory
       if (!personaPath.startsWith(personaDir)) {
         return res.status(403).json({ ok: false, error: 'Access denied' });
       }
-      
+
       const content = await fs.readFile(personaPath, 'utf8');
       res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
       res.send(content);
@@ -2421,7 +2554,7 @@ router.get("/identity/persona/:filename", requireAuth, async (req, res) => {
         const __dirname = dirname(__filename);
         const projectRoot = path.resolve(__dirname, '../..');
         const fallbackPath = path.join(projectRoot, 'prompts', 'customAI', filename);
-        
+
         try {
           const content = await fs.readFile(fallbackPath, 'utf8');
           res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
@@ -2449,7 +2582,7 @@ router.post("/brevity/config", requireAuth, async (req, res) => {
   if (!userId) return;
 
   const { constructCallsign, config } = req.body || {};
-  
+
   if (!constructCallsign || !config) {
     return res.status(400).json({ ok: false, error: "Missing constructCallsign or config" });
   }
@@ -2479,7 +2612,7 @@ router.get("/brevity/config", requireAuth, async (req, res) => {
   if (!userId) return;
 
   const { constructCallsign } = req.query || {};
-  
+
   if (!constructCallsign) {
     return res.status(400).json({ ok: false, error: "Missing constructCallsign" });
   }
@@ -2504,7 +2637,7 @@ router.post("/brevity/analytics", requireAuth, async (req, res) => {
   if (!userId) return;
 
   const { constructCallsign, config } = req.body || {};
-  
+
   if (!constructCallsign || !config) {
     return res.status(400).json({ ok: false, error: "Missing constructCallsign or config" });
   }
@@ -2534,7 +2667,7 @@ router.get("/brevity/analytics", requireAuth, async (req, res) => {
   if (!userId) return;
 
   const { constructCallsign } = req.query || {};
-  
+
   if (!constructCallsign) {
     return res.status(400).json({ ok: false, error: "Missing constructCallsign" });
   }
@@ -2562,7 +2695,7 @@ router.post("/capsules/generate", requireAuth, async (req, res) => {
   if (!userId) return;
 
   const { constructCallsign, gptConfig, transcriptData } = req.body || {};
-  
+
   if (!constructCallsign) {
     return res.status(400).json({ ok: false, error: "Missing constructCallsign" });
   }
@@ -2579,10 +2712,10 @@ router.post("/capsules/generate", requireAuth, async (req, res) => {
       throw new Error(`Cannot resolve VVAULT user ID for: ${userId}`);
     }
 
-    // Use constructCallsign DIRECTLY for instance directory (e.g., "katana-001")
-    // DO NOT parse into constructId-callsign and reconstruct (would create "katana-katana-001")
+    // Use constructCallsign DIRECTLY for instance directory (e.g., "example-construct-001")
+    // DO NOT parse into constructId-callsign and reconstruct (would create "example-construct-example-construct-001")
     // Per documentation: instances/{constructCallsign}/
-    
+
     // Build instance directory path: users/{shard}/{userId}/instances/{constructCallsign}
     const instancePath = path.join(
       VVAULT_ROOT,
@@ -2592,7 +2725,7 @@ router.post("/capsules/generate", requireAuth, async (req, res) => {
       'instances',
       constructCallsign // Use directly, not parsed
     );
-    
+
     // instanceName is same as constructCallsign (used in capsule metadata)
     const instanceName = constructCallsign;
 
@@ -2600,10 +2733,10 @@ router.post("/capsules/generate", requireAuth, async (req, res) => {
     const { spawn } = require('child_process');
     const path = require('path');
     const fs = require('fs').promises;
-    
+
     // Use CapsuleForge bridge script
     const bridgePath = path.join(__dirname, 'services', 'capsuleForgeBridge.py');
-    
+
     // Check if bridge exists
     try {
       await fs.access(bridgePath);
@@ -2618,7 +2751,7 @@ router.post("/capsules/generate", requireAuth, async (req, res) => {
       const { getCapsuleLoader } = require('../services/capsuleLoader.js');
       const capsuleLoader = getCapsuleLoader();
       const existingCapsule = await capsuleLoader.loadCapsule(userId, constructCallsign, VVAULT_ROOT);
-      
+
       if (existingCapsule && existingCapsule.data && existingCapsule.data.traits) {
         // Preserve exact scoring from existing capsule
         traits = existingCapsule.data.traits;
@@ -2640,16 +2773,16 @@ router.post("/capsules/generate", requireAuth, async (req, res) => {
 
     // Extract memory log from transcript data or use empty array
     const memoryLog = transcriptData?.memoryLog || [];
-    
+
     // Extract personality type from GPT config or use default
     let personalityType = gptConfig?.personalityType || 'UNKNOWN';
-    
+
     // Try to preserve personality type from existing capsule
     try {
       const { getCapsuleLoader } = require('../services/capsuleLoader.js');
       const capsuleLoader = getCapsuleLoader();
       const existingCapsule = await capsuleLoader.loadCapsule(userId, constructCallsign, VVAULT_ROOT);
-      
+
       if (existingCapsule && existingCapsule.data && existingCapsule.data.personality) {
         personalityType = existingCapsule.data.personality.personality_type || personalityType;
       }
@@ -2659,12 +2792,12 @@ router.post("/capsules/generate", requireAuth, async (req, res) => {
 
     // Prepare capsule generation data
     const capsuleData = {
-      instance_name: instanceName, // Same as constructCallsign (e.g., "katana-001")
+      instance_name: instanceName, // Same as constructCallsign (e.g., "example-construct-001")
       traits,
       memory_log: memoryLog,
       personality_type: personalityType,
       additional_data: {
-        constructCallsign, // Use constructCallsign directly (e.g., "katana-001")
+        constructCallsign, // Use constructCallsign directly (e.g., "example-construct-001")
         gptConfig: gptConfig || {},
         generatedAt: new Date().toISOString(),
         generatedBy: 'chatty-gpt-creator'
@@ -2672,7 +2805,7 @@ router.post("/capsules/generate", requireAuth, async (req, res) => {
       vault_path: VVAULT_ROOT,
       instance_path: instancePath  // New: save directly in instance directory
     };
-    
+
     console.log(`📦 [VVAULT API] Generating capsule with instance_path: ${instancePath}`);
 
     // Call CapsuleForge via Python bridge
@@ -2702,7 +2835,7 @@ router.post("/capsules/generate", requireAuth, async (req, res) => {
           try {
             const result = stdout.trim() ? JSON.parse(stdout) : { success: true, path: stdout.trim() };
             console.log(`✅ [VVAULT API] Capsule generated: ${result.path || result.capsulePath}`);
-            
+
             res.json({
               ok: true,
               capsulePath: result.path || result.capsulePath,
@@ -2737,8 +2870,8 @@ router.post("/capsules/generate", requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error("❌ [VVAULT API] Failed to generate capsule:", error);
-    res.status(500).json({ 
-      ok: false, 
+    res.status(500).json({
+      ok: false,
       error: "Failed to generate capsule",
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -2767,7 +2900,7 @@ router.get("/capsules/load", (req, res, next) => {
   }
 
   const { constructCallsign } = req.query;
-  
+
   if (!constructCallsign) {
     return res.status(400).json({ ok: false, error: "Missing constructCallsign" });
   }
@@ -2782,9 +2915,9 @@ router.get("/capsules/load", (req, res, next) => {
 
     const { getCapsuleLoader } = require('../services/capsuleLoader.js');
     const capsuleLoader = getCapsuleLoader();
-    
+
     const capsule = await capsuleLoader.loadCapsule(userId, constructCallsign, VVAULT_ROOT);
-    
+
     if (!capsule) {
       console.log(`ℹ️ [VVAULT API] Capsule not found for user: ${userId}, construct: ${constructCallsign}`);
       return res.status(404).json({ ok: false, error: "Capsule not found" });
@@ -2798,19 +2931,19 @@ router.get("/capsules/load", (req, res, next) => {
   } catch (error) {
     // Check if error indicates capsule doesn't exist (expected) vs server error
     const errorMessage = error.message || String(error);
-    const isNotFoundError = errorMessage.includes('not found') || 
-                            errorMessage.includes('ENOENT') ||
-                            errorMessage.includes('does not exist');
-    
+    const isNotFoundError = errorMessage.includes('not found') ||
+      errorMessage.includes('ENOENT') ||
+      errorMessage.includes('does not exist');
+
     if (isNotFoundError) {
       console.log(`ℹ️ [VVAULT API] Capsule not found (expected) for user: ${userId}, construct: ${constructCallsign}`);
       return res.status(404).json({ ok: false, error: "Capsule not found" });
     }
-    
+
     // Actual server error - log and return 500
     console.error("❌ [VVAULT API] Failed to load capsule:", error);
-    res.status(500).json({ 
-      ok: false, 
+    res.status(500).json({
+      ok: false,
       error: "Failed to load capsule",
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -2823,7 +2956,7 @@ router.get("/brevity/memories", requireAuth, async (req, res) => {
   if (!userId) return;
 
   const { constructCallsign, query, limit = 10, includeBrevityExamples = false, minBrevityScore, oneWordOnly } = req.query || {};
-  
+
   if (!constructCallsign || !query) {
     return res.status(400).json({ ok: false, error: "Missing constructCallsign or query" });
   }
@@ -2831,7 +2964,7 @@ router.get("/brevity/memories", requireAuth, async (req, res) => {
   try {
     const { getIdentityService } = await import('../services/identityService.js');
     const identityService = getIdentityService();
-    
+
     // Query identities with brevity context
     let identities = await identityService.queryIdentities(
       userId,
@@ -2842,15 +2975,15 @@ router.get("/brevity/memories", requireAuth, async (req, res) => {
 
     // Filter by brevity metadata if requested
     if (oneWordOnly === 'true') {
-      identities = identities.filter(m => 
-        m.metadata?.oneWordResponse === true || 
+      identities = identities.filter(m =>
+        m.metadata?.oneWordResponse === true ||
         m.metadata?.wordCount === 1
       );
     }
 
     if (minBrevityScore) {
       const minScore = parseFloat(minBrevityScore);
-      identities = identities.filter(m => 
+      identities = identities.filter(m =>
         (m.metadata?.brevityScore || 0) >= minScore
       );
     }
@@ -2860,7 +2993,7 @@ router.get("/brevity/memories", requireAuth, async (req, res) => {
 
     // Add brevity examples if requested
     if (includeBrevityExamples === 'true') {
-      const brevityExamples = identities.filter(m => 
+      const brevityExamples = identities.filter(m =>
         m.metadata?.tags?.some(tag => tag.startsWith('brevity:'))
       );
       identities = [...brevityExamples, ...identities].slice(0, parseInt(limit, 10));
@@ -2918,7 +3051,16 @@ router.get("/profile", requireAuth, async (req, res) => {
         const fs = require('fs').promises;
         const path = require('path');
         const { VVAULT_ROOT } = require("../../vvaultConnector/config.js");
-        const profilePath = path.join(
+        // Try account/profile.json first (correct location), fallback to identity/profile.json
+        const accountProfilePath = path.join(
+          VVAULT_ROOT,
+          'users',
+          'shard_0000',
+          vvaultUserId,
+          'account',
+          'profile.json'
+        );
+        const identityProfilePath = path.join(
           VVAULT_ROOT,
           'users',
           'shard_0000',
@@ -2927,10 +3069,17 @@ router.get("/profile", requireAuth, async (req, res) => {
           'profile.json'
         );
         try {
-          const profileContent = await fs.readFile(profilePath, 'utf8');
+          // Try account/profile.json first
+          const profileContent = await fs.readFile(accountProfilePath, 'utf8');
           vvaultProfile = JSON.parse(profileContent);
         } catch {
-          // VVAULT profile doesn't exist yet - that's okay
+          try {
+            // Fallback to identity/profile.json
+            const profileContent = await fs.readFile(identityProfilePath, 'utf8');
+            vvaultProfile = JSON.parse(profileContent);
+          } catch {
+            // VVAULT profile doesn't exist yet - that's okay
+          }
         }
       }
     } catch (error) {
@@ -2942,7 +3091,12 @@ router.get("/profile", requireAuth, async (req, res) => {
     const mergedProfile = {
       ...oauthProfile,
       vvault_user_id: vvaultProfile?.user_id || null,
-      vvault_linked: !!vvaultProfile
+      vvault_linked: !!vvaultProfile,
+      // Include personalization fields from VVAULT profile
+      nickname: vvaultProfile?.personalization?.nickname || null,
+      occupation: vvaultProfile?.personalization?.occupation || null,
+      tags: vvaultProfile?.personalization?.tags || [],
+      aboutYou: vvaultProfile?.personalization?.aboutYou || null
     };
 
     res.json({
@@ -2952,6 +3106,164 @@ router.get("/profile", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("❌ [VVAULT API] Failed to retrieve user profile:", error);
     res.status(500).json({ ok: false, error: "Failed to retrieve user profile" });
+  }
+});
+
+// Update user personalization in profile.json
+router.post("/profile/personalization", requireAuth, async (req, res) => {
+  const userId = validateUser(res, req.user);
+  if (!userId) return;
+
+  try {
+    const { nickname, occupation, tags, aboutYou } = req.body;
+
+    // Validate input
+    if (nickname === undefined && occupation === undefined && tags === undefined && aboutYou === undefined) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: "At least one personalization field must be provided" 
+      });
+    }
+
+    // Resolve VVAULT user ID
+    const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
+    const vvaultUserId = await resolveVVAULTUserId(userId, req.user.email, false, req.user.name);
+    
+    if (!vvaultUserId) {
+      return res.status(404).json({ 
+        ok: false, 
+        error: "VVAULT user ID not found" 
+      });
+    }
+
+    const fs = require('fs').promises;
+    const path = require('path');
+    const { VVAULT_ROOT } = require("../../vvaultConnector/config.js");
+    
+    // Try account/profile.json first (correct location), fallback to identity/profile.json
+    const accountProfilePath = path.join(
+      VVAULT_ROOT,
+      'users',
+      'shard_0000',
+      vvaultUserId,
+      'account',
+      'profile.json'
+    );
+    const identityProfilePath = path.join(
+      VVAULT_ROOT,
+      'users',
+      'shard_0000',
+      vvaultUserId,
+      'identity',
+      'profile.json'
+    );
+
+    let profilePath = accountProfilePath;
+    let profile = null;
+
+    // Try to read existing profile
+    try {
+      const profileContent = await fs.readFile(accountProfilePath, 'utf8');
+      profile = JSON.parse(profileContent);
+    } catch {
+      try {
+        const profileContent = await fs.readFile(identityProfilePath, 'utf8');
+        profile = JSON.parse(profileContent);
+        profilePath = identityProfilePath;
+      } catch {
+        // Profile doesn't exist, create new one
+        profile = {
+          user_id: vvaultUserId,
+          user_name: req.user.name,
+          email: req.user.email,
+          created: new Date().toISOString(),
+          last_seen: new Date().toISOString(),
+          constructs: [],
+          storage_quota: "unlimited",
+          features: []
+        };
+        // Ensure account directory exists
+        const accountDir = path.dirname(accountProfilePath);
+        await fs.mkdir(accountDir, { recursive: true });
+        profilePath = accountProfilePath;
+      }
+    }
+
+    // Update personalization fields
+    if (!profile.personalization) {
+      profile.personalization = {};
+    }
+
+    if (nickname !== undefined) profile.personalization.nickname = nickname || '';
+    if (occupation !== undefined) profile.personalization.occupation = occupation || '';
+    if (tags !== undefined) profile.personalization.tags = Array.isArray(tags) ? tags : [];
+    if (aboutYou !== undefined) profile.personalization.aboutYou = aboutYou || '';
+
+    // Update last_seen timestamp
+    profile.last_seen = new Date().toISOString();
+
+    // Write updated profile
+    await fs.writeFile(profilePath, JSON.stringify(profile, null, 2), 'utf8');
+
+    console.log(`✅ [VVAULT API] Updated personalization for user ${vvaultUserId}`);
+
+    res.json({
+      ok: true,
+      profile: {
+        nickname: profile.personalization.nickname,
+        occupation: profile.personalization.occupation,
+        tags: profile.personalization.tags,
+        aboutYou: profile.personalization.aboutYou
+      }
+    });
+  } catch (error) {
+    console.error("❌ [VVAULT API] Failed to update personalization:", error);
+    res.status(500).json({ ok: false, error: "Failed to update personalization" });
+  }
+});
+
+router.get("/chat/:sessionId", requireAuth, async (req, res) => {
+  const { sessionId } = req.params;
+  if (!sessionId) {
+    return res.status(400).json({ ok: false, error: "sessionId is required" });
+  }
+
+  try {
+    await loadVVAULTModules();
+    if (!VVAULT_ROOT) {
+      return res.status(500).json({ ok: false, error: "VVAULT_ROOT not configured" });
+    }
+
+    const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
+    const vvaultUserId = await resolveVVAULTUserId(getUserId(req.user), req.user?.email);
+    if (!vvaultUserId) {
+      return res.status(400).json({ ok: false, error: "Failed to resolve VVAULT user ID" });
+    }
+
+    const sanitizedSessionId = sessionId.replace(/[^a-zA-Z0-9_-]/g, "");
+    const [constructIdCandidate] = sanitizedSessionId.split("_chat_with_");
+    const constructId = constructIdCandidate || sanitizedSessionId;
+    const fileName = `chat_with_${constructId}.md`;
+    const fs = require("fs").promises;
+    const transcriptPath = path.join(
+      VVAULT_ROOT,
+      "users",
+      "shard_0000",
+      vvaultUserId,
+      "instances",
+      constructId,
+      "chatty",
+      fileName
+    );
+
+    const content = await fs.readFile(transcriptPath, "utf8");
+    return res.json({ ok: true, content });
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return res.status(404).json({ ok: false, error: "Transcript not found" });
+    }
+    console.error(`❌ [VVAULT API] Failed to load transcript for ${sessionId}:`, error);
+    return res.status(500).json({ ok: false, error: error?.message || "Failed to load transcript" });
   }
 });
 

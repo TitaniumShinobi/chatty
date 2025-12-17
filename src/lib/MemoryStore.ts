@@ -8,6 +8,7 @@
 import Database from 'better-sqlite3';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { checkMemoryPermission } from './memoryPermission';
 
 export interface ChatMessage {
   id?: number;
@@ -116,7 +117,19 @@ export class MemoryStore {
   /**
    * Store a chat message
    */
-  async persistMessage(userId: string, gptId: string, content: string, role: 'user' | 'assistant', ttl?: number): Promise<number> {
+  async persistMessage(
+    userId: string, 
+    gptId: string, 
+    content: string, 
+    role: 'user' | 'assistant', 
+    ttl?: number,
+    settings?: { personalization?: { allowMemory?: boolean } }
+  ): Promise<number> {
+    // Check if memory is allowed
+    if (!checkMemoryPermission(settings, 'persistMessage')) {
+      return 0; // Return 0 to indicate no message was stored
+    }
+
     await this.initialize();
 
     const stmt = this.db.prepare(`
@@ -131,7 +144,17 @@ export class MemoryStore {
   /**
    * Retrieve conversation history
    */
-  async retrieveHistory(userId: string, gptId: string, limit: number = 50): Promise<ChatMessage[]> {
+  async retrieveHistory(
+    userId: string, 
+    gptId: string, 
+    limit: number = 50,
+    settings?: { personalization?: { allowMemory?: boolean } }
+  ): Promise<ChatMessage[]> {
+    // Check if memory is allowed
+    if (!checkMemoryPermission(settings, 'retrieveHistory')) {
+      return []; // Return empty array when memory is disabled
+    }
+
     await this.initialize();
 
     const stmt = this.db.prepare(`
@@ -149,7 +172,19 @@ export class MemoryStore {
   /**
    * Store a triple for symbolic reasoning
    */
-  async storeTriple(userId: string, subject: string, predicate: string, object: string, sourceFile?: string): Promise<number> {
+  async storeTriple(
+    userId: string, 
+    subject: string, 
+    predicate: string, 
+    object: string, 
+    sourceFile?: string,
+    settings?: { personalization?: { allowMemory?: boolean } }
+  ): Promise<number> {
+    // Check if memory is allowed
+    if (!checkMemoryPermission(settings, 'storeTriple')) {
+      return 0; // Return 0 to indicate no triple was stored
+    }
+
     await this.initialize();
 
     const stmt = this.db.prepare(`
@@ -164,7 +199,16 @@ export class MemoryStore {
   /**
    * Search triples by query
    */
-  async searchTriples(userId: string, query: string): Promise<Triple[]> {
+  async searchTriples(
+    userId: string, 
+    query: string,
+    settings?: { personalization?: { allowMemory?: boolean } }
+  ): Promise<Triple[]> {
+    // Check if memory is allowed
+    if (!checkMemoryPermission(settings, 'searchTriples')) {
+      return []; // Return empty array when memory is disabled
+    }
+
     await this.initialize();
 
     const stmt = this.db.prepare(`
@@ -182,7 +226,15 @@ export class MemoryStore {
   /**
    * Store transcript fragment
    */
-  async storeTranscriptFragment(fragment: Omit<TranscriptFragment, 'id'>): Promise<number | null> {
+  async storeTranscriptFragment(
+    fragment: Omit<TranscriptFragment, 'id'>,
+    settings?: { personalization?: { allowMemory?: boolean } }
+  ): Promise<number | null> {
+    // Check if memory is allowed
+    if (!checkMemoryPermission(settings, 'storeTranscriptFragment')) {
+      return null; // Return null when memory is disabled
+    }
+
     await this.initialize();
 
     try {

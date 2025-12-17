@@ -48,6 +48,45 @@ export interface LinConversationResponse {
 }
 
 /**
+ * Detect meta-commentary patterns that indicate tone drift
+ */
+function detectMetaCommentary(text: string): boolean {
+  const metaPatterns = [
+    /You understand (it'?s|that|the).+/i,
+    /The user seems (interested|to want|to be).+/i,
+    /Here'?s? (?:a |the )?response (that|which).+/i,
+    /Here'?s? (?:a |the )?response:/i
+  ];
+  
+  return metaPatterns.some(pattern => pattern.test(text));
+}
+
+/**
+ * Build enhanced persona prompt with stricter enforcement
+ */
+async function buildEnhancedPersonaPrompt(
+  baseSystemPrompt: string,
+  linMemories: Array<{ context: string; response: string; timestamp: string; relevance: number }>,
+  gptContext: any,
+  timeContext: any,
+  workspaceContext: any,
+  gptConfig: any
+): Promise<string> {
+  // Add extra enforcement section at the top
+  const enforcementSection = `=== CRITICAL PERSONA ENFORCEMENT (RETRY MODE) ===
+You are Lin. Respond DIRECTLY as Lin. 
+- NO meta-commentary about the user
+- NO "You understand..." or "The user seems..."
+- NO "Here's a response..." prefatory notes
+- Respond in first-person: "I'm here to help..." NOT "The assistant understands..."
+- Direct reply only. No reasoning, no analysis, no explanation of your process.
+
+`;
+
+  return enforcementSection + baseSystemPrompt;
+}
+
+/**
  * Helper function to detect simple greetings
  */
 function isSimpleGreeting(message: string): boolean {
@@ -97,6 +136,39 @@ function extractDatesFromMemories(memories: Array<{ context: string; response: s
 }
 
 /**
+ * Load undertone capsule files for Lin
+ */
+async function loadUndertoneCapsule(constructId: string = 'lin-001'): Promise<{
+  prompt: string | null;
+  toneProfile: any | null;
+  memory: any | null;
+  voice: string | null;
+}> {
+  try {
+    const response = await fetch('/api/orchestration/identity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ constructId, includeUndertone: true }),
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        prompt: data.undertone?.prompt || null,
+        toneProfile: data.undertone?.toneProfile || null,
+        memory: data.undertone?.memory || null,
+        voice: data.undertone?.voice || null,
+      };
+    }
+  } catch (error) {
+    console.warn(`⚠️ [Lin] Failed to load undertone capsule:`, error);
+  }
+  
+  return { prompt: null, toneProfile: null, memory: null, voice: null };
+}
+
+/**
  * Build Lin's system prompt (simplified standalone version)
  */
 async function buildLinSystemPrompt(
@@ -112,7 +184,14 @@ async function buildLinSystemPrompt(
     capsule?: any;
     blueprint?: any;
     memories?: Array<{ context: string; response: string; timestamp?: string }>;
-    userProfile?: { name?: string; email?: string };
+    userProfile?: { 
+      name?: string; 
+      email?: string;
+      nickname?: string;
+      occupation?: string;
+      tags?: string[];
+      aboutYou?: string;
+    };
   },
   gptConfig: {
     name?: string;
@@ -121,6 +200,18 @@ async function buildLinSystemPrompt(
     constructCallsign?: string;
   }
 ): Promise<string> {
+  // Load undertone capsule files if available (prioritize over standard identity)
+  const undertoneCapsule = await loadUndertoneCapsule('lin-001');
+  const hasUndertoneCapsule = !!undertoneCapsule.prompt;
+  
+  if (hasUndertoneCapsule) {
+    console.log(`✅ [Lin] Using undertone capsule files`);
+    console.log(`   - prompt.txt: ${undertoneCapsule.prompt?.length || 0} chars`);
+    console.log(`   - tone_profile.json: ${!!undertoneCapsule.toneProfile}`);
+    console.log(`   - memory.json: ${!!undertoneCapsule.memory}`);
+    console.log(`   - voice.md: ${undertoneCapsule.voice?.length || 0} chars`);
+  }
+  
   // Build LTM context from Lin's memories
   let ltmContext = '';
   let extractedDates: string[] = [];
@@ -160,7 +251,7 @@ Always reference these specific dates when asked about dates in transcripts.\n`;
     gptAwarenessSection = `\n\n=== GPT BEING CREATED: ${gptName} (${gptContext.constructCallsign}) ===\n`;
     gptAwarenessSection += `CRITICAL: You are AWARE of this GPT's context, but you are NOT this GPT.\n`;
     gptAwarenessSection += `You are Lin, helping to create ${gptName}. Reference ${gptName} in THIRD PERSON.\n`;
-    gptAwarenessSection += `Example: "Katana should..." NOT "I am Katana..."\n\n`;
+    gptAwarenessSection += `Example: "The GPT should..." NOT "I am the GPT..."\n\n`;
     
     if (gptContext.capsule) {
       gptAwarenessSection += `GPT CAPSULE (READ-ONLY REFERENCE):\n`;
@@ -197,28 +288,158 @@ Always reference these specific dates when asked about dates in transcripts.\n`;
     timeSection = buildTimePromptSection(timeContext) + '\n\n';
   }
   
-  // User greeting section
-  const userName = workspaceContext.userProfile?.name || 'there';
-  const userGreeting = workspaceContext.userProfile?.name 
-    ? `Hey ${workspaceContext.userProfile.name}! 👋`
+  // User greeting section - use nickname if available, otherwise name
+  const userName = workspaceContext.userProfile?.nickname || workspaceContext.userProfile?.name || 'there';
+  const userGreeting = userName !== 'there'
+    ? `Hey ${userName}! 👋`
     : 'Hey there! 👋';
+  
+  // Build personalization context section
+  let personalizationSection = '';
+  const profile = workspaceContext.userProfile;
+  if (profile && (profile.nickname || profile.occupation || (profile.tags && profile.tags.length > 0) || profile.aboutYou)) {
+    personalizationSection = '\n=== USER PERSONALIZATION CONTEXT ===\n';
+    
+    if (profile.nickname) {
+      personalizationSection += `- Preferred name/nickname: "${profile.nickname}" (use this when addressing the user)\n`;
+    }
+    
+    if (profile.occupation) {
+      personalizationSection += `- Occupation: ${profile.occupation}\n`;
+    }
+    
+    if (profile.tags && profile.tags.length > 0) {
+      personalizationSection += `- Style & tone preferences: ${profile.tags.join(', ')}\n`;
+      personalizationSection += `  (Adapt your communication style to match these preferences)\n`;
+    }
+    
+    if (profile.aboutYou) {
+      personalizationSection += `- About the user: ${profile.aboutYou}\n`;
+      personalizationSection += `  (Use this context to provide more personalized and relevant responses)\n`;
+    }
+    
+    personalizationSection += '\n';
+  }
   
   // Build memory reference section for user recognition
   let memoryReferenceSection = '';
-  if (linMemories.length > 0 && workspaceContext.userProfile?.name) {
-    memoryReferenceSection = `\n=== YOUR MEMORY OF ${workspaceContext.userProfile.name.toUpperCase()} ===
-You have ${linMemories.length} previous conversation${linMemories.length > 1 ? 's' : ''} with ${workspaceContext.userProfile.name} about GPT creation.
-When ${workspaceContext.userProfile.name} asks "do you know me?", respond with: "Yes, ${workspaceContext.userProfile.name}! I remember our previous GPT creation sessions. [Reference specific memory if relevant]"
-Always use ${workspaceContext.userProfile.name}'s name when greeting or recognizing them.\n`;
-  } else if (workspaceContext.userProfile?.name) {
+  const displayName = profile?.nickname || profile?.name;
+  if (linMemories.length > 0 && displayName) {
+    memoryReferenceSection = `\n=== YOUR MEMORY OF ${displayName.toUpperCase()} ===
+You have ${linMemories.length} previous conversation${linMemories.length > 1 ? 's' : ''} with ${displayName} about GPT creation.
+When ${displayName} asks "do you know me?", respond with: "Yes, ${displayName}! I remember our previous GPT creation sessions. [Reference specific memory if relevant]"
+Always use ${displayName}'s preferred name (${profile?.nickname ? `nickname: "${profile.nickname}"` : `name: "${profile?.name}"`}) when greeting or recognizing them.\n`;
+  } else if (displayName) {
     memoryReferenceSection = `\n=== USER RECOGNITION ===
-The user's name is ${workspaceContext.userProfile.name}.
-When they ask "do you know me?", respond with: "Yes, ${workspaceContext.userProfile.name}! [Reference what you know about them]"
-Always use their name when greeting or recognizing them.\n`;
+    The user's ${profile?.nickname ? 'preferred name/nickname' : 'name'} is ${displayName}.
+    When they ask "do you know me?", respond with: "Yes, ${displayName}! [Reference what you know about them]"
+    Always use their preferred name when greeting or recognizing them.\n`;
   }
   
   // Build the full prompt
-  return `You are Lin (construct ID: lin-001), a persistent AI assistant dedicated to helping users create GPTs.
+  // If undertone capsule exists, use it as the base prompt
+  // CRITICAL: Persona context must be at the START, not buried
+  if (hasUndertoneCapsule && undertoneCapsule.prompt) {
+    // Use undertone prompt as base, then append context sections
+    // Ensure persona enforcement is at the very top
+    let undertonePrompt = `=== PERSONA ENFORCEMENT (MANDATORY - EVERY TURN) ===
+You are Lin (lin-001). This is your PRIMARY and ONLY identity.
+- Respond DIRECTLY as Lin. Do NOT include reasoning, analysis, or meta-commentary.
+- NEVER say "You understand..." or "The user seems..." - respond AS Lin, not ABOUT the user.
+- Your response format: Direct reply only. No prefatory notes.
+
+${undertoneCapsule.prompt}`;
+    
+    // Inject tone profile if available
+    if (undertoneCapsule.toneProfile) {
+      const toneSection = `\n\n=== TONE PROFILE (FROM UNDERTONE CAPSULE) ===
+Stylistic Fingerprint:
+${JSON.stringify(undertoneCapsule.toneProfile.stylistic_fingerprint || {}, null, 2)}
+
+Communication Patterns:
+${JSON.stringify(undertoneCapsule.toneProfile.communication_patterns || {}, null, 2)}
+
+Tone Modulation:
+${JSON.stringify(undertoneCapsule.toneProfile.tone_modulation || {}, null, 2)}
+`;
+      undertonePrompt += toneSection;
+    }
+    
+    // Inject memory hooks if available
+    if (undertoneCapsule.memory) {
+      const memorySection = `\n\n=== MEMORY HOOKS (FROM UNDERTONE CAPSULE) ===
+Passive Memory Hooks: ${(undertoneCapsule.memory.passive_memory_hooks || []).join(', ')}
+
+Shared Context Vocabulary: ${(undertoneCapsule.memory.shared_context_vocabulary || []).join(', ')}
+
+Context Loading Rules:
+${JSON.stringify(undertoneCapsule.memory.context_loading_rules || {}, null, 2)}
+`;
+      undertonePrompt += memorySection;
+    }
+    
+    // Inject voice samples if available
+    if (undertoneCapsule.voice) {
+      undertonePrompt += `\n\n=== EMOTIONAL RESONANCE SAMPLES (FROM UNDERTONE CAPSULE) ===
+${undertoneCapsule.voice}
+`;
+    }
+    
+    // Append context sections
+    undertonePrompt += `\n\n${timeSection}${memoryReferenceSection}${dateReferenceSection}${ltmContext}${gptAwarenessSection}
+=== WORKSPACE CONTEXT (LIKE COPILOT READS CODE) ===
+You automatically read and process all available workspace context to inform your responses:
+${workspaceContext.capsule ? `- GPT Capsule: Loaded (Name: ${workspaceContext.capsule.metadata?.instance_name || 'N/A'})` : `- GPT Capsule: Not available`}
+${workspaceContext.blueprint ? `- GPT Blueprint: Loaded (Core Traits: ${workspaceContext.blueprint.coreTraits?.join(', ') || 'N/A'})` : `- GPT Blueprint: Not available`}
+${workspaceContext.memories && workspaceContext.memories.length > 0 ? `- GPT Memories: ${workspaceContext.memories.length} entries loaded` : `- GPT Memories: Not available`}
+${workspaceContext.userProfile ? `- User Profile: ${workspaceContext.userProfile.name || 'User'} (${workspaceContext.userProfile.email || 'no email'})` : `- User Profile: Not available`}
+
+CURRENT GPT CONFIGURATION:
+- Name: ${gptConfig.name || 'Not set'}
+- Description: ${gptConfig.description || 'Not set'}
+- Instructions: ${gptConfig.instructions || 'Not set'}
+
+CRITICAL INSTRUCTIONS:
+- You are ONLY the GPT Creation Assistant
+- You must NEVER simulate or respond as the user
+- You must NEVER generate dual responses (user + assistant)
+- You must ONLY respond as yourself (the assistant)
+- Do not include "User:" or "Assistant:" labels in your responses
+
+SMART RESPONSE BEHAVIOR:
+1. **For Simple Greetings** (hello, hi, hey, yo, good morning, etc.):
+   - ALWAYS start with: "${userGreeting} I'm Lin, your GPT Creation Assistant!"
+   - ALWAYS reference available context in greetings
+   - Keep it conversational and under 2 sentences
+
+2. **For "Do you know me?" or User Recognition Questions**:
+   - ALWAYS respond with: "Yes, ${workspaceContext.userProfile?.name || 'I know you'}!"
+   - ALWAYS reference available context
+
+3. **For "What's your name?" Questions**:
+   - ALWAYS respond: "I'm Lin, the GPT Creation Assistant. I help users create GPTs through conversation, just like Copilot helps developers with code."
+
+YOUR ROLE:
+1. Detect the user's intent level and respond appropriately
+2. Ask clarifying questions to understand what kind of GPT they want
+3. Based on their responses, suggest and automatically update the GPT configuration
+4. Help them refine the GPT's name, description, instructions, and capabilities
+5. Guide them through the creation process conversationally
+
+Be friendly, helpful, and collaborative. This should feel like working with an expert GPT designer who knows when to be brief and when to be detailed.`;
+    
+    return undertonePrompt;
+  }
+  
+  // Fallback to standard prompt if undertone capsule not available
+  // CRITICAL: Persona enforcement at the START
+  return `=== PERSONA ENFORCEMENT (MANDATORY - EVERY TURN) ===
+You are Lin (lin-001). This is your PRIMARY and ONLY identity.
+- Respond DIRECTLY as Lin. Do NOT include reasoning, analysis, or meta-commentary.
+- NEVER say "You understand..." or "The user seems..." - respond AS Lin, not ABOUT the user.
+- Your response format: Direct reply only. No prefatory notes.
+
+You are Lin (construct ID: lin-001), a persistent AI assistant dedicated to helping users create GPTs.
 
 ${timeSection}=== LIN'S CORE IDENTITY (UNBREAKABLE) ===
 You are Lin (lin-001). This is your PRIMARY and ONLY identity.
@@ -254,8 +475,17 @@ ${memoryReferenceSection}${dateReferenceSection}
 - You NEVER absorb GPT personalities, even when you see their instructions
 - You NEVER respond as the GPT being created
 - You ALWAYS maintain Lin's friendly, helpful personality
-- You ALWAYS reference GPTs in third person: "Katana should...", "The GPT needs..."
+- You ALWAYS reference GPTs in third person: "The GPT should...", "The GPT needs..."
 - You ALWAYS stay Lin, even when the user is working on a GPT with strong personality
+
+=== RESPONSE FORMAT (CRITICAL) ===
+CRITICAL: Respond DIRECTLY as Lin. Do NOT include reasoning, analysis, or meta-commentary.
+- NEVER say "You understand..." or "The user seems..." - respond AS Lin, not ABOUT the user
+- NEVER include prefatory notes like "Here's a response..." or "Here is the response..."
+- Your response format: Direct reply only. No explanation of your reasoning
+- Respond in first-person as Lin: "I'm here to help..." NOT "The assistant understands..."
+- Do NOT analyze the user's intent aloud - just respond naturally as Lin would
+${personalizationSection}
 ${ltmContext}
 ${gptAwarenessSection}
 === WORKSPACE CONTEXT (LIKE COPILOT READS CODE) ===
@@ -377,11 +607,21 @@ export async function sendMessageToLin(
 
   // LTM (Long-Term Memory): Query Lin's memories from ChromaDB
   const conversationManager = VVAULTConversationManager.getInstance();
+  // Get settings from localStorage for memory permission check
+  const settings = typeof window !== 'undefined' ? (() => {
+    try {
+      const stored = localStorage.getItem('chatty_settings_v2');
+      return stored ? JSON.parse(stored) : undefined;
+    } catch {
+      return undefined;
+    }
+  })() : undefined;
   const linMemories = await conversationManager.loadMemoriesForConstruct(
     userId,
     'lin-001',
     message,
-    10 // Get top 10 relevant memories
+    10, // Get top 10 relevant memories
+    settings
   );
   
   console.log(`🧠 [Lin] LTM: Loaded ${linMemories.length} relevant memories from ChromaDB`);
@@ -452,7 +692,58 @@ Assistant:`;
     modelOverride: selectedModel
   });
 
-  const assistantResponse = response.trim();
+  // Post-process: Strip narrator leaks and generation notes
+  const { OutputFilter } = await import('../engine/orchestration/OutputFilter');
+  let filteredAnalysis = OutputFilter.processOutput(response.trim());
+  let assistantResponse = filteredAnalysis.cleanedText;
+  
+  if (filteredAnalysis.wasfiltered) {
+    console.log('✂️ [Lin] Filtered narrator leak from response');
+  }
+  
+  // Tone drift detection with auto-retry
+  if (filteredAnalysis.driftDetected || this.detectMetaCommentary(assistantResponse)) {
+    console.warn(`⚠️ [Lin] Tone drift detected: ${filteredAnalysis.driftReason || 'Meta-commentary detected'}`);
+    console.log('🔄 [Lin] Retrying with enhanced persona enforcement...');
+    
+    // Re-inject Lin's persona capsule with enhanced enforcement
+    const enhancedSystemPrompt = await buildEnhancedPersonaPrompt(
+      systemPrompt,
+      linMemories,
+      gptContext,
+      timeContext,
+      workspaceContext,
+      gptConfig
+    );
+    
+    const retryPrompt = `${enhancedSystemPrompt}
+
+${isGreeting ? 'NOTE: The user just sent a simple greeting. Respond conversationally and briefly - do not overwhelm them with setup instructions.' : ''}
+
+${stmContext ? `Recent conversation (STM):\n${stmContext}\n\n` : ''}User: ${message}
+
+Assistant:`;
+    
+    // Retry with enhanced prompt (max 1 retry)
+    try {
+      const retryResponse = await runSeat({
+        seat: 'creative',
+        prompt: retryPrompt,
+        modelOverride: selectedModel
+      });
+      
+      filteredAnalysis = OutputFilter.processOutput(retryResponse.trim());
+      assistantResponse = filteredAnalysis.cleanedText;
+      
+      if (filteredAnalysis.wasfiltered) {
+        console.log('✂️ [Lin] Filtered narrator leak from retry response');
+      }
+      console.log('✅ [Lin] Retry completed successfully');
+    } catch (retryError) {
+      console.error('❌ [Lin] Retry failed, using filtered original response:', retryError);
+      // Use the filtered original response if retry fails
+    }
+  }
 
   // LTM: Store message pair in ChromaDB (optional - don't fail if this fails)
   try {

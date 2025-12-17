@@ -4,6 +4,12 @@
 const isBrowser = typeof window !== 'undefined';
 const envVars = (!isBrowser && typeof process !== 'undefined' && process.env) ? process.env : undefined;
 
+// Import Node.js modules as ES modules (only used in Node.js, browser uses browserSeatRunner)
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as http from 'node:http';
+import * as https from 'node:https';
+
 export type Seat = 'smalltalk' | 'coding' | 'creative' | string;
 
 type SeatInfo = { tag: string; role?: string } | string;
@@ -45,8 +51,7 @@ function loadSeatConfig(): SeatConfig {
     return cachedConfig;
   }
 
-  const fs = require('node:fs') as typeof import('node:fs');
-  const path = require('node:path') as typeof import('node:path');
+  // Use imported ES modules (fs and path are imported at top level)
 
   const cfgPath = path.resolve(process.cwd(), 'models.json');
   try {
@@ -215,8 +220,7 @@ async function makeRequest(
   }
 
   const { protocol } = new URL(url);
-  const http = require('node:http') as typeof import('node:http');
-  const https = require('node:https') as typeof import('node:https');
+  // http and https are imported at top level
 
   return new Promise<string>((resolve, reject) => {
     const timeoutId = setTimeout(() => {
@@ -289,8 +293,7 @@ async function fetchJSON(urlStr: string, timeout = 10000): Promise<any> {
     }
   }
 
-  const http = require('node:http') as typeof import('node:http');
-  const https = require('node:https') as typeof import('node:https');
+  // http and https are imported at top level
 
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {

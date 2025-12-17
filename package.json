@@ -2,11 +2,12 @@
   "name": "chatty",
   "version": "1.0.0",
   "type": "module",
-  "description": "A modern AI chat application with beautiful interface and powerful features",
+  "description": "A next-generation AI workspace by LIFE Technology, designed for production environments.",
   "main": "index.js",
   "scripts": {
     "start": "./start.sh",
     "dev": "vite",
+    "dev:strict": "VITE_STRICT_MODE=true vite",
     "dev:full": "concurrently \"npm run dev\" \"npm run server\"",
     "server": "cd server && npm run dev",
     "server:cli": "cd server && npm run cli",
@@ -18,7 +19,8 @@
     "lint:fix": "eslint . --ext js,jsx,ts,tsx --fix",
     "test": "jest",
     "ledger": "python3 scripts/append_ledger_entry.py",
-    "project-map": "python3 scripts/project_map.py"
+    "project-map": "python3 scripts/project_map.py",
+    "capsuleforge": "node scripts/capsuleforge-cli.js"
   },
   "dependencies": {
     "@tensorflow/tfjs-node": "^4.22.0",
@@ -27,6 +29,7 @@
     "express": "^5.1.0",
     "ffmpeg-static": "^5.2.0",
     "fluent-ffmpeg": "^2.1.3",
+    "glob": "^13.0.0",
     "lucide-react": "^0.294.0",
     "pdfjs-dist": "^5.4.54",
     "react": "^18.2.0",
@@ -72,6 +75,6 @@
     "react",
     "typescript"
   ],
-  "author": "Your Name",
+  "author": "LIFE Technology",
   "license": "MIT"
 }

@@ -35,7 +35,11 @@ export class DynamicPersonaOrchestrator {
   constructor(vvaultRoot?: string, model?: string) {
     this.personaOrchestrator = new PersonalityOrchestrator(vvaultRoot, model);
     this.personaDetector = new PersonaDetectionEngine(vvaultRoot);
-    const parsedThreshold = parseFloat(process.env.PERSONA_CONFIDENCE_THRESHOLD || '');
+    // Browser-safe environment variable access
+    const envValue = typeof process !== 'undefined' && process.env 
+      ? process.env.PERSONA_CONFIDENCE_THRESHOLD 
+      : undefined;
+    const parsedThreshold = parseFloat(envValue || '');
     this.confidenceThreshold = Number.isFinite(parsedThreshold) ? parsedThreshold : 0.7;
   }
 
@@ -83,7 +87,7 @@ export class DynamicPersonaOrchestrator {
         contextLockManager.lockPersona(
           detectedPersona,
           threadId,
-          parseInt(process.env.PERSONA_LOCK_DURATION || '10'),
+          parseInt((typeof process !== 'undefined' && process.env ? process.env.PERSONA_LOCK_DURATION : undefined) || '10'),
           `High confidence persona detection (${(detectedPersona.confidence * 100).toFixed(0)}%)`
         );
       }

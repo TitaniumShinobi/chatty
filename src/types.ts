@@ -70,6 +70,7 @@ export interface ChatAreaProps {
 
 export interface SidebarProps {
   conversations: Conversation[]
+  threads: any[]
   currentConversationId: string | null
   onConversationSelect: (id: string) => void
   onNewConversation: () => void
@@ -89,6 +90,7 @@ export interface SidebarProps {
   currentUser?: any
   onLogout?: () => void
   onShowSettings?: () => void
+  hasBlockingOverlay?: boolean
 }
 
 export interface MessageProps {

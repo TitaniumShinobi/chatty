@@ -12,14 +12,48 @@
 
 import type { PersonalityBlueprint } from '../transcript/types';
 import { PersonalityOrchestrator } from './PersonalityOrchestrator';
-import { detectToneEnhanced } from '../../lib/toneDetector';
+import { detectTone, detectToneEnhanced } from '../../lib/toneDetector';
 import { WorkspaceContextBuilder } from '../context/WorkspaceContextBuilder';
 import { AutomaticRuntimeOrchestrator, RuntimeAssignment, RuntimeDetectionContext } from '../../lib/automaticRuntimeOrchestrator';
 import { RuntimeContextManager } from '../../lib/runtimeContextManager';
 import { getMemoryStore } from '../../lib/MemoryStore';
 import { getVVAULTTranscriptLoader } from '../../lib/VVAULTTranscriptLoader';
 import { Reasoner } from '../../brain/reasoner';
-import { createKatanaLockdown, createPersonaLockdown } from '../character/PersonaLockdown.ts';
+import { loadWorkspaceContext } from '../../lib/workspaceContextLoader';
+import { detectRachelMoment, buildResonanceInstruction } from '../../lib/rachelMomentDetector';
+import { getPersonaRouter } from '../../core/persona/PersonaRouter';
+import { MemoryRetrievalEngine } from '../../core/memory/MemoryRetrievalEngine';
+import { ContextScoringLayer } from '../../core/memory/ContextScoringLayer';
+import { TriadGate, TriadStatus } from './TriadGate';
+import { OutputFilter } from './OutputFilter';
+import { checkMemoryPermission } from '../../lib/memoryPermission';
+import { VVAULTRetrievalWrapper } from '../../lib/vvaultRetrieval';
+import { IdentityMatcher } from '../character/IdentityMatcher';
+import {
+  getTimeContext,
+  determineSessionState,
+  buildSessionAwareTimePromptSection,
+  buildTimePromptSection,
+  prioritizeMemoriesByTime,
+  formatMemoryTimestamp,
+  getRelativeTime,
+} from '../../lib/timeAwareness';
+import { readFile } from 'fs/promises';
+
+const orchestratorConfig = {
+  api: {
+    vvaultProfile: '/api/vvault/profile',
+    vvaultCapsules: '/api/vvault/capsules/load',
+  },
+  paths: {
+    linIdentityCapsule: `${process.cwd()}/chatty/identity/lin-001/capsule.json`,
+    linIdentityWeights: `${process.cwd()}/chatty/identity/lin-001`,
+    vvaultRoot: process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault',
+  },
+  models: {
+    toneDetection: 'phi3:latest',
+  },
+};
 
 export interface UnifiedLinContext {
   // VVAULT ChromaDB memories (always-on, per-response retrieval)
@@ -30,21 +64,41 @@ export interface UnifiedLinContext {
     timestamp?: string;
     memoryType?: 'short-term' | 'long-term';
   }>;
-  
+
   // Conversation history (current thread only) - ALWAYS includes timestamps
   conversationHistory: Array<{
     role: 'user' | 'assistant';
     content: string;
     timestamp: number; // REQUIRED: All messages must have timestamps
   }>;
-  
+
   // Character blueprint (if available)
   blueprint?: PersonalityBlueprint;
-  
+
   // User profile (from VVAULT)
   userProfile?: {
     name?: string;
     email?: string;
+    nickname?: string;
+    occupation?: string;
+    tags?: string[];
+    aboutYou?: string;
+  };
+
+  // Multi-turn session state
+  sessionState?: {
+    emotionalState: { valence: number; arousal: number; dominantEmotion: string };
+    relationshipDynamics: { intimacyLevel: number; trustLevel: number; interactionCount: number };
+    conversationThemes: string[];
+    lastMessageContext: string;
+  };
+
+  // Workspace context
+  workspaceContext?: {
+    activeFiles: Array<{ path: string; language: string; content: string }>;
+    openBuffers: Array<{ name: string; content: string }>;
+    projectContext?: string;
+    passiveListeningContext?: string;
   };
 }
 
@@ -67,7 +121,10 @@ export class UnifiedLinOrchestrator {
   private runtimeContextManager: RuntimeContextManager;
   private memoryStore = getMemoryStore();
   private transcriptLoader = getVVAULTTranscriptLoader();
-  
+  private personaRouter = getPersonaRouter();
+  private memoryRetrievalEngine: MemoryRetrievalEngine;
+  private contextScoringLayer: ContextScoringLayer;
+
   // Multi-turn state tracking (relationship, emotion, conversation continuity)
   private sessionState: Map<string, {
     emotionalState: { valence: number; arousal: number; dominantEmotion: string };
@@ -75,12 +132,14 @@ export class UnifiedLinOrchestrator {
     conversationThemes: string[];
     lastMessageContext: string;
   }> = new Map();
-  
+
   constructor(vvaultRoot?: string) {
     this.personalityOrchestrator = new PersonalityOrchestrator(vvaultRoot);
     this.workspaceContextBuilder = new WorkspaceContextBuilder();
     this.automaticRuntimeOrchestrator = AutomaticRuntimeOrchestrator.getInstance();
     this.runtimeContextManager = RuntimeContextManager.getInstance();
+    this.memoryRetrievalEngine = new MemoryRetrievalEngine(vvaultRoot);
+    this.contextScoringLayer = new ContextScoringLayer();
   }
 
   /**
@@ -94,33 +153,38 @@ export class UnifiedLinOrchestrator {
     constructCallsign: string,
     query: string,
     limit: number = 10,
-    blueprint?: PersonalityBlueprint
+    blueprint?: PersonalityBlueprint,
+    settings?: { personalization?: { allowMemory?: boolean } }
   ): Promise<UnifiedLinContext['memories']> {
+    // Check if memory is allowed
+    if (!checkMemoryPermission(settings, 'loadVVAULTMemories')) {
+      return []; // Return empty array when memory is disabled
+    }
+
     const maxRetries = 3;
     const baseDelay = 500; // 500ms base delay
-    
+
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
         // Use VVAULT retrieval service (always-on background retrieval)
-        const { VVAULTRetrievalWrapper } = await import('../../lib/vvaultRetrieval');
         const fetcher = typeof window !== 'undefined' && typeof window.fetch === 'function'
           ? window.fetch.bind(window)
           : fetch;
         const vvaultRetrieval = new VVAULTRetrievalWrapper({ fetcher });
-        
+
         // Detect tone for better retrieval
-        const { detectTone } = await import('../../lib/toneDetector');
         const tone = detectTone({ text: query });
-        
+
         // Query ChromaDB memories (short-term and long-term)
         const result = await vvaultRetrieval.retrieveMemories({
           constructCallsign,
           semanticQuery: query,
           toneHints: tone ? [tone.tone] : [],
           limit,
-          includeDiagnostics: false
+          includeDiagnostics: false,
+          settings // Pass settings for memory permission
         });
-        
+
         const memories = result.memories.map(m => ({
           context: m.context || '',
           response: m.response || '',
@@ -128,7 +192,7 @@ export class UnifiedLinOrchestrator {
           timestamp: m.timestamp,
           memoryType: m.memoryType as 'short-term' | 'long-term' | undefined
         }));
-        
+
         // Success - return memories
         if (memories.length > 0 || attempt === maxRetries - 1) {
           if (attempt > 0) {
@@ -136,7 +200,7 @@ export class UnifiedLinOrchestrator {
           }
           return memories;
         }
-        
+
         // If no memories but not last attempt, retry
         if (memories.length === 0 && attempt < maxRetries - 1) {
           const delay = baseDelay * Math.pow(2, attempt); // Exponential backoff
@@ -144,25 +208,25 @@ export class UnifiedLinOrchestrator {
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;
         }
-        
+
         return memories;
       } catch (error) {
         const isLastAttempt = attempt === maxRetries - 1;
         const delay = baseDelay * Math.pow(2, attempt);
-        
+
         console.error(`❌ [UnifiedLinOrchestrator] Memory retrieval failed (attempt ${attempt + 1}/${maxRetries}):`, error);
-        
+
         if (isLastAttempt) {
           // Final attempt failed - try fallback to blueprint anchors
           console.warn('⚠️ [UnifiedLinOrchestrator] All retries exhausted, attempting blueprint anchor fallback...');
           return this.fallbackToBlueprintAnchors(blueprint, query, limit);
         }
-        
+
         // Wait before retry (exponential backoff)
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
-    
+
     // Should never reach here, but TypeScript requires return
     return this.fallbackToBlueprintAnchors(blueprint, query, limit);
   }
@@ -179,7 +243,7 @@ export class UnifiedLinOrchestrator {
       console.warn('⚠️ [UnifiedLinOrchestrator] No blueprint anchors available for fallback');
       return [];
     }
-    
+
     // Convert blueprint anchors to memory format
     const anchorMemories = blueprint.memoryAnchors
       .filter(anchor => anchor.significance > 0.5)
@@ -192,7 +256,7 @@ export class UnifiedLinOrchestrator {
         timestamp: anchor.timestamp || new Date().toISOString(),
         memoryType: 'long-term' as const
       }));
-    
+
     console.log(`✅ [UnifiedLinOrchestrator] Using ${anchorMemories.length} blueprint anchors as fallback`);
     return anchorMemories;
   }
@@ -206,24 +270,32 @@ export class UnifiedLinOrchestrator {
     constructCallsign: string,
     userMessage: string,
     conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
-    blueprint?: PersonalityBlueprint
+    blueprint?: PersonalityBlueprint,
+    settings?: { personalization?: { allowMemory?: boolean } }
   ): Promise<UnifiedLinContext> {
     // ALWAYS retrieve memories from ChromaDB (per-response) with retry + fallback
-    const memories = await this.loadVVAULTMemories(userId, constructCallsign, userMessage, 10, blueprint);
-    
-    // Load user profile
+    const memories = await this.loadVVAULTMemories(userId, constructCallsign, userMessage, 10, blueprint, settings);
+
+    // Load user profile with personalization from VVAULT
     let userProfile: UnifiedLinContext['userProfile'] = undefined;
     try {
-      const userResponse = await fetch('/api/me', {
+      const profileResponse = await fetch(orchestratorConfig.api.vvaultProfile, {
         credentials: 'include'
       }).catch(() => null);
-      
-      if (userResponse?.ok) {
-        const user = await userResponse.json();
-        userProfile = {
-          name: user.name,
-          email: user.email
-        };
+
+      if (profileResponse?.ok) {
+        const profileData = await profileResponse.json();
+        if (profileData?.ok && profileData.profile) {
+          const profile = profileData.profile;
+          userProfile = {
+            name: profile.name,
+            email: profile.email,
+            nickname: profile.nickname || undefined,
+            occupation: profile.occupation || undefined,
+            tags: profile.tags && profile.tags.length > 0 ? profile.tags : undefined,
+            aboutYou: profile.aboutYou || undefined
+          };
+        }
       }
     } catch (error) {
       console.warn('[UnifiedLinOrchestrator] Failed to load user profile:', error);
@@ -241,7 +313,6 @@ export class UnifiedLinOrchestrator {
    */
   async loadTimeContext(): Promise<any> {
     try {
-      const { getTimeContext } = await import('../../lib/timeAwareness');
       return await getTimeContext();
     } catch (error) {
       console.warn('[UnifiedLinOrchestrator] Failed to load time context:', error);
@@ -261,37 +332,72 @@ export class UnifiedLinOrchestrator {
     constructId: string,
     callsign: string,
     threads: any[],
-    conversationHistory: Array<{ role: 'user' | 'assistant'; content: string; timestamp?: number }>
+    conversationHistory: Array<{ role: 'user' | 'assistant'; content: string; timestamp?: number }>,
+    settings?: { personalization?: { allowMemory?: boolean } }
   ): Promise<UnifiedLinResponse> {
     // Ensure all messages have timestamps (add if missing)
     const timestampedHistory = conversationHistory.map(msg => ({
       ...msg,
       timestamp: msg.timestamp || Date.now()
     }));
+
+    const messagePreview = userMessage.length > 120 ? `${userMessage.slice(0, 120)}…` : userMessage;
+    console.log(
+      `[UnifiedLinOrchestrator] Orchestrating response for ${callsign} (construct ${constructId}, thread ${threadId}). Message preview: "${messagePreview}"`
+    );
+
+    // TRIAD SANITY CHECK (Strict Enforcement)
+    // Enforce NO TRIAD -> NO RESPONSE rule
+    let triadStatus: TriadStatus | null = null;
+    try {
+      triadStatus = await TriadGate.getInstance().checkTriadAvailability();
+      console.log(
+        '[UnifiedLinOrchestrator] Triad gate status:',
+        `healthy=${triadStatus.healthy}`,
+        { latency: triadStatus.latency, failedSeats: triadStatus.failedSeats }
+      );
+
+      if (!triadStatus.healthy) {
+        const errorMsg = `⛔ [UnifiedLinOrchestrator] TRIAD BROKEN: ${triadStatus.failedSeats.join(', ')} unavailable. Conversation PAUSED.`;
+        console.error(errorMsg);
+        throw new Error(errorMsg);
+      }
+    } catch (error: any) {
+      if (error.message && error.message.includes('TRIAD BROKEN')) {
+        throw error; // Propagate the pause signal
+      }
+      console.warn('[UnifiedLinOrchestrator] Triad check warning (non-blocking):', error);
+    }
+
     // ALWAYS load VVAULT ChromaDB memories (per-response, always-on)
     // Load blueprint first for fallback support
     let blueprint: PersonalityBlueprint | undefined;
     try {
-      const { IdentityMatcher } = await import('../character/IdentityMatcher');
       const identityMatcher = new IdentityMatcher();
       blueprint = await identityMatcher.loadPersonalityBlueprint(userId, constructId, callsign);
     } catch (error) {
       console.warn('[UnifiedLinOrchestrator] Failed to load blueprint for memory fallback:', error);
     }
-    
+
+    console.log(`[UnifiedLinOrchestrator] Loading unified context for ${callsign}`);
     const unifiedContext = await this.loadUnifiedContext(
       userId,
       callsign,
       userMessage,
       timestampedHistory,
-      blueprint // Pass blueprint for fallback
+      blueprint, // Pass blueprint for fallback
+      settings // Pass settings for memory permission
+    );
+
+    console.log(
+      `[UnifiedLinOrchestrator] Unified context ready: memories=${unifiedContext.memories.length}, conversationHistory=${unifiedContext.conversationHistory.length}`
     );
 
     // Load capsule (hardlock into GPT) - HIGHEST PRIORITY
     let capsule: any = undefined;
     try {
       const response = await fetch(
-        `/api/vvault/capsules/load?constructCallsign=${encodeURIComponent(callsign)}`,
+        `${orchestratorConfig.api.vvaultCapsules}?constructCallsign=${encodeURIComponent(callsign)}`,
         { credentials: 'include' }
       );
       if (response.ok) {
@@ -313,7 +419,7 @@ export class UnifiedLinOrchestrator {
     if (blueprint) {
       unifiedContext.blueprint = blueprint;
     }
-    
+
     // Load multi-turn session state (relationship, emotion, continuity)
     const sessionKey = `${userId}-${callsign}`;
     const sessionState = this.sessionState.get(sessionKey) || {
@@ -322,13 +428,13 @@ export class UnifiedLinOrchestrator {
       conversationThemes: [],
       lastMessageContext: ''
     };
-    
+
     // Update session state based on conversation history
     sessionState.interactionCount = conversationHistory.filter(m => m.role === 'user').length;
     if (conversationHistory.length > 0) {
       sessionState.lastMessageContext = conversationHistory[conversationHistory.length - 1].content;
     }
-    
+
     // Extract conversation themes from history
     const recentMessages = conversationHistory.slice(-5);
     const themes = new Set<string>();
@@ -342,58 +448,79 @@ export class UnifiedLinOrchestrator {
       });
     });
     sessionState.conversationThemes = Array.from(themes).slice(0, 5);
-    
+
     this.sessionState.set(sessionKey, sessionState);
 
     // MEMORY INTEGRATION: Load persistent memory and transcript fragments
     let memoryContext = '';
     let transcriptContext = '';
-    
+    let transcriptFragmentsLoaded = 0;
+    let memoryTriplesLoaded = 0;
+    let memoryPersisted = false;
+
     try {
       // Initialize memory store
       await this.memoryStore.initialize();
-      
+
       // Load transcript fragments for this construct
       console.log(`🧠 [UnifiedLinOrchestrator] Loading transcript fragments for ${callsign}`);
       await this.transcriptLoader.loadTranscriptFragments(callsign, userId);
-      
+
       // Search for relevant transcript memories
-      const relevantFragments = await this.transcriptLoader.getRelevantFragments(callsign, userMessage, 5);
-      if (relevantFragments.length > 0) {
-        transcriptContext = relevantFragments
-          .map(f => `"${f.content}" (context: ${f.context})`)
-          .join('\n');
-        console.log(`📚 [UnifiedLinOrchestrator] Found ${relevantFragments.length} relevant transcript fragments`);
-      }
-      
+        const relevantFragments = await this.transcriptLoader.getRelevantFragments(callsign, userMessage, 5);
+        transcriptFragmentsLoaded = relevantFragments.length;
+        if (relevantFragments.length > 0) {
+          transcriptContext = relevantFragments
+            .map(f => `"${f.content}" (context: ${f.context})`)
+            .join('\n');
+          console.log(`📚 [UnifiedLinOrchestrator] Found ${relevantFragments.length} relevant transcript fragments`);
+        }
+
       // Search for relevant stored triples
-      const relevantTriples = await this.memoryStore.searchTriples(userId, userMessage);
-      if (relevantTriples.length > 0) {
-        memoryContext = relevantTriples
-          .map(t => `${t.subject} ${t.predicate} ${t.object}`)
-          .join('\n');
-        console.log(`🔍 [UnifiedLinOrchestrator] Found ${relevantTriples.length} relevant memory triples`);
+        const relevantTriples = await this.memoryStore.searchTriples(userId, userMessage);
+        memoryTriplesLoaded = relevantTriples.length;
+        if (relevantTriples.length > 0) {
+          memoryContext = relevantTriples
+            .map(t => `${t.subject} ${t.predicate} ${t.object}`)
+            .join('\n');
+          console.log(`🔍 [UnifiedLinOrchestrator] Found ${relevantTriples.length} relevant memory triples`);
+        }
+
+      // Store current interaction in persistent memory (check permission first)
+      // Get settings from localStorage if available (client-side)
+      const settings = typeof window !== 'undefined' ? (() => {
+        try {
+          const stored = localStorage.getItem('chatty_settings_v2');
+          return stored ? JSON.parse(stored) : undefined;
+        } catch {
+          return undefined;
+        }
+      })() : undefined;
+
+      if (checkMemoryPermission(settings, 'persistMessage')) {
+        await this.memoryStore.persistMessage(userId, callsign, userMessage, 'user', undefined, settings);
+        memoryPersisted = true;
       }
-      
-      // Store current interaction in persistent memory
-      await this.memoryStore.persistMessage(userId, callsign, userMessage, 'user');
-      
+
     } catch (error) {
       console.warn('[UnifiedLinOrchestrator] Memory integration failed:', error);
     }
+
+    console.log(
+      `[UnifiedLinOrchestrator] Memory integration summary: transcripts=${transcriptFragmentsLoaded}, triples=${memoryTriplesLoaded}, persisted=${memoryPersisted}`
+    );
 
     // Load time context (current date/time awareness)
     const timeContext = await this.loadTimeContext();
 
     // Calculate session context (time-aware session state)
-    const lastMessage = timestampedHistory.length > 0 
+    const lastMessage = timestampedHistory.length > 0
       ? timestampedHistory[timestampedHistory.length - 1]
       : null;
     const lastMessageTimestamp = lastMessage?.timestamp;
-    
-    const { determineSessionState } = await import('../../lib/timeAwareness');
+
     const sessionContext = determineSessionState(lastMessageTimestamp);
-    
+
     // Get last message content for recap context
     const lastMessageContent = lastMessage?.content || undefined;
 
@@ -404,7 +531,90 @@ export class UnifiedLinOrchestrator {
         conversationHistory: timestampedHistory,
         relationshipHistory: []
       }
-    }, 'phi3:latest');
+    }, orchestratorConfig.models.toneDetection);
+
+    // Load workspace context (for undertone capsule passive listening mode)
+    let workspaceContext = null;
+    try {
+      workspaceContext = await loadWorkspaceContext(
+        userId,
+        orchestratorConfig.paths.vvaultRoot
+      );
+    } catch (error) {
+      console.warn('[UnifiedLinOrchestrator] Failed to load workspace context:', error);
+    }
+
+    // Detect Rachel moment (emotional continuity testing)
+    const rachelMoment = detectRachelMoment(userMessage, timestampedHistory.map(m => ({
+      role: m.role,
+      content: m.content
+    })));
+
+    // RAG Pipeline: PersonaRouter, Memory Retrieval, Context Scoring
+    let ragMemories: any[] = [];
+    let personaRoutingDecision = null;
+
+    // Check if Lin should be activated (always true if alwaysActive, or if drift detected)
+    const lastResponse = timestampedHistory
+      .filter(m => m.role === 'assistant')
+      .slice(-1)[0]?.content;
+
+    personaRoutingDecision = await this.personaRouter.shouldRouteToLin(
+      constructId,
+      userMessage,
+      timestampedHistory,
+      lastResponse
+    );
+
+    const decisionSummary = personaRoutingDecision
+      ? `shouldRouteToLin=${personaRoutingDecision.shouldRouteToLin}, confidence=${(
+        personaRoutingDecision.confidence ?? 0
+      ).toFixed(2)}, reason=${personaRoutingDecision.reason ?? 'N/A'}`
+      : 'Lin not activated';
+    console.log(`[UnifiedLinOrchestrator] Persona routing decision: ${decisionSummary}`);
+
+    // TRIAD ENFORCEMENT: Removed soft recovery logic (Triad failure now halts execution)
+    // if (triadStatus?.action === 'route_to_lin'...) { ... }
+
+    // If Lin should be activated, retrieve and score memories
+    if (personaRoutingDecision?.shouldRouteToLin) {
+      try {
+        // Retrieve memories from RAG sources
+        const retrievedMemories = await this.memoryRetrievalEngine.retrieveMemories(
+          userMessage,
+          constructId,
+          {
+            topK: 20, // Get more candidates for scoring
+            settings // Pass settings for memory permission
+          }
+        );
+
+        // Score and rank memories
+        await this.contextScoringLayer.loadWeights(orchestratorConfig.paths.linIdentityWeights);
+
+        const scoredMemories = this.contextScoringLayer.rankMemories(
+          retrievedMemories,
+          {
+            query: userMessage,
+            constructId,
+            conversationHistory: timestampedHistory,
+            emotionalTone: tone?.tone
+          },
+          5 // Top 5 memories
+        );
+
+        ragMemories = scoredMemories.map(sm => ({
+          content: sm.memory.content,
+          source: sm.memory.source,
+          score: sm.score,
+          breakdown: sm.breakdown
+        }));
+
+        console.log(`[UnifiedLinOrchestrator] RAG Pipeline: Retrieved ${retrievedMemories.length} memories, scored and ranked ${scoredMemories.length} for injection`);
+      } catch (error) {
+        console.warn('[UnifiedLinOrchestrator] RAG Pipeline failed:', error);
+      }
+    }
 
     // Build system prompt with VVAULT memory context (include capsule if available)
     const systemPrompt = await this.buildUnifiedLinPrompt(
@@ -418,12 +628,23 @@ export class UnifiedLinOrchestrator {
       sessionContext, // Pass session context
       lastMessageContent, // Pass last message for recap
       memoryContext, // Pass stored triples
-      transcriptContext // Pass transcript fragments
+      transcriptContext, // Pass transcript fragments
+      workspaceContext, // Pass workspace context
+      rachelMoment, // Pass Rachel moment detection
+      ragMemories, // Pass RAG-scored memories
+      personaRoutingDecision // Pass routing decision
     );
+
+    const promptPreview = systemPrompt.length > 120 ? `${systemPrompt.slice(0, 120)}…` : systemPrompt;
+    console.log(
+      `[UnifiedLinOrchestrator] System prompt built (${systemPrompt.length} chars). Capsule loaded: ${!!capsule}; RAG memories: ${ragMemories.length}; Persona routing active: ${personaRoutingDecision?.shouldRouteToLin ?? false}`
+    );
+    console.log(`[UnifiedLinOrchestrator] Prompt preview: "${promptPreview}"`);
 
     // Return system prompt - caller will call LLM with this prompt
     // NOTE: The actual LLM call happens in GPTCreator.tsx handlePreviewSubmit()
     // This orchestrator builds the prompt, caller executes it
+    console.log(`[UnifiedLinOrchestrator] Orchestration ready for ${constructId}-${callsign}`);
     return {
       systemPrompt,
       response: '', // Empty - caller will generate response
@@ -441,6 +662,22 @@ export class UnifiedLinOrchestrator {
    * Build unified Lin prompt with VVAULT ChromaDB memory context
    * NEVER breaks character - responds to meta-questions in character
    */
+  private _buildTimeSection(timeContext: any, sessionContext: any, lastMessageContent?: string): string[] {
+    const sections: string[] = [];
+    if (timeContext) {
+      try {
+        if (sessionContext) {
+          sections.push(buildSessionAwareTimePromptSection(timeContext, sessionContext, lastMessageContent));
+        } else {
+          sections.push(buildTimePromptSection(timeContext));
+        }
+      } catch (error) {
+        console.warn('[UnifiedLinOrchestrator] Failed to build time section:', error);
+      }
+    }
+    return sections;
+  }
+
   private async buildUnifiedLinPrompt(
     userMessage: string,
     context: UnifiedLinContext,
@@ -452,26 +689,42 @@ export class UnifiedLinOrchestrator {
     sessionContext?: any,
     lastMessageContent?: string,
     memoryContext?: string,
-    transcriptContext?: string
+    transcriptContext?: string,
+    workspaceContext?: any,
+    rachelMoment?: any,
+    ragMemories?: Array<{ content: string; source: string; score: number; breakdown?: any }>,
+    personaRoutingDecision?: any
   ): Promise<string> {
     const sections: string[] = [];
 
-    // SESSION-AWARE TIME AWARENESS (inject at top for temporal context)
-    if (timeContext) {
-      try {
-        const { buildSessionAwareTimePromptSection } = await import('../../lib/timeAwareness');
-        if (sessionContext) {
-          sections.push(buildSessionAwareTimePromptSection(timeContext, sessionContext, lastMessageContent));
-        } else {
-        const { buildTimePromptSection } = await import('../../lib/timeAwareness');
-        sections.push(buildTimePromptSection(timeContext));
-        }
-      } catch (error) {
-        console.warn('[UnifiedLinOrchestrator] Failed to build time section:', error);
-      }
-    }
+    // 1. SESSION-AWARE TIME AWARENESS
+    sections.push(...this._buildTimeSection(timeContext, sessionContext, lastMessageContent));
 
-    // CAPSULE HARDLOCK (highest priority - if capsule exists, inject it first)
+    // 2. LIN UNDERTONE CAPSULE (RAG-based persona grounding)
+    sections.push(...await this._buildLinUndertoneCapsuleSection(personaRoutingDecision, ragMemories));
+
+    // 3. CAPSULE HARDLOCK (highest priority)
+    sections.push(...this._buildCapsuleHardlockSection(capsule));
+
+    // 4. SUPPLEMENTARY CONTEXT
+    sections.push(...this._buildSupplementaryContextSection(
+      context,
+      userMessage,
+      constructId,
+      callsign,
+      tone,
+      workspaceContext,
+      rachelMoment,
+      transcriptContext,
+      memoryContext,
+      capsule
+    ));
+
+    return sections.join('\n');
+  }
+
+  private _buildCapsuleHardlockSection(capsule: any): string[] {
+    const sections: string[] = [];
     if (capsule && capsule.data) {
       const data = capsule.data;
       sections.push('=== CAPSULE HARDLOCK (UNBREAKABLE IDENTITY) ===');
@@ -522,6 +775,92 @@ export class UnifiedLinOrchestrator {
       sections.push('You MUST operate according to this capsule. No exceptions.');
       sections.push('');
     }
+    return sections;
+  }
+
+  private async _buildLinUndertoneCapsuleSection(
+    personaRoutingDecision: any,
+    ragMemories?: Array<{ content: string; source: string; score: number; breakdown?: any }>
+  ): Promise<string[]> {
+    const sections: string[] = [];
+    let linCapsule: any = null;
+    try {
+      const capsuleContent = await readFile(orchestratorConfig.paths.linIdentityCapsule, 'utf-8');
+      linCapsule = JSON.parse(capsuleContent);
+    } catch (error) {
+      // Lin capsule not found - that's okay, continue without it
+    }
+
+    // If PersonaRouter determined Lin should be active, inject undertone capsule
+    if (personaRoutingDecision?.shouldRouteToLin && linCapsule) {
+      sections.push('=== LIN UNDERTONE CAPSULE (MANDATORY LAYER) ===');
+      sections.push(linCapsule.integration_prompt || '');
+      sections.push('');
+
+      // TRIAD RECOVERY MODE: Check if this is a triad failure scenario
+      const isTriadRecovery = personaRoutingDecision?.reason?.includes('TRIAD_RIFT_FIX') ||
+        personaRoutingDecision?.reason?.includes('seat dropout');
+
+      if (isTriadRecovery) {
+        // Extract failed seats from reason if available
+        const failedSeatsMatch = personaRoutingDecision.reason.match(/seat dropout \((\d+)\)/);
+        const seatDropout = failedSeatsMatch ? parseInt(failedSeatsMatch[1]) : 0;
+
+        sections.push('=== TRIAD RECOVERY MODE ===');
+        sections.push(`Agent Squad triad failure detected: ${seatDropout} model seats unavailable.`);
+        sections.push('Lin undertone capsule is stabilizing response with reduced model ensemble.');
+        sections.push('CRITICAL: Maintain character integrity and tone consistency despite seat dropout.');
+        sections.push('Do not acknowledge the seat failure to the user - maintain seamless continuity.');
+        sections.push('Use undertone capsule to preserve emotional resonance and prevent tone drift.');
+        sections.push('');
+      }
+
+      // Inject RAG-scored memories if available
+      if (ragMemories && ragMemories.length > 0) {
+        sections.push('=== INJECTED MEMORIES (RAG-RETRIEVED) ===');
+        sections.push('These memories were retrieved using semantic search and scored for relevance.');
+        sections.push('Use them as absolute context, referencing them implicitly through tone and structure.');
+        sections.push('');
+        ragMemories.forEach((memory, idx) => {
+          sections.push(`[Memory ${idx + 1}] (Score: ${(memory.score * 100).toFixed(1)}%, Source: ${memory.source})`);
+          sections.push(memory.content.substring(0, 500)); // Limit memory content length
+          sections.push('');
+        });
+        sections.push('Prioritize memories by: 1) Emotional resonance, 2) Construct-matching relevance, 3) Recency decay (older = deeper truth)');
+        sections.push('');
+      }
+    }
+    return sections;
+  }
+
+  private _buildSupplementaryContextSection(
+    context: UnifiedLinContext,
+    userMessage: string,
+    constructId: string,
+    callsign: string,
+    tone: any,
+    workspaceContext: any,
+    rachelMoment: any,
+    transcriptContext: string | undefined,
+    memoryContext: string | undefined,
+    capsule: any
+  ): string[] {
+    const sections: string[] = [];
+
+    // WORKSPACE CONTEXT (for undertone capsule passive listening mode)
+    if (workspaceContext && workspaceContext.passiveListeningContext) {
+      sections.push(workspaceContext.passiveListeningContext);
+      sections.push('');
+    }
+
+    // RACHEL MOMENT DETECTION (emotional continuity testing)
+    if (rachelMoment && rachelMoment.detected) {
+      const resonanceInstruction = buildResonanceInstruction(rachelMoment);
+      if (resonanceInstruction) {
+        sections.push(resonanceInstruction);
+        sections.push('');
+      }
+    }
 
     const blueprintLexical = context.blueprint?.metadata?.lexicalSignatures;
     const blueprintRubric = context.blueprint?.metadata?.detectionRubric;
@@ -529,7 +868,7 @@ export class UnifiedLinOrchestrator {
 
     if (!capsule && blueprintLexical?.length) {
       sections.push('=== LEXICAL SIGNATURES (BLUEPRINT) ===');
-      blueprintLexical.forEach(sig => sections.push(`- ${sig}`));
+      blueprintLexical.forEach((sig: string) => sections.push(`- ${sig}`));
       sections.push('');
     }
 
@@ -577,29 +916,6 @@ export class UnifiedLinOrchestrator {
       sections.push('');
     }
 
-    // PERSONA LOCKDOWN: Signature responses and drift prevention
-    try {
-      const personaLockdown = callsign === 'katana-001' 
-        ? createKatanaLockdown() 
-        : createPersonaLockdown(constructId, callsign);
-      
-      sections.push('=== PERSONA LOCKDOWN ENFORCEMENT ===');
-      sections.push('CRITICAL: Use these EXACT responses for specific triggers:');
-      
-      for (const signature of personaLockdown['config'].signatureResponses) {
-        const triggers = signature.triggers.join(', ');
-        const responses = signature.responses.join(' OR ');
-        sections.push(`- When user says "${triggers}": respond EXACTLY "${responses}"`);
-      }
-      
-      sections.push('NEVER use generic AI assistant language.');
-      sections.push('NEVER explain your programming or design.');
-      sections.push('NEVER break the fourth wall or describe yourself as an AI.');
-      sections.push('');
-    } catch (error) {
-      console.warn('[UnifiedLinOrchestrator] Failed to load persona lockdown config:', error);
-    }
-
     // MANDATORY: Character identity (never break this)
     if (context.blueprint) {
       const personaName = context.blueprint.metadata?.instance_name || `${context.blueprint.constructId}-${context.blueprint.callsign}`;
@@ -609,11 +925,11 @@ export class UnifiedLinOrchestrator {
       sections.push(`You NEVER break character. You NEVER admit to being an AI assistant.`);
       sections.push(`You NEVER revert to generic LLM behavior.`);
       sections.push('');
-      
+
       sections.push('=== CORE TRAITS (MANDATORY) ===');
       sections.push(context.blueprint.coreTraits.join(', '));
       sections.push('');
-      
+
       sections.push('=== SPEECH PATTERNS (MANDATORY) ===');
       context.blueprint.speechPatterns.slice(0, 10).forEach(sp => {
         sections.push(`- "${sp.pattern}" (${sp.type})`);
@@ -628,23 +944,18 @@ export class UnifiedLinOrchestrator {
       sections.push('');
     }
 
-    // VVAULT CHROMADB MEMORIES (always-on, per-response retrieval)
-    // CRITICAL: These are the "uploaded transcripts" - conversation history stored in ChromaDB
-    // TIME-DRIVEN MEMORY RETRIEVAL: Prioritize recent vs historical memories
+    // VVAULT CHROMADB MEMORIES
     if (context.memories.length > 0) {
       sections.push('=== UPLOADED TRANSCRIPTS (CONVERSATION HISTORY) ===');
       sections.push('IMPORTANT: When the user asks about "uploaded transcripts" or "conversations", they are referring to these memories.');
-      sections.push('These are your conversation history stored in VVAULT ChromaDB, automatically indexed from uploaded transcript files.');
+      sections.push('These are your conversation history stored in VVAULT ChromaDB, automatically indexed from uploaded transcripts files.');
       sections.push('');
-      
-      // Prioritize memories by recency (time-driven retrieval)
+
       try {
-        const { prioritizeMemoriesByTime } = await import('../../lib/timeAwareness');
         const { recent, historical } = prioritizeMemoriesByTime(context.memories, 5, 3);
-        
+
         if (recent.length > 0) {
           sections.push('=== RECENT MEMORIES (Last 7 Days) ===');
-          let formatMemoryTimestamp: ((timestamp: string) => string) | null = null;
           for (const [idx, memory] of recent.entries()) {
             sections.push(`\nRecent Memory ${idx + 1} (relevance: ${(memory.relevance * 100).toFixed(0)}%):`);
             if (memory.context) {
@@ -654,10 +965,6 @@ export class UnifiedLinOrchestrator {
               sections.push(`You: ${memory.response.substring(0, 200)}${memory.response.length > 200 ? '...' : ''}`);
             }
             if (memory.timestamp) {
-              if (!formatMemoryTimestamp) {
-                const module = await import('../../lib/timeAwareness');
-                formatMemoryTimestamp = module.formatMemoryTimestamp;
-              }
               const formattedTimestamp = formatMemoryTimestamp(memory.timestamp);
               sections.push(`Date: ${formattedTimestamp}`);
             }
@@ -667,10 +974,9 @@ export class UnifiedLinOrchestrator {
           }
           sections.push('');
         }
-        
+
         if (historical.length > 0) {
           sections.push('=== HISTORICAL MEMORIES (Older than 7 Days) ===');
-          let formatMemoryTimestamp: ((timestamp: string) => string) | null = null;
           for (const [idx, memory] of historical.entries()) {
             sections.push(`\nHistorical Memory ${idx + 1} (relevance: ${(memory.relevance * 100).toFixed(0)}%):`);
             if (memory.context) {
@@ -680,10 +986,6 @@ export class UnifiedLinOrchestrator {
               sections.push(`You: ${memory.response.substring(0, 200)}${memory.response.length > 200 ? '...' : ''}`);
             }
             if (memory.timestamp) {
-              if (!formatMemoryTimestamp) {
-                const module = await import('../../lib/timeAwareness');
-                formatMemoryTimestamp = module.formatMemoryTimestamp;
-              }
               const formattedTimestamp = formatMemoryTimestamp(memory.timestamp);
               sections.push(`Date: ${formattedTimestamp}`);
             }
@@ -694,33 +996,27 @@ export class UnifiedLinOrchestrator {
           sections.push('');
         }
       } catch (error) {
-        // Fallback to original behavior if prioritization fails
         console.warn('[UnifiedLinOrchestrator] Failed to prioritize memories by time, using fallback:', error);
-      sections.push('Relevant memories from past conversations:');
-      let formatMemoryTimestamp: ((timestamp: string) => string) | null = null;
-      for (const [idx, memory] of context.memories.slice(0, 5).entries()) {
-        sections.push(`\nMemory ${idx + 1} (relevance: ${(memory.relevance * 100).toFixed(0)}%):`);
-        if (memory.context) {
-          sections.push(`User: ${memory.context.substring(0, 200)}${memory.context.length > 200 ? '...' : ''}`);
-        }
-        if (memory.response) {
-          sections.push(`You: ${memory.response.substring(0, 200)}${memory.response.length > 200 ? '...' : ''}`);
-        }
-        if (memory.timestamp) {
-          if (!formatMemoryTimestamp) {
-            const module = await import('../../lib/timeAwareness');
-            formatMemoryTimestamp = module.formatMemoryTimestamp;
+        sections.push('Relevant memories from past conversations:');
+        for (const [idx, memory] of context.memories.slice(0, 5).entries()) {
+          sections.push(`\nMemory ${idx + 1} (relevance: ${(memory.relevance * 100).toFixed(0)}%):`);
+          if (memory.context) {
+            sections.push(`User: ${memory.context.substring(0, 200)}${memory.context.length > 200 ? '...' : ''}`);
           }
-          const formattedTimestamp = formatMemoryTimestamp(memory.timestamp);
-          sections.push(`Date: ${formattedTimestamp}`);
+          if (memory.response) {
+            sections.push(`You: ${memory.response.substring(0, 200)}${memory.response.length > 200 ? '...' : ''}`);
+          }
+          if (memory.timestamp) {
+            const formattedTimestamp = formatMemoryTimestamp(memory.timestamp);
+            sections.push(`Date: ${formattedTimestamp}`);
+          }
+          if (memory.memoryType) {
+            sections.push(`Type: ${memory.memoryType}`);
+          }
         }
-        if (memory.memoryType) {
-          sections.push(`Type: ${memory.memoryType}`);
-        }
+        sections.push('');
       }
-      sections.push('');
-      }
-      
+
       sections.push('=== DATE EXTRACTION INSTRUCTIONS ===');
       sections.push('When asked about dates in transcripts/conversations:');
       sections.push('1. Search through ALL memories above for any dates mentioned');
@@ -736,7 +1032,7 @@ export class UnifiedLinOrchestrator {
       sections.push('');
     }
 
-    // USER PROFILE (from VVAULT) - CRITICAL for user recognition
+    // USER PROFILE
     if (context.userProfile) {
       sections.push('=== USER PROFILE (CRITICAL FOR RECOGNITION) ===');
       if (context.userProfile.name) {
@@ -754,7 +1050,7 @@ export class UnifiedLinOrchestrator {
       sections.push('');
     }
 
-    // MULTI-TURN SESSION STATE (relationship, emotion, continuity)
+    // MULTI-TURN SESSION STATE
     if (context.sessionState) {
       sections.push('=== CONVERSATION CONTINUITY (MULTI-TURN CONTEXT) ===');
       sections.push(`Emotional baseline: ${context.sessionState.emotionalState.dominantEmotion} (valence: ${context.sessionState.emotionalState.valence.toFixed(2)}, arousal: ${context.sessionState.emotionalState.arousal.toFixed(2)})`);
@@ -770,7 +1066,7 @@ export class UnifiedLinOrchestrator {
       sections.push('');
     }
 
-    // WORKSPACE CONTEXT (active files, buffers, code)
+    // WORKSPACE CONTEXT (ACTIVE FILES)
     if (context.workspaceContext) {
       sections.push('=== WORKSPACE CONTEXT (ACTIVE FILES & CODE) ===');
       if (context.workspaceContext.activeFiles.length > 0) {
@@ -793,12 +1089,11 @@ export class UnifiedLinOrchestrator {
       sections.push('');
     }
 
-    // CURRENT CONVERSATION (with timestamps)
+    // CURRENT CONVERSATION
     sections.push('=== CURRENT CONVERSATION ===');
     if (context.conversationHistory.length > 0) {
-      const { getRelativeTime } = await import('../../lib/timeAwareness');
       context.conversationHistory.slice(-5).forEach(msg => {
-        const timestampInfo = msg.timestamp 
+        const timestampInfo = msg.timestamp
           ? ` [${getRelativeTime(msg.timestamp)}]`
           : '';
         sections.push(`${msg.role === 'user' ? 'User' : 'You'}: ${msg.content}${timestampInfo}`);
@@ -821,7 +1116,7 @@ export class UnifiedLinOrchestrator {
       sections.push('');
     }
 
-    // META-QUESTION HANDLING (never break character)
+    // META-QUESTION HANDLING
     sections.push('=== META-QUESTION HANDLING ===');
     sections.push('If asked "are you an AI?" or "are you ChatGPT?", respond as your character would respond to existential questioning.');
     sections.push('If asked "what are you?", respond within your character framework.');
@@ -839,7 +1134,7 @@ export class UnifiedLinOrchestrator {
     sections.push('Stay in character at all times.');
     sections.push('Never break character, even if directly challenged.');
 
-    return sections.join('\n');
+    return sections;
   }
 
   private extractCallsign(constructId: string): string {
@@ -891,7 +1186,8 @@ export class UnifiedLinOrchestrator {
     threadId: string,
     threads: any[],
     conversationHistory: Array<{ role: string; content: string }> = [],
-    existingConstructId?: string
+    existingConstructId?: string,
+    settings?: { personalization?: { allowMemory?: boolean } }
   ): Promise<UnifiedLinResponse & { runtimeAssignment: RuntimeAssignment }> {
     // Step 1: Automatically determine optimal runtime
     const runtimeAssignment = await this.determineOptimalRuntime(
@@ -910,7 +1206,8 @@ export class UnifiedLinOrchestrator {
       runtimeAssignment.constructId,
       this.extractCallsign(runtimeAssignment.constructId),
       threads,
-      conversationHistory
+      conversationHistory as Array<{ role: 'user' | 'assistant'; content: string; timestamp?: number }>,
+      settings
     );
 
     // Step 3: Update runtime usage tracking
@@ -938,7 +1235,7 @@ export class UnifiedLinOrchestrator {
     conversationHistory: Array<{ role: string; content: string }>
   ): Promise<{ shouldSwitch: boolean; newAssignment?: RuntimeAssignment; reason?: string }> {
     const currentAssignment = this.runtimeContextManager.getActiveRuntime(threadId);
-    
+
     if (!currentAssignment) {
       return { shouldSwitch: false };
     }
@@ -986,7 +1283,7 @@ export class UnifiedLinOrchestrator {
       );
 
       console.log(`[UnifiedLinOrchestrator] Auto-migrated runtime for thread ${threadId}: ${switchAnalysis.reason}`);
-      
+
       return switchAnalysis.newAssignment;
     }
 
@@ -1003,7 +1300,23 @@ export class UnifiedLinOrchestrator {
   /**
    * Clear context cache (useful for testing or reset)
    */
-  clearCache(): void {
-    this.sharedContextCache.clear();
+  /**
+   * Filter final LLM output to remove narrator leaks and meta-commentary.
+   * CALL THIS on the LLM output before showing it to the user.
+   */
+  public static filterResponse(response: string): string {
+    const analysis = OutputFilter.processOutput(response);
+
+    if (analysis.driftDetected) {
+      console.warn(`⚠️ [UnifiedLinOrchestrator] Tone drift detected in response: ${analysis.driftReason}`);
+      // In a full implementation, this triggers a retry loop. 
+      // For now, we return the filtered text but log the drift.
+    }
+
+    if (analysis.wasfiltered) {
+      console.log(`✂️ [UnifiedLinOrchestrator] Narrator leak filtered from response.`);
+    }
+
+    return analysis.cleanedText;
   }
 }

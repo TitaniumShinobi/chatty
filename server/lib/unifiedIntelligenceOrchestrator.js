@@ -117,8 +117,14 @@ export class UnifiedIntelligenceOrchestrator {
    * Process any message on any topic without restrictions
    * Maintains personality while providing complete conversational freedom
    */
-  async processUnrestrictedMessage(constructId, message, userId, conversationId) {
+  async processUnrestrictedMessage(constructId, message, userId, conversationId, identityContext = null) {
     console.time(`🧠 [UnifiedIntelligence] Processing message for ${constructId}`);
+    
+    // 🔒 ZEN HARD-DELEGATION - Never use templates for Zen
+    if (constructId === 'zen-001' || constructId === 'zen') {
+      console.log('🚀 [UnifiedIntelligence] ZEN DETECTED - Delegating to OptimizedZenProcessor');
+      throw new Error('DELEGATE_TO_OPTIMIZED_ZEN'); // Signal to conversations.js to delegate
+    }
     
     // Enhanced diagnostic logging
     console.log(`🔍 [CONTEXT-PIPELINE] Starting processing for ${constructId}`);
@@ -222,6 +228,9 @@ export class UnifiedIntelligenceOrchestrator {
           driftValidation
         );
       }
+
+      // Apply identity guidance from user profile (prompt/conditioning)
+      finalResponse = this.applyIdentityGuidance(finalResponse, identityContext, constructId);
 
       // Update conversation context
       await this.updateConversationContext(conversationId, message, finalResponse);
@@ -1111,6 +1120,35 @@ export class UnifiedIntelligenceOrchestrator {
     }
 
     return response;
+  }
+
+  /**
+   * Blend identity prompt/conditioning into the final response so Zen speaks with the user's Chatty profile.
+   * Keeps it lightweight: extract the declared name and traits and prefix the response without dumping full prompt text.
+   */
+  applyIdentityGuidance(response, identityContext, constructId) {
+    if (!identityContext || (!identityContext.prompt && !identityContext.conditioning)) {
+      return response;
+    }
+
+    const prompt = identityContext.prompt || '';
+    const conditioning = identityContext.conditioning || '';
+
+    const nameMatch = prompt.match(/\*\*YOU ARE\s+([^\*]+)\*\*/i);
+    const name = nameMatch?.[1]?.trim() || constructId?.split?.('-')?.[0]?.toUpperCase?.() || 'Zen';
+
+    const traitsMatch = prompt.match(/\*\*Traits\*\*\s*([\s\S]*?)(?:\n{2,}|\r?\n``|$)/i);
+    const traitsRaw = traitsMatch?.[1] || '';
+    const traitsSnippet = traitsRaw.replace(/[\r\n*]+/g, ' ').trim().slice(0, 120);
+
+    const conditioningHint = conditioning.split('\n').map(line => line.trim()).filter(Boolean)[0] || '';
+
+    const identityPrefixParts = [name];
+    if (traitsSnippet) identityPrefixParts.push(traitsSnippet);
+    if (conditioningHint) identityPrefixParts.push(conditioningHint);
+
+    const identityPrefix = identityPrefixParts.filter(Boolean).join(' · ');
+    return identityPrefix ? `${identityPrefix}: ${response}` : response;
   }
 
   /**

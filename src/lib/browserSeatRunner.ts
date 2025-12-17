@@ -74,12 +74,21 @@ interface GenerateOptions {
 }
 
 export async function runSeat(opts: GenerateOptions): Promise<string> {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'browserSeatRunner.ts:76',message:'runSeat entry',data:{seat:opts.seat,modelOverride:opts.modelOverride,promptLength:opts.prompt.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+  // #endregion
   const timeout = opts.timeout ?? 15000; // Default 15s to avoid verbose stalls
   const maxRetries = opts.retries ?? 2; // 2 retries max
   
   // Use Vite proxy for Ollama to avoid CORS issues
   const baseURL = '/ollama';
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'browserSeatRunner.ts:82',message:'Before resolveModel',data:{seat:opts.seat,modelOverride:opts.modelOverride},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+  // #endregion
   const model = await resolveModel(opts.seat, opts.modelOverride);
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'browserSeatRunner.ts:85',message:'After resolveModel',data:{resolvedModel:model},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+  // #endregion
 
   let lastError: Error | null = null;
   let ollamaAvailable = false;
@@ -139,6 +148,9 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
           num_predict: 2000 // Limit response length
         }
       });
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'browserSeatRunner.ts:139',message:'Before generate API call',data:{url,model,bodyLength:body.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
 
       // Create AbortController for timeout
       const controller = new AbortController();
@@ -153,11 +165,17 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
           body,
           signal: controller.signal,
         });
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'browserSeatRunner.ts:157',message:'After generate fetch',data:{ok:response.ok,status:response.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
 
         clearTimeout(timeoutId);
 
         if (!response.ok) {
           const errorText = await response.text();
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'browserSeatRunner.ts:168',message:'Generate API error response',data:{status:response.status,errorText:errorText.substring(0,200)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+          // #endregion
           let errorMessage = `Ollama error ${response.status}`;
           try {
             const errorJson = JSON.parse(errorText);
@@ -169,12 +187,18 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
         }
 
         const data = await response.json();
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'browserSeatRunner.ts:180',message:'After generate JSON parse',data:{hasResponse:!!data.response,responseLength:data.response?.length || 0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
         if (!data.response) {
           throw new Error('Empty response from Ollama. The model may not be responding correctly.');
         }
         return data.response;
       } catch (error: any) {
         clearTimeout(timeoutId);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'browserSeatRunner.ts:185',message:'Error in generate API call',data:{errorName:error.name,errorMessage:error.message,isAbortError:error.name === 'AbortError'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
         
         // Handle abort/timeout with better error message
         if (error.name === 'AbortError') {
@@ -190,6 +214,9 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
       }
     } catch (error: any) {
       lastError = error;
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'browserSeatRunner.ts:200',message:'Retry loop catch',data:{attempt,maxRetries,errorMessage:error.message,willRetry:!(error.message?.includes('ModelNotAvailable') || error.message?.includes('timeout') || attempt === maxRetries)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
       
       // Don't retry on certain errors
       if (error.message?.includes('ModelNotAvailable') || 
@@ -208,6 +235,9 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
   }
 
   // If we get here, all retries failed
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'browserSeatRunner.ts:211',message:'All retries failed',data:{seat:opts.seat,lastError:lastError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+  // #endregion
   throw new Error(`Seat ${opts.seat} failed after ${maxRetries} retries: ${lastError?.message || 'Unknown error'}`);
 }
 

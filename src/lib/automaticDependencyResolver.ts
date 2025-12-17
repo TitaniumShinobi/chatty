@@ -8,7 +8,7 @@
 import { AutomaticRuntimeOrchestrator, RuntimeAssignment } from './automaticRuntimeOrchestrator';
 import { RuntimeContextManager } from './runtimeContextManager';
 import { createGPTManager, type IGPTManager } from './gptManagerFactory';
-import { AIService } from './aiService';
+
 import { shouldUseBrowserStubs, createBrowserSafeDependencyResolver } from './browserStubs';
 
 export interface DependencyResolutionContext {
@@ -57,18 +57,18 @@ export class AutomaticDependencyResolver {
   private runtimeOrchestrator: AutomaticRuntimeOrchestrator;
   private contextManager: RuntimeContextManager;
   private gptManager: IGPTManager | null = null;
-  private aiService: AIService;
+
   private dependencyCache: Map<string, ResolvedDependencies> = new Map();
   private conflictHistory: Map<string, DependencyConflict[]> = new Map();
   private isBrowserEnvironment: boolean;
 
   private constructor() {
     this.isBrowserEnvironment = shouldUseBrowserStubs();
-    
+
     this.runtimeOrchestrator = AutomaticRuntimeOrchestrator.getInstance();
     this.contextManager = RuntimeContextManager.getInstance();
-    this.aiService = AIService.getInstance();
-    
+
+
     if (!this.isBrowserEnvironment) {
       this.initializeGPTManager();
     }
@@ -80,7 +80,7 @@ export class AutomaticDependencyResolver {
       if (shouldUseBrowserStubs()) {
         return createBrowserSafeDependencyResolver() as any;
       }
-      
+
       AutomaticDependencyResolver.instance = new AutomaticDependencyResolver();
     }
     return AutomaticDependencyResolver.instance;
@@ -102,7 +102,7 @@ export class AutomaticDependencyResolver {
    */
   async resolveDependencies(context: DependencyResolutionContext): Promise<ResolvedDependencies> {
     const cacheKey = this.generateCacheKey(context);
-    
+
     // Check cache first
     const cached = this.dependencyCache.get(cacheKey);
     if (cached && this.isCacheValid(cached, context)) {
@@ -125,7 +125,7 @@ export class AutomaticDependencyResolver {
 
       // Step 5: Validate dependencies and detect conflicts
       const conflicts = await this.detectDependencyConflicts(runtimeAssignment, modelConfiguration, contextConfiguration);
-      
+
       if (conflicts.length > 0) {
         const resolved = await this.resolveDependencyConflicts(conflicts, context);
         return resolved;
@@ -151,7 +151,7 @@ export class AutomaticDependencyResolver {
 
     } catch (error) {
       console.error('[AutomaticDependencyResolver] Failed to resolve dependencies:', error);
-      
+
       // Fallback to safe defaults
       return this.getFallbackDependencies(context);
     }
@@ -163,7 +163,7 @@ export class AutomaticDependencyResolver {
   private async resolveRuntimeAssignment(context: DependencyResolutionContext): Promise<RuntimeAssignment> {
     // Check if thread already has a runtime assignment
     const existingAssignment = this.contextManager.getActiveRuntime(context.threadId);
-    
+
     if (existingAssignment) {
       // Validate existing assignment is still optimal
       const isStillOptimal = await this.validateRuntimeAssignment(existingAssignment, context);
@@ -195,7 +195,7 @@ export class AutomaticDependencyResolver {
    * Resolve model configuration based on runtime and requirements
    */
   private async resolveModelConfiguration(
-    runtimeAssignment: RuntimeAssignment, 
+    runtimeAssignment: RuntimeAssignment,
     context: DependencyResolutionContext
   ): Promise<ResolvedDependencies['modelConfiguration']> {
     try {
@@ -382,7 +382,7 @@ export class AutomaticDependencyResolver {
           `Resource unavailable: ${conflict.description}`
         );
         break;
-      
+
       case 'configuration_error':
         // Reset to safe defaults
         await this.resetToSafeDefaults(context);
@@ -477,10 +477,10 @@ export class AutomaticDependencyResolver {
 
   private shouldEnableWorkspaceContext(assignment: RuntimeAssignment, context: DependencyResolutionContext): boolean {
     // Enable workspace context for coding and technical runtimes
-    return context.requiredCapabilities?.includes('coding') || 
-           context.requiredCapabilities?.includes('technical') ||
-           assignment.constructId.includes('dev') ||
-           assignment.constructId.includes('code');
+    return context.requiredCapabilities?.includes('coding') ||
+      context.requiredCapabilities?.includes('technical') ||
+      assignment.constructId.includes('dev') ||
+      assignment.constructId.includes('code');
   }
 
   private shouldEnablePersonality(assignment: RuntimeAssignment, context: DependencyResolutionContext): boolean {
@@ -523,7 +523,7 @@ export class AutomaticDependencyResolver {
   private async getFallbackDependencies(context: DependencyResolutionContext): Promise<ResolvedDependencies> {
     // Return safe fallback dependencies
     const fallbackAssignment = await this.getFallbackRuntimeAssignment(context);
-    
+
     return {
       runtimeAssignment: fallbackAssignment,
       modelConfiguration: {

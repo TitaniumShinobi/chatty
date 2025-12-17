@@ -2,9 +2,13 @@
   "name": "api",
   "type": "module",
   "scripts": {
-    "dev": "node server.js",
+    "dev": "npx tsx server.js",
     "cli": "npx tsx cli-server.ts",
-    "start": "npx tsx cli-server.ts"
+    "start": "npx tsx cli-server.ts",
+    "prestart": "node -e \"const fs=require('fs');const path=require('path');const distPath=path.join(__dirname,'dist/engine/optimizedZen.js');if(process.env.NODE_ENV==='production'&&!fs.existsSync(distPath)){console.error('ERROR: Build artifacts missing in production. Run: npm run build');process.exit(1);}\"",
+    "build": "tsc --project tsconfig.json",
+    "prebuild": "echo 'Building OptimizedZenProcessor and related TypeScript files...'",
+    "build:watch": "tsc --project tsconfig.json --watch"
   },
   "dependencies": {
     "aws-sdk": "^2.1692.0",
@@ -25,6 +29,7 @@
     "mammoth": "^1.10.0",
     "mongoose": "^8.0.3",
     "multer": "^1.4.5-lts.1",
+    "node-cron": "^4.2.1",
     "node-fetch": "^3.3.2",
     "nodemailer": "^6.9.7",
     "passport": "^0.7.0",

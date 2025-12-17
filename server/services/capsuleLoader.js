@@ -131,6 +131,13 @@ class CapsuleLoader {
       sections.push('');
     }
 
+    // Integration Prompt (Undertone/RAG)
+    if (data.integration_prompt) {
+      sections.push('=== IDENTITY INTEGRATION ===');
+      sections.push(data.integration_prompt);
+      sections.push('');
+    }
+
     return sections.join('\n');
   }
 

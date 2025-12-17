@@ -98,7 +98,17 @@ After authentication, all chat history, file uploads, and preferences are tied t
 🧱 Projects & Vault
 	•	Save and organize chat threads by project
 	•	Search, recover, and share conversations
-	•	Persistent local + remote backups through VVAULT
+🤖 AI Constructs & Identity
+	•	Multi-construct support (Katana, Monday, Aurora, etc.)
+	•	Lin undertone capsule: System-wide identity stabilization layer
+	•	Emotional continuity across all constructs via nova-001 tone mimicry
+	•	See [Lin Undertone Capsule Documentation](./docs/implementation/LIN_UNDERTONE_CAPSULE.md) for details
+
+🤖 AI Constructs & Identity
+	•	Multi-construct support (Katana, Monday, Aurora, etc.)
+	•	Lin undertone capsule: System-wide identity stabilization layer
+	•	Emotional continuity across all constructs via nova-001 tone mimicry
+	•	See [Lin Undertone Capsule Documentation](./docs/implementation/LIN_UNDERTONE_CAPSULE.md) for details
 
 🧭 Research Tools
 	•	Action menu for:
@@ -155,10 +165,13 @@ curl http://localhost:3001/health
 
 🧬 Credits
 
-Built and maintained by Devon Allen Woodson
-Design, architecture, and framework extensions by Katana Systems
+Built and maintained by **LIFE Technology**, a LIFE Group Company.
+Design and Architecture by Katana Systems.
 
-© 2025 Woodson & Associates / WRECK LLC
+**Corporate Structure:**
+Woodson & Associates > Vaer’Hûn Trust > LIFE Group > LIFE Technology
+
+© 2025 Woodson & Associates / Vaer’Hûn Living Trust.
 All rights reserved.
 
 ---

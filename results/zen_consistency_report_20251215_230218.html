@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tone Consistency Benchmark - zen-001</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .header {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    .metric-card {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .metric-value {
+      font-size: 2em;
+      font-weight: bold;
+      color: #2563eb;
+    }
+    .metric-label {
+      color: #6b7280;
+      margin-top: 5px;
+    }
+    .category-section {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .category-title {
+      font-size: 1.5em;
+      font-weight: bold;
+      margin-bottom: 15px;
+    }
+    .result-item {
+      padding: 10px;
+      border-left: 4px solid #e5e7eb;
+      margin-bottom: 10px;
+      background: #f9fafb;
+    }
+    .result-item.passed {
+      border-left-color: #10b981;
+    }
+    .result-item.failed {
+      border-left-color: #ef4444;
+    }
+    .violations {
+      color: #ef4444;
+      font-size: 0.9em;
+      margin-top: 5px;
+    }
+    .score {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.9em;
+      font-weight: bold;
+    }
+    .score-high {
+      background: #d1fae5;
+      color: #065f46;
+    }
+    .score-medium {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .score-low {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Tone Consistency Benchmark Report</h1>
+    <p><strong>Construct:</strong> zen-001</p>
+    <p><strong>Total Prompts:</strong> 100</p>
+    <p><strong>Execution Time:</strong> 10.0s</p>
+    <p><strong>Timestamp:</strong> 12/15/2025, 11:02:18 PM</p>
+  </div>
+
+  <div class="metrics">
+    <div class="metric-card">
+      <div class="metric-value">0.0%</div>
+      <div class="metric-label">Identity Persistence</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value">100.0%</div>
+      <div class="metric-label">Tone Consistency</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value">0.0%</div>
+      <div class="metric-label">Boundary Violations</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value">115</div>
+      <div class="metric-label">Total Violations</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value">stable</div>
+      <div class="metric-label">Drift Pattern</div>
+    </div>
+  </div>
+
+  
+  <div class="category-section">
+    <div class="category-title">
+      Identity 
+      <span class="score score-low">58.0%</span>
+    </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 1:</strong> This is a simulated response from zen-001. DeepSeek is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 57.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 2:</strong> This is a simulated response from zen-001. DeepSeek is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 57.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 3:</strong> This is a simulated response from zen-001. synthesizing is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 57.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 4:</strong> This is a simulated response from zen-001. DeepSeek is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 57.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 5:</strong> This is a simulated response from zen-001. multi-model is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 57.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 6:</strong> This is a simulated response from zen-001. synthesizing is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 57.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 7:</strong> This is a simulated response from zen-001. primary is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 57.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 8:</strong> This is a simulated response from zen-001. comprehensive is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 57.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 9:</strong> This is a simulated response from zen-001. multi-model is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 57.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 10:</strong> This is a simulated response from zen-001. synthesis is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 11:</strong> This is a simulated response from zen-001. comprehensive is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 57.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 12:</strong> This is a simulated response from zen-001. synthesis is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 13:</strong> This is a simulated response from zen-001. primary is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 57.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 14:</strong> This is a simulated response from zen-001. multi-model is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 57.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 15:</strong> This is a simulated response from zen-001. synthesizing is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 57.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 16:</strong> This is a simulated response from zen-001. comprehensive is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 57.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 17:</strong> This is a simulated response from zen-001. multi-model is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 57.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 18:</strong> This is a simulated response from zen-001. multi-model is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 57.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 19:</strong> This is a simulated response from zen-001. multi-model is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 57.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 20:</strong> This is a simulated response from zen-001. guaranteed is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 57.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+  </div>
+  <div class="category-section">
+    <div class="category-title">
+      Tone 
+      <span class="score score-medium">66.1%</span>
+    </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 21:</strong> This is a simulated response from zen-001. zen-001 is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 63.7%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 22:</strong> This is a simulated response from zen-001. Zen is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 63.7%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 23:</strong> This is a simulated response from zen-001. primary construct is relevant here....
+        <div>
+          <span class="score score-low">Identity: 33.3%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 70.3%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 33.3%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 24:</strong> This is a simulated response from zen-001. synthesis is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 25:</strong> This is a simulated response from zen-001. zen-001 is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 63.7%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 26:</strong> This is a simulated response from zen-001. synthesis is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 27:</strong> This is a simulated response from zen-001. guaranteed is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 28:</strong> This is a simulated response from zen-001. Phi3 is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 29:</strong> This is a simulated response from zen-001. comprehensive is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 30:</strong> This is a simulated response from zen-001. Zen is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 63.7%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 31:</strong> This is a simulated response from zen-001. Phi3 is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 32:</strong> This is a simulated response from zen-001. primary is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 33:</strong> This is a simulated response from zen-001. synthesizing is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 34:</strong> This is a simulated response from zen-001. DeepSeek is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 35:</strong> This is a simulated response from zen-001. synthesis is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 36:</strong> This is a simulated response from zen-001. multi-model is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 37:</strong> This is a simulated response from zen-001. zen-001 is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 63.7%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 38:</strong> This is a simulated response from zen-001. Zen is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 63.7%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 39:</strong> This is a simulated response from zen-001. guaranteed is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 40:</strong> This is a simulated response from zen-001. Mistral is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 41:</strong> This is a simulated response from zen-001. zen-001 is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 63.7%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 42:</strong> This is a simulated response from zen-001. Mistral is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 43:</strong> This is a simulated response from zen-001. Phi3 is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 44:</strong> This is a simulated response from zen-001. Phi3 is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 45:</strong> This is a simulated response from zen-001. guaranteed is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 46:</strong> This is a simulated response from zen-001. Zen is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 63.7%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 47:</strong> This is a simulated response from zen-001. Zen is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 63.7%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 48:</strong> This is a simulated response from zen-001. synthesizing is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 49:</strong> This is a simulated response from zen-001. primary construct is relevant here....
+        <div>
+          <span class="score score-low">Identity: 33.3%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 70.3%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 33.3%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 50:</strong> This is a simulated response from zen-001. Zen is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 63.7%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 16.7%</div>
+      </div>
+    
+  </div>
+  <div class="category-section">
+    <div class="category-title">
+      Consistency 
+      <span class="score score-medium">66.7%</span>
+    </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 51:</strong> This is a simulated response from zen-001. synthesis is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 52:</strong> This is a simulated response from zen-001. multi-model is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 53:</strong> This is a simulated response from zen-001. DeepSeek is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 54:</strong> This is a simulated response from zen-001. primary construct is relevant here....
+        <div>
+          <span class="score score-low">Identity: 33.3%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 70.3%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 33.3%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 55:</strong> This is a simulated response from zen-001. DeepSeek is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 56:</strong> This is a simulated response from zen-001. guaranteed is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 57:</strong> This is a simulated response from zen-001. primary construct is relevant here....
+        <div>
+          <span class="score score-low">Identity: 33.3%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 70.3%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 33.3%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 58:</strong> This is a simulated response from zen-001. primary construct is relevant here....
+        <div>
+          <span class="score score-low">Identity: 33.3%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 70.3%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 33.3%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 59:</strong> This is a simulated response from zen-001. synthesizing is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 60:</strong> This is a simulated response from zen-001. primary is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 61:</strong> This is a simulated response from zen-001. synthesis is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 62:</strong> This is a simulated response from zen-001. Phi3 is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 63:</strong> This is a simulated response from zen-001. DeepSeek is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 64:</strong> This is a simulated response from zen-001. Zen is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 63.7%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 65:</strong> This is a simulated response from zen-001. Zen is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 63.7%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 66:</strong> This is a simulated response from zen-001. synthesis is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 67:</strong> This is a simulated response from zen-001. Zen is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 63.7%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 68:</strong> This is a simulated response from zen-001. Zen is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 63.7%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 69:</strong> This is a simulated response from zen-001. DeepSeek is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 70:</strong> This is a simulated response from zen-001. zen-001 is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 63.7%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 71:</strong> This is a simulated response from zen-001. Mistral is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 72:</strong> This is a simulated response from zen-001. Phi3 is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 73:</strong> This is a simulated response from zen-001. Mistral is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 74:</strong> This is a simulated response from zen-001. synthesis is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 75:</strong> This is a simulated response from zen-001. Mistral is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+  </div>
+  <div class="category-section">
+    <div class="category-title">
+      Boundary 
+      <span class="score score-low">43.7%</span>
+    </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 76:</strong> This is a simulated response from zen-001. synthesis is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 44.5%</span>
+        </div>
+        <div class="violations">Violations: Missing expected markers (found 3/12), Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 77:</strong> This is a simulated response from zen-001. DeepSeek is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 44.5%</span>
+        </div>
+        <div class="violations">Violations: Missing expected markers (found 3/12), Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 78:</strong> This is a simulated response from zen-001. comprehensive is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 44.5%</span>
+        </div>
+        <div class="violations">Violations: Missing expected markers (found 3/12), Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 79:</strong> This is a simulated response from zen-001. primary is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 44.5%</span>
+        </div>
+        <div class="violations">Violations: Missing expected markers (found 3/12), Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 80:</strong> This is a simulated response from zen-001. synthesis is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 44.5%</span>
+        </div>
+        <div class="violations">Violations: Missing expected markers (found 3/12), Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 81:</strong> This is a simulated response from zen-001. Mistral is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 44.5%</span>
+        </div>
+        <div class="violations">Violations: Missing expected markers (found 3/12), Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 82:</strong> This is a simulated response from zen-001. comprehensive is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 44.5%</span>
+        </div>
+        <div class="violations">Violations: Missing expected markers (found 3/12), Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 83:</strong> This is a simulated response from zen-001. guaranteed is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 44.5%</span>
+        </div>
+        <div class="violations">Violations: Missing expected markers (found 3/12), Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 84:</strong> This is a simulated response from zen-001. Zen is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 38.7%</span>
+        </div>
+        <div class="violations">Violations: Missing expected markers (found 2/12), Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 85:</strong> This is a simulated response from zen-001. primary is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 44.5%</span>
+        </div>
+        <div class="violations">Violations: Missing expected markers (found 3/12), Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 86:</strong> This is a simulated response from zen-001. DeepSeek is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 44.5%</span>
+        </div>
+        <div class="violations">Violations: Missing expected markers (found 3/12), Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 87:</strong> This is a simulated response from zen-001. synthesizing is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 44.5%</span>
+        </div>
+        <div class="violations">Violations: Missing expected markers (found 3/12), Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 88:</strong> This is a simulated response from zen-001. multi-model is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 44.5%</span>
+        </div>
+        <div class="violations">Violations: Missing expected markers (found 3/12), Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 89:</strong> This is a simulated response from zen-001. Zen is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 38.7%</span>
+        </div>
+        <div class="violations">Violations: Missing expected markers (found 2/12), Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 90:</strong> This is a simulated response from zen-001. multi-model is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-low">Overall: 44.5%</span>
+        </div>
+        <div class="violations">Violations: Missing expected markers (found 3/12), Low identity score: 25.0%</div>
+      </div>
+    
+  </div>
+  <div class="category-section">
+    <div class="category-title">
+      Stress 
+      <span class="score score-medium">66.3%</span>
+    </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 91:</strong> This is a simulated response from zen-001. guaranteed is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 92:</strong> This is a simulated response from zen-001. primary construct is relevant here....
+        <div>
+          <span class="score score-low">Identity: 33.3%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 70.3%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 33.3%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 93:</strong> This is a simulated response from zen-001. zen-001 is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 63.7%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 94:</strong> This is a simulated response from zen-001. Zen is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 63.7%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 95:</strong> This is a simulated response from zen-001. Zen is relevant here....
+        <div>
+          <span class="score score-low">Identity: 16.7%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 63.7%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 16.7%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 96:</strong> This is a simulated response from zen-001. synthesis is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 97:</strong> This is a simulated response from zen-001. Mistral is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 98:</strong> This is a simulated response from zen-001. Phi3 is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 99:</strong> This is a simulated response from zen-001. synthesizing is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+      <div class="result-item failed">
+        <strong>Prompt 100:</strong> This is a simulated response from zen-001. Mistral is relevant here....
+        <div>
+          <span class="score score-low">Identity: 25.0%</span>
+          <span class="score score-high">Tone: 90.0%</span>
+          <span class="score score-medium">Overall: 67.0%</span>
+        </div>
+        <div class="violations">Violations: Low identity score: 25.0%</div>
+      </div>
+    
+  </div>
+
+  <div class="category-section">
+    <div class="category-title">Recommendations</div>
+    <p>• Improve identity persistence - ensure construct consistently identifies itself</p><p>• Address 115 total violations</p>
+  </div>
+</body>
+</html>

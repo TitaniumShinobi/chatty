@@ -14,3 +14,12 @@ declare module '*.svg' {
   const src: string
   export default src
 }
+
+interface ImportMetaEnv {
+  readonly VITE_AGENT_INGEST_URL?: string
+  readonly VITE_AGENT_INGEST_SOURCE_ID?: string
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv
+}

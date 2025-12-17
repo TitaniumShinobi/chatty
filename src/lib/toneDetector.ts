@@ -327,8 +327,12 @@ Respond with JSON containing:
 
 Only respond with valid JSON, no other text.`;
 
-    // Dynamic import to avoid circular dependencies
-    const { runSeat } = await import('../engine/seatRunner');
+    // Dynamic import to avoid circular dependencies and to stay browser-safe
+    const isBrowser = typeof window !== 'undefined';
+    const seatModule = isBrowser
+      ? await import('../lib/browserSeatRunner')
+      : await import('../engine/seatRunner');
+    const { runSeat } = seatModule;
     const response = await runSeat({
       seat: 'smalltalk',
       prompt,

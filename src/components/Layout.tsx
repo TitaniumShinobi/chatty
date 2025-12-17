@@ -2,8 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { fetchMe, logout, getUserId, type User } from '../lib/auth'
 import { VVAULTConversationManager, type ConversationThread } from '../lib/vvaultConversationManager'
+// Import message recovery utility (exposes window.recoverMessages)
+import '../lib/messageRecovery'
 import StorageFailureFallback from './StorageFailureFallback'
 import { ThemeProvider } from '../lib/ThemeContext'
+import { SettingsProvider, useSettings } from '../context/SettingsContext'
 import { Z_LAYERS } from '../lib/zLayers'
 // icons not needed here after Sidebar is used
 import SearchPopup from './SearchPopup'
@@ -21,20 +24,35 @@ import { DynamicPersonaOrchestrator } from '../engine/orchestration/DynamicPerso
 import { AutomaticRuntimeOrchestrator } from '../lib/automaticRuntimeOrchestrator'
 import { RuntimeContextManager } from '../lib/runtimeContextManager'
 
+// Add timestamps to console output for easier traceability
+const patchConsoleWithTimestamp = () => {
+  const anyConsole = console as any
+  if (anyConsole.__tsPatched) return
+  const withTs = (fn: (...args: any[]) => void) => (...args: any[]) =>
+    fn(new Date().toISOString(), ...args)
+  console.log = withTs(console.log.bind(console))
+  console.error = withTs(console.error.bind(console))
+  console.warn = withTs(console.warn.bind(console))
+  anyConsole.__tsPatched = true
+}
+patchConsoleWithTimestamp()
+
 type Message = {
   id: string
   role: 'user' | 'assistant'
   text?: string
   packets?: import('../types').AssistantPacket[]
   ts: number
+  timestamp?: string
   files?: { name: string; size: number; type?: string }[]
   typing?: boolean  // For typing indicators
   responseTimeMs?: number
   thinkingLog?: string[]
   metadata?: {
-    responseTimeMs?: number
-    thinkingLog?: string[]
-  }
+  responseTimeMs?: number
+  thinkingLog?: string[]
+  unsaved?: boolean
+}
 }
 type Thread = {
   id: string;
@@ -59,6 +77,7 @@ const DEFAULT_ZEN_RUNTIME_ID = 'zen-001';
 function mapChatMessageToThreadMessage(message: ChatMessage): Message | null {
   const parsedTs = message.timestamp ? Date.parse(message.timestamp) : NaN
   const ts = Number.isFinite(parsedTs) ? parsedTs : Date.now()
+  const timestampIso = message.timestamp || new Date(ts).toISOString()
   const mapFiles = (files?: File[]) =>
     (files ?? []).map(file => ({
       name: file.name,
@@ -73,6 +92,7 @@ function mapChatMessageToThreadMessage(message: ChatMessage): Message | null {
         role: 'user',
         text: message.content,
         ts,
+        timestamp: timestampIso,
         files: mapFiles(message.files)
       }
     case 'assistant': {
@@ -86,6 +106,7 @@ function mapChatMessageToThreadMessage(message: ChatMessage): Message | null {
         role: 'assistant',
         packets,
         ts,
+        timestamp: timestampIso,
         files: mapFiles(message.files),
         responseTimeMs: message.metadata?.responseTimeMs,
         thinkingLog: message.metadata?.thinkingLog,
@@ -97,7 +118,8 @@ function mapChatMessageToThreadMessage(message: ChatMessage): Message | null {
         id: message.id,
         role: 'assistant',
         packets: [{ op: 'answer.v1', payload: { content: message.content } }],
-        ts
+        ts,
+        timestamp: timestampIso
       }
     default:
       return null
@@ -138,7 +160,28 @@ export default function Layout() {
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:137',message:'Layout: threads updated',data:{threadCount:threads.length,threadIds:threads.map(t=>t.id),threadTitles:threads.map(t=>t.title)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
     // #endregion
+    
+    // Expose threads to window for message recovery (if browser is still open)
+    // This allows recovery from React state if server restarts before messages are saved
+    if (typeof window !== 'undefined') {
+      (window as any).__CHATTY_THREADS__ = threads;
+    }
   }, [threads])
+
+  // Listen for custom event to open settings modal
+  useEffect(() => {
+    const handleOpenSettings = (event: CustomEvent) => {
+      setIsSettingsOpen(true)
+      // Optionally set active tab if provided in event detail
+      // This would require modifying SettingsModal to accept initialTab prop
+    }
+
+    window.addEventListener('chatty:open-settings', handleOpenSettings as EventListener)
+    
+    return () => {
+      window.removeEventListener('chatty:open-settings', handleOpenSettings as EventListener)
+    }
+  }, [])
   
         const activeId = useMemo(() => {
     const match = location.pathname.match(/^\/app\/chat\/(.+)$/)
@@ -158,7 +201,7 @@ export default function Layout() {
   const synthAddressBookThreads = useMemo(() => {
     const canonical =
       threads.find(t => t.id === DEFAULT_ZEN_CANONICAL_SESSION_ID) ||
-      threads.find(t => t.constructId === DEFAULT_ZEN_C极客时间ANONICAL_CONSTRUCT_ID) ||
+      threads.find(t => t.constructId === DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID) ||
       threads.find(t => t.runtimeId === DEFAULT_ZEN_RUNTIME_ID && t.isPrimary);
     return canonical ? [canonical] : [];
   }, [threads])
@@ -169,7 +212,78 @@ export default function Layout() {
     isProjectsOpen ||
     isSettingsOpen ||
     Boolean(shareConversation) ||
-    Boolean(storageFailureInfo)
+    Boolean(storageFailureInfo) ||
+    location.pathname.includes('/gpts/new') ||
+    location.pathname.includes('/gpts/edit/') ||
+    location.pathname.includes('/ais/new') ||
+    location.pathname.includes('/ais/edit/')
+
+  // Verify that a message persisted to VVAULT; dev-only safeguard to catch drops early
+  const verifyMessagePersisted = useCallback(
+    async (threadId: string, role: 'user' | 'assistant', content?: string, isoTimestamp?: string) => {
+      // Retry in case the write is still flushing
+      const attempts = 5;
+      const delayMs = 500;
+      const vvaultUserId = getUserId(user as any) || user?.email;
+      if (!vvaultUserId) return;
+
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        try {
+          const conversations = await VVAULTConversationManager.getInstance().loadAllConversations(
+            vvaultUserId,
+            true
+          );
+          let convo = conversations.find(c => c.sessionId === threadId);
+
+          // Fallback: Zen sessions often normalize to canonical file-based IDs (zen-001_chat_with_zen-001)
+          // even if the UI threadId differs. Try to locate by constructId/name to avoid false negatives.
+          if (!convo) {
+            const zenCandidate = conversations.find(c =>
+              (c.constructId && c.constructId.toLowerCase() === 'zen-001') ||
+              (c.title && c.title.toLowerCase().includes('zen'))
+            );
+            if (zenCandidate) {
+              convo = zenCandidate;
+            }
+          }
+
+          if (!convo || !Array.isArray(convo.messages)) {
+            console.error('❌ [Layout.tsx] Persistence check failed: conversation missing', {
+              threadId
+            });
+            return;
+          }
+
+          const found = convo.messages.some(m => {
+            if (m.role !== role) return false;
+            if (isoTimestamp && m.timestamp) {
+              return m.timestamp === isoTimestamp;
+            }
+            if (content) {
+              return (m.content || '').trim() === content.trim();
+            }
+            return true;
+          });
+
+          if (found) return;
+        } catch (err) {
+          console.warn('⚠️ [Layout.tsx] Persistence check errored (non-blocking):', err);
+          return;
+        }
+
+        // wait before next attempt
+        await new Promise(res => setTimeout(res, delayMs));
+      }
+
+      console.error('❌ [Layout.tsx] Persistence check failed: message not found in VVAULT', {
+        threadId,
+        role,
+        isoTimestamp,
+        contentPreview: content?.slice(0, 100)
+      });
+    },
+    [user]
+  )
 
   // Debug logging for overlay state (must be before any conditional returns)
   useEffect(() => {
@@ -448,11 +562,43 @@ export default function Layout() {
         setIsBackendUnavailable(backendUnavailable);
         console.log('📚 [Layout.tsx] VVAULT returned:', vvaultConversations);
         
+        // Log detailed message information for each conversation
+        vvaultConversations.forEach((conv, idx) => {
+          console.log(`📋 [Layout] Conversation ${idx + 1}:`, {
+            sessionId: conv.sessionId,
+            title: conv.title,
+            constructId: conv.constructId,
+            messageCount: conv.messages?.length || 0,
+            messages: conv.messages?.map((m: any, i: number) => ({
+              index: i,
+              id: m.id,
+              role: m.role,
+              contentLength: m.content?.length || 0,
+              contentPreview: m.content?.substring(0, 50) || 'no content',
+              timestamp: m.timestamp
+            })) || []
+          });
+        });
+        
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:418',message:'Layout: VVAULT conversations received',data:{count:vvaultConversations.length,conversations:vvaultConversations.map(c=>({sessionId:c.sessionId,title:c.title,constructId:c.constructId}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:418',message:'Layout: VVAULT conversations received',data:{count:vvaultConversations.length,conversations:vvaultConversations.map(c=>({sessionId:c.sessionId,title:c.title,constructId:c.constructId,messageCount:c.messages?.length||0}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
         // #endregion
         
         const loadedThreads: Thread[] = vvaultConversations.map(conv => {
+          // Debug: Log raw conversation data before mapping
+          console.log(`🔍 [Layout] Mapping conversation:`, {
+            sessionId: conv.sessionId,
+            title: conv.title,
+            constructId: conv.constructId,
+            rawMessageCount: conv.messages?.length || 0,
+            rawMessages: conv.messages?.slice(0, 3).map((m: any) => ({
+              id: m.id,
+              role: m.role,
+              contentLength: m.content?.length || 0,
+              hasTimestamp: !!m.timestamp
+            })) || []
+          });
+
           // Normalize title: strip "Chat with " prefix and callsigns for address book display
           let normalizedTitle = conv.title || 'Zen';
           // #region agent log
@@ -486,21 +632,55 @@ export default function Layout() {
                   ? conv.importMetadata.isPrimary.toLowerCase() === 'true'
                   : false;
           
+          // Map messages with validation
+          const mappedMessages = (conv.messages || []).map((msg: any) => {
+            if (!msg || !msg.id) {
+              console.warn('⚠️ [Layout] Invalid message found:', msg);
+              return null;
+            }
+            return {
+              id: msg.id,
+              role: msg.role,
+              text: msg.content,
+              packets: msg.role === 'assistant' ? [{ op: 'answer.v1', payload: { content: msg.content } }] : undefined,
+              ts: new Date(msg.timestamp).getTime(),
+              metadata: msg.metadata || undefined,
+              responseTimeMs: msg.metadata?.responseTimeMs,
+              thinkingLog: msg.metadata?.thinkingLog
+            };
+          }).filter((msg): msg is NonNullable<typeof msg> => msg !== null);
+
+          // Debug: Log after mapping
+          console.log(`✅ [Layout] Mapped conversation "${normalizedTitle}":`, {
+            sessionId: conv.sessionId,
+            rawMessageCount: conv.messages?.length || 0,
+            mappedMessageCount: mappedMessages.length,
+            messageIds: mappedMessages.map(m => m.id).slice(0, 5)
+          });
+
+          if (mappedMessages.length === 0 && (conv.messages?.length || 0) > 0) {
+            console.error('❌ [Layout] Message mapping failed - messages were lost!', {
+              sessionId: conv.sessionId,
+              rawCount: conv.messages?.length || 0,
+              mappedCount: mappedMessages.length,
+              sampleRawMessage: conv.messages?.[0]
+            });
+          }
+          
+          // Normalize thread ID for Zen conversations to match URL pattern
+          let threadId = conv.sessionId;
+          if (constructId === 'zen-001' || constructId === 'zen' || normalizedTitle.toLowerCase() === 'zen') {
+            // Use canonical ID format for Zen to match URL routing
+            threadId = DEFAULT_ZEN_CANONICAL_SESSION_ID;
+            console.log(`🔄 [Layout] Normalized Zen thread ID: ${conv.sessionId} → ${threadId}`);
+          }
+          
           return {
-          id: conv.sessionId,
+          id: threadId,
             title: normalizedTitle,
-          messages: conv.messages.map((msg: any) => ({
-            id: msg.id,
-            role: msg.role,
-            text: msg.content,
-            packets: msg.role === 'assistant' ? [{ op: 'answer.v1', payload: { content: msg.content } }] : undefined,
-            ts: new Date(msg.timestamp).getTime(),
-            metadata: msg.metadata || undefined,
-            responseTimeMs: msg.metadata?.responseTimeMs,
-            thinkingLog: msg.metadata?.thinkingLog
-          })),
-          createdAt: conv.messages.length > 0 ? new Date(conv.messages[0].timestamp).getTime() : Date.now(),
-          updatedAt: conv.messages.length > 0 ? new Date(conv.messages[conv.messages.length - 1].timestamp).getTime() : Date.now(),
+          messages: mappedMessages,
+          createdAt: mappedMessages.length > 0 ? mappedMessages[0].ts : Date.now(),
+          updatedAt: mappedMessages.length > 0 ? mappedMessages[mappedMessages.length - 1].ts : Date.now(),
           archived: false,
           importMetadata: (conv as any).importMetadata || null,
           constructId,
@@ -511,6 +691,33 @@ export default function Layout() {
         });
         
         console.log(`✅ [Layout.tsx] Loaded ${loadedThreads.length} conversations from VVAULT`);
+        
+        // Log message counts for debugging
+        loadedThreads.forEach(thread => {
+          console.log(`📊 [Layout] Thread "${thread.title}" (${thread.id}): ${thread.messages.length} messages`, {
+            messageIds: thread.messages.map(m => m.id).slice(0, 5),
+            firstMessage: thread.messages[0] ? {
+              role: thread.messages[0].role,
+              textPreview: (thread.messages[0].text || '').substring(0, 50)
+            } : null,
+            constructId: thread.constructId,
+            isPrimary: thread.isPrimary
+          });
+          
+          // Special check for Zen
+          if (thread.constructId === 'zen-001' || thread.title.toLowerCase() === 'zen') {
+            console.log(`🔍 [Layout] ZEN THREAD FOUND:`, {
+              id: thread.id,
+              expectedId: DEFAULT_ZEN_CANONICAL_SESSION_ID,
+              matches: thread.id === DEFAULT_ZEN_CANONICAL_SESSION_ID,
+              messageCount: thread.messages.length,
+              messages: thread.messages.slice(0, 3).map(m => ({
+                role: m.role,
+                textPreview: (m.text || '').substring(0, 30)
+              }))
+            });
+          }
+        });
         
         // Check if there's a thread ID in the URL that we should preserve
         const urlThreadId = activeId;
@@ -841,6 +1048,7 @@ export default function Layout() {
             text: msg.content,
             packets: msg.role === 'assistant' ? [{ op: 'answer.v1', payload: { content: msg.content } }] : undefined,
             ts: new Date(msg.timestamp).getTime(),
+            timestamp: msg.timestamp,
             metadata: msg.metadata || undefined,
             responseTimeMs: msg.metadata?.responseTimeMs,
             thinkingLog: msg.metadata?.thinkingLog
@@ -1057,7 +1265,15 @@ export default function Layout() {
     }
     
     // Dynamic persona detection + context lock
-    const detectionEnabled = (process.env.PERSONA_DETECTION_ENABLED || 'true') !== 'false'
+    // #region agent log
+    const envValue = import.meta.env.VITE_PERSONA_DETECTION_ENABLED;
+    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:1061',message:'sendMessage: checking persona detection env var',data:{envValue,hasImportMeta:typeof import.meta !== 'undefined',hasEnv:typeof import.meta.env !== 'undefined'},timestamp:Date.now(),sessionId:'debug-session',runId:'verify-fix',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    const detectionEnabled =
+      (envValue ?? 'true') !== 'false'
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:1065',message:'sendMessage: detectionEnabled calculated',data:{detectionEnabled,envValue},timestamp:Date.now(),sessionId:'debug-session',runId:'verify-fix',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     let detectedPersona: import('../engine/character/PersonaDetectionEngine').PersonaSignal | undefined
     let personaContextLock: import('../engine/character/ContextLock').ContextLock | null = null
     let personaSystemPrompt: string | null = null
@@ -1065,11 +1281,21 @@ export default function Layout() {
 
     if (detectionEnabled) {
       try {
-        const workspaceContext = await WorkspaceContextBuilder.buildWorkspaceContext(
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:1088',message:'sendMessage: starting persona detection',data:{detectionEnabled,hasWorkspaceContextBuilder:typeof WorkspaceContextBuilder !== 'undefined',isClass:typeof WorkspaceContextBuilder === 'function'},timestamp:Date.now(),sessionId:'debug-session',runId:'fix-workspace-builder',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
+        const workspaceBuilder = new WorkspaceContextBuilder()
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:1091',message:'sendMessage: WorkspaceContextBuilder instantiated',data:{hasInstance:!!workspaceBuilder,hasBuildMethod:typeof workspaceBuilder?.buildWorkspaceContext === 'function'},timestamp:Date.now(),sessionId:'debug-session',runId:'fix-workspace-builder',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
+        const workspaceContext = await workspaceBuilder.buildWorkspaceContext(
           user.id || user.sub || '',
           threadId,
           threads as any
         )
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:1096',message:'sendMessage: workspaceContext built successfully',data:{hasContext:!!workspaceContext,hasCurrentThread:!!workspaceContext?.currentThread},timestamp:Date.now(),sessionId:'debug-session',runId:'fix-workspace-builder',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
         const dynamicOrchestrator = new DynamicPersonaOrchestrator()
         const conversationHistory = thread.messages.map(m => {
           if (m.role === 'assistant') {
@@ -1078,12 +1304,45 @@ export default function Layout() {
           }
           return { role: m.role, content: m.text || '' }
         })
+        // Load user personalization from profile
+        let userPersonalization: {
+          nickname?: string;
+          occupation?: string;
+          tags?: string[];
+          aboutYou?: string;
+        } | undefined = undefined;
+        
+        try {
+          const profileResponse = await fetch('/api/vvault/profile', {
+            credentials: 'include'
+          }).catch(() => null);
+          
+          if (profileResponse?.ok) {
+            const profileData = await profileResponse.json();
+            if (profileData?.ok && profileData.profile) {
+              const profile = profileData.profile;
+              if (profile.nickname || profile.occupation || (profile.tags && profile.tags.length > 0) || profile.aboutYou) {
+                userPersonalization = {
+                  nickname: profile.nickname || undefined,
+                  occupation: profile.occupation || undefined,
+                  tags: profile.tags && profile.tags.length > 0 ? profile.tags : undefined,
+                  aboutYou: profile.aboutYou || undefined
+                };
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('[Layout] Failed to load user personalization:', error);
+        }
+        
         const orchestration = await dynamicOrchestrator.orchestrateWithDynamicPersona(
           input,
           user.id || user.sub || '',
           workspaceContext,
           conversationHistory,
-          threadId
+          threadId,
+          undefined, // memoryContext
+          userPersonalization // userProfile with personalization
         )
         detectedPersona = orchestration.detectedPersona
         personaContextLock = orchestration.contextLock || null
@@ -1110,25 +1369,28 @@ export default function Layout() {
       console.warn('⚠️ [Layout.tsx] No effective constructId, defaulting to synth')
     }
 
-    const conversationManager = VVAULTConversationManager.getInstance()
-    const userTimestamp = Date.now()
+  const conversationManager = VVAULTConversationManager.getInstance()
+  const userTimestamp = Date.now()
+  const userTimestampIso = new Date(userTimestamp).toISOString()
 
-    // 1. Show user message immediately
-    const userMsg: Message = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      text: input,
-      ts: userTimestamp,
-      files: files ? files.map(f => ({ name: f.name, size: f.size })) : undefined,
-    }
+  // 1. Show user message immediately
+  const userMsg: Message = {
+    id: crypto.randomUUID(),
+    role: 'user',
+    text: input,
+    ts: userTimestamp,
+    timestamp: userTimestampIso,
+    files: files ? files.map(f => ({ name: f.name, size: f.size })) : undefined,
+  }
     
     // 2. Add typing indicator message
-    const typingMsg: Message = {
-      id: crypto.randomUUID(),
-      role: 'assistant',
-      typing: true,
-      ts: userTimestamp + 1,
-    }
+  const typingMsg: Message = {
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    typing: true,
+    ts: userTimestamp + 1,
+    timestamp: new Date(userTimestamp + 1).toISOString(),
+  }
     
     // 3. Update UI immediately with user message and typing indicator
     setThreads(ts =>
@@ -1144,18 +1406,27 @@ export default function Layout() {
     )
     
     // 4. IMMEDIATELY save user message to VVAULT
+    // CRITICAL: Save happens BEFORE continuing to AI response
+    // This ensures user message is persisted even if server restarts during AI processing
     console.log('💾 [Layout.tsx] Saving USER message to VVAULT...')
-    try {
-      await conversationManager.addMessageToConversation(user, threadId, {
-        role: 'user',
-        content: input,
-        timestamp: new Date(userTimestamp).toISOString(),
-        metadata: {
-          files: files ? files.map(f => ({ name: f.name, size: f.size, type: f.type })) : undefined
-        }
-      })
-      console.log('✅ [Layout.tsx] USER message saved to VVAULT')
-    } catch (error) {
+  try {
+    await conversationManager.addMessageToConversation(user, threadId, {
+      role: 'user',
+      content: input,
+      timestamp: userTimestampIso,
+      metadata: {
+        files: files ? files.map(f => ({ name: f.name, size: f.size, type: f.type })) : undefined
+      }
+    })
+    console.log('✅ [Layout.tsx] USER message saved to VVAULT')
+    console.log('💾 [Layout] Message saved to VVAULT:', {
+      threadId,
+      messageLength: input.length,
+      timestamp: userTimestampIso,
+      filePath: `instances/${thread.constructId || 'unknown'}/chatty/chat_with_${thread.constructId || 'unknown'}.md`
+    });
+    verifyMessagePersisted(threadId, 'user', input, userTimestampIso)
+  } catch (error) {
       console.error('❌ [Layout.tsx] CRITICAL: Failed to save user message:', error)
       alert('Failed to save message to VVAULT. Please check console.')
       setThreads(ts =>
@@ -1176,11 +1447,21 @@ export default function Layout() {
     try {
       const constructCallsign = effectiveConstructId
       console.log(`🧠 [Layout.tsx] Querying identity for construct: ${constructCallsign}`)
+      // Get settings from localStorage for memory permission check
+      const settings = typeof window !== 'undefined' ? (() => {
+        try {
+          const stored = localStorage.getItem('chatty_settings_v2');
+          return stored ? JSON.parse(stored) : undefined;
+        } catch {
+          return undefined;
+        }
+      })() : undefined;
       relevantMemories = await conversationManager.loadMemoriesForConstruct(
         user.id || user.sub || '',
         constructCallsign,
         input, // Use user's message as query
-        5 // Limit to 5 most relevant identity/memories
+        5, // Limit to 5 most relevant identity/memories
+        settings
       )
       if (relevantMemories.length > 0) {
         console.log(`✅ [Layout.tsx] Found ${relevantMemories.length} relevant identity/memories`)
@@ -1288,57 +1569,132 @@ export default function Layout() {
       return;
     }
       
-      const raw = await aiService.processMessage(input, files, {
-        onPartialUpdate: (partialContent: string) => {
-          const trimmed = (partialContent || '').trim()
-          const normalized = trimmed.toLowerCase()
-          const statusMessages = new Set([
-            'generating…',
-            'generating...',
-            'synthesizing…',
-            'synthesizing...'
-          ])
-          const isStatusMessage = trimmed.length > 0 && statusMessages.has(normalized)
-          const statusDisplay = normalized.startsWith('generating')
-            ? 'generating…'
-            : normalized.startsWith('synthesizing')
-            ? 'synthesizing…'
-            : trimmed
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:1322',message:'sendMessage: calling aiService.processMessage',data:{inputLength:input.length,hasFiles:!!files,filesCount:files?.length||0,effectiveConstructId,hasPersonaSystemPrompt:!!personaSystemPrompt,threadId},timestamp:Date.now(),sessionId:'debug-session',runId:'fix-processmessage',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+      const raw = await aiService.processMessage(
+        input, 
+        files, 
+        {
+          onPartialUpdate: (partialContent: string) => {
+            const trimmed = (partialContent || '').trim()
+            const normalized = trimmed.toLowerCase()
+            const statusMessages = new Set([
+              'generating…',
+              'generating...',
+              'synthesizing…',
+              'synthesizing...'
+            ])
+            const isStatusMessage = trimmed.length > 0 && statusMessages.has(normalized)
+            const statusDisplay = normalized.startsWith('generating')
+              ? 'generating…'
+              : normalized.startsWith('synthesizing')
+              ? 'synthesizing…'
+              : trimmed
 
-          if (isStatusMessage) {
-            thinkingLog.splice(0, thinkingLog.length)
-            thinkingLog.push(statusDisplay)
-          } else if (trimmed && thinkingLog[thinkingLog.length - 1] !== trimmed) {
-            thinkingLog.push(trimmed)
-          }
-          // Update typing message with partial content
-          setThreads(ts =>
-            ts.map(t =>
-              t.id === threadId 
-                ? { 
-                    ...t, 
-                    messages: t.messages.map(m => 
-                      m.id === typingMsg.id 
-                        ? { ...m, text: isStatusMessage ? '' : partialContent, typing: true, thinkingLog: [...thinkingLog] }
-                        : m
-                    ),
-                    updatedAt: Date.now()
-                  } 
-                : t
+            if (isStatusMessage) {
+              thinkingLog.splice(0, thinkingLog.length)
+              thinkingLog.push(statusDisplay)
+            } else if (trimmed && thinkingLog[thinkingLog.length - 1] !== trimmed) {
+              thinkingLog.push(trimmed)
+            }
+            // Update typing message with partial content
+            setThreads(ts =>
+              ts.map(t =>
+                t.id === threadId 
+                  ? { 
+                      ...t, 
+                      messages: t.messages.map(m => 
+                        m.id === typingMsg.id 
+                          ? { ...m, text: isStatusMessage ? '' : partialContent, typing: true, thinkingLog: [...thinkingLog] }
+                          : m
+                      ),
+                      updatedAt: Date.now()
+                    } 
+                  : t
+              )
             )
-          )
-        },
-        onFinalUpdate: (finalPackets: import('../types').AssistantPacket[]) => {
+          },
+          onFinalUpdate: async (finalPackets: import('../types').AssistantPacket[]) => {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:1373',message:'sendMessage: onFinalUpdate called',data:{packetsCount:finalPackets.length,firstPacketOp:finalPackets[0]?.op},timestamp:Date.now(),sessionId:'debug-session',runId:'fix-processmessage',hypothesisId:'D'})}).catch(()=>{});
+            // #endregion
           const responseTimeMs = Date.now() - responseStart
           const filteredThinking: string[] = []
-          // Replace typing message with final response
+          
+          // Extract content from packets before saving
+          const assistantContent = finalPackets
+            .map(packet => {
+              if (!packet) return '';
+              if (packet.op === 'answer.v1' && packet.payload?.content) {
+                return packet.payload.content;
+              }
+              return '';
+            })
+            .filter(Boolean)
+            .join('\n\n');
+          
+          console.log(`📝 [Layout.tsx] onFinalUpdate: Extracted assistant content (length: ${assistantContent.length})`);
+          
+          let assistantUnsaved = false;
+          if (user && assistantContent) {
+            const assistantTimestampIso = new Date(Date.now() + 2).toISOString();
+            const savePayload = {
+              role: 'assistant' as const,
+              content: assistantContent,
+              packets: finalPackets,
+              timestamp: assistantTimestampIso,
+              metadata: {
+                responseTimeMs,
+                thinkingLog: filteredThinking
+              }
+            };
+            try {
+              console.log('💾 [Layout.tsx] onFinalUpdate: Saving ASSISTANT message to VVAULT BEFORE UI update...');
+              await conversationManager.addMessageToConversation(user, threadId, savePayload);
+              console.log('✅ [Layout.tsx] onFinalUpdate: ASSISTANT message saved to VVAULT - safe to update UI');
+              verifyMessagePersisted(
+                threadId,
+                'assistant',
+                assistantContent,
+                assistantTimestampIso
+              );
+            } catch (error) {
+              assistantUnsaved = true;
+              console.error('[VVAULT_WRITE_FAIL] onFinalUpdate: Failed to save assistant message', {
+                error,
+                threadId,
+                requestBody: savePayload
+              });
+              // Continue to render UI with unsaved marker for debugging
+            }
+          } else {
+            console.warn('⚠️ [Layout.tsx] onFinalUpdate: Cannot save - missing user or content');
+            if (!assistantContent) {
+              console.warn('⚠️ [Layout.tsx] onFinalUpdate: Empty content extracted from packets');
+            }
+          }
+          
+          // Update UI even if save failed (unsaved flagged for debugging)
           const aiMsg: Message = {
             id: typingMsg.id, // Use same ID to replace
             role: 'assistant',
             packets: finalPackets,
             ts: Date.now() + 2,
+            timestamp: new Date(Date.now() + 2).toISOString(),
             responseTimeMs,
-            thinkingLog: filteredThinking
+            thinkingLog: filteredThinking,
+            metadata: { responseTimeMs, thinkingLog: filteredThinking, unsaved: assistantUnsaved }
+          }
+          
+          // Expose threads to window for recovery (if browser is still open)
+          // This allows recovery from React state if server restarts
+          if (typeof window !== 'undefined') {
+            (window as any).__CHATTY_THREADS__ = threads.map(t => 
+              t.id === threadId 
+                ? { ...t, messages: t.messages.map(m => m.id === typingMsg.id ? aiMsg : m) }
+                : t
+            );
           }
           
           setThreads(ts =>
@@ -1360,27 +1716,17 @@ export default function Layout() {
           finalAssistantResponseMs = responseTimeMs
           finalAssistantThinking = filteredThinking
         }
-      }, enhancedUiContext)
-      
-      if (finalAssistantPackets && user) {
-        console.log('💾 [Layout.tsx] Saving ASSISTANT message to VVAULT...')
-        try {
-          await conversationManager.addMessageToConversation(user, threadId, {
-            role: 'assistant',
-            content: '',
-            packets: finalAssistantPackets,
-            timestamp: new Date(finalAssistantTimestamp || Date.now()).toISOString(),
-            metadata: {
-              responseTimeMs: finalAssistantResponseMs,
-              thinkingLog: finalAssistantThinking
-            }
-          })
-          console.log('✅ [Layout.tsx] ASSISTANT message saved to VVAULT')
-        } catch (error) {
-          console.error('❌ [Layout.tsx] CRITICAL: Failed to save assistant message:', error)
-          alert('Failed to save AI response to VVAULT. Please check console.')
-        }
+      },
+      {
+        threadId,
+        constructId: effectiveConstructId,
+        uiContext: enhancedUiContext
       }
+      )
+      
+      // Note: Assistant message is now saved INSIDE onFinalUpdate callback
+      // This ensures the message is persisted before UI update, preventing loss on server restart
+      // The save happens synchronously before setThreads() is called in onFinalUpdate
       
       // Fallback: if callbacks weren't used, handle the response normally
       if (raw && !Array.isArray(raw)) {
@@ -1391,6 +1737,7 @@ export default function Layout() {
           role: 'assistant',
           packets: packets,
           ts: Date.now() + 2,
+          timestamp: new Date(Date.now() + 2).toISOString(),
           responseTimeMs,
           thinkingLog: []
         }
@@ -1410,23 +1757,46 @@ export default function Layout() {
         )
         
         console.log('💾 [Layout.tsx] Saving ASSISTANT fallback message to VVAULT...')
+        const assistantIso = new Date(aiMsg.ts).toISOString()
+        const savePayload = {
+          role: 'assistant' as const,
+          content: String(raw ?? ''),
+          timestamp: assistantIso,
+          metadata: {
+            responseTimeMs
+          }
+        };
         try {
-          await conversationManager.addMessageToConversation(user, threadId, {
-            role: 'assistant',
-            content: String(raw ?? ''),
-            timestamp: new Date(aiMsg.ts).toISOString(),
-            metadata: {
-              responseTimeMs
-            }
-          })
+          await conversationManager.addMessageToConversation(user, threadId, savePayload)
           console.log('✅ [Layout.tsx] ASSISTANT fallback saved to VVAULT')
+          verifyMessagePersisted(
+            threadId,
+            'assistant',
+            String(raw ?? ''),
+            assistantIso
+          )
         } catch (error) {
-          console.error('❌ [Layout.tsx] CRITICAL: Failed to save assistant fallback message:', error)
-          alert('Failed to save AI response to VVAULT. Please check console.')
+          aiMsg.metadata = { ...(aiMsg.metadata || {}), unsaved: true }
+          console.error('[VVAULT_WRITE_FAIL] Fallback: Failed to save assistant message', {
+            error,
+            threadId,
+            requestBody: savePayload
+          })
+          // keep UI message for debugging
         }
       }
       
     } catch (error) {
+      // #region agent log
+      const errorDetails = {
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorName: error instanceof Error ? error.name : typeof error,
+        errorType: error?.constructor?.name
+      };
+      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:1460',message:'sendMessage: error caught in main catch block',data:errorDetails,timestamp:Date.now(),sessionId:'debug-session',runId:'fix-workspace-builder',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
+      console.error('❌ [Layout.tsx] Error in sendMessage:', error)
       // Handle error by replacing typing message with error
       const errorMsg: Message = {
         id: typingMsg.id,
@@ -1512,16 +1882,239 @@ export default function Layout() {
     setShareConversationId(null)
   }
 
+  async function reloadThreadMessages(threadId: string): Promise<void> {
+    console.log('🔄 [Layout] Reloading messages for thread:', threadId);
+    
+    if (!user) {
+      console.error('❌ [Layout] Cannot reload messages: no user session');
+      return;
+    }
+
+    try {
+      const vvaultUserId = getUserId(user as any) || user?.email;
+      if (!vvaultUserId) {
+        console.error('❌ [Layout] Cannot reload messages: no user ID');
+        return;
+      }
+
+      const conversationManager = VVAULTConversationManager.getInstance();
+      const conversations = await conversationManager.loadAllConversations(vvaultUserId, true);
+      
+      console.log(`📥 [Layout] Reloaded ${conversations.length} conversations from VVAULT`);
+      console.log(`🔍 [Layout] Searching for threadId: ${threadId}`);
+      console.log(`📋 [Layout] Available conversations:`, conversations.map(c => ({
+        sessionId: c.sessionId,
+        title: c.title,
+        constructId: c.constructId,
+        messageCount: c.messages?.length || 0
+      })));
+      
+      // Find the specific conversation - try multiple matching strategies
+      let conv = conversations.find(c => c.sessionId === threadId);
+      
+      if (!conv) {
+        // Try matching by transformed ID pattern (zen-001_chat_with_zen-001)
+        conv = conversations.find(c => {
+          if (c.constructId && threadId.includes(c.constructId)) {
+            const transformedId = `${c.constructId}_chat_with_${c.constructId}`;
+            return transformedId === threadId;
+          }
+          return false;
+        });
+      }
+      
+      if (!conv) {
+        // Try matching by constructId for Zen (zen-001)
+        if (threadId.includes('zen-001') || threadId.includes('zen_')) {
+          conv = conversations.find(c => 
+            c.constructId === 'zen-001' || 
+            c.constructId === 'zen' ||
+            (c.title && c.title.toLowerCase().includes('zen'))
+          );
+        }
+      }
+      
+      if (!conv) {
+        // Last resort: find any conversation with matching constructId pattern
+        const constructIdMatch = threadId.match(/([a-z]+-\d+)/i);
+        if (constructIdMatch) {
+          const extractedConstructId = constructIdMatch[1];
+          conv = conversations.find(c => c.constructId === extractedConstructId);
+        }
+      }
+
+      if (!conv) {
+        console.error(`❌ [Layout] Conversation not found for threadId: ${threadId}`);
+        console.error(`📋 [Layout] Available sessionIds:`, conversations.map(c => c.sessionId));
+        
+        // Last resort: If this is a Zen conversation, try to find ANY Zen conversation
+        if (threadId.includes('zen')) {
+          console.log(`🔄 [Layout] Attempting fallback: finding any Zen conversation...`);
+          conv = conversations.find(c => 
+            c.constructId === 'zen-001' || 
+            c.constructId === 'zen' ||
+            (c.title && c.title.toLowerCase().includes('zen')) ||
+            (c.sessionId && c.sessionId.toLowerCase().includes('zen'))
+          );
+          
+          if (conv) {
+            console.log(`✅ [Layout] Found fallback Zen conversation: ${conv.sessionId} with ${conv.messages.length} messages`);
+          } else {
+            console.error(`❌ [Layout] No Zen conversation found at all. Total conversations: ${conversations.length}`);
+            return;
+          }
+        } else {
+          return;
+        }
+      }
+
+      console.log(`📋 [Layout] Found conversation: ${conv.title} (${conv.sessionId}) with ${conv.messages.length} messages`);
+      
+      if (conv.messages.length === 0) {
+        console.warn(`⚠️ [Layout] Conversation found but has NO messages! This might indicate a parsing issue.`);
+        console.warn(`📄 [Layout] Check VVAULT file: instances/${conv.constructId || 'unknown'}/chatty/chat_with_${conv.constructId || 'unknown'}.md`);
+      }
+
+      // Map conversation to thread format
+      const normalizedTitle = (conv.title || 'Zen')
+        .replace(/^Chat with /i, '')
+        .replace(/-\d{3,}$/i, '');
+      
+      const constructId =
+        conv.constructId ||
+        conv.importMetadata?.constructId ||
+        conv.importMetadata?.connectedConstructId ||
+        conv.constructFolder ||
+        null;
+      const runtimeId =
+        conv.runtimeId ||
+        conv.importMetadata?.runtimeId ||
+        (constructId ? constructId.replace(/-001$/, '') : null) ||
+        null;
+      const isPrimary =
+        typeof conv.isPrimary === 'boolean'
+          ? conv.isPrimary
+          : typeof conv.importMetadata?.isPrimary === 'boolean'
+            ? conv.importMetadata.isPrimary
+            : typeof conv.importMetadata?.isPrimary === 'string'
+              ? conv.importMetadata.isPrimary.toLowerCase() === 'true'
+              : false;
+
+      // Normalize thread ID for Zen conversations to match URL pattern
+      let normalizedThreadId = conv.sessionId;
+      if (constructId === 'zen-001' || constructId === 'zen' || normalizedTitle.toLowerCase() === 'zen') {
+        normalizedThreadId = DEFAULT_ZEN_CANONICAL_SESSION_ID;
+      }
+      
+      // Use threadId from URL if it matches the pattern, otherwise use normalized ID
+      const finalThreadId = (threadId === DEFAULT_ZEN_CANONICAL_SESSION_ID || 
+                            (threadId.includes('zen-001') && normalizedThreadId === DEFAULT_ZEN_CANONICAL_SESSION_ID))
+                            ? threadId : normalizedThreadId;
+
+      const updatedThread: Thread = {
+        id: finalThreadId,
+        title: normalizedTitle,
+        messages: conv.messages.map((msg: any) => {
+          if (!msg || !msg.id || !msg.timestamp) {
+            console.warn('⚠️ [Layout] Invalid message in reload:', msg);
+            return null;
+          }
+          return {
+            id: msg.id,
+            role: msg.role,
+            text: msg.content,
+            packets: msg.role === 'assistant' ? [{ op: 'answer.v1', payload: { content: msg.content } }] : undefined,
+            ts: new Date(msg.timestamp).getTime(),
+            metadata: msg.metadata || undefined,
+            responseTimeMs: msg.metadata?.responseTimeMs,
+            thinkingLog: msg.metadata?.thinkingLog
+          };
+        }).filter((msg): msg is NonNullable<typeof msg> => msg !== null),
+        createdAt: conv.messages.length > 0 ? new Date(conv.messages[0].timestamp).getTime() : Date.now(),
+        updatedAt: conv.messages.length > 0 ? new Date(conv.messages[conv.messages.length - 1].timestamp).getTime() : Date.now(),
+        archived: false,
+        importMetadata: (conv as any).importMetadata || null,
+        constructId,
+        runtimeId,
+        isPrimary,
+        canonicalForRuntime: isPrimary && constructId ? runtimeId || constructId : null
+      };
+
+      console.log(`🔄 [Layout] Updating thread state:`, {
+        threadId,
+        finalThreadId,
+        messageCount: updatedThread.messages.length,
+        sessionId: conv.sessionId
+      });
+
+      // Update thread in state - find by threadId from URL or by matching patterns
+      setThreads(prevThreads => {
+        // Find existing thread by threadId (from URL) or by matching constructId
+        const existingIndex = prevThreads.findIndex(t => 
+          t.id === threadId || 
+          t.id === finalThreadId ||
+          (t.constructId && threadId.includes(t.constructId)) ||
+          (t.isPrimary && t.constructId && `${t.constructId}_chat_with_${t.constructId}` === threadId) ||
+          (constructId === 'zen-001' && t.constructId === 'zen-001' && t.isPrimary)
+        );
+        
+        if (existingIndex >= 0) {
+          // Update existing thread
+          const updated = [...prevThreads];
+          updated[existingIndex] = updatedThread;
+          console.log(`✅ [Layout] Updated thread "${updatedThread.title}" (${updatedThread.id}) with ${updatedThread.messages.length} messages`);
+          return updated;
+        } else {
+          // Add new thread if not found
+          console.log(`✅ [Layout] Added new thread "${updatedThread.title}" (${updatedThread.id}) with ${updatedThread.messages.length} messages`);
+          return [...prevThreads, updatedThread];
+        }
+      });
+    } catch (error) {
+      console.error('❌ [Layout] Failed to reload thread messages:', error);
+      throw error;
+    }
+  }
+
   function handleThreadClick(threadId: string) {
-    const targetId = preferCanonicalThreadId(threadId, threads) || threadId
-    const routedId = routeIdForThread(targetId, threads)
+    console.log('🟡 [Layout] handleThreadClick START:', {
+      threadId,
+      threadsCount: threads.length,
+      threadIds: threads.map(t => ({ id: t.id, title: t.title, constructId: t.constructId, isPrimary: t.isPrimary }))
+    });
+    
+    const targetId = preferCanonicalThreadId(threadId, threads) || threadId;
+    const routedId = routeIdForThread(targetId, threads);
+    const targetPath = `/app/chat/${routedId}`;
+    
+    // Check if selected thread has messages
+    const selectedThread = threads.find(t => t.id === targetId || t.id === routedId);
+    if (selectedThread) {
+      console.log(`📊 [Layout] Selected thread "${selectedThread.title}": ${selectedThread.messages.length} messages`);
+      if (selectedThread.messages.length === 0) {
+        console.warn(`⚠️ [Layout] Thread "${selectedThread.title}" has no messages - Chat.tsx will trigger reload`);
+      }
+    } else {
+      console.warn(`⚠️ [Layout] Thread not found in current threads list: ${targetId}`);
+    }
+    
+    console.log('🟡 [Layout] Navigation:', {
+      original: threadId,
+      targetId,
+      routedId,
+      targetPath,
+      currentPath: location.pathname
+    });
+    
     if (targetId !== threadId) {
       console.log(
         '🧭 [Layout.tsx] Routing to canonical thread instead of runtime thread:',
         { requested: threadId, canonical: targetId }
-      )
+      );
     }
-    navigate(`/app/chat/${routedId}`, { state: { activeRuntimeId } })
+    
+    navigate(targetPath, { state: { activeRuntimeId } });
+    console.log('✅ [Layout] Navigation called');
   }
 
 
@@ -1570,8 +2163,12 @@ export default function Layout() {
     setCollapsed((s) => !s)
   }
 
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:1796',message:'Layout render - checking provider structure',data:{hasUser:!!user,pathname:location.pathname},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+  // #endregion
   return (
-    <ThemeProvider user={user}>
+    <SettingsProvider>
+      <ThemeProvider user={user}>
       <div 
         className="flex h-screen bg-[var(--chatty-bg-main)] text-[var(--chatty-text)] relative"
         style={{ isolation: 'isolate' }} // Ensure proper stacking context for children
@@ -1610,15 +2207,16 @@ export default function Layout() {
 
         {/* Main Content */}
         <main 
-          className="flex-1 flex flex-col overflow-hidden"
+          className="flex-1 flex flex-col"
           style={{
             position: 'relative',
             zIndex: hasBlockingOverlay ? Z_LAYERS.base : Z_LAYERS.content,
             pointerEvents: hasBlockingOverlay ? 'none' : 'auto',
-            isolation: 'isolate' // Create new stacking context, but lower than sidebar
+            isolation: 'isolate', // Create new stacking context, but lower than sidebar
+            overflow: hasBlockingOverlay ? 'hidden' : 'auto'
           }}
         >
-          <Outlet context={{ threads, sendMessage, renameThread, newThread, toggleSidebar, activeThreadId: activeId, appendMessageToThread, navigate }} />
+          <Outlet context={{ threads, sendMessage, renameThread, newThread, toggleSidebar, activeThreadId: activeId, appendMessageToThread, navigate, reloadThreadMessages }} />
         </main>
         <StorageFailureFallback info={storageFailureInfo} onClose={closeStorageFailure} />
 
@@ -1657,5 +2255,6 @@ export default function Layout() {
         {/* Manual runtime dashboard removed - using automatic runtime orchestration */}
       </div>
     </ThemeProvider>
+    </SettingsProvider>
   )
 }

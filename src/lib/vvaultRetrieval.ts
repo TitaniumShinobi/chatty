@@ -1,4 +1,5 @@
 import { detectTone, ToneLabel, ToneDetectionResult, TONE_LABELS } from './toneDetector';
+import { checkMemoryPermission } from './memoryPermission';
 
 type Fetcher = (input: RequestInfo, init?: RequestInit) => Promise<Response>;
 
@@ -16,6 +17,7 @@ export interface MemoryRetrievalOptions {
   minSignificance?: number;
   relationshipPatterns?: string[];
   emotionalState?: string;
+  settings?: { personalization?: { allowMemory?: boolean } }; // Settings for memory permission check
 }
 
 export interface VVAULTMemoryHit {
@@ -72,8 +74,14 @@ export class VVAULTRetrievalWrapper {
       anchorTypes = [],
       minSignificance = 0,
       relationshipPatterns = [],
-      emotionalState
+      emotionalState,
+      settings
     } = options;
+
+    // Check if memory is allowed
+    if (!checkMemoryPermission(settings, 'retrieveMemories')) {
+      return { memories: [] }; // Return empty result when memory is disabled
+    }
 
     if (!constructCallsign) {
       throw new Error('constructCallsign is required for VVAULT retrieval');
