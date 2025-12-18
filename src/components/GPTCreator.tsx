@@ -1583,7 +1583,7 @@ ${fileContent}`;
         .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
         .join('\n');
 
-      const fullPrompt = `${systemPrompt}
+      let fullPrompt = `${systemPrompt}
 
 ${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : ''}User: ${userMessage}
 

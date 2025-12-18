@@ -25,7 +25,7 @@ import { getChatService } from "./services/chatService.js";
 dotenv.config();
 
 // Construct canonical redirect URI with normalization
-const PUBLIC_CALLBACK_BASE = process.env.PUBLIC_CALLBACK_BASE || 'http://localhost:5173';
+const PUBLIC_CALLBACK_BASE = process.env.PUBLIC_CALLBACK_BASE || 'http://localhost:5000';
 const CALLBACK_PATH = process.env.CALLBACK_PATH || '/api/auth/google/callback';
 const REDIRECT_URI = `${PUBLIC_CALLBACK_BASE.replace(/\/$/, '')}${CALLBACK_PATH.startsWith('/') ? CALLBACK_PATH : '/' + CALLBACK_PATH}`;
 
@@ -99,8 +99,8 @@ app.use(express.json());
 app.use(cookieParser());
 app.set("trust proxy", 1);
 
-// single-origin dev
-app.use(cors({ origin: "http://localhost:5173", credentials: true }));
+// Allow all origins in development for Replit proxy support
+app.use(cors({ origin: true, credentials: true }));
 
 // Rate limiting for auth endpoints
 const authLimiter = rateLimit({
@@ -253,13 +253,13 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
     // Handle OAuth errors from Google
     if (error) {
       console.error('OAuth error from Google:', error);
-      const frontendUrl = process.env.POST_LOGIN_REDIRECT || "http://localhost:5173";
+      const frontendUrl = process.env.POST_LOGIN_REDIRECT || "http://localhost:5000";
       return res.redirect(`${frontendUrl}/?error=${encodeURIComponent(error)}`);
     }
 
     if (!code) {
       console.error('OAuth callback missing code parameter');
-      const frontendUrl = process.env.POST_LOGIN_REDIRECT || "http://localhost:5173";
+      const frontendUrl = process.env.POST_LOGIN_REDIRECT || "http://localhost:5000";
       return res.redirect(`${frontendUrl}/?error=missing_code`);
     }
 
@@ -283,7 +283,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
         has_client_secret: !!process.env.GOOGLE_CLIENT_SECRET,
         code_length: code?.length
       });
-      const frontendUrl = process.env.POST_LOGIN_REDIRECT || "http://localhost:5173";
+      const frontendUrl = process.env.POST_LOGIN_REDIRECT || "http://localhost:5000";
       return res.redirect(`${frontendUrl}/?error=oauth_token_exchange_failed&details=${encodeURIComponent(JSON.stringify(tokenRes))}`);
     }
 
@@ -352,12 +352,12 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
     });
 
     // 4) redirect back to app (to /app route which shows Home)
-    const frontendUrl = process.env.POST_LOGIN_REDIRECT || "http://localhost:5173";
+    const frontendUrl = process.env.POST_LOGIN_REDIRECT || "http://localhost:5000";
     console.log(`✅ OAuth success! Redirecting to ${frontendUrl}/app`);
     res.redirect(`${frontendUrl}/app`);
   } catch (e) {
     console.error('OAuth callback error:', e);
-    const frontendUrl = process.env.POST_LOGIN_REDIRECT || "http://localhost:5173";
+    const frontendUrl = process.env.POST_LOGIN_REDIRECT || "http://localhost:5000";
     res.redirect(`${frontendUrl}/?error=auth_failed`);
   }
 });
@@ -738,8 +738,8 @@ function cryptoRandom() {
   return randomBytes(16).toString("hex");
 }
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`API on :${PORT}`));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, 'localhost', () => console.log(`API on :${PORT}`));
 
 // Kick off background services without blocking auth/API availability
 // FORCE RUN MODE: Skip ChromaDB initialization to prevent 45-second delays
