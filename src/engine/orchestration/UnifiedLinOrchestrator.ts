@@ -38,6 +38,7 @@ import {
   formatMemoryTimestamp,
   getRelativeTime,
 } from '../../lib/timeAwareness';
+import { sessionActivityTracker } from '../../lib/sessionActivityTracker';
 import { readFile } from 'fs/promises';
 
 const orchestratorConfig = {
@@ -335,6 +336,10 @@ export class UnifiedLinOrchestrator {
     conversationHistory: Array<{ role: 'user' | 'assistant'; content: string; timestamp?: number }>,
     settings?: { personalization?: { allowMemory?: boolean } }
   ): Promise<UnifiedLinResponse> {
+    // Update session activity early in the method
+    const sessionKey = `${userId}-${callsign}`;
+    sessionActivityTracker.updateActivity(sessionKey, userId, threadId);
+
     // Ensure all messages have timestamps (add if missing)
     const timestampedHistory = conversationHistory.map(msg => ({
       ...msg,
@@ -421,7 +426,7 @@ export class UnifiedLinOrchestrator {
     }
 
     // Load multi-turn session state (relationship, emotion, continuity)
-    const sessionKey = `${userId}-${callsign}`;
+    // Note: sessionKey already calculated above for activity tracking
     const sessionState = this.sessionState.get(sessionKey) || {
       emotionalState: { valence: 0.5, arousal: 0.5, dominantEmotion: 'neutral' },
       relationshipDynamics: { intimacyLevel: 0.5, trustLevel: 0.5, interactionCount: 0 },

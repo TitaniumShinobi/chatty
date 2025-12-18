@@ -351,11 +351,11 @@ export class AutomaticRuntimeOrchestrator {
     // Create mock GPT configs for browser environment
     if (requirements.coding || requirements.technical) {
       fallbackCandidates.push({
-        id: 'synth-browser',
-        name: 'Synth',
-        callsign: 'synth-001',
+        id: 'zen-browser',
+        name: 'Zen',
+        callsign: 'zen-001', // Changed from 'synth-001'
         description: 'Technical and coding assistant',
-        instructions: 'You are Synth, a technical assistant specialized in coding and system architecture.',
+        instructions: 'You are Zen, a technical assistant specialized in coding and system architecture.',
         modelId: 'gpt-4',
         createdAt: new Date().toISOString()
       } as GPTConfig);
@@ -550,8 +550,8 @@ export class AutomaticRuntimeOrchestrator {
     let reasoning = "Default runtime selected";
     
     if (requirements.coding) {
-      defaultConstructId = 'synth'; // Better for coding
-      reasoning = "Synth selected for coding capabilities";
+      defaultConstructId = 'zen-001'; // Changed from 'synth' to 'zen-001'
+      reasoning = "Zen selected for coding capabilities";
     } else if (requirements.creative) {
       defaultConstructId = 'lin'; // Better for creative tasks
       reasoning = "Lin selected for creative capabilities";
@@ -621,11 +621,11 @@ export class AutomaticRuntimeOrchestrator {
         createdAt: new Date().toISOString()
       },
       {
-        id: 'synth-browser',
-        name: 'Synth',
-        callsign: 'synth-001',
+        id: 'zen-browser',
+        name: 'Zen',
+        callsign: 'zen-001', // Changed from 'synth-001'
         description: 'Technical assistant',
-        instructions: 'You are Synth, a technical assistant.',
+        instructions: 'You are Zen, a technical assistant.',
         modelId: 'gpt-4',
         createdAt: new Date().toISOString()
       }

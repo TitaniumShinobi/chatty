@@ -37,6 +37,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   onShowSettings,
   hasBlockingOverlay = false
 }) => {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Sidebar.tsx:22',message:'Sidebar props received',data:{conversations:conversations,conversationsType:typeof conversations,isUndefined:conversations===undefined,isArray:Array.isArray(conversations),conversationsLength:conversations?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+  // #endregion
+  
   const [gptCreator] = useState(() => GPTCreator.getInstance())
   const navigate = useNavigate()
   const location = useLocation()
@@ -400,7 +404,13 @@ const Sidebar: React.FC<SidebarProps> = ({
         )}
         <div className="space-y-1">
           {/* Existing Conversations - No borders, just hover highlights */}
-          {conversations.map((conversation) => (
+          {/* #region agent log */}
+          {(() => {
+            fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Sidebar.tsx:402',message:'Before conversations.map',data:{conversations:conversations,conversationsType:typeof conversations,isArray:Array.isArray(conversations),conversationsLength:conversations?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'C'})}).catch(()=>{});
+            return null;
+          })()}
+          {/* #endregion */}
+          {(conversations || []).map((conversation) => (
             <button
               key={conversation.id}
               onClick={(e) => {

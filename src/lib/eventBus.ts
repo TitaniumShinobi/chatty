@@ -24,6 +24,12 @@ export type ChatEventPayloads = {
   "error_occurred": { error: string; context: string; timestamp: number };
   "performance_metric": { metric: string; value: number; unit: string; timestamp: number };
   
+  // Session lifecycle events
+  "session_active": { sessionId: string; userId: string; threadId?: string; timestamp: number };
+  "session_idle": { sessionId: string; userId: string; threadId?: string; idleMs: number; timestamp: number };
+  "session_resumed": { sessionId: string; userId: string; threadId?: string; idleDuration: number; timestamp: number };
+  "session_ended": { sessionId: string; userId: string; threadId?: string; reason: 'timeout' | 'explicit' | 'long_absence'; timestamp: number };
+  
   // UI events
   "ui_state_changed": { component: string; state: any };
   "debug_panel_toggled": { visible: boolean };

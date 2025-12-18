@@ -309,4 +309,20 @@
     }
   }
 
+  pre, code {
+    white-space: pre !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: auto !important;
+    word-break: normal;
+  }
+
+  .prose pre,
+  .prose code {
+    white-space: pre !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    word-break: normal !important;
+  }
+
 }

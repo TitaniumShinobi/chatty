@@ -18,7 +18,9 @@ import workspaceRoutes from "./routes/workspace.js";
 import unrestrictedConversationRoutes from "./routes/unrestrictedConversation.js";
 import orchestrationRoutes from "./routes/orchestration.js";
 import diagnosticsRoutes from "./routes/diagnostics.js";
+import chatRoutes from './routes/chat.js';
 import { initializeChromaDB, shutdownChromaDB, getChromaDBService } from "./services/chromadbService.js";
+import { getChatService } from "./services/chatService.js";
 
 dotenv.config();
 
@@ -83,6 +85,13 @@ try {
 } catch (error) {
   console.error('❌ [Server] Failed to initialize memory system:', error);
   // Continue anyway - memory system will initialize on first use
+}
+
+// Initialize the new Chat Application Service
+try {
+  getChatService();
+} catch (error) {
+  console.error('❌ [Server] Failed to initialize ChatService:', error);
 }
 
 const app = express();
@@ -720,6 +729,10 @@ app.use("/api/preview", previewRoutes);
 // Workspace context routes (for editor integration - like Copilot)
 app.use("/api/workspace", requireAuth, workspaceRoutes);
 console.log('✅ [Server] Workspace routes mounted at /api/workspace');
+
+// New Chat App routes
+app.use("/api/app", requireAuth, chatRoutes);
+console.log('✅ [Server] Chat App routes mounted at /api/app');
 
 function cryptoRandom() {
   return randomBytes(16).toString("hex");

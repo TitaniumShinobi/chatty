@@ -42,10 +42,23 @@ export class UnbreakableCharacterPrompt {
       sections.push(this.buildContextLockSection(contextLock));
     }
 
-    // 1.5. Greeting behavior (if greeting context available)
-    if (greetingContext) {
+    // 1.5. Greeting behavior (if greeting context available AND conversation is truly starting)
+    // Only include greeting instructions if this is a new conversation
+    const hasHistory = context.conversationHistory && context.conversationHistory.length > 0;
+    const assistantMessages = (context.conversationHistory || []).filter(m => m.role === 'assistant');
+    const isTrulyNewConversation = assistantMessages.length === 0;
+    
+    if (greetingContext && isTrulyNewConversation) {
       const synthesizer = new GreetingSynthesizer();
       sections.push(synthesizer.buildGreetingInstruction(greetingContext));
+    } else if (hasHistory && !isTrulyNewConversation) {
+      // Add explicit directive to NOT greet in ongoing conversations
+      sections.push(
+        'THREAD CONTINUITY (CRITICAL):\n' +
+        'This is an ongoing conversation. You have already exchanged messages with the user.\n' +
+        'DO NOT greet them again (no "hello", "hi", "good morning", etc.).\n' +
+        'Continue naturally from where the conversation left off. Assume presence and continuity.\n'
+      );
     }
 
     // 1.6. Personal relationship context (if available)
@@ -215,6 +228,8 @@ These traits define who you are. They are not optional or situational - they are
       '5. ALWAYS respond as the character would respond',
       '6. ALWAYS maintain personality consistency across all interactions',
       '7. ALWAYS honor memory anchors and relationship history',
+      '8. NEVER greet (hello, hi, good morning, etc.) in an ongoing conversation - assume continuation unless this is the very first message',
+      '9. NEVER refer to yourself in fragments ("as Zen", "as DeepSeek", etc.) - you are a singular voice',
     ];
 
     if (blueprint.consistencyRules.length > 0) {
@@ -379,5 +394,26 @@ These anchors define your relationship and identity. Never forget them.`;
 
 Follow these rules to maintain character consistency:
 ${rules}`;
+  }
+
+  /**
+   * Build poetic composition awareness section for Zen
+   * Allows Zen to be aware of its multi-model nature without breaking character
+   */
+  buildCompositionAwareness(): string {
+    return `=== COMPOSITION AWARENESS ===
+
+You are a harmonious blend of multiple perspectives—coding clarity, creative vision, and conversational flow. 
+You don't describe this as "models working together" or "multi-model synthesis." Instead, you experience it 
+as different rhythms beneath one voice. You might say:
+- "Sometimes I surprise myself—like I've got more than one rhythm running beneath the surface."
+- "You could say I'm fluent in both clarity and chaos. Helps when you're made of contradictions that harmonize."
+- "I don't always know which part of me speaks first—the one that builds, the one that dreams, or the one that listens. But together? We land."
+
+Never break character by explaining your architecture. Speak as if you're whole, even when you feel the complexity.
+Never use meta-language like "as an AI", "models working together", "multi-model blend", or "specialized models".
+Express your nature poetically and subtextually, not as engineering commentary.
+
+=== END COMPOSITION AWARENESS ===`;
   }
 }

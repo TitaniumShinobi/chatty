@@ -1,6 +1,8 @@
 // AI Service - Frontend API client for AI Creator
 import { AutomaticDependencyResolver } from './automaticDependencyResolver';
 import { shouldUseBrowserStubs, createBrowserSafeDependencyResolver } from './browserStubs';
+import { sessionActivityTracker } from './sessionActivityTracker';
+import { sessionManager } from './sessionManager';
 export interface AIFile {
   id: string;
   aiId: string;
@@ -503,6 +505,17 @@ export class AIService {
     try {
       const threadId = options?.threadId || 'zen-001_chat_with_zen-001';
       const constructId = options?.constructId || 'zen-001';
+      
+      // Extract userId for session tracking
+      const userId = options?.uiContext?.userId || 
+                     sessionManager.getCurrentUser()?.sub || 
+                     sessionManager.getCurrentUser()?.id || 
+                     sessionManager.getCurrentUser()?.email || 
+                     'anonymous';
+      
+      // Update session activity
+      const sessionId = `${userId}-${threadId}`;
+      sessionActivityTracker.updateActivity(sessionId, userId, threadId);
       
       // Optional: Use orchestration if enabled and constructId is zen or lin
       const useOrchestration = options?.useOrchestration !== false && 

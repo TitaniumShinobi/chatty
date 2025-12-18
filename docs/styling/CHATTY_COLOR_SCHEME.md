@@ -18,6 +18,7 @@ This document defines the official color scheme for Chatty's user interface.
 ### Text Colors
 - **Primary Text**: `#3A2E14` - Main text color for readability
 - **Placeholder Text**: `#ADA587` - Placeholder text in input fields and text areas
+- **Timestamp Text**: `#ADA587` - Message timestamps (hover-only visibility)
 
 ## Usage Guidelines
 
@@ -40,6 +41,14 @@ This document defines the official color scheme for Chatty's user interface.
 - **Primary Text**: `#3A2E14` for all main content
 - **Secondary Text**: `#3A2E14` with reduced opacity (0.6-0.8) for labels and metadata
 - **Placeholder Text**: `#ADA587` for all placeholder text in input fields, text areas, and search boxes
+- **Timestamp Text**: `#ADA587` for message timestamps with hover-only visibility
+
+### Message Timestamps
+- **Color**: `#ADA587` - Uses accent color for subtle, elegant appearance
+- **Visibility**: Hidden by default (`opacity-0`), visible on hover (`group-hover:opacity-100`)
+- **Behavior**: Appears when hovering over message container (user or assistant messages)
+- **Styling**: Small text size (`text-xs`), smooth opacity transition
+- **Purpose**: Provides temporal context without cluttering the interface
 
 ### Form Inputs
 - **Background**: Match container background (`2F2510` or `#ffffeb`)
@@ -59,6 +68,7 @@ This document defines the official color scheme for Chatty's user interface.
 7. Form inputs should blend with their container background - no visible borders or contrasting backgrounds
 8. Form text uses primary text color (`#3A2E14`) for readability
 9. Placeholder text uses accent color (`#ADA587`) for subtle distinction
+10. Message timestamps use `#ADA587` and are hidden by default, appearing only on hover for a clean interface
 
 ## CSS Variables (Recommended)
 
@@ -73,6 +83,7 @@ This document defines the official color scheme for Chatty's user interface.
   --chatty-line: #ADA587;
   --chatty-text: #3A2E14;
   --chatty-placeholder: #ADA587;
+  --chatty-timestamp: #ADA587;
 }
 ```
 
@@ -108,4 +119,5 @@ This color scheme ensures a cohesive, warm, and professional user experience acr
   --chatty-line: #ADA587;
   --chatty-text: #ffffeb;
   --chatty-placeholder: #ADA587;
+  --chatty-timestamp: #ADA587;
 }

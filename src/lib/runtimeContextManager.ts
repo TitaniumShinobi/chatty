@@ -8,6 +8,7 @@
 
 import { RuntimeAssignment } from './automaticRuntimeOrchestrator';
 import { shouldUseBrowserStubs, createBrowserSafeContextManager } from './browserStubs';
+import { sessionActivityTracker } from './sessionActivityTracker';
 
 export interface RuntimeContext {
   threadId: string;
@@ -144,6 +145,9 @@ export class RuntimeContextManager {
         session.lastActivity = new Date().toISOString();
       }
 
+      // Update session activity tracker
+      sessionActivityTracker.updateActivity(context.sessionId, context.userId, threadId);
+
       // Persist updated usage
       this.persistRuntimeAssignment(context);
     }
@@ -159,6 +163,8 @@ export class RuntimeContextManager {
 
     if (existingSession) {
       existingSession.lastActivity = new Date().toISOString();
+      // Update session activity tracker
+      sessionActivityTracker.updateActivity(existingSession.sessionId, userId);
       return existingSession;
     }
 
@@ -174,6 +180,8 @@ export class RuntimeContextManager {
     };
 
     this.activeSessions.set(sessionId, session);
+    // Update session activity tracker for new session
+    sessionActivityTracker.updateActivity(sessionId, userId);
     return session;
   }
 
@@ -268,6 +276,8 @@ export class RuntimeContextManager {
     Array.from(this.activeSessions.entries()).forEach(([sessionId, session]) => {
       if (!this.isSessionActive(session)) {
         this.activeSessions.delete(sessionId);
+        // Coordinate with session activity tracker
+        sessionActivityTracker.endSession(sessionId, 'timeout');
       }
     });
   }

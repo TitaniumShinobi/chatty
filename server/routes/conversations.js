@@ -311,7 +311,8 @@ r.post("/:id/messages", async (req, res) => {
                   .filter(msg => msg.role === 'user' || msg.role === 'assistant')
                   .map(msg => ({
                     text: msg.content || msg.message || '',
-                    timestamp: msg.createdAt ? new Date(msg.createdAt).toISOString() : new Date().toISOString()
+                    timestamp: msg.createdAt ? new Date(msg.createdAt).toISOString() : new Date().toISOString(),
+                    role: msg.role
                   }));
 
                 const processor = new OptimizedZenProcessor(brain, config);
@@ -430,7 +431,8 @@ r.post("/:id/messages", async (req, res) => {
           .filter(msg => msg.role === 'user' || msg.role === 'assistant')
           .map(msg => ({
             text: msg.content || msg.message || '',
-            timestamp: msg.createdAt ? new Date(msg.createdAt).toISOString() : new Date().toISOString()
+            timestamp: msg.createdAt ? new Date(msg.createdAt).toISOString() : new Date().toISOString(),
+            role: msg.role
           }));
 
         console.log(`📚 [Conversations API] Loaded ${conversationHistory.length} messages from conversation history`);

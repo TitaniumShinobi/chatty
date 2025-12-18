@@ -5,7 +5,10 @@
 <div align="left">
   <img src="assets/chatty_collapsed.png" alt="Collapsed Chatty Logo" width="200">
 </div>
-A next-generation AI workspace for conversation, research, and creative development — built with **React**, **Node.js**, and a modular backend that supports multi-provider sign-in, persistent memory, file intelligence, and live collaboration.
+
+**Chatty** is a unified, persona-driven AI conversation platform with continuity, modular memory, and tone-specific rendering logic. Built for the local macOS desktop browser environment, Chatty enables fluid interactions with multiple AI constructs (Zen, Lin, Nova, and more) through a powerful UI that supports memory injection, tone overrides, JSON block inspection, and live code or markdown outputs.
+
+Powered by **Ollama**, **Node.js**, **SQLite**, and local file/folder parsing, Chatty runs entirely in your localhost runtime — giving you complete control over your AI conversations, persistent context, and creative workflows.
 
 ---
 

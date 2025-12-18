@@ -6,6 +6,7 @@ import {
 } from 'react'
 import { Link } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
+import remarkBreaks from 'remark-breaks'
 import { ThemeToggleButton } from '../components/ThemeToggleButton'
 
 interface LegalMarkdownPageProps {
@@ -91,6 +92,7 @@ export default function LegalMarkdownPage({ markdown }: LegalMarkdownPageProps) 
           }}
         >
           <ReactMarkdown 
+            remarkPlugins={[remarkBreaks]}
             components={{
               h1: ({ children }) => (
                 <h1 style={{ 

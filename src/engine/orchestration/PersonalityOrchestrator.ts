@@ -154,8 +154,33 @@ export class PersonalityOrchestrator {
 
     // 2. Check if this is a greeting/opener
     const isGreeting = this.greetingSynthesizer.isGreetingOrOpener(userMessage);
-    const isConversationStart = conversationHistory.length === 0 || 
-                                 conversationHistory.filter(m => m.role === 'assistant').length === 0;
+    
+    // Thread-awareness check: Determine if conversation is truly starting or ongoing
+    const assistantMessages = conversationHistory.filter(m => m.role === 'assistant');
+    const hasHistory = assistantMessages.length > 0;
+    
+    // Check if thread is active based on last message timestamp
+    let isThreadActive = false;
+    if (hasHistory) {
+      const lastMessage = assistantMessages[assistantMessages.length - 1];
+      const lastTimestamp = (lastMessage as any).timestamp || Date.now();
+      const elapsedMinutes = (Date.now() - lastTimestamp) / (1000 * 60);
+      // Thread is active if last message was less than 5 minutes ago
+      isThreadActive = elapsedMinutes < 5;
+    }
+    
+    // Only treat as conversation start if:
+    // 1. No history exists, OR
+    // 2. Thread is not active (last message was > 5 minutes ago)
+    const isConversationStart = !hasHistory || !isThreadActive;
+    
+    if (hasHistory && isThreadActive) {
+      console.log(
+        `[PersonalityOrchestrator] Thread-aware: Ongoing conversation detected ` +
+        `(${assistantMessages.length} previous messages, last ${Math.round((Date.now() - (assistantMessages[assistantMessages.length - 1] as any).timestamp || Date.now()) / 1000 / 60)}m ago). ` +
+        `Suppressing greeting generation.`
+      );
+    }
 
     // 3. Detect tone of user message
     const userTone = await detectToneEnhanced(

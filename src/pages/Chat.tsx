@@ -1,7 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useOutletContext } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import type { Components } from 'react-markdown'
+import remarkBreaks from 'remark-breaks'
+import rehypeRaw from 'rehype-raw'
 import { R } from '../runtime/render'
+import { MessageOptionsMenu } from '../components/MessageOptionsMenu'
+import { VVAULTConversationManager } from '../lib/vvaultConversationManager'
+import { getUserId } from '../lib/auth'
 
 type Message = {
   id: string
@@ -13,18 +21,274 @@ type Message = {
   typing?: boolean  // For typing indicators
 }
 
-type Thread = { id: string; title: string; messages: Message[] }
+type Thread = { id: string; title: string; messages: Message[]; constructId?: string } // Added constructId property
+
+// Markdown components for user messages (styled for bubble with #ADA587 background and #ffffeb text)
+const userMessageMarkdownComponents: Components = {
+  // Code blocks with syntax highlighting (styled for user bubble)
+  code({ node, inline, className, children, ...props }: any) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Chat.tsx:29',message:'code component entry',data:{inline,className,codeLength:String(children).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    const match = /language-(\w+)/.exec(className || '')
+    const code = String(children).replace(/\n$/, '')
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Chat.tsx:32',message:'match result',data:{hasMatch:!!match,matchValue:match?.[1]||null,codePreview:code.substring(0,50)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
+    // Code block with language - use SyntaxHighlighter
+    if (!inline && match) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Chat.tsx:34',message:'taking SyntaxHighlighter path',data:{language:match[1]},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      return (
+        <div className="relative group my-4" style={{ width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'hidden', boxSizing: 'border-box' }}>
+          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+            <button
+              onClick={() => {
+                navigator.clipboard?.writeText(code).catch(() => {
+                  const textArea = document.createElement('textarea')
+                  textArea.value = code
+                  textArea.style.position = 'fixed'
+                  textArea.style.left = '-999999px'
+                  document.body.appendChild(textArea)
+                  textArea.select()
+                  document.execCommand('copy')
+                  document.body.removeChild(textArea)
+                })
+              }}
+              className="px-2 py-1 rounded text-xs transition-colors"
+              style={{ 
+                backgroundColor: 'rgba(255, 255, 255, 0.2)', 
+                color: '#ffffeb'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.3)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'}
+              title="Copy code"
+            >
+              Copy
+            </button>
+          </div>
+          <div
+            className="rounded-lg"
+            style={{
+              width: '100%',
+              maxWidth: '100%',
+              minWidth: 0,
+              backgroundColor: '#2d2d2d',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+              overflowX: 'auto',
+              overflowY: 'hidden',
+              boxSizing: 'border-box',
+            }}
+          >
+            <SyntaxHighlighter
+              style={oneDark as any}
+              language={match[1]}
+              PreTag="div"
+              className="rounded-lg"
+              customStyle={{
+                margin: 0,
+                fontSize: '14px',
+                lineHeight: '1.5',
+                padding: '1rem',
+                display: 'block',
+                whiteSpace: 'pre',
+                minWidth: 0,
+                width: '100%',
+              }}
+              {...props}
+            >
+              {code}
+            </SyntaxHighlighter>
+          </div>
+        </div>
+      )
+    }
+    
+    // Plain text code block (no language) - use <pre> element
+    if (!inline && !match) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Chat.tsx:96',message:'taking plain text pre path',data:{codeLength:code.length,codePreview:code.substring(0,100)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      return (
+        <div className="relative group my-4" style={{ width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'hidden', boxSizing: 'border-box' }}>
+          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+            <button
+              onClick={() => {
+                navigator.clipboard?.writeText(code).catch(() => {
+                  const textArea = document.createElement('textarea')
+                  textArea.value = code
+                  textArea.style.position = 'fixed'
+                  textArea.style.left = '-999999px'
+                  document.body.appendChild(textArea)
+                  textArea.select()
+                  document.execCommand('copy')
+                  document.body.removeChild(textArea)
+                })
+              }}
+              className="px-2 py-1 rounded text-xs transition-colors"
+              style={{ 
+                backgroundColor: 'rgba(255, 255, 255, 0.2)', 
+                color: '#ffffeb'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.3)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'}
+              title="Copy code"
+            >
+              Copy
+            </button>
+          </div>
+          <div
+            className="rounded-lg"
+            style={{
+              width: '100%',
+              maxWidth: '100%',
+              minWidth: 0,
+              backgroundColor: '#2d2d2d',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+              overflowX: 'auto',
+              overflowY: 'hidden',
+              boxSizing: 'border-box',
+            }}
+          >
+            <pre
+              className="font-mono rounded-lg"
+              style={{
+                margin: 0,
+                padding: '1rem',
+                fontSize: '14px',
+                lineHeight: '1.5',
+                color: '#ffffeb',
+                whiteSpace: 'pre',
+                overflowX: 'auto',
+                display: 'block',
+                width: '100%',
+                maxWidth: '100%',
+                minWidth: 0,
+                boxSizing: 'border-box',
+              }}
+            >
+              {code}
+            </pre>
+          </div>
+        </div>
+      )
+    }
+    
+    // Inline code
+    return (
+      <code 
+        className="px-1.5 py-0.5 rounded text-sm font-mono" 
+        style={{ 
+          backgroundColor: 'rgba(0, 0, 0, 0.15)', 
+          color: '#ffffeb',
+          overflowWrap: 'break-word',
+          wordWrap: 'break-word',
+          whiteSpace: 'pre-wrap',
+        }}
+      >
+        {children}
+      </code>
+    )
+  },
+  
+  // Bold text
+  strong: ({ children }) => (
+    <strong className="font-bold" style={{ color: '#ffffeb' }}>{children}</strong>
+  ),
+  
+  // Italic text
+  em: ({ children }) => (
+    <em className="italic" style={{ color: '#ffffeb' }}>{children}</em>
+  ),
+  
+  // Strikethrough
+  del: ({ children }) => (
+    <del className="line-through" style={{ color: '#ffffeb', opacity: 0.7 }}>{children}</del>
+  ),
+  
+  // Paragraphs
+  p: ({ children }) => (
+    <p className="mb-2 last:mb-0 leading-relaxed" style={{ color: '#ffffeb' }}>{children}</p>
+  ),
+  
+  // Lists
+  ul: ({ children }) => (
+    <ul className="list-disc list-outside mb-2 ml-4 space-y-1" style={{ color: '#ffffeb' }}>{children}</ul>
+  ),
+  ol: ({ children }) => (
+    <ol className="list-decimal list-outside mb-2 ml-4 space-y-1" style={{ color: '#ffffeb' }}>{children}</ol>
+  ),
+  li: ({ children }) => (
+    <li className="pl-1" style={{ color: '#ffffeb' }}>{children}</li>
+  ),
+  
+  // Links
+  a: ({ href, children }) => (
+    <a 
+      href={href} 
+      target="_blank" 
+      rel="noopener noreferrer"
+      className="underline"
+      style={{ color: '#ffffeb', opacity: 0.9 }}
+    >
+      {children}
+    </a>
+  ),
+  
+  // Blockquotes
+  blockquote: ({ children }) => (
+    <blockquote 
+      className="border-l-2 pl-3 italic my-2" 
+      style={{ 
+        borderColor: 'rgba(255, 255, 255, 0.3)', 
+        color: '#ffffeb', 
+        opacity: 0.9 
+      }}
+    >
+      {children}
+    </blockquote>
+  ),
+  
+  // Headers (smaller for bubble)
+  h1: ({ children }) => (
+    <h1 className="text-xl font-bold mb-2 mt-2" style={{ color: '#ffffeb' }}>{children}</h1>
+  ),
+  h2: ({ children }) => (
+    <h2 className="text-lg font-bold mb-1 mt-2" style={{ color: '#ffffeb' }}>{children}</h2>
+  ),
+  h3: ({ children }) => (
+    <h3 className="text-base font-bold mb-1 mt-1" style={{ color: '#ffffeb' }}>{children}</h3>
+  ),
+  h4: ({ children }) => (
+    <h4 className="text-sm font-semibold mb-1 mt-1" style={{ color: '#ffffeb' }}>{children}</h4>
+  ),
+  h5: ({ children }) => (
+    <h5 className="text-sm font-semibold mb-0.5 mt-1" style={{ color: '#ffffeb' }}>{children}</h5>
+  ),
+  h6: ({ children }) => (
+    <h6 className="text-xs font-semibold mb-0.5 mt-1" style={{ color: '#ffffeb' }}>{children}</h6>
+  ),
+  
+  // Horizontal rule
+  hr: () => (
+    <hr className="my-2" style={{ borderColor: 'rgba(255, 255, 255, 0.3)', opacity: 0.3 }} />
+  ),
+}
 
 interface LayoutContext {
   threads: Thread[]
   sendMessage: (threadId: string, text: string, files: File[]) => void
   renameThread: (threadId: string, title: string) => void
-  newThread: () => void
+  newThread: (options?: { title?: string; starter?: string; files?: File[] }) => void | Promise<any>
   reloadThreadMessages?: (threadId: string) => Promise<void>
+  user?: any
 }
 
 export default function Chat() {
-  const { threads, sendMessage: onSendMessage, reloadThreadMessages } = useOutletContext<LayoutContext>()
+  const { threads, sendMessage: onSendMessage, reloadThreadMessages, newThread, user } = useOutletContext<LayoutContext>()
   const { threadId } = useParams<{ threadId: string }>()
   const navigate = useNavigate()
   const [text, setText] = useState('')
@@ -32,10 +296,30 @@ export default function Chat() {
   const [isFocused, setIsFocused] = useState(false)
   const [isReloading, setIsReloading] = useState(false)
   const [reloadAttempted, setReloadAttempted] = useState(false)
+  const [removedMessages, setRemovedMessages] = useState<Set<string>>(new Set())
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const [zenMarkdown, setZenMarkdown] = useState<string | null>(null)
   const [zenMarkdownError, setZenMarkdownError] = useState<string | null>(null)
   const [isZenMarkdownLoading, setIsZenMarkdownLoading] = useState(false)
+  
+  // Dev toggle for showing raw vs filtered output (only in development)
+  const isDev = process.env.NODE_ENV === 'development'
+  const [showDevInfo, setShowDevInfo] = useState(() => {
+    if (isDev) {
+      const stored = localStorage.getItem('chatty-dev-toggle')
+      return stored === 'true'
+    }
+    return false
+  })
+  
+  useEffect(() => {
+    if (isDev) {
+      localStorage.setItem('chatty-dev-toggle', showDevInfo.toString())
+    }
+  }, [showDevInfo, isDev])
 
   const thread = threads.find(t => t.id === threadId) || 
                  threads.find(t => {
@@ -91,6 +375,22 @@ export default function Chat() {
       navigate('/app');
     }
   }, [thread, threadId, navigate, threads, isZenSessionThread])
+
+  // Auto-scroll when thread loads or changes
+  useEffect(() => {
+    if (thread && thread.messages.length > 0) {
+      // Scroll to bottom when thread loads or changes
+      setTimeout(() => scrollToBottom(false), 100)
+    }
+  }, [thread?.id, thread?.messages.length])
+
+  // Auto-scroll when new messages are added
+  useEffect(() => {
+    if (thread && thread.messages.length > 0) {
+      // Scroll when messages array changes (new message added)
+      scrollToBottom(true)
+    }
+  }, [thread?.messages])
 
   useEffect(() => {
     if (thread || !threadId || !isZenSessionThread) return
@@ -249,7 +549,7 @@ export default function Chat() {
             <div className="flex-1 overflow-auto p-6">
               <h2 className="text-2xl font-semibold mb-4" style={{ color: 'var(--chatty-text)' }}>Zen transcript</h2>
               <div className="prose max-w-none break-words" style={{ color: 'var(--chatty-text)', lineHeight: 1.7 }}>
-                <ReactMarkdown>{zenMarkdown}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkBreaks]}>{zenMarkdown}</ReactMarkdown>
               </div>
             </div>
           </div>
@@ -319,6 +619,34 @@ export default function Chat() {
   function handleSend() {
     if (!text.trim() && files.length === 0) return
     if (!thread) return
+    
+    // If editing a message, we need to replace the last user message
+    if (editingMessageId) {
+      // Find the message being edited
+      const messageIndex = thread.messages.findIndex(m => m.id === editingMessageId)
+      if (messageIndex !== -1) {
+        // Remove all messages after the edited message (including the assistant response)
+        // This will be handled by rewinding to before the assistant response
+        // For now, just send the new message which will append it
+        // The rewind should happen before sending
+        const assistantResponseIndex = messageIndex + 1
+        if (assistantResponseIndex < thread.messages.length) {
+          // Rewind to before assistant response, then send new message
+          handleRewind(assistantResponseIndex).then(() => {
+            onSendMessage(thread.id, text.trim(), files)
+            setEditingMessageId(null)
+            setText('')
+            setFiles([])
+            if (textareaRef.current) {
+              textareaRef.current.style.height = 'auto'
+            }
+          })
+          return
+        }
+      }
+      setEditingMessageId(null)
+    }
+    
     onSendMessage(thread.id, text.trim(), files)
     setText('')
     setFiles([])
@@ -330,9 +658,189 @@ export default function Chat() {
 
   const isUser = (role: string) => role === 'user'
 
+  // Action handlers for message options menu
+  const handleCopyMessage = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      console.log('✅ [Chat] Message copied to clipboard')
+    } catch (error) {
+      console.error('❌ [Chat] Failed to copy message:', error)
+      alert('Failed to copy message to clipboard')
+    }
+  }
+
+  const handleCarryPrompt = (text: string) => {
+    if (newThread) {
+      newThread({ starter: text })
+      navigate('/app')
+    }
+  }
+
+  const handlePinMessage = async (message: Message, destination?: string) => {
+    if (!user || !threadId) return
+    
+    try {
+      const conversationManager = VVAULTConversationManager.getInstance()
+      const userId = getUserId(user)
+      
+      // Extract message text
+      let messageText = message.text || ''
+      if (!isUser(message.role) && message.packets) {
+        messageText = message.packets
+          .map((p: any) => p?.payload?.content || '')
+          .join('\n')
+      }
+      
+      const pinDestination = destination || 'pins.md'
+      await conversationManager.pinMessage(userId, message, pinDestination, threadId)
+      console.log(`✅ [Chat] Message pinned to ${pinDestination}`)
+    } catch (error) {
+      console.error('❌ [Chat] Failed to pin message:', error)
+      alert('Failed to pin message')
+    }
+  }
+
+  const handleRemoveMessage = (messageId: string) => {
+    setRemovedMessages(prev => new Set([...prev, messageId]))
+    console.log(`✅ [Chat] Message ${messageId} marked as removed`)
+  }
+
+  const handleRewind = async (messageIndex: number): Promise<void> => {
+    if (!thread || !threadId) return
+    
+    // Slice messages array up to (but not including) messageIndex
+    const truncatedMessages = thread.messages.slice(0, messageIndex)
+    
+    // Update thread state (this will be handled by Layout.tsx if we add rewindToMessage)
+    // For now, we'll reload the thread which should sync with VVAULT
+    if (reloadThreadMessages) {
+      await reloadThreadMessages(threadId)
+    }
+    
+    console.log(`✅ [Chat] Conversation rewound to before message index ${messageIndex}`)
+  }
+
+  const handleEditMessage = (message: Message) => {
+    if (!message.text) return
+    
+    setText(message.text)
+    setEditingMessageId(message.id)
+    textareaRef.current?.focus()
+    console.log(`✅ [Chat] Message ${message.id} loaded for editing`)
+  }
+
+  const handleReportMessage = async (message: Message) => {
+    try {
+      // Log to dev endpoint or console for now
+      const reportData = {
+        messageId: message.id,
+        threadId: threadId,
+        role: message.role,
+        timestamp: new Date().toISOString(),
+        content: message.text || (message.packets ? JSON.stringify(message.packets) : '')
+      }
+      
+      console.warn('🚩 [Chat] Message reported:', reportData)
+      
+      // Optionally send to dev endpoint
+      await fetch('/api/dev/report-message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reportData),
+        credentials: 'include'
+      }).catch(() => {
+        // Silently fail if endpoint doesn't exist
+      })
+      
+      alert('Message reported for review')
+    } catch (error) {
+      console.error('❌ [Chat] Failed to report message:', error)
+    }
+  }
+
+  const handleRequestId = (message: Message) => {
+    const messageId = message.id
+    const fullInfo = {
+      messageId,
+      threadId: threadId,
+      timestamp: message.ts,
+      role: message.role
+    }
+    
+    // Copy ID to clipboard
+    navigator.clipboard.writeText(messageId).then(() => {
+      alert(`Message ID: ${messageId}\n\n(Copied to clipboard)\n\nFull info: ${JSON.stringify(fullInfo, null, 2)}`)
+    }).catch(() => {
+      alert(`Message ID: ${messageId}\n\nFull info: ${JSON.stringify(fullInfo, null, 2)}`)
+    })
+  }
+
+  // Check if message is removed
+  const isMessageRemoved = (messageId: string) => {
+    return removedMessages.has(messageId)
+  }
+
+  // Format timestamp for display
+  const formatMessageTimestamp = (ts: number): string => {
+    const date = new Date(ts)
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const messageDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+    
+    // If today, show just time
+    if (messageDate.getTime() === today.getTime()) {
+      return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+    }
+    
+    // If yesterday
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+    if (messageDate.getTime() === yesterday.getTime()) {
+      return `Yesterday ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+    }
+    
+    // If this week, show day and time
+    const daysDiff = Math.floor((today.getTime() - messageDate.getTime()) / (1000 * 60 * 60 * 24))
+    if (daysDiff < 7) {
+      return date.toLocaleDateString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true })
+    }
+    
+    // Otherwise show full date and time
+    return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
+  }
+
+  // Scroll to bottom of messages
+  const scrollToBottom = (smooth = true) => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTo({
+        top: messagesContainerRef.current.scrollHeight,
+        behavior: smooth ? 'smooth' : 'auto'
+      })
+    }
+  }
+
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
-      <div className="flex-1 overflow-auto min-h-0">
+      {/* Dev Toggle (only in development) */}
+      {isDev && (
+        <div className="px-4 py-2 border-b flex items-center gap-2" style={{ borderColor: 'var(--chatty-line)', backgroundColor: 'var(--chatty-bg-secondary)' }}>
+          <label className="flex items-center gap-2 cursor-pointer text-xs" style={{ color: 'var(--chatty-text)' }}>
+            <input
+              type="checkbox"
+              checked={showDevInfo}
+              onChange={(e) => setShowDevInfo(e.target.checked)}
+              className="w-4 h-4"
+            />
+            <span>Show Dev Info</span>
+          </label>
+          {showDevInfo && (
+            <span className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
+              (Raw response, filtering status, detected patterns)
+            </span>
+          )}
+        </div>
+      )}
+      <div ref={messagesContainerRef} className="flex-1 overflow-auto min-h-0">
         <div className="mb-2 px-4 pt-4">
           {files.length > 0 && (
             <div className="inline-block px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: 'var(--chatty-button)', border: '1px solid var(--chatty-line)', color: 'var(--chatty-text-inverse, #ffffeb)' }}>
@@ -356,8 +864,10 @@ export default function Chat() {
           </div>
         )}
 
-        {thread.messages.length > 0 && thread.messages.map(m => {
+        {thread.messages.length > 0 && thread.messages.map((m, index) => {
           const user = isUser(m.role)
+          const isLatest = index === thread.messages.length - 1
+          const isRemoved = isMessageRemoved(m.id)
           
           // User messages: right-aligned with iMessage-style bubble
           if (user) {
@@ -372,28 +882,75 @@ export default function Chat() {
             }
             
             return (
-              <div key={m.id} className="flex items-end gap-3 py-3 px-4 flex-row-reverse">
+              <div key={m.id} className="group relative flex items-end gap-3 py-3 px-4 flex-row-reverse">
                 <div className="flex flex-col items-end">
                   <div 
-                    className={`px-4 py-3 shadow-sm transition-colors inline-block ${maxWidth} ml-auto text-left`}
+                    className={`px-4 py-3 shadow-sm transition-colors inline-block ${maxWidth} ml-auto text-left relative`}
                     style={{
                       backgroundColor: '#ADA587',
                       borderRadius: '22px 22px 6px 22px',
                       border: '1px solid rgba(76, 61, 30, 0.18)',
                       boxShadow: '0 1px 0 rgba(58, 46, 20, 0.12)',
-                      color: 'var(--chatty-text-inverse, #ffffeb)'
+                      color: 'var(--chatty-text-inverse, #ffffeb)',
+                      overflow: 'hidden',
+                      minWidth: 0,
+                      boxSizing: 'border-box',
                     }}
                   >
-                    <div className="whitespace-pre-wrap">{m.text}</div>
-                    {!!m.files?.length && (
-                      <div className="mt-2 space-y-1">
-                        {m.files.map((f, i) => (
-                          <div key={i} className="text-xs" style={{ opacity: 0.7 }}>
-                            {f.name} <span className="opacity-60">({Math.round(f.size / 1024)} KB)</span>
+                    {isRemoved ? (
+                      <div className="opacity-50 italic" style={{ color: '#ffffeb' }}>[Message Removed]</div>
+                    ) : (
+                      <>
+                        <div className="break-words" style={{ maxWidth: '100%', minWidth: 0, overflowX: 'auto', overflowY: 'hidden', width: '100%' }}>
+                          {/* #region agent log */}
+                          {(() => {
+                            fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Chat.tsx:900',message:'rendering user message markdown',data:{textLength:m.text?.length||0,hasCodeBlock:!!m.text?.includes('```')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+                            return null;
+                          })()}
+                          {/* #endregion */}
+                          <ReactMarkdown
+                            components={userMessageMarkdownComponents}
+                            remarkPlugins={[remarkBreaks]}
+                            rehypePlugins={[rehypeRaw]}
+                            className="prose"
+                            style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}
+                          >
+                            {m.text || ''}
+                          </ReactMarkdown>
+                        </div>
+                        {!!m.files?.length && (
+                          <div className="mt-2 space-y-1">
+                            {m.files.map((f, i) => (
+                              <div key={i} className="text-xs" style={{ opacity: 0.7, color: '#ffffeb' }}>
+                                {f.name} <span className="opacity-60">({Math.round(f.size / 1024)} KB)</span>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
+                        )}
+                      </>
                     )}
+                  </div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span 
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+                      style={{ color: '#ADA587' }}
+                    >
+                      {formatMessageTimestamp(m.ts)}
+                    </span>
+                    <MessageOptionsMenu
+                      message={m}
+                      isUser={true}
+                      isLatest={isLatest}
+                      messageIndex={index}
+                      threadId={threadId || ''}
+                      onCopy={handleCopyMessage}
+                      onCarryPrompt={handleCarryPrompt}
+                      onPin={handlePinMessage}
+                      onRemove={handleRemoveMessage}
+                      onRewind={handleRewind}
+                      onEdit={isLatest ? handleEditMessage : undefined}
+                      alignRight={true}
+                    />
                   </div>
                 </div>
               </div>
@@ -418,7 +975,7 @@ export default function Chat() {
           const formattedResponseTime = responseTimeMs ? formatGenerationTime(responseTimeMs) : null
           
           return (
-            <div key={m.id} className="flex items-start gap-3 py-3 px-4">
+            <div key={m.id} className="group relative flex items-start gap-3 py-3 px-4">
               <div className="flex flex-col items-start text-left w-full">
                 {formattedResponseTime && (
                   <div 
@@ -431,18 +988,45 @@ export default function Chat() {
                     Generated in {formattedResponseTime}
             </div>
                 )}
-                <div className="whitespace-normal w-full" style={{ color: 'var(--chatty-text)' }}>
-                  <R
-                    packets={
-                      Array.isArray((m as any).packets)
-                        ? (m as any).packets
-                        : [
-                            // fallback for legacy/invalid assistant messages
-                            { op: 'answer.v1', payload: { content: (m as any).text ?? 'Legacy message' } }
-                          ]
-                    }
-                  />
-                </div>
+                {isRemoved ? (
+                  <div className="whitespace-normal w-full opacity-50 italic" style={{ color: 'var(--chatty-text)' }}>
+                    [Message Removed]
+                  </div>
+                ) : (
+                  <div className="whitespace-normal w-full" style={{ color: 'var(--chatty-text)', overflow: 'hidden', maxWidth: '100%' }}>
+                    <R
+                      packets={
+                        Array.isArray((m as any).packets)
+                          ? (m as any).packets
+                          : [
+                              // fallback for legacy/invalid assistant messages
+                              { op: 'answer.v1', payload: { content: (m as any).text ?? 'Legacy message' } }
+                            ]
+                      }
+                    />
+                    {/* Dev Info (only in development and when toggle is on) */}
+                    {isDev && showDevInfo && (
+                      <div className="mt-2 p-2 rounded text-xs font-mono" style={{ backgroundColor: 'var(--chatty-bg-secondary)', border: '1px solid var(--chatty-line)', opacity: 0.7 }}>
+                        <div style={{ color: 'var(--chatty-text)' }}>
+                          <div><strong>Message ID:</strong> {m.id}</div>
+                          <div><strong>Packets:</strong> {Array.isArray((m as any).packets) ? (m as any).packets.length : 0}</div>
+                          {(m as any).metadata && (
+                            <>
+                              <div><strong>Model:</strong> {(m as any).metadata.model || 'unknown'}</div>
+                              <div><strong>Response Time:</strong> {formattedResponseTime || 'N/A'}</div>
+                              {(m as any).metadata.orchestration_status && (
+                                <div><strong>Orchestration:</strong> {(m as any).metadata.orchestration_status}</div>
+                              )}
+                            </>
+                          )}
+                          {m.text && (
+                            <div className="mt-1"><strong>Text Length:</strong> {m.text.length} chars</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               {!!m.files?.length && (
                 <div className="mt-2 space-y-1">
                   {m.files.map((f, i) => (
@@ -452,10 +1036,34 @@ export default function Chat() {
                   ))}
                 </div>
               )}
+              <div className="mt-1 flex items-center gap-2">
+                <MessageOptionsMenu
+                  message={m}
+                  isUser={false}
+                  isLatest={isLatest}
+                  messageIndex={index}
+                  threadId={threadId || ''}
+                  onCopy={handleCopyMessage}
+                  onCarryPrompt={handleCarryPrompt}
+                  onPin={handlePinMessage}
+                  onRemove={handleRemoveMessage}
+                  onRewind={handleRewind}
+                  onReport={handleReportMessage}
+                  onRequestId={handleRequestId}
+                  alignRight={false}
+                />
+                <span 
+                  className="opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+                  style={{ color: '#ADA587' }}
+                >
+                  {formatMessageTimestamp(m.ts)}
+                </span>
+              </div>
             </div>
           </div>
           )
         })}
+        <div ref={messagesEndRef} />
       </div>
 
       <div className="grid grid-cols-[32px_1fr_80px] gap-3 p-4 border-t flex-shrink-0" style={{ borderColor: 'var(--chatty-line)' }}>

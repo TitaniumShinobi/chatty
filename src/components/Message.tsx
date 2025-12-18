@@ -1,5 +1,6 @@
 import React from 'react'
 import ReactMarkdown from 'react-markdown'
+import remarkBreaks from 'remark-breaks'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { Copy, Check, Paperclip, FileText, FileImage, FileCode } from 'lucide-react'
@@ -128,6 +129,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message, isLast }) => {
           {/* Handle both string content and packet content */}
           {typeof message.content === 'string' ? (
             <ReactMarkdown
+              remarkPlugins={[remarkBreaks]}
               components={{
                 // Code blocks with syntax highlighting
                 code({ node, inline, className, children, ...props }) {

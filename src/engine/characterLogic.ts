@@ -14,7 +14,7 @@ export interface CharacterState {
 
 export interface ConversationContext {
   userMessage: string;
-  conversationHistory: Array<{ role: string; content: string }>;
+  conversationHistory: Array<{ role: string; content: string; timestamp?: number }>;
   characterState: CharacterState;
 }
 
@@ -49,6 +49,37 @@ const MOOD_TONE_TAGS: Record<string, string[]> = {
   warm: ['soft', 'encouraging', 'open'],
 };
 
+const GREETING_PATTERNS = [
+  /good (morning|afternoon|evening)/i,
+  /^(hello|hi|hey)[,!.]/i,
+  /^(hello|hi|hey)\s+there/i,
+  // More aggressive patterns to catch greetings anywhere in first sentence
+  /^.*good (morning|afternoon|evening).*$/i,
+  /^.*(good morning|good afternoon|good evening).*$/i
+];
+
+const META_PLURAL_PATTERNS = [
+  /\bwe\b(?!\s+(can|will|should|are))/i,  // "we" but not "we can"
+  /\bthis model\b/i,
+  /\bchatbot\b/i,
+  /\bas an assistant\b/i,
+  /\bas a language model\b/i,
+  // New patterns for meta/plural leaks
+  /\bspecialized models\b/i,
+  /\bworking together\b/i,  // catches "models working together"
+  /\bmulti-model\b/i,  // catches "multi-model blend"
+  /\bAI\b/i,  // but only when used as meta-reference (context-dependent, but catch common cases)
+  /\bmodels working together\b/i,
+  /\bharmonious blend of.*models\b/i,
+  /\bseveral.*models\b/i,
+  // More specific patterns
+  /\bharmonious blend of several specialized models\b/i,
+  /\bblend of.*specialized models\b/i,
+  /\bcomposed of.*models\b/i,
+  /\bmultiple.*models.*working\b/i,
+  /\bmodels.*synthesize\b/i
+];
+
 export async function applyConversationalLogic(
   context: ConversationContext
 ): Promise<LogicProtocolResult> {
@@ -60,6 +91,7 @@ export async function applyConversationalLogic(
 
   const postProcessHooks = [
     filterMetaResponses(characterState),
+    filterGreetingAndMetaLeaks(conversationHistory, characterState.identity),
     enforceHostileTone(),
     enforceHostileBrevity(),
     enforceEmotionalConsistency(characterState),
@@ -134,6 +166,69 @@ function embedCharacterContext(message: string, state: CharacterState, reflectio
 ${reflection}
 
 User:${message}`.trim();
+}
+
+function filterGreetingAndMetaLeaks(
+  conversationHistory: Array<{ role: string; content: string; timestamp?: number }>,
+  constructId?: string
+): (response: string) => string {
+  return (response: string) => {
+    // Thread-awareness check: Determine if conversation is ongoing
+    const assistantMessages = conversationHistory.filter(m => m.role === 'assistant');
+    const turnCount = assistantMessages.length;
+    const isFirstTurn = turnCount === 0;
+    
+    // Check if thread is active based on last message timestamp
+    let isThreadActive = false;
+    if (assistantMessages.length > 0) {
+      const lastMessage = assistantMessages[assistantMessages.length - 1];
+      const lastTimestamp = lastMessage.timestamp || Date.now();
+      const elapsedMinutes = (Date.now() - lastTimestamp) / (1000 * 60);
+      // Thread is active if last message was less than 5 minutes ago
+      isThreadActive = elapsedMinutes < 5;
+    }
+    
+    // Block mid-thread greetings if:
+    // 1. Not first turn AND
+    // 2. Thread is active (recent messages) OR has any history
+    const shouldBlockGreeting = !isFirstTurn && (isThreadActive || turnCount > 0);
+    
+    if (shouldBlockGreeting) {
+      // Check entire response for greetings, not just first sentence
+      const hasGreeting = GREETING_PATTERNS.some(pattern => pattern.test(response));
+      if (hasGreeting) {
+        console.warn(
+          `[ZenLinGreetingGuard] Mid-thread greeting blocked for ${constructId || 'unknown'} ` +
+          `(turn ${turnCount + 1}, ${isThreadActive ? 'active thread' : 'has history'}):`,
+          response.substring(0, 50)
+        );
+        // Remove greeting patterns from response
+        let cleaned = response;
+        GREETING_PATTERNS.forEach(pattern => {
+          cleaned = cleaned.replace(pattern, '').trim();
+        });
+        // Remove leading punctuation and whitespace
+        cleaned = cleaned.replace(/^[,\s.!?]+/, '').trim();
+        return cleaned || '...';
+      }
+    }
+    
+    // Block meta/plural leaks (always, regardless of turn)
+    const hasMetaLeak = META_PLURAL_PATTERNS.some(pattern => pattern.test(response));
+    if (hasMetaLeak) {
+      console.warn(`[ZenLinGreetingGuard] Meta/plural leak blocked for ${constructId || 'unknown'}:`, response.substring(0, 50));
+      // Remove meta/plural patterns from response
+      let cleaned = response;
+      META_PLURAL_PATTERNS.forEach(pattern => {
+        cleaned = cleaned.replace(pattern, '').trim();
+      });
+      // Clean up any double spaces or punctuation artifacts
+      cleaned = cleaned.replace(/\s+/g, ' ').trim();
+      return cleaned;
+    }
+    
+    return response;
+  };
 }
 
 function filterMetaResponses(state: CharacterState) {

@@ -20,6 +20,7 @@ import { getPromptAuditor } from '../core/identity/PromptAuditor.js';
 import { getRoleScoreCalculator } from '../core/identity/RoleScoreCalculator.js';
 import { getCapsuleLockService } from '../core/capsule/CapsuleLockService.js';
 import { getMemoryWeightingService } from '../core/memory/MemoryWeightingService.js';
+import { sessionActivityTracker } from './sessionActivityTracker.js';
 
 export interface GPTMessage {
   role: 'user' | 'assistant' | 'system';
@@ -278,6 +279,11 @@ export class GPTRuntimeService {
 
     // Store user message in persistent memory (check permission first)
     const userId = runtime.config.userId || _userId || 'anonymous';
+    
+    // Update session activity
+    const sessionId = `gpt-${gptId}`;
+    sessionActivityTracker.updateActivity(sessionId, userId, gptId);
+    
     // Check memory permission - will use localStorage fallback if settings not available
     const settings = typeof window !== 'undefined' ? (() => {
       try {

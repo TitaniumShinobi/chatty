@@ -358,9 +358,145 @@ export class OptimizedZenProcessor {
       fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:274', message: 'processWithTimeout returned', data: { responseLength: response.length }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
       // #endregion
 
-      this.brain.remember(userId, 'assistant', response);
+      // Apply post-processing filters
+      let filteredResponse = response;
+
+      // 1. Remove quotation marks and narrator leaks using OutputFilter
+      try {
+        const { OutputFilter } = await import('../orchestration/OutputFilter');
+        const filterResult = OutputFilter.processOutput(filteredResponse);
+        filteredResponse = filterResult.cleanedText;
+        if (filterResult.wasfiltered) {
+          console.log(`✂️ [OptimizedZenProcessor] Filtered narrator leak/quotes from response`);
+        }
+        if (filterResult.driftDetected) {
+          console.warn(`⚠️ [OptimizedZenProcessor] Tone drift detected: ${filterResult.driftReason}`);
+          // Log violation
+          const { logPersonaViolation, createViolation } = await import('../lib/vxrunnerLogger');
+          logPersonaViolation(createViolation(
+            'tone_drift',
+            'zen-001',
+            userId, // Use userId as thread identifier
+            filteredResponse,
+            filterResult.driftReason
+          ));
+        }
+      } catch (error) {
+        console.warn(`⚠️ [OptimizedZenProcessor] OutputFilter failed:`, error);
+      }
+
+      // 2. Apply conversational logic post-processing hooks (greeting filter, meta/plural filter)
+      try {
+        const { applyConversationalLogic } = await import('./characterLogic');
+        // Convert conversationHistory to format expected by hooks
+        const conversationHistoryForFilter = conversationHistory.map((h) => {
+          // Use actual role from history if available, otherwise default to 'user'
+          return {
+            role: h.role || 'user',
+            content: h.text,
+            timestamp: new Date(h.timestamp).getTime()
+          };
+        });
+        
+        // Count assistant messages to determine if this is first turn
+        const assistantCount = conversationHistoryForFilter.filter(m => m.role === 'assistant').length;
+        const isFirstTurn = assistantCount === 0;
+        
+        if (!isFirstTurn || assistantCount > 0) {
+          // Apply conversational logic hooks
+          const logicResult = await applyConversationalLogic({
+            userMessage,
+            conversationHistory: conversationHistoryForFilter,
+            characterState: {
+              identity: 'zen-001',
+              emotionalContext: { currentMood: 'calm', arousalLevel: 0.5, memoryWeight: 0.7 },
+              conversationalRules: { neverBreakCharacter: true, metaAwarenessLevel: 'none', identityChallengeResponse: 'deflect' }
+            }
+          });
+          
+          // Apply post-processing hooks in sequence
+          for (const hook of logicResult.postProcessHooks) {
+            const beforeHook = filteredResponse;
+            filteredResponse = hook(filteredResponse);
+            // Log if hook modified the response (potential violation)
+            if (beforeHook !== filteredResponse && filteredResponse.length < beforeHook.length) {
+              // Check what was filtered
+              const { logPersonaViolation, createViolation } = await import('../lib/vxrunnerLogger');
+              // Detect violation type based on what changed
+              if (/good (morning|afternoon|evening)|hello|hi|hey/i.test(beforeHook) && !/good (morning|afternoon|evening)|hello|hi|hey/i.test(filteredResponse)) {
+                logPersonaViolation(createViolation(
+                  'greeting_injection',
+                  'zen-001',
+                  userId,
+                  beforeHook,
+                  'greeting_pattern'
+                ));
+              }
+              if (/\bwe\b|\bthis model\b|\bspecialized models\b|\bworking together\b|\bmulti-model\b/i.test(beforeHook) && !/\bwe\b|\bthis model\b|\bspecialized models\b|\bworking together\b|\bmulti-model\b/i.test(filteredResponse)) {
+                logPersonaViolation(createViolation(
+                  'meta_plural_leak',
+                  'zen-001',
+                  userId,
+                  beforeHook,
+                  'meta_plural_pattern'
+                ));
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ [OptimizedZenProcessor] Greeting filter failed:`, error);
+      }
+
+      // 3. Remove content leakage (unrelated text after code blocks)
+      try {
+        const codeBlockPattern = /```[\s\S]*?```/g;
+        const codeBlocks = filteredResponse.match(codeBlockPattern);
+        if (codeBlocks && codeBlocks.length > 0) {
+          // Find the last code block
+          const lastCodeBlockIndex = filteredResponse.lastIndexOf('```');
+          if (lastCodeBlockIndex > -1) {
+            const afterCodeBlock = filteredResponse.substring(lastCodeBlockIndex);
+            const codeBlockEnd = afterCodeBlock.indexOf('```') + 3;
+            const textAfterCodeBlock = afterCodeBlock.substring(codeBlockEnd).trim();
+            
+            // Check if text after code block contains unrelated content (emails, appointments, etc.)
+            const unrelatedPatterns = [
+              /dental|appointment|dr\.\s+\w+\s+\w+|clinic|medical|patient/i,
+              /@\w+\.\w+|email|subject:|body:/i,
+              /we are pleased to confirm|upcoming|scheduled date/i,
+              // More specific patterns
+              /dear\s+\w+|sincerely|regards|warm regards/i,
+              /appointment.*date.*time|scheduled.*date/i,
+              /please arrive|arrive.*minutes early/i,
+              /looking forward to seeing you/i,
+              /team.*@.*clinic|clinic.*team/i
+            ];
+            
+            if (textAfterCodeBlock.length > 30 && unrelatedPatterns.some(p => p.test(textAfterCodeBlock))) {
+              console.warn(`⚠️ [OptimizedZenProcessor] Detected content leakage after code block, removing...`);
+              // Log violation
+              const { logPersonaViolation, createViolation } = await import('../lib/vxrunnerLogger');
+              logPersonaViolation(createViolation(
+                'content_leakage',
+                'zen-001',
+                userId,
+                textAfterCodeBlock,
+                'unrelated_content_after_code_block'
+              ));
+              // Remove everything after the last code block
+              const codeBlockEndPos = lastCodeBlockIndex + codeBlockEnd;
+              filteredResponse = filteredResponse.substring(0, codeBlockEndPos).trim();
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ [OptimizedZenProcessor] Content leakage detection failed:`, error);
+      }
+
+      this.brain.remember(userId, 'assistant', filteredResponse);
       this.metrics.processingTime = Date.now() - this.metrics.startTime;
-      return { response, metrics: this.metrics };
+      return { response: filteredResponse, metrics: this.metrics };
 
     } catch (error: any) {
       this.metrics.processingTime = Date.now() - this.metrics.startTime;
@@ -491,7 +627,7 @@ export class OptimizedZenProcessor {
    */
   private getOptimizedContext(
     userId: string,
-    conversationHistory: { text: string; timestamp: string }[],
+    conversationHistory: { text: string; timestamp: string; role?: string }[],
     contextSummary: string
   ): any {
     const context = this.brain.getContext(userId);
@@ -504,7 +640,8 @@ export class OptimizedZenProcessor {
       ...context,
       recentHistory: recentHistory.substring(0, 2000),
       contextSummary,
-      optimized: true
+      optimized: true,
+      conversationHistory: conversationHistory // Add full history for greeting detection
     };
   }
 
@@ -748,7 +885,7 @@ ${smalltalkOutput}`;
     if (this.config.enableLinMode) {
       synthPrompt = this.buildLinearZenPrompt(userMessage, context, helperSection);
     } else {
-      synthPrompt = this.buildOptimizedZenPrompt(
+      synthPrompt = await this.buildOptimizedZenPrompt(
         userMessage,
         context,
         helperSection,
@@ -776,15 +913,49 @@ ${smalltalkOutput}`;
   /**
    * Build optimized zen prompt
    */
-  private buildOptimizedZenPrompt(
+  private async buildOptimizedZenPrompt(
     userMessage: string,
     context: any,
     helperSection: string,
     _models: { codingModel: string; creativeModel: string; smalltalkModel: string }
-  ): string {
+  ): Promise<string> {
 
     // Check if this is a simple greeting
     const isGreeting = this.isSimpleGreeting(userMessage)
+
+    // Detect if greeting already occurred in conversation
+    const hasGreetingInHistory = (() => {
+      const conversationHistory = context.conversationHistory || [];
+      const recentHistoryText = context.recentHistory || '';
+      
+      // Check recent history string for greetings
+      const hasUserGreeting = /(?:^|\n)user[:\s]+.*?(?:good (?:morning|afternoon|evening)|hello|hi|hey)/i.test(recentHistoryText);
+      const hasAssistantGreeting = /(?:^|\n)(?:assistant|zen)[:\s]+.*?(?:good (?:morning|afternoon|evening)|hello|hi|hey)/i.test(recentHistoryText);
+      
+      // Check conversationHistory array if available
+      if (conversationHistory && conversationHistory.length > 0) {
+        const lastFew = conversationHistory.slice(-4); // Check last 4 messages
+        for (const msg of lastFew) {
+          const text = msg.text || msg.content || '';
+          const hasGreeting = /good (morning|afternoon|evening)|hello|hi|hey/i.test(text);
+          if (hasGreeting) return true;
+        }
+      }
+      
+      return hasUserGreeting || hasAssistantGreeting;
+    })();
+
+    // Load time context for timestamp awareness
+    let timeSection = '';
+    try {
+      const { getTimeContext, buildTimePromptSection } = await import('../lib/timeAwareness');
+      const timeContext = await getTimeContext();
+      timeSection = `\n\n${buildTimePromptSection(timeContext)}\n`;
+      console.log(`✅ [OptimizedZenProcessor] Injected time context: ${timeContext.fullDate} ${timeContext.localTime}`);
+    } catch (error) {
+      console.warn(`⚠️ [OptimizedZenProcessor] Failed to load time context:`, error);
+      // Continue without time context
+    }
 
     // Use loaded identity prompt or fallback
     const baseSystemPrompt = this.identity.prompt
@@ -806,8 +977,18 @@ FOUNDATIONAL CALIBRATION - FLUID CONVERSATION:
       ? `\n\n=== CONDITIONING & RESPONSE STYLE ===\n${this.identity.conditioning}\n`
       : '';
 
+    // Add poetic composition awareness for Zen
+    let compositionAwareness = '';
+    try {
+      const { UnbreakableCharacterPrompt } = await import('./character/UnbreakableCharacterPrompt');
+      const promptBuilder = new UnbreakableCharacterPrompt();
+      compositionAwareness = `\n\n${promptBuilder.buildCompositionAwareness()}\n`;
+    } catch (error) {
+      console.warn(`⚠️ [OptimizedZenProcessor] Failed to load composition awareness:`, error);
+    }
+
     return `${baseSystemPrompt}
-${conditioningRules}
+${conditioningRules}${compositionAwareness}${timeSection}
 ${context.contextSummary ? `Context: ${context.contextSummary}` : ''}
 
 ${context.persona ? `Your persona: ${JSON.stringify(context.persona, null, 2)}` : ''}
@@ -824,6 +1005,8 @@ Expert insights:
 ${helperSection}
 
 Synthesize these insights into a natural, helpful response. Be conversational and maintain context flow. Don't mention the expert analysis process unless specifically asked about your capabilities.
+
+${hasGreetingInHistory ? '\n\nIMPORTANT: You have already exchanged greetings in this conversation. Do NOT greet again. Continue naturally without saying "good morning", "good afternoon", "good evening", "hello", "hi", or similar greetings. Just respond to the user\'s message directly.' : ''}
 
 ${isGreeting ? 'Keep it brief and friendly.' : 'Be comprehensive but not overwhelming.'}`;
   }

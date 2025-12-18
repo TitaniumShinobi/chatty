@@ -1,9 +1,8 @@
-// src/runtime/render.tsx
 import React from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { CompressedCodeBlock } from '../components/CompressedCodeBlock'
 import type { Components } from 'react-markdown'
+import remarkBreaks from 'remark-breaks'
 
 type Packet = { op: string; payload?: any }
 
@@ -21,64 +20,26 @@ function renderAnswer(pl: any): string {
 
 const markdownComponents: Components = {
   // Code blocks with syntax highlighting
-  code({ node, inline, className, children, ...props }) {
+  code({ node, inline, className, children }: any) {
     const match = /language-(\w+)/.exec(className || '')
-    const code = String(children).replace(/\n$/, '')
-    
-    if (!inline && match) {
+
+    // Code block with language or plain text block
+    if (!inline) {
       return (
-        <div className="relative group my-4">
-          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-            <button
-              onClick={() => {
-                navigator.clipboard?.writeText(code).catch(() => {
-                  const textArea = document.createElement('textarea')
-                  textArea.value = code
-                  textArea.style.position = 'fixed'
-                  textArea.style.left = '-999999px'
-                  document.body.appendChild(textArea)
-                  textArea.select()
-                  document.execCommand('copy')
-                  document.body.removeChild(textArea)
-                })
-              }}
-              className="px-2 py-1 rounded text-xs transition-colors"
-              style={{ 
-                backgroundColor: 'var(--chatty-button)', 
-                color: 'var(--chatty-text-inverse, #ffffeb)'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--chatty-hover)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--chatty-button)'}
-              title="Copy code"
-            >
-              Copy
-            </button>
-          </div>
-          <SyntaxHighlighter
-            style={oneDark as any}
-            language={match[1]}
-            PreTag="div"
-            className="rounded-lg"
-            customStyle={{
-              margin: 0,
-              fontSize: '14px',
-              lineHeight: '1.5',
-              padding: '1rem',
-            }}
-            {...props}
-          >
-            {code}
-          </SyntaxHighlighter>
-        </div>
+        <CompressedCodeBlock
+          code={String(children)}
+          language={match ? match[1] : undefined}
+          className={className}
+        />
       )
     }
-    
+
     // Inline code
     return (
-      <code 
-        className="px-1.5 py-0.5 rounded text-sm font-mono" 
-        style={{ 
-          backgroundColor: 'var(--chatty-bg-secondary)', 
+      <code
+        className="px-1.5 py-0.5 rounded text-sm font-mono"
+        style={{
+          backgroundColor: 'var(--chatty-bg-secondary)',
           color: 'var(--chatty-text)'
         }}
       >
@@ -86,25 +47,25 @@ const markdownComponents: Components = {
       </code>
     )
   },
-  
+
   // Bold text
   strong: ({ children }) => (
     <strong className="font-bold" style={{ color: 'var(--chatty-text)' }}>{children}</strong>
   ),
-  
+
   // Italic text
   em: ({ children }) => (
     <em className="italic" style={{ color: 'var(--chatty-text)' }}>{children}</em>
   ),
-  
+
   // Strikethrough
   del: ({ children }) => (
     <del className="line-through" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>{children}</del>
   ),
-  
+
   // Underline (using <u> tag via remark plugin or custom component)
   // Note: Standard markdown doesn't have underline, but we can handle it if present
-  
+
   // Headers
   h1: ({ children }) => (
     <h1 className="text-3xl font-bold mb-4 mt-6" style={{ color: 'var(--chatty-text)' }}>{children}</h1>
@@ -124,7 +85,7 @@ const markdownComponents: Components = {
   h6: ({ children }) => (
     <h6 className="text-sm font-semibold mb-1 mt-2" style={{ color: 'var(--chatty-text)' }}>{children}</h6>
   ),
-  
+
   // Lists with proper spacing and indentation
   ul: ({ children }) => (
     <ul className="list-disc list-outside mb-4 ml-6 space-y-1" style={{ color: 'var(--chatty-text)' }}>{children}</ul>
@@ -135,15 +96,15 @@ const markdownComponents: Components = {
   li: ({ children }) => (
     <li className="pl-2" style={{ margin: '0.25rem 0', color: 'var(--chatty-text)' }}>{children}</li>
   ),
-  
+
   // Nested lists support
   // ReactMarkdown handles nested lists automatically, but we ensure proper indentation
-  
+
   // Links
   a: ({ href, children }) => (
-    <a 
-      href={href} 
-      target="_blank" 
+    <a
+      href={href}
+      target="_blank"
       rel="noopener noreferrer"
       className="underline"
       style={{ color: 'var(--chatty-text)', opacity: 0.8 }}
@@ -153,21 +114,21 @@ const markdownComponents: Components = {
       {children}
     </a>
   ),
-  
+
   // Blockquotes
   blockquote: ({ children }) => (
-    <blockquote 
-      className="border-l-4 pl-4 italic my-4" 
-      style={{ 
-        borderColor: 'var(--chatty-line)', 
-        color: 'var(--chatty-text)', 
-        opacity: 0.9 
+    <blockquote
+      className="border-l-4 pl-4 italic my-4"
+      style={{
+        borderColor: 'var(--chatty-line)',
+        color: 'var(--chatty-text)',
+        opacity: 0.9
       }}
     >
       {children}
     </blockquote>
   ),
-  
+
   // Tables
   table: ({ children }) => (
     <div className="overflow-x-auto my-4">
@@ -177,31 +138,31 @@ const markdownComponents: Components = {
     </div>
   ),
   th: ({ children }) => (
-    <th 
-      className="border px-3 py-2 text-left font-semibold" 
-      style={{ 
-        borderColor: 'var(--chatty-line)', 
-        backgroundColor: 'var(--chatty-bg-secondary)', 
-        color: 'var(--chatty-text)' 
+    <th
+      className="border px-3 py-2 text-left font-semibold"
+      style={{
+        borderColor: 'var(--chatty-line)',
+        backgroundColor: 'var(--chatty-bg-secondary)',
+        color: 'var(--chatty-text)'
       }}
     >
       {children}
     </th>
   ),
   td: ({ children }) => (
-    <td 
-      className="border px-3 py-2" 
+    <td
+      className="border px-3 py-2"
       style={{ borderColor: 'var(--chatty-line)', color: 'var(--chatty-text)' }}
     >
       {children}
     </td>
   ),
-  
+
   // Paragraphs with proper spacing
   p: ({ children }) => (
     <p className="mb-4 leading-relaxed" style={{ color: 'var(--chatty-text)' }}>{children}</p>
   ),
-  
+
   // Horizontal rule
   hr: () => (
     <hr className="my-6" style={{ borderColor: 'var(--chatty-line)', opacity: 0.3 }} />
@@ -249,9 +210,10 @@ const RENDERERS: Record<string, (pl: any) => React.ReactNode> = {
     if (!content) return null
     return (
       <MarkdownErrorBoundary content={content}>
-        <ReactMarkdown 
+        <ReactMarkdown
           components={markdownComponents}
-          className="prose prose-invert max-w-none"
+          remarkPlugins={[remarkBreaks]}
+          className="prose-invert max-w-none break-words"
         >
           {content}
         </ReactMarkdown>

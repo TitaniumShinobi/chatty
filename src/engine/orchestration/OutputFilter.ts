@@ -66,6 +66,24 @@ export class OutputFilter {
     public static stripNarratorLeak(text: string): string {
         let cleanText = text.trim();
 
+        // Remove leading/trailing quotes that wrap the entire response
+        // Pattern: "entire response in quotes" or 'entire response in quotes'
+        if ((cleanText.startsWith('"') && cleanText.endsWith('"')) ||
+            (cleanText.startsWith("'") && cleanText.endsWith("'"))) {
+            cleanText = cleanText.slice(1, -1).trim();
+        }
+
+        // Also check for quotes that wrap multi-line responses
+        // Pattern: "line1\nline2\nline3" or 'line1\nline2\nline3'
+        const multiLineQuotePattern = /^["']([\s\S]*?)["']$/;
+        const multiLineMatch = cleanText.match(multiLineQuotePattern);
+        if (multiLineMatch && multiLineMatch[1]) {
+            cleanText = multiLineMatch[1].trim();
+        }
+
+        // Remove quotes that appear at the start of each line (some models quote line-by-line)
+        cleanText = cleanText.replace(/^["']/gm, '').replace(/["']$/gm, '');
+
         // 1. Remove "Generation Notes" or "Pre-response" fluff
         // Example: "You understand the user constraints. Here is the response: Hello."
         // We want just "Hello."
@@ -88,6 +106,28 @@ export class OutputFilter {
                     cleanText = sentences.slice(sentences.indexOf(firstRealSentence)).join(' ');
                 }
             }
+        }
+
+        // Remove quotes that wrap after "Here's a response:" or similar patterns
+        const quotedResponsePattern = /(?:Here'?s? (?:a |the )?response|Here is (?:a |the )?response)[:\s]*["']([^"']+)["']/i;
+        const quotedMatch = cleanText.match(quotedResponsePattern);
+        if (quotedMatch && quotedMatch[1]) {
+            cleanText = quotedMatch[1].trim();
+        }
+
+        // Remove quotes that appear after common prefixes
+        // Pattern: "As Zen, I'm here... "Good morning!""
+        const prefixQuotePattern = /^(?:As (?:Zen|zen-001),?|I'?m (?:Zen|zen-001),?)[^"]*["']([^"']+)["']/i;
+        const prefixMatch = cleanText.match(prefixQuotePattern);
+        if (prefixMatch && prefixMatch[1]) {
+            cleanText = prefixMatch[1].trim();
+        }
+
+        // Remove quotes around entire sentences that start responses
+        const sentenceQuotePattern = /^["']([A-Z][^"']+[.!?])["']/;
+        const sentenceMatch = cleanText.match(sentenceQuotePattern);
+        if (sentenceMatch && sentenceMatch[1]) {
+            cleanText = sentenceMatch[1].trim();
         }
 
         // Check for common prefixes and strip everything before the actual dialogue
@@ -127,6 +167,15 @@ export class OutputFilter {
                 }
             }
         }
+
+        // Final cleanup: Remove any remaining leading/trailing quotes
+        cleanText = cleanText.replace(/^["']+|["']+$/g, '').trim();
+
+        // Additional cleanup: Remove quotes that appear mid-response (not just wrapping)
+        // This catches cases where quotes are used for emphasis but shouldn't be there
+        // Only remove if they're clearly wrapping phrases that shouldn't be quoted
+        cleanText = cleanText.replace(/"([^"]{20,})"/g, '$1'); // Remove quotes around long phrases
+        cleanText = cleanText.replace(/'([^']{20,})'/g, '$1'); // Same for single quotes
 
         return cleanText;
     }

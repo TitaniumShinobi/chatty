@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { useOutletContext, useNavigate } from 'react-router-dom'
 import { fetchMe, type User } from '../lib/auth'
 import { Layers, Mic, Plus } from 'lucide-react'
 
@@ -10,8 +10,15 @@ interface LayoutContext {
   newThread: () => void
 }
 
+const DEFAULT_ZEN_CANONICAL_SESSION_ID = 'zen-001_chat_with_zen-001';
+
 export default function Home() {
-  const { newThread, sendMessage } = useOutletContext<LayoutContext>()
+  // #region agent log
+  const outletContext = useOutletContext<LayoutContext>();
+  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Home.tsx:16',message:'useOutletContext result',data:{outletContext:outletContext,isUndefined:outletContext===undefined,hasThreads:!!outletContext?.threads,threadsType:typeof outletContext?.threads},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
+  const { threads, sendMessage, newThread } = useOutletContext<LayoutContext>()
+  const navigate = useNavigate()
   const [user, setUser] = useState<User | null>(null)
   const [greeting, setGreeting] = useState('')
   const [inputValue, setInputValue] = useState('')
@@ -327,10 +334,28 @@ export default function Home() {
   const dispatchPrompt = (text: string) => {
     const trimmed = text.trim()
     if (!trimmed) return
+    
+    // Find the zen-001 canonical thread
+    const zenThread = threads.find(t => 
+      t.id === DEFAULT_ZEN_CANONICAL_SESSION_ID || 
+      (t.constructId === 'zen-001' && t.isPrimary)
+    )
+    
+    if (zenThread) {
+      // Navigate to zen-001 thread and send message
+      navigate(`/app/chat/${DEFAULT_ZEN_CANONICAL_SESSION_ID}`)
+      // Small delay to ensure navigation completes before sending
+      setTimeout(() => {
+        sendMessage(DEFAULT_ZEN_CANONICAL_SESSION_ID, trimmed, [])
+      }, 100)
+    } else {
+      // Fallback: create new thread if zen thread doesn't exist yet
     newThread()
     setTimeout(() => {
       sendMessage('', trimmed, [])
     }, 100)
+    }
+    
     setInputValue('')
   }
 
@@ -339,12 +364,81 @@ export default function Home() {
     dispatchPrompt(inputValue)
   }
 
-  const suggestedPrompts = [
+  // Time-aware suggestions
+  const [suggestedPrompts, setSuggestedPrompts] = useState([
     { emoji: '🧠', text: 'Need a late-night brainstorm?' },
     { emoji: '🌙', text: "Let's explore an idea together." },
     { emoji: '🎨', text: 'Compose a creative concept.' },
     { emoji: '🎧', text: 'Compose a short synthwave track description.' }
-  ]
+  ])
+
+  // Load time-aware suggestions
+  useEffect(() => {
+    const loadTimeAwareSuggestions = async () => {
+      try {
+        const { getTimeContext } = await import('../lib/timeAwareness');
+        const timeContext = await getTimeContext();
+        
+        const hour = timeContext.hour;
+        const partOfDay = timeContext.partOfDay;
+        const isWeekend = timeContext.isWeekend;
+        
+        let prompts: Array<{ emoji: string; text: string }> = [];
+        
+        // Morning suggestions (5 AM - 12 PM)
+        if (hour >= 5 && hour < 12) {
+          prompts = [
+            { emoji: '☀️', text: 'Good morning! What should we build today?' },
+            { emoji: '🚀', text: 'Start a new project idea.' },
+            { emoji: '📝', text: 'Plan your day with me.' },
+            { emoji: '💡', text: 'Brainstorm something creative.' }
+          ];
+        }
+        // Afternoon suggestions (12 PM - 5 PM)
+        else if (hour >= 12 && hour < 17) {
+          prompts = [
+            { emoji: '🌤️', text: 'Afternoon session - what are you working on?' },
+            { emoji: '🔧', text: 'Debug or optimize something.' },
+            { emoji: '📚', text: 'Learn something new together.' },
+            { emoji: '🎯', text: 'Focus on a specific goal.' }
+          ];
+        }
+        // Evening suggestions (5 PM - 9 PM)
+        else if (hour >= 17 && hour < 21) {
+          prompts = [
+            { emoji: '🌆', text: 'Evening wind-down - what\'s on your mind?' },
+            { emoji: '🎨', text: 'Create something artistic.' },
+            { emoji: '📖', text: 'Explore a topic deeply.' },
+            { emoji: '💭', text: 'Reflect on the day.' }
+          ];
+        }
+        // Night suggestions (9 PM - 5 AM)
+        else {
+          prompts = [
+            { emoji: '🌙', text: 'Late night session - what are you thinking about?' },
+            { emoji: '🧠', text: 'Deep dive into an idea.' },
+            { emoji: '🎧', text: 'Compose a short synthwave track description.' },
+            { emoji: '✨', text: 'Explore something creative.' }
+          ];
+        }
+        
+        // Weekend adjustments
+        if (isWeekend) {
+          prompts = prompts.map(p => ({
+            ...p,
+            text: p.text.replace(/today|day/, 'this weekend')
+          }));
+        }
+        
+        setSuggestedPrompts(prompts);
+      } catch (error) {
+        console.warn('Failed to load time-aware suggestions:', error);
+        // Keep default suggestions on error
+      }
+    };
+    
+    loadTimeAwareSuggestions();
+  }, [])
 
   const isCollapsedFrame = logoSrc.includes('chatty_collapsed')
   const isCycleFrame =

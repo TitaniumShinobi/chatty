@@ -998,6 +998,81 @@ export class VVAULTConversationManager {
   }
 
   /**
+   * Pin a message to a designated file (pins.md, vault_notes.md, or logbook.json)
+   */
+  async pinMessage(
+    userId: string,
+    message: { id: string; role: string; text?: string; packets?: any[]; ts: number },
+    destination: string,
+    threadId: string
+  ): Promise<void> {
+    try {
+      await this.initializeVVAULT();
+
+      // Extract message text
+      let messageText = message.text || ''
+      if (message.role === 'assistant' && message.packets) {
+        messageText = message.packets
+          .map((p: any) => {
+            if (p?.payload?.content) {
+              return typeof p.payload.content === 'string' ? p.payload.content : ''
+            }
+            return ''
+          })
+          .join('\n')
+      }
+
+      const timestamp = new Date(message.ts).toISOString()
+      const date = new Date(message.ts).toLocaleDateString()
+      const time = new Date(message.ts).toLocaleTimeString()
+
+      // Format message for markdown
+      const pinEntry = `## ${date} ${time}
+
+**Thread**: ${threadId}
+**Message ID**: ${message.id}
+**Role**: ${message.role}
+**Timestamp**: ${timestamp}
+
+${messageText}
+
+---
+
+`
+
+      if (this.isBrowserEnv()) {
+        // Browser: For now, log the pin action
+        // TODO: Add backend endpoint /api/vvault/pin-message if needed
+        console.log(`📌 [VVAULT] Pin request (browser):`, {
+          destination,
+          threadId,
+          messageId: message.id,
+          content: pinEntry.substring(0, 100) + '...'
+        })
+        // In browser, we can't write directly to filesystem
+        // This would require a backend endpoint to be implemented
+        // For now, we'll just log it
+      } else {
+        // Server: write directly to file
+        const fs = await import('fs').then(m => m.promises)
+        const path = await import('path')
+        
+        // Determine file path based on destination
+        const vvaultRoot = process.env.VVAULT_ROOT || './vvault'
+        const filePath = path.join(vvaultRoot, 'users', 'shard_0000', userId, destination)
+        
+        // Append to file (create if doesn't exist)
+        await fs.appendFile(filePath, pinEntry, 'utf8')
+      }
+
+      console.log(`✅ [VVAULT] Message ${message.id} pinned to ${destination}`)
+    } catch (error) {
+      console.error(`❌ [VVAULT] Failed to pin message ${message.id}:`, error)
+      throw error
+    }
+  }
+
+  /**
    * Get conversation statistics from VVAULT
    */
   async getConversationStats(user: User): Promise<{ totalConversations: number; totalMessages: number; lastActivity: Date | null }> {
