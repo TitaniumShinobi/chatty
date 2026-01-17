@@ -25,7 +25,8 @@ import { getChatService } from "./services/chatService.js";
 dotenv.config();
 
 // Construct canonical redirect URI with normalization
-const PUBLIC_CALLBACK_BASE = process.env.PUBLIC_CALLBACK_BASE || 'http://localhost:5000';
+const REPLIT_DOMAIN = process.env.REPLIT_DEV_DOMAIN || process.env.REPLIT_DOMAINS;
+const PUBLIC_CALLBACK_BASE = REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : (process.env.PUBLIC_CALLBACK_BASE || 'http://localhost:5000');
 const CALLBACK_PATH = process.env.CALLBACK_PATH || '/api/auth/google/callback';
 const REDIRECT_URI = `${PUBLIC_CALLBACK_BASE.replace(/\/$/, '')}${CALLBACK_PATH.startsWith('/') ? CALLBACK_PATH : '/' + CALLBACK_PATH}`;
 
@@ -263,7 +264,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       return res.redirect(`${frontendUrl}/?error=missing_code`);
     }
 
-    // 1) exchange code for tokens
+    // exchange code for tokens
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },

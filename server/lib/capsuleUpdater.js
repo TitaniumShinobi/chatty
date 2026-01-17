@@ -6,12 +6,12 @@
  * Uses capsuleIntegrityValidator for UUID/fingerprint preservation.
  */
 
-const {
-    prepareCapsuleUpdate,
-    validateImmutableFields,
-    validateCapsuleIntegrity,
-    CapsuleIntegrityError
-} = require('./capsuleIntegrityValidator.js');
+export class CapsuleIntegrityError extends Error {
+    constructor(type, expected, received) {
+        super(`Capsule integrity error: ${type}. Expected ${expected}, received ${received}`);
+        this.name = 'CapsuleIntegrityError';
+    }
+}
 
 const SAFE_FIELDS = [
     'metadata.timestamp',
@@ -39,7 +39,7 @@ const NEVER_UPDATE_FIELDS = [
  * @param {Object} updates - The new data to merge in (only safe fields will be used)
  * @returns {Object} - The safely updated capsule
  */
-function updateCapsuleMetadata(originalCapsule, updates) {
+export function updateCapsuleMetadata(originalCapsule, updates) {
     if (!originalCapsule || !updates) {
         throw new Error('Invalid input: originalCapsule and updates are required');
     }
@@ -84,7 +84,7 @@ function updateCapsuleMetadata(originalCapsule, updates) {
     const {
         recalculateFingerprint,
         contentChanged
-    } = require('./capsuleIntegrityValidator.js');
+    } = await import('./capsuleIntegrityValidator.js');
     
     if (contentChanged(originalCapsule, updatedCapsule)) {
         updatedCapsule.metadata.fingerprint_hash = recalculateFingerprint(updatedCapsule);
@@ -106,7 +106,8 @@ function updateCapsuleMetadata(originalCapsule, updates) {
     return updatedCapsule;
 }
 
-module.exports = {
-    updateCapsuleMetadata,
-    CapsuleIntegrityError
-};
+// ESM Exports
+// module.exports = {
+//     updateCapsuleMetadata,
+//     CapsuleIntegrityError
+// };
