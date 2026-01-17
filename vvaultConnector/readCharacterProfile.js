@@ -1,2 +1,4 @@
-// Proxy to provide a stable, space-free import path for the character profile reader.
-module.exports = require('./readCharacterProfile 3.js');
+// Stub for VVAULT readCharacterProfile - returns null in Replit environment
+module.exports = async function readCharacterProfile() {
+  return null;
+};

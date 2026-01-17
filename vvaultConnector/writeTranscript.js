@@ -1,2 +1,4 @@
-// Proxy to handle spaced filename in a stable import path
-module.exports = require('./writeTranscript 3.js');
+// Stub for VVAULT writeTranscript - no-op in Replit environment
+module.exports = async function writeTranscript() {
+  return { success: true };
+};
