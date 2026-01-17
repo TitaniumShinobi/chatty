@@ -309,7 +309,7 @@ router.get("/conversations", async (req, res) => {
     let lookupId = linkedVvaultUserId;
     if (!lookupId) {
       // Import resolveVVAULTUserId from writeTranscript
-      const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript 3.js");
+      const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
       try {
         lookupId = await resolveVVAULTUserId(userId, email, false); // false = don't auto-create
         if (lookupId) {

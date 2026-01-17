@@ -1,4 +1,10 @@
-// Stub for VVAULT readMemories - returns empty in Replit environment
-module.exports = async function readMemories() {
+/**
+ * Stub for VVAULT readMemories - returns empty in Replit environment
+ */
+async function readMemories() {
   return [];
+}
+
+module.exports = {
+  readMemories
 };

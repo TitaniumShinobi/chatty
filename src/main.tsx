@@ -11,6 +11,8 @@ import VVAULTPage from './pages/VVAULTPage'
 import LibraryPage from './pages/LibraryPage'
 import CodePage from './pages/CodePage'
 import SimForge from './pages/SimForge'
+import SearchPage from './pages/SearchPage'
+import ProjectsPage from './pages/ProjectsPage'
 import { ThemeProvider } from './lib/ThemeContext'
 import './index.css'
 
@@ -37,6 +39,8 @@ const app = (
           <Route path="vvault" element={<VVAULTPage />} />
           <Route path="library" element={<LibraryPage />} />
           <Route path="codex" element={<CodePage />} />
+          <Route path="search" element={<SearchPage />} />
+          <Route path="projects" element={<ProjectsPage />} />
         </Route>
       </Routes>
     </BrowserRouter>
