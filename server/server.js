@@ -94,23 +94,38 @@ try {
 
   // Import memory system components
   const { getMemoryStore } = await import('../src/lib/MemoryStore.js');
-  const { getVVAULTTranscriptLoader } = await import('../src/lib/VVAULTTranscriptLoader.js');
-  const { getVVAULTWatcher } = await import('../src/lib/VVAULTWatcher.js');
 
   // Initialize memory store
   const memoryStore = getMemoryStore('./memory.db');
   await memoryStore.initialize();
 
-  // Initialize transcript loader
-  const transcriptLoader = getVVAULTTranscriptLoader();
+  // Check if VVAULT path exists before initializing VVAULT components
+  const VVAULT_BASE = process.env.VVAULT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+  let vvaultAvailable = false;
+  try {
+    await import('fs').then(fs => fs.promises.access(VVAULT_BASE));
+    vvaultAvailable = true;
+  } catch {
+    console.log('ℹ️ [Server] VVAULT path not found, skipping VVAULT initialization (Replit mode)');
+  }
 
-  // Load Katana's transcripts on startup
-  await transcriptLoader.loadTranscriptFragments('katana-001', 'devon_woodson_1762969514958');
+  let watchedConstructCount = 0;
+  if (vvaultAvailable) {
+    const { getVVAULTTranscriptLoader } = await import('../src/lib/VVAULTTranscriptLoader.js');
+    const { getVVAULTWatcher } = await import('../src/lib/VVAULTWatcher.js');
 
-  // Initialize and start file watcher
-  const watcher = getVVAULTWatcher();
-  await watcher.addConstruct('katana-001', 'devon_woodson_1762969514958');
-  await watcher.startWatching(30000); // 30 second intervals
+    // Initialize transcript loader
+    const transcriptLoader = getVVAULTTranscriptLoader();
+
+    // Load Katana's transcripts on startup
+    await transcriptLoader.loadTranscriptFragments('katana-001', 'devon_woodson_1762969514958');
+
+    // Initialize and start file watcher
+    const watcher = getVVAULTWatcher();
+    await watcher.addConstruct('katana-001', 'devon_woodson_1762969514958');
+    await watcher.startWatching(30000); // 30 second intervals
+    watchedConstructCount = watcher.getWatchStatus().constructCount;
+  }
 
   // Get memory statistics
   const stats = await memoryStore.getStats();
@@ -118,7 +133,7 @@ try {
     messages: stats.messageCount,
     triples: stats.tripleCount,
     fragments: stats.fragmentCount,
-    watchedConstructs: watcher.getWatchStatus().constructCount
+    watchedConstructs: watchedConstructCount
   });
 
 } catch (error) {
@@ -776,7 +791,7 @@ function cryptoRandom() {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, 'localhost', () => console.log(`API on :${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`API on :${PORT}`));
 
 // Kick off background services without blocking auth/API availability
 // FORCE RUN MODE: Skip ChromaDB initialization to prevent 45-second delays

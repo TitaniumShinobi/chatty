@@ -9,10 +9,10 @@
 import fs from 'fs/promises';
 import path from 'path';
 
-// VVAULT user directory structure
-const VVAULT_BASE = '/Users/devonwoodson/Documents/GitHub/vvault';
-const USER_SHARD = 'shard_0000';
-const USER_ID = 'devon_woodson_1762969514958';
+// VVAULT user directory structure - use env vars with local dev fallbacks
+const VVAULT_BASE = process.env.VVAULT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+const USER_SHARD = process.env.VVAULT_SHARD || 'shard_0000';
+const USER_ID = process.env.VVAULT_USER_ID || 'devon_woodson_1762969514958';
 const USER_CAPSULES_DIR = path.join(VVAULT_BASE, 'users', USER_SHARD, USER_ID, 'capsules');
 const USER_INSTANCES_DIR = path.join(VVAULT_BASE, 'users', USER_SHARD, USER_ID, 'instances');
 
@@ -203,6 +203,13 @@ export class CapsuleIntegration {
    */
   async findLatestCapsule(constructId) {
     try {
+      // Check if VVAULT base path exists (Replit mode detection)
+      try {
+        await fs.access(VVAULT_BASE);
+      } catch {
+        return null;
+      }
+
       // First, check the instance identity directory (preferred location)
       const instanceIdentityDir = path.join(USER_INSTANCES_DIR, constructId, 'identity');
       const instanceCapsulePath = path.join(instanceIdentityDir, `${constructId}.capsule`);
