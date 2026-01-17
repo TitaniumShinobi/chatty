@@ -41,3 +41,8 @@ externalPort = 80
 deploymentTarget = "autoscale"
 run = ["npm", "run", "dev:full"]
 build = ["npm", "run", "build"]
+
+[userenv]
+
+[userenv.development]
+NODE_ENV = "development"

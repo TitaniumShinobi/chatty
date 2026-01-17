@@ -9,8 +9,18 @@
       "shard": "shard_0000",
       "vvault_linked": true,
       "vvault_user_id": "devon_woodson_1762969514958"
+    },
+    "dev_user_001": {
+      "user_id": "dev_user_001",
+      "email": "dev@chatty.local",
+      "name": "Dev User",
+      "created_at": "2026-01-17T16:16:38.300Z",
+      "last_seen": "2026-01-17T16:16:38.300Z",
+      "shard": "shard_0000",
+      "vvault_linked": false,
+      "vvault_user_id": "dev_user_001"
     }
   },
   "nextUserId": 1,
-  "totalUsers": 1
+  "totalUsers": 2
 }

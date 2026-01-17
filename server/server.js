@@ -252,6 +252,50 @@ app.get("/api/auth/google/health", (req, res) => {
   });
 });
 
+// DEV-ONLY: Login bypass for development/testing (disabled in production)
+app.post("/api/auth/dev-login", async (req, res) => {
+  const isDev = process.env.NODE_ENV !== 'production';
+  if (!isDev) {
+    return res.status(403).json({ error: "Dev login is disabled in production" });
+  }
+
+  console.log('🔓 [Dev Auth] Dev login endpoint accessed');
+
+  try {
+    const { getOrCreateUser } = await import('./lib/userRegistry.js');
+    const email = 'dev@chatty.local';
+    const name = 'Dev User';
+    const userProfile = await getOrCreateUser('dev_user_001', email, name);
+    
+    const payload = {
+      id: userProfile.user_id,
+      uid: 'dev_user_001',
+      name: name,
+      given_name: 'Dev',
+      family_name: 'User',
+      email: email,
+      picture: null,
+      locale: 'en'
+    };
+
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: "30d" });
+
+    res.cookie(COOKIE_NAME, token, {
+      httpOnly: false,
+      sameSite: "lax",
+      secure: false,
+      path: "/",
+      maxAge: 1000 * 60 * 60 * 24 * 30
+    });
+
+    console.log('✅ [Dev Auth] Dev login successful for:', email);
+    res.json({ ok: true, user: payload, token });
+  } catch (error) {
+    console.error('❌ [Dev Auth] Dev login failed:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // start OAuth (front-end should hit this)
 app.get("/api/auth/google", authLimiter, (req, res) => {
   console.log('🔍 [OAuth] /api/auth/google endpoint hit');
