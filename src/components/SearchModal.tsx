@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { Search, MessageSquare, Calendar, X } from 'lucide-react'
+import { Search, X, Calendar } from 'lucide-react'
+import { Z_LAYERS } from '../lib/zLayers'
 
 interface SearchModalProps {
   isOpen: boolean
@@ -15,62 +16,58 @@ export default function SearchModal({ isOpen, onClose, onSelectConversation }: S
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="fixed inset-0 flex items-center justify-center px-4"
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.35)', zIndex: Z_LAYERS.modal }}
       onClick={onClose}
     >
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div 
-        className="relative w-full max-w-2xl max-h-[80vh] rounded-xl shadow-2xl overflow-hidden"
-        style={{ backgroundColor: 'var(--chatty-bg-main)' }}
+        className="w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden"
+        style={{ backgroundColor: '#2F2510' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-6 border-b flex items-center justify-between" style={{ borderColor: 'var(--chatty-line)' }}>
-          <h2 className="text-xl font-bold" style={{ color: 'var(--chatty-text)' }}>
-            Search Chats
-          </h2>
+        <div className="flex items-center gap-3 px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
+          <Search className="w-5 h-5 flex-shrink-0" style={{ color: '#ADA587' }} />
+          <input
+            type="text"
+            placeholder="Search conversations... (use quotes for exact phrases)"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            autoFocus
+            className="flex-1 bg-transparent outline-none text-sm"
+            style={{ color: '#F5F0E1' }}
+          />
           <button
             onClick={onClose}
-            className="p-2 rounded-lg transition-colors hover:bg-black/10"
-            style={{ color: 'var(--chatty-text)' }}
+            className="p-1 rounded transition-colors flex-shrink-0"
+            style={{ color: '#ADA587' }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = '#F5F0E1')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = '#ADA587')}
+            aria-label="Close search"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
         
-        <div className="p-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 opacity-50" style={{ color: 'var(--chatty-text)' }} />
-            <input
-              type="text"
-              placeholder="Search your conversations..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              autoFocus
-              className="w-full pl-10 pr-4 py-3 rounded-lg outline-none focus:ring-2"
-              style={{
-                backgroundColor: 'var(--chatty-bg-sidebar)',
-                color: 'var(--chatty-text)',
-                borderColor: 'var(--chatty-line)'
-              }}
-            />
-          </div>
-        </div>
-        
-        <div className="max-h-[50vh] overflow-y-auto px-6 pb-6">
+        <div className="px-6 py-10">
           {results.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 opacity-50">
-              <MessageSquare className="w-12 h-12 mb-4" style={{ color: 'var(--chatty-text)' }} />
-              <p style={{ color: 'var(--chatty-text)' }}>
-                {searchQuery ? 'No results found' : 'Enter a search term to find conversations'}
+            <div className="flex flex-col items-center justify-center text-center">
+              <Search className="w-10 h-10 mb-4" style={{ color: '#ADA587', opacity: 0.6 }} />
+              <p className="text-sm mb-1" style={{ color: '#F5F0E1', opacity: 0.8 }}>
+                {searchQuery ? 'No results found' : 'Start typing to search your conversations'}
+              </p>
+              <p className="text-xs" style={{ color: '#ADA587', opacity: 0.7 }}>
+                Use quotes for exact phrase matching
               </p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-[50vh] overflow-y-auto">
               {results.map((result, index) => (
                 <div
                   key={index}
-                  className="p-4 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
-                  style={{ backgroundColor: 'var(--chatty-bg-sidebar)' }}
+                  className="p-4 rounded-lg cursor-pointer transition-colors"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)')}
                   onClick={() => {
                     if (onSelectConversation && result.id) {
                       onSelectConversation(result.id)
@@ -79,10 +76,10 @@ export default function SearchModal({ isOpen, onClose, onSelectConversation }: S
                   }}
                 >
                   <div className="flex items-center gap-2 mb-2">
-                    <Calendar className="w-4 h-4 opacity-50" />
-                    <span className="text-sm opacity-50">{result.date}</span>
+                    <Calendar className="w-4 h-4" style={{ color: '#ADA587', opacity: 0.6 }} />
+                    <span className="text-xs" style={{ color: '#ADA587' }}>{result.date}</span>
                   </div>
-                  <p style={{ color: 'var(--chatty-text)' }}>{result.preview}</p>
+                  <p className="text-sm" style={{ color: '#F5F0E1' }}>{result.preview}</p>
                 </div>
               ))}
             </div>
