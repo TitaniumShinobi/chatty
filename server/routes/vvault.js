@@ -333,17 +333,7 @@ router.get("/conversations", async (req, res) => {
     let conversations = [];
     try {
       console.log(`🔍 [VVAULT API] Calling readConversations with lookupId: ${lookupId}`);
-      // #region agent log
-      const fs = require('fs');
-      const logPath = '/Users/devonwoodson/Documents/GitHub/.cursor/debug.log';
-      const logEntry = JSON.stringify({ location: 'vvault.js:306', message: 'VVAULT API: calling readConversations', data: { lookupId, email: req.user?.email, userId }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run2', hypothesisId: 'I' }) + '\n';
-      fs.appendFileSync(logPath, logEntry);
-      // #endregion
       conversations = await readConversations(lookupId);
-      // #region agent log
-      const logEntry2 = JSON.stringify({ location: 'vvault.js:307', message: 'VVAULT API: readConversations returned', data: { count: conversations.length, conversationIds: conversations.map(c => c.sessionId), conversationTitles: conversations.map(c => c.title) }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run2', hypothesisId: 'I' }) + '\n';
-      fs.appendFileSync(logPath, logEntry2);
-      // #endregion
       console.log(`📥 [VVAULT API] readConversations returned ${Array.isArray(conversations) ? conversations.length : 'non-array'} conversations`);
     } catch (error) {
       console.error(`❌ [VVAULT API] Failed to read conversations for user ${lookupId}:`, error.message);
