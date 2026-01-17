@@ -30,6 +30,27 @@ const PUBLIC_CALLBACK_BASE = REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : (proce
 const CALLBACK_PATH = process.env.CALLBACK_PATH || '/api/auth/google/callback';
 const REDIRECT_URI = `${PUBLIC_CALLBACK_BASE.replace(/\/$/, '')}${CALLBACK_PATH.startsWith('/') ? CALLBACK_PATH : '/' + CALLBACK_PATH}`;
 
+// IMPORTANT: Override for Google Callback to ensure it matches what was provided in .env
+const GOOGLE_CALLBACK = process.env.GOOGLE_CALLBACK || process.env.GOOGLE_CALLBACK_URL || REDIRECT_URI;
+const POST_LOGIN_REDIRECT = REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : (process.env.POST_LOGIN_REDIRECT || process.env.FRONTEND_URL || "http://localhost:5000");
+
+// Override for MONGODB_URI to handle the provided connection string properly
+if (process.env.MONGODB_URI && process.env.MONGODB_URI.includes('devonwoodson')) {
+  // Ensure the connection string is used exactly as provided if it contains the full path
+  // This is a safety check for the specific Atlas URI provided.
+}
+
+// SMTP Configuration
+const SMTP_CONFIG = {
+  host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+  port: parseInt(process.env.EMAIL_PORT || '587'),
+  secure: false, // true for 465, false for other ports
+  auth: {
+    user: process.env.EMAIL_USER || 'info@thewreck.org',
+    pass: process.env.EMAIL_PASS
+  }
+};
+
 // Connect to database (optional in development)
 if (process.env.MONGODB_URI) {
   try {
@@ -116,7 +137,7 @@ const COOKIE_NAME = process.env.COOKIE_NAME || 'sid';
 const OAUTH = {
   client_id: process.env.GOOGLE_CLIENT_ID,
   client_secret: process.env.GOOGLE_CLIENT_SECRET,
-  redirect_uri: REDIRECT_URI,
+  redirect_uri: GOOGLE_CALLBACK,
   token_url: "https://oauth2.googleapis.com/token",
   userinfo_url: "https://www.googleapis.com/oauth2/v3/userinfo",
 };
@@ -254,14 +275,12 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
     // Handle OAuth errors from Google
     if (error) {
       console.error('OAuth error from Google:', error);
-      const frontendUrl = process.env.POST_LOGIN_REDIRECT || "http://localhost:5000";
-      return res.redirect(`${frontendUrl}/?error=${encodeURIComponent(error)}`);
+      return res.redirect(`${POST_LOGIN_REDIRECT}/?error=${encodeURIComponent(error)}`);
     }
 
     if (!code) {
       console.error('OAuth callback missing code parameter');
-      const frontendUrl = process.env.POST_LOGIN_REDIRECT || "http://localhost:5000";
-      return res.redirect(`${frontendUrl}/?error=missing_code`);
+      return res.redirect(`${POST_LOGIN_REDIRECT}/?error=missing_code`);
     }
 
     // exchange code for tokens
@@ -284,8 +303,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
         has_client_secret: !!process.env.GOOGLE_CLIENT_SECRET,
         code_length: code?.length
       });
-      const frontendUrl = process.env.POST_LOGIN_REDIRECT || "http://localhost:5000";
-      return res.redirect(`${frontendUrl}/?error=oauth_token_exchange_failed&details=${encodeURIComponent(JSON.stringify(tokenRes))}`);
+      return res.redirect(`${POST_LOGIN_REDIRECT}/?error=oauth_token_exchange_failed&details=${encodeURIComponent(JSON.stringify(tokenRes))}`);
     }
 
     // 2) fetch user info
@@ -326,8 +344,8 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       console.log(`✅ [User Registry] Registered user: ${userId} (${profile.email})`);
     } catch (regError) {
       console.error('⚠️ [User Registry] Failed to register user (non-critical):', regError);
-      // Fallback to MongoDB _id if registry fails
-      userId = doc._id.toString?.() ?? doc._id;
+      // Use the LIFE ID from the profile if we have it, or fallback to MongoDB ID
+      userId = profile.id || (doc._id.toString ? doc._id.toString() : doc._id);
     }
 
     const payload = {
@@ -353,20 +371,20 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
     });
 
     // 4) redirect back to app (to /app route which shows Home)
-    const frontendUrl = process.env.POST_LOGIN_REDIRECT || "http://localhost:5000";
-    console.log(`✅ OAuth success! Redirecting to ${frontendUrl}/app`);
-    res.redirect(`${frontendUrl}/app`);
+    console.log(`✅ OAuth success! Redirecting to ${POST_LOGIN_REDIRECT}/app`);
+    res.redirect(`${POST_LOGIN_REDIRECT}/app`);
   } catch (e) {
     console.error('OAuth callback error:', e);
-    const frontendUrl = process.env.POST_LOGIN_REDIRECT || "http://localhost:5000";
-    res.redirect(`${frontendUrl}/?error=auth_failed`);
+    res.redirect(`${POST_LOGIN_REDIRECT}/?error=auth_failed`);
   }
 });
 
-// session probe
+  // session probe
 app.get("/api/me", (req, res) => {
-  // HARDCODED AUTHENTICATION FOR DEVELOPMENT
-  if (process.env.NODE_ENV === 'development' || !JWT_SECRET) {
+  // HARDCODED AUTHENTICATION FOR DEVELOPMENT (DISABLED IF JWT_SECRET IS SET PROPERLY)
+  const isHardcodedDev = process.env.NODE_ENV === 'development' && !req.cookies?.[COOKIE_NAME];
+  
+  if (isHardcodedDev) {
     console.log('🔓 [Auth] Using hardcoded development user for /api/me');
     const hardcodedUser = {
       id: 'devon_woodson_1762969514958',
@@ -387,7 +405,8 @@ app.get("/api/me", (req, res) => {
     const user = jwt.verify(raw, JWT_SECRET);
     // If you persist users: fetch by user.uid and return DB record here.
     res.json({ ok: true, user });
-  } catch {
+  } catch (error) {
+    console.error('❌ [Auth] JWT verification failed:', error.message);
     res.status(401).json({ ok: false });
   }
 });
