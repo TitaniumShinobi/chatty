@@ -7,10 +7,6 @@ import { VVAULTConversationManager, type ConversationThread } from '../lib/vvaul
 import type { Conversation } from '../types';
 
 const Layout: React.FC = () => {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:10',message:'Layout component rendering',data:{hasSidebar:true,hasOutlet:true},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
-
   const [user, setUser] = useState<User | null>(null);
   const [threads, setThreads] = useState<ConversationThread[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -26,10 +22,6 @@ const Layout: React.FC = () => {
         setUser(currentUser);
         
         if (currentUser) {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:28',message:'Loading conversations for user',data:{userId:currentUser.email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-          // #endregion
-          
           const loadedThreads = await conversationManager.loadUserConversations(currentUser);
           setThreads(loadedThreads);
           
@@ -42,16 +34,9 @@ const Layout: React.FC = () => {
             updatedAt: thread.updatedAt ? new Date(thread.updatedAt).toISOString() : new Date().toISOString()
           }));
           setConversations(convs);
-          
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:42',message:'Conversations loaded',data:{threadCount:loadedThreads.length,conversationCount:convs.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-          // #endregion
         }
       } catch (error) {
         console.error('Failed to load user or conversations:', error);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:47',message:'Failed to load user/conversations',data:{error:error instanceof Error ? error.message : String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
       }
     };
     loadUser();
@@ -115,6 +100,50 @@ const Layout: React.FC = () => {
     setConversations(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
   }, []);
 
+  // Navigation handlers for Sidebar
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+
+  const handleOpenSearch = useCallback(() => {
+    navigate('/app/search');
+  }, [navigate]);
+
+  const handleOpenLibrary = useCallback(() => {
+    navigate('/app/library');
+  }, [navigate]);
+
+  const handleOpenCodex = useCallback(() => {
+    navigate('/app/codex');
+  }, [navigate]);
+
+  const handleOpenProjects = useCallback(() => {
+    navigate('/app/projects');
+  }, [navigate]);
+
+  const handleOpenExplore = useCallback(() => {
+    navigate('/app/explore');
+  }, [navigate]);
+
+  const handleShowRuntimeDashboard = useCallback(() => {
+    navigate('/app/runtime');
+  }, [navigate]);
+
+  const handleToggleCollapsed = useCallback(() => {
+    setSidebarCollapsed(prev => !prev);
+  }, []);
+
+  const handleShowSettings = useCallback(() => {
+    navigate('/app/settings');
+  }, [navigate]);
+
+  const handleShowGPTCreator = useCallback(() => {
+    navigate('/app/gpt-creator');
+  }, [navigate]);
+
+  const handleShowGPTs = useCallback(() => {
+    navigate('/app/explore');
+  }, [navigate]);
+
   const sendMessage = useCallback(async (threadId: string, text: string, files: File[]) => {
     // This will be handled by the Chat component, but we need to provide it in context
     console.log('sendMessage called', { threadId, text, files });
@@ -127,10 +156,6 @@ const Layout: React.FC = () => {
   const newThread = useCallback(() => {
     handleNewConversation();
   }, [handleNewConversation]);
-
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Layout.tsx:118',message:'Providing context to Outlet',data:{threadsCount:threads.length,conversationsCount:conversations.length,hasUser:!!user},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-  // #endregion
 
   const outletContext = {
     threads,
@@ -152,6 +177,17 @@ const Layout: React.FC = () => {
           onNewConversationWithGPT={handleNewConversationWithGPT}
           onDeleteConversation={handleDeleteConversation}
           onUpdateConversation={handleUpdateConversation}
+          onOpenSearch={handleOpenSearch}
+          onOpenLibrary={handleOpenLibrary}
+          onOpenCodex={handleOpenCodex}
+          onOpenProjects={handleOpenProjects}
+          onOpenExplore={handleOpenExplore}
+          onShowRuntimeDashboard={handleShowRuntimeDashboard}
+          onShowSettings={handleShowSettings}
+          onShowGPTCreator={handleShowGPTCreator}
+          onShowGPTs={handleShowGPTs}
+          collapsed={sidebarCollapsed}
+          onToggleCollapsed={handleToggleCollapsed}
           currentUser={user}
         />
         <main className="flex-1 flex flex-col">

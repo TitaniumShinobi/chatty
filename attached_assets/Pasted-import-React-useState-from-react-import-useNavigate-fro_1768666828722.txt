@@ -29,8 +29,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   onOpenSearch,
   onOpenProjects,
   onShowRuntimeDashboard,
-  collapsed = false,
-  onToggleCollapsed,
   currentUser,
   onShowSettings
 }) => {
@@ -41,10 +39,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   
   return (
     <div 
-      className={cn(
-        "flex flex-col h-full transition-all duration-200",
-        collapsed ? "w-16" : "w-72"
-      )}
+      className="flex flex-col h-full"
       style={{ backgroundColor: 'var(--chatty-bg-sidebar)', color: 'var(--chatty-text)' }}
     >
       {/* Top Section - Logo and Actions */}
@@ -63,37 +58,27 @@ const Sidebar: React.FC<SidebarProps> = ({
         </button>
         
         {/* Top Actions */}
-        {!collapsed && (
-          <div className="flex items-center gap-2">
-            <ThemeToggleButton className="hover:bg-[var(--chatty-highlight)]" />
-            <button
-              onClick={onShowRuntimeDashboard}
-              className="p-2 rounded transition-colors"
-              style={{ color: 'var(--chatty-text)' }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
-              aria-label="Open runtime dashboard"
-            >
-              <Gauge size={16} />
-            </button>
-            <button 
-              onClick={onToggleCollapsed}
-              className="p-1 rounded transition-colors"
-              style={{ color: 'var(--chatty-text)' }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
-              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            >
-              <PanelLeftClose 
-                size={16} 
-                style={{ 
-                  transform: collapsed ? 'rotate(180deg)' : 'rotate(0deg)',
-                  transition: 'transform 0.2s ease'
-                }}
-              />
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <ThemeToggleButton className="hover:bg-[var(--chatty-highlight)]" />
+          <button
+            onClick={onShowRuntimeDashboard}
+            className="p-2 rounded transition-colors"
+            style={{ color: 'var(--chatty-text)' }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+            aria-label="Open runtime dashboard"
+          >
+            <Gauge size={16} />
+          </button>
+          <button 
+            className="p-1 rounded transition-colors"
+            style={{ color: 'var(--chatty-text)' }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+          >
+            <PanelLeftClose size={16} />
+          </button>
+        </div>
       </div>
 
       {/* Navigation Options - Flat List Style */}
@@ -109,7 +94,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
           >
             <Search size={16} />
-            {!collapsed && <span>Search chats</span>}
+            Search chats
           </button>
           
           <button 
@@ -122,7 +107,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
           >
             <Library size={16} />
-            {!collapsed && <span>Library</span>}
+            Library
           </button>
           
           <button 
@@ -135,7 +120,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
           >
             <Clock size={16} />
-            {!collapsed && <span>Codex</span>}
+            Codex
           </button>
 
           <button 
@@ -146,7 +131,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
           >
             <Shield size={16} />
-            {!collapsed && <span>VVAULT</span>}
+            VVAULT
           </button>
           
           <button 
@@ -159,16 +144,14 @@ const Sidebar: React.FC<SidebarProps> = ({
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
           >
             <FolderPlus size={16} />
-            {!collapsed && <span>Projects</span>}
+            Projects
           </button>
         </div>
       </div>
 
       {/* GPTs Section */}
       <div className="px-4 pb-4">
-        {!collapsed && (
-          <h3 className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>GPTs</h3>
-        )}
+        <h3 className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>GPTs</h3>
         <div className="space-y-1">
           <button 
             onClick={() => {
@@ -185,11 +168,11 @@ const Sidebar: React.FC<SidebarProps> = ({
               alt="SimForge"
               className="w-6 h-6 object-contain"
             />
-            {!collapsed && <span>Explore</span>}
+            Explore
           </button>
           
           {/* Custom GPTs */}
-          {!collapsed && gptCreator.getAllPersonalities().filter(p => p.id !== 'default-chatty').slice(0, 2).map((personality) => (
+          {gptCreator.getAllPersonalities().filter(p => p.id !== 'default-chatty').slice(0, 2).map((personality) => (
             <button
               key={personality.id}
               onClick={() => {
@@ -214,12 +197,10 @@ const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Chats Section */}
       <div className="flex-1 px-4 pb-4 overflow-y-auto">
-        {!collapsed && (
-          <h3 className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Chats</h3>
-        )}
+        <h3 className="text-xs font-medium uppercase tracking-wide mb-2" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Chats</h3>
         <div className="space-y-1">
           {/* Existing Conversations - No borders, just hover highlights */}
-          {(conversations || []).map((conversation) => (
+          {conversations.map((conversation) => (
             <button
               key={conversation.id}
               onClick={() => onConversationSelect(conversation.id)}
@@ -236,27 +217,25 @@ const Sidebar: React.FC<SidebarProps> = ({
               }}
             >
               <span className="truncate flex-1">
-                {collapsed ? conversation.title.charAt(0) : conversation.title}
+                {conversation.title}
               </span>
-              {!collapsed && (
-                <button
-                  className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all ml-2"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteConversation(conversation.id);
-                  }}
-                  style={{ color: 'var(--chatty-text)' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
-                >
-                  <Trash2 size={12} />
-                </button>
-              )}
+              <button
+                className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all ml-2"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteConversation(conversation.id);
+                }}
+                style={{ color: 'var(--chatty-text)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+              >
+                <Trash2 size={12} />
+              </button>
             </button>
           ))}
           
           {/* Empty state */}
-          {!collapsed && conversations.length === 0 && (
+          {conversations.length === 0 && (
             <div className="text-center text-sm py-8" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
               <MessageSquare size={20} className="mx-auto mb-2 opacity-50" />
               <p>No conversations yet</p>
@@ -265,72 +244,52 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Collapsed mode bottom actions */}
-      {collapsed && (
-        <div className="mt-auto p-3 space-y-2">
-          <div className="flex justify-center">
-            <ThemeToggleButton collapsed={collapsed} className="hover:bg-[var(--chatty-highlight)]" />
-          </div>
-          <button
-            onClick={onToggleCollapsed}
-            className="w-full p-2 rounded transition-colors flex justify-center"
-            style={{ color: 'var(--chatty-text)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)' }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
-            aria-label="Expand sidebar"
-          >
-            <PanelLeftClose size={16} style={{ transform: 'rotate(180deg)' }} />
-          </button>
-        </div>
-      )}
-
       {/* User Profile Section - Anchored at Bottom */}
-      {!collapsed && (
-        <div className="p-4">
-          {currentUser ? (
-            <button
-              onClick={onShowSettings}
-              className="flex items-center gap-3 w-full p-2 hover:bg-gray-100 rounded-md transition-colors"
+      <div className="p-4">
+        {currentUser ? (
+          <button
+            onClick={onShowSettings}
+            className="flex items-center gap-3 w-full p-2 hover:bg-gray-100 rounded-md transition-colors"
+          >
+            <img 
+              src={`/api/profile-image/${currentUser.sub}`}
+              alt={currentUser.name}
+              className="w-8 h-8 rounded-full"
+              onError={(e) => {
+                console.log('Sidebar image failed to load, falling back to initial');
+                e.currentTarget.style.display = 'none';
+                const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                if (fallback) {
+                  fallback.style.display = 'flex';
+                }
+              }}
+            />
+            <div 
+              className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center"
+              style={{ display: 'none' }}
             >
-              <img 
-                src={`/api/profile-image/${currentUser.sub || currentUser.id || currentUser.uid}`}
-                alt={currentUser.name}
-                className="w-8 h-8 rounded-full"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                  const fallback = e.currentTarget.nextElementSibling as HTMLElement;
-                  if (fallback) {
-                    fallback.style.display = 'flex';
-                  }
-                }}
-              />
-              <div 
-                className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center"
-                style={{ display: 'none' }}
-              >
-                <span className="text-white text-sm font-medium">
-                  {currentUser.name?.charAt(0) || currentUser.email?.charAt(0) || 'U'}
-                </span>
-              </div>
-              <div className="flex flex-col text-left">
-                <span className="text-sm font-medium truncate" style={{ color: 'var(--chatty-text)' }}>
-                  {currentUser.name || currentUser.email || 'User'}
-                </span>
-                <span className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
-                  Plus
-                </span>
-              </div>
-            </button>
-          ) : (
-            <button 
-              onClick={() => window.location.href = "/api/auth/google"}
-              className="w-full rounded-md p-2 bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
-            >
-              Continue with Google
-            </button>
-          )}
-        </div>
-      )}
+              <span className="text-white text-sm font-medium">
+                {currentUser.name?.charAt(0) || currentUser.email?.charAt(0) || 'U'}
+              </span>
+            </div>
+            <div className="flex flex-col text-left">
+              <span className="text-sm font-medium truncate" style={{ color: 'var(--chatty-text)' }}>
+                {currentUser.name || currentUser.email || 'User'}
+              </span>
+              <span className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
+                Plus
+              </span>
+            </div>
+          </button>
+        ) : (
+          <button 
+            onClick={() => window.location.href = "/api/auth/google"}
+            className="w-full rounded-md p-2 bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+          >
+            Continue with Google
+          </button>
+        )}
+      </div>
     </div>
   )
 }
