@@ -70,7 +70,7 @@ const ProjectsModal: React.FC<ProjectsModalProps> = ({ isOpen, onClose }) => {
                 <span
                   key={label}
                   className="inline-flex items-center px-3 py-1 text-xs rounded-full"
-                  style={{ backgroundColor: '#2F2510', color: 'var(--chatty-text)', opacity: 0.85 }}
+                  style={{ backgroundColor: '#ADA587', color: '#2F2510' }}
                 >
                   {label}
                 </span>
