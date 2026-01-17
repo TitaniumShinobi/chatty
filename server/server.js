@@ -24,6 +24,16 @@ import { getChatService } from "./services/chatService.js";
 
 dotenv.config();
 
+// Global error handlers to prevent silent crashes
+process.on('uncaughtException', (err) => {
+  console.error('💥 [CRASH] Uncaught Exception:', err);
+  console.error(err.stack);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('💥 [CRASH] Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 // Construct canonical redirect URI with normalization
 const REPLIT_DOMAIN = process.env.REPLIT_DEV_DOMAIN || process.env.REPLIT_DOMAINS;
 const PUBLIC_CALLBACK_BASE = REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : (process.env.PUBLIC_CALLBACK_BASE || 'http://localhost:5000');
