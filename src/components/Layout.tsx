@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import SearchModal from './SearchModal';
+import ProjectsModal from './ProjectsModal';
 import { ThemeProvider } from '../lib/ThemeContext';
 import { fetchMe, type User } from '../lib/auth';
 import { VVAULTConversationManager, type ConversationThread } from '../lib/vvaultConversationManager';
@@ -103,10 +105,12 @@ const Layout: React.FC = () => {
   // Navigation handlers for Sidebar
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [showProjectsModal, setShowProjectsModal] = useState(false);
 
   const handleOpenSearch = useCallback(() => {
-    navigate('/app/search');
-  }, [navigate]);
+    setShowSearchModal(true);
+  }, []);
 
   const handleOpenLibrary = useCallback(() => {
     navigate('/app/library');
@@ -117,8 +121,8 @@ const Layout: React.FC = () => {
   }, [navigate]);
 
   const handleOpenProjects = useCallback(() => {
-    navigate('/app/projects');
-  }, [navigate]);
+    setShowProjectsModal(true);
+  }, []);
 
   const handleOpenExplore = useCallback(() => {
     navigate('/app/explore');
@@ -193,6 +197,17 @@ const Layout: React.FC = () => {
         <main className="flex-1 flex flex-col">
           <Outlet context={outletContext} />
         </main>
+        
+        <SearchModal
+          isOpen={showSearchModal}
+          onClose={() => setShowSearchModal(false)}
+          onSelectConversation={handleConversationSelect}
+        />
+        
+        <ProjectsModal
+          isOpen={showProjectsModal}
+          onClose={() => setShowProjectsModal(false)}
+        />
       </div>
     </ThemeProvider>
   );
