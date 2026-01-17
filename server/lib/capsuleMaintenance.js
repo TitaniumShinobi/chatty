@@ -108,7 +108,7 @@ export class CapsuleMaintenanceService {
             // Perform Update
             // For now, we are just refreshing the timestamp. 
             // In a real scenario, we might also prune old memory logs here.
-            const updatedCapsule = updateCapsuleMetadata(capsule, {});
+            const updatedCapsule = await updateCapsuleMetadata(capsule, {});
 
             // Save back to file
             await fs.writeFile(filePath, JSON.stringify(updatedCapsule, null, 2), 'utf8');

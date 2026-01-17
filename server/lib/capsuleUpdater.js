@@ -39,12 +39,14 @@ const NEVER_UPDATE_FIELDS = [
  * @param {Object} updates - The new data to merge in (only safe fields will be used)
  * @returns {Object} - The safely updated capsule
  */
-export function updateCapsuleMetadata(originalCapsule, updates) {
+export async function updateCapsuleMetadata(originalCapsule, updates) {
     if (!originalCapsule || !updates) {
         throw new Error('Invalid input: originalCapsule and updates are required');
     }
 
     // Use integrity validator to prepare update (preserves immutable fields, recalculates fingerprint if needed)
+    const { prepareCapsuleUpdate, validateImmutableFields, validateCapsuleIntegrity } = await import('./capsuleIntegrityValidator.js');
+    
     const updatedCapsule = prepareCapsuleUpdate(originalCapsule, updates);
 
     // Apply memory updates
@@ -80,11 +82,8 @@ export function updateCapsuleMetadata(originalCapsule, updates) {
         updatedCapsule.memory.last_memory_timestamp = new Date().toISOString();
     }
 
-    // Recalculate fingerprint if content changed (prepareCapsuleUpdate already handles this, but ensure it's done)
-    const {
-        recalculateFingerprint,
-        contentChanged
-    } = await import('./capsuleIntegrityValidator.js');
+    // Recalculate fingerprint if content changed
+    const { recalculateFingerprint, contentChanged } = await import('./capsuleIntegrityValidator.js');
     
     if (contentChanged(originalCapsule, updatedCapsule)) {
         updatedCapsule.metadata.fingerprint_hash = recalculateFingerprint(updatedCapsule);
@@ -94,7 +93,7 @@ export function updateCapsuleMetadata(originalCapsule, updates) {
     const immutableValidation = validateImmutableFields(originalCapsule, updatedCapsule);
     if (!immutableValidation.valid) {
         const violations = immutableValidation.violations.map(v => v.message).join(', ');
-        throw new CapsuleIntegrityError('immutable_fields', 'preserved', violations);
+        throw new Error(`Capsule integrity error: immutable_fields. Preserved violations: ${violations}`);
     }
 
     // Validate integrity (fingerprint matches content)
