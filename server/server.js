@@ -27,12 +27,19 @@ dotenv.config();
 // Construct canonical redirect URI with normalization
 const REPLIT_DOMAIN = process.env.REPLIT_DEV_DOMAIN || process.env.REPLIT_DOMAINS;
 const PUBLIC_CALLBACK_BASE = REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : (process.env.PUBLIC_CALLBACK_BASE || 'http://localhost:5000');
-const CALLBACK_PATH = process.env.CALLBACK_PATH || '/api/auth/google/callback';
-const REDIRECT_URI = `${PUBLIC_CALLBACK_BASE.replace(/\/$/, '')}${CALLBACK_PATH.startsWith('/') ? CALLBACK_PATH : '/' + CALLBACK_PATH}`;
+const CALLBACK_PATH = '/api/auth/google/callback';
+const REDIRECT_URI = `${PUBLIC_CALLBACK_BASE.replace(/\/$/, '')}${CALLBACK_PATH}`;
 
-// IMPORTANT: Override for Google Callback to ensure it matches what was provided in .env
-const GOOGLE_CALLBACK = process.env.GOOGLE_CALLBACK || process.env.GOOGLE_CALLBACK_URL || REDIRECT_URI;
-const POST_LOGIN_REDIRECT = REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : (process.env.POST_LOGIN_REDIRECT || process.env.FRONTEND_URL || "http://localhost:5000");
+// IMPORTANT: Override for Google Callback
+const GOOGLE_CALLBACK = REDIRECT_URI;
+const POST_LOGIN_REDIRECT = REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : (process.env.FRONTEND_URL || "http://localhost:5000");
+
+console.log('--- OAUTH CONFIG DEBUG ---');
+console.log('REPLIT_DOMAIN:', REPLIT_DOMAIN);
+console.log('PUBLIC_CALLBACK_BASE:', PUBLIC_CALLBACK_BASE);
+console.log('REDIRECT_URI:', REDIRECT_URI);
+console.log('GOOGLE_CALLBACK:', GOOGLE_CALLBACK);
+console.log('---------------------------');
 
 // Override for MONGODB_URI to handle the provided connection string properly
 if (process.env.MONGODB_URI && process.env.MONGODB_URI.includes('devonwoodson')) {
