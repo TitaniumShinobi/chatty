@@ -46,3 +46,6 @@ build = ["npm", "run", "build"]
 
 [userenv.development]
 NODE_ENV = "development"
+
+[userenv.shared]
+VVAULT_API_BASE_URL = "https://599a5072-8b82-4727-ae1e-43e2217bd5de-00-slt5qjtbwqe.riker.replit.dev"
