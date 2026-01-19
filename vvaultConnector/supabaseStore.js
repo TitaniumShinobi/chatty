@@ -137,7 +137,23 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
         ? JSON.parse(file.metadata) 
         : (file.metadata || {});
       
-      const messages = metadata.messages || parseMarkdownTranscript(file.content);
+      // Debug: Log what we're reading from Supabase
+      console.log(`🔍 [SupabaseStore] Processing file:`, {
+        filename: file.filename,
+        hasContent: !!file.content,
+        contentLength: file.content?.length || 0,
+        metadataMessages: metadata.messages?.length || 0,
+        metadata: JSON.stringify(metadata).substring(0, 200)
+      });
+      
+      const parsedMessages = parseMarkdownTranscript(file.content);
+      const messages = metadata.messages?.length > 0 ? metadata.messages : parsedMessages;
+      
+      console.log(`📝 [SupabaseStore] Message counts:`, {
+        fromMetadata: metadata.messages?.length || 0,
+        fromMarkdown: parsedMessages.length,
+        final: messages.length
+      });
 
       return {
         sessionId: metadata.sessionId || file.filename.replace('chat/', '').replace('.md', ''),
