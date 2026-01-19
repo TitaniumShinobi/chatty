@@ -49,10 +49,19 @@ docs/
 ```
 
 ## Recent Changes
-- **2026-01-19**: PostgreSQL-backed VVAULT integration for Replit environment
-  - vvaultConnector/readConversations.js and writeTranscript.js use PostgreSQL instead of filesystem
+- **2026-01-19**: Supabase integration for shared backend with VVAULT
+  - Supabase is now the single source of truth for construct conversations
+  - Conversations stored in `vault_files` table with file_type='conversation'
+  - Filename convention: `chat/{constructId}/{sessionId}.md`
+  - User resolution: Uses shard_0000 fallback for VVAULT sharding compatibility
+  - PostgreSQL serves as ephemeral cache with async sync after Supabase writes
+  - Key modules:
+    - `server/lib/supabaseClient.js` - ES module Supabase client
+    - `vvaultConnector/supabaseStore.js` - Read/write conversations to Supabase
+  - All vvaultConnector modules converted to ES modules (import/export)
+- **2026-01-19**: PostgreSQL-backed VVAULT fallback for Replit environment
+  - vvaultConnector/readConversations.js and writeTranscript.js use PostgreSQL as fallback
   - Tables: vvault_conversations, vvault_messages (auto-created via ensureTable())
-  - Single source of truth for Zen construct persistence
   - ID normalization: frontend `zen-001_chat_with_zen-001` maps to DB `zen_<timestamp>` via constructId matching
   - Upsert with COALESCE preserves existing metadata while updating new fields
   - Safe user ID handling: never stores NULL user_id (falls back to email or 'unknown_user')
