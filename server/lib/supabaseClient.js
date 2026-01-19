@@ -5,11 +5,11 @@
  * enabling real-time sync and shared source of truth for construct data.
  */
 
-const { createClient } = require('@supabase/supabase-js');
+import { createClient } from '@supabase/supabase-js';
 
 let supabaseClient = null;
 
-function getSupabaseClient() {
+export function getSupabaseClient() {
   if (supabaseClient) return supabaseClient;
 
   const supabaseUrl = process.env.SUPABASE_URL;
@@ -35,7 +35,7 @@ function getSupabaseClient() {
   }
 }
 
-function getSupabaseAnonClient() {
+export function getSupabaseAnonClient() {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
@@ -46,7 +46,7 @@ function getSupabaseAnonClient() {
   return createClient(supabaseUrl, supabaseAnonKey);
 }
 
-async function testSupabaseConnection() {
+export async function testSupabaseConnection() {
   const client = getSupabaseClient();
   if (!client) return { connected: false, error: 'No client' };
 
@@ -58,9 +58,3 @@ async function testSupabaseConnection() {
     return { connected: false, error: error.message };
   }
 }
-
-module.exports = {
-  getSupabaseClient,
-  getSupabaseAnonClient,
-  testSupabaseConnection
-};

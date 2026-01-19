@@ -42,14 +42,14 @@ const identityUpload = multer({
 });
 
 // Lazy load VVAULT modules to speed up server startup
-let readConversations, readCharacterProfile, VVAULTConnector, VVAULT_ROOT, writeTranscript;
+let readConversations, readCharacterProfile, VVAULTConnector, VVAULT_ROOT, writeTranscript, resolveVVAULTUserId;
 let modulesLoaded = false;
 
 async function loadVVAULTModules() {
   if (modulesLoaded) return;
 
   try {
-    const readConv = require("../../vvaultConnector/readConversations.js");
+    const readConv = await import("../../vvaultConnector/readConversations.js");
     readConversations = readConv.readConversations;
 
     const readChar = require("../../vvaultConnector/readCharacterProfile.js");
@@ -57,7 +57,10 @@ async function loadVVAULTModules() {
 
     const connector = require("../../vvaultConnector/index.js");
     VVAULTConnector = connector.VVAULTConnector;
-    writeTranscript = connector.writeTranscript;
+    
+    const writeModule = await import("../../vvaultConnector/writeTranscript.js");
+    writeTranscript = writeModule.writeTranscript;
+    resolveVVAULTUserId = writeModule.resolveVVAULTUserId;
 
     const config = require("../../vvaultConnector/config.js");
     VVAULT_ROOT = config.VVAULT_ROOT;
@@ -315,7 +318,7 @@ router.get("/conversations", async (req, res) => {
     let lookupId = linkedVvaultUserId;
     if (!lookupId) {
       // Import resolveVVAULTUserId from writeTranscript
-      const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
+      // resolveVVAULTUserId loaded via loadVVAULTModules()
       try {
         lookupId = await resolveVVAULTUserId(userId, email, false); // false = don't auto-create
         if (lookupId) {
@@ -432,7 +435,7 @@ router.post("/create-canonical", async (req, res) => {
       throw new Error('VVAULT root not configured');
     }
 
-    const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
+    // resolveVVAULTUserId loaded via loadVVAULTModules()
     const vvaultUserId = await resolveVVAULTUserId(userId, req.user?.email);
     if (!vvaultUserId) {
       throw new Error(`Cannot resolve VVAULT user ID for: ${userId}`);
@@ -851,7 +854,7 @@ router.post("/identity/reindex", requireAuth, async (req, res) => {
     }
 
     // Get VVAULT user ID
-    const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
+    // resolveVVAULTUserId loaded via loadVVAULTModules()
     const vvaultUserId = await resolveVVAULTUserId(userId, req.user?.email);
     if (!vvaultUserId) {
       return res.status(400).json({ ok: false, error: "Failed to resolve VVAULT user ID" });
@@ -1124,7 +1127,7 @@ router.get("/identity/diagnostic", async (req, res) => {
 
     if (isInitialized && hasClient) {
       try {
-        const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
+        // resolveVVAULTUserId loaded via loadVVAULTModules()
         const vvaultUserId = await resolveVVAULTUserId(userId, req.user?.email);
 
         if (vvaultUserId) {
@@ -1365,7 +1368,7 @@ router.post("/identity/store", requireAuth, async (req, res) => {
     const identityService = getIdentityService();
 
     // Resolve VVAULT user ID (with auto-create if needed)
-    const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
+    // resolveVVAULTUserId loaded via loadVVAULTModules()
     const vvaultUserId = await resolveVVAULTUserId(userId, req.user?.email, true, req.user?.name);
     if (!vvaultUserId) {
       throw new Error(`Cannot resolve VVAULT user ID for: ${userId}`);
@@ -1445,7 +1448,7 @@ router.get("/identity/list", async (req, res) => {
     await loadVVAULTModules();
     console.log(`✅ [VVAULT API] VVAULT modules loaded`);
 
-    const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
+    // resolveVVAULTUserId loaded via loadVVAULTModules()
     const fs = require('fs').promises;
     const path = require('path');
 
@@ -1997,7 +2000,7 @@ router.post("/identity/upload", requireAuth, (req, res) => {
         try {
           const crypto = require('crypto');
           // For identity files, store in /instances/{construct-callsign}/identity/ instead of provider subdirectory
-          const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
+          // resolveVVAULTUserId loaded via loadVVAULTModules()
           const vvaultUserId = await resolveVVAULTUserId(userId, req.user?.email);
           if (!vvaultUserId) {
             throw new Error(`Cannot resolve VVAULT user ID for: ${userId}`);
@@ -2706,7 +2709,7 @@ router.post("/capsules/generate", requireAuth, async (req, res) => {
       throw new Error('VVAULT root not configured');
     }
 
-    const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
+    // resolveVVAULTUserId loaded via loadVVAULTModules()
     const vvaultUserId = await resolveVVAULTUserId(userId, req.user?.email, true, req.user?.name);
     if (!vvaultUserId) {
       throw new Error(`Cannot resolve VVAULT user ID for: ${userId}`);
@@ -3045,7 +3048,7 @@ router.get("/profile", requireAuth, async (req, res) => {
     // Try to get VVAULT profile for additional context
     let vvaultProfile = null;
     try {
-      const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
+      // resolveVVAULTUserId loaded via loadVVAULTModules()
       const vvaultUserId = await resolveVVAULTUserId(userId, req.user.email, false, req.user.name);
       if (vvaultUserId) {
         const fs = require('fs').promises;
@@ -3126,7 +3129,7 @@ router.post("/profile/personalization", requireAuth, async (req, res) => {
     }
 
     // Resolve VVAULT user ID
-    const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
+    // resolveVVAULTUserId loaded via loadVVAULTModules()
     const vvaultUserId = await resolveVVAULTUserId(userId, req.user.email, false, req.user.name);
     
     if (!vvaultUserId) {
@@ -3269,7 +3272,7 @@ router.get("/chat/:sessionId", requireAuth, async (req, res) => {
       return res.json({ ok: true, content: "", messages: [] });
     }
 
-    const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
+    // resolveVVAULTUserId loaded via loadVVAULTModules()
     const vvaultUserId = await resolveVVAULTUserId(getUserId(req.user), req.user?.email);
     if (!vvaultUserId) {
       return res.status(400).json({ ok: false, error: "Failed to resolve VVAULT user ID" });

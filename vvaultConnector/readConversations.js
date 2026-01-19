@@ -1,7 +1,10 @@
 /**
- * VVAULT readConversations - PostgreSQL-backed persistence in Replit environment
+ * VVAULT readConversations - Supabase-backed with PostgreSQL fallback
+ * 
+ * Priority: Supabase (source of truth) → PostgreSQL (cache/fallback)
  */
-const pg = require('pg');
+import pg from 'pg';
+import { readConversationsFromSupabase } from './supabaseStore.js';
 
 let pool = null;
 let tableChecked = false;
@@ -58,21 +61,18 @@ async function ensureTable() {
   }
 }
 
-async function readConversations(userId, constructId) {
+async function readConversationsFromPostgres(userId, constructId) {
   const db = getPool();
   if (!db) {
-    console.log('⚠️ [VVAULT DB] No database connection, returning empty');
-    return [];
+    console.log('⚠️ [VVAULT DB] No database connection');
+    return null;
   }
 
-  // Handle null/undefined userId
   const safeUserId = userId || 'unknown_user';
 
   try {
-    // Ensure tables exist before reading
     await ensureTable();
     
-    // Read conversations for this user (match by email, user_id, or unknown_user fallback)
     const result = await db.query(`
       SELECT 
         c.session_id,
@@ -108,15 +108,38 @@ async function readConversations(userId, constructId) {
       messages: row.messages || []
     }));
 
-    console.log(`📥 [VVAULT DB] Read ${conversations.length} conversations for user: ${userId}`);
+    console.log(`📥 [VVAULT Postgres] Read ${conversations.length} conversations for user: ${userId}`);
     return conversations;
   } catch (error) {
-    console.error('❌ [VVAULT DB] Read failed:', error.message);
-    return [];
+    console.error('❌ [VVAULT Postgres] Read failed:', error.message);
+    return null;
   }
 }
 
-module.exports = {
+async function readConversations(userId, constructId) {
+  console.log(`📚 [VVAULT] Reading conversations for user: ${userId}, construct: ${constructId || 'all'}`);
+  
+  try {
+    const supabaseResult = await readConversationsFromSupabase(userId, constructId);
+    if (supabaseResult !== null) {
+      console.log(`✅ [VVAULT] Supabase returned ${supabaseResult.length} conversations`);
+      return supabaseResult;
+    }
+  } catch (err) {
+    console.warn(`⚠️ [VVAULT] Supabase read failed, falling back to PostgreSQL: ${err.message}`);
+  }
+
+  const pgResult = await readConversationsFromPostgres(userId, constructId);
+  if (pgResult !== null) {
+    console.log(`✅ [VVAULT] PostgreSQL fallback returned ${pgResult.length} conversations`);
+    return pgResult;
+  }
+
+  console.log('⚠️ [VVAULT] No data sources available, returning empty');
+  return [];
+}
+
+export {
   readConversations,
   getPool,
   ensureTable

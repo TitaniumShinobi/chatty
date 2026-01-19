@@ -1,7 +1,10 @@
 /**
- * VVAULT writeTranscript - PostgreSQL-backed persistence in Replit environment
+ * VVAULT writeTranscript - Supabase-backed with PostgreSQL fallback
+ * 
+ * Priority: Supabase (source of truth) → PostgreSQL (cache/fallback)
  */
-const pg = require('pg');
+import pg from 'pg';
+import { writeConversationToSupabase } from './supabaseStore.js';
 
 let pool = null;
 
@@ -55,7 +58,7 @@ async function ensureTable() {
   }
 }
 
-async function writeTranscript(params) {
+async function writeTranscriptToPostgres(params) {
   const {
     userId,
     userEmail,
@@ -72,20 +75,17 @@ async function writeTranscript(params) {
 
   const db = getPool();
   if (!db) {
-    console.log('⚠️ [VVAULT DB] No database connection, using no-op mode');
-    return { success: true };
+    console.log('⚠️ [VVAULT Postgres] No database connection');
+    return null;
   }
 
-  // Ensure we have a valid user identifier (never store NULL)
   const safeUserId = userId || userEmail || 'unknown_user';
   const safeUserEmail = userEmail || null;
 
   try {
     await ensureTable();
 
-    // Check if this is a new conversation (CONVERSATION_CREATED marker)
     if (content?.startsWith('CONVERSATION_CREATED:')) {
-      // Insert or update conversation with full metadata
       await db.query(`
         INSERT INTO vvault_conversations (user_id, user_email, session_id, title, construct_id, construct_name, construct_callsign)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -99,9 +99,8 @@ async function writeTranscript(params) {
           updated_at = CURRENT_TIMESTAMP
       `, [safeUserId, safeUserEmail, sessionId, title, constructId, constructName, constructCallsign]);
       
-      console.log(`✅ [VVAULT DB] Created conversation: ${sessionId} for user: ${safeUserId}`);
+      console.log(`✅ [VVAULT Postgres] Created conversation: ${sessionId}`);
     } else {
-      // Ensure conversation exists with full metadata update
       await db.query(`
         INSERT INTO vvault_conversations (user_id, user_email, session_id, title, construct_id, construct_name, construct_callsign)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -115,27 +114,52 @@ async function writeTranscript(params) {
           updated_at = CURRENT_TIMESTAMP
       `, [safeUserId, safeUserEmail, sessionId, title || 'Untitled', constructId, constructName, constructCallsign]);
 
-      // Insert message
       await db.query(`
         INSERT INTO vvault_messages (session_id, role, content, timestamp, metadata)
         VALUES ($1, $2, $3, $4, $5)
       `, [sessionId, role, content, timestamp || new Date().toISOString(), JSON.stringify(metadata || {})]);
       
-      console.log(`✅ [VVAULT DB] Appended message to: ${sessionId}`);
+      console.log(`✅ [VVAULT Postgres] Appended message to: ${sessionId}`);
     }
 
-    return { success: true };
+    return { success: true, source: 'postgres' };
   } catch (error) {
-    console.error('❌ [VVAULT DB] Write failed:', error.message);
-    throw error;
+    console.error('❌ [VVAULT Postgres] Write failed:', error.message);
+    return null;
   }
+}
+
+async function writeTranscript(params) {
+  console.log(`📝 [VVAULT] Writing transcript for session: ${params?.sessionId}`);
+  
+  try {
+    const supabaseResult = await writeConversationToSupabase(params);
+    if (supabaseResult !== null) {
+      console.log(`✅ [VVAULT] Supabase write successful`);
+      writeTranscriptToPostgres(params).catch(err => 
+        console.warn(`⚠️ [VVAULT] PostgreSQL cache sync failed: ${err.message}`)
+      );
+      return supabaseResult;
+    }
+  } catch (err) {
+    console.warn(`⚠️ [VVAULT] Supabase write failed, falling back to PostgreSQL: ${err.message}`);
+  }
+
+  const pgResult = await writeTranscriptToPostgres(params);
+  if (pgResult !== null) {
+    console.log(`✅ [VVAULT] PostgreSQL fallback write successful`);
+    return pgResult;
+  }
+
+  console.error('❌ [VVAULT] All write targets failed');
+  return { success: false };
 }
 
 async function resolveVVAULTUserId(userId, email, autoCreate = false) {
   return userId || email || null;
 }
 
-module.exports = {
+export {
   writeTranscript,
   resolveVVAULTUserId,
   getPool,
