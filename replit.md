@@ -49,6 +49,15 @@ docs/
 ```
 
 ## Recent Changes
+- **2026-01-19**: VVAULT API Integration (API-first architecture)
+  - VVAULT API is now the canonical source for conversation transcripts
+  - Priority: VVAULT API → Supabase (fallback only when API unavailable)
+  - Key modules:
+    - `vvaultConnector/vvaultApiClient.js` - API client for VVAULT endpoints
+    - `vvaultConnector/supabaseStore.js` - Updated to use VVAULT API first
+  - Markdown parser handles both VVAULT format ("You said:" / "Synth said:") and Chatty format
+  - Construct deduplication implemented to prevent duplicate conversations
+  - Environment: `VVAULT_API_BASE_URL` points to VVAULT deployment
 - **2026-01-19**: Supabase integration for shared backend with VVAULT
   - Supabase is now the single source of truth for construct conversations
   - Conversations stored in `vault_files` table with file_type='conversation'

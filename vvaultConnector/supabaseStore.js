@@ -136,13 +136,21 @@ async function readConversationsFromVVAULTApi(userEmailOrId, constructId = null)
     const constructs = await vvaultApi.listConstructs();
     if (!constructs || constructs.length === 0) {
       console.log('⚠️ [SupabaseStore] VVAULT API returned no constructs');
-      return null;
+      return []; // Return empty array, not null - API is reachable but no data
     }
 
-    console.log(`📋 [SupabaseStore] VVAULT API found ${constructs.length} constructs`);
+    // Deduplicate constructs by construct_id
+    const seenIds = new Set();
+    const uniqueConstructs = constructs.filter(c => {
+      if (seenIds.has(c.construct_id)) return false;
+      seenIds.add(c.construct_id);
+      return true;
+    });
+
+    console.log(`📋 [SupabaseStore] VVAULT API found ${uniqueConstructs.length} unique constructs (${constructs.length} total)`);
     
     const conversations = [];
-    for (const construct of constructs) {
+    for (const construct of uniqueConstructs) {
       const transcriptData = await vvaultApi.getTranscript(construct.construct_id);
       if (transcriptData && transcriptData.success) {
         const messages = vvaultApi.parseMarkdownToMessages(transcriptData.content);
