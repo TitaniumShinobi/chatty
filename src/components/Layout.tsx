@@ -317,15 +317,26 @@ export default function Layout() {
     [threads, shareConversationId],
   );
   const synthAddressBookThreads = useMemo(() => {
-    const canonical =
-      threads.find((t) => t.id === DEFAULT_ZEN_CANONICAL_SESSION_ID) ||
-      threads.find(
-        (t) => t.constructId === DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID,
-      ) ||
-      threads.find(
-        (t) => t.runtimeId === DEFAULT_ZEN_RUNTIME_ID && t.isPrimary,
-      );
-    return canonical ? [canonical] : [];
+    const constructThreads = threads.filter((t) => 
+      t.constructId && (
+        t.constructId === 'zen-001' ||
+        t.constructId === 'katana-001' ||
+        t.constructId === 'lin-001' ||
+        t.constructId.match(/^[a-z]+-\d{3}$/)
+      )
+    );
+    
+    const zenThread = constructThreads.find(
+      (t) => t.id === DEFAULT_ZEN_CANONICAL_SESSION_ID ||
+             t.constructId === DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID
+    );
+    
+    if (zenThread) {
+      const otherThreads = constructThreads.filter(t => t.id !== zenThread.id);
+      return [zenThread, ...otherThreads];
+    }
+    
+    return constructThreads;
   }, [threads]);
 
   // Calculate hasBlockingOverlay early (before any early returns)

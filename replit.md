@@ -82,5 +82,6 @@ docs/
 
 ## User Preferences
 - Primary construct: Zen (not Synth)
-- Address Book should always show Zen when authenticated
+- Address Book shows ALL constructs from VVAULT API (Zen, Katana, Lin, etc.)
+- Zen always appears first in the Address Book with a pin icon
 - Modal windows (Search, Projects) overlay main interface
