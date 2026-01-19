@@ -83,5 +83,7 @@ docs/
 ## User Preferences
 - Primary construct: Zen (not Synth)
 - Address Book: Only Zen (canonical representative with blue pin icon)
-- GPTCreator: Lin, Katana, and other custom constructs
+- GPTCreator: Katana and other custom-made GPTs
+- GPTCreator Create Tab: Lin (conversational agent users speak to when creating GPTs)
+- Lin is also an undertone stabilizer that runs silently to stabilize other constructs
 - Modal windows (Search, Projects) overlay main interface

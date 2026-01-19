@@ -408,7 +408,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           >
             <img
               src={simforgeIcon}
-              alt="SimForge"
+              alt="simForge"
               className="w-6 h-6 object-contain"
               style={{
                 transform: collapsed ? "scale(1.15)" : "scale(1)",
@@ -416,7 +416,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 marginTop: collapsed ? "-9px" : "0px",
               }}
             />
-            {!collapsed && <span>SimForge</span>}
+            {!collapsed && <span>simForge</span>}
           </button>
 
           {/* Custom GPTs */}
@@ -546,7 +546,10 @@ const Sidebar: React.FC<SidebarProps> = ({
                 ) : null}
               </div>
               {/* Hide delete button for primary construct (Zen) */}
-              {!((conversation as any).isPrimary || (conversation as any).constructId === "zen-001") && (
+              {!(
+                (conversation as any).isPrimary ||
+                (conversation as any).constructId === "zen-001"
+              ) && (
                 <div
                   role="button"
                   tabIndex={0}
@@ -585,7 +588,11 @@ const Sidebar: React.FC<SidebarProps> = ({
               style={{ color: "var(--chatty-text)", opacity: 0.7 }}
             >
               <MessageSquare size={20} className="mx-auto mb-2 opacity-50" />
-              <p>{isVVAULTConnected ? "No conversations yet" : "No connection to VVAULT."}</p>
+              <p>
+                {isVVAULTConnected
+                  ? "No conversations yet"
+                  : "No connection to VVAULT."}
+              </p>
             </div>
           )}
         </div>
