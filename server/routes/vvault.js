@@ -313,14 +313,18 @@ router.get("/conversations", async (req, res) => {
       throw new Error(`VVAULT module loading failed: ${loadError.message}. Stack: ${loadError.stack}`);
     }
 
-    // CRITICAL FIX: Resolve email/Chatty ID to VVAULT user ID before reading
-    // This ensures we read from the correct user directory (canonical account)
+    // CRITICAL FIX: Use email for Supabase lookups (Supabase users table has email as identifier)
+    // Email is preferred because Supabase can resolve dwoodson92@gmail.com -> devon_woodson_1762969514958
     let lookupId = linkedVvaultUserId;
-    if (!lookupId) {
-      // Import resolveVVAULTUserId from writeTranscript
-      // resolveVVAULTUserId loaded via loadVVAULTModules()
+    
+    // For Supabase mode, prefer email since supabaseStore can resolve it to the correct user
+    if (email && email !== '(no req.user.email)') {
+      lookupId = email;
+      console.log(`✅ [VVAULT API] Using email for Supabase lookup: ${lookupId}`);
+    } else if (!lookupId) {
+      // Fallback to resolveVVAULTUserId for filesystem mode
       try {
-        lookupId = await resolveVVAULTUserId(userId, email, false); // false = don't auto-create
+        lookupId = await resolveVVAULTUserId(userId, email, false);
         if (lookupId) {
           console.log(`✅ [VVAULT API] Resolved VVAULT user ID: ${lookupId} for email: ${email}`);
         }
@@ -329,9 +333,9 @@ router.get("/conversations", async (req, res) => {
       }
     }
 
-    // Fallback to email if resolution failed (but this should rarely happen)
+    // Final fallback to userId
     if (!lookupId) {
-      lookupId = email !== '(no req.user.email)' ? email : userId;
+      lookupId = userId;
       console.warn(`⚠️ [VVAULT API] Using fallback lookupId: ${lookupId}`);
     }
 

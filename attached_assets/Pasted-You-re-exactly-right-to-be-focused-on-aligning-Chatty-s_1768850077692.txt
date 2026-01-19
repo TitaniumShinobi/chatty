@@ -1,0 +1,114 @@
+You're exactly right to be focused on aligning **Chatty**'s live chat page (as shown in the screenshot) with the data now fully present in **Supabase via VVAULT's `users/` hierarchy**. Here's a breakdown of what's happening — and how to fix the logic gap between Chatty and VVAULT:
+
+---
+
+### ✅ CURRENT STATE
+
+* ✅ `users/` folder was uploaded with both shard directories **and** named user directories (`devon_woodson_1762969514958`)
+* ✅ Supabase now contains:
+
+  ```
+  users/
+    ├── shard_0000/
+    └── devon_woodson_1762969514958/
+  ```
+* ✅ VVAULT correctly maps these to the proper user in its frontend
+* ✅ Supabase `files`, `transcripts`, or `vault` tables show data under correct keys
+* ✅ Replit/Chatty is using `SUPABASE_URL` and `SUPABASE_ANON_KEY` correctly
+
+---
+
+### ❌ ISSUE
+
+Chatty is **defaulting to `shard_0000` as the active user** (User ID: `7e34f6b8-e33a-48b5-8ddb-95b94d18e296`), **ignoring the real user record** (`devon_woodson_1762969514958`) even though it's present in Supabase.
+
+Result: Your chat page sees the Address Book and can load constructs (like Zen), but **conversation data is bound to the shard**, not the real user, which breaks user continuity and transcript recovery.
+
+---
+
+### 🧠 WHAT TO DO NEXT
+
+You have two valid paths. You just need to pick one and apply the logic **once at login/session boot**:
+
+---
+
+#### **Option 1: Migrate to the Real User**
+
+Ensure Supabase’s `users` table includes:
+
+```json
+{
+  "id": "devon_woodson_1762969514958",
+  "email": "dwoodson92@gmail.com",
+  "name": "Devon Woodson",
+  "shard": "shard_0000"
+}
+```
+
+✅ Then set this **as the active user** in Chatty via session boot logic.
+
+Update Chatty login session:
+
+```ts
+const activeUserId = "devon_woodson_1762969514958";
+```
+
+Update conversation query filter:
+
+```ts
+const { data } = await supabase
+  .from('transcripts')
+  .select('*')
+  .eq('user_id', activeUserId);
+```
+
+---
+
+#### **Option 2: Build Shard Resolver**
+
+Use a helper that maps the current `shard_xxxx` back to the intended real user.
+
+**Example function:**
+
+```ts
+function resolveShardToUser(shardId: string): string {
+  if (shardId === 'shard_0000') return 'devon_woodson_1762969514958';
+  return shardId;
+}
+```
+
+Then swap `user_id` dynamically in queries.
+
+---
+
+### 📌 Action Checklist
+
+To complete the fix:
+
+* [ ] ✅ Confirm that `devon_woodson_1762969514958` exists in Supabase `users`
+* [ ] 🔁 Swap Chatty’s default user from `shard_0000` to the real user (either hardcoded or via resolver)
+* [ ] 💬 Update Chatty’s conversation loader to query Supabase using this resolved user ID
+* [ ] ✅ Verify Zen’s conversations appear under this ID (not shard_0000)
+* [ ] 🔄 Rebuild any session cache or index in Chatty to reflect this
+
+---
+
+### 💡 Optional: Patch Chatty to Detect Supabase User Automatically
+
+In `chatty/sessionManager.ts` or similar:
+
+```ts
+const { data: user } = await supabase
+  .from('users')
+  .select('*')
+  .eq('email', currentEmail)
+  .single();
+
+if (user) {
+  session.userId = user.id;
+}
+```
+
+---
+
+Would you like me to give you a patch for `sessionManager.ts` or `chatLoader.ts` to resolve the user from Supabase and automatically fix this in the live app?

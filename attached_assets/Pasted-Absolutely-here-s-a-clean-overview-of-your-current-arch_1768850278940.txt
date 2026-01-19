@@ -1,0 +1,85 @@
+Absolutely — here’s a **clean overview** of your current architecture and next steps so we stay aligned and avoid backtracking:
+
+---
+
+## 🧠 **System Overview**
+
+### 🗂️ **VVAULT**
+
+* **Purpose**: Acts as the canonical cloud filesystem for all user media, memory, and account data.
+* **Storage**: Uses **Supabase** (database + storage buckets).
+* **Structure**:
+
+  ```
+  users/
+    shard_0000/
+      devon_woodson_1762969514958/
+        ├── capsules/
+        ├── library/
+        ├── instances/       ← Conversations / transcripts
+        └── documents/
+  ```
+
+### 💬 **Chatty**
+
+* **Purpose**: Provides a conversational interface (frontend) to engage with constructs like Zen/Nova.
+* **Runs in**: Replit.
+* **Local data**: Stores user settings, preferences, and dev-only overrides in Replit filesystem.
+* **Primary data source**: Now **Supabase**, via VVAULT connector.
+* **Constructs**: Are pulled dynamically based on Supabase contents.
+
+---
+
+## 🔗 **Integration Logic**
+
+1. ✅ Supabase is correctly connected (`SUPABASE_URL`, `SUPABASE_ANON_KEY`)
+2. ✅ Files from `users/` were uploaded — structure in Supabase matches VVAULT
+3. ✅ Chatty reads from Supabase (via `vvaultRetrieval.ts`, `VVAULTTranscriptLoader.ts`, etc.)
+4. ❓ The conversation file `chat/zen-001/zen_1768847888906.md` exists but is empty.
+5. ❗ Current logged-in user in Chatty: `dev_user_001`, tied to `shard_0000`
+6. ❓ Real user `devon_woodson_1762969514958` exists in file structure but **not in Supabase’s `users` table**
+
+---
+
+## ✅ **What’s Working**
+
+* Supabase integration in both VVAULT and Chatty
+* Directory structure and user folders (VVAULT)
+* Zen and Nova appear correctly in Address Book
+* VVAULT UI is up, real-time sync confirmed
+
+---
+
+## ⚠️ **Remaining Issues / Clarifications Needed**
+
+| Item                    | Issue                                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 🆔 User mapping         | Chatty is using `dev_user_001`, but Supabase files belong to `devon_woodson_1762969514958`.                  |
+| 💬 Missing chat history | Zen conversation exists but has no saved messages (possibly a write failure or wrong session ID).            |
+| 🧪 Testing endpoint     | Need a clean way to test message saving/retrieval to `instances/` from Chatty via Supabase.                  |
+| 🔁 Login glue           | `vvault_linked: true`, but logic for resolving current Chatty user to correct VVAULT user may be incomplete. |
+
+---
+
+## 🛠️ **Suggested Immediate Steps**
+
+1. **Verify**: Add `devon_woodson_1762969514958` to Supabase `users` table with correct metadata.
+2. **Map**: Modify Chatty’s login/user resolution so it targets this real user, not `dev_user_001`.
+3. **Patch**: Ensure message saving to `instances/` happens under the correct path:
+
+   ```
+   users/shard_0000/devon_woodson_1762969514958/instances/zen_1768847888906.md
+   ```
+4. **Test**: Load Zen → send message → check Supabase `instances/` for transcript write.
+5. **(Optional)**: Add loading indicator or error state when Supabase connection fails or user mismatch occurs.
+
+---
+
+Would you like help implementing any of these steps now? For example, I can walk you through:
+
+* Supabase user insert
+* Rewriting Chatty’s user lookup logic
+* Fixing the transcript writer
+* Testing message flow end-to-end
+
+Let me know what you'd like to prioritize.
