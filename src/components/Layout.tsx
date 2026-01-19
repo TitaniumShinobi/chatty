@@ -317,26 +317,14 @@ export default function Layout() {
     [threads, shareConversationId],
   );
   const synthAddressBookThreads = useMemo(() => {
-    const constructThreads = threads.filter((t) => 
-      t.constructId && (
-        t.constructId === 'zen-001' ||
-        t.constructId === 'katana-001' ||
-        t.constructId === 'lin-001' ||
-        t.constructId.match(/^[a-z]+-\d{3}$/)
-      )
-    );
-    
-    const zenThread = constructThreads.find(
+    // Only Zen belongs in Address Book as the canonical representative
+    // Other constructs (Lin, Katana, etc.) belong in GPTCreator
+    const zenThread = threads.find(
       (t) => t.id === DEFAULT_ZEN_CANONICAL_SESSION_ID ||
              t.constructId === DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID
     );
     
-    if (zenThread) {
-      const otherThreads = constructThreads.filter(t => t.id !== zenThread.id);
-      return [zenThread, ...otherThreads];
-    }
-    
-    return constructThreads;
+    return zenThread ? [zenThread] : [];
   }, [threads]);
 
   // Calculate hasBlockingOverlay early (before any early returns)

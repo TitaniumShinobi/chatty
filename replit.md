@@ -82,6 +82,6 @@ docs/
 
 ## User Preferences
 - Primary construct: Zen (not Synth)
-- Address Book shows ALL constructs from VVAULT API (Zen, Katana, Lin, etc.)
-- Zen always appears first in the Address Book with a pin icon
+- Address Book: Only Zen (canonical representative with blue pin icon)
+- GPTCreator: Lin, Katana, and other custom constructs
 - Modal windows (Search, Projects) overlay main interface
