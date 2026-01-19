@@ -59,6 +59,7 @@ docs/
     - `server/lib/supabaseClient.js` - ES module Supabase client
     - `vvaultConnector/supabaseStore.js` - Read/write conversations to Supabase
   - All vvaultConnector modules converted to ES modules (import/export)
+  - Supabase Realtime subscription enabled for live cross-app sync
 - **2026-01-19**: PostgreSQL-backed VVAULT fallback for Replit environment
   - vvaultConnector/readConversations.js and writeTranscript.js use PostgreSQL as fallback
   - Tables: vvault_conversations, vvault_messages (auto-created via ensureTable())
