@@ -22,9 +22,9 @@
 | `sidebar`              | 20    | sidebar when the user is actively browsing conversations |
 | `popover`              | 40    | dropdowns, menus, command palettes tied to a parent surface |
 | `floatingPanel`        | 45    | HUD elements such as action menus or inline inspectors |
-| `overlay` / `modal`    | 50–60 | app-wide modals (Search, Projects, Settings, Share, GPT Creator, Auth, etc.) |
+| `overlay` / `modal`    | 50–60 | **DEPRECATED** - Use `critical` for blocking modals. Legacy value for non-blocking overlays. |
 | `toast`                | 70    | transient notifications + debug/status panels |
-| `critical`             | 120   | app-halting states (Storage failure, destructive confirmations, export dialogs) |
+| `critical`             | 120   | **REQUIRED for all blocking modals** (Search, Projects, Settings, Share, GPT Creator, Auth, etc.) + app-halting states (Storage failure, destructive confirmations, export dialogs) |
 
 **Rules**
 1. Never hard-code `zIndex`/`z-xx` strings—import `Z_LAYERS` (or `getZIndex`) and reference a token.
@@ -46,9 +46,12 @@
 - [x] Sidebar conversation menus + user menu pin to `popover`.
 
 ### 3. Global Overlays
-- [x] Search Popup, Projects Modal, Settings Modal, Share Conversation Modal, GPT Creator, GPTs Modal, Auth Modal, Theme Customizer, Drift History, Runtime Dashboard dialogs, Mode Toggle panel, Data Import/Export/Delete flows all mount at `Z_LAYERS.modal`.
-- [x] Nested confirmations (e.g., export confirmation inside Settings) call `getZIndex('modal', offset)` so they sit above their parent modal.
+- [x] **All blocking modals MUST use React Portal** (`createPortal`) to render at `document.body` level
+- [x] **All blocking modals MUST use `Z_LAYERS.critical` (120)** for backdrop to ensure they're always on top
+- [x] Search Popup, Projects Modal, Settings Modal, Share Conversation Modal, GPT Creator, GPTs Modal, Auth Modal, Theme Customizer, Drift History, Runtime Dashboard dialogs, Mode Toggle panel, Data Import/Export/Delete flows all use `Z_LAYERS.critical` with React Portal.
+- [x] Nested confirmations (e.g., export confirmation inside Settings) call `getZIndex('critical', offset)` so they sit above their parent modal.
 - [x] Storage failure fallback + other emergency panels rely on `Z_LAYERS.critical`.
+- [x] **See [Modal Implementation Guide](./MODAL_IMPLEMENTATION_GUIDE.md) for complete requirements**
 
 ### 4. Popovers & Suggestions
 - [x] Action menu, command suggestions, General/Data Control dropdowns, Account tab tooltips, Library selection controls all reference `Z_LAYERS.popover`.
@@ -65,6 +68,15 @@
 ---
 
 ## 📌 When Adding New UI
+
+### For Modals (Blocking Overlays)
+**CRITICAL**: All blocking modals MUST follow the [Modal Implementation Guide](./MODAL_IMPLEMENTATION_GUIDE.md):
+1. Use `createPortal` to render at `document.body`
+2. Use `Z_LAYERS.critical` (120) for backdrop
+3. Add to `hasBlockingOverlay` in Layout.tsx
+4. Ensure proper pointer-events
+
+### For Non-Modal UI
 1. Decide whether the element is **local** (within a surface) or **global** (blocks the whole app).
 2. Import `{ Z_LAYERS }` (and optionally `getZIndex`) and assign the closest matching token.
 3. If the surface should become inactive when another layer opens, expose a boolean (similar to `hasBlockingOverlay`) and downshift its z-index/pointer events.

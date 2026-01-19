@@ -2,6 +2,9 @@
  * VVAULT writeTranscript - Supabase-backed with PostgreSQL fallback
  * 
  * Priority: Supabase (source of truth) → PostgreSQL (cache/fallback)
+ * 
+ * Both Chatty and VVAULT share Supabase (vault_files table), so writes here
+ * are visible to VVAULT when it reads transcripts.
  */
 import pg from 'pg';
 import { writeConversationToSupabase } from './supabaseStore.js';
@@ -136,9 +139,11 @@ async function writeTranscript(params) {
     const supabaseResult = await writeConversationToSupabase(params);
     if (supabaseResult !== null) {
       console.log(`✅ [VVAULT] Supabase write successful`);
+      
       writeTranscriptToPostgres(params).catch(err => 
         console.warn(`⚠️ [VVAULT] PostgreSQL cache sync failed: ${err.message}`)
       );
+      
       return supabaseResult;
     }
   } catch (err) {

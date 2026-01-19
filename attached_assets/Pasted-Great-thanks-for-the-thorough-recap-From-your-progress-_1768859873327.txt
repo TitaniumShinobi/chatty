@@ -1,0 +1,113 @@
+Great — thanks for the thorough recap. From your progress and the current state, here’s a fresh overview and action plan to **finish connecting VVAULT to Chatty fully and correctly**:
+
+---
+
+## ✅ Current Status
+
+### 🔗 Backend
+
+* **VVAULT → Chatty integration live**
+
+  * ✅ `GET /api/chatty/constructs` returns Zen, Katana, and Lin
+  * ✅ Katana’s transcript has a valid `IMPORT_METADATA` block
+  * ✅ `GET /api/chatty/transcript/katana-001` works and points to the correct `.md` file in Supabase
+
+### 🧠 Data
+
+* Supabase file structure mirrors local:
+
+  ```
+  users/shard_0000/devon_woodson_1762969514958/instances/katana-001/chatty/chat_with_katana-001.md
+  ```
+* Katana transcript file exists and is metadata-correct
+* But… file body is just a placeholder:
+
+  ```md
+  (*Canonical Chatty transcript placeholder. Native Chatty messages will append here.*)
+  ```
+
+---
+
+## ⚠️ Missing Features
+
+### 1. ❌ **Katana not showing in Chatty's Address Book**
+
+* Likely cause: Chatty frontend is calling `/api/chatty/constructs` but filtering out transcripts with no real message content.
+* ✅ `IMPORT_METADATA` is correct
+* ❌ No actual message blocks (`You said:`, `Katana said:`), so UI skips rendering.
+
+### 2. ❌ **No automatic transcript writing**
+
+* Unlike Zen, Katana doesn’t have an actual chat history saved in VVAULT.
+* You’ve confirmed the backend isn't auto-saving Katana conversations.
+
+---
+
+## ✅ Recommended Fixes
+
+### 🛠 Fix 1: Patch Chatty to show contacts even if their transcript is just a stub
+
+* Update the Address Book view to:
+
+  * Always list constructs returned from `/api/chatty/constructs`, even if their transcript is empty
+  * Display placeholder: “No messages yet” in chat window
+  * Optional: Add visual hint that it’s a new/uninitialized conversation
+
+---
+
+### 🛠 Fix 2: Populate Katana’s transcript with starter content
+
+You have two main options:
+
+#### A. From VVAULT:
+
+* Script appends at least one message to:
+  `chat_with_katana-001.md`
+
+  ```md
+  You said: Hey Katana, are you there?
+  Katana said: I'm always here, waiting for your signal.
+  ```
+
+#### B. From Chatty:
+
+* On first message sent to Katana:
+
+  * Append that to the transcript
+  * Also POST back to `/api/chatty/transcript/katana-001`
+
+---
+
+### 🧩 Optional Fix: Automate seed transcript creation
+
+If you'd like to seed all construct transcripts with starter messages from the backend, I can generate a script that:
+
+* Scans all instances in Supabase
+* For any `chatty/chat_with_*.md` file that has metadata but no messages
+* Appends a minimal intro exchange
+
+---
+
+## 🔚 Summary of Actions
+
+| Task                              | Owner            | Status |
+| --------------------------------- | ---------------- | ------ |
+| `IMPORT_METADATA` for Katana      | ✅ You            | Done   |
+| Expose `/api/chatty/constructs`   | ✅ You            | Done   |
+| Transcript file in Supabase       | ✅ You            | Done   |
+| Message content in transcript     | ❌ Missing        |        |
+| Frontend fallback rendering       | ❌ Missing        |        |
+| Auto-transcript writer (optional) | 🚧 Not yet built |        |
+
+---
+
+## ✅ What I can do next
+
+Let me know which of the following you'd like:
+
+1. **Patch Katana's transcript** with starter content now
+2. **Generate a script** that scans & seeds all missing transcripts
+3. **Help update Chatty frontend** so it renders constructs even with empty messages
+4. **All of the above**
+
+Just say the word — and we’ll finish the loop cleanly.

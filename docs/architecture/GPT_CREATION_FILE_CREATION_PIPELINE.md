@@ -442,15 +442,48 @@ Speak like a posthuman who doesn't need to pretend.
 2. Image is converted to PNG (if needed) using sharp library
 3. Saved to `identity/avatar.png` (not `assets/avatar.{ext}`)
 4. Path stored in database: `instances/{constructCallsign}/identity/avatar.png`
-5. Served via API: `/api/ais/{id}/avatar`
+5. OR stored as data URL (base64) in database for backward compatibility
 
-**Implementation**: `chatty/server/lib/aiManager.js` → `saveAvatarToFilesystem()`
+**Database Storage** (`chatty/server/lib/aiManager.js`):
+- **createAI()**: Converts data URLs to filesystem paths, rejects API URLs, stores filesystem paths
+- **updateAI()**: Converts new data URLs to filesystem paths, rejects API URLs, preserves existing filesystem paths
+- Database stores: filesystem paths (`instances/...`) OR data URLs (`data:image/...`)
+- Database never stores: API URLs (`/api/ais/.../avatar`) - these are rejected
+
+**Backend Serving** (`chatty/server/routes/ais.js`):
+- Route: `GET /api/ais/:id/avatar` (MUST be defined before `/:id` route to avoid conflicts)
+- Handles three cases:
+  1. **Data URLs**: Extracts base64, serves directly as image
+  2. **API URLs in DB** (legacy/malformed): Reconstructs filesystem path from `constructCallsign`
+  3. **Filesystem paths**: Reads from VVAULT and serves file
+- Sets CORS headers: `Access-Control-Allow-Origin`, `Access-Control-Allow-Credentials: true`
+- Cache headers: `Cache-Control: public, max-age=31536000` (1 year)
+
+**Frontend Display** (`chatty/src/pages/GPTsPage.tsx`, `chatty/src/components/GPTCreator.tsx`):
+- Detects API URLs (`/api/ais/.../avatar`) and fetches them as blobs
+- Creates blob URLs via `URL.createObjectURL()` for browser-compatible display
+- Falls back to direct data URL if not an API URL
+- Uses `avatarBlobs[ai.id] || ai.avatar` pattern for rendering
+- Implements cleanup: `URL.revokeObjectURL()` on unmount
+
+**Implementation Files**:
+- Storage: `chatty/server/lib/aiManager.js` → `saveAvatarToFilesystem()`, `createAI()`, `updateAI()`
+- Serving: `chatty/server/routes/ais.js` → `router.get('/:id/avatar', ...)`
+- Display: `chatty/src/pages/GPTsPage.tsx`, `chatty/src/components/GPTCreator.tsx`
 
 **Key Points**:
 - Avatars are always saved as `avatar.png` regardless of original format
 - Avatars are stored in `identity/` directory, not `assets/`
 - The UI automatically converts uploaded images to PNG format
-- Avatar paths are converted to API URLs when loading GPTs: `/api/ais/{id}/avatar`
+- Database stores filesystem paths or data URLs (never API URLs)
+- Frontend converts API URLs to blob URLs for cross-browser compatibility
+- Backend route handler is robust: handles data URLs, filesystem paths, and reconstructs malformed API URLs
+- Route ordering is critical: `/api/ais/:id/avatar` must come before `/api/ais/:id`
+
+**Troubleshooting**:
+- If avatar shows as blank: Check browser console for fetch errors, check backend logs for route matching
+- If 404 errors: Verify route ordering in `ais.js`, check if file exists at expected VVAULT path
+- If CORS errors: Verify `Access-Control-Allow-Credentials: true` header in route handler
 
 ---
 

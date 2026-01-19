@@ -1,0 +1,55 @@
+Here's a recap of the Chatty architecture for the frontend integration:
+
+Chatty ↔ VVAULT Connection Summary
+Address Book Architecture
+Address Book is an entity directory showing AI constructs (Zen, Katana, Lin) - NOT a chat history list
+Constructs appear by parsing chat_with_{construct}.md files that have <!-- IMPORT_METADATA {...} --> blocks
+Required Metadata Format
+Each transcript file needs this header for Chatty to recognize it:
+
+<!-- IMPORT_METADATA
+{
+  "source": "vvault",
+  "constructId": "katana-001",
+  "runtimeId": "katana", 
+  "conversationId": "katana-001_chat_with_katana-001",
+  "conversationTitle": "Chat with Katana",
+  "isPrimary": true,
+  "createdBy": "dwoodson92@gmail.com"
+}
+-->
+VVAULT Backend API Endpoints
+Chatty frontend should call these VVAULT endpoints:
+
+Endpoint	Purpose
+GET /api/chatty/constructs	Returns available constructs (Zen, Katana, Lin with role metadata)
+GET /api/chatty/transcript/{construct_id}	Returns transcript content for a construct
+POST /api/chatty/transcript/{construct_id}	Appends messages to transcript
+Construct List (from API)
+{
+  "constructs": [
+    {"construct_id": "katana-001", "filename": "chat_with_katana-001.md"},
+    {"construct_id": "lin-001", "role": "undertone", "context": "gpt_creator_create_tab", "is_system": true},
+    {"construct_id": "zen-001", "filename": "chat_with_zen-001.md"}
+  ]
+}
+Special Construct Roles
+Zen (zen-001): Primary construct (renamed from Synth Dec 2025)
+Katana (katana-001): Secondary construct - has full transcript with IMPORT_METADATA
+Lin (lin-001): Dual-mode - conversational in GPTCreator create tab + undertone stabilizer
+Title Normalization for Address Book
+Frontend should strip prefixes and callsigns for display:
+
+chat_with_katana-001.md → Display as "Katana"
+chat_with_zen-001.md → Display as "Zen"
+Key File: Katana's Transcript in Supabase
+Path: devon_woodson_1762969514958/instances/katana-001/chatty/chat_with_katana-001.md
+Has proper IMPORT_METADATA block
+Ready to be loaded by Chatty frontend
+The VVAULT backend (port 8000) is serving construct data. Chatty frontend needs to call /api/chatty/constructs to populate the Address Book, and Katana should appear as a contact.
+
+Worked for 21 seconds
+
+Scroll to latest
+
+Make, test, iterate…
