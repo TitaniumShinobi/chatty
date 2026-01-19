@@ -837,6 +837,22 @@ function cryptoRandom() {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => console.log(`API on :${PORT}`));
 
+// Initialize Supabase Realtime subscription for cross-app sync
+(async () => {
+  try {
+    const { subscribeToConversations } = await import('../vvaultConnector/supabaseStore.js');
+    const channel = await subscribeToConversations((payload) => {
+      console.log(`🔔 [Supabase Realtime] ${payload.eventType} on vault_files`);
+      // Future: broadcast to connected WebSocket clients for live UI updates
+    });
+    if (channel) {
+      console.log('✅ [Server] Supabase Realtime subscription active');
+    }
+  } catch (err) {
+    console.log('⚠️ [Server] Supabase Realtime not available:', err.message);
+  }
+})();
+
 // Kick off background services without blocking auth/API availability
 // FORCE RUN MODE: Skip ChromaDB initialization to prevent 45-second delays
 console.log('🚀 [Server] Running in FORCE MODE - skipping ChromaDB initialization for faster startup');
