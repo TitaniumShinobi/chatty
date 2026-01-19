@@ -38,6 +38,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   currentUser,
   onShowSettings,
   hasBlockingOverlay = false,
+  isVVAULTConnected = true,
 }) => {
   const [gptCreator] = useState(() => GPTCreator.getInstance());
   const navigate = useNavigate();
@@ -577,14 +578,14 @@ const Sidebar: React.FC<SidebarProps> = ({
             </button>
           ))}
 
-          {/* Empty state */}
+          {/* Empty state - VVAULT connection status */}
           {conversations.length === 0 && (
             <div
               className="text-center text-sm py-8"
               style={{ color: "var(--chatty-text)", opacity: 0.7 }}
             >
               <MessageSquare size={20} className="mx-auto mb-2 opacity-50" />
-              <p>No conversations yet</p>
+              <p>{isVVAULTConnected ? "No conversations yet" : "No connection to VVAULT."}</p>
             </div>
           )}
         </div>

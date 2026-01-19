@@ -504,12 +504,12 @@ export default function Chat() {
 
   if (!thread) {
     if (isZenSessionThread) {
-      if (isZenMarkdownLoading) {
+      if (isZenMarkdownLoading || threads.length === 0) {
         return (
           <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
             <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
-              <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--chatty-text)' }}>Loading Zen transcript…</h2>
-              <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Fetching the saved markdown from VVAULT.</p>
+              <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--chatty-text)' }}>Loading Zen…</h2>
+              <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Connecting to VVAULT storage.</p>
             </div>
           </div>
         )

@@ -91,6 +91,7 @@ export interface SidebarProps {
   onLogout?: () => void
   onShowSettings?: () => void
   hasBlockingOverlay?: boolean
+  isVVAULTConnected?: boolean
 }
 
 export interface MessageProps {

@@ -42,7 +42,7 @@ const identityUpload = multer({
 });
 
 // Lazy load VVAULT modules to speed up server startup
-let readConversations, readCharacterProfile, VVAULTConnector, VVAULT_ROOT;
+let readConversations, readCharacterProfile, VVAULTConnector, VVAULT_ROOT, writeTranscript;
 let modulesLoaded = false;
 
 async function loadVVAULTModules() {
@@ -57,11 +57,17 @@ async function loadVVAULTModules() {
 
     const connector = require("../../vvaultConnector/index.js");
     VVAULTConnector = connector.VVAULTConnector;
+    writeTranscript = connector.writeTranscript;
 
     const config = require("../../vvaultConnector/config.js");
     VVAULT_ROOT = config.VVAULT_ROOT;
 
     modulesLoaded = true;
+    console.log('✅ [VVAULT] Modules loaded:', { 
+      hasReadConversations: !!readConversations, 
+      hasWriteTranscript: !!writeTranscript,
+      hasVVAULTConnector: !!VVAULTConnector 
+    });
   } catch (error) {
     console.error('❌ [VVAULT] Failed to load modules:', error);
     throw error;
@@ -495,7 +501,9 @@ router.post("/conversations", async (req, res) => {
 
     console.log(`🔍 [VVAULT API] Writing transcript for conversation creation...`);
     try {
-      await connector.writeTranscript({
+      // Use standalone writeTranscript function (not a method on connector)
+      await loadVVAULTModules(); // Ensure modules are loaded
+      await writeTranscript({
         userId, // Will be resolved to VVAULT user ID in writeTranscript.js
         userEmail: req.user?.email, // Pass email for VVAULT user ID resolution
         sessionId: session,
@@ -586,12 +594,14 @@ router.post("/conversations/:sessionId/messages", async (req, res) => {
   }
 
   try {
-    const connector = await getConnector();
+    // Ensure modules are loaded for standalone writeTranscript function
+    await loadVVAULTModules();
     // CRITICAL: Always use constructCallsign format (e.g., "synth-001"), never just "synth"
     const actualConstructId = constructId || metadata?.constructId || 'synth-001';
     const actualConstructCallsign = metadata?.constructCallsign || constructId || metadata?.constructId;
 
-    await connector.writeTranscript({
+    // Use standalone writeTranscript function (not a method on connector)
+    await writeTranscript({
       userId, // Will be resolved to VVAULT user ID in writeTranscript.js
       userEmail: req.user?.email, // Pass email for VVAULT user ID resolution
       sessionId,
@@ -3220,8 +3230,43 @@ router.get("/chat/:sessionId", requireAuth, async (req, res) => {
 
   try {
     await loadVVAULTModules();
+    
+    const userEmail = req.user?.email || "unknown";
+    const chattyUserId = getUserId(req.user);
+    const lookupId = userEmail !== "unknown" ? userEmail : chattyUserId;
+    
+    console.log(`📚 [VVAULT API] Loading chat ${sessionId} for user: ${lookupId}`);
+    
+    // Try PostgreSQL database first (Replit mode)
+    if (process.env.DATABASE_URL && readConversations) {
+      const conversations = await readConversations(lookupId);
+      
+      // Extract constructId from normalized thread ID (e.g., "zen-001_chat_with_zen-001" -> "zen-001")
+      const constructIdFromSession = sessionId.split('_chat_with_')[0] || sessionId.split('_')[0];
+      
+      const conversation = conversations.find(c => 
+        c.sessionId === sessionId || 
+        c.constructId === constructIdFromSession ||
+        c.constructCallsign === constructIdFromSession ||
+        sessionId.includes(c.sessionId) ||
+        c.sessionId?.includes(sessionId.split('_')[0])
+      );
+      
+      if (conversation) {
+        const content = (conversation.messages || [])
+          .map(m => `**${m.role === 'user' ? 'You' : 'Zen'}:** ${m.content}`)
+          .join('\n\n');
+        console.log(`✅ [VVAULT API] Loaded chat from PostgreSQL with ${conversation.messages?.length || 0} messages`);
+        return res.json({ ok: true, content, messages: conversation.messages || [] });
+      }
+      console.log(`⚠️ [VVAULT API] Chat not found in PostgreSQL, session: ${sessionId}, constructId: ${constructIdFromSession}`);
+      return res.json({ ok: true, content: "", messages: [] });
+    }
+    
+    // Fallback to filesystem if VVAULT_ROOT is configured
     if (!VVAULT_ROOT) {
-      return res.status(500).json({ ok: false, error: "VVAULT_ROOT not configured" });
+      console.log(`ℹ️ [VVAULT API] No VVAULT_ROOT - returning empty for new chat`);
+      return res.json({ ok: true, content: "", messages: [] });
     }
 
     const { resolveVVAULTUserId } = require("../../vvaultConnector/writeTranscript.js");
@@ -3250,7 +3295,7 @@ router.get("/chat/:sessionId", requireAuth, async (req, res) => {
     return res.json({ ok: true, content });
   } catch (error) {
     if (error?.code === "ENOENT") {
-      return res.status(404).json({ ok: false, error: "Transcript not found" });
+      return res.json({ ok: true, content: "", messages: [] });
     }
     console.error(`❌ [VVAULT API] Failed to load transcript for ${sessionId}:`, error);
     return res.status(500).json({ ok: false, error: error?.message || "Failed to load transcript" });

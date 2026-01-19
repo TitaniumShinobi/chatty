@@ -1344,6 +1344,9 @@ export default function Layout() {
                 "❌ [Layout.tsx] Failed to create Zen in VVAULT:",
                 error,
               );
+              // Mark VVAULT as unavailable since write failed
+              console.log("🔴 [Layout.tsx] Setting isBackendUnavailable = true (VVAULT write failed)");
+              setIsBackendUnavailable(true);
               // Don't add to local state if VVAULT creation failed
             }
           }
@@ -3301,6 +3304,7 @@ export default function Layout() {
               onLogout={handleLogout}
               onShowSettings={() => setIsSettingsOpen(true)}
               hasBlockingOverlay={hasBlockingOverlay}
+              isVVAULTConnected={!isBackendUnavailable}
             />
           }
 

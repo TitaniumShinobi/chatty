@@ -49,6 +49,13 @@ docs/
 ```
 
 ## Recent Changes
+- **2026-01-19**: PostgreSQL-backed VVAULT integration for Replit environment
+  - vvaultConnector/readConversations.js and writeTranscript.js use PostgreSQL instead of filesystem
+  - Tables: vvault_conversations, vvault_messages (auto-created via ensureTable())
+  - Single source of truth for Zen construct persistence
+  - ID normalization: frontend `zen-001_chat_with_zen-001` maps to DB `zen_<timestamp>` via constructId matching
+  - Upsert with COALESCE preserves existing metadata while updating new fields
+  - Safe user ID handling: never stores NULL user_id (falls back to email or 'unknown_user')
 - **2026-01-19**: Implemented Canonical Zen Pattern in Layout.tsx
   - Zen appears immediately on login (system-guaranteed)
   - Added deletion protection for primary construct
