@@ -188,7 +188,8 @@ async function writeConversationToSupabase(params) {
       return null;
     }
 
-    const filename = `chat/${constructId || 'unknown'}/${sessionId}.md`;
+    // Match VVAULT filesystem path: instances/{constructId}/chatty/chat_with_{constructId}.md
+    const filename = `instances/${constructId || 'unknown'}/chatty/chat_with_${constructId || 'unknown'}.md`;
 
     const { data: existing } = await supabase
       .from('vault_files')
