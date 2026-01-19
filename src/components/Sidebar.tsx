@@ -83,39 +83,10 @@ const Sidebar: React.FC<SidebarProps> = ({
     e.currentTarget.style.color = "var(--chatty-text)";
   };
 
-  // #region agent log
   const sidebarZIndex = hasBlockingOverlay
     ? Z_LAYERS.sidebarMuted
     : Z_LAYERS.sidebar;
   const sidebarPointerEvents = hasBlockingOverlay ? "none" : "auto";
-  useEffect(() => {
-    fetch("http://127.0.0.1:7243/ingest/9aa5e079-2a3d-44e1-a152-645d01668332", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "Sidebar.tsx:87",
-        message: "Sidebar render",
-        data: {
-          hasBlockingOverlay,
-          sidebarZIndex,
-          sidebarPointerEvents,
-          computedZIndex:
-            typeof document !== "undefined"
-              ? window.getComputedStyle(
-                  (document.querySelector(
-                    '[class*="flex flex-col h-full"]',
-                  ) as HTMLElement) || document.body,
-                )?.zIndex
-              : "N/A",
-        },
-        timestamp: Date.now(),
-        sessionId: "debug-session",
-        runId: "run1",
-        hypothesisId: "B",
-      }),
-    }).catch(() => {});
-  }, [hasBlockingOverlay, sidebarZIndex, sidebarPointerEvents]);
-  // #endregion
 
   return (
     <div
@@ -563,9 +534,9 @@ const Sidebar: React.FC<SidebarProps> = ({
             >
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 <span className="truncate">{conversation.title}</span>
-                {/* Blue pin icon for Synth (primary construct) */}
+                {/* Blue pin icon for Zen (primary construct) */}
                 {(conversation as any).isPrimary ||
-                (conversation as any).constructId === "synth-001" ? (
+                (conversation as any).constructId === "zen-001" ? (
                   <Pin
                     size={12}
                     className="text-blue-500 flex-shrink-0"
@@ -573,33 +544,36 @@ const Sidebar: React.FC<SidebarProps> = ({
                   />
                 ) : null}
               </div>
-              <div
-                role="button"
-                tabIndex={0}
-                className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all ml-2"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeleteConversation(conversation.id);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
+              {/* Hide delete button for primary construct (Zen) */}
+              {!((conversation as any).isPrimary || (conversation as any).constructId === "zen-001") && (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all ml-2"
+                  onClick={(e) => {
                     e.stopPropagation();
                     onDeleteConversation(conversation.id);
-                  }
-                }}
-                style={{ color: "var(--chatty-text)" }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor =
-                    "var(--chatty-highlight)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "transparent";
-                }}
-                aria-label={`Delete conversation ${conversation.title}`}
-              >
-                <Trash2 size={12} />
-              </div>
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onDeleteConversation(conversation.id);
+                    }
+                  }}
+                  style={{ color: "var(--chatty-text)" }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor =
+                      "var(--chatty-highlight)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "transparent";
+                  }}
+                  aria-label={`Delete conversation ${conversation.title}`}
+                >
+                  <Trash2 size={12} />
+                </div>
+              )}
             </button>
           ))}
 
