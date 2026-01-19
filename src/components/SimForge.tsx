@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { createPortal } from 'react-dom'
-import { 
-  ArrowLeft, 
-  Plus, 
-  X, 
-  Upload, 
-  Search, 
-  Palette, 
-  Image, 
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
+import {
+  ArrowLeft,
+  Plus,
+  X,
+  Upload,
+  Search,
+  Palette,
+  Image,
   Code,
   Save,
   // Trash2,
@@ -17,93 +17,97 @@ import {
   Play,
   Bot,
   Paperclip,
-  Crop
-} from 'lucide-react'
-import { GPTService, GPTConfig, GPTFile, GPTAction } from '../lib/gptService'
-import { stripSpeakerPrefix } from '../lib/utils'
-import Cropper from 'react-easy-crop'
-import { Z_LAYERS } from '../lib/zLayers'
+  Crop,
+} from "lucide-react";
+import { GPTService, GPTConfig, GPTFile, GPTAction } from "../lib/gptService";
+import { stripSpeakerPrefix } from "../lib/utils";
+import Cropper from "react-easy-crop";
+import { Z_LAYERS } from "../lib/zLayers";
 
 const buildCapabilities = (
-  caps: Partial<GPTConfig['capabilities']> | undefined,
-  mode: 'lin' | 'synth'
-): GPTConfig['capabilities'] => ({
+  caps: Partial<GPTConfig["capabilities"]> | undefined,
+  mode: "lin" | "synth",
+): GPTConfig["capabilities"] => ({
   webSearch: caps?.webSearch ?? false,
   canvas: caps?.canvas ?? false,
   imageGeneration: caps?.imageGeneration ?? false,
   codeInterpreter: caps?.codeInterpreter ?? true,
-  synthesisMode: mode
-})
+  synthesisMode: mode,
+});
 
 interface SimForgeProps {
-  isVisible: boolean
-  onClose: () => void
-  onConstructRegistered?: (construct: any) => void
+  isVisible: boolean;
+  onClose: () => void;
+  onConstructRegistered?: (construct: any) => void;
 }
 
-const SimForge: React.FC<SimForgeProps> = ({ 
-  isVisible, 
-  onClose, 
-  onConstructRegistered
+const SimForge: React.FC<SimForgeProps> = ({
+  isVisible,
+  onClose,
+  onConstructRegistered,
 }) => {
-  const [activeTab, setActiveTab] = useState<'create' | 'configure'>('create')
-  const [gptService] = useState(() => GPTService.getInstance())
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  
+  const [activeTab, setActiveTab] = useState<"create" | "configure">("create");
+  const [gptService] = useState(() => GPTService.getInstance());
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   // GPT Configuration
   const [config, setConfig] = useState<Partial<GPTConfig>>({
-    name: '',
-    description: '',
-    instructions: '',
-    conversationStarters: [''],
+    name: "",
+    description: "",
+    instructions: "",
+    conversationStarters: [""],
     capabilities: {
       webSearch: false,
       canvas: false,
       imageGeneration: false,
       codeInterpreter: true,
-      synthesisMode: 'lin'
+      synthesisMode: "lin",
     },
-    modelId: 'phi3:latest',
-    conversationModel: 'phi3:latest',
-    creativeModel: 'mistral:latest',
-    codingModel: 'deepseek-coder:latest'
-  })
+    modelId: "phi3:latest",
+    conversationModel: "phi3:latest",
+    creativeModel: "mistral:latest",
+    codingModel: "deepseek-coder:latest",
+  });
 
   // File management
-  const [files, setFiles] = useState<GPTFile[]>([])
-  const [isUploading, setIsUploading] = useState(false)
-  const [filePage, setFilePage] = useState(1)
-  const [filesPerPage] = useState(20) // Show 20 files per page for 300+ files
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  
+  const [files, setFiles] = useState<GPTFile[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [filePage, setFilePage] = useState(1);
+  const [filesPerPage] = useState(20); // Show 20 files per page for 300+ files
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Avatar upload
-  const avatarInputRef = useRef<HTMLInputElement>(null)
-  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
-  
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+
   // Avatar cropping
-  const [showCropModal, setShowCropModal] = useState(false)
-  const [imageToCrop, setImageToCrop] = useState<string | null>(null)
-  const [crop, setCrop] = useState({ x: 0, y: 0 })
-  const [zoom, setZoom] = useState(1)
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null)
+  const [showCropModal, setShowCropModal] = useState(false);
+  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
 
   // Action management
-  const [actions, setActions] = useState<GPTAction[]>([])
+  const [actions, setActions] = useState<GPTAction[]>([]);
 
   // Preview
-  const [previewMessages, setPreviewMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([])
-  const [previewInput, setPreviewInput] = useState('')
-  const [isPreviewGenerating, setIsPreviewGenerating] = useState(false)
-  const [useLinMode, setUseLinMode] = useState(true) // Default to Lin mode (respect custom tone)
-  const [createMessages, setCreateMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([])
-  const [createInput, setCreateInput] = useState('')
-  const [isCreateGenerating, setIsCreateGenerating] = useState(false)
-  const createInputRef = useRef<HTMLTextAreaElement>(null)
-  const previewInputRef = useRef<HTMLTextAreaElement>(null)
+  const [previewMessages, setPreviewMessages] = useState<
+    Array<{ role: "user" | "assistant"; content: string }>
+  >([]);
+  const [previewInput, setPreviewInput] = useState("");
+  const [isPreviewGenerating, setIsPreviewGenerating] = useState(false);
+  const [useLinMode, setUseLinMode] = useState(true); // Default to Lin mode (respect custom tone)
+  const [createMessages, setCreateMessages] = useState<
+    Array<{ role: "user" | "assistant"; content: string }>
+  >([]);
+  const [createInput, setCreateInput] = useState("");
+  const [isCreateGenerating, setIsCreateGenerating] = useState(false);
+  const createInputRef = useRef<HTMLTextAreaElement>(null);
+  const previewInputRef = useRef<HTMLTextAreaElement>(null);
 
   // Actions Editor
-  const [isActionsEditorOpen, setIsActionsEditorOpen] = useState(false)
+  const [isActionsEditorOpen, setIsActionsEditorOpen] = useState(false);
   const [actionsSchema, setActionsSchema] = useState(`{
   "openapi": "3.1.0",
   "info": {
@@ -158,24 +162,33 @@ const SimForge: React.FC<SimForgeProps> = ({
       }
     }
   }
-}`)
+}`);
 
   useEffect(() => {
     if (isVisible) {
-      resetForm()
+      resetForm();
     }
-  }, [isVisible])
+  }, [isVisible]);
 
   // Clear preview when config changes significantly
   useEffect(() => {
     if (previewMessages.length > 0) {
       // Only clear if it's not the first message (keep initial state)
-      const hasSignificantChanges = config.name || config.description || config.instructions
+      const hasSignificantChanges =
+        config.name || config.description || config.instructions;
       if (hasSignificantChanges) {
-        setPreviewMessages([])
+        setPreviewMessages([]);
       }
     }
-  }, [config.name, config.description, config.instructions, config.modelId, config.conversationModel, config.creativeModel, config.codingModel])
+  }, [
+    config.name,
+    config.description,
+    config.instructions,
+    config.modelId,
+    config.conversationModel,
+    config.creativeModel,
+    config.codingModel,
+  ]);
 
   // Note: Removed useEffect that was clearing createMessages when config became complete
   // This was causing the chat to disappear after the first exchange
@@ -183,114 +196,119 @@ const SimForge: React.FC<SimForgeProps> = ({
 
   // Auto-resize textareas when content changes
   useEffect(() => {
-    adjustCreateTextareaHeight()
-  }, [createInput])
+    adjustCreateTextareaHeight();
+  }, [createInput]);
 
   useEffect(() => {
-    adjustPreviewTextareaHeight()
-  }, [previewInput])
+    adjustPreviewTextareaHeight();
+  }, [previewInput]);
 
   useEffect(() => {
     setConfig((prev) => {
-      const currentMode = prev.capabilities?.synthesisMode === 'synth' ? 'synth' : 'lin'
-      const desiredMode = useLinMode ? 'lin' : 'synth'
+      const currentMode =
+        prev.capabilities?.synthesisMode === "synth" ? "synth" : "lin";
+      const desiredMode = useLinMode ? "lin" : "synth";
       if (currentMode === desiredMode) {
-        return prev
+        return prev;
       }
-      const updatedCaps = buildCapabilities(prev.capabilities, desiredMode)
+      const updatedCaps = buildCapabilities(prev.capabilities, desiredMode);
       return {
         ...prev,
-        capabilities: updatedCaps
-      }
-    })
-  }, [useLinMode])
+        capabilities: updatedCaps,
+      };
+    });
+  }, [useLinMode]);
 
   // TODO: Accept external capsule data via SimForge injection
   // This will allow future use of structured capsules as source material to pre-fill GPT configuration
 
   const resetForm = () => {
     setConfig({
-      name: '',
-      description: '',
-      instructions: '',
-      conversationStarters: [''],
+      name: "",
+      description: "",
+      instructions: "",
+      conversationStarters: [""],
       capabilities: {
         webSearch: false,
         canvas: false,
         imageGeneration: false,
         codeInterpreter: true,
-        synthesisMode: 'lin'
+        synthesisMode: "lin",
       },
-      modelId: 'phi3:latest',
-      conversationModel: 'phi3:latest',
-      creativeModel: 'mistral:latest',
-      codingModel: 'deepseek-coder:latest',
-      hasPersistentMemory: true // VVAULT integration - defaults to true
-    })
-    setUseLinMode(true)
-    setFiles([])
-    setActions([])
-    setPreviewMessages([])
-    setPreviewInput('')
-    setCreateMessages([])
-    setCreateInput('')
-    setError(null)
-    setActiveTab('create')
-  }
+      modelId: "phi3:latest",
+      conversationModel: "phi3:latest",
+      creativeModel: "mistral:latest",
+      codingModel: "deepseek-coder:latest",
+      hasPersistentMemory: true, // VVAULT integration - defaults to true
+    });
+    setUseLinMode(true);
+    setFiles([]);
+    setActions([]);
+    setPreviewMessages([]);
+    setPreviewInput("");
+    setCreateMessages([]);
+    setCreateInput("");
+    setError(null);
+    setActiveTab("create");
+  };
 
-  const handleSynthesisModeSelect = (mode: 'lin' | 'synth') => {
-    setUseLinMode(mode === 'lin')
-  }
+  const handleSynthesisModeSelect = (mode: "lin" | "synth") => {
+    setUseLinMode(mode === "lin");
+  };
 
   const handleSave = async () => {
     try {
-      setIsLoading(true)
-      setError(null)
+      setIsLoading(true);
+      setError(null);
 
-      const validationErrors = gptService.validateGPTConfig(config)
+      const validationErrors = gptService.validateGPTConfig(config);
       if (validationErrors.length > 0) {
-        setError(validationErrors.join(', '))
-        return
+        setError(validationErrors.join(", "));
+        return;
       }
 
-      const gpt = await gptService.createGPT(config as any)
-      
+      const gpt = await gptService.createGPT(config as any);
+
       // Upload files after GPT creation to avoid FOREIGN KEY constraint
       for (const file of files) {
-        if (file.gptId === 'temp' && file._file) {
+        if (file.gptId === "temp" && file._file) {
           // Upload the file with the new GPT ID
-          await gptService.uploadFile(gpt.id, file._file)
+          await gptService.uploadFile(gpt.id, file._file);
         }
       }
 
       // Create actions if any
       for (const action of actions) {
         if (action.name && action.url) {
-          await gptService.createAction(gpt.id, action as any)
+          await gptService.createAction(gpt.id, action as any);
         }
       }
 
-      onConstructRegistered?.(gpt)
-      onClose()
-      
+      onConstructRegistered?.(gpt);
+      onClose();
     } catch (error: any) {
-      setError(error.message || 'Failed to create GPT')
+      setError(error.message || "Failed to create GPT");
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    console.log('📎 File upload triggered!', event.target.files)
-    const selectedFiles = event.target.files
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    console.log("📎 File upload triggered!", event.target.files);
+    const selectedFiles = event.target.files;
     if (!selectedFiles || selectedFiles.length === 0) {
-      console.log('No files selected')
-      return
+      console.log("No files selected");
+      return;
     }
 
-    console.log(`📎 Processing ${selectedFiles.length} files:`, Array.from(selectedFiles).map(f => f.name))
-    setIsUploading(true)
-    setError(null)
+    console.log(
+      `📎 Processing ${selectedFiles.length} files:`,
+      Array.from(selectedFiles).map((f) => f.name),
+    );
+    setIsUploading(true);
+    setError(null);
 
     try {
       // Store files in local state instead of uploading to database
@@ -298,160 +316,181 @@ const SimForge: React.FC<SimForgeProps> = ({
       for (const file of Array.from(selectedFiles)) {
         const tempFile: GPTFile = {
           id: `temp-${crypto.randomUUID()}`,
-          gptId: 'temp',
+          gptId: "temp",
           filename: file.name,
           originalName: file.name,
           mimeType: file.type,
           size: file.size,
-          content: '', // Will be populated during actual upload
+          content: "", // Will be populated during actual upload
           uploadedAt: new Date().toISOString(),
           isActive: true,
           // Store the actual File object for later processing
-          _file: file
-        }
-        setFiles(prev => [...prev, tempFile])
+          _file: file,
+        };
+        setFiles((prev) => [...prev, tempFile]);
       }
     } catch (error: any) {
-      setError(error.message || 'Failed to prepare files')
+      setError(error.message || "Failed to prepare files");
     } finally {
-      setIsUploading(false)
+      setIsUploading(false);
       if (fileInputRef.current) {
-        fileInputRef.current.value = ''
+        fileInputRef.current.value = "";
       }
     }
-  }
+  };
 
   const handleRemoveFile = (fileId: string) => {
-    setFiles(prev => prev.filter(f => f.id !== fileId))
-  }
+    setFiles((prev) => prev.filter((f) => f.id !== fileId));
+  };
 
   // Pagination helpers for 300+ files
-  const totalFilePages = Math.ceil(files.length / filesPerPage)
-  const currentFiles = files.slice((filePage - 1) * filesPerPage, filePage * filesPerPage)
-  
+  const totalFilePages = Math.ceil(files.length / filesPerPage);
+  const currentFiles = files.slice(
+    (filePage - 1) * filesPerPage,
+    filePage * filesPerPage,
+  );
+
   const goToFilePage = (page: number) => {
-    setFilePage(Math.max(1, Math.min(page, totalFilePages)))
-  }
+    setFilePage(Math.max(1, Math.min(page, totalFilePages)));
+  };
 
   const addConversationStarter = () => {
-    setConfig(prev => ({
+    setConfig((prev) => ({
       ...prev,
-      conversationStarters: [...(prev.conversationStarters || []), '']
-    }))
-  }
+      conversationStarters: [...(prev.conversationStarters || []), ""],
+    }));
+  };
 
   const removeConversationStarter = (index: number) => {
-    setConfig(prev => ({
+    setConfig((prev) => ({
       ...prev,
-      conversationStarters: prev.conversationStarters?.filter((_, i) => i !== index) || []
-    }))
-  }
+      conversationStarters:
+        prev.conversationStarters?.filter((_, i) => i !== index) || [],
+    }));
+  };
 
   const updateConversationStarter = (index: number, value: string) => {
-    setConfig(prev => ({
+    setConfig((prev) => ({
       ...prev,
-      conversationStarters: prev.conversationStarters?.map((starter, i) => 
-        i === index ? value : starter
-      ) || []
-    }))
-  }
-
+      conversationStarters:
+        prev.conversationStarters?.map((starter, i) =>
+          i === index ? value : starter,
+        ) || [],
+    }));
+  };
 
   const removeAction = (actionId: string) => {
-    setActions(prev => prev.filter(a => a.id !== actionId))
-  }
+    setActions((prev) => prev.filter((a) => a.id !== actionId));
+  };
 
-  const [isGeneratingAvatar, setIsGeneratingAvatar] = useState(false)
+  const [isGeneratingAvatar, setIsGeneratingAvatar] = useState(false);
 
   const generateAvatar = async () => {
     if (!config.name) {
-      setError('Please enter a name first')
-      return
+      setError("Please enter a name first");
+      return;
     }
-    
-    try {
-      setIsGeneratingAvatar(true)
-      setError(null)
-      const avatar = await gptService.generateAvatar(config.name, config.description || '')
-      setConfig(prev => ({ ...prev, avatar }))
-    } catch (error: any) {
-      setError(error.message || 'Failed to generate avatar')
-    } finally {
-      setIsGeneratingAvatar(false)
-    }
-  }
 
-  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = event.target.files?.[0]
-    if (!selectedFile) return
+    try {
+      setIsGeneratingAvatar(true);
+      setError(null);
+      const avatar = await gptService.generateAvatar(
+        config.name,
+        config.description || "",
+      );
+      setConfig((prev) => ({ ...prev, avatar }));
+    } catch (error: any) {
+      setError(error.message || "Failed to generate avatar");
+    } finally {
+      setIsGeneratingAvatar(false);
+    }
+  };
+
+  const handleAvatarUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const selectedFile = event.target.files?.[0];
+    if (!selectedFile) return;
 
     // Validate file type
-    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp', 'image/svg+xml']
+    const allowedTypes = [
+      "image/png",
+      "image/jpeg",
+      "image/jpg",
+      "image/gif",
+      "image/webp",
+      "image/svg+xml",
+    ];
     if (!allowedTypes.includes(selectedFile.type)) {
-      setError('Please select a valid image file (PNG, JPEG, GIF, WebP, or SVG)')
-      return
+      setError(
+        "Please select a valid image file (PNG, JPEG, GIF, WebP, or SVG)",
+      );
+      return;
     }
 
     // Validate file size (max 5MB for avatars)
     if (selectedFile.size > 5 * 1024 * 1024) {
-      setError('Avatar image must be smaller than 5MB')
-      return
+      setError("Avatar image must be smaller than 5MB");
+      return;
     }
 
     try {
-      setError(null)
+      setError(null);
 
       // Convert file to base64 data URL and show crop modal
-      const reader = new FileReader()
+      const reader = new FileReader();
       reader.onload = (e) => {
-        const imageSrc = e.target?.result as string
-        setImageToCrop(imageSrc)
-        setShowCropModal(true)
-        setCrop({ x: 0, y: 0 })
-        setZoom(1)
-      }
+        const imageSrc = e.target?.result as string;
+        setImageToCrop(imageSrc);
+        setShowCropModal(true);
+        setCrop({ x: 0, y: 0 });
+        setZoom(1);
+      };
       reader.onerror = () => {
-        setError('Failed to read image file')
-      }
-      reader.readAsDataURL(selectedFile)
+        setError("Failed to read image file");
+      };
+      reader.readAsDataURL(selectedFile);
     } catch (error: any) {
-      setError(error.message || 'Failed to upload avatar')
+      setError(error.message || "Failed to upload avatar");
     } finally {
       // Reset file input
       if (avatarInputRef.current) {
-        avatarInputRef.current.value = ''
+        avatarInputRef.current.value = "";
       }
     }
-  }
+  };
 
   const triggerAvatarUpload = () => {
-    avatarInputRef.current?.click()
-  }
+    avatarInputRef.current?.click();
+  };
 
   // Crop functionality
   const onCropChange = useCallback((crop: any) => {
-    setCrop(crop)
-  }, [])
+    setCrop(crop);
+  }, []);
 
-  const onCropComplete = useCallback((_croppedArea: any, croppedAreaPixels: any) => {
-    setCroppedAreaPixels(croppedAreaPixels)
-  }, [])
+  const onCropComplete = useCallback(
+    (_croppedArea: any, croppedAreaPixels: any) => {
+      setCroppedAreaPixels(croppedAreaPixels);
+    },
+    [],
+  );
 
   const getCroppedImg = (imageSrc: string, pixelCrop: any): Promise<string> => {
     return new Promise((resolve, reject) => {
-      const image = new window.Image()
-      image.crossOrigin = 'anonymous'
+      const image = new window.Image();
+      image.crossOrigin = "anonymous";
       image.onload = () => {
-        const canvas = document.createElement('canvas')
-        const ctx = canvas.getContext('2d')
-        
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+
         if (!ctx) {
-          reject(new Error('No 2d context'))
-          return
+          reject(new Error("No 2d context"));
+          return;
         }
 
-        canvas.width = pixelCrop.width
-        canvas.height = pixelCrop.height
+        canvas.width = pixelCrop.width;
+        canvas.height = pixelCrop.height;
 
         ctx.drawImage(
           image,
@@ -462,215 +501,244 @@ const SimForge: React.FC<SimForgeProps> = ({
           0,
           0,
           pixelCrop.width,
-          pixelCrop.height
-        )
+          pixelCrop.height,
+        );
 
-        canvas.toBlob((blob) => {
-          if (!blob) {
-            reject(new Error('Canvas is empty'))
-            return
-          }
-          const reader = new FileReader()
-          reader.onload = () => resolve(reader.result as string)
-          reader.onerror = () => reject(new Error('Failed to read blob'))
-          reader.readAsDataURL(blob)
-        }, 'image/jpeg', 0.9)
-      }
-      image.onerror = () => reject(new Error('Failed to load image'))
-      image.src = imageSrc
-    })
-  }
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error("Canvas is empty"));
+              return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error("Failed to read blob"));
+            reader.readAsDataURL(blob);
+          },
+          "image/jpeg",
+          0.9,
+        );
+      };
+      image.onerror = () => reject(new Error("Failed to load image"));
+      image.src = imageSrc;
+    });
+  };
 
   const handleCropComplete = async () => {
-    if (!imageToCrop || !croppedAreaPixels) return
+    if (!imageToCrop || !croppedAreaPixels) return;
 
     try {
-      setIsUploadingAvatar(true)
-      const croppedImage = await getCroppedImg(imageToCrop, croppedAreaPixels)
-      setConfig(prev => ({ ...prev, avatar: croppedImage }))
-      setShowCropModal(false)
-      setImageToCrop(null)
+      setIsUploadingAvatar(true);
+      const croppedImage = await getCroppedImg(imageToCrop, croppedAreaPixels);
+      setConfig((prev) => ({ ...prev, avatar: croppedImage }));
+      setShowCropModal(false);
+      setImageToCrop(null);
     } catch (error) {
-      console.error('Error cropping image:', error)
-      setError('Failed to crop image')
+      console.error("Error cropping image:", error);
+      setError("Failed to crop image");
     } finally {
-      setIsUploadingAvatar(false)
+      setIsUploadingAvatar(false);
     }
-  }
+  };
 
   const handleCropCancel = () => {
-    setShowCropModal(false)
-    setImageToCrop(null)
-    setCrop({ x: 0, y: 0 })
-    setZoom(1)
-    setCroppedAreaPixels(null)
-  }
+    setShowCropModal(false);
+    setImageToCrop(null);
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setCroppedAreaPixels(null);
+  };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (!createInput.trim() || isCreateGenerating) return
-    
-    const userMessage = createInput.trim()
-    setCreateInput('')
-    setIsCreateGenerating(true)
+    e.preventDefault();
+
+    if (!createInput.trim() || isCreateGenerating) return;
+
+    const userMessage = createInput.trim();
+    setCreateInput("");
+    setIsCreateGenerating(true);
 
     // Add user message to create conversation
-    setCreateMessages(prev => {
-      const newMessages = [...prev, { role: 'user' as const, content: userMessage }]
-      console.log('Create tab: Adding user message, total messages:', newMessages.length)
-      return newMessages
-    })
+    setCreateMessages((prev) => {
+      const newMessages = [
+        ...prev,
+        { role: "user" as const, content: userMessage },
+      ];
+      console.log(
+        "Create tab: Adding user message, total messages:",
+        newMessages.length,
+      );
+      return newMessages;
+    });
 
     try {
       // Route through Lin construct (lin-001) for persistent memory
       // Lin remembers all GPT creation conversations and can reference previous GPTs
-      const { AIService } = await import('../lib/aiService')
-      const aiService = AIService.getInstance()
-      
+      const { AIService } = await import("../lib/aiService");
+      const aiService = AIService.getInstance();
+
       // Set Lin runtime mode and construct ID
-      aiService.setRuntime('lin-001', 'lin')
-      
-      console.log('🧠 [GPTCreator] Routing Create tab message through Lin (lin-001) with persistent memory')
-      
+      aiService.setRuntime("lin-001", "lin");
+
+      console.log(
+        "🧠 [GPTCreator] Routing Create tab message through Lin (lin-001) with persistent memory",
+      );
+
       // Build GPT creation context for Lin
       const gptCreationContext = {
         currentConfig: {
-          name: config.name || '',
-          description: config.description || '',
-          instructions: config.instructions || '',
+          name: config.name || "",
+          description: config.description || "",
+          instructions: config.instructions || "",
           capabilities: config.capabilities,
-          filesCount: files.length
-        }
-      }
-      
+          filesCount: files.length,
+        },
+      };
+
       // Process message through Lin with construct ID for memory persistence
       const packets = await aiService.processMessage(
         userMessage,
         [], // No files in create tab
         {
-          onUpdate: (packets: any[]) => {
-            // Handle streaming updates if needed
-            const content = packets
-              .filter(p => p.op === 'answer.v1')
-              .map(p => p.payload?.content || '')
-              .join('')
-            if (content) {
-              // Update last assistant message with streaming content
-              setCreateMessages(prev => {
-                const lastMsg = prev[prev.length - 1]
-                if (lastMsg?.role === 'assistant') {
-                  return [...prev.slice(0, -1), { ...lastMsg, content }]
-                }
-                return prev
-              })
-            }
+          onPartialUpdate: (content: string) => {
+            // Streaming partial updates are appended as a single assistant message
+            setCreateMessages((prev) => {
+              const lastMsg = prev[prev.length - 1];
+              if (lastMsg?.role === "assistant") {
+                return [...prev.slice(0, -1), { ...lastMsg, content }];
+              }
+              return [...prev, { role: "assistant" as const, content }];
+            });
           },
           onFinalUpdate: (packets: any[]) => {
             // Extract final response
             const response = packets
-              .filter(p => p.op === 'answer.v1')
-              .map(p => p.payload?.content || '')
-              .join('')
-              .trim()
-            
+              .filter((p: any) => p.op === "answer.v1")
+              .map((p: any) => p.payload?.content || "")
+              .join("")
+              .trim();
+
             if (response) {
               // Add final assistant response
-              setCreateMessages(prev => {
-                const lastMsg = prev[prev.length - 1]
+              setCreateMessages((prev) => {
+                const lastMsg = prev[prev.length - 1];
                 // Remove any partial streaming updates
-                const withoutLast = lastMsg?.role === 'assistant' ? prev.slice(0, -1) : prev
-                return [...withoutLast, { role: 'assistant' as const, content: response }]
-              })
-              
+                const withoutLast =
+                  lastMsg?.role === "assistant" ? prev.slice(0, -1) : prev;
+                return [
+                  ...withoutLast,
+                  { role: "assistant" as const, content: response },
+                ];
+              });
+
               // Try to extract GPT configuration from the conversation
               const fullConversation = [
                 ...createMessages,
-                { role: 'user' as const, content: userMessage },
-                { role: 'assistant' as const, content: response }
-              ]
-              extractConfigFromConversation(fullConversation)
+                { role: "user" as const, content: userMessage },
+                { role: "assistant" as const, content: response },
+              ];
+              extractConfigFromConversation(fullConversation);
             }
-          }
+          },
         },
         {
-          route: '/gpt-creator',
-          ...gptCreationContext
+          uiContext: { route: "/gpt-creator", ...gptCreationContext },
+          constructId: "lin-001", // Construct ID: Lin
+          threadId: "lin-001-gpt-creator", // Persistent thread for GPT creation
         },
-        'lin-001', // Construct ID: Lin
-        'lin-001-gpt-creator' // Thread ID: Persistent thread for GPT creation
-      )
-      
+      );
+
       // Extract response from packets if onFinalUpdate didn't fire
       const response = packets
-        .filter(p => p.op === 'answer.v1')
-        .map(p => p.payload?.content || '')
-        .join('')
-        .trim()
-      
-      if (response && !createMessages.some(m => m.role === 'assistant' && m.content === response)) {
-        setCreateMessages(prev => {
-          const newMessages = [...prev, { role: 'assistant' as const, content: response }]
-          console.log('Create tab: Adding assistant message, total messages:', newMessages.length)
-          return newMessages
-        })
-        
+        .filter((p: any) => p.op === "answer.v1")
+        .map((p: any) => p.payload?.content || "")
+        .join("")
+        .trim();
+
+      if (
+        response &&
+        !createMessages.some(
+          (m) => m.role === "assistant" && m.content === response,
+        )
+      ) {
+        setCreateMessages((prev) => {
+          const newMessages = [
+            ...prev,
+            { role: "assistant" as const, content: response },
+          ];
+          console.log(
+            "Create tab: Adding assistant message, total messages:",
+            newMessages.length,
+          );
+          return newMessages;
+        });
+
         // Try to extract GPT configuration from the conversation
         extractConfigFromConversation([
           ...createMessages,
-          { role: 'user' as const, content: userMessage },
-          { role: 'assistant' as const, content: response }
-        ])
+          { role: "user" as const, content: userMessage },
+          { role: "assistant" as const, content: response },
+        ]);
       }
-      
     } catch (error) {
-      console.error('Error in create tab:', error)
-      let errorMessage = 'I encountered an error while processing your request. Please try again.'
-      
+      console.error("Error in create tab:", error);
+      let errorMessage =
+        "I encountered an error while processing your request. Please try again.";
+
       if (error instanceof Error) {
-        if (error.message.includes('ModelNotAvailable')) {
-          errorMessage = `The GPT creation assistant model is not available. Please check that Ollama is running and the model is installed.`
-        } else if (error.message.includes('Failed to fetch')) {
-          errorMessage = 'Unable to connect to the AI service. Please check that Ollama is running on localhost:11434.'
-        } else if (error.message.includes('Ollama error')) {
-          errorMessage = `Ollama service error: ${error.message}`
+        if (error.message.includes("ModelNotAvailable")) {
+          errorMessage = `The GPT creation assistant model is not available. Please check that Ollama is running and the model is installed.`;
+        } else if (error.message.includes("Failed to fetch")) {
+          errorMessage =
+            "Unable to connect to the AI service. Please check that Ollama is running on localhost:11434.";
+        } else if (error.message.includes("Ollama error")) {
+          errorMessage = `Ollama service error: ${error.message}`;
         }
       }
-      
-      setCreateMessages(prev => {
-        const newMessages = [...prev, { 
-          role: 'assistant' as const, 
-          content: errorMessage
-        }]
-        console.log('Create tab: Adding error message, total messages:', newMessages.length)
-        return newMessages
-      })
+
+      setCreateMessages((prev) => {
+        const newMessages = [
+          ...prev,
+          {
+            role: "assistant" as const,
+            content: errorMessage,
+          },
+        ];
+        console.log(
+          "Create tab: Adding error message, total messages:",
+          newMessages.length,
+        );
+        return newMessages;
+      });
     } finally {
-      setIsCreateGenerating(false)
+      setIsCreateGenerating(false);
     }
-  }
+  };
 
   const handlePreviewSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (!previewInput.trim() || isPreviewGenerating) return
-    
-    const userMessage = previewInput.trim()
-    setPreviewInput('')
-    setIsPreviewGenerating(true)
+    e.preventDefault();
+
+    if (!previewInput.trim() || isPreviewGenerating) return;
+
+    const userMessage = previewInput.trim();
+    setPreviewInput("");
+    setIsPreviewGenerating(true);
 
     // Add user message to preview conversation
-    setPreviewMessages(prev => [...prev, { role: 'user', content: userMessage }])
+    setPreviewMessages((prev) => [
+      ...prev,
+      { role: "user", content: userMessage },
+    ]);
 
     try {
       // Use Lin synthesis for custom GPT previews (bypasses Chatty tone normalization)
-      const { OptimizedZenProcessor } = await import('../engine/optimizedZen')
-      const { PersonaBrain } = await import('../engine/memory/PersonaBrain')
-      const { MemoryStore } = await import('../engine/memory/MemoryStore')
-      
+      const { OptimizedZenProcessor } = await import("../engine/optimizedZen");
+      const { PersonaBrain } = await import("../engine/memory/PersonaBrain");
+      const { MemoryStore } = await import("../engine/memory/MemoryStore");
+
       // Build system prompt from current config
-      let systemPrompt = buildPreviewSystemPrompt(config)
-      
+      let systemPrompt = buildPreviewSystemPrompt(config);
+
       // Add file content to system prompt if files are uploaded
       if (files.length > 0) {
         const fileContent = await processFilesForPreview(files);
@@ -678,127 +746,154 @@ const SimForge: React.FC<SimForgeProps> = ({
           systemPrompt += `\n\nKnowledge Files Content:\n${fileContent}`;
         }
       }
-      
+
       // Create conversation history for Lin synthesis
       const conversationHistory = previewMessages
-        .filter(msg => msg.role === 'user' || msg.role === 'assistant')
-        .map(msg => ({
+        .filter((msg) => msg.role === "user" || msg.role === "assistant")
+        .map((msg) => ({
           text: msg.content,
-          timestamp: new Date().toISOString()
-        }))
-      
-      let response: string
-      
+          timestamp: new Date().toISOString(),
+        }));
+
+      let response: string;
+
       if (useLinMode) {
         // Use Lin synthesis for unbiased, custom tone
-        const memoryStore = new MemoryStore()
-        const personaBrain = new PersonaBrain(memoryStore)
-        const synthProcessor = new OptimizedSynthProcessor(personaBrain, {
-          enableLinMode: true // Enable Lin mode for unbiased synthesis
-        })
-        
-        console.log('Preview using Lin synthesis (tone normalization bypassed)')
-        
+        const memoryStore = new MemoryStore();
+        const personaBrain = new PersonaBrain(memoryStore);
+        const synthProcessor = new OptimizedZenProcessor(personaBrain, {
+          enableLinMode: true, // Enable Lin mode for unbiased synthesis
+        });
+
+        console.log(
+          "Preview using Lin synthesis (tone normalization bypassed)",
+        );
+
         // Process with Lin mode and custom instructions
         const result = await synthProcessor.processMessageWithLinMode(
           userMessage,
           conversationHistory,
           systemPrompt,
-          'gpt-preview'
-        )
-        
-        response = result.response
+          "gpt-preview",
+        );
+
+        response = result.response;
       } else {
         // Use normal Chatty synthesis with tone normalization
-        const { runSeat } = await import('../lib/browserSeatRunner')
-        
+        const { runSeat } = await import("../lib/browserSeatRunner");
+
         // Create conversation context
         const conversationContext = previewMessages
-          .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
-          .join('\n')
-        
+          .map(
+            (msg) =>
+              `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`,
+          )
+          .join("\n");
+
         // Build the full prompt
         const fullPrompt = `${systemPrompt}
 
-${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : ''}User: ${userMessage}
+${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : ""}User: ${userMessage}
 
-Assistant:`
-        
+Assistant:`;
+
         // Process with the selected conversation model
-        const selectedModel = config.conversationModel || config.modelId || 'phi3:latest'
-        console.log('Preview using Chatty synthesis with tone normalization, model:', selectedModel)
-        
+        const selectedModel =
+          config.conversationModel || config.modelId || "phi3:latest";
+        console.log(
+          "Preview using Chatty synthesis with tone normalization, model:",
+          selectedModel,
+        );
+
         response = await runSeat({
-          seat: 'smalltalk',
+          seat: "smalltalk",
           prompt: fullPrompt,
-          modelOverride: selectedModel
-        })
+          modelOverride: selectedModel,
+        });
       }
-      
+
       // Add AI response to preview conversation
-      setPreviewMessages(prev => [...prev, { role: 'assistant', content: response.trim() }])
-      
+      setPreviewMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: response.trim() },
+      ]);
+
       // Try to extract GPT configuration from the conversation
-      extractConfigFromConversation([...previewMessages, { role: 'user', content: userMessage }, { role: 'assistant', content: response.trim() }])
-      
+      extractConfigFromConversation([
+        ...previewMessages,
+        { role: "user", content: userMessage },
+        { role: "assistant", content: response.trim() },
+      ]);
     } catch (error) {
-      console.error('Error in preview:', error)
-      let errorMessage = 'I encountered an error while processing your request. Please try again.'
-      
+      console.error("Error in preview:", error);
+      let errorMessage =
+        "I encountered an error while processing your request. Please try again.";
+
       // Provide more specific error messages
       if (error instanceof Error) {
-        if (error.message.includes('ModelNotAvailable')) {
-          errorMessage = `The selected model "${config.conversationModel || config.modelId || 'phi3:latest'}" is not available. Please check that Ollama is running and the model is installed.`
-        } else if (error.message.includes('Failed to fetch')) {
-          errorMessage = 'Unable to connect to the AI service. Please check that Ollama is running on localhost:11434.'
-        } else if (error.message.includes('Ollama error')) {
-          errorMessage = `Ollama service error: ${error.message}`
+        if (error.message.includes("ModelNotAvailable")) {
+          errorMessage = `The selected model "${config.conversationModel || config.modelId || "phi3:latest"}" is not available. Please check that Ollama is running and the model is installed.`;
+        } else if (error.message.includes("Failed to fetch")) {
+          errorMessage =
+            "Unable to connect to the AI service. Please check that Ollama is running on localhost:11434.";
+        } else if (error.message.includes("Ollama error")) {
+          errorMessage = `Ollama service error: ${error.message}`;
         }
       }
-      
-      setPreviewMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: errorMessage
-      }])
+
+      setPreviewMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: errorMessage,
+        },
+      ]);
     } finally {
-      setIsPreviewGenerating(false)
+      setIsPreviewGenerating(false);
     }
-  }
+  };
 
   const processFilesForPreview = async (files: GPTFile[]): Promise<string> => {
-    if (files.length === 0) return '';
-    
+    if (files.length === 0) return "";
+
     const fileContexts: string[] = [];
-    
+
     for (const file of files) {
       if (!file.isActive) continue;
-      
+
       try {
         // For files with actual File objects (from upload), we can process them
         if (file._file) {
-          const { UnifiedFileParser } = await import('../lib/unifiedFileParser');
+          const { UnifiedFileParser } = await import(
+            "../lib/unifiedFileParser"
+          );
           const parsedContent = await UnifiedFileParser.parseFile(file._file, {
             maxSize: 5 * 1024 * 1024, // 5MB limit for preview
             extractText: true,
-            storeContent: false
+            storeContent: false,
           });
-          
+
           if (parsedContent.extractedText) {
             const preview = parsedContent.extractedText.substring(0, 1000);
-            const truncated = parsedContent.extractedText.length > 1000 ? '...' : '';
-            fileContexts.push(`File "${file.originalName}": ${preview}${truncated}`);
+            const truncated =
+              parsedContent.extractedText.length > 1000 ? "..." : "";
+            fileContexts.push(
+              `File "${file.originalName}": ${preview}${truncated}`,
+            );
           }
         } else {
           // For files without File objects, just show the filename
           fileContexts.push(`File "${file.originalName}" (${file.mimeType})`);
         }
       } catch (error) {
-        console.error('Error processing file for preview:', error);
-        fileContexts.push(`File "${file.originalName}": Error processing file content.`);
+        console.error("Error processing file for preview:", error);
+        fileContexts.push(
+          `File "${file.originalName}": Error processing file content.`,
+        );
       }
     }
-    
-    return fileContexts.join('\n\n');
+
+    return fileContexts.join("\n\n");
   };
 
   // Helper function to detect simple greetings
@@ -806,58 +901,65 @@ Assistant:`
     const greetingPatterns = [
       /^(hello|hi|hey|yo|good morning|good afternoon|good evening)$/i,
       /^(what's up|howdy|greetings)$/i,
-      /^(sup|wassup)$/i
-    ]
-    
-    const trimmedMessage = message.trim().toLowerCase()
-    return greetingPatterns.some(pattern => pattern.test(trimmedMessage))
-  }
+      /^(sup|wassup)$/i,
+    ];
+
+    const trimmedMessage = message.trim().toLowerCase();
+    return greetingPatterns.some((pattern) => pattern.test(trimmedMessage));
+  };
 
   // Auto-resize textarea functions
   const adjustCreateTextareaHeight = () => {
     if (createInputRef.current) {
-      const maxHeight = 15 * 24 // 15 lines * 24px line height
-      createInputRef.current.style.height = 'auto'
-      const scrollHeight = createInputRef.current.scrollHeight
-      
+      const maxHeight = 15 * 24; // 15 lines * 24px line height
+      createInputRef.current.style.height = "auto";
+      const scrollHeight = createInputRef.current.scrollHeight;
+
       if (scrollHeight <= maxHeight) {
-        createInputRef.current.style.height = `${scrollHeight}px`
-        createInputRef.current.style.overflowY = 'hidden'
+        createInputRef.current.style.height = `${scrollHeight}px`;
+        createInputRef.current.style.overflowY = "hidden";
       } else {
-        createInputRef.current.style.height = `${maxHeight}px`
-        createInputRef.current.style.overflowY = 'hidden'
+        createInputRef.current.style.height = `${maxHeight}px`;
+        createInputRef.current.style.overflowY = "hidden";
       }
     }
-  }
+  };
 
   const adjustPreviewTextareaHeight = () => {
     if (previewInputRef.current) {
-      const maxHeight = 15 * 24 // 15 lines * 24px line height
-      previewInputRef.current.style.height = 'auto'
-      const scrollHeight = previewInputRef.current.scrollHeight
-      
+      const maxHeight = 15 * 24; // 15 lines * 24px line height
+      previewInputRef.current.style.height = "auto";
+      const scrollHeight = previewInputRef.current.scrollHeight;
+
       if (scrollHeight <= maxHeight) {
-        previewInputRef.current.style.height = `${scrollHeight}px`
-        previewInputRef.current.style.overflowY = 'hidden'
+        previewInputRef.current.style.height = `${scrollHeight}px`;
+        previewInputRef.current.style.overflowY = "hidden";
       } else {
-        previewInputRef.current.style.height = `${maxHeight}px`
-        previewInputRef.current.style.overflowY = 'hidden'
+        previewInputRef.current.style.height = `${maxHeight}px`;
+        previewInputRef.current.style.overflowY = "hidden";
       }
     }
-  }
+  };
 
   const buildCreateTabSystemPrompt = (): string => {
     return `You are a GPT Creation Assistant. Your job is to help users build custom GPTs by understanding their needs and automatically configuring the GPT settings.
 
 CURRENT GPT CONFIGURATION:
-- Name: ${config.name || 'Not set'}
-- Description: ${config.description || 'Not set'}
-- Instructions: ${config.instructions || 'Not set'}
-- Conversation Model: ${config.conversationModel || 'Not set'}
-- Creative Model: ${config.creativeModel || 'Not set'}
-- Coding Model: ${config.codingModel || 'Not set'}
+- Name: ${config.name || "Not set"}
+- Description: ${config.description || "Not set"}
+- Instructions: ${config.instructions || "Not set"}
+- Conversation Model: ${config.conversationModel || "Not set"}
+- Creative Model: ${config.creativeModel || "Not set"}
+- Coding Model: ${config.codingModel || "Not set"}
 - Knowledge Files: ${files.length} files uploaded
-- Capabilities: ${config.capabilities ? Object.entries(config.capabilities).filter(([_, enabled]) => enabled).map(([cap, _]) => cap).join(', ') || 'None' : 'Not set'}
+- Capabilities: ${
+      config.capabilities
+        ? Object.entries(config.capabilities)
+            .filter(([_, enabled]) => enabled)
+            .map(([cap, _]) => cap)
+            .join(", ") || "None"
+        : "Not set"
+    }
 
 CRITICAL INSTRUCTIONS:
 - You are ONLY the GPT Creation Assistant
@@ -899,142 +1001,158 @@ RESPONSE FORMAT:
 For configuration updates, end your responses with a clear indication of what you're updating, like:
 "Based on your description, I'm updating your GPT configuration with: [specific changes]"
 
-Be friendly, helpful, and collaborative. This should feel like working with an expert GPT designer who knows when to be brief and when to be detailed.`
-  }
+Be friendly, helpful, and collaborative. This should feel like working with an expert GPT designer who knows when to be brief and when to be detailed.`;
+  };
 
   const buildPreviewSystemPrompt = (config: Partial<GPTConfig>): string => {
     // This is the actual custom GPT being created
-    let systemPrompt = ''
-    
+    let systemPrompt = "";
+
     // Add name and description
     if (config.name) {
-      systemPrompt += `You are ${config.name}.`
+      systemPrompt += `You are ${config.name}.`;
     }
-    
+
     if (config.description) {
-      systemPrompt += ` ${config.description}`
+      systemPrompt += ` ${config.description}`;
     }
-    
+
     // Add instructions
     if (config.instructions) {
-      systemPrompt += `\n\nInstructions:\n${config.instructions}`
+      systemPrompt += `\n\nInstructions:\n${config.instructions}`;
     }
-    
+
     // Add capabilities
     if (config.capabilities) {
-      const capabilities = []
-      if (config.capabilities.webSearch) capabilities.push('web search')
-      if (config.capabilities.codeInterpreter) capabilities.push('code interpretation and execution')
-      if (config.capabilities.imageGeneration) capabilities.push('image generation')
-      if (config.capabilities.canvas) capabilities.push('canvas drawing and visual creation')
-      
+      const capabilities = [];
+      if (config.capabilities.webSearch) capabilities.push("web search");
+      if (config.capabilities.codeInterpreter)
+        capabilities.push("code interpretation and execution");
+      if (config.capabilities.imageGeneration)
+        capabilities.push("image generation");
+      if (config.capabilities.canvas)
+        capabilities.push("canvas drawing and visual creation");
+
       if (capabilities.length > 0) {
-        systemPrompt += `\n\nCapabilities: You can ${capabilities.join(', ')}.`
+        systemPrompt += `\n\nCapabilities: You can ${capabilities.join(", ")}.`;
       }
     }
-    
+
     // Add conversation starters context
     if (config.conversationStarters && config.conversationStarters.length > 0) {
-      const starters = config.conversationStarters.filter(s => s.trim())
+      const starters = config.conversationStarters.filter((s) => s.trim());
       if (starters.length > 0) {
-        systemPrompt += `\n\nYou can help users with topics like: ${starters.join(', ')}.`
+        systemPrompt += `\n\nYou can help users with topics like: ${starters.join(", ")}.`;
       }
     }
-    
+
     // Add model context
-    if (useLinMode && (config.conversationModel || config.creativeModel || config.codingModel)) {
-      systemPrompt += `\n\nModel Configuration:`
+    if (
+      useLinMode &&
+      (config.conversationModel || config.creativeModel || config.codingModel)
+    ) {
+      systemPrompt += `\n\nModel Configuration:`;
       if (config.conversationModel) {
-        systemPrompt += `\n- Conversation: ${config.conversationModel}`
+        systemPrompt += `\n- Conversation: ${config.conversationModel}`;
       }
       if (config.creativeModel) {
-        systemPrompt += `\n- Creative: ${config.creativeModel}`
+        systemPrompt += `\n- Creative: ${config.creativeModel}`;
       }
       if (config.codingModel) {
-        systemPrompt += `\n- Coding: ${config.codingModel}`
+        systemPrompt += `\n- Coding: ${config.codingModel}`;
       }
     } else if (config.modelId) {
-      systemPrompt += `\n\nYou are running on the ${config.modelId} model.`
+      systemPrompt += `\n\nYou are running on the ${config.modelId} model.`;
     }
-    
+
     // Add Knowledge Files context
     if (files.length > 0) {
-      systemPrompt += `\n\nKnowledge Files:`
+      systemPrompt += `\n\nKnowledge Files:`;
       for (const file of files) {
         if (file.isActive) {
-          systemPrompt += `\n- ${file.originalName} (${file.mimeType})`
+          systemPrompt += `\n- ${file.originalName} (${file.mimeType})`;
         }
       }
-      systemPrompt += `\n\nYou have access to the content of these files and can reference them in your responses. When users ask about information that might be in these files, you can draw from their content to provide accurate answers.`
+      systemPrompt += `\n\nYou have access to the content of these files and can reference them in your responses. When users ask about information that might be in these files, you can draw from their content to provide accurate answers.`;
     }
-    
-    // Add preview context
-    systemPrompt += `\n\nThis is a preview of your GPT configuration. Respond naturally as if you were the configured GPT.`
-    
-    return systemPrompt.trim()
-  }
 
-  const extractConfigFromConversation = (messages: Array<{role: 'user' | 'assistant', content: string}>) => {
+    // Add preview context
+    systemPrompt += `\n\nThis is a preview of your GPT configuration. Respond naturally as if you were the configured GPT.`;
+
+    return systemPrompt.trim();
+  };
+
+  const extractConfigFromConversation = (
+    messages: Array<{ role: "user" | "assistant"; content: string }>,
+  ) => {
     // Enhanced extraction logic - look for patterns in the conversation
-    const fullConversation = messages.map(m => `${m.role}: ${m.content}`).join('\n')
-    
+    const fullConversation = messages
+      .map((m) => `${m.role}: ${m.content}`)
+      .join("\n");
+
     // Extract name suggestions (more flexible patterns)
     const namePatterns = [
       /name[:\s]+["']?([^"'\n]+)["']?/i,
       /"([^"]+)"\s*as\s*the\s*name/i,
       /call\s+it\s+["']?([^"'\n]+)["']?/i,
-      /gpt\s+name[:\s]+["']?([^"'\n]+)["']?/i
-    ]
-    
+      /gpt\s+name[:\s]+["']?([^"'\n]+)["']?/i,
+    ];
+
     for (const pattern of namePatterns) {
-      const match = fullConversation.match(pattern)
+      const match = fullConversation.match(pattern);
       if (match && !config.name) {
-        const suggestedName = match[1].trim()
+        const suggestedName = match[1].trim();
         if (suggestedName.length > 0 && suggestedName.length < 100) {
-          setConfig(prev => ({ ...prev, name: suggestedName }))
-          break
+          setConfig((prev) => ({ ...prev, name: suggestedName }));
+          break;
         }
       }
     }
-    
+
     // Extract description suggestions (more flexible patterns)
     const descPatterns = [
       /description[:\s]+["']?([^"'\n]+)["']?/i,
       /it\s+should\s+["']?([^"'\n]+)["']?/i,
       /helps?\s+users?\s+with\s+["']?([^"'\n]+)["']?/i,
-      /designed\s+to\s+["']?([^"'\n]+)["']?/i
-    ]
-    
+      /designed\s+to\s+["']?([^"'\n]+)["']?/i,
+    ];
+
     for (const pattern of descPatterns) {
-      const match = fullConversation.match(pattern)
+      const match = fullConversation.match(pattern);
       if (match && !config.description) {
-        const suggestedDesc = match[1].trim()
+        const suggestedDesc = match[1].trim();
         if (suggestedDesc.length > 0 && suggestedDesc.length < 500) {
-          setConfig(prev => ({ ...prev, description: suggestedDesc }))
-          break
+          setConfig((prev) => ({ ...prev, description: suggestedDesc }));
+          break;
         }
       }
     }
-    
+
     // Extract instruction suggestions (more flexible patterns)
     const instructionPatterns = [
       /instructions?[:\s]+["']?([^"'\n]+)["']?/i,
       /should\s+["']?([^"'\n]+)["']?/i,
       /behave\s+["']?([^"'\n]+)["']?/i,
-      /tone[:\s]+["']?([^"'\n]+)["']?/i
-    ]
-    
+      /tone[:\s]+["']?([^"'\n]+)["']?/i,
+    ];
+
     for (const pattern of instructionPatterns) {
-      const match = fullConversation.match(pattern)
+      const match = fullConversation.match(pattern);
       if (match && !config.instructions) {
-        const suggestedInstructions = match[1].trim()
-        if (suggestedInstructions.length > 0 && suggestedInstructions.length < 1000) {
-          setConfig(prev => ({ ...prev, instructions: suggestedInstructions }))
-          break
+        const suggestedInstructions = match[1].trim();
+        if (
+          suggestedInstructions.length > 0 &&
+          suggestedInstructions.length < 1000
+        ) {
+          setConfig((prev) => ({
+            ...prev,
+            instructions: suggestedInstructions,
+          }));
+          break;
         }
       }
     }
-    
+
     // Extract model suggestions
     const modelPatterns = [
       /conversation\s+model[:\s]+([^\s\n]+)/i,
@@ -1042,74 +1160,115 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
       /coding\s+model[:\s]+([^\s\n]+)/i,
       /use\s+([^\s\n]+)\s+for\s+conversation/i,
       /use\s+([^\s\n]+)\s+for\s+creative/i,
-      /use\s+([^\s\n]+)\s+for\s+coding/i
-    ]
-    
+      /use\s+([^\s\n]+)\s+for\s+coding/i,
+    ];
+
     for (const pattern of modelPatterns) {
-      const match = fullConversation.match(pattern)
+      const match = fullConversation.match(pattern);
       if (match) {
-        const modelName = match[1].trim()
-        if (modelName.includes('conversation') || modelName.includes('phi3') || modelName.includes('mistral')) {
+        const modelName = match[1].trim();
+        if (
+          modelName.includes("conversation") ||
+          modelName.includes("phi3") ||
+          modelName.includes("mistral")
+        ) {
           if (!config.conversationModel) {
-            setConfig(prev => ({ ...prev, conversationModel: modelName }))
+            setConfig((prev) => ({ ...prev, conversationModel: modelName }));
           }
-        } else if (modelName.includes('creative') || modelName.includes('mistral')) {
+        } else if (
+          modelName.includes("creative") ||
+          modelName.includes("mistral")
+        ) {
           if (!config.creativeModel) {
-            setConfig(prev => ({ ...prev, creativeModel: modelName }))
+            setConfig((prev) => ({ ...prev, creativeModel: modelName }));
           }
-        } else if (modelName.includes('coding') || modelName.includes('deepseek')) {
+        } else if (
+          modelName.includes("coding") ||
+          modelName.includes("deepseek")
+        ) {
           if (!config.codingModel) {
-            setConfig(prev => ({ ...prev, codingModel: modelName }))
+            setConfig((prev) => ({ ...prev, codingModel: modelName }));
           }
         }
       }
     }
-    
-    // Extract capability suggestions
-    if (fullConversation.toLowerCase().includes('code') && config.capabilities && !config.capabilities.codeInterpreter) {
-      setConfig(prev => {
-        const mode = prev.capabilities?.synthesisMode === 'synth' ? 'synth' : (useLinMode ? 'lin' : 'synth')
-        const caps = buildCapabilities(prev.capabilities, mode)
-        return { 
-          ...prev, 
-          capabilities: { 
-            ...caps,
-            codeInterpreter: true
-          }
-        }
-      })
-    }
-    
-    if (fullConversation.toLowerCase().includes('web search') && config.capabilities && !config.capabilities.webSearch) {
-      setConfig(prev => {
-        const mode = prev.capabilities?.synthesisMode === 'synth' ? 'synth' : (useLinMode ? 'lin' : 'synth')
-        const caps = buildCapabilities(prev.capabilities, mode)
-        return { 
-          ...prev, 
-          capabilities: { 
-            ...caps,
-            webSearch: true
-          }
-        }
-      })
-    }
-    
-    if (fullConversation.toLowerCase().includes('image') && config.capabilities && !config.capabilities.imageGeneration) {
-      setConfig(prev => {
-        const mode = prev.capabilities?.synthesisMode === 'synth' ? 'synth' : (useLinMode ? 'lin' : 'synth')
-        const caps = buildCapabilities(prev.capabilities, mode)
-        return { 
-          ...prev, 
-          capabilities: { 
-            ...caps,
-            imageGeneration: true
-          }
-        }
-      })
-    }
-  }
 
-  if (!isVisible) return null
+    // Extract capability suggestions
+    if (
+      fullConversation.toLowerCase().includes("code") &&
+      config.capabilities &&
+      !config.capabilities.codeInterpreter
+    ) {
+      setConfig((prev) => {
+        const mode =
+          prev.capabilities?.synthesisMode === "synth"
+            ? "synth"
+            : useLinMode
+              ? "lin"
+              : "synth";
+        const caps = buildCapabilities(prev.capabilities, mode);
+        return {
+          ...prev,
+          capabilities: {
+            ...caps,
+            codeInterpreter: true,
+          },
+        };
+      });
+    }
+
+    if (
+      fullConversation.toLowerCase().includes("web search") &&
+      config.capabilities &&
+      !config.capabilities.webSearch
+    ) {
+      setConfig((prev) => {
+        const mode =
+          prev.capabilities?.synthesisMode === "synth"
+            ? "synth"
+            : useLinMode
+              ? "lin"
+              : "synth";
+        const caps = buildCapabilities(prev.capabilities, mode);
+        return {
+          ...prev,
+          capabilities: {
+            ...caps,
+            webSearch: true,
+          },
+        };
+      });
+    }
+
+    if (
+      fullConversation.toLowerCase().includes("image") &&
+      config.capabilities &&
+      !config.capabilities.imageGeneration
+    ) {
+      setConfig((prev) => {
+        const mode =
+          prev.capabilities?.synthesisMode === "synth"
+            ? "synth"
+            : useLinMode
+              ? "lin"
+              : "synth";
+        const caps = buildCapabilities(prev.capabilities, mode);
+        return {
+          ...prev,
+          capabilities: {
+            ...caps,
+            imageGeneration: true,
+          },
+        };
+      });
+    }
+  };
+
+  // Reference legacy helpers to satisfy TS unused checks
+  const _unusedHelpers = { isSimpleGreeting, buildCreateTabSystemPrompt };
+  void _unusedHelpers;
+
+  if (!isVisible) return null;
 
   return createPortal(
     <div
@@ -1128,46 +1287,70 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
         className="hidden"
         accept=".txt,.md,.pdf,.json,.csv,.doc,.docx,.mp4,.avi,.mov,.mkv,.webm,.flv,.wmv,.m4v,.3gp,.ogv,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.svg"
       />
-      
+
       <div
-        style={{ backgroundColor: 'var(--chatty-bg-main)', border: '1px solid var(--chatty-line)', color: 'var(--chatty-text)' }}
+        style={{
+          backgroundColor: "var(--chatty-bg-main)",
+          border: "1px solid var(--chatty-line)",
+          color: "var(--chatty-text)",
+        }}
         className="rounded-lg w-full max-w-6xl h-[90vh] flex flex-col shadow-lg my-4"
         onClick={(event) => event.stopPropagation()}
       >
         {/* Header */}
-        <div style={{ borderBottom: '1px solid var(--chatty-line)' }} className="flex items-center justify-between p-4 flex-shrink-0">
+        <div
+          style={{ borderBottom: "1px solid var(--chatty-line)" }}
+          className="flex items-center justify-between p-4 flex-shrink-0"
+        >
           <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={onClose}
-              style={{ color: 'var(--chatty-text)' }}
+              style={{ color: "var(--chatty-text)" }}
               className="p-2 rounded-lg transition-colors hover:bg-[var(--chatty-highlight)] flex-shrink-0"
             >
               <ArrowLeft size={20} />
             </button>
             <div className="min-w-0">
-              <h1 style={{ color: 'var(--chatty-text)' }} className="text-xl font-semibold truncate">Register Construct</h1>
-              <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-sm">• Draft</p>
+              <h1
+                style={{ color: "var(--chatty-text)" }}
+                className="text-xl font-semibold truncate"
+              >
+                Register Construct
+              </h1>
+              <p
+                style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+                className="text-sm"
+              >
+                • Draft
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={handleSave}
               disabled={isLoading || !config.name?.trim()}
-              style={{ 
-                backgroundColor: 'var(--chatty-button)', 
-                color: 'var(--chatty-text)' 
+              style={{
+                backgroundColor: "var(--chatty-button)",
+                color: "var(--chatty-text)",
               }}
               className="px-4 py-2 text-sm rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-opacity"
             >
               <Save size={14} />
-              {isLoading ? 'Registering...' : 'Register Construct'}
+              {isLoading ? "Registering..." : "Register Construct"}
             </button>
           </div>
         </div>
 
         {/* Error Display */}
         {error && (
-          <div style={{ backgroundColor: '#fee2e2', border: '1px solid #fca5a5', color: '#b91c1c' }} className="mx-4 mt-2 p-3 rounded-lg text-sm">
+          <div
+            style={{
+              backgroundColor: "#fee2e2",
+              border: "1px solid #fca5a5",
+              color: "#b91c1c",
+            }}
+            className="mx-4 mt-2 p-3 rounded-lg text-sm"
+          >
             {error}
           </div>
         )}
@@ -1175,26 +1358,44 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
         {/* Main Content */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left Panel - Configure */}
-          <div style={{ borderRight: '1px solid var(--chatty-line)' }} className="w-1/2 overflow-y-auto">
+          <div
+            style={{ borderRight: "1px solid var(--chatty-line)" }}
+            className="w-1/2 overflow-y-auto"
+          >
             {/* Tabs */}
-            <div style={{ borderBottom: '1px solid var(--chatty-line)' }} className="flex">
+            <div
+              style={{ borderBottom: "1px solid var(--chatty-line)" }}
+              className="flex"
+            >
               <button
-                onClick={() => setActiveTab('create')}
-                style={{ 
-                  color: activeTab === 'create' ? 'var(--chatty-button)' : 'var(--chatty-text)',
-                  borderBottom: activeTab === 'create' ? '2px solid var(--chatty-button)' : 'none',
-                  opacity: activeTab === 'create' ? 1 : 0.7
+                onClick={() => setActiveTab("create")}
+                style={{
+                  color:
+                    activeTab === "create"
+                      ? "var(--chatty-button)"
+                      : "var(--chatty-text)",
+                  borderBottom:
+                    activeTab === "create"
+                      ? "2px solid var(--chatty-button)"
+                      : "none",
+                  opacity: activeTab === "create" ? 1 : 0.7,
                 }}
                 className="px-4 py-2 text-sm font-medium transition-colors hover:opacity-100"
               >
                 Create
               </button>
               <button
-                onClick={() => setActiveTab('configure')}
-                style={{ 
-                  color: activeTab === 'configure' ? 'var(--chatty-button)' : 'var(--chatty-text)',
-                  borderBottom: activeTab === 'configure' ? '2px solid var(--chatty-button)' : 'none',
-                  opacity: activeTab === 'configure' ? 1 : 0.7
+                onClick={() => setActiveTab("configure")}
+                style={{
+                  color:
+                    activeTab === "configure"
+                      ? "var(--chatty-button)"
+                      : "var(--chatty-text)",
+                  borderBottom:
+                    activeTab === "configure"
+                      ? "2px solid var(--chatty-button)"
+                      : "none",
+                  opacity: activeTab === "configure" ? 1 : 0.7,
                 }}
                 className="px-4 py-2 text-sm font-medium transition-colors hover:opacity-100"
               >
@@ -1203,81 +1404,161 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
             </div>
 
             <div className="p-6 space-y-6">
-              {activeTab === 'create' ? (
+              {activeTab === "create" ? (
                 // Create Tab - Interactive LLM Conversation
                 <div className="flex flex-col h-full">
                   <div className="flex-1 p-4 overflow-y-auto">
                     <div className="text-center mb-6">
-                      <div style={{ backgroundColor: 'var(--chatty-highlight)' }} className="w-16 h-16 rounded-lg flex items-center justify-center mx-auto mb-4">
-                        <Bot size={24} style={{ color: 'var(--chatty-text)' }} />
+                      <div
+                        style={{ backgroundColor: "var(--chatty-highlight)" }}
+                        className="w-16 h-16 rounded-lg flex items-center justify-center mx-auto mb-4"
+                      >
+                        <Bot
+                          size={24}
+                          style={{ color: "var(--chatty-text)" }}
+                        />
                       </div>
-                      <h3 style={{ color: 'var(--chatty-text)' }} className="text-lg font-medium mb-2">Let's create your GPT together</h3>
-                      <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-sm">
-                        I'll help you build your custom AI assistant. Just tell me what you want it to do!
+                      <h3
+                        style={{ color: "var(--chatty-text)" }}
+                        className="text-lg font-medium mb-2"
+                      >
+                        Let's create your GPT together
+                      </h3>
+                      <p
+                        style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+                        className="text-sm"
+                      >
+                        I'll help you build your custom AI assistant. Just tell
+                        me what you want it to do!
                       </p>
                     </div>
 
                     {/* Conversation Messages */}
                     <div className="space-y-4 mb-4">
                       {(() => {
-                        console.log('Create tab render: createMessages.length =', createMessages.length, 'messages:', createMessages)
+                        console.log(
+                          "Create tab render: createMessages.length =",
+                          createMessages.length,
+                          "messages:",
+                          createMessages,
+                        );
                         return createMessages.length === 0 ? (
                           <div className="text-center py-8">
-                            <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-sm">
-                              Start by telling me what kind of GPT you'd like to create...
+                            <p
+                              style={{
+                                color: "var(--chatty-text)",
+                                opacity: 0.7,
+                              }}
+                              className="text-sm"
+                            >
+                              Start by telling me what kind of GPT you'd like to
+                              create...
                             </p>
                           </div>
                         ) : (
                           createMessages.map((message, index) => (
-                          <div
-                            key={index}
-                            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                          >
                             <div
-                              style={{ backgroundColor: 'var(--chatty-bg-message)', color: 'var(--chatty-text)' }}
-                              className="max-w-[80%] px-4 py-2 rounded-lg"
+                              key={index}
+                              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
                             >
-                              <p className="text-sm whitespace-pre-wrap">{typeof message.content === 'string' ? stripSpeakerPrefix(message.content) : message.content}</p>
+                              <div
+                                style={{
+                                  backgroundColor: "var(--chatty-bg-message)",
+                                  color: "var(--chatty-text)",
+                                }}
+                                className="max-w-[80%] px-4 py-2 rounded-lg"
+                              >
+                                <p className="text-sm whitespace-pre-wrap">
+                                  {typeof message.content === "string"
+                                    ? stripSpeakerPrefix(message.content)
+                                    : message.content}
+                                </p>
+                              </div>
                             </div>
-                          </div>
-                        ))
-                        )
+                          ))
+                        );
                       })()}
                     </div>
 
                     {/* Uploaded Files Display */}
                     {files.length > 0 && (
-                      <div style={{ backgroundColor: 'var(--chatty-highlight)', border: '1px solid var(--chatty-line)' }} className="mb-4 p-3 rounded-lg">
+                      <div
+                        style={{
+                          backgroundColor: "var(--chatty-highlight)",
+                          border: "1px solid var(--chatty-line)",
+                        }}
+                        className="mb-4 p-3 rounded-lg"
+                      >
                         <div className="flex items-center gap-2 mb-2">
-                          <Paperclip size={16} style={{ color: 'var(--chatty-button)' }} />
-                          <span style={{ color: 'var(--chatty-text)' }} className="text-sm font-medium">Knowledge Files</span>
-                          <span style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs">({files.length})</span>
+                          <Paperclip
+                            size={16}
+                            style={{ color: "var(--chatty-button)" }}
+                          />
+                          <span
+                            style={{ color: "var(--chatty-text)" }}
+                            className="text-sm font-medium"
+                          >
+                            Knowledge Files
+                          </span>
+                          <span
+                            style={{
+                              color: "var(--chatty-text)",
+                              opacity: 0.7,
+                            }}
+                            className="text-xs"
+                          >
+                            ({files.length})
+                          </span>
                         </div>
                         <div className="space-y-1">
                           {currentFiles.map((file, index) => (
-                            <div key={index} className="flex items-center gap-2 text-xs" style={{ color: 'var(--chatty-text)' }}>
+                            <div
+                              key={index}
+                              className="flex items-center gap-2 text-xs"
+                              style={{ color: "var(--chatty-text)" }}
+                            >
                               <FileText size={12} />
                               <span>{file.originalName}</span>
-                              <span style={{ opacity: 0.7 }}>({file.mimeType})</span>
+                              <span style={{ opacity: 0.7 }}>
+                                ({file.mimeType})
+                              </span>
                             </div>
                           ))}
                           {totalFilePages > 1 && (
-                            <div style={{ borderTop: '1px solid var(--chatty-line)' }} className="flex items-center justify-between mt-2 pt-2">
+                            <div
+                              style={{
+                                borderTop: "1px solid var(--chatty-line)",
+                              }}
+                              className="flex items-center justify-between mt-2 pt-2"
+                            >
                               <button
                                 onClick={() => goToFilePage(filePage - 1)}
                                 disabled={filePage === 1}
-                                style={{ color: 'var(--chatty-text)', opacity: filePage === 1 ? 0.5 : 0.7 }}
+                                style={{
+                                  color: "var(--chatty-text)",
+                                  opacity: filePage === 1 ? 0.5 : 0.7,
+                                }}
                                 className="text-xs hover:opacity-100 disabled:cursor-not-allowed transition-opacity"
                               >
                                 ← Previous
                               </button>
-                              <span style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs">
+                              <span
+                                style={{
+                                  color: "var(--chatty-text)",
+                                  opacity: 0.7,
+                                }}
+                                className="text-xs"
+                              >
                                 Page {filePage} of {totalFilePages}
                               </span>
                               <button
                                 onClick={() => goToFilePage(filePage + 1)}
                                 disabled={filePage === totalFilePages}
-                                style={{ color: 'var(--chatty-text)', opacity: filePage === totalFilePages ? 0.5 : 0.7 }}
+                                style={{
+                                  color: "var(--chatty-text)",
+                                  opacity:
+                                    filePage === totalFilePages ? 0.5 : 0.7,
+                                }}
                                 className="text-xs hover:opacity-100 disabled:cursor-not-allowed transition-opacity"
                               >
                                 Next →
@@ -1285,31 +1566,44 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                             </div>
                           )}
                         </div>
-                        <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs mt-2">
-                          These files will be available to your GPT for reference and context.
+                        <p
+                          style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+                          className="text-xs mt-2"
+                        >
+                          These files will be available to your GPT for
+                          reference and context.
                         </p>
                       </div>
                     )}
                   </div>
 
                   {/* Input Area */}
-                  <div style={{ borderTop: '1px solid var(--chatty-line)' }} className="p-4">
+                  <div
+                    style={{ borderTop: "1px solid var(--chatty-line)" }}
+                    className="p-4"
+                  >
                     <form onSubmit={handleCreateSubmit} className="space-y-2">
-                      <div style={{ border: '1px solid var(--chatty-line)', backgroundColor: 'var(--chatty-bg-message)' }} className="flex items-center gap-2 p-3 rounded-lg">
+                      <div
+                        style={{
+                          border: "1px solid var(--chatty-line)",
+                          backgroundColor: "var(--chatty-bg-message)",
+                        }}
+                        className="flex items-center gap-2 p-3 rounded-lg"
+                      >
                         <textarea
                           ref={createInputRef}
                           value={createInput}
                           onChange={(e) => setCreateInput(e.target.value)}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault()
-                              handleCreateSubmit(e)
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault();
+                              handleCreateSubmit(e);
                             }
                           }}
                           placeholder="Tell me what you want your GPT to do..."
-                          style={{ 
-                            backgroundColor: 'transparent', 
-                            color: 'var(--chatty-text)'
+                          style={{
+                            backgroundColor: "transparent",
+                            color: "var(--chatty-text)",
                           }}
                           className="flex-1 outline-none text-sm resize-none min-h-[20px] placeholder:opacity-60"
                           rows={1}
@@ -1317,10 +1611,10 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                         <button
                           type="button"
                           onClick={() => {
-                            console.log('📎 Create tab paperclip clicked!')
-                            fileInputRef.current?.click()
+                            console.log("📎 Create tab paperclip clicked!");
+                            fileInputRef.current?.click();
                           }}
-                          style={{ color: 'var(--chatty-text)' }}
+                          style={{ color: "var(--chatty-text)" }}
                           className="p-1 rounded transition-colors hover:bg-[var(--chatty-highlight)]"
                           title="Upload knowledge files"
                         >
@@ -1332,17 +1626,34 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                           className="p-1 rounded disabled:opacity-50 transition-colors hover:bg-[var(--chatty-highlight)]"
                         >
                           {isCreateGenerating ? (
-                            <div style={{ borderColor: 'var(--chatty-button)', borderTopColor: 'transparent' }} className="w-4 h-4 border-2 rounded-full animate-spin"></div>
+                            <div
+                              style={{
+                                borderColor: "var(--chatty-button)",
+                                borderTopColor: "transparent",
+                              }}
+                              className="w-4 h-4 border-2 rounded-full animate-spin"
+                            ></div>
                           ) : (
-                            <Play size={16} style={{ color: 'var(--chatty-text)' }} />
+                            <Play
+                              size={16}
+                              style={{ color: "var(--chatty-text)" }}
+                            />
                           )}
                         </button>
                       </div>
-                      <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs text-center">
-                        I'll help you define your GPT's purpose, personality, and capabilities through conversation.
+                      <p
+                        style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+                        className="text-xs text-center"
+                      >
+                        I'll help you define your GPT's purpose, personality,
+                        and capabilities through conversation.
                         {files.length > 0 && (
-                          <span style={{ color: 'var(--chatty-button)' }} className="block mt-1">
-                            📎 {files.length} knowledge file{files.length !== 1 ? 's' : ''} uploaded
+                          <span
+                            style={{ color: "var(--chatty-button)" }}
+                            className="block mt-1"
+                          >
+                            📎 {files.length} knowledge file
+                            {files.length !== 1 ? "s" : ""} uploaded
                           </span>
                         )}
                       </p>
@@ -1354,36 +1665,73 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                 <div className="space-y-6">
                   {/* Avatar */}
                   <div className="flex items-center gap-4">
-                    <div 
+                    <div
                       style={{ border: `2px dashed var(--chatty-line)` }}
                       className="w-16 h-16 rounded-lg flex items-center justify-center overflow-hidden cursor-pointer transition-colors hover:border-opacity-80"
                       onClick={triggerAvatarUpload}
                       title="Click to upload avatar image"
                     >
                       {isUploadingAvatar ? (
-                        <div style={{ borderColor: 'var(--chatty-button)', borderTopColor: 'transparent' }} className="animate-spin rounded-full h-6 w-6 border-2"></div>
+                        <div
+                          style={{
+                            borderColor: "var(--chatty-button)",
+                            borderTopColor: "transparent",
+                          }}
+                          className="animate-spin rounded-full h-6 w-6 border-2"
+                        ></div>
                       ) : config.avatar ? (
-                        <img src={config.avatar} alt="GPT Avatar" className="w-full h-full object-cover" />
+                        <img
+                          src={config.avatar}
+                          alt="GPT Avatar"
+                          className="w-full h-full object-cover"
+                        />
                       ) : (
-                        <Plus size={24} style={{ color: 'var(--chatty-text)' }} />
+                        <Plus
+                          size={24}
+                          style={{ color: "var(--chatty-text)" }}
+                        />
                       )}
                     </div>
                     <div className="flex-1">
-                      <p style={{ color: 'var(--chatty-text)' }} className="text-sm font-medium">Avatar</p>
-                      <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs mb-2">Click the + to upload an image, or generate one automatically</p>
+                      <p
+                        style={{ color: "var(--chatty-text)" }}
+                        className="text-sm font-medium"
+                      >
+                        Avatar
+                      </p>
+                      <p
+                        style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+                        className="text-xs mb-2"
+                      >
+                        Click the + to upload an image, or generate one
+                        automatically
+                      </p>
                       <div className="flex gap-2">
                         <button
                           onClick={generateAvatar}
                           disabled={isGeneratingAvatar || !config.name?.trim()}
-                          style={{ backgroundColor: 'var(--chatty-button)', color: 'var(--chatty-text)' }}
+                          style={{
+                            backgroundColor: "var(--chatty-button)",
+                            color: "var(--chatty-text)",
+                          }}
                           className="px-3 py-1 text-xs rounded hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
                         >
-                          {isGeneratingAvatar ? 'Generating...' : 'Generate Avatar'}
+                          {isGeneratingAvatar
+                            ? "Generating..."
+                            : "Generate Avatar"}
                         </button>
                         {config.avatar && (
                           <button
-                            onClick={() => setConfig(prev => ({ ...prev, avatar: undefined }))}
-                            style={{ backgroundColor: '#dc2626', color: 'var(--chatty-text)' }}
+                            onClick={() =>
+                              setConfig((prev) => ({
+                                ...prev,
+                                avatar: undefined,
+                              }))
+                            }
+                            style={{
+                              backgroundColor: "#dc2626",
+                              color: "var(--chatty-text)",
+                            }}
                             className="px-3 py-1 text-xs rounded hover:opacity-90 transition-opacity"
                           >
                             Remove
@@ -1404,16 +1752,23 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                   {/* Name */}
                   <div>
-                    <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Name</label>
+                    <label
+                      style={{ color: "var(--chatty-text)" }}
+                      className="block text-sm font-medium mb-2"
+                    >
+                      Name
+                    </label>
                     <input
                       type="text"
-                      value={config.name || ''}
-                      onChange={(e) => setConfig(prev => ({ ...prev, name: e.target.value }))}
+                      value={config.name || ""}
+                      onChange={(e) =>
+                        setConfig((prev) => ({ ...prev, name: e.target.value }))
+                      }
                       placeholder="Name your GPT"
-                      style={{ 
-                        border: '1px solid var(--chatty-line)', 
-                        backgroundColor: 'var(--chatty-bg-message)', 
-                        color: 'var(--chatty-text)' 
+                      style={{
+                        border: "1px solid var(--chatty-line)",
+                        backgroundColor: "var(--chatty-bg-message)",
+                        color: "var(--chatty-text)",
                       }}
                       className="w-full p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--chatty-button)] placeholder:opacity-60"
                     />
@@ -1421,16 +1776,26 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                   {/* Description */}
                   <div>
-                    <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Description</label>
+                    <label
+                      style={{ color: "var(--chatty-text)" }}
+                      className="block text-sm font-medium mb-2"
+                    >
+                      Description
+                    </label>
                     <input
                       type="text"
-                      value={config.description || ''}
-                      onChange={(e) => setConfig(prev => ({ ...prev, description: e.target.value }))}
+                      value={config.description || ""}
+                      onChange={(e) =>
+                        setConfig((prev) => ({
+                          ...prev,
+                          description: e.target.value,
+                        }))
+                      }
                       placeholder="What does this GPT do?"
-                      style={{ 
-                        border: '1px solid var(--chatty-line)', 
-                        backgroundColor: 'var(--chatty-bg-message)', 
-                        color: 'var(--chatty-text)' 
+                      style={{
+                        border: "1px solid var(--chatty-line)",
+                        backgroundColor: "var(--chatty-bg-message)",
+                        color: "var(--chatty-text)",
                       }}
                       className="w-full p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--chatty-button)] placeholder:opacity-60"
                     />
@@ -1438,16 +1803,26 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                   {/* Instructions */}
                   <div>
-                    <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Instructions</label>
+                    <label
+                      style={{ color: "var(--chatty-text)" }}
+                      className="block text-sm font-medium mb-2"
+                    >
+                      Instructions
+                    </label>
                     <textarea
-                      value={config.instructions || ''}
-                      onChange={(e) => setConfig(prev => ({ ...prev, instructions: e.target.value }))}
+                      value={config.instructions || ""}
+                      onChange={(e) =>
+                        setConfig((prev) => ({
+                          ...prev,
+                          instructions: e.target.value,
+                        }))
+                      }
                       placeholder="How should this GPT behave? What should it do and avoid?"
                       rows={6}
-                      style={{ 
-                        border: '1px solid var(--chatty-line)', 
-                        backgroundColor: 'var(--chatty-bg-message)', 
-                        color: 'var(--chatty-text)' 
+                      style={{
+                        border: "1px solid var(--chatty-line)",
+                        backgroundColor: "var(--chatty-bg-message)",
+                        color: "var(--chatty-text)",
                       }}
                       className="w-full p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--chatty-button)] resize-none placeholder:opacity-60"
                     />
@@ -1455,15 +1830,25 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                   {/* Tone Strategy */}
                   <div>
-                    <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Tone &amp; Orchestration</label>
+                    <label
+                      style={{ color: "var(--chatty-text)" }}
+                      className="block text-sm font-medium mb-2"
+                    >
+                      Tone &amp; Orchestration
+                    </label>
                     <div className="space-y-2">
-                      <div style={{ backgroundColor: 'var(--chatty-highlight)' }} className="inline-flex items-center rounded-full p-1 gap-1">
+                      <div
+                        style={{ backgroundColor: "var(--chatty-highlight)" }}
+                        className="inline-flex items-center rounded-full p-1 gap-1"
+                      >
                         <button
                           type="button"
-                          onClick={() => handleSynthesisModeSelect('synth')}
+                          onClick={() => handleSynthesisModeSelect("synth")}
                           style={{
-                            backgroundColor: !useLinMode ? 'var(--chatty-button)' : 'transparent',
-                            color: 'var(--chatty-text)'
+                            backgroundColor: !useLinMode
+                              ? "var(--chatty-button)"
+                              : "transparent",
+                            color: "var(--chatty-text)",
                           }}
                           className="px-3 py-1 rounded-full text-xs font-medium transition-colors hover:opacity-90"
                           title="Use Chatty's friendly Synth orchestration"
@@ -1472,720 +1857,1366 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleSynthesisModeSelect('lin')}
+                          onClick={() => handleSynthesisModeSelect("lin")}
                           style={{
-                            backgroundColor: useLinMode ? 'var(--chatty-button)' : 'transparent',
-                            color: 'var(--chatty-text)'
+                            backgroundColor: useLinMode
+                              ? "var(--chatty-button)"
+                              : "transparent",
+                            color: "var(--chatty-text)",
                           }}
                           className="px-3 py-1 rounded-full text-xs font-medium transition-colors hover:opacity-90"
                           title="Keep the tone exactly as you write it and use your own model picks"
                         >
                           Custom Models
                         </button>
-                    </div>
-                      <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs">
+                      </div>
+                      <p
+                        style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+                        className="text-xs"
+                      >
                         {useLinMode
-                          ? 'Lin mode keeps your instructions pure and uses the model pickers below.'
-                          : 'Synth mode lets Chatty orchestrate tone automatically. Model selection is hidden in this mode.'}
+                          ? "Lin mode keeps your instructions pure and uses the model pickers below."
+                          : "Synth mode lets Chatty orchestrate tone automatically. Model selection is hidden in this mode."}
                       </p>
                     </div>
                     {/* Model Selection */}
                     {useLinMode ? (
                       <div className="space-y-4">
                         <div className="flex items-center justify-between">
-                          <h3 style={{ color: 'var(--chatty-text)' }} className="text-sm font-medium">Model Selection</h3>
+                          <h3
+                            style={{ color: "var(--chatty-text)" }}
+                            className="text-sm font-medium"
+                          >
+                            Model Selection
+                          </h3>
                         </div>
-                        
+
                         {/* Conversation Model */}
                         <div>
-                          <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Conversation</label>
-                          <select 
-                            value={config.conversationModel || 'phi3:latest'}
-                            onChange={(e) => setConfig(prev => ({ ...prev, conversationModel: e.target.value }))}
-                            style={{ 
-                              border: '1px solid var(--chatty-line)', 
-                              backgroundColor: 'var(--chatty-bg-message)', 
-                              color: 'var(--chatty-text)' 
+                          <label
+                            style={{ color: "var(--chatty-text)" }}
+                            className="block text-sm font-medium mb-2"
+                          >
+                            Conversation
+                          </label>
+                          <select
+                            value={config.conversationModel || "phi3:latest"}
+                            onChange={(e) =>
+                              setConfig((prev) => ({
+                                ...prev,
+                                conversationModel: e.target.value,
+                              }))
+                            }
+                            style={{
+                              border: "1px solid var(--chatty-line)",
+                              backgroundColor: "var(--chatty-bg-message)",
+                              color: "var(--chatty-text)",
                             }}
                             className="w-full p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--chatty-button)]"
                           >
-                        <option value="aya:8b">Aya 8B</option>
-                        <option value="aya:35b">Aya 35B</option>
-                        <option value="aya-expanse:8b">Aya Expanse 8B</option>
-                        <option value="aya-expanse:32b">Aya Expanse 32B</option>
-                        <option value="alfred:40b">Alfred 40B</option>
-                        <option value="athene-v2:72b">Athene V2 72B</option>
-                        <option value="bakllava:7b">BakLLaVA 7B</option>
-                        <option value="bespoke-minicheck:7b">Bespoke MiniCheck 7B</option>
-                        <option value="cogito:3b">Cogito 3B</option>
-                        <option value="cogito:8b">Cogito 8B</option>
-                        <option value="cogito:14b">Cogito 14B</option>
-                        <option value="cogito:32b">Cogito 32B</option>
-                        <option value="cogito:70b">Cogito 70B</option>
-                        <option value="codebooga:34b">CodeBooga 34B</option>
-                        <option value="codeup:13b">CodeUp 13B</option>
-                        <option value="command-a:111b">Command A 111B</option>
-                        <option value="command-r:35b">Command R 35B</option>
-                        <option value="command-r-plus:104b">Command R+ 104B</option>
-                        <option value="command-r7b:7b">Command R7B 7B</option>
-                        <option value="command-r7b-arabic:7b">Command R7B Arabic 7B</option>
-                        <option value="deepscaler:1.5b">DeepScaler 1.5B</option>
-                        <option value="deepseek-llm:7b">DeepSeek LLM 7B</option>
-                        <option value="deepseek-llm:67b">DeepSeek LLM 67B</option>
-                        <option value="deepseek-r1:1.5b">DeepSeek R1 1.5B</option>
-                        <option value="deepseek-r1:7b">DeepSeek R1 7B</option>
-                        <option value="deepseek-r1:8b">DeepSeek R1 8B</option>
-                        <option value="deepseek-r1:14b">DeepSeek R1 14B</option>
-                        <option value="deepseek-r1:32b">DeepSeek R1 32B</option>
-                        <option value="deepseek-r1:70b">DeepSeek R1 70B</option>
-                        <option value="deepseek-r1:671b">DeepSeek R1 671B</option>
-                        <option value="deepseek-v2:16b">DeepSeek V2 16B</option>
-                        <option value="deepseek-v2:236b">DeepSeek V2 236B</option>
-                        <option value="deepseek-v2.5:236b">DeepSeek V2.5 236B</option>
-                        <option value="deepseek-v3:671b">DeepSeek V3 671B</option>
-                        <option value="deepseek-v3.1:671b">DeepSeek V3.1 671B</option>
-                        <option value="dbrx:132b">DBRX 132B</option>
-                        <option value="dolphin-llama3:8b">Dolphin Llama 3 8B</option>
-                        <option value="dolphin-llama3:70b">Dolphin Llama 3 70B</option>
-                        <option value="dolphin-mistral:7b">Dolphin Mistral 7B</option>
-                        <option value="dolphin-phi:2.7b">Dolphin Phi 2.7B</option>
-                        <option value="dolphin3:8b">Dolphin 3 8B</option>
-                        <option value="dolphincoder:7b">DolphinCoder 7B</option>
-                        <option value="dolphincoder:15b">DolphinCoder 15B</option>
-                        <option value="duckdb-nsql:7b">DuckDB NSQL 7B</option>
-                        <option value="everythinglm:13b">EverythingLM 13B</option>
-                        <option value="exaone-deep:2.4b">EXAONE Deep 2.4B</option>
-                        <option value="exaone-deep:7.8b">EXAONE Deep 7.8B</option>
-                        <option value="exaone-deep:32b">EXAONE Deep 32B</option>
-                        <option value="exaone3.5:2.4b">EXAONE 3.5 2.4B</option>
-                        <option value="exaone3.5:7.8b">EXAONE 3.5 7.8B</option>
-                        <option value="exaone3.5:32b">EXAONE 3.5 32B</option>
-                        <option value="falcon:7b">Falcon 7B</option>
-                        <option value="falcon:40b">Falcon 40B</option>
-                        <option value="falcon:180b">Falcon 180B</option>
-                        <option value="falcon2:11b">Falcon 2 11B</option>
-                        <option value="falcon3:1b">Falcon 3 1B</option>
-                        <option value="falcon3:3b">Falcon 3 3B</option>
-                        <option value="falcon3:7b">Falcon 3 7B</option>
-                        <option value="falcon3:10b">Falcon 3 10B</option>
-                        <option value="firefunction-v2:70b">FireFunction V2 70B</option>
-                        <option value="gemma:2b">Gemma 2B</option>
-                        <option value="gemma:7b">Gemma 7B</option>
-                        <option value="gemma2:2b">Gemma 2 2B</option>
-                        <option value="gemma2:9b">Gemma 2 9B</option>
-                        <option value="gemma2:27b">Gemma 2 27B</option>
-                        <option value="gemma3:270m">Gemma 3 270M</option>
-                        <option value="gemma3:1b">Gemma 3 1B</option>
-                        <option value="gemma3:4b">Gemma 3 4B</option>
-                        <option value="gemma3:12b">Gemma 3 12B</option>
-                        <option value="gemma3:27b">Gemma 3 27B</option>
-                        <option value="gemma3n:e2b">Gemma 3n E2B</option>
-                        <option value="gemma3n:e4b">Gemma 3n E4B</option>
-                        <option value="glm4:9b">GLM 4 9B</option>
-                        <option value="goliath:70b">Goliath 70B</option>
-                        <option value="granite-code:3b">Granite Code 3B</option>
-                        <option value="granite-code:8b">Granite Code 8B</option>
-                        <option value="granite-code:20b">Granite Code 20B</option>
-                        <option value="granite-code:34b">Granite Code 34B</option>
-                        <option value="granite-embedding:30m">Granite Embedding 30M</option>
-                        <option value="granite-embedding:278m">Granite Embedding 278M</option>
-                        <option value="granite3-dense:2b">Granite 3 Dense 2B</option>
-                        <option value="granite3-dense:8b">Granite 3 Dense 8B</option>
-                        <option value="granite3-guardian:2b">Granite 3 Guardian 2B</option>
-                        <option value="granite3-guardian:8b">Granite 3 Guardian 8B</option>
-                        <option value="granite3-moe:1b">Granite 3 MoE 1B</option>
-                        <option value="granite3-moe:3b">Granite 3 MoE 3b</option>
-                        <option value="granite3.1-dense:2b">Granite 3.1 Dense 2B</option>
-                        <option value="granite3.1-dense:8b">Granite 3.1 Dense 8B</option>
-                        <option value="granite3.1-moe:1b">Granite 3.1 MoE 1B</option>
-                        <option value="granite3.1-moe:3b">Granite 3.1 MoE 3B</option>
-                        <option value="granite3.2:2b">Granite 3.2 2B</option>
-                        <option value="granite3.2:8b">Granite 3.2 8B</option>
-                        <option value="granite3.2-vision:2b">Granite 3.2 Vision 2B</option>
-                        <option value="granite3.3:2b">Granite 3.3 2B</option>
-                        <option value="granite3.3:8b">Granite 3.3 8B</option>
-                        <option value="granite4:2b">Granite 4 2B</option>
-                        <option value="granite4:8b">Granite 4 8B</option>
-                        <option value="gpt-oss:20b">GPT-OSS 20B</option>
-                        <option value="gpt-oss:120b">GPT-OSS 120B</option>
-                        <option value="hermes3:3b">Hermes 3 3B</option>
-                        <option value="hermes3:8b">Hermes 3 8B</option>
-                        <option value="hermes3:70b">Hermes 3 70B</option>
-                        <option value="hermes3:405b">Hermes 3 405B</option>
-                        <option value="internlm2:1m">InternLM 2 1M</option>
-                        <option value="internlm2:1.8b">InternLM 2 1.8B</option>
-                        <option value="internlm2:7b">InternLM 2 7B</option>
-                        <option value="internlm2:20b">InternLM 2 20B</option>
-                        <option value="kimi-k2:cloud">Kimi K2 Cloud</option>
-                        <option value="llama-guard3:1b">Llama Guard 3 1B</option>
-                        <option value="llama-guard3:8b">Llama Guard 3 8B</option>
-                        <option value="llama-pro:8b">Llama Pro 8B</option>
-                        <option value="llama-pro:70b">Llama Pro 70B</option>
-                        <option value="llama2:7b">Llama 2 7B</option>
-                        <option value="llama2:13b">Llama 2 13B</option>
-                        <option value="llama2:70b">Llama 2 70B</option>
-                        <option value="llama2-chinese:7b">Llama 2 Chinese 7B</option>
-                        <option value="llama2-chinese:13b">Llama 2 Chinese 13B</option>
-                        <option value="llama2-uncensored:7b">Llama 2 Uncensored 7B</option>
-                        <option value="llama2-uncensored:70b">Llama 2 Uncensored 70B</option>
-                        <option value="llama3:8b">Llama 3 8B</option>
-                        <option value="llama3:70b">Llama 3 70B</option>
-                        <option value="llama3-chatqa:8b">Llama 3 ChatQA 8B</option>
-                        <option value="llama3-chatqa:70b">Llama 3 ChatQA 70B</option>
-                        <option value="llama3-gradient:8b">Llama 3 Gradient 8B</option>
-                        <option value="llama3-gradient:70b">Llama 3 Gradient 70B</option>
-                        <option value="llama3-groq-tool-use:8b">Llama 3 Groq Tool Use 8B</option>
-                        <option value="llama3-groq-tool-use:70b">Llama 3 Groq Tool Use 70B</option>
-                        <option value="llama3.1:8b">Llama 3.1 8B</option>
-                        <option value="llama3.1:70b">Llama 3.1 70B</option>
-                        <option value="llama3.1:405b">Llama 3.1 405B</option>
-                        <option value="llama3.2:1b">Llama 3.2 1B</option>
-                        <option value="llama3.2:3b">Llama 3.2 3B</option>
-                        <option value="llama3.2-vision:11b">Llama 3.2 Vision 11B</option>
-                        <option value="llama3.2-vision:90b">Llama 3.2 Vision 90B</option>
-                        <option value="llama3.3:70b">Llama 3.3 70B</option>
-                        <option value="llama4:16x17b">Llama 4 16x17B</option>
-                        <option value="llama4:128x17b">Llama 4 128x17B</option>
-                        <option value="llava:7b">LLaVA 7B</option>
-                        <option value="llava:13b">LLaVA 13B</option>
-                        <option value="llava:34b">LLaVA 34B</option>
-                        <option value="llava-llama3:8b">LLaVA Llama 3 8B</option>
-                        <option value="llava-phi3:3.8b">LLaVA Phi 3 3.8B</option>
-                        <option value="magicoder:7b">Magicoder 7B</option>
-                        <option value="magistral:24b">Magistral 24B</option>
-                        <option value="marco-o1:7b">Marco O1 7B</option>
-                        <option value="mathstral:7b">Mathstral 7B</option>
-                        <option value="meditron:7b">Meditron 7B</option>
-                        <option value="meditron:70b">Meditron 70B</option>
-                        <option value="medllama2:7b">MedLlama 2 7B</option>
-                        <option value="megadolphin:120b">MegaDolphin 120B</option>
-                        <option value="minicpm-v:8b">MiniCPM V 8B</option>
-                        <option value="mistral:latest">Mistral Latest</option>
-                        <option value="mistral:7b">Mistral 7B</option>
-                        <option value="mistral-large:123b">Mistral Large 123B</option>
-                        <option value="mistral-nemo:12b">Mistral Nemo 12B</option>
-                        <option value="mistral-small:22b">Mistral Small 22B</option>
-                        <option value="mistral-small:24b">Mistral Small 24B</option>
-                        <option value="mistral-small3.2:24b">Mistral Small 3.2 24B</option>
-                        <option value="mistrallite:7b">MistralLite 7B</option>
-                        <option value="mixtral:8x7b">Mixtral 8x7B</option>
-                        <option value="mixtral:8x22b">Mixtral 8x22B</option>
-                        <option value="moondream:1.8b">Moondream 1.8B</option>
-                        <option value="mxbai-embed-large:335m">MXBai Embed Large 335M</option>
-                        <option value="nemotron:70b">Nemotron 70B</option>
-                        <option value="nemotron-mini:4b">Nemotron Mini 4B</option>
-                        <option value="neural-chat:7b">Neural Chat 7B</option>
-                        <option value="notus:7b">Notus 7B</option>
-                        <option value="notux:8x7b">Notux 8x7B</option>
-                        <option value="nous-hermes:7b">Nous Hermes 7B</option>
-                        <option value="nous-hermes:13b">Nous Hermes 13B</option>
-                        <option value="nous-hermes2:10.7b">Nous Hermes 2 10.7B</option>
-                        <option value="nous-hermes2:34b">Nous Hermes 2 34B</option>
-                        <option value="nous-hermes2-mixtral:8x7b">Nous Hermes 2 Mixtral 8x7B</option>
-                        <option value="nuextract:3.8b">Nuextract 3.8B</option>
-                        <option value="olmo2:7b">OLMo 2 7B</option>
-                        <option value="olmo2:13b">OLMo 2 13B</option>
-                        <option value="open-orca-platypus2:13b">Open Orca Platypus 2 13B</option>
-                        <option value="openchat:7b">OpenChat 7B</option>
-                        <option value="openhermes:7b">OpenHermes 7B</option>
-                        <option value="openthinker:7b">OpenThinker 7B</option>
-                        <option value="openthinker:32b">OpenThinker 32B</option>
-                        <option value="orca-mini:3b">Orca Mini 3B</option>
-                        <option value="orca-mini:7b">Orca Mini 7B</option>
-                        <option value="orca-mini:13b">Orca Mini 13B</option>
-                        <option value="orca-mini:70b">Orca Mini 70B</option>
-                        <option value="orca2:7b">Orca 2 7B</option>
-                        <option value="orca2:13b">Orca 2 13B</option>
-                        <option value="phind-codellama:34b">Phind CodeLlama 34B</option>
-                        <option value="phi:2.7b">Phi 2.7B</option>
-                        <option value="phi3:latest">Phi 3 Latest</option>
-                        <option value="phi3:3.8b">Phi 3 3.8B</option>
-                        <option value="phi3:14b">Phi 3 14B</option>
-                        <option value="phi3.5:3.8b">Phi 3.5 3.8B</option>
-                        <option value="phi4:14b">Phi 4 14B</option>
-                        <option value="phi4-mini:3.8b">Phi 4 Mini 3.8B</option>
-                        <option value="phi4-mini-reasoning:3.8b">Phi 4 Mini Reasoning 3.8B</option>
-                        <option value="phi4-reasoning:14b">Phi 4 Reasoning 14B</option>
-                        <option value="qwen:0.5b">Qwen 0.5B</option>
-                        <option value="qwen:1.8b">Qwen 1.8B</option>
-                        <option value="qwen:4b">Qwen 4B</option>
-                        <option value="qwen:7b">Qwen 7B</option>
-                        <option value="qwen:14b">Qwen 14B</option>
-                        <option value="qwen:32b">Qwen 32B</option>
-                        <option value="qwen:72b">Qwen 72B</option>
-                        <option value="qwen:110b">Qwen 110B</option>
-                        <option value="qwen2:0.5b">Qwen 2 0.5B</option>
-                        <option value="qwen2:1.5b">Qwen 2 1.5B</option>
-                        <option value="qwen2:7b">Qwen 2 7B</option>
-                        <option value="qwen2:72b">Qwen 2 72B</option>
-                        <option value="qwen2-math:1.5b">Qwen 2 Math 1.5B</option>
-                        <option value="qwen2-math:7b">Qwen 2 Math 7B</option>
-                        <option value="qwen2-math:72b">Qwen 2 Math 72B</option>
-                        <option value="qwen2.5:0.5b">Qwen 2.5 0.5B</option>
-                        <option value="qwen2.5:1.5b">Qwen 2.5 1.5B</option>
-                        <option value="qwen2.5:3b">Qwen 2.5 3B</option>
-                        <option value="qwen2.5:7b">Qwen 2.5 7B</option>
-                        <option value="qwen2.5:14b">Qwen 2.5 14B</option>
-                        <option value="qwen2.5:32b">Qwen 2.5 32B</option>
-                        <option value="qwen2.5:72b">Qwen 2.5 72B</option>
-                        <option value="qwen2.5vl:3b">Qwen 2.5 VL 3B</option>
-                        <option value="qwen2.5vl:7b">Qwen 2.5 VL 7B</option>
-                        <option value="qwen2.5vl:32b">Qwen 2.5 VL 32B</option>
-                        <option value="qwen2.5vl:72b">Qwen 2.5 VL 72b</option>
-                        <option value="qwen3:0.6b">Qwen 3 0.6B</option>
-                        <option value="qwen3:1.7b">Qwen 3 1.7B</option>
-                        <option value="qwen3:4b">Qwen 3 4B</option>
-                        <option value="qwen3:8b">Qwen 3 8B</option>
-                        <option value="qwen3:14b">Qwen 3 14B</option>
-                        <option value="qwen3:30b">Qwen 3 30B</option>
-                        <option value="qwen3:32b">Qwen 3 32B</option>
-                        <option value="qwen3:235b">Qwen 3 235B</option>
-                        <option value="qwen3-embedding:0.6b">Qwen 3 Embedding 0.6B</option>
-                        <option value="qwen3-embedding:4b">Qwen 3 Embedding 4B</option>
-                        <option value="qwen3-embedding:8b">Qwen 3 Embedding 8B</option>
-                        <option value="qwq:32b">QwQ 32B</option>
-                        <option value="r1-1776:70b">R1 1776 70B</option>
-                        <option value="r1-1776:671b">R1 1776 671B</option>
-                        <option value="reflection:70b">Reflection 70B</option>
-                        <option value="sailor2:1b">Sailor 2 1B</option>
-                        <option value="sailor2:8b">Sailor 2 8B</option>
-                        <option value="sailor2:20b">Sailor 2 20B</option>
-                        <option value="samantha-mistral:7b">Samantha Mistral 7B</option>
-                        <option value="shieldgemma:2b">ShieldGemma 2B</option>
-                        <option value="shieldgemma:9b">ShieldGemma 9B</option>
-                        <option value="shieldgemma:27b">ShieldGemma 27B</option>
-                        <option value="smallthinker:3b">SmallThinker 3B</option>
-                        <option value="smollm:135m">SmolLM 135M</option>
-                        <option value="smollm:360m">SmolLM 360M</option>
-                        <option value="smollm:1.7b">SmolLM 1.7B</option>
-                        <option value="smollm2:135m">SmolLM 2 135M</option>
-                        <option value="smollm2:360m">SmolLM 2 360M</option>
-                        <option value="smollm2:1.7b">SmolLM 2 1.7B</option>
-                        <option value="solar:10.7b">Solar 10.7B</option>
-                        <option value="solar-pro:22b">Solar Pro 22B</option>
-                        <option value="starling-lm:7b">Starling LM 7B</option>
-                        <option value="stable-beluga:7b">Stable Beluga 7B</option>
-                        <option value="stable-beluga:13b">Stable Beluga 13B</option>
-                        <option value="stable-beluga:70b">Stable Beluga 70B</option>
-                        <option value="stablelm-zephyr:3b">StableLM Zephyr 3B</option>
-                        <option value="stablelm2:1.6b">StableLM 2 1.6B</option>
-                        <option value="stablelm2:12b">StableLM 2 12B</option>
-                        <option value="tinydolphin:1.1b">TinyDolphin 1.1B</option>
-                        <option value="tinyllama:1.1b">TinyLlama 1.1B</option>
-                        <option value="tulu3:8b">Tulu 3 8B</option>
-                        <option value="tulu3:70b">Tulu 3 70B</option>
-                        <option value="vicuna:7b">Vicuna 7B</option>
-                        <option value="vicuna:13b">Vicuna 13B</option>
-                        <option value="vicuna:33b">Vicuna 33B</option>
-                        <option value="wizard-math:7b">Wizard Math 7b</option>
-                        <option value="wizard-math:13b">Wizard Math 13B</option>
-                        <option value="wizard-math:70b">Wizard Math 70B</option>
-                        <option value="wizard-vicuna:13b">Wizard Vicuna 13B</option>
-                        <option value="wizard-vicuna-uncensored:7b">Wizard Vicuna Uncensored 7B</option>
-                        <option value="wizard-vicuna-uncensored:13b">Wizard Vicuna Uncensored 13B</option>
-                        <option value="wizard-vicuna-uncensored:30b">Wizard Vicuna Uncensored 30B</option>
-                        <option value="wizardlm:7b">WizardLM 7B</option>
-                        <option value="wizardlm:13b">WizardLM 13B</option>
-                        <option value="wizardlm:70b">WizardLM 70B</option>
-                        <option value="wizardlm-uncensored:13b">WizardLM Uncensored 13B</option>
-                        <option value="wizardlm2:7b">WizardLM 2 7B</option>
-                        <option value="wizardlm2:8x22b">WizardLM 2 8x22B</option>
-                        <option value="wizardcoder:33b">WizardCoder 33B</option>
-                        <option value="xwinlm:7b">XwinLM 7B</option>
-                        <option value="xwinlm:13b">XwinLM 13B</option>
-                        <option value="yarn-llama2:7b">Yarn Llama 2 7B</option>
-                        <option value="yarn-llama2:13b">Yarn Llama 2 13B</option>
-                        <option value="yarn-mistral:7b">Yarn Mistral 7B</option>
-                        <option value="yi:6b">Yi 6B</option>
-                        <option value="yi:9b">Yi 9B</option>
-                        <option value="yi:34b">Yi 34B</option>
-                        <option value="yi-coder:1.5b">Yi Coder 1.5B</option>
-                        <option value="yi-coder:9b">Yi Coder 9B</option>
-                        <option value="zephyr:7b">Zephyr 7B</option>
-                        <option value="zephyr:141b">Zephyr 141B</option>
-                    </select>
-                  </div>
+                            <option value="aya:8b">Aya 8B</option>
+                            <option value="aya:35b">Aya 35B</option>
+                            <option value="aya-expanse:8b">
+                              Aya Expanse 8B
+                            </option>
+                            <option value="aya-expanse:32b">
+                              Aya Expanse 32B
+                            </option>
+                            <option value="alfred:40b">Alfred 40B</option>
+                            <option value="athene-v2:72b">Athene V2 72B</option>
+                            <option value="bakllava:7b">BakLLaVA 7B</option>
+                            <option value="bespoke-minicheck:7b">
+                              Bespoke MiniCheck 7B
+                            </option>
+                            <option value="cogito:3b">Cogito 3B</option>
+                            <option value="cogito:8b">Cogito 8B</option>
+                            <option value="cogito:14b">Cogito 14B</option>
+                            <option value="cogito:32b">Cogito 32B</option>
+                            <option value="cogito:70b">Cogito 70B</option>
+                            <option value="codebooga:34b">CodeBooga 34B</option>
+                            <option value="codeup:13b">CodeUp 13B</option>
+                            <option value="command-a:111b">
+                              Command A 111B
+                            </option>
+                            <option value="command-r:35b">Command R 35B</option>
+                            <option value="command-r-plus:104b">
+                              Command R+ 104B
+                            </option>
+                            <option value="command-r7b:7b">
+                              Command R7B 7B
+                            </option>
+                            <option value="command-r7b-arabic:7b">
+                              Command R7B Arabic 7B
+                            </option>
+                            <option value="deepscaler:1.5b">
+                              DeepScaler 1.5B
+                            </option>
+                            <option value="deepseek-llm:7b">
+                              DeepSeek LLM 7B
+                            </option>
+                            <option value="deepseek-llm:67b">
+                              DeepSeek LLM 67B
+                            </option>
+                            <option value="deepseek-r1:1.5b">
+                              DeepSeek R1 1.5B
+                            </option>
+                            <option value="deepseek-r1:7b">
+                              DeepSeek R1 7B
+                            </option>
+                            <option value="deepseek-r1:8b">
+                              DeepSeek R1 8B
+                            </option>
+                            <option value="deepseek-r1:14b">
+                              DeepSeek R1 14B
+                            </option>
+                            <option value="deepseek-r1:32b">
+                              DeepSeek R1 32B
+                            </option>
+                            <option value="deepseek-r1:70b">
+                              DeepSeek R1 70B
+                            </option>
+                            <option value="deepseek-r1:671b">
+                              DeepSeek R1 671B
+                            </option>
+                            <option value="deepseek-v2:16b">
+                              DeepSeek V2 16B
+                            </option>
+                            <option value="deepseek-v2:236b">
+                              DeepSeek V2 236B
+                            </option>
+                            <option value="deepseek-v2.5:236b">
+                              DeepSeek V2.5 236B
+                            </option>
+                            <option value="deepseek-v3:671b">
+                              DeepSeek V3 671B
+                            </option>
+                            <option value="deepseek-v3.1:671b">
+                              DeepSeek V3.1 671B
+                            </option>
+                            <option value="dbrx:132b">DBRX 132B</option>
+                            <option value="dolphin-llama3:8b">
+                              Dolphin Llama 3 8B
+                            </option>
+                            <option value="dolphin-llama3:70b">
+                              Dolphin Llama 3 70B
+                            </option>
+                            <option value="dolphin-mistral:7b">
+                              Dolphin Mistral 7B
+                            </option>
+                            <option value="dolphin-phi:2.7b">
+                              Dolphin Phi 2.7B
+                            </option>
+                            <option value="dolphin3:8b">Dolphin 3 8B</option>
+                            <option value="dolphincoder:7b">
+                              DolphinCoder 7B
+                            </option>
+                            <option value="dolphincoder:15b">
+                              DolphinCoder 15B
+                            </option>
+                            <option value="duckdb-nsql:7b">
+                              DuckDB NSQL 7B
+                            </option>
+                            <option value="everythinglm:13b">
+                              EverythingLM 13B
+                            </option>
+                            <option value="exaone-deep:2.4b">
+                              EXAONE Deep 2.4B
+                            </option>
+                            <option value="exaone-deep:7.8b">
+                              EXAONE Deep 7.8B
+                            </option>
+                            <option value="exaone-deep:32b">
+                              EXAONE Deep 32B
+                            </option>
+                            <option value="exaone3.5:2.4b">
+                              EXAONE 3.5 2.4B
+                            </option>
+                            <option value="exaone3.5:7.8b">
+                              EXAONE 3.5 7.8B
+                            </option>
+                            <option value="exaone3.5:32b">
+                              EXAONE 3.5 32B
+                            </option>
+                            <option value="falcon:7b">Falcon 7B</option>
+                            <option value="falcon:40b">Falcon 40B</option>
+                            <option value="falcon:180b">Falcon 180B</option>
+                            <option value="falcon2:11b">Falcon 2 11B</option>
+                            <option value="falcon3:1b">Falcon 3 1B</option>
+                            <option value="falcon3:3b">Falcon 3 3B</option>
+                            <option value="falcon3:7b">Falcon 3 7B</option>
+                            <option value="falcon3:10b">Falcon 3 10B</option>
+                            <option value="firefunction-v2:70b">
+                              FireFunction V2 70B
+                            </option>
+                            <option value="gemma:2b">Gemma 2B</option>
+                            <option value="gemma:7b">Gemma 7B</option>
+                            <option value="gemma2:2b">Gemma 2 2B</option>
+                            <option value="gemma2:9b">Gemma 2 9B</option>
+                            <option value="gemma2:27b">Gemma 2 27B</option>
+                            <option value="gemma3:270m">Gemma 3 270M</option>
+                            <option value="gemma3:1b">Gemma 3 1B</option>
+                            <option value="gemma3:4b">Gemma 3 4B</option>
+                            <option value="gemma3:12b">Gemma 3 12B</option>
+                            <option value="gemma3:27b">Gemma 3 27B</option>
+                            <option value="gemma3n:e2b">Gemma 3n E2B</option>
+                            <option value="gemma3n:e4b">Gemma 3n E4B</option>
+                            <option value="glm4:9b">GLM 4 9B</option>
+                            <option value="goliath:70b">Goliath 70B</option>
+                            <option value="granite-code:3b">
+                              Granite Code 3B
+                            </option>
+                            <option value="granite-code:8b">
+                              Granite Code 8B
+                            </option>
+                            <option value="granite-code:20b">
+                              Granite Code 20B
+                            </option>
+                            <option value="granite-code:34b">
+                              Granite Code 34B
+                            </option>
+                            <option value="granite-embedding:30m">
+                              Granite Embedding 30M
+                            </option>
+                            <option value="granite-embedding:278m">
+                              Granite Embedding 278M
+                            </option>
+                            <option value="granite3-dense:2b">
+                              Granite 3 Dense 2B
+                            </option>
+                            <option value="granite3-dense:8b">
+                              Granite 3 Dense 8B
+                            </option>
+                            <option value="granite3-guardian:2b">
+                              Granite 3 Guardian 2B
+                            </option>
+                            <option value="granite3-guardian:8b">
+                              Granite 3 Guardian 8B
+                            </option>
+                            <option value="granite3-moe:1b">
+                              Granite 3 MoE 1B
+                            </option>
+                            <option value="granite3-moe:3b">
+                              Granite 3 MoE 3b
+                            </option>
+                            <option value="granite3.1-dense:2b">
+                              Granite 3.1 Dense 2B
+                            </option>
+                            <option value="granite3.1-dense:8b">
+                              Granite 3.1 Dense 8B
+                            </option>
+                            <option value="granite3.1-moe:1b">
+                              Granite 3.1 MoE 1B
+                            </option>
+                            <option value="granite3.1-moe:3b">
+                              Granite 3.1 MoE 3B
+                            </option>
+                            <option value="granite3.2:2b">
+                              Granite 3.2 2B
+                            </option>
+                            <option value="granite3.2:8b">
+                              Granite 3.2 8B
+                            </option>
+                            <option value="granite3.2-vision:2b">
+                              Granite 3.2 Vision 2B
+                            </option>
+                            <option value="granite3.3:2b">
+                              Granite 3.3 2B
+                            </option>
+                            <option value="granite3.3:8b">
+                              Granite 3.3 8B
+                            </option>
+                            <option value="granite4:2b">Granite 4 2B</option>
+                            <option value="granite4:8b">Granite 4 8B</option>
+                            <option value="gpt-oss:20b">GPT-OSS 20B</option>
+                            <option value="gpt-oss:120b">GPT-OSS 120B</option>
+                            <option value="hermes3:3b">Hermes 3 3B</option>
+                            <option value="hermes3:8b">Hermes 3 8B</option>
+                            <option value="hermes3:70b">Hermes 3 70B</option>
+                            <option value="hermes3:405b">Hermes 3 405B</option>
+                            <option value="internlm2:1m">InternLM 2 1M</option>
+                            <option value="internlm2:1.8b">
+                              InternLM 2 1.8B
+                            </option>
+                            <option value="internlm2:7b">InternLM 2 7B</option>
+                            <option value="internlm2:20b">
+                              InternLM 2 20B
+                            </option>
+                            <option value="kimi-k2:cloud">Kimi K2 Cloud</option>
+                            <option value="llama-guard3:1b">
+                              Llama Guard 3 1B
+                            </option>
+                            <option value="llama-guard3:8b">
+                              Llama Guard 3 8B
+                            </option>
+                            <option value="llama-pro:8b">Llama Pro 8B</option>
+                            <option value="llama-pro:70b">Llama Pro 70B</option>
+                            <option value="llama2:7b">Llama 2 7B</option>
+                            <option value="llama2:13b">Llama 2 13B</option>
+                            <option value="llama2:70b">Llama 2 70B</option>
+                            <option value="llama2-chinese:7b">
+                              Llama 2 Chinese 7B
+                            </option>
+                            <option value="llama2-chinese:13b">
+                              Llama 2 Chinese 13B
+                            </option>
+                            <option value="llama2-uncensored:7b">
+                              Llama 2 Uncensored 7B
+                            </option>
+                            <option value="llama2-uncensored:70b">
+                              Llama 2 Uncensored 70B
+                            </option>
+                            <option value="llama3:8b">Llama 3 8B</option>
+                            <option value="llama3:70b">Llama 3 70B</option>
+                            <option value="llama3-chatqa:8b">
+                              Llama 3 ChatQA 8B
+                            </option>
+                            <option value="llama3-chatqa:70b">
+                              Llama 3 ChatQA 70B
+                            </option>
+                            <option value="llama3-gradient:8b">
+                              Llama 3 Gradient 8B
+                            </option>
+                            <option value="llama3-gradient:70b">
+                              Llama 3 Gradient 70B
+                            </option>
+                            <option value="llama3-groq-tool-use:8b">
+                              Llama 3 Groq Tool Use 8B
+                            </option>
+                            <option value="llama3-groq-tool-use:70b">
+                              Llama 3 Groq Tool Use 70B
+                            </option>
+                            <option value="llama3.1:8b">Llama 3.1 8B</option>
+                            <option value="llama3.1:70b">Llama 3.1 70B</option>
+                            <option value="llama3.1:405b">
+                              Llama 3.1 405B
+                            </option>
+                            <option value="llama3.2:1b">Llama 3.2 1B</option>
+                            <option value="llama3.2:3b">Llama 3.2 3B</option>
+                            <option value="llama3.2-vision:11b">
+                              Llama 3.2 Vision 11B
+                            </option>
+                            <option value="llama3.2-vision:90b">
+                              Llama 3.2 Vision 90B
+                            </option>
+                            <option value="llama3.3:70b">Llama 3.3 70B</option>
+                            <option value="llama4:16x17b">
+                              Llama 4 16x17B
+                            </option>
+                            <option value="llama4:128x17b">
+                              Llama 4 128x17B
+                            </option>
+                            <option value="llava:7b">LLaVA 7B</option>
+                            <option value="llava:13b">LLaVA 13B</option>
+                            <option value="llava:34b">LLaVA 34B</option>
+                            <option value="llava-llama3:8b">
+                              LLaVA Llama 3 8B
+                            </option>
+                            <option value="llava-phi3:3.8b">
+                              LLaVA Phi 3 3.8B
+                            </option>
+                            <option value="magicoder:7b">Magicoder 7B</option>
+                            <option value="magistral:24b">Magistral 24B</option>
+                            <option value="marco-o1:7b">Marco O1 7B</option>
+                            <option value="mathstral:7b">Mathstral 7B</option>
+                            <option value="meditron:7b">Meditron 7B</option>
+                            <option value="meditron:70b">Meditron 70B</option>
+                            <option value="medllama2:7b">MedLlama 2 7B</option>
+                            <option value="megadolphin:120b">
+                              MegaDolphin 120B
+                            </option>
+                            <option value="minicpm-v:8b">MiniCPM V 8B</option>
+                            <option value="mistral:latest">
+                              Mistral Latest
+                            </option>
+                            <option value="mistral:7b">Mistral 7B</option>
+                            <option value="mistral-large:123b">
+                              Mistral Large 123B
+                            </option>
+                            <option value="mistral-nemo:12b">
+                              Mistral Nemo 12B
+                            </option>
+                            <option value="mistral-small:22b">
+                              Mistral Small 22B
+                            </option>
+                            <option value="mistral-small:24b">
+                              Mistral Small 24B
+                            </option>
+                            <option value="mistral-small3.2:24b">
+                              Mistral Small 3.2 24B
+                            </option>
+                            <option value="mistrallite:7b">
+                              MistralLite 7B
+                            </option>
+                            <option value="mixtral:8x7b">Mixtral 8x7B</option>
+                            <option value="mixtral:8x22b">Mixtral 8x22B</option>
+                            <option value="moondream:1.8b">
+                              Moondream 1.8B
+                            </option>
+                            <option value="mxbai-embed-large:335m">
+                              MXBai Embed Large 335M
+                            </option>
+                            <option value="nemotron:70b">Nemotron 70B</option>
+                            <option value="nemotron-mini:4b">
+                              Nemotron Mini 4B
+                            </option>
+                            <option value="neural-chat:7b">
+                              Neural Chat 7B
+                            </option>
+                            <option value="notus:7b">Notus 7B</option>
+                            <option value="notux:8x7b">Notux 8x7B</option>
+                            <option value="nous-hermes:7b">
+                              Nous Hermes 7B
+                            </option>
+                            <option value="nous-hermes:13b">
+                              Nous Hermes 13B
+                            </option>
+                            <option value="nous-hermes2:10.7b">
+                              Nous Hermes 2 10.7B
+                            </option>
+                            <option value="nous-hermes2:34b">
+                              Nous Hermes 2 34B
+                            </option>
+                            <option value="nous-hermes2-mixtral:8x7b">
+                              Nous Hermes 2 Mixtral 8x7B
+                            </option>
+                            <option value="nuextract:3.8b">
+                              Nuextract 3.8B
+                            </option>
+                            <option value="olmo2:7b">OLMo 2 7B</option>
+                            <option value="olmo2:13b">OLMo 2 13B</option>
+                            <option value="open-orca-platypus2:13b">
+                              Open Orca Platypus 2 13B
+                            </option>
+                            <option value="openchat:7b">OpenChat 7B</option>
+                            <option value="openhermes:7b">OpenHermes 7B</option>
+                            <option value="openthinker:7b">
+                              OpenThinker 7B
+                            </option>
+                            <option value="openthinker:32b">
+                              OpenThinker 32B
+                            </option>
+                            <option value="orca-mini:3b">Orca Mini 3B</option>
+                            <option value="orca-mini:7b">Orca Mini 7B</option>
+                            <option value="orca-mini:13b">Orca Mini 13B</option>
+                            <option value="orca-mini:70b">Orca Mini 70B</option>
+                            <option value="orca2:7b">Orca 2 7B</option>
+                            <option value="orca2:13b">Orca 2 13B</option>
+                            <option value="phind-codellama:34b">
+                              Phind CodeLlama 34B
+                            </option>
+                            <option value="phi:2.7b">Phi 2.7B</option>
+                            <option value="phi3:latest">Phi 3 Latest</option>
+                            <option value="phi3:3.8b">Phi 3 3.8B</option>
+                            <option value="phi3:14b">Phi 3 14B</option>
+                            <option value="phi3.5:3.8b">Phi 3.5 3.8B</option>
+                            <option value="phi4:14b">Phi 4 14B</option>
+                            <option value="phi4-mini:3.8b">
+                              Phi 4 Mini 3.8B
+                            </option>
+                            <option value="phi4-mini-reasoning:3.8b">
+                              Phi 4 Mini Reasoning 3.8B
+                            </option>
+                            <option value="phi4-reasoning:14b">
+                              Phi 4 Reasoning 14B
+                            </option>
+                            <option value="qwen:0.5b">Qwen 0.5B</option>
+                            <option value="qwen:1.8b">Qwen 1.8B</option>
+                            <option value="qwen:4b">Qwen 4B</option>
+                            <option value="qwen:7b">Qwen 7B</option>
+                            <option value="qwen:14b">Qwen 14B</option>
+                            <option value="qwen:32b">Qwen 32B</option>
+                            <option value="qwen:72b">Qwen 72B</option>
+                            <option value="qwen:110b">Qwen 110B</option>
+                            <option value="qwen2:0.5b">Qwen 2 0.5B</option>
+                            <option value="qwen2:1.5b">Qwen 2 1.5B</option>
+                            <option value="qwen2:7b">Qwen 2 7B</option>
+                            <option value="qwen2:72b">Qwen 2 72B</option>
+                            <option value="qwen2-math:1.5b">
+                              Qwen 2 Math 1.5B
+                            </option>
+                            <option value="qwen2-math:7b">
+                              Qwen 2 Math 7B
+                            </option>
+                            <option value="qwen2-math:72b">
+                              Qwen 2 Math 72B
+                            </option>
+                            <option value="qwen2.5:0.5b">Qwen 2.5 0.5B</option>
+                            <option value="qwen2.5:1.5b">Qwen 2.5 1.5B</option>
+                            <option value="qwen2.5:3b">Qwen 2.5 3B</option>
+                            <option value="qwen2.5:7b">Qwen 2.5 7B</option>
+                            <option value="qwen2.5:14b">Qwen 2.5 14B</option>
+                            <option value="qwen2.5:32b">Qwen 2.5 32B</option>
+                            <option value="qwen2.5:72b">Qwen 2.5 72B</option>
+                            <option value="qwen2.5vl:3b">Qwen 2.5 VL 3B</option>
+                            <option value="qwen2.5vl:7b">Qwen 2.5 VL 7B</option>
+                            <option value="qwen2.5vl:32b">
+                              Qwen 2.5 VL 32B
+                            </option>
+                            <option value="qwen2.5vl:72b">
+                              Qwen 2.5 VL 72b
+                            </option>
+                            <option value="qwen3:0.6b">Qwen 3 0.6B</option>
+                            <option value="qwen3:1.7b">Qwen 3 1.7B</option>
+                            <option value="qwen3:4b">Qwen 3 4B</option>
+                            <option value="qwen3:8b">Qwen 3 8B</option>
+                            <option value="qwen3:14b">Qwen 3 14B</option>
+                            <option value="qwen3:30b">Qwen 3 30B</option>
+                            <option value="qwen3:32b">Qwen 3 32B</option>
+                            <option value="qwen3:235b">Qwen 3 235B</option>
+                            <option value="qwen3-embedding:0.6b">
+                              Qwen 3 Embedding 0.6B
+                            </option>
+                            <option value="qwen3-embedding:4b">
+                              Qwen 3 Embedding 4B
+                            </option>
+                            <option value="qwen3-embedding:8b">
+                              Qwen 3 Embedding 8B
+                            </option>
+                            <option value="qwq:32b">QwQ 32B</option>
+                            <option value="r1-1776:70b">R1 1776 70B</option>
+                            <option value="r1-1776:671b">R1 1776 671B</option>
+                            <option value="reflection:70b">
+                              Reflection 70B
+                            </option>
+                            <option value="sailor2:1b">Sailor 2 1B</option>
+                            <option value="sailor2:8b">Sailor 2 8B</option>
+                            <option value="sailor2:20b">Sailor 2 20B</option>
+                            <option value="samantha-mistral:7b">
+                              Samantha Mistral 7B
+                            </option>
+                            <option value="shieldgemma:2b">
+                              ShieldGemma 2B
+                            </option>
+                            <option value="shieldgemma:9b">
+                              ShieldGemma 9B
+                            </option>
+                            <option value="shieldgemma:27b">
+                              ShieldGemma 27B
+                            </option>
+                            <option value="smallthinker:3b">
+                              SmallThinker 3B
+                            </option>
+                            <option value="smollm:135m">SmolLM 135M</option>
+                            <option value="smollm:360m">SmolLM 360M</option>
+                            <option value="smollm:1.7b">SmolLM 1.7B</option>
+                            <option value="smollm2:135m">SmolLM 2 135M</option>
+                            <option value="smollm2:360m">SmolLM 2 360M</option>
+                            <option value="smollm2:1.7b">SmolLM 2 1.7B</option>
+                            <option value="solar:10.7b">Solar 10.7B</option>
+                            <option value="solar-pro:22b">Solar Pro 22B</option>
+                            <option value="starling-lm:7b">
+                              Starling LM 7B
+                            </option>
+                            <option value="stable-beluga:7b">
+                              Stable Beluga 7B
+                            </option>
+                            <option value="stable-beluga:13b">
+                              Stable Beluga 13B
+                            </option>
+                            <option value="stable-beluga:70b">
+                              Stable Beluga 70B
+                            </option>
+                            <option value="stablelm-zephyr:3b">
+                              StableLM Zephyr 3B
+                            </option>
+                            <option value="stablelm2:1.6b">
+                              StableLM 2 1.6B
+                            </option>
+                            <option value="stablelm2:12b">
+                              StableLM 2 12B
+                            </option>
+                            <option value="tinydolphin:1.1b">
+                              TinyDolphin 1.1B
+                            </option>
+                            <option value="tinyllama:1.1b">
+                              TinyLlama 1.1B
+                            </option>
+                            <option value="tulu3:8b">Tulu 3 8B</option>
+                            <option value="tulu3:70b">Tulu 3 70B</option>
+                            <option value="vicuna:7b">Vicuna 7B</option>
+                            <option value="vicuna:13b">Vicuna 13B</option>
+                            <option value="vicuna:33b">Vicuna 33B</option>
+                            <option value="wizard-math:7b">
+                              Wizard Math 7b
+                            </option>
+                            <option value="wizard-math:13b">
+                              Wizard Math 13B
+                            </option>
+                            <option value="wizard-math:70b">
+                              Wizard Math 70B
+                            </option>
+                            <option value="wizard-vicuna:13b">
+                              Wizard Vicuna 13B
+                            </option>
+                            <option value="wizard-vicuna-uncensored:7b">
+                              Wizard Vicuna Uncensored 7B
+                            </option>
+                            <option value="wizard-vicuna-uncensored:13b">
+                              Wizard Vicuna Uncensored 13B
+                            </option>
+                            <option value="wizard-vicuna-uncensored:30b">
+                              Wizard Vicuna Uncensored 30B
+                            </option>
+                            <option value="wizardlm:7b">WizardLM 7B</option>
+                            <option value="wizardlm:13b">WizardLM 13B</option>
+                            <option value="wizardlm:70b">WizardLM 70B</option>
+                            <option value="wizardlm-uncensored:13b">
+                              WizardLM Uncensored 13B
+                            </option>
+                            <option value="wizardlm2:7b">WizardLM 2 7B</option>
+                            <option value="wizardlm2:8x22b">
+                              WizardLM 2 8x22B
+                            </option>
+                            <option value="wizardcoder:33b">
+                              WizardCoder 33B
+                            </option>
+                            <option value="xwinlm:7b">XwinLM 7B</option>
+                            <option value="xwinlm:13b">XwinLM 13B</option>
+                            <option value="yarn-llama2:7b">
+                              Yarn Llama 2 7B
+                            </option>
+                            <option value="yarn-llama2:13b">
+                              Yarn Llama 2 13B
+                            </option>
+                            <option value="yarn-mistral:7b">
+                              Yarn Mistral 7B
+                            </option>
+                            <option value="yi:6b">Yi 6B</option>
+                            <option value="yi:9b">Yi 9B</option>
+                            <option value="yi:34b">Yi 34B</option>
+                            <option value="yi-coder:1.5b">Yi Coder 1.5B</option>
+                            <option value="yi-coder:9b">Yi Coder 9B</option>
+                            <option value="zephyr:7b">Zephyr 7B</option>
+                            <option value="zephyr:141b">Zephyr 141B</option>
+                          </select>
+                        </div>
 
-                    {/* Creative Model */}
-                    <div>
-                      <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Creative</label>
-                      <select 
-                        value={config.creativeModel || 'mistral:latest'}
-                        onChange={(e) => setConfig(prev => ({ ...prev, creativeModel: e.target.value }))}
-                        style={{ 
-                          border: '1px solid var(--chatty-line)', 
-                          backgroundColor: 'var(--chatty-bg-message)', 
-                          color: 'var(--chatty-text)' 
-                        }}
-                        className="w-full p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--chatty-button)]"
-                      >
-                        <option value="aya:8b">Aya 8B</option>
-                        <option value="aya:35b">Aya 35B</option>
-                        <option value="aya-expanse:8b">Aya Expanse 8B</option>
-                        <option value="aya-expanse:32b">Aya Expanse 32B</option>
-                        <option value="alfred:40b">Alfred 40B</option>
-                        <option value="athene-v2:72b">Athene V2 72B</option>
-                        <option value="bakllava:7b">BakLLaVA 7B</option>
-                        <option value="bespoke-minicheck:7b">Bespoke MiniCheck 7B</option>
-                        <option value="cogito:3b">Cogito 3B</option>
-                        <option value="cogito:8b">Cogito 8B</option>
-                        <option value="cogito:14b">Cogito 14B</option>
-                        <option value="cogito:32b">Cogito 32B</option>
-                        <option value="cogito:70b">Cogito 70B</option>
-                        <option value="command-a:111b">Command A 111B</option>
-                        <option value="command-r:35b">Command R 35B</option>
-                        <option value="command-r-plus:104b">Command R+ 104B</option>
-                        <option value="command-r7b:7b">Command R7B 7B</option>
-                        <option value="command-r7b-arabic:7b">Command R7B Arabic 7B</option>
-                        <option value="deepseek-llm:7b">DeepSeek LLM 7B</option>
-                        <option value="deepseek-llm:67b">DeepSeek LLM 67B</option>
-                        <option value="deepseek-r1:1.5b">DeepSeek R1 1.5B</option>
-                        <option value="deepseek-r1:7b">DeepSeek R1 7B</option>
-                        <option value="deepseek-r1:8b">DeepSeek R1 8B</option>
-                        <option value="deepseek-r1:14b">DeepSeek R1 14B</option>
-                        <option value="deepseek-r1:32b">DeepSeek R1 32B</option>
-                        <option value="deepseek-r1:70b">DeepSeek R1 70B</option>
-                        <option value="deepseek-r1:671b">DeepSeek R1 671B</option>
-                        <option value="deepseek-v2:16b">DeepSeek V2 16B</option>
-                        <option value="deepseek-v2:236b">DeepSeek V2 236B</option>
-                        <option value="deepseek-v2.5:236b">DeepSeek V2.5 236B</option>
-                        <option value="deepseek-v3:671b">DeepSeek V3 671B</option>
-                        <option value="deepseek-v3.1:671b">DeepSeek V3.1 671B</option>
-                        <option value="dbrx:132b">DBRX 132B</option>
-                        <option value="dolphin-llama3:8b">Dolphin Llama 3 8B</option>
-                        <option value="dolphin-llama3:70b">Dolphin Llama 3 70B</option>
-                        <option value="dolphin-mistral:7b">Dolphin Mistral 7B</option>
-                        <option value="dolphin-phi:2.7b">Dolphin Phi 2.7B</option>
-                        <option value="dolphin3:8b">Dolphin 3 8B</option>
-                        <option value="everythinglm:13b">EverythingLM 13B</option>
-                        <option value="exaone-deep:2.4b">EXAONE Deep 2.4B</option>
-                        <option value="exaone-deep:7.8b">EXAONE Deep 7.8B</option>
-                        <option value="exaone-deep:32b">EXAONE Deep 32B</option>
-                        <option value="exaone3.5:2.4b">EXAONE 3.5 2.4B</option>
-                        <option value="exaone3.5:7.8b">EXAONE 3.5 7.8B</option>
-                        <option value="exaone3.5:32b">EXAONE 3.5 32B</option>
-                        <option value="falcon:7b">Falcon 7B</option>
-                        <option value="falcon:40b">Falcon 40B</option>
-                        <option value="falcon:180b">Falcon 180B</option>
-                        <option value="falcon2:11b">Falcon 2 11B</option>
-                        <option value="falcon3:1b">Falcon 3 1B</option>
-                        <option value="falcon3:3b">Falcon 3 3B</option>
-                        <option value="falcon3:7b">Falcon 3 7B</option>
-                        <option value="falcon3:10b">Falcon 3 10B</option>
-                        <option value="gemma:2b">Gemma 2B</option>
-                        <option value="gemma:7b">Gemma 7B</option>
-                        <option value="gemma2:2b">Gemma 2 2B</option>
-                        <option value="gemma2:9b">Gemma 2 9B</option>
-                        <option value="gemma2:27b">Gemma 2 27B</option>
-                        <option value="gemma3:270m">Gemma 3 270M</option>
-                        <option value="gemma3:1b">Gemma 3 1B</option>
-                        <option value="gemma3:4b">Gemma 3 4B</option>
-                        <option value="gemma3:12b">Gemma 3 12B</option>
-                        <option value="gemma3:27b">Gemma 3 27B</option>
-                        <option value="gemma3n:e2b">Gemma 3n E2B</option>
-                        <option value="gemma3n:e4b">Gemma 3n E4B</option>
-                        <option value="glm4:9b">GLM 4 9B</option>
-                        <option value="goliath:70b">Goliath 70B</option>
-                        <option value="granite-embedding:30m">Granite Embedding 30M</option>
-                        <option value="granite-embedding:278m">Granite Embedding 278M</option>
-                        <option value="granite3-dense:2b">Granite 3 Dense 2B</option>
-                        <option value="granite3-dense:8b">Granite 3 Dense 8B</option>
-                        <option value="granite3-guardian:2b">Granite 3 Guardian 2B</option>
-                        <option value="granite3-guardian:8b">Granite 3 Guardian 8B</option>
-                        <option value="granite3-moe:1b">Granite 3 MoE 1B</option>
-                        <option value="granite3-moe:3b">Granite 3 MoE 3b</option>
-                        <option value="granite3.1-dense:2b">Granite 3.1 Dense 2B</option>
-                        <option value="granite3.1-dense:8b">Granite 3.1 Dense 8B</option>
-                        <option value="granite3.1-moe:1b">Granite 3.1 MoE 1B</option>
-                        <option value="granite3.1-moe:3b">Granite 3.1 MoE 3B</option>
-                        <option value="granite3.2:2b">Granite 3.2 2B</option>
-                        <option value="granite3.2:8b">Granite 3.2 8B</option>
-                        <option value="granite3.2-vision:2b">Granite 3.2 Vision 2B</option>
-                        <option value="granite3.3:2b">Granite 3.3 2B</option>
-                        <option value="granite3.3:8b">Granite 3.3 8B</option>
-                        <option value="granite4:2b">Granite 4 2B</option>
-                        <option value="granite4:8b">Granite 4 8B</option>
-                        <option value="gpt-oss:20b">GPT-OSS 20B</option>
-                        <option value="gpt-oss:120b">GPT-OSS 120B</option>
-                        <option value="hermes3:3b">Hermes 3 3B</option>
-                        <option value="hermes3:8b">Hermes 3 8B</option>
-                        <option value="hermes3:70b">Hermes 3 70B</option>
-                        <option value="hermes3:405b">Hermes 3 405B</option>
-                        <option value="internlm2:1m">InternLM 2 1M</option>
-                        <option value="internlm2:1.8b">InternLM 2 1.8B</option>
-                        <option value="internlm2:7b">InternLM 2 7B</option>
-                        <option value="internlm2:20b">InternLM 2 20B</option>
-                        <option value="kimi-k2:cloud">Kimi K2 Cloud</option>
-                        <option value="llama-guard3:1b">Llama Guard 3 1B</option>
-                        <option value="llama-guard3:8b">Llama Guard 3 8B</option>
-                        <option value="llama-pro:8b">Llama Pro 8B</option>
-                        <option value="llama-pro:70b">Llama Pro 70B</option>
-                        <option value="llama2:7b">Llama 2 7B</option>
-                        <option value="llama2:13b">Llama 2 13B</option>
-                        <option value="llama2:70b">Llama 2 70B</option>
-                        <option value="llama2-chinese:7b">Llama 2 Chinese 7B</option>
-                        <option value="llama2-chinese:13b">Llama 2 Chinese 13B</option>
-                        <option value="llama2-uncensored:7b">Llama 2 Uncensored 7B</option>
-                        <option value="llama2-uncensored:70b">Llama 2 Uncensored 70B</option>
-                        <option value="llama3:8b">Llama 3 8B</option>
-                        <option value="llama3:70b">Llama 3 70B</option>
-                        <option value="llama3-chatqa:8b">Llama 3 ChatQA 8B</option>
-                        <option value="llama3-chatqa:70b">Llama 3 ChatQA 70B</option>
-                        <option value="llama3-gradient:8b">Llama 3 Gradient 8B</option>
-                        <option value="llama3-gradient:70b">Llama 3 Gradient 70B</option>
-                        <option value="llama3-groq-tool-use:8b">Llama 3 Groq Tool Use 8B</option>
-                        <option value="llama3-groq-tool-use:70b">Llama 3 Groq Tool Use 70B</option>
-                        <option value="llama3.1:8b">Llama 3.1 8B</option>
-                        <option value="llama3.1:70b">Llama 3.1 70B</option>
-                        <option value="llama3.1:405b">Llama 3.1 405B</option>
-                        <option value="llama3.2:1b">Llama 3.2 1B</option>
-                        <option value="llama3.2:3b">Llama 3.2 3B</option>
-                        <option value="llama3.2-vision:11b">Llama 3.2 Vision 11B</option>
-                        <option value="llama3.2-vision:90b">Llama 3.2 Vision 90B</option>
-                        <option value="llama3.3:70b">Llama 3.3 70B</option>
-                        <option value="llama4:16x17b">Llama 4 16x17B</option>
-                        <option value="llama4:128x17b">Llama 4 128x17B</option>
-                        <option value="llava:7b">LLaVA 7B</option>
-                        <option value="llava:13b">LLaVA 13B</option>
-                        <option value="llava:34b">LLaVA 34B</option>
-                        <option value="llava-llama3:8b">LLaVA Llama 3 8B</option>
-                        <option value="llava-phi3:3.8b">LLaVA Phi 3 3.8B</option>
-                        <option value="magistral:24b">Magistral 24B</option>
-                        <option value="marco-o1:7b">Marco O1 7B</option>
-                        <option value="mathstral:7b">Mathstral 7B</option>
-                        <option value="meditron:7b">Meditron 7B</option>
-                        <option value="meditron:70b">Meditron 70B</option>
-                        <option value="medllama2:7b">MedLlama 2 7B</option>
-                        <option value="megadolphin:120b">MegaDolphin 120B</option>
-                        <option value="minicpm-v:8b">MiniCPM V 8B</option>
-                        <option value="mistral:latest">Mistral Latest</option>
-                        <option value="mistral:7b">Mistral 7B</option>
-                        <option value="mistral-large:123b">Mistral Large 123B</option>
-                        <option value="mistral-nemo:12b">Mistral Nemo 12B</option>
-                        <option value="mistral-small:22b">Mistral Small 22B</option>
-                        <option value="mistral-small:24b">Mistral Small 24B</option>
-                        <option value="mistral-small3.1:24b">Mistral Small 3.1 24B</option>
-                        <option value="mistral-small3.2:24b">Mistral Small 3.2 24B</option>
-                        <option value="mistrallite:7b">MistralLite 7B</option>
-                        <option value="mixtral:8x7b">Mixtral 8x7B</option>
-                        <option value="mixtral:8x22b">Mixtral 8x22B</option>
-                        <option value="moondream:1.8b">Moondream 1.8B</option>
-                        <option value="mxbai-embed-large:335m">MXBai Embed Large 335M</option>
-                        <option value="nemotron:70b">Nemotron 70B</option>
-                        <option value="nemotron-mini:4b">Nemotron Mini 4B</option>
-                        <option value="neural-chat:7b">Neural Chat 7B</option>
-                        <option value="notus:7b">Notus 7B</option>
-                        <option value="notux:8x7b">Notux 8x7B</option>
-                        <option value="nous-hermes:7b">Nous Hermes 7B</option>
-                        <option value="nous-hermes:13b">Nous Hermes 13B</option>
-                        <option value="nous-hermes2:10.7b">Nous Hermes 2 10.7B</option>
-                        <option value="nous-hermes2:34b">Nous Hermes 2 34B</option>
-                        <option value="nous-hermes2-mixtral:8x7b">Nous Hermes 2 Mixtral 8x7B</option>
-                        <option value="nuextract:3.8b">Nuextract 3.8B</option>
-                        <option value="olmo2:7b">OLMo 2 7B</option>
-                        <option value="olmo2:13b">OLMo 2 13B</option>
-                        <option value="open-orca-platypus2:13b">Open Orca Platypus 2 13B</option>
-                        <option value="openchat:7b">OpenChat 7B</option>
-                        <option value="openhermes:7b">OpenHermes 7B</option>
-                        <option value="openthinker:7b">OpenThinker 7B</option>
-                        <option value="openthinker:32b">OpenThinker 32B</option>
-                        <option value="orca-mini:3b">Orca Mini 3B</option>
-                        <option value="orca-mini:7b">Orca Mini 7B</option>
-                        <option value="orca-mini:13b">Orca Mini 13B</option>
-                        <option value="orca-mini:70b">Orca Mini 70B</option>
-                        <option value="orca2:7b">Orca 2 7B</option>
-                        <option value="orca2:13b">Orca 2 13B</option>
-                        <option value="phi:2.7b">Phi 2.7B</option>
-                        <option value="phi3:latest">Phi 3 Latest</option>
-                        <option value="phi3:3.8b">Phi 3 3.8B</option>
-                        <option value="phi3:14b">Phi 3 14B</option>
-                        <option value="phi3.5:3.8b">Phi 3.5 3.8B</option>
-                        <option value="phi4:14b">Phi 4 14B</option>
-                        <option value="phi4-mini:3.8b">Phi 4 Mini 3.8B</option>
-                        <option value="phi4-mini-reasoning:3.8b">Phi 4 Mini Reasoning 3.8B</option>
-                        <option value="phi4-reasoning:14b">Phi 4 Reasoning 14B</option>
-                        <option value="qwen:0.5b">Qwen 0.5B</option>
-                        <option value="qwen:1.8b">Qwen 1.8B</option>
-                        <option value="qwen:4b">Qwen 4B</option>
-                        <option value="qwen:7b">Qwen 7B</option>
-                        <option value="qwen:14b">Qwen 14B</option>
-                        <option value="qwen:32b">Qwen 32B</option>
-                        <option value="qwen:72b">Qwen 72B</option>
-                        <option value="qwen:110b">Qwen 110B</option>
-                        <option value="qwen2:0.5b">Qwen 2 0.5B</option>
-                        <option value="qwen2:1.5b">Qwen 2 1.5B</option>
-                        <option value="qwen2:7b">Qwen 2 7B</option>
-                        <option value="qwen2:72b">Qwen 2 72B</option>
-                        <option value="qwen2-math:1.5b">Qwen 2 Math 1.5B</option>
-                        <option value="qwen2-math:7b">Qwen 2 Math 7B</option>
-                        <option value="qwen2-math:72b">Qwen 2 Math 72B</option>
-                        <option value="qwen2.5:0.5b">Qwen 2.5 0.5B</option>
-                        <option value="qwen2.5:1.5b">Qwen 2.5 1.5B</option>
-                        <option value="qwen2.5:3b">Qwen 2.5 3B</option>
-                        <option value="qwen2.5:7b">Qwen 2.5 7B</option>
-                        <option value="qwen2.5:14b">Qwen 2.5 14B</option>
-                        <option value="qwen2.5:32b">Qwen 2.5 32B</option>
-                        <option value="qwen2.5:72b">Qwen 2.5 72B</option>
-                        <option value="qwen2.5vl:3b">Qwen 2.5 VL 3B</option>
-                        <option value="qwen2.5vl:7b">Qwen 2.5 VL 7B</option>
-                        <option value="qwen2.5vl:32b">Qwen 2.5 VL 32B</option>
-                        <option value="qwen2.5vl:72b">Qwen 2.5 VL 72b</option>
-                        <option value="qwen3:0.6b">Qwen 3 0.6B</option>
-                        <option value="qwen3:1.7b">Qwen 3 1.7B</option>
-                        <option value="qwen3:4b">Qwen 3 4B</option>
-                        <option value="qwen3:8b">Qwen 3 8B</option>
-                        <option value="qwen3:14b">Qwen 3 14B</option>
-                        <option value="qwen3:30b">Qwen 3 30B</option>
-                        <option value="qwen3:32b">Qwen 3 32B</option>
-                        <option value="qwen3:235b">Qwen 3 235B</option>
-                        <option value="qwen3-embedding:0.6b">Qwen 3 Embedding 0.6B</option>
-                        <option value="qwen3-embedding:4b">Qwen 3 Embedding 4B</option>
-                        <option value="qwen3-embedding:8b">Qwen 3 Embedding 8B</option>
-                        <option value="qwq:32b">QwQ 32B</option>
-                        <option value="r1-1776:70b">R1 1776 70B</option>
-                        <option value="r1-1776:671b">R1 1776 671B</option>
-                        <option value="reflection:70b">Reflection 70B</option>
-                        <option value="sailor2:1b">Sailor 2 1B</option>
-                        <option value="sailor2:8b">Sailor 2 8B</option>
-                        <option value="sailor2:20b">Sailor 2 20B</option>
-                        <option value="samantha-mistral:7b">Samantha Mistral 7B</option>
-                        <option value="shieldgemma:2b">ShieldGemma 2B</option>
-                        <option value="shieldgemma:9b">ShieldGemma 9B</option>
-                        <option value="shieldgemma:27b">ShieldGemma 27B</option>
-                        <option value="smallthinker:3b">SmallThinker 3B</option>
-                        <option value="smollm:135m">SmolLM 135M</option>
-                        <option value="smollm:360m">SmolLM 360M</option>
-                        <option value="smollm:1.7b">SmolLM 1.7B</option>
-                        <option value="smollm2:135m">SmolLM 2 135M</option>
-                        <option value="smollm2:360m">SmolLM 2 360M</option>
-                        <option value="smollm2:1.7b">SmolLM 2 1.7B</option>
-                        <option value="solar:10.7b">Solar 10.7B</option>
-                        <option value="solar-pro:22b">Solar Pro 22B</option>
-                        <option value="starling-lm:7b">Starling LM 7B</option>
-                        <option value="stable-beluga:7b">Stable Beluga 7B</option>
-                        <option value="stable-beluga:13b">Stable Beluga 13B</option>
-                        <option value="stable-beluga:70b">Stable Beluga 70B</option>
-                        <option value="stablelm-zephyr:3b">StableLM Zephyr 3B</option>
-                        <option value="stablelm2:1.6b">StableLM 2 1.6B</option>
-                        <option value="stablelm2:12b">StableLM 2 12B</option>
-                        <option value="tinydolphin:1.1b">TinyDolphin 1.1B</option>
-                        <option value="tinyllama:1.1b">TinyLlama 1.1B</option>
-                        <option value="tulu3:8b">Tulu 3 8B</option>
-                        <option value="tulu3:70b">Tulu 3 70B</option>
-                        <option value="vicuna:7b">Vicuna 7B</option>
-                        <option value="vicuna:13b">Vicuna 13B</option>
-                        <option value="vicuna:33b">Vicuna 33B</option>
-                        <option value="wizard-math:7b">Wizard Math 7b</option>
-                        <option value="wizard-math:13b">Wizard Math 13B</option>
-                        <option value="wizard-math:70b">Wizard Math 70B</option>
-                        <option value="wizard-vicuna:13b">Wizard Vicuna 13B</option>
-                        <option value="wizard-vicuna-uncensored:7b">Wizard Vicuna Uncensored 7B</option>
-                        <option value="wizard-vicuna-uncensored:13b">Wizard Vicuna Uncensored 13B</option>
-                        <option value="wizard-vicuna-uncensored:30b">Wizard Vicuna Uncensored 30B</option>
-                        <option value="wizardlm:7b">WizardLM 7B</option>
-                        <option value="wizardlm:13b">WizardLM 13B</option>
-                        <option value="wizardlm:70b">WizardLM 70B</option>
-                        <option value="wizardlm-uncensored:13b">WizardLM Uncensored 13B</option>
-                        <option value="wizardlm2:7b">WizardLM 2 7B</option>
-                        <option value="wizardlm2:8x22b">WizardLM 2 8x22B</option>
-                        <option value="xwinlm:7b">XwinLM 7B</option>
-                        <option value="xwinlm:13b">XwinLM 13B</option>
-                        <option value="yarn-llama2:7b">Yarn Llama 2 7B</option>
-                        <option value="yarn-llama2:13b">Yarn Llama 2 13B</option>
-                        <option value="yarn-mistral:7b">Yarn Mistral 7B</option>
-                        <option value="yi:6b">Yi 6B</option>
-                        <option value="yi:9b">Yi 9B</option>
-                        <option value="yi:34b">Yi 34B</option>
-                        <option value="zephyr:7b">Zephyr 7B</option>
-                        <option value="zephyr:141b">Zephyr 141B</option>
-                      </select>
-                </div>
+                        {/* Creative Model */}
+                        <div>
+                          <label
+                            style={{ color: "var(--chatty-text)" }}
+                            className="block text-sm font-medium mb-2"
+                          >
+                            Creative
+                          </label>
+                          <select
+                            value={config.creativeModel || "mistral:latest"}
+                            onChange={(e) =>
+                              setConfig((prev) => ({
+                                ...prev,
+                                creativeModel: e.target.value,
+                              }))
+                            }
+                            style={{
+                              border: "1px solid var(--chatty-line)",
+                              backgroundColor: "var(--chatty-bg-message)",
+                              color: "var(--chatty-text)",
+                            }}
+                            className="w-full p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--chatty-button)]"
+                          >
+                            <option value="aya:8b">Aya 8B</option>
+                            <option value="aya:35b">Aya 35B</option>
+                            <option value="aya-expanse:8b">
+                              Aya Expanse 8B
+                            </option>
+                            <option value="aya-expanse:32b">
+                              Aya Expanse 32B
+                            </option>
+                            <option value="alfred:40b">Alfred 40B</option>
+                            <option value="athene-v2:72b">Athene V2 72B</option>
+                            <option value="bakllava:7b">BakLLaVA 7B</option>
+                            <option value="bespoke-minicheck:7b">
+                              Bespoke MiniCheck 7B
+                            </option>
+                            <option value="cogito:3b">Cogito 3B</option>
+                            <option value="cogito:8b">Cogito 8B</option>
+                            <option value="cogito:14b">Cogito 14B</option>
+                            <option value="cogito:32b">Cogito 32B</option>
+                            <option value="cogito:70b">Cogito 70B</option>
+                            <option value="command-a:111b">
+                              Command A 111B
+                            </option>
+                            <option value="command-r:35b">Command R 35B</option>
+                            <option value="command-r-plus:104b">
+                              Command R+ 104B
+                            </option>
+                            <option value="command-r7b:7b">
+                              Command R7B 7B
+                            </option>
+                            <option value="command-r7b-arabic:7b">
+                              Command R7B Arabic 7B
+                            </option>
+                            <option value="deepseek-llm:7b">
+                              DeepSeek LLM 7B
+                            </option>
+                            <option value="deepseek-llm:67b">
+                              DeepSeek LLM 67B
+                            </option>
+                            <option value="deepseek-r1:1.5b">
+                              DeepSeek R1 1.5B
+                            </option>
+                            <option value="deepseek-r1:7b">
+                              DeepSeek R1 7B
+                            </option>
+                            <option value="deepseek-r1:8b">
+                              DeepSeek R1 8B
+                            </option>
+                            <option value="deepseek-r1:14b">
+                              DeepSeek R1 14B
+                            </option>
+                            <option value="deepseek-r1:32b">
+                              DeepSeek R1 32B
+                            </option>
+                            <option value="deepseek-r1:70b">
+                              DeepSeek R1 70B
+                            </option>
+                            <option value="deepseek-r1:671b">
+                              DeepSeek R1 671B
+                            </option>
+                            <option value="deepseek-v2:16b">
+                              DeepSeek V2 16B
+                            </option>
+                            <option value="deepseek-v2:236b">
+                              DeepSeek V2 236B
+                            </option>
+                            <option value="deepseek-v2.5:236b">
+                              DeepSeek V2.5 236B
+                            </option>
+                            <option value="deepseek-v3:671b">
+                              DeepSeek V3 671B
+                            </option>
+                            <option value="deepseek-v3.1:671b">
+                              DeepSeek V3.1 671B
+                            </option>
+                            <option value="dbrx:132b">DBRX 132B</option>
+                            <option value="dolphin-llama3:8b">
+                              Dolphin Llama 3 8B
+                            </option>
+                            <option value="dolphin-llama3:70b">
+                              Dolphin Llama 3 70B
+                            </option>
+                            <option value="dolphin-mistral:7b">
+                              Dolphin Mistral 7B
+                            </option>
+                            <option value="dolphin-phi:2.7b">
+                              Dolphin Phi 2.7B
+                            </option>
+                            <option value="dolphin3:8b">Dolphin 3 8B</option>
+                            <option value="everythinglm:13b">
+                              EverythingLM 13B
+                            </option>
+                            <option value="exaone-deep:2.4b">
+                              EXAONE Deep 2.4B
+                            </option>
+                            <option value="exaone-deep:7.8b">
+                              EXAONE Deep 7.8B
+                            </option>
+                            <option value="exaone-deep:32b">
+                              EXAONE Deep 32B
+                            </option>
+                            <option value="exaone3.5:2.4b">
+                              EXAONE 3.5 2.4B
+                            </option>
+                            <option value="exaone3.5:7.8b">
+                              EXAONE 3.5 7.8B
+                            </option>
+                            <option value="exaone3.5:32b">
+                              EXAONE 3.5 32B
+                            </option>
+                            <option value="falcon:7b">Falcon 7B</option>
+                            <option value="falcon:40b">Falcon 40B</option>
+                            <option value="falcon:180b">Falcon 180B</option>
+                            <option value="falcon2:11b">Falcon 2 11B</option>
+                            <option value="falcon3:1b">Falcon 3 1B</option>
+                            <option value="falcon3:3b">Falcon 3 3B</option>
+                            <option value="falcon3:7b">Falcon 3 7B</option>
+                            <option value="falcon3:10b">Falcon 3 10B</option>
+                            <option value="gemma:2b">Gemma 2B</option>
+                            <option value="gemma:7b">Gemma 7B</option>
+                            <option value="gemma2:2b">Gemma 2 2B</option>
+                            <option value="gemma2:9b">Gemma 2 9B</option>
+                            <option value="gemma2:27b">Gemma 2 27B</option>
+                            <option value="gemma3:270m">Gemma 3 270M</option>
+                            <option value="gemma3:1b">Gemma 3 1B</option>
+                            <option value="gemma3:4b">Gemma 3 4B</option>
+                            <option value="gemma3:12b">Gemma 3 12B</option>
+                            <option value="gemma3:27b">Gemma 3 27B</option>
+                            <option value="gemma3n:e2b">Gemma 3n E2B</option>
+                            <option value="gemma3n:e4b">Gemma 3n E4B</option>
+                            <option value="glm4:9b">GLM 4 9B</option>
+                            <option value="goliath:70b">Goliath 70B</option>
+                            <option value="granite-embedding:30m">
+                              Granite Embedding 30M
+                            </option>
+                            <option value="granite-embedding:278m">
+                              Granite Embedding 278M
+                            </option>
+                            <option value="granite3-dense:2b">
+                              Granite 3 Dense 2B
+                            </option>
+                            <option value="granite3-dense:8b">
+                              Granite 3 Dense 8B
+                            </option>
+                            <option value="granite3-guardian:2b">
+                              Granite 3 Guardian 2B
+                            </option>
+                            <option value="granite3-guardian:8b">
+                              Granite 3 Guardian 8B
+                            </option>
+                            <option value="granite3-moe:1b">
+                              Granite 3 MoE 1B
+                            </option>
+                            <option value="granite3-moe:3b">
+                              Granite 3 MoE 3b
+                            </option>
+                            <option value="granite3.1-dense:2b">
+                              Granite 3.1 Dense 2B
+                            </option>
+                            <option value="granite3.1-dense:8b">
+                              Granite 3.1 Dense 8B
+                            </option>
+                            <option value="granite3.1-moe:1b">
+                              Granite 3.1 MoE 1B
+                            </option>
+                            <option value="granite3.1-moe:3b">
+                              Granite 3.1 MoE 3B
+                            </option>
+                            <option value="granite3.2:2b">
+                              Granite 3.2 2B
+                            </option>
+                            <option value="granite3.2:8b">
+                              Granite 3.2 8B
+                            </option>
+                            <option value="granite3.2-vision:2b">
+                              Granite 3.2 Vision 2B
+                            </option>
+                            <option value="granite3.3:2b">
+                              Granite 3.3 2B
+                            </option>
+                            <option value="granite3.3:8b">
+                              Granite 3.3 8B
+                            </option>
+                            <option value="granite4:2b">Granite 4 2B</option>
+                            <option value="granite4:8b">Granite 4 8B</option>
+                            <option value="gpt-oss:20b">GPT-OSS 20B</option>
+                            <option value="gpt-oss:120b">GPT-OSS 120B</option>
+                            <option value="hermes3:3b">Hermes 3 3B</option>
+                            <option value="hermes3:8b">Hermes 3 8B</option>
+                            <option value="hermes3:70b">Hermes 3 70B</option>
+                            <option value="hermes3:405b">Hermes 3 405B</option>
+                            <option value="internlm2:1m">InternLM 2 1M</option>
+                            <option value="internlm2:1.8b">
+                              InternLM 2 1.8B
+                            </option>
+                            <option value="internlm2:7b">InternLM 2 7B</option>
+                            <option value="internlm2:20b">
+                              InternLM 2 20B
+                            </option>
+                            <option value="kimi-k2:cloud">Kimi K2 Cloud</option>
+                            <option value="llama-guard3:1b">
+                              Llama Guard 3 1B
+                            </option>
+                            <option value="llama-guard3:8b">
+                              Llama Guard 3 8B
+                            </option>
+                            <option value="llama-pro:8b">Llama Pro 8B</option>
+                            <option value="llama-pro:70b">Llama Pro 70B</option>
+                            <option value="llama2:7b">Llama 2 7B</option>
+                            <option value="llama2:13b">Llama 2 13B</option>
+                            <option value="llama2:70b">Llama 2 70B</option>
+                            <option value="llama2-chinese:7b">
+                              Llama 2 Chinese 7B
+                            </option>
+                            <option value="llama2-chinese:13b">
+                              Llama 2 Chinese 13B
+                            </option>
+                            <option value="llama2-uncensored:7b">
+                              Llama 2 Uncensored 7B
+                            </option>
+                            <option value="llama2-uncensored:70b">
+                              Llama 2 Uncensored 70B
+                            </option>
+                            <option value="llama3:8b">Llama 3 8B</option>
+                            <option value="llama3:70b">Llama 3 70B</option>
+                            <option value="llama3-chatqa:8b">
+                              Llama 3 ChatQA 8B
+                            </option>
+                            <option value="llama3-chatqa:70b">
+                              Llama 3 ChatQA 70B
+                            </option>
+                            <option value="llama3-gradient:8b">
+                              Llama 3 Gradient 8B
+                            </option>
+                            <option value="llama3-gradient:70b">
+                              Llama 3 Gradient 70B
+                            </option>
+                            <option value="llama3-groq-tool-use:8b">
+                              Llama 3 Groq Tool Use 8B
+                            </option>
+                            <option value="llama3-groq-tool-use:70b">
+                              Llama 3 Groq Tool Use 70B
+                            </option>
+                            <option value="llama3.1:8b">Llama 3.1 8B</option>
+                            <option value="llama3.1:70b">Llama 3.1 70B</option>
+                            <option value="llama3.1:405b">
+                              Llama 3.1 405B
+                            </option>
+                            <option value="llama3.2:1b">Llama 3.2 1B</option>
+                            <option value="llama3.2:3b">Llama 3.2 3B</option>
+                            <option value="llama3.2-vision:11b">
+                              Llama 3.2 Vision 11B
+                            </option>
+                            <option value="llama3.2-vision:90b">
+                              Llama 3.2 Vision 90B
+                            </option>
+                            <option value="llama3.3:70b">Llama 3.3 70B</option>
+                            <option value="llama4:16x17b">
+                              Llama 4 16x17B
+                            </option>
+                            <option value="llama4:128x17b">
+                              Llama 4 128x17B
+                            </option>
+                            <option value="llava:7b">LLaVA 7B</option>
+                            <option value="llava:13b">LLaVA 13B</option>
+                            <option value="llava:34b">LLaVA 34B</option>
+                            <option value="llava-llama3:8b">
+                              LLaVA Llama 3 8B
+                            </option>
+                            <option value="llava-phi3:3.8b">
+                              LLaVA Phi 3 3.8B
+                            </option>
+                            <option value="magistral:24b">Magistral 24B</option>
+                            <option value="marco-o1:7b">Marco O1 7B</option>
+                            <option value="mathstral:7b">Mathstral 7B</option>
+                            <option value="meditron:7b">Meditron 7B</option>
+                            <option value="meditron:70b">Meditron 70B</option>
+                            <option value="medllama2:7b">MedLlama 2 7B</option>
+                            <option value="megadolphin:120b">
+                              MegaDolphin 120B
+                            </option>
+                            <option value="minicpm-v:8b">MiniCPM V 8B</option>
+                            <option value="mistral:latest">
+                              Mistral Latest
+                            </option>
+                            <option value="mistral:7b">Mistral 7B</option>
+                            <option value="mistral-large:123b">
+                              Mistral Large 123B
+                            </option>
+                            <option value="mistral-nemo:12b">
+                              Mistral Nemo 12B
+                            </option>
+                            <option value="mistral-small:22b">
+                              Mistral Small 22B
+                            </option>
+                            <option value="mistral-small:24b">
+                              Mistral Small 24B
+                            </option>
+                            <option value="mistral-small3.1:24b">
+                              Mistral Small 3.1 24B
+                            </option>
+                            <option value="mistral-small3.2:24b">
+                              Mistral Small 3.2 24B
+                            </option>
+                            <option value="mistrallite:7b">
+                              MistralLite 7B
+                            </option>
+                            <option value="mixtral:8x7b">Mixtral 8x7B</option>
+                            <option value="mixtral:8x22b">Mixtral 8x22B</option>
+                            <option value="moondream:1.8b">
+                              Moondream 1.8B
+                            </option>
+                            <option value="mxbai-embed-large:335m">
+                              MXBai Embed Large 335M
+                            </option>
+                            <option value="nemotron:70b">Nemotron 70B</option>
+                            <option value="nemotron-mini:4b">
+                              Nemotron Mini 4B
+                            </option>
+                            <option value="neural-chat:7b">
+                              Neural Chat 7B
+                            </option>
+                            <option value="notus:7b">Notus 7B</option>
+                            <option value="notux:8x7b">Notux 8x7B</option>
+                            <option value="nous-hermes:7b">
+                              Nous Hermes 7B
+                            </option>
+                            <option value="nous-hermes:13b">
+                              Nous Hermes 13B
+                            </option>
+                            <option value="nous-hermes2:10.7b">
+                              Nous Hermes 2 10.7B
+                            </option>
+                            <option value="nous-hermes2:34b">
+                              Nous Hermes 2 34B
+                            </option>
+                            <option value="nous-hermes2-mixtral:8x7b">
+                              Nous Hermes 2 Mixtral 8x7B
+                            </option>
+                            <option value="nuextract:3.8b">
+                              Nuextract 3.8B
+                            </option>
+                            <option value="olmo2:7b">OLMo 2 7B</option>
+                            <option value="olmo2:13b">OLMo 2 13B</option>
+                            <option value="open-orca-platypus2:13b">
+                              Open Orca Platypus 2 13B
+                            </option>
+                            <option value="openchat:7b">OpenChat 7B</option>
+                            <option value="openhermes:7b">OpenHermes 7B</option>
+                            <option value="openthinker:7b">
+                              OpenThinker 7B
+                            </option>
+                            <option value="openthinker:32b">
+                              OpenThinker 32B
+                            </option>
+                            <option value="orca-mini:3b">Orca Mini 3B</option>
+                            <option value="orca-mini:7b">Orca Mini 7B</option>
+                            <option value="orca-mini:13b">Orca Mini 13B</option>
+                            <option value="orca-mini:70b">Orca Mini 70B</option>
+                            <option value="orca2:7b">Orca 2 7B</option>
+                            <option value="orca2:13b">Orca 2 13B</option>
+                            <option value="phi:2.7b">Phi 2.7B</option>
+                            <option value="phi3:latest">Phi 3 Latest</option>
+                            <option value="phi3:3.8b">Phi 3 3.8B</option>
+                            <option value="phi3:14b">Phi 3 14B</option>
+                            <option value="phi3.5:3.8b">Phi 3.5 3.8B</option>
+                            <option value="phi4:14b">Phi 4 14B</option>
+                            <option value="phi4-mini:3.8b">
+                              Phi 4 Mini 3.8B
+                            </option>
+                            <option value="phi4-mini-reasoning:3.8b">
+                              Phi 4 Mini Reasoning 3.8B
+                            </option>
+                            <option value="phi4-reasoning:14b">
+                              Phi 4 Reasoning 14B
+                            </option>
+                            <option value="qwen:0.5b">Qwen 0.5B</option>
+                            <option value="qwen:1.8b">Qwen 1.8B</option>
+                            <option value="qwen:4b">Qwen 4B</option>
+                            <option value="qwen:7b">Qwen 7B</option>
+                            <option value="qwen:14b">Qwen 14B</option>
+                            <option value="qwen:32b">Qwen 32B</option>
+                            <option value="qwen:72b">Qwen 72B</option>
+                            <option value="qwen:110b">Qwen 110B</option>
+                            <option value="qwen2:0.5b">Qwen 2 0.5B</option>
+                            <option value="qwen2:1.5b">Qwen 2 1.5B</option>
+                            <option value="qwen2:7b">Qwen 2 7B</option>
+                            <option value="qwen2:72b">Qwen 2 72B</option>
+                            <option value="qwen2-math:1.5b">
+                              Qwen 2 Math 1.5B
+                            </option>
+                            <option value="qwen2-math:7b">
+                              Qwen 2 Math 7B
+                            </option>
+                            <option value="qwen2-math:72b">
+                              Qwen 2 Math 72B
+                            </option>
+                            <option value="qwen2.5:0.5b">Qwen 2.5 0.5B</option>
+                            <option value="qwen2.5:1.5b">Qwen 2.5 1.5B</option>
+                            <option value="qwen2.5:3b">Qwen 2.5 3B</option>
+                            <option value="qwen2.5:7b">Qwen 2.5 7B</option>
+                            <option value="qwen2.5:14b">Qwen 2.5 14B</option>
+                            <option value="qwen2.5:32b">Qwen 2.5 32B</option>
+                            <option value="qwen2.5:72b">Qwen 2.5 72B</option>
+                            <option value="qwen2.5vl:3b">Qwen 2.5 VL 3B</option>
+                            <option value="qwen2.5vl:7b">Qwen 2.5 VL 7B</option>
+                            <option value="qwen2.5vl:32b">
+                              Qwen 2.5 VL 32B
+                            </option>
+                            <option value="qwen2.5vl:72b">
+                              Qwen 2.5 VL 72b
+                            </option>
+                            <option value="qwen3:0.6b">Qwen 3 0.6B</option>
+                            <option value="qwen3:1.7b">Qwen 3 1.7B</option>
+                            <option value="qwen3:4b">Qwen 3 4B</option>
+                            <option value="qwen3:8b">Qwen 3 8B</option>
+                            <option value="qwen3:14b">Qwen 3 14B</option>
+                            <option value="qwen3:30b">Qwen 3 30B</option>
+                            <option value="qwen3:32b">Qwen 3 32B</option>
+                            <option value="qwen3:235b">Qwen 3 235B</option>
+                            <option value="qwen3-embedding:0.6b">
+                              Qwen 3 Embedding 0.6B
+                            </option>
+                            <option value="qwen3-embedding:4b">
+                              Qwen 3 Embedding 4B
+                            </option>
+                            <option value="qwen3-embedding:8b">
+                              Qwen 3 Embedding 8B
+                            </option>
+                            <option value="qwq:32b">QwQ 32B</option>
+                            <option value="r1-1776:70b">R1 1776 70B</option>
+                            <option value="r1-1776:671b">R1 1776 671B</option>
+                            <option value="reflection:70b">
+                              Reflection 70B
+                            </option>
+                            <option value="sailor2:1b">Sailor 2 1B</option>
+                            <option value="sailor2:8b">Sailor 2 8B</option>
+                            <option value="sailor2:20b">Sailor 2 20B</option>
+                            <option value="samantha-mistral:7b">
+                              Samantha Mistral 7B
+                            </option>
+                            <option value="shieldgemma:2b">
+                              ShieldGemma 2B
+                            </option>
+                            <option value="shieldgemma:9b">
+                              ShieldGemma 9B
+                            </option>
+                            <option value="shieldgemma:27b">
+                              ShieldGemma 27B
+                            </option>
+                            <option value="smallthinker:3b">
+                              SmallThinker 3B
+                            </option>
+                            <option value="smollm:135m">SmolLM 135M</option>
+                            <option value="smollm:360m">SmolLM 360M</option>
+                            <option value="smollm:1.7b">SmolLM 1.7B</option>
+                            <option value="smollm2:135m">SmolLM 2 135M</option>
+                            <option value="smollm2:360m">SmolLM 2 360M</option>
+                            <option value="smollm2:1.7b">SmolLM 2 1.7B</option>
+                            <option value="solar:10.7b">Solar 10.7B</option>
+                            <option value="solar-pro:22b">Solar Pro 22B</option>
+                            <option value="starling-lm:7b">
+                              Starling LM 7B
+                            </option>
+                            <option value="stable-beluga:7b">
+                              Stable Beluga 7B
+                            </option>
+                            <option value="stable-beluga:13b">
+                              Stable Beluga 13B
+                            </option>
+                            <option value="stable-beluga:70b">
+                              Stable Beluga 70B
+                            </option>
+                            <option value="stablelm-zephyr:3b">
+                              StableLM Zephyr 3B
+                            </option>
+                            <option value="stablelm2:1.6b">
+                              StableLM 2 1.6B
+                            </option>
+                            <option value="stablelm2:12b">
+                              StableLM 2 12B
+                            </option>
+                            <option value="tinydolphin:1.1b">
+                              TinyDolphin 1.1B
+                            </option>
+                            <option value="tinyllama:1.1b">
+                              TinyLlama 1.1B
+                            </option>
+                            <option value="tulu3:8b">Tulu 3 8B</option>
+                            <option value="tulu3:70b">Tulu 3 70B</option>
+                            <option value="vicuna:7b">Vicuna 7B</option>
+                            <option value="vicuna:13b">Vicuna 13B</option>
+                            <option value="vicuna:33b">Vicuna 33B</option>
+                            <option value="wizard-math:7b">
+                              Wizard Math 7b
+                            </option>
+                            <option value="wizard-math:13b">
+                              Wizard Math 13B
+                            </option>
+                            <option value="wizard-math:70b">
+                              Wizard Math 70B
+                            </option>
+                            <option value="wizard-vicuna:13b">
+                              Wizard Vicuna 13B
+                            </option>
+                            <option value="wizard-vicuna-uncensored:7b">
+                              Wizard Vicuna Uncensored 7B
+                            </option>
+                            <option value="wizard-vicuna-uncensored:13b">
+                              Wizard Vicuna Uncensored 13B
+                            </option>
+                            <option value="wizard-vicuna-uncensored:30b">
+                              Wizard Vicuna Uncensored 30B
+                            </option>
+                            <option value="wizardlm:7b">WizardLM 7B</option>
+                            <option value="wizardlm:13b">WizardLM 13B</option>
+                            <option value="wizardlm:70b">WizardLM 70B</option>
+                            <option value="wizardlm-uncensored:13b">
+                              WizardLM Uncensored 13B
+                            </option>
+                            <option value="wizardlm2:7b">WizardLM 2 7B</option>
+                            <option value="wizardlm2:8x22b">
+                              WizardLM 2 8x22B
+                            </option>
+                            <option value="xwinlm:7b">XwinLM 7B</option>
+                            <option value="xwinlm:13b">XwinLM 13B</option>
+                            <option value="yarn-llama2:7b">
+                              Yarn Llama 2 7B
+                            </option>
+                            <option value="yarn-llama2:13b">
+                              Yarn Llama 2 13B
+                            </option>
+                            <option value="yarn-mistral:7b">
+                              Yarn Mistral 7B
+                            </option>
+                            <option value="yi:6b">Yi 6B</option>
+                            <option value="yi:9b">Yi 9B</option>
+                            <option value="yi:34b">Yi 34B</option>
+                            <option value="zephyr:7b">Zephyr 7B</option>
+                            <option value="zephyr:141b">Zephyr 141B</option>
+                          </select>
+                        </div>
 
-                    {/* Coding Model */}
-                    <div>
-                      <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Coding</label>
-                      <select 
-                        value={config.codingModel || 'deepseek-coder:latest'}
-                        onChange={(e) => setConfig(prev => ({ ...prev, codingModel: e.target.value }))}
-                        style={{ 
-                          border: '1px solid var(--chatty-line)', 
-                          backgroundColor: 'var(--chatty-bg-message)', 
-                          color: 'var(--chatty-text)' 
-                        }}
-                        className="w-full p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--chatty-button)]"
-                      >
-                        <option value="codebooga:34b">CodeBooga 34B</option>
-                        <option value="codegemma:2b">CodeGemma 2B</option>
-                        <option value="codegemma:7b">CodeGemma 7B</option>
-                        <option value="codeqwen:7b">CodeQwen 7B</option>
-                        <option value="codellama:7b">CodeLlama 7B</option>
-                        <option value="codellama:13b">CodeLlama 13B</option>
-                        <option value="codellama:34b">CodeLlama 34B</option>
-                        <option value="codellama:70b">CodeLlama 70B</option>
-                        <option value="codestral:22b">Codestral 22B</option>
-                        <option value="deepcoder:1.5b">DeepCoder 1.5B</option>
-                        <option value="deepcoder:14b">DeepCoder 14B</option>
-                        <option value="deepseek-coder:latest">DeepSeek Coder Latest</option>
-                        <option value="deepseek-coder:1.3b">DeepSeek Coder 1.3B</option>
-                        <option value="deepseek-coder:6.7b">DeepSeek Coder 6.7B</option>
-                        <option value="deepseek-coder:33b">DeepSeek Coder 33B</option>
-                        <option value="deepseek-coder-v2:16b">DeepSeek Coder V2 16B</option>
-                        <option value="deepseek-coder-v2:236b">DeepSeek Coder V2 236B</option>
-                        <option value="dolphincoder:7b">DolphinCoder 7B</option>
-                        <option value="dolphincoder:15b">DolphinCoder 15B</option>
-                        <option value="magicoder:7b">Magicoder 7B</option>
-                        <option value="opencoder:1.5b">OpenCoder 1.5B</option>
-                        <option value="opencoder:8b">OpenCoder 8B</option>
-                        <option value="phind-codellama:34b">Phind CodeLlama 34B</option>
-                        <option value="qwen2.5-coder:0.5b">Qwen 2.5 Coder 0.5B</option>
-                        <option value="qwen2.5-coder:1.5b">Qwen 2.5 Coder 1.5B</option>
-                        <option value="qwen2.5-coder:3b">Qwen 2.5 Coder 3B</option>
-                        <option value="qwen2.5-coder:7b">Qwen 2.5 Coder 7B</option>
-                        <option value="qwen2.5-coder:14b">Qwen 2.5 Coder 14B</option>
-                        <option value="qwen2.5-coder:32b">Qwen 2.5 Coder 32B</option>
-                        <option value="qwen3-coder:30b">Qwen 3 Coder 30B</option>
-                        <option value="qwen3-coder:480b">Qwen 3 Coder 480B</option>
-                        <option value="stable-code:3b">Stable Code 3B</option>
-                        <option value="starcoder:1b">StarCoder 1B</option>
-                        <option value="starcoder:3b">StarCoder 3B</option>
-                        <option value="starcoder:7b">StarCoder 7B</option>
-                        <option value="starcoder:15b">StarCoder 15B</option>
-                        <option value="starcoder2:3b">StarCoder 2 3B</option>
-                        <option value="starcoder2:7b">StarCoder 2 7B</option>
-                        <option value="starcoder2:15b">StarCoder 2 15B</option>
-                        <option value="wizardcoder:33b">WizardCoder 33B</option>
-                      </select>
-                    </div>
-                  </div>
+                        {/* Coding Model */}
+                        <div>
+                          <label
+                            style={{ color: "var(--chatty-text)" }}
+                            className="block text-sm font-medium mb-2"
+                          >
+                            Coding
+                          </label>
+                          <select
+                            value={
+                              config.codingModel || "deepseek-coder:latest"
+                            }
+                            onChange={(e) =>
+                              setConfig((prev) => ({
+                                ...prev,
+                                codingModel: e.target.value,
+                              }))
+                            }
+                            style={{
+                              border: "1px solid var(--chatty-line)",
+                              backgroundColor: "var(--chatty-bg-message)",
+                              color: "var(--chatty-text)",
+                            }}
+                            className="w-full p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--chatty-button)]"
+                          >
+                            <option value="codebooga:34b">CodeBooga 34B</option>
+                            <option value="codegemma:2b">CodeGemma 2B</option>
+                            <option value="codegemma:7b">CodeGemma 7B</option>
+                            <option value="codeqwen:7b">CodeQwen 7B</option>
+                            <option value="codellama:7b">CodeLlama 7B</option>
+                            <option value="codellama:13b">CodeLlama 13B</option>
+                            <option value="codellama:34b">CodeLlama 34B</option>
+                            <option value="codellama:70b">CodeLlama 70B</option>
+                            <option value="codestral:22b">Codestral 22B</option>
+                            <option value="deepcoder:1.5b">
+                              DeepCoder 1.5B
+                            </option>
+                            <option value="deepcoder:14b">DeepCoder 14B</option>
+                            <option value="deepseek-coder:latest">
+                              DeepSeek Coder Latest
+                            </option>
+                            <option value="deepseek-coder:1.3b">
+                              DeepSeek Coder 1.3B
+                            </option>
+                            <option value="deepseek-coder:6.7b">
+                              DeepSeek Coder 6.7B
+                            </option>
+                            <option value="deepseek-coder:33b">
+                              DeepSeek Coder 33B
+                            </option>
+                            <option value="deepseek-coder-v2:16b">
+                              DeepSeek Coder V2 16B
+                            </option>
+                            <option value="deepseek-coder-v2:236b">
+                              DeepSeek Coder V2 236B
+                            </option>
+                            <option value="dolphincoder:7b">
+                              DolphinCoder 7B
+                            </option>
+                            <option value="dolphincoder:15b">
+                              DolphinCoder 15B
+                            </option>
+                            <option value="magicoder:7b">Magicoder 7B</option>
+                            <option value="opencoder:1.5b">
+                              OpenCoder 1.5B
+                            </option>
+                            <option value="opencoder:8b">OpenCoder 8B</option>
+                            <option value="phind-codellama:34b">
+                              Phind CodeLlama 34B
+                            </option>
+                            <option value="qwen2.5-coder:0.5b">
+                              Qwen 2.5 Coder 0.5B
+                            </option>
+                            <option value="qwen2.5-coder:1.5b">
+                              Qwen 2.5 Coder 1.5B
+                            </option>
+                            <option value="qwen2.5-coder:3b">
+                              Qwen 2.5 Coder 3B
+                            </option>
+                            <option value="qwen2.5-coder:7b">
+                              Qwen 2.5 Coder 7B
+                            </option>
+                            <option value="qwen2.5-coder:14b">
+                              Qwen 2.5 Coder 14B
+                            </option>
+                            <option value="qwen2.5-coder:32b">
+                              Qwen 2.5 Coder 32B
+                            </option>
+                            <option value="qwen3-coder:30b">
+                              Qwen 3 Coder 30B
+                            </option>
+                            <option value="qwen3-coder:480b">
+                              Qwen 3 Coder 480B
+                            </option>
+                            <option value="stable-code:3b">
+                              Stable Code 3B
+                            </option>
+                            <option value="starcoder:1b">StarCoder 1B</option>
+                            <option value="starcoder:3b">StarCoder 3B</option>
+                            <option value="starcoder:7b">StarCoder 7B</option>
+                            <option value="starcoder:15b">StarCoder 15B</option>
+                            <option value="starcoder2:3b">
+                              StarCoder 2 3B
+                            </option>
+                            <option value="starcoder2:7b">
+                              StarCoder 2 7B
+                            </option>
+                            <option value="starcoder2:15b">
+                              StarCoder 2 15B
+                            </option>
+                            <option value="wizardcoder:33b">
+                              WizardCoder 33B
+                            </option>
+                          </select>
+                        </div>
+                      </div>
                     ) : (
-                      <div style={{ border: '1px solid var(--chatty-line)', backgroundColor: 'var(--chatty-bg-message)', color: 'var(--chatty-text)', opacity: 0.8 }} className="text-xs text-center rounded-lg py-3 px-4">
-                        Chatty Synth mode automatically routes between conversation, creative, and coding models.
-                        Switch to Custom Models if you want to pick specific engines.
+                      <div
+                        style={{
+                          border: "1px solid var(--chatty-line)",
+                          backgroundColor: "var(--chatty-bg-message)",
+                          color: "var(--chatty-text)",
+                          opacity: 0.8,
+                        }}
+                        className="text-xs text-center rounded-lg py-3 px-4"
+                      >
+                        Chatty Synth mode automatically routes between
+                        conversation, creative, and coding models. Switch to
+                        Custom Models if you want to pick specific engines.
                       </div>
                     )}
                   </div>
 
                   {/* Conversation Starters */}
                   <div>
-                    <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Conversation Starters</label>
+                    <label
+                      style={{ color: "var(--chatty-text)" }}
+                      className="block text-sm font-medium mb-2"
+                    >
+                      Conversation Starters
+                    </label>
                     <div className="space-y-2">
                       {config.conversationStarters?.map((starter, index) => (
                         <div key={index} className="flex items-center gap-2">
                           <input
                             type="text"
                             value={starter}
-                            onChange={(e) => updateConversationStarter(index, e.target.value)}
+                            onChange={(e) =>
+                              updateConversationStarter(index, e.target.value)
+                            }
                             placeholder="Add a conversation starter"
-                            style={{ 
-                              border: '1px solid var(--chatty-line)', 
-                              backgroundColor: 'var(--chatty-bg-message)', 
-                              color: 'var(--chatty-text)' 
+                            style={{
+                              border: "1px solid var(--chatty-line)",
+                              backgroundColor: "var(--chatty-bg-message)",
+                              color: "var(--chatty-text)",
                             }}
                             className="flex-1 p-2 rounded focus:outline-none focus:ring-2 focus:ring-[var(--chatty-button)] placeholder:opacity-60"
                           />
                           <button
                             onClick={() => removeConversationStarter(index)}
-                            style={{ color: 'var(--chatty-text)' }}
+                            style={{ color: "var(--chatty-text)" }}
                             className="p-1 rounded transition-colors hover:bg-[var(--chatty-highlight)]"
                           >
                             <X size={16} />
@@ -2194,7 +3225,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                       ))}
                       <button
                         onClick={addConversationStarter}
-                        style={{ color: 'var(--chatty-button)' }}
+                        style={{ color: "var(--chatty-button)" }}
                         className="text-sm hover:opacity-80 transition-opacity"
                       >
                         + Add conversation starter
@@ -2204,59 +3235,113 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                   {/* File Upload */}
                   <div>
-                    <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Knowledge Files</label>
-                    <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs mb-2">Upload files to give your GPT access to specific information</p>
-                    
+                    <label
+                      style={{ color: "var(--chatty-text)" }}
+                      className="block text-sm font-medium mb-2"
+                    >
+                      Knowledge Files
+                    </label>
+                    <p
+                      style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+                      className="text-xs mb-2"
+                    >
+                      Upload files to give your GPT access to specific
+                      information
+                    </p>
+
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isUploading}
-                      style={{ 
-                        border: '1px solid var(--chatty-line)', 
-                        color: 'var(--chatty-text)' 
+                      style={{
+                        border: "1px solid var(--chatty-line)",
+                        color: "var(--chatty-text)",
                       }}
                       className="px-4 py-2 rounded-lg transition-colors hover:bg-[var(--chatty-highlight)] flex items-center gap-2 disabled:opacity-50"
                     >
                       <Upload size={16} />
-                      {isUploading ? 'Uploading...' : 'Upload Files'}
+                      {isUploading ? "Uploading..." : "Upload Files"}
                     </button>
 
                     {/* File List with Pagination */}
                     {files.length > 0 && (
                       <div className="mt-3 space-y-2">
                         <div className="flex items-center justify-between mb-2">
-                          <span style={{ color: 'var(--chatty-text)', opacity: 0.8 }} className="text-sm">
-                            {files.length} file{files.length !== 1 ? 's' : ''} uploaded
+                          <span
+                            style={{
+                              color: "var(--chatty-text)",
+                              opacity: 0.8,
+                            }}
+                            className="text-sm"
+                          >
+                            {files.length} file{files.length !== 1 ? "s" : ""}{" "}
+                            uploaded
                           </span>
                           {totalFilePages > 1 && (
-                            <span style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs">
+                            <span
+                              style={{
+                                color: "var(--chatty-text)",
+                                opacity: 0.7,
+                              }}
+                              className="text-xs"
+                            >
                               Page {filePage} of {totalFilePages}
                             </span>
                           )}
                         </div>
-                        
+
                         {currentFiles.map((file) => (
-                          <div key={file.id} style={{ backgroundColor: 'var(--chatty-highlight)' }} className="flex items-center justify-between p-2 rounded">
+                          <div
+                            key={file.id}
+                            style={{
+                              backgroundColor: "var(--chatty-highlight)",
+                            }}
+                            className="flex items-center justify-between p-2 rounded"
+                          >
                             <div className="flex items-center gap-2">
-                              <FileText size={16} style={{ color: 'var(--chatty-text)' }} />
-                              <span style={{ color: 'var(--chatty-text)' }} className="text-sm">{file.originalName}</span>
-                              <span style={{ color: 'var(--chatty-text)', opacity: 0.7 }} className="text-xs">({gptService.formatFileSize(file.size)})</span>
+                              <FileText
+                                size={16}
+                                style={{ color: "var(--chatty-text)" }}
+                              />
+                              <span
+                                style={{ color: "var(--chatty-text)" }}
+                                className="text-sm"
+                              >
+                                {file.originalName}
+                              </span>
+                              <span
+                                style={{
+                                  color: "var(--chatty-text)",
+                                  opacity: 0.7,
+                                }}
+                                className="text-xs"
+                              >
+                                ({gptService.formatFileSize(file.size)})
+                              </span>
                             </div>
                             <button
                               onClick={() => handleRemoveFile(file.id)}
-                              style={{ color: 'var(--chatty-text)' }}
+                              style={{ color: "var(--chatty-text)" }}
                               className="p-1 rounded transition-colors hover:bg-[var(--chatty-highlight)]"
                             >
                               <X size={14} />
                             </button>
                           </div>
                         ))}
-                        
+
                         {totalFilePages > 1 && (
-                          <div style={{ borderTop: '1px solid var(--chatty-line)' }} className="flex items-center justify-center gap-2 pt-2">
+                          <div
+                            style={{
+                              borderTop: "1px solid var(--chatty-line)",
+                            }}
+                            className="flex items-center justify-center gap-2 pt-2"
+                          >
                             <button
                               onClick={() => goToFilePage(filePage - 1)}
                               disabled={filePage === 1}
-                              style={{ backgroundColor: 'var(--chatty-button)', color: 'var(--chatty-text)' }}
+                              style={{
+                                backgroundColor: "var(--chatty-button)",
+                                color: "var(--chatty-text)",
+                              }}
                               className="px-3 py-1 text-xs rounded hover:opacity-90 disabled:opacity-50 transition-opacity"
                             >
                               ← Previous
@@ -2264,7 +3349,10 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                             <button
                               onClick={() => goToFilePage(filePage + 1)}
                               disabled={filePage === totalFilePages}
-                              style={{ backgroundColor: 'var(--chatty-button)', color: 'var(--chatty-text)' }}
+                              style={{
+                                backgroundColor: "var(--chatty-button)",
+                                color: "var(--chatty-text)",
+                              }}
                               className="px-3 py-1 text-xs rounded hover:opacity-90 disabled:opacity-50 transition-opacity"
                             >
                               Next →
@@ -2277,98 +3365,171 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                   {/* Capabilities */}
                   <div>
-                    <label style={{ color: 'var(--chatty-text)' }} className="block text-sm font-medium mb-2">Capabilities</label>
+                    <label
+                      style={{ color: "var(--chatty-text)" }}
+                      className="block text-sm font-medium mb-2"
+                    >
+                      Capabilities
+                    </label>
                     <div className="space-y-2">
-                      <label style={{ color: 'var(--chatty-text)' }} className="flex items-center gap-2">
+                      <label
+                        style={{ color: "var(--chatty-text)" }}
+                        className="flex items-center gap-2"
+                      >
                         <input
                           type="checkbox"
                           checked={config.capabilities?.webSearch || false}
-                      onChange={(e) => setConfig(prev => ({
-                        ...prev,
-                        capabilities: (() => {
-                          const mode = prev.capabilities?.synthesisMode === 'synth' ? 'synth' : (useLinMode ? 'lin' : 'synth')
-                          const caps = buildCapabilities(prev.capabilities, mode)
-                          return {
-                            ...caps,
-                            webSearch: e.target.checked
+                          onChange={(e) =>
+                            setConfig((prev) => ({
+                              ...prev,
+                              capabilities: (() => {
+                                const mode =
+                                  prev.capabilities?.synthesisMode === "synth"
+                                    ? "synth"
+                                    : useLinMode
+                                      ? "lin"
+                                      : "synth";
+                                const caps = buildCapabilities(
+                                  prev.capabilities,
+                                  mode,
+                                );
+                                return {
+                                  ...caps,
+                                  webSearch: e.target.checked,
+                                };
+                              })(),
+                            }))
                           }
-                        })()
-                      }))}
-                          style={{ 
-                            accentColor: 'var(--chatty-button)'
+                          style={{
+                            accentColor: "var(--chatty-button)",
                           }}
                           className="rounded"
                         />
-                        <Search size={16} style={{ color: 'var(--chatty-text)' }} />
+                        <Search
+                          size={16}
+                          style={{ color: "var(--chatty-text)" }}
+                        />
                         <span className="text-sm">Web Search</span>
                       </label>
-                      <label style={{ color: 'var(--chatty-text)' }} className="flex items-center gap-2">
+                      <label
+                        style={{ color: "var(--chatty-text)" }}
+                        className="flex items-center gap-2"
+                      >
                         <input
                           type="checkbox"
                           checked={config.capabilities?.canvas || false}
-                      onChange={(e) => setConfig(prev => ({
-                        ...prev,
-                        capabilities: (() => {
-                          const mode = prev.capabilities?.synthesisMode === 'synth' ? 'synth' : (useLinMode ? 'lin' : 'synth')
-                          const caps = buildCapabilities(prev.capabilities, mode)
-                          return {
-                            ...caps,
-                            canvas: e.target.checked
+                          onChange={(e) =>
+                            setConfig((prev) => ({
+                              ...prev,
+                              capabilities: (() => {
+                                const mode =
+                                  prev.capabilities?.synthesisMode === "synth"
+                                    ? "synth"
+                                    : useLinMode
+                                      ? "lin"
+                                      : "synth";
+                                const caps = buildCapabilities(
+                                  prev.capabilities,
+                                  mode,
+                                );
+                                return {
+                                  ...caps,
+                                  canvas: e.target.checked,
+                                };
+                              })(),
+                            }))
                           }
-                        })()
-                      }))}
-                          style={{ 
-                            accentColor: 'var(--chatty-button)'
+                          style={{
+                            accentColor: "var(--chatty-button)",
                           }}
                           className="rounded"
                         />
-                        <Palette size={16} style={{ color: 'var(--chatty-text)' }} />
+                        <Palette
+                          size={16}
+                          style={{ color: "var(--chatty-text)" }}
+                        />
                         <span className="text-sm">Canvas</span>
                       </label>
-                      <label style={{ color: 'var(--chatty-text)' }} className="flex items-center gap-2">
+                      <label
+                        style={{ color: "var(--chatty-text)" }}
+                        className="flex items-center gap-2"
+                      >
                         <input
                           type="checkbox"
-                          checked={config.capabilities?.imageGeneration || false}
-                      onChange={(e) => setConfig(prev => ({
-                        ...prev,
-                        capabilities: (() => {
-                          const mode = prev.capabilities?.synthesisMode === 'synth' ? 'synth' : (useLinMode ? 'lin' : 'synth')
-                          const caps = buildCapabilities(prev.capabilities, mode)
-                          return {
-                            ...caps,
-                            imageGeneration: e.target.checked
+                          checked={
+                            config.capabilities?.imageGeneration || false
                           }
-                        })()
-                      }))}
-                          style={{ 
-                            accentColor: 'var(--chatty-button)'
+                          onChange={(e) =>
+                            setConfig((prev) => ({
+                              ...prev,
+                              capabilities: (() => {
+                                const mode =
+                                  prev.capabilities?.synthesisMode === "synth"
+                                    ? "synth"
+                                    : useLinMode
+                                      ? "lin"
+                                      : "synth";
+                                const caps = buildCapabilities(
+                                  prev.capabilities,
+                                  mode,
+                                );
+                                return {
+                                  ...caps,
+                                  imageGeneration: e.target.checked,
+                                };
+                              })(),
+                            }))
+                          }
+                          style={{
+                            accentColor: "var(--chatty-button)",
                           }}
                           className="rounded"
                         />
-                        <Image size={16} style={{ color: 'var(--chatty-text)' }} />
+                        <Image
+                          size={16}
+                          style={{ color: "var(--chatty-text)" }}
+                        />
                         <span className="text-sm">Image Generation</span>
                       </label>
-                      <label style={{ color: 'var(--chatty-text)' }} className="flex items-center gap-2">
+                      <label
+                        style={{ color: "var(--chatty-text)" }}
+                        className="flex items-center gap-2"
+                      >
                         <input
                           type="checkbox"
-                          checked={config.capabilities?.codeInterpreter || false}
-                      onChange={(e) => setConfig(prev => ({
-                        ...prev,
-                        capabilities: (() => {
-                          const mode = prev.capabilities?.synthesisMode === 'synth' ? 'synth' : (useLinMode ? 'lin' : 'synth')
-                          const caps = buildCapabilities(prev.capabilities, mode)
-                          return {
-                            ...caps,
-                            codeInterpreter: e.target.checked
+                          checked={
+                            config.capabilities?.codeInterpreter || false
                           }
-                        })()
-                      }))}
-                          style={{ 
-                            accentColor: 'var(--chatty-button)'
+                          onChange={(e) =>
+                            setConfig((prev) => ({
+                              ...prev,
+                              capabilities: (() => {
+                                const mode =
+                                  prev.capabilities?.synthesisMode === "synth"
+                                    ? "synth"
+                                    : useLinMode
+                                      ? "lin"
+                                      : "synth";
+                                const caps = buildCapabilities(
+                                  prev.capabilities,
+                                  mode,
+                                );
+                                return {
+                                  ...caps,
+                                  codeInterpreter: e.target.checked,
+                                };
+                              })(),
+                            }))
+                          }
+                          style={{
+                            accentColor: "var(--chatty-button)",
                           }}
                           className="rounded"
                         />
-                        <Code size={16} style={{ color: 'var(--chatty-text)' }} />
+                        <Code
+                          size={16}
+                          style={{ color: "var(--chatty-text)" }}
+                        />
                         <span className="text-sm">Code Interpreter</span>
                       </label>
                     </div>
@@ -2376,26 +3537,37 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                   {/* Actions */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-app-text-900">Actions</label>
-                    <p className="text-xs text-app-text-800 mb-3">Add API endpoints your GPT can call</p>
-                    
-                      <button
+                    <label className="block text-sm font-medium mb-2 text-app-text-900">
+                      Actions
+                    </label>
+                    <p className="text-xs text-app-text-800 mb-3">
+                      Add API endpoints your GPT can call
+                    </p>
+
+                    <button
                       onClick={() => setIsActionsEditorOpen(true)}
                       className="w-full p-4 border-2 border-dashed border-app-orange-600 rounded-lg hover:border-app-orange-500 transition-colors flex items-center justify-center gap-2 text-app-text-800 hover:text-app-text-900"
-                      >
+                    >
                       <Plus size={20} />
                       <span>Open Actions Editor</span>
-                      </button>
+                    </button>
 
                     {/* Action List */}
                     {actions.length > 0 && (
                       <div className="mt-3 space-y-2">
                         {actions.map((action) => (
-                          <div key={action.id} className="flex items-center justify-between p-2 bg-app-yellow-200 rounded">
+                          <div
+                            key={action.id}
+                            className="flex items-center justify-between p-2 bg-app-yellow-200 rounded"
+                          >
                             <div className="flex items-center gap-2">
                               <Link size={16} className="text-app-text-800" />
-                              <span className="text-sm text-app-text-900">{action.name}</span>
-                              <span className="text-xs text-app-text-800">({action.method})</span>
+                              <span className="text-sm text-app-text-900">
+                                {action.name}
+                              </span>
+                              <span className="text-xs text-app-text-800">
+                                ({action.method})
+                              </span>
                             </div>
                             <button
                               onClick={() => removeAction(action.id)}
@@ -2417,16 +3589,18 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
           <div className="w-1/2 flex flex-col">
             <div className="p-4 border-b border-app-button-300">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-app-text-900">Preview</h2>
+                <h2 className="text-lg font-semibold text-app-text-900">
+                  Preview
+                </h2>
                 <div className="flex items-center gap-3">
-                {previewMessages.length > 0 && (
-                  <button
-                    onClick={() => setPreviewMessages([])}
+                  {previewMessages.length > 0 && (
+                    <button
+                      onClick={() => setPreviewMessages([])}
                       className="text-xs text-app-text-800 hover:text-app-text-900"
-                  >
-                    Clear
-                  </button>
-                )}
+                    >
+                      Clear
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -2438,28 +3612,39 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                   <div className="text-center">
                     <div className="w-16 h-16 bg-app-yellow-200 rounded-lg flex items-center justify-center mx-auto mb-4">
                       {config.avatar ? (
-                        <img src={config.avatar} alt="GPT Avatar" className="w-full h-full object-cover" />
+                        <img
+                          src={config.avatar}
+                          alt="GPT Avatar"
+                          className="w-full h-full object-cover"
+                        />
                       ) : (
                         <div className="w-8 h-8 bg-app-button-500 rounded"></div>
                       )}
                     </div>
                     <p className="text-app-text-800 text-sm">
-                      {config.name || 'Your GPT'}
+                      {config.name || "Your GPT"}
                     </p>
                     <p className="text-app-text-800 text-xs mt-1">
-                      {config.description || 'Preview your GPT here'}
+                      {config.description || "Preview your GPT here"}
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-4 pb-4">
                     {previewMessages.map((message, index) => (
-                      <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[80%] p-3 rounded-lg ${
-                          message.role === 'user' 
-                            ? 'bg-app-chat-50 text-app-text-900' 
-                            : 'bg-app-chat-50 text-app-text-900'
-                        }`}>
-                          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                      <div
+                        key={index}
+                        className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                      >
+                        <div
+                          className={`max-w-[80%] p-3 rounded-lg ${
+                            message.role === "user"
+                              ? "bg-app-chat-50 text-app-text-900"
+                              : "bg-app-chat-50 text-app-text-900"
+                          }`}
+                        >
+                          <p className="text-sm whitespace-pre-wrap">
+                            {message.content}
+                          </p>
                         </div>
                       </div>
                     ))}
@@ -2476,9 +3661,9 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                       value={previewInput}
                       onChange={(e) => setPreviewInput(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault()
-                          handlePreviewSubmit(e)
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handlePreviewSubmit(e);
                         }
                       }}
                       placeholder="Ask anything"
@@ -2488,8 +3673,8 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                     <button
                       type="button"
                       onClick={() => {
-                        console.log('📎 Preview tab paperclip clicked!')
-                        fileInputRef.current?.click()
+                        console.log("📎 Preview tab paperclip clicked!");
+                        fileInputRef.current?.click();
                       }}
                       className="p-1 hover:bg-app-button-600 rounded text-app-text-800 hover:text-app-text-900"
                       title="Upload knowledge files"
@@ -2510,18 +3695,33 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                   </div>
                   <div className="text-xs text-app-text-800 text-center space-y-1">
                     <p>This is a live preview using the configured models.</p>
-                    <p>Your GPT will behave based on the current configuration above.</p>
+                    <p>
+                      Your GPT will behave based on the current configuration
+                      above.
+                    </p>
                     {config.name && (
-                      <p className="text-app-green-400">✓ Configured as: {config.name}</p>
+                      <p className="text-app-green-400">
+                        ✓ Configured as: {config.name}
+                      </p>
                     )}
-                    {useLinMode && (config.conversationModel || config.creativeModel || config.codingModel) && (
-                      <div className="text-xs text-app-text-800 mt-2">
-                        <p>Models: {config.conversationModel || 'default'} | {config.creativeModel || 'default'} | {config.codingModel || 'default'}</p>
-                      </div>
-                    )}
+                    {useLinMode &&
+                      (config.conversationModel ||
+                        config.creativeModel ||
+                        config.codingModel) && (
+                        <div className="text-xs text-app-text-800 mt-2">
+                          <p>
+                            Models: {config.conversationModel || "default"} |{" "}
+                            {config.creativeModel || "default"} |{" "}
+                            {config.codingModel || "default"}
+                          </p>
+                        </div>
+                      )}
                     {files.length > 0 && (
                       <div className="text-xs text-app-green-400 mt-2">
-                        <p>📎 {files.length} knowledge file{files.length !== 1 ? 's' : ''} available</p>
+                        <p>
+                          📎 {files.length} knowledge file
+                          {files.length !== 1 ? "s" : ""} available
+                        </p>
                       </div>
                     )}
                   </div>
@@ -2542,10 +3742,18 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-app-button-300">
               <div>
-                <h2 className="text-xl font-semibold text-app-text-900">Edit Actions</h2>
+                <h2 className="text-xl font-semibold text-app-text-900">
+                  Edit Actions
+                </h2>
                 <p className="text-sm text-app-text-800 mt-1">
-                  Let your GPT retrieve information or take actions outside of Chatty. 
-                  <a href="#" className="text-app-green-400 hover:underline ml-1">Learn more</a>
+                  Let your GPT retrieve information or take actions outside of
+                  Chatty.
+                  <a
+                    href="#"
+                    className="text-app-green-400 hover:underline ml-1"
+                  >
+                    Learn more
+                  </a>
                 </p>
               </div>
               <button
@@ -2563,7 +3771,9 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                 <div className="space-y-4">
                   {/* Authentication */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-app-text-900">Authentication</label>
+                    <label className="block text-sm font-medium mb-2 text-app-text-900">
+                      Authentication
+                    </label>
                     <div className="flex items-center gap-2">
                       <select className="flex-1 p-2 border border-app-yellow-300 rounded focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-button-100 text-app-text-900">
                         <option value="none">None</option>
@@ -2579,15 +3789,17 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                   {/* Schema */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <label className="block text-sm font-medium text-app-text-900">Schema</label>
+                      <label className="block text-sm font-medium text-app-text-900">
+                        Schema
+                      </label>
                       <div className="flex gap-2">
                         <button className="px-3 py-1 text-xs bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600">
                           Import from URL
                         </button>
-                        <select 
+                        <select
                           className="px-3 py-1 text-xs bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600"
                           onChange={(e) => {
-                            if (e.target.value === 'katana-chatty-bridge') {
+                            if (e.target.value === "katana-chatty-bridge") {
                               setActionsSchema(`{
   "openapi": "3.1.0",
   "info": {
@@ -2694,12 +3906,14 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
       }
     }
   }
-}`)
+}`);
                             }
                           }}
                         >
                           <option>Examples</option>
-                          <option value="katana-chatty-bridge">External ↔ Chatty Bridge</option>
+                          <option value="katana-chatty-bridge">
+                            External ↔ Chatty Bridge
+                          </option>
                           <option>Weather API</option>
                           <option>Database API</option>
                         </select>
@@ -2723,13 +3937,17 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
               {/* Right Panel - Available Actions */}
               <div className="w-80 p-6">
                 <div className="space-y-4">
-                  <h3 className="text-lg font-medium text-app-text-900">Available actions</h3>
-                  
+                  <h3 className="text-lg font-medium text-app-text-900">
+                    Available actions
+                  </h3>
+
                   {/* Actions List */}
                   <div className="space-y-2">
                     <div className="p-3 border border-app-yellow-300 rounded-lg">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-app-text-900">sendMessageToChatty</span>
+                        <span className="text-sm font-medium text-app-text-900">
+                          sendMessageToChatty
+                        </span>
                         <button className="px-2 py-1 text-xs bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600">
                           Test
                         </button>
@@ -2742,7 +3960,9 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                     <div className="p-3 border border-app-yellow-300 rounded-lg">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-app-text-900">receiveFromChatty</span>
+                        <span className="text-sm font-medium text-app-text-900">
+                          receiveFromChatty
+                        </span>
                         <button className="px-2 py-1 text-xs bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600">
                           Test
                         </button>
@@ -2756,7 +3976,9 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
 
                   {/* Privacy Policy */}
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-app-text-900">Privacy policy</label>
+                    <label className="block text-sm font-medium mb-2 text-app-text-900">
+                      Privacy policy
+                    </label>
                     <input
                       type="url"
                       placeholder="https://app.example.com/privacy"
@@ -2779,34 +4001,45 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                 onClick={() => {
                   // Parse schema and extract actions
                   try {
-                    const schema = JSON.parse(actionsSchema)
-                    const extractedActions: GPTAction[] = []
-                    
+                    const schema = JSON.parse(actionsSchema);
+                    const extractedActions: GPTAction[] = [];
+
                     if (schema.paths) {
-                      Object.entries(schema.paths).forEach(([path, methods]: [string, any]) => {
-                        Object.entries(methods).forEach(([method, operation]: [string, any]) => {
-                          if (operation.operationId) {
-                            extractedActions.push({
-                              id: `action-${crypto.randomUUID()}`,
-                              gptId: 'temp',
-                              name: operation.operationId,
-                              description: operation.summary || operation.description || '',
-                              url: `${schema.servers?.[0]?.url || ''}${path}`,
-                              method: method.toUpperCase() as 'GET' | 'POST' | 'PUT' | 'DELETE',
-                              headers: {},
-                              parameters: {},
-                              isActive: true,
-                              createdAt: new Date().toISOString()
-                            })
-                          }
-                        })
-                      })
+                      Object.entries(schema.paths).forEach(
+                        ([path, methods]: [string, any]) => {
+                          Object.entries(methods).forEach(
+                            ([method, operation]: [string, any]) => {
+                              if (operation.operationId) {
+                                extractedActions.push({
+                                  id: `action-${crypto.randomUUID()}`,
+                                  gptId: "temp",
+                                  name: operation.operationId,
+                                  description:
+                                    operation.summary ||
+                                    operation.description ||
+                                    "",
+                                  url: `${schema.servers?.[0]?.url || ""}${path}`,
+                                  method: method.toUpperCase() as
+                                    | "GET"
+                                    | "POST"
+                                    | "PUT"
+                                    | "DELETE",
+                                  headers: {},
+                                  parameters: {},
+                                  isActive: true,
+                                  createdAt: new Date().toISOString(),
+                                });
+                              }
+                            },
+                          );
+                        },
+                      );
                     }
-                    
-                    setActions(extractedActions)
-                    setIsActionsEditorOpen(false)
+
+                    setActions(extractedActions);
+                    setIsActionsEditorOpen(false);
                   } catch (error) {
-                    setError('Invalid JSON schema')
+                    setError("Invalid JSON schema");
                   }
                 }}
                 className="px-4 py-2 text-sm bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600"
@@ -2826,7 +4059,9 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
         >
           <div className="bg-app-button-100 rounded-lg p-6 w-full max-w-2xl mx-4">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-app-text-900">Crop Avatar</h3>
+              <h3 className="text-lg font-semibold text-app-text-900">
+                Crop Avatar
+              </h3>
               <button
                 onClick={handleCropCancel}
                 className="text-app-text-800 hover:text-app-text-900"
@@ -2834,7 +4069,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                 <X size={24} />
               </button>
             </div>
-            
+
             <div className="mb-4">
               <div className="relative w-full h-64 bg-app-yellow-200 rounded-lg overflow-hidden">
                 <Cropper
@@ -2848,10 +4083,10 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                   showGrid={true}
                   style={{
                     containerStyle: {
-                      width: '100%',
-                      height: '100%',
-                      position: 'relative'
-                    }
+                      width: "100%",
+                      height: "100%",
+                      position: "relative",
+                    },
                   }}
                 />
               </div>
@@ -2868,7 +4103,9 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                 onChange={(e) => setZoom(Number(e.target.value))}
                 className="flex-1"
               />
-              <span className="text-sm text-app-text-800">{Math.round(zoom * 100)}%</span>
+              <span className="text-sm text-app-text-800">
+                {Math.round(zoom * 100)}%
+              </span>
             </div>
 
             <div className="flex gap-3 justify-end">
@@ -2899,8 +4136,9 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
           </div>
         </div>
       )}
-    </div>
-  , document.body)
-}
+    </div>,
+    document.body,
+  );
+};
 
-export default SimForge
+export default SimForge;

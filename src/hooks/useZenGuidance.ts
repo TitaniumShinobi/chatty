@@ -1,51 +1,51 @@
-import { useState, useEffect } from 'react'
-import { getZenGuidanceService } from '../lib/zenGuidanceService'
-import type { GuidanceStep } from '../components/ZenGuidance'
+import { useState, useEffect } from "react";
+import { getZenGuidanceService } from "../lib/zenGuidanceService";
+import type { GuidanceStep } from "../components/ZenGuidance";
 
 export function useZenGuidance() {
-  const [currentStep, setCurrentStep] = useState<GuidanceStep | null>(null)
-  const [currentStepIndex, setCurrentStepIndex] = useState(0)
-  const [totalSteps, setTotalSteps] = useState(0)
-  const [isVisible, setIsVisible] = useState(false)
+  const [currentStep, setCurrentStep] = useState<GuidanceStep | null>(null);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [totalSteps, setTotalSteps] = useState(0);
+  const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    const service = getZenGuidanceService()
-    
+    const service = getZenGuidanceService();
+
     const unsubscribe = service.subscribe((step) => {
-      setCurrentStep(step)
-      setCurrentStepIndex(service.getCurrentStepIndex())
-      setTotalSteps(service.getTotalSteps())
-      setIsVisible(service.isVisible())
-    })
+      setCurrentStep(step);
+      setCurrentStepIndex(service.getCurrentStepIndex());
+      setTotalSteps(service.getTotalSteps());
+      setIsVisible(service.isVisible());
+    });
 
     // Initialize state
-    setCurrentStep(service.getCurrentStep())
-    setCurrentStepIndex(service.getCurrentStepIndex())
-    setTotalSteps(service.getTotalSteps())
-    setIsVisible(service.isVisible())
+    setCurrentStep(service.getCurrentStep());
+    setCurrentStepIndex(service.getCurrentStepIndex());
+    setTotalSteps(service.getTotalSteps());
+    setIsVisible(service.isVisible());
 
-    return unsubscribe
-  }, [])
+    return unsubscribe;
+  }, []);
 
   const showStep = (step: GuidanceStep) => {
-    getZenGuidanceService().极客时间showStep(step)
-  }
+    getZenGuidanceService().极客时间showStep(step);
+  };
 
   const showFlow = (steps: GuidanceStep[]) => {
-    getZenGuidanceService().showFlow(steps)
-  }
+    getZenGuidanceService().showFlow(steps);
+  };
 
   const nextStep = () => {
-    getZenGuidanceService().nextStep()
-  }
+    getZenGuidanceService().nextStep();
+  };
 
   const previousStep = () => {
-    getZenGuidanceService().previousStep()
-  }
+    getZenGuidanceService().previousStep();
+  };
 
   const hide = () => {
-    getZenGuidanceService().hide()
-  }
+    getZenGuidanceService().hide();
+  };
 
   return {
     currentStep,
@@ -56,7 +56,6 @@ export function useZenGuidance() {
     showFlow,
     nextStep,
     previousStep,
-    hide
-  }
+    hide,
+  };
 }
-

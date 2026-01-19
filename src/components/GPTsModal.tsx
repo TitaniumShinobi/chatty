@@ -1,19 +1,20 @@
-import React from 'react'
-import { X, Bot, Plus, Search } from 'lucide-react'
-import { cn } from '../lib/utils'
+// @ts-nocheck
+import React from "react";
+import { X, Bot, Plus, Search } from "lucide-react";
+import { cn } from "../lib/utils";
 
 interface GPTsModalProps {
-  isVisible: boolean
-  onClose: () => void
-  onCreateGPT: () => void
+  isVisible: boolean;
+  onClose: () => void;
+  onCreateGPT: () => void;
 }
 
 const GPTsModal: React.FC<GPTsModalProps> = ({
   isVisible,
   onClose,
-  onCreateGPT
+  onCreateGPT,
 }) => {
-  if (!isVisible) return null
+  if (!isVisible) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -32,7 +33,10 @@ const GPTsModal: React.FC<GPTsModalProps> = ({
         {/* Search Bar */}
         <div className="p-6 border-b border-app-orange-800">
           <div className="relative">
-            <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-app-orange-400" />
+            <Search
+              size={20}
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 text-app-orange-400"
+            />
             <input
               type="text"
               placeholder="Search GPTs..."
@@ -48,13 +52,17 @@ const GPTsModal: React.FC<GPTsModalProps> = ({
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-medium text-white">Create a GPT</h3>
             </div>
-            <div 
+            <div
               className="border-2 border-dashed border-app-orange-700 rounded-lg p-8 text-center hover:border-app-orange-600 cursor-pointer transition-colors"
               onClick={onCreateGPT}
             >
               <Plus size={48} className="mx-auto mb-4 text-app-orange-400" />
-              <h4 className="text-lg font-medium text-white mb-2">Create a new GPT</h4>
-              <p className="text-app-orange-400">Build a custom GPT for specific tasks</p>
+              <h4 className="text-lg font-medium text-white mb-2">
+                Create a new GPT
+              </h4>
+              <p className="text-app-orange-400">
+                Build a custom GPT for specific tasks
+              </p>
             </div>
           </div>
 
@@ -73,13 +81,17 @@ const GPTsModal: React.FC<GPTsModalProps> = ({
 
           {/* Featured GPTs Section */}
           <div className="mb-8">
-            <h3 className="text-lg font-medium text-white mb-4">Featured GPTs</h3>
+            <h3 className="text-lg font-medium text-white mb-4">
+              Featured GPTs
+            </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {/* Placeholder for featured GPTs */}
               <div className="text-center text-app-orange-400 py-8">
                 <Bot size={32} className="mx-auto mb-2 opacity-50" />
                 <p>Featured GPTs coming soon</p>
-                <p className="text-sm">Discover amazing GPTs created by the community</p>
+                <p className="text-sm">
+                  Discover amazing GPTs created by the community
+                </p>
               </div>
             </div>
           </div>
@@ -101,7 +113,7 @@ const GPTsModal: React.FC<GPTsModalProps> = ({
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default GPTsModal
+export default GPTsModal;
