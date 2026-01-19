@@ -1,16 +1,19 @@
 /**
  * Supabase Store for VVAULT Conversations
  * 
- * Uses the vault_files table to store conversation transcripts as markdown,
- * matching VVAULT's filesystem semantics while using Supabase as source of truth.
+ * Priority: VVAULT API (source of truth) → Supabase (fallback)
+ * 
+ * The VVAULT API is the canonical source for conversation transcripts.
+ * Supabase is used as a fallback when the API is unavailable.
  * 
  * Convention:
- * - filename: "chat/{constructId}/{sessionId}.md"
+ * - filename: "instances/{constructId}/chatty/chat_with_{constructId}.md"
  * - file_type: "conversation"
  * - metadata: { sessionId, title, constructId, constructName, constructCallsign, messages: [...] }
  */
 
 import { getSupabaseClient } from '../server/lib/supabaseClient.js';
+import * as vvaultApi from './vvaultApiClient.js';
 import crypto from 'crypto';
 
 function sha256(content) {
@@ -100,7 +103,83 @@ async function resolveSupabaseUserId(emailOrId) {
   }
 }
 
+/**
+ * Read conversations from VVAULT API first, then Supabase as fallback
+ * The VVAULT API is the canonical source for real conversation data
+ */
+async function readConversationsFromVVAULTApi(userEmailOrId, constructId = null) {
+  console.log(`📡 [SupabaseStore] Attempting VVAULT API for user: ${userEmailOrId}, construct: ${constructId || 'all'}`);
+  
+  try {
+    // If specific constructId, fetch just that one
+    if (constructId) {
+      const transcriptData = await vvaultApi.getTranscript(constructId);
+      if (transcriptData && transcriptData.success) {
+        const messages = vvaultApi.parseMarkdownToMessages(transcriptData.content);
+        console.log(`✅ [SupabaseStore] VVAULT API returned ${messages.length} messages for ${constructId}`);
+        
+        return [{
+          sessionId: `${constructId}_chat_with_${constructId}`,
+          title: constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase()),
+          constructId: constructId,
+          constructName: constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase()),
+          constructCallsign: constructId,
+          createdAt: transcriptData.updated_at || new Date().toISOString(),
+          updatedAt: transcriptData.updated_at || new Date().toISOString(),
+          messages
+        }];
+      }
+      return null;
+    }
+
+    // List all constructs and fetch their transcripts
+    const constructs = await vvaultApi.listConstructs();
+    if (!constructs || constructs.length === 0) {
+      console.log('⚠️ [SupabaseStore] VVAULT API returned no constructs');
+      return null;
+    }
+
+    console.log(`📋 [SupabaseStore] VVAULT API found ${constructs.length} constructs`);
+    
+    const conversations = [];
+    for (const construct of constructs) {
+      const transcriptData = await vvaultApi.getTranscript(construct.construct_id);
+      if (transcriptData && transcriptData.success) {
+        const messages = vvaultApi.parseMarkdownToMessages(transcriptData.content);
+        const constructName = construct.construct_id.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase());
+        
+        conversations.push({
+          sessionId: `${construct.construct_id}_chat_with_${construct.construct_id}`,
+          title: constructName,
+          constructId: construct.construct_id,
+          constructName: constructName,
+          constructCallsign: construct.construct_id,
+          createdAt: transcriptData.updated_at || new Date().toISOString(),
+          updatedAt: transcriptData.updated_at || new Date().toISOString(),
+          messages
+        });
+        
+        console.log(`📝 [SupabaseStore] ${construct.construct_id}: ${messages.length} messages`);
+      }
+    }
+
+    console.log(`✅ [SupabaseStore] VVAULT API returned ${conversations.length} conversations`);
+    return conversations.length > 0 ? conversations : null;
+  } catch (err) {
+    console.error('❌ [SupabaseStore] VVAULT API error:', err.message);
+    return null;
+  }
+}
+
 async function readConversationsFromSupabase(userEmailOrId, constructId = null) {
+  // First try VVAULT API (canonical source of truth)
+  const apiResult = await readConversationsFromVVAULTApi(userEmailOrId, constructId);
+  if (apiResult !== null) {
+    return apiResult;
+  }
+
+  console.log('⚠️ [SupabaseStore] VVAULT API unavailable, falling back to direct Supabase');
+  
   const supabase = getSupabaseClient();
   if (!supabase) {
     console.log('⚠️ [SupabaseStore] No Supabase client - falling back to PostgreSQL');
@@ -137,23 +216,15 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
         ? JSON.parse(file.metadata) 
         : (file.metadata || {});
       
-      // Debug: Log what we're reading from Supabase
       console.log(`🔍 [SupabaseStore] Processing file:`, {
         filename: file.filename,
         hasContent: !!file.content,
         contentLength: file.content?.length || 0,
-        metadataMessages: metadata.messages?.length || 0,
-        metadata: JSON.stringify(metadata).substring(0, 200)
+        metadataMessages: metadata.messages?.length || 0
       });
       
       const parsedMessages = parseMarkdownTranscript(file.content);
       const messages = metadata.messages?.length > 0 ? metadata.messages : parsedMessages;
-      
-      console.log(`📝 [SupabaseStore] Message counts:`, {
-        fromMetadata: metadata.messages?.length || 0,
-        fromMarkdown: parsedMessages.length,
-        final: messages.length
-      });
 
       return {
         sessionId: metadata.sessionId || file.filename.replace('chat/', '').replace('.md', ''),

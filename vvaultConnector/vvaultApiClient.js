@@ -159,6 +159,10 @@ async function listConstructs() {
 
 /**
  * Parse markdown transcript into messages array
+ * Handles multiple formats:
+ * - VVAULT format: "You said:" / "Synth said:" / "Zen said:" / "[Name] said:"
+ * - Chatty format: "**User**:" / "**Assistant**:" / "**Zen**:"
+ * 
  * @param {string} content - markdown transcript
  * @returns {Array<{role: string, content: string, id: string, timestamp: string}>}
  */
@@ -170,46 +174,83 @@ function parseMarkdownToMessages(content) {
   let currentRole = null;
   let currentContent = [];
   let messageIndex = 0;
+  let inMetadataBlock = false;
 
   for (const line of lines) {
-    const userMatch = line.match(/^\*\*User\*\*:\s*(.*)$/);
-    const assistantMatch = line.match(/^\*\*Assistant\*\*:\s*(.*)$/);
-    const zenMatch = line.match(/^\*\*Zen\*\*:\s*(.*)$/);
+    // Skip metadata block
+    if (line.includes('<!-- IMPORT_METADATA') || line.includes('<!--')) {
+      inMetadataBlock = true;
+      continue;
+    }
+    if (line.includes('-->')) {
+      inMetadataBlock = false;
+      continue;
+    }
+    if (inMetadataBlock) continue;
+    
+    // Skip header lines
+    if (line.startsWith('#') || line.startsWith('**Created') || 
+        line.startsWith('**Session') || line.startsWith('**Construct') ||
+        line.trim() === '---') {
+      continue;
+    }
 
-    if (userMatch) {
+    // VVAULT format: "You said:" - marks user message
+    const youSaidMatch = line.match(/^You said:\s*$/i);
+    // VVAULT format: "[Name] said:" - marks assistant message
+    const nameSaidMatch = line.match(/^(\w+) said:\s*$/i);
+    
+    // Chatty format: "**User**:", "**Assistant**:", "**Zen**:"
+    const userMatch = line.match(/^\*\*User\*\*:\s*(.*)$/);
+    const assistantMatch = line.match(/^\*\*(?:Assistant|Zen|Synth|Katana|Lin)\*\*:\s*(.*)$/i);
+
+    if (youSaidMatch || userMatch) {
+      // Save previous message
       if (currentRole && currentContent.length) {
-        messages.push({
-          id: `msg_${messageIndex++}`,
-          role: currentRole,
-          content: currentContent.join('\n').trim(),
-          timestamp: new Date().toISOString()
-        });
+        const msgContent = currentContent.join('\n').trim();
+        if (msgContent) {
+          messages.push({
+            id: `msg_${messageIndex++}`,
+            role: currentRole,
+            content: msgContent,
+            timestamp: new Date().toISOString()
+          });
+        }
       }
       currentRole = 'user';
-      currentContent = [userMatch[1]];
-    } else if (assistantMatch || zenMatch) {
+      currentContent = userMatch ? [userMatch[1]] : [];
+    } else if (nameSaidMatch || assistantMatch) {
+      // Save previous message
       if (currentRole && currentContent.length) {
-        messages.push({
-          id: `msg_${messageIndex++}`,
-          role: currentRole,
-          content: currentContent.join('\n').trim(),
-          timestamp: new Date().toISOString()
-        });
+        const msgContent = currentContent.join('\n').trim();
+        if (msgContent) {
+          messages.push({
+            id: `msg_${messageIndex++}`,
+            role: currentRole,
+            content: msgContent,
+            timestamp: new Date().toISOString()
+          });
+        }
       }
       currentRole = 'assistant';
-      currentContent = [(assistantMatch || zenMatch)[1]];
+      currentContent = assistantMatch ? [assistantMatch[1]] : [];
     } else if (currentRole && line.trim()) {
+      // Continuation of current message
       currentContent.push(line);
     }
   }
 
+  // Don't forget the last message
   if (currentRole && currentContent.length) {
-    messages.push({
-      id: `msg_${messageIndex++}`,
-      role: currentRole,
-      content: currentContent.join('\n').trim(),
-      timestamp: new Date().toISOString()
-    });
+    const msgContent = currentContent.join('\n').trim();
+    if (msgContent) {
+      messages.push({
+        id: `msg_${messageIndex++}`,
+        role: currentRole,
+        content: msgContent,
+        timestamp: new Date().toISOString()
+      });
+    }
   }
 
   return messages;
