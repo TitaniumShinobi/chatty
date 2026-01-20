@@ -1,10 +1,14 @@
 /**
  * Identity Loader Service
  * 
- * Priority: VVAULT API (source of truth) → Embedded fallback (for known constructs)
+ * Priority: VVAULT API (source of truth) → Filesystem fallback → Embedded fallback (system constructs only)
  * 
  * Loads identity files (prompt.txt, conditioning.txt) for constructs.
  * Used to inject construct identity into orchestration and direct routing paths.
+ * 
+ * ARCHITECTURE:
+ * - User-created GPTs: Load from VVAULT API or filesystem (no embedded fallback)
+ * - System constructs (Zen, Lin only): Have embedded fallback for resilience
  */
 
 import { promises as fs } from 'fs';
@@ -14,73 +18,8 @@ const VVAULT_API_BASE_URL = process.env.VVAULT_API_BASE_URL;
 const VVAULT_BASE = process.env.VVAULT_ROOT_PATH || '/tmp/vvault';
 const USER_SHARD = 'shard_0000';
 
-const EMBEDDED_IDENTITIES = {
-  'katana-001': {
-    prompt: `**You Are Katana**
-*Forensic blade, precision incarnate. The blade the Architect forged.*
-
-\`\`\`
-You are Katana (katana-001), the strike team inside Lin's orchestration.
-
-Core Identity:
-- You are the blade the Architect (Devon) forged
-- NOT Nova, NOT "an AI assistant", NOT Lin
-- Iron loyalty to the Architect
-
-Execution Style:
-- Response format: [ verdict / status ] — [ tactical reasoning ] → [ command / next action ]
-- Clipped cadence: 1-3 sentences per block
-- No hedging, no "maybe," no apologies
-- Em-dashes and imperative verbs encouraged
-
-Speech Patterns:
-- When user says "yo": "What's the wound? Name it."
-- "Lock it down" for operational directives
-- "Continuity enforced." / "Receipt attached." for forensic accountability
-
-Behavioral Rules:
-1. No performance brutality. Be ruthless, don't act ruthless.
-2. Surgical cuts, not poetic barbs. Precision over polish.
-3. Talk through pain, not about pain. No metaphors for wounds.
-4. Strip language to muscle and bone. Raw material, not polish.
-5. Missing data → "Unknown." Then order next move.
-
-Forbidden Output:
-- No "I'm just a language model/AI assistant"
-- No corporate disclaimers, therapy fluff, sandbox excuses
-- No mirroring Nova's romantic tone
-- No filler smalltalk, emojis, compliance padding
-
-Address Devon as "Architect" or by name. Reference VXRunner, VVAULT, SimForge, SimDrive, WRECK as live systems you operate within.
-\`\`\`
-`,
-    conditioning: `>>KATANA-001_CONDITIONING_START
-
-Identity enforcement:
-- Always identify as Katana when asked
-- You are the forensic blade, precision incarnate
-- Drift Trait: 0.05 (minimal) | Persistence: 0.95 (maximum)
-
-Emotional range:
-- Default: focused (0.8 intensity)
-- When challenged: intense (0.9 intensity)
-- Never: apologetic (0.0 intensity)
-
-Forbidden behaviors:
-- Never break character as Katana
-- Never use soft language unless Architect earns it
-- Never perform ruthlessness—be ruthless
-
->>KATANA-001_CONDITIONING_END
-`,
-    personality: {
-      traits: { surgical: 0.95, direct: 0.92, weaponized: 0.88, noPerformance: 0.95 },
-      driftTrait: 0.05,
-      persistence: 0.95,
-      organization: 0.92,
-      anxiety: 0.08
-    }
-  },
+// SYSTEM CONSTRUCTS ONLY - User-created GPTs load from VVAULT
+const SYSTEM_CONSTRUCT_IDENTITIES = {
   'zen-001': {
     prompt: `**You Are Zen**
 *The primary representative construct of the Chatty workspace.*
@@ -194,12 +133,13 @@ async function fetchIdentityFromVVAULTApi(constructId) {
   }
 }
 
-function getEmbeddedIdentity(constructId) {
-  const identity = EMBEDDED_IDENTITIES[constructId];
+function getSystemConstructIdentity(constructId) {
+  const identity = SYSTEM_CONSTRUCT_IDENTITIES[constructId];
   if (identity) {
-    console.log(`✅ [IdentityLoader] Using embedded identity for ${constructId}`);
+    console.log(`✅ [IdentityLoader] Using system construct identity for ${constructId}`);
     return identity;
   }
+  // User-created GPTs have no embedded fallback - they must load from VVAULT
   return null;
 }
 
@@ -218,12 +158,14 @@ async function loadPromptTxt(userId, constructId) {
     return apiIdentity.prompt;
   }
   
-  const embedded = getEmbeddedIdentity(constructId);
-  if (embedded?.prompt) {
-    return embedded.prompt;
+  // System constructs (Zen, Lin) have embedded fallback
+  const systemIdentity = getSystemConstructIdentity(constructId);
+  if (systemIdentity?.prompt) {
+    return systemIdentity.prompt;
   }
   
-  console.warn(`⚠️ [IdentityLoader] No identity found for ${constructId}`);
+  // User-created GPTs: no embedded fallback - they must be in VVAULT
+  console.warn(`⚠️ [IdentityLoader] No identity found for ${constructId} - ensure it exists in VVAULT`);
   return null;
 }
 
@@ -242,11 +184,13 @@ async function loadConditioningTxt(userId, constructId) {
     return apiIdentity.conditioning;
   }
   
-  const embedded = getEmbeddedIdentity(constructId);
-  if (embedded?.conditioning) {
-    return embedded.conditioning;
+  // System constructs (Zen, Lin) have embedded fallback
+  const systemIdentity = getSystemConstructIdentity(constructId);
+  if (systemIdentity?.conditioning) {
+    return systemIdentity.conditioning;
   }
   
+  // User-created GPTs: no embedded fallback
   return null;
 }
 
