@@ -60,8 +60,10 @@ const GeneralTab: React.FC = () => {
     
     // === THEME INTEGRATION - START ===
     // Also update the theme context when theme setting changes
+    // ThemeContext expects lowercase values: 'system' | 'light' | 'night'
     if (setting === 'theme') {
-      setTheme(value as 'System' | 'Light' | 'Night');
+      const themeValue = value.toLowerCase() as 'system' | 'light' | 'night';
+      setTheme(themeValue);
     }
     // === THEME INTEGRATION - END ===
     
