@@ -325,6 +325,9 @@ export default function Layout() {
       t.constructId && ADDRESS_BOOK_CONSTRUCTS.includes(t.constructId)
     );
     
+    console.log(`📖 [Layout] Address Book filter: ${addressBookThreads.length} threads from ${threads.length} total`, 
+      addressBookThreads.map(t => ({ id: t.id, title: t.title, constructId: t.constructId })));
+    
     // Ensure Zen appears first (primary construct)
     const zenThread = addressBookThreads.find(
       (t) => t.id === DEFAULT_ZEN_CANONICAL_SESSION_ID ||
