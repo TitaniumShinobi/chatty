@@ -49,6 +49,16 @@ docs/
 ```
 
 ## Recent Changes
+- **2026-01-20**: Sunrise/Sunset-based Auto Theme
+  - Renamed "System" theme to "Auto" - now follows real sunrise/sunset times, not OS preference
+  - Uses `suncalc` library to calculate actual sunrise/sunset for user's location
+  - Geolocation: Requests user location on first load, caches in localStorage
+  - Default fallback: Atlanta, GA coordinates if geolocation denied
+  - Settings UI: Shows timezone + sunrise/sunset times when "Auto" is selected
+  - Theme transitions: Light theme during day (sunrise→sunset), Dark during night (sunset→sunrise)
+  - Key files:
+    - `src/lib/ThemeContext.tsx` - SunCalc integration, geolocation, auto theme logic
+    - `src/components/settings/GeneralTab.tsx` - Updated theme options (Auto/Light/Dark)
 - **2026-01-20**: VVAULT API Message Routing Architecture (Thin UI Layer)
   - **Architecture Principle**: Chatty is now a thin UI layer; VVAULT is the stateful home for constructs
   - **Message Flow**: Browser → `/api/vvault/message` → VVAULT API → Ollama → transcript saved

@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 import SunCalc from 'suncalc'
 import { type User } from './auth'
 
-export type Theme = 'light' | 'night' | 'system'
+export type Theme = 'light' | 'night' | 'auto'
 
 interface ThemeContextType {
   theme: Theme
@@ -30,7 +30,7 @@ interface ThemeProviderProps {
 const DEFAULT_COORDS = { lat: 33.749, lng: -84.388 }
 
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) => {
-  const [theme, setTheme] = useState<Theme>('system')
+  const [theme, setTheme] = useState<Theme>('auto')
   const [systemTheme, setSystemTheme] = useState<'light' | 'night'>('light')
   const [coords, setCoords] = useState<{ lat: number; lng: number }>(DEFAULT_COORDS)
   const [sunTimes, setSunTimes] = useState<{ sunrise: Date; sunset: Date } | null>(null)
@@ -103,31 +103,37 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
   // Load theme from localStorage when user changes
   useEffect(() => {
     if (user?.sub) {
-      const savedTheme = localStorage.getItem(`user_${user.sub}_theme`) as Theme
-      if (savedTheme && (savedTheme === 'light' || savedTheme === 'night' || savedTheme === 'system')) {
+      const savedTheme = localStorage.getItem(`user_${user.sub}_theme`)
+      // Migration: convert old 'system' to new 'auto'
+      if (savedTheme === 'system') {
+        setTheme('auto')
+      } else if (savedTheme && (savedTheme === 'light' || savedTheme === 'night' || savedTheme === 'auto')) {
         setTheme(savedTheme)
       } else {
-        setTheme('system') // Default to system preference
+        setTheme('auto') // Default to auto (sunrise/sunset based)
       }
     } else {
       // For non-logged-in users, check global preference
-      const globalTheme = localStorage.getItem('chatty-theme') as Theme
-      if (globalTheme && (globalTheme === 'light' || globalTheme === 'night' || globalTheme === 'system')) {
+      const globalTheme = localStorage.getItem('chatty-theme')
+      // Migration: convert old 'system' to new 'auto'
+      if (globalTheme === 'system') {
+        setTheme('auto')
+      } else if (globalTheme && (globalTheme === 'light' || globalTheme === 'night' || globalTheme === 'auto')) {
         setTheme(globalTheme)
       } else {
-        setTheme('system')
+        setTheme('auto')
       }
     }
   }, [user])
 
   // Calculate actual theme
-  const actualTheme = theme === 'system' ? systemTheme : theme
+  const actualTheme = theme === 'auto' ? systemTheme : theme
 
   // === THEME APPLICATION - START ===
   // Apply theme to document
   useEffect(() => {
     const root = document.documentElement
-    const resolved = theme === 'system' ? systemTheme : theme
+    const resolved = theme === 'auto' ? systemTheme : theme
     
     console.log('[Theme] Applying theme:', { 
       setting: theme, 

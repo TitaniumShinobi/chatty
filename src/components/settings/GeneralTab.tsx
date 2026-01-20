@@ -7,7 +7,7 @@ import {
   Check,
   Sun,
   Moon,
-  Monitor,
+  Sunrise,
 } from "lucide-react";
 import { useSettings } from "../../context/SettingsContext";
 import { useTheme } from "../../lib/ThemeContext";
@@ -16,11 +16,11 @@ import { Z_LAYERS } from "../../lib/zLayers";
 
 const GeneralTab: React.FC = () => {
   const { settings, updateGeneral } = useSettings();
-  const { setTheme } = useTheme();
+  const { setTheme, theme, sunTimes } = useTheme();
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
   const themeOptions = [
-    { value: "System", label: "System", icon: Monitor },
+    { value: "Auto", label: "Auto", icon: Sunrise },
     { value: "Light", label: "Light", icon: Sun },
     { value: "Dark", label: "Dark", icon: Moon },
   ];
@@ -69,9 +69,15 @@ const GeneralTab: React.FC = () => {
 
     // === THEME INTEGRATION - START ===
     // Also update the theme context when theme setting changes
-    // ThemeContext expects lowercase values: 'system' | 'light' | 'dark'
+    // ThemeContext expects: 'auto' | 'light' | 'night'
     if (setting === "theme") {
-      const themeValue = value.toLowerCase() as "system" | "light" | "dark";
+      // Map display values to theme context values
+      const themeMap: Record<string, "auto" | "light" | "night"> = {
+        "Auto": "auto",
+        "Light": "light", 
+        "Dark": "night"
+      };
+      const themeValue = themeMap[value] || "auto";
       setTheme(themeValue);
     }
     // === THEME INTEGRATION - END ===
@@ -107,6 +113,15 @@ const GeneralTab: React.FC = () => {
               </span>
             </div>
             <div className="flex items-center gap-2">
+              {/* Show timezone and sun times when Auto is selected */}
+              {theme === "auto" && sunTimes && (
+                <span
+                  className="text-xs"
+                  style={{ color: "var(--chatty-text)", opacity: 0.5 }}
+                >
+                  {Intl.DateTimeFormat().resolvedOptions().timeZone} · ☀️{sunTimes.sunrise.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · 🌙{sunTimes.sunset.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                </span>
+              )}
               <span
                 className="text-sm"
                 style={{ color: "var(--chatty-text)", opacity: 0.7 }}
