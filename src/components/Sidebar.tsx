@@ -279,7 +279,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Navigation Options - Flat List Style */}
-      <div className={cn(collapsed ? "px-3 pb-3" : "pl-[13px] pr-4 pb-4")}>
+      <div className={cn(collapsed ? "px-3 pb-3" : "px-4 pb-4")}>
         <div className="space-y-1">
           <button
             onClick={() => {
@@ -386,21 +386,23 @@ const Sidebar: React.FC<SidebarProps> = ({
               if (onOpenExplore) return onOpenExplore();
               navigate("/app/explore");
             }}
-            className={`${navButtonBase} px-2`}
+            className={navButtonBase}
             style={navButtonStyle("/app/explore")}
             onMouseEnter={(e) => handleNavHover(e, "/app/explore", true)}
             onMouseLeave={(e) => handleNavHover(e, "/app/explore", false)}
           >
-            <img
-              src={simforgeIcon}
-              alt="simForge"
-              className="w-6 h-6 object-contain"
-              style={{
-                transform: collapsed ? "scale(1.15)" : "scale(1)",
-                transformOrigin: "center",
-                marginTop: collapsed ? "-9px" : "0px",
-              }}
-            />
+            <div className="w-4 h-4 flex items-center justify-center overflow-visible flex-shrink-0">
+              <img
+                src={simforgeIcon}
+                alt="simForge"
+                className="w-5 h-5 object-contain"
+                style={{
+                  transform: collapsed ? "scale(1.15)" : "scale(1)",
+                  transformOrigin: "center",
+                  marginTop: collapsed ? "-9px" : "0px",
+                }}
+              />
+            </div>
             {!collapsed && <span>simForge</span>}
           </button>
         </div>
@@ -410,7 +412,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       <div
         className={cn(
           "flex-1 overflow-y-auto",
-          collapsed ? "px-3 pb-3" : "pl-[13px] pr-4 pb-4",
+          collapsed ? "px-3 pb-3" : "px-4 pb-4",
         )}
       >
         {!collapsed && (
