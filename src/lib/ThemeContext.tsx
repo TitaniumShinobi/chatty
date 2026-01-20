@@ -29,26 +29,35 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
   const [systemTheme, setSystemTheme] = useState<'light' | 'night'>('light')
 
   // === SYSTEM THEME DETECTION - START ===
+  // Note: Browser matchMedia is unreliable in Replit's webview/iframe environment
+  // Using time-based theming instead: light during daytime (6am-6pm), night during evening
   useEffect(() => {
-    // Detect initial system theme
-    const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    const detectedTheme = darkModeQuery.matches ? 'night' : 'light'
-    console.log('[Theme] System detection:', { 
-      prefersDark: darkModeQuery.matches, 
+    const getTimeBasedTheme = (): 'light' | 'night' => {
+      const hour = new Date().getHours()
+      // Daytime: 6am (6) to 6pm (18)
+      return (hour >= 6 && hour < 18) ? 'light' : 'night'
+    }
+    
+    const detectedTheme = getTimeBasedTheme()
+    console.log('[Theme] Time-based detection:', { 
+      hour: new Date().getHours(),
       detectedTheme,
       currentSystemTheme: systemTheme 
     })
     setSystemTheme(detectedTheme)
 
-    // Listen for system theme changes
-    const handleSystemThemeChange = (e: MediaQueryListEvent) => {
-      const newTheme = e.matches ? 'night' : 'light'
-      console.log('[Theme] System theme changed:', { prefersDark: e.matches, newTheme })
-      setSystemTheme(newTheme)
-    }
+    // Check every minute for time-based theme changes
+    const intervalId = setInterval(() => {
+      const newTheme = getTimeBasedTheme()
+      setSystemTheme(prev => {
+        if (prev !== newTheme) {
+          console.log('[Theme] Time-based theme changed:', { newTheme })
+        }
+        return newTheme
+      })
+    }, 60000) // Check every minute
 
-    darkModeQuery.addEventListener('change', handleSystemThemeChange)
-    return () => darkModeQuery.removeEventListener('change', handleSystemThemeChange)
+    return () => clearInterval(intervalId)
   }, [])
   // === SYSTEM THEME DETECTION - END ===
 
