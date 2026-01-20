@@ -232,10 +232,12 @@ function parseMarkdownToMessages(content) {
       continue;
     }
 
-    // VVAULT timestamp format: "10:42:22 AM EST - Devon [2025-12-18T15:42:22.552Z]: message"
-    // Also handles names with spaces: "10:42:22 AM EST - Devon Woodson [2025-12-18T15:42:22.552Z]: message"
-    // Pattern: TIME - NAME [ISO_TIMESTAMP]: CONTENT
-    const timestampMatch = line.match(/^\d{1,2}:\d{2}:\d{2}\s*(?:AM|PM)?\s*(?:[A-Z]{2,4})?\s*-\s*([A-Za-z][A-Za-z\s\-]*?)\s*\[([^\]]+)\]:\s*(.*)$/i);
+    // VVAULT timestamp format variants:
+    // Plain: "10:42:22 AM EST - Devon [2025-12-18T15:42:22.552Z]: message"
+    // Bold: "**06:48:09 AM EST - Devon** [2025-12-13T11:48:09.613Z]: message"
+    // Names with spaces: "10:42:22 AM EST - Devon Woodson [2025-12-18T15:42:22.552Z]: message"
+    // Pattern: [**]TIME - NAME[**] [ISO_TIMESTAMP]: CONTENT
+    const timestampMatch = line.match(/^\*{0,2}\d{1,2}:\d{2}:\d{2}\s*(?:AM|PM)?\s*(?:[A-Z]{2,4})?\s*-\s*([A-Za-z][A-Za-z\s\-]*?)\*{0,2}\s*\[([^\]]+)\]:\s*(.*)$/i);
     
     if (timestampMatch) {
       // Save previous message first

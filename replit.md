@@ -49,13 +49,18 @@ docs/
 ```
 
 ## Recent Changes
+- **2026-01-20**: Fixed parser to handle bold markdown timestamp format
+  - **Root cause**: VVAULT transcripts use bold markdown: `**06:48:09 AM EST - Devon** [ISO_TIMESTAMP]: message`
+  - **Fix**: Updated regex in `vvaultApiClient.js` to handle optional `**` markers: `\*{0,2}` at start and end
+  - Parser now recognizes all 181 messages in zen-001 transcript (was only 4)
+  - File path fix: Copied transcript data from old path (`chat_with_zen-001.md`) to new path (`instances/zen-001/chatty/chat_with_zen-001.md`)
 - **2026-01-20**: Parser improvements for VVAULT transcript formats
-  - Parser in `vvaultApiClient.js` now handles both formats:
+  - Parser in `vvaultApiClient.js` now handles:
     - VVAULT format: "You said:" / "Synth said:" / "[Name] said:"
-    - Timestamp format: "HH:MM:SS AM/PM TZ - Name [ISO_TIMESTAMP]: message"
+    - Plain timestamp: "HH:MM:SS AM/PM TZ - Name [ISO_TIMESTAMP]: message"
+    - Bold timestamp: "**HH:MM:SS AM/PM TZ - Name** [ISO_TIMESTAMP]: message"
   - Regex updated to handle multiword speaker names (e.g., "Devon Woodson")
   - Speaker matching uses `.startsWith('devon')` for flexibility
-  - **Note**: zen-001 transcript only has 4 proper message pairs; rest is legacy test data
 - **2026-01-20**: Fixed raw markdown rendering issue in chat messages
   - **Root cause**: `mapChatMessageToThreadMessage()` in Layout.tsx was treating string content as a packets array
   - **Fix**: Added type checking to distinguish between string content (from VVAULT) and packet arrays (from live chat)
