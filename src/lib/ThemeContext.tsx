@@ -32,11 +32,19 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
   useEffect(() => {
     // Detect initial system theme
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    setSystemTheme(darkModeQuery.matches ? 'night' : 'light')
+    const detectedTheme = darkModeQuery.matches ? 'night' : 'light'
+    console.log('[Theme] System detection:', { 
+      prefersDark: darkModeQuery.matches, 
+      detectedTheme,
+      currentSystemTheme: systemTheme 
+    })
+    setSystemTheme(detectedTheme)
 
     // Listen for system theme changes
     const handleSystemThemeChange = (e: MediaQueryListEvent) => {
-      setSystemTheme(e.matches ? 'night' : 'light')
+      const newTheme = e.matches ? 'night' : 'light'
+      console.log('[Theme] System theme changed:', { prefersDark: e.matches, newTheme })
+      setSystemTheme(newTheme)
     }
 
     darkModeQuery.addEventListener('change', handleSystemThemeChange)
@@ -72,6 +80,13 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
   useEffect(() => {
     const root = document.documentElement
     const resolved = theme === 'system' ? systemTheme : theme
+    
+    console.log('[Theme] Applying theme:', { 
+      setting: theme, 
+      systemTheme, 
+      resolved,
+      localStorage: localStorage.getItem('chatty-theme')
+    })
 
     // Clear previous state
     root.classList.remove('theme-light', 'theme-night', 'night-mode')
