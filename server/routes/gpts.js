@@ -115,12 +115,13 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const chattyUserId = req.user?.id || req.user?.uid || req.user?.sub || req.user?.email || 'anonymous';
+    const userEmail = req.user?.email;
     
     // Resolve to VVAULT user ID format for database storage
     let userId = chattyUserId;
     try {
       const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
-      const vvaultUserId = await resolveVVAULTUserId(chattyUserId, req.user?.email);
+      const vvaultUserId = await resolveVVAULTUserId(chattyUserId, userEmail);
       if (vvaultUserId) {
         userId = vvaultUserId;
         console.log(`✅ [GPTs API] Resolved user ID for creation: ${chattyUserId} → ${vvaultUserId}`);
@@ -136,6 +137,41 @@ router.post('/', async (req, res) => {
     };
 
     const gpt = await gptManager.createGPT(gptData);
+    
+    // Bootstrap conversation scaffold in Supabase so GPT appears in Address Book immediately
+    if (gpt.constructCallsign) {
+      try {
+        const { writeConversationToSupabase } = await import('../../vvaultConnector/supabaseStore.js');
+        const constructId = gpt.constructCallsign;
+        const sessionId = `${constructId}_chat_with_${constructId}`;
+        
+        console.log(`📝 [GPTs API] Bootstrapping conversation for new GPT: ${constructId}`);
+        
+        await writeConversationToSupabase({
+          userId,
+          userEmail,
+          sessionId,
+          title: gpt.name,
+          constructId,
+          constructName: gpt.name,
+          constructCallsign: constructId,
+          role: 'assistant',
+          content: 'CONVERSATION_CREATED:New conversation',
+          timestamp: new Date().toISOString(),
+          metadata: {
+            source: 'chatty',
+            createdBy: userEmail || userId,
+            isPrimary: false
+          }
+        });
+        
+        console.log(`✅ [GPTs API] Conversation scaffold created for: ${constructId}`);
+      } catch (bootstrapError) {
+        console.warn(`⚠️ [GPTs API] Failed to bootstrap conversation: ${bootstrapError.message}`);
+        // Don't fail the GPT creation if conversation bootstrap fails
+      }
+    }
+    
     res.json({ success: true, gpt });
   } catch (error) {
     console.error('Error creating GPT:', error);

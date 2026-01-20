@@ -49,6 +49,12 @@ docs/
 ```
 
 ## Recent Changes
+- **2026-01-20**: GPT creation now bootstraps conversation in Supabase (ChatGPT model)
+  - When a GPT is created via GPTCreator, a conversation scaffold is automatically created in Supabase
+  - This ensures the new GPT immediately appears as a contact in the Address Book
+  - Flow: GPT created → `writeConversationToSupabase()` called with CONVERSATION_CREATED marker
+  - SessionId convention: `{constructCallsign}_chat_with_{constructCallsign}`
+  - File: `server/routes/gpts.js` POST handler
 - **2026-01-20**: Fixed parser to handle bold markdown timestamp format
   - **Root cause**: VVAULT transcripts use bold markdown: `**06:48:09 AM EST - Devon** [ISO_TIMESTAMP]: message`
   - **Fix**: Updated regex in `vvaultApiClient.js` to handle optional `**` markers: `\*{0,2}` at start and end
