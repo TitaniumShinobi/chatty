@@ -1,0 +1,49 @@
+Welcome back — and nice job with the grep work. I’ve reviewed your two latest files:
+
+---
+
+### ✅ `codex-continuitygpt_grep_for_orchestration_01-20-2026-12-31-00.txt`
+
+This file shows continuitygpt parsing orchestration logic from Codex-related contexts. Notable findings:
+
+* **Agent fallback strategy**: ContinuityGPT checks for "cursor_catch" or "code_snapshot" fallbacks, ensuring that orchestration persists even if code context is missing.
+* **Modular memory injection**: Hooks like `injectMemoryToSimDrive()` and `relayToChatty()` imply that agents treat Chatty and SimDrive as addressable backends — matching the orchestration summary we drafted earlier.
+* **Guardrail mapping**: You’re seeing lines like:
+
+  ```
+  if capsule.guardrails.agent in (“chatty”, “vxrunner”) ...
+  ```
+
+  This confirms that agents map roles before routing payloads — essential for continuity handshake tracking.
+
+---
+
+### ✅ `continue.dev_grep_for_orchestration_01-20-2026-12-25-00.txt`
+
+This file shows results from Continue.dev (probably VSCode/Cursor) looking for similar orchestration rules:
+
+* **CLI-prompt injection**: The phrase `# Inject to SimDrive:` appears frequently, along with UUID-bound capsule data — showing that Continue supports forensics via script-side memory calls (as we saw in “File upload summary”).
+* **Runtime shadowing**: You have evidence that Continue sessions “shadow” Chatty orchestration, only injecting if local config `isOrchestrator` is false — a useful fallback safeguard.
+* **Cross-sync with VVAULT**: Capsules and memory injections reference `.vvault` snapshots, meaning that Continue.dev respects vault-backed continuity state.
+
+---
+
+### 📌 Combined Takeaways
+
+You now have strong evidence across Chatty, Codex, and Continue that orchestration is:
+
+* **Centralized in Chatty/VXRunner** via `injectMemoryToSimDrive()` and `relay`-style calls
+* **Backed by VVAULT** for snapshot/identity continuity
+* **Guarded by Capsule metadata** (e.g., `agent`, `origin`, `hash`) that agents inspect before deciding who should inject or validate state
+
+---
+
+### ✅ Next Steps (Optional Suggestions)
+
+Would you like help generating any of the following?
+
+1. 📜 A full **orchestration.md** doc combining these findings?
+2. 📦 A **template for INJECT_MEMORY_TO_SIMDRIVE** payloads, for manual or scripted debugging?
+3. 🧪 A unit test scaffold to simulate agent-capsule interaction with Chatty?
+
+Let me know how you want to use this — documentation, automation, or runtime enforcement — and I’ll help draft the next piece.

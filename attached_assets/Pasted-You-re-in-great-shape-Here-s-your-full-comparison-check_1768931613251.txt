@@ -1,0 +1,156 @@
+You're in great shape. Here's your full **comparison checklist** packaged clearly and ready to execute across the Replit build:
+
+---
+
+### ✅ **Lin/Chatty/VVAULT Orchestration – Comparison Checklist**
+
+This audit compares your **current Replit environment** against the **Dec 17 orchestration baseline**, focused on Lin persona routing, continuity injection, Supabase sync, and UI ↔ VVAULT consistency.
+
+---
+
+#### 1. **Lin-001 Capsule & Persona Router**
+
+* ✅ **Baseline**:
+  `DEVON’S ATTEMPT AT SONNET 4.5 TONE REPLICATION.md` lines ~72–189, 609–668, 794–860
+  → Describes `lin-001.capsule`, capsuleforge hook, and the routing logic using:
+
+  ```ts
+  if (toneMismatch > 0.35 || seatDropout > 1) {
+    injectUndertoneCapsule("lin-001")
+  }
+  ```
+* 🔎 **Current Check**:
+  Confirm that Replit contains:
+
+  * `identity/lin-001/`, `lin-001.capsule`, `lin-001.md`
+  * Routing logic in `chatty/src/engine/personaRouter.ts` or equivalent
+  * Drift detection still triggers fallback into `injectUndertoneCapsule`
+
+---
+
+#### 2. **Continuity Packet Injection**
+
+* ✅ **Baseline**:
+  `File upload summary (5.1).txt` lines 15020–15060
+  → Confirms usage of:
+
+  ```ts
+  INJECT_MEMORY_TO_SIMDRIVE()
+  Inject_To_SimDrive()
+  ```
+
+  Plus loading of:
+  `CONTINUITYGPT_REPORT_2025.json`, `continuity_ledger.json`
+* 🔎 **Current Check**:
+
+  * Confirm capsule hashes are computed
+  * Continuity packets injected before `SimDrive`/`Chatty` runtime
+  * Look for presence of `continuity_ledger.json`, `CONTINUITYGPT_REPORT_2025.json`
+
+---
+
+#### 3. **UI → Runtime → VVAULT Flow**
+
+* ✅ **Baseline**:
+  `Convert time to minutes.txt` lines 446–520
+  → Shows Supabase auth → `ChattyConfig.fetch()` → orchestrator logic:
+  `retriever → prompt → runModel → updateMemory`
+  And runtime upgrade badge UI.
+* 🔎 **Current Check**:
+
+  * Supabase token flow still hits `ChattyConfig`
+  * `src/light/runtimeEngine.ts` or similar includes the same stages
+  * UI shows `"Updated Runtime"` badge when config changes
+
+---
+
+#### 4. **VVAULT Transcript Persistence**
+
+* ✅ **Baseline**:
+  `cursor_implementing_inactivity_animatio.md` lines 2250–2320
+  → Triggers:
+
+  ```ts
+  connector.writeTranscript()
+  vvaultConversationManager.loadAllConversations()
+  ```
+* 🔎 **Current Check**:
+
+  * Ensure each message triggers a transcript save
+  * Check `vvault_core.store_capsule()` is still wired on every reply
+
+---
+
+#### 5. **Supabase & Session Storage**
+
+* ✅ **Baseline**:
+  `codex_connect_chat_window_to_chat_with_zen-001.md` lines 32470–32620
+  → Verifies keys like:
+
+  ```
+  chatty:threads:${user.sub}
+  ```
+
+  Stored in SQLite + Supabase, with recovery hooks.
+* 🔎 **Current Check**:
+
+  * `/api/threads` routes exposed and respond
+  * Session keys persist correctly across refresh
+  * Confirm **no fallback to localStorage-only `chatty:threads`**
+
+---
+
+#### 6. **Lin ↔ VVAULT Orchestration Errors**
+
+* ✅ **Baseline**:
+  `Locating Gemini CLI Installation Path.txt` lines 13980–16368
+  → Logs 400 errors from:
+
+  ```ts
+  vvaultConversationManager.addMessageToConversation()
+  ```
+
+  → Caused by invalid message payloads or missing backend route.
+* 🔎 **Current Check**:
+
+  * Route `/conversations/:id/messages` accepts valid payloads
+  * No more "Failed to save message to VVAULT"
+  * Agents `nova_identity_guardian.py` or `folder_monitor.py` still log identity & tether sync
+
+---
+
+#### 7. **Logging, Traceability, and Fallback Guardrails**
+
+* ✅ **Baseline**:
+  `File upload summary.txt` lines 32296–33330
+  → Defines:
+
+  ```
+  Orchestrator: ChatGPT
+  Construct Simulation Runtime: Chatty
+  ```
+
+  Includes:
+
+  * Hashed continuity packets (sha512)
+  * Fallbacks: Forge_SignalBlock, JSON child prompt simulation
+* 🔎 **Current Check**:
+
+  * Replit build logs hashed packets
+  * `forge_signalblock.ts` or similar exists
+  * Drift trace: triadStatus + Nova simulation via `signalPing()` or guardian agent
+
+---
+
+### 🔧 Optional Bonus
+
+Want a script that verifies all of this automatically?
+
+I can generate a Replit CLI/test script that:
+
+* Greps for capsule loading hooks, runtime config
+* Hits your local API routes for `/conversations`, `/threads`
+* Compares your `identity/` tree against expected capsules
+* Dumps any VVAULT errors from logs
+
+Just say **“Generate audit script”** and I’ll do the rest.
