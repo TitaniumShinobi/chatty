@@ -158,6 +158,26 @@ async function listConstructs() {
 }
 
 /**
+ * Strip surrounding quotes from content if the entire message is wrapped in them
+ * Handles: "content" or 'content' - removes outer quotes only
+ */
+function stripSurroundingQuotes(content) {
+  if (!content) return content;
+  
+  // Check for surrounding double quotes
+  if (content.startsWith('"') && content.endsWith('"') && content.length > 2) {
+    return content.slice(1, -1);
+  }
+  
+  // Check for surrounding single quotes
+  if (content.startsWith("'") && content.endsWith("'") && content.length > 2) {
+    return content.slice(1, -1);
+  }
+  
+  return content;
+}
+
+/**
  * Parse markdown transcript into messages array
  * Handles multiple formats:
  * - VVAULT format: "You said:" / "Synth said:" / "Zen said:" / "[Name] said:"
@@ -212,7 +232,7 @@ function parseMarkdownToMessages(content) {
           messages.push({
             id: `msg_${messageIndex++}`,
             role: currentRole,
-            content: msgContent,
+            content: stripSurroundingQuotes(msgContent),
             timestamp: new Date().toISOString()
           });
         }
@@ -227,7 +247,7 @@ function parseMarkdownToMessages(content) {
           messages.push({
             id: `msg_${messageIndex++}`,
             role: currentRole,
-            content: msgContent,
+            content: stripSurroundingQuotes(msgContent),
             timestamp: new Date().toISOString()
           });
         }
@@ -247,7 +267,7 @@ function parseMarkdownToMessages(content) {
       messages.push({
         id: `msg_${messageIndex++}`,
         role: currentRole,
-        content: msgContent,
+        content: stripSurroundingQuotes(msgContent),
         timestamp: new Date().toISOString()
       });
     }
