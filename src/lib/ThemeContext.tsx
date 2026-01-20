@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
+import SunCalc from 'suncalc'
 import { type User } from './auth'
 
 export type Theme = 'light' | 'night' | 'system'
@@ -7,6 +8,7 @@ interface ThemeContextType {
   theme: Theme
   setTheme: (theme: Theme) => void
   actualTheme: 'light' | 'night' // The actual resolved theme (when system is selected)
+  sunTimes?: { sunrise: Date; sunset: Date } | null
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
@@ -24,42 +26,79 @@ interface ThemeProviderProps {
   user: User | null
 }
 
+// Default coordinates (Atlanta, GA - Devon's approximate location based on EST timezone)
+const DEFAULT_COORDS = { lat: 33.749, lng: -84.388 }
+
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) => {
   const [theme, setTheme] = useState<Theme>('system')
   const [systemTheme, setSystemTheme] = useState<'light' | 'night'>('light')
+  const [coords, setCoords] = useState<{ lat: number; lng: number }>(DEFAULT_COORDS)
+  const [sunTimes, setSunTimes] = useState<{ sunrise: Date; sunset: Date } | null>(null)
 
-  // === SYSTEM THEME DETECTION - START ===
-  // Note: Browser matchMedia is unreliable in Replit's webview/iframe environment
-  // Using time-based theming instead: light during daytime (6am-6pm), night during evening
+  // === GEOLOCATION - Get user's location for accurate sunrise/sunset ===
   useEffect(() => {
-    const getTimeBasedTheme = (): 'light' | 'night' => {
-      const hour = new Date().getHours()
-      // Daytime: 6am (6) to 6pm (18)
-      return (hour >= 6 && hour < 18) ? 'light' : 'night'
+    // Try to get saved location first
+    const savedLat = localStorage.getItem('chatty_user_lat')
+    const savedLng = localStorage.getItem('chatty_user_lng')
+    
+    if (savedLat && savedLng) {
+      setCoords({ lat: parseFloat(savedLat), lng: parseFloat(savedLng) })
+      console.log('[Theme] Using saved location:', { lat: savedLat, lng: savedLng })
+    } else if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords
+          setCoords({ lat: latitude, lng: longitude })
+          localStorage.setItem('chatty_user_lat', latitude.toString())
+          localStorage.setItem('chatty_user_lng', longitude.toString())
+          console.log('[Theme] Got geolocation:', { lat: latitude, lng: longitude })
+        },
+        (error) => {
+          console.log('[Theme] Geolocation denied/unavailable, using default:', DEFAULT_COORDS, error.message)
+        },
+        { timeout: 5000, maximumAge: 86400000 } // Cache for 24 hours
+      )
+    }
+  }, [])
+
+  // === SUNRISE/SUNSET CALCULATION - START ===
+  useEffect(() => {
+    const calculateSunTheme = (): 'light' | 'night' => {
+      const now = new Date()
+      const times = SunCalc.getTimes(now, coords.lat, coords.lng)
+      
+      setSunTimes({ sunrise: times.sunrise, sunset: times.sunset })
+      
+      const isDay = now >= times.sunrise && now < times.sunset
+      
+      console.log('[Theme] Sunrise/Sunset detection:', { 
+        now: now.toLocaleTimeString(),
+        sunrise: times.sunrise.toLocaleTimeString(),
+        sunset: times.sunset.toLocaleTimeString(),
+        isDay,
+        coords
+      })
+      
+      return isDay ? 'light' : 'night'
     }
     
-    const detectedTheme = getTimeBasedTheme()
-    console.log('[Theme] Time-based detection:', { 
-      hour: new Date().getHours(),
-      detectedTheme,
-      currentSystemTheme: systemTheme 
-    })
+    const detectedTheme = calculateSunTheme()
     setSystemTheme(detectedTheme)
 
-    // Check every minute for time-based theme changes
+    // Check every minute for sunrise/sunset transitions
     const intervalId = setInterval(() => {
-      const newTheme = getTimeBasedTheme()
+      const newTheme = calculateSunTheme()
       setSystemTheme(prev => {
         if (prev !== newTheme) {
-          console.log('[Theme] Time-based theme changed:', { newTheme })
+          console.log('[Theme] Sun-based theme changed:', { newTheme })
         }
         return newTheme
       })
     }, 60000) // Check every minute
 
     return () => clearInterval(intervalId)
-  }, [])
-  // === SYSTEM THEME DETECTION - END ===
+  }, [coords])
+  // === SUNRISE/SUNSET CALCULATION - END ===
 
   // Load theme from localStorage when user changes
   useEffect(() => {
@@ -120,7 +159,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
   }, [theme, user])
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, actualTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme, actualTheme, sunTimes }}>
       {children}
     </ThemeContext.Provider>
   )
