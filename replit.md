@@ -49,6 +49,11 @@ docs/
 ```
 
 ## Recent Changes
+- **2026-01-20**: Fixed raw markdown rendering issue in chat messages
+  - **Root cause**: `mapChatMessageToThreadMessage()` in Layout.tsx was treating string content as a packets array
+  - **Fix**: Added type checking to distinguish between string content (from VVAULT) and packet arrays (from live chat)
+  - String content now properly wrapped in `{ op: "answer.v1", payload: { content: ... } }` structure
+  - This ensures ReactMarkdown in the `R` component receives proper packet format for rendering
 - **2026-01-20**: Chat UI rendering fixes and code cleanup
   - Fixed VVAULT transcript parsing: Added `stripSurroundingQuotes()` in `vvaultApiClient.js` to remove literal quote characters from message content
   - Cleaned up debug logging code in `Chat.tsx` (removed leftover fetch calls to localhost:7242)

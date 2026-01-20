@@ -159,15 +159,18 @@ function mapChatMessageToThreadMessage(message: ChatMessage): Message | null {
         files: mapFiles(message.files),
       };
     case "assistant": {
-      const packets =
-        message.content && message.content.length > 0
-          ? message.content
-          : [
-              {
-                op: "answer.v1",
-                payload: { content: "" },
-              } as import("../types").AssistantPacket,
-            ];
+      // Handle both string content (from VVAULT) and packet arrays (from live chat)
+      let packets: import("../types").AssistantPacket[];
+      if (Array.isArray(message.content)) {
+        // Already in packet format
+        packets = message.content;
+      } else if (typeof message.content === "string" && message.content.length > 0) {
+        // String content from VVAULT - wrap in proper packet structure
+        packets = [{ op: "answer.v1", payload: { content: message.content } }];
+      } else {
+        // Fallback for empty content
+        packets = [{ op: "answer.v1", payload: { content: "" } }];
+      }
 
       return {
         id: message.id,
