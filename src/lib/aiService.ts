@@ -563,36 +563,38 @@ export class AIService {
             }
           }
           
-          // Try orchestration with fallback to direct routing
+          // Try orchestration with fallback to VVAULT API
           const orchestrationResult = await routeMessageWithFallback(
             agentId,
             input,
             identityContext,
             async () => {
-              // Fallback: use existing routing
-              const response = await fetch(`/api/conversations/${threadId}/messages`, {
+              // Fallback: use VVAULT API for LLM inference and transcript saving
+              // VVAULT handles: Ollama, transcript saving, memory management
+              console.log('[AIService] Falling back to VVAULT API for message processing');
+              const response = await fetch('/api/vvault/message', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
                 },
                 credentials: 'include',
                 body: JSON.stringify({
-                  message: input,
-                  content: input,
                   constructId: constructId,
-                  metadata: options?.uiContext
+                  message: input,
+                  threadId: threadId,
+                  sessionId: threadId,
                 }),
               });
               
               if (!response.ok) {
                 const error = await response.json();
-                throw new Error(error.error || 'Failed to process message');
+                throw new Error(error.error || 'Failed to process message via VVAULT');
               }
               
               const data = await response.json();
               return {
                 agent_id: agentId,
-                response: data.aiResponse?.content || data.content || data.aiResponse?.message || '',
+                response: data.response || '',
                 status: 'success' as const
               };
             }
@@ -624,33 +626,35 @@ export class AIService {
       }
       
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.ts:555',message:'processMessage: using direct routing',data:{constructId,threadId},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'E'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.ts:555',message:'processMessage: using VVAULT API direct routing',data:{constructId,threadId},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'E'})}).catch(()=>{});
       // #endregion
       
-      // Call the conversations API endpoint
-      const response = await fetch(`/api/conversations/${threadId}/messages`, {
+      // Call VVAULT API for LLM inference and transcript saving
+      // VVAULT is the stateful home for constructs - Chatty is just a UI layer
+      console.log('[AIService] Using VVAULT API for message processing');
+      const response = await fetch('/api/vvault/message', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
         body: JSON.stringify({
-          message: input,
-          content: input,
           constructId: constructId,
-          metadata: options?.uiContext
+          message: input,
+          threadId: threadId,
+          sessionId: threadId,
         }),
       });
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || 'Failed to process message');
+        throw new Error(error.error || 'Failed to process message via VVAULT');
       }
 
       const data = await response.json();
       
-      // Extract AI response content
-      const aiContent = data.aiResponse?.content || data.content || data.aiResponse?.message || '';
+      // Extract AI response content from VVAULT response
+      const aiContent = data.response || '';
       
       // Convert response to packets format
       const packets = [{ op: 'answer.v1', payload: { content: aiContent } }];

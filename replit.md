@@ -49,6 +49,18 @@ docs/
 ```
 
 ## Recent Changes
+- **2026-01-20**: VVAULT API Message Routing Architecture (Thin UI Layer)
+  - **Architecture Principle**: Chatty is now a thin UI layer; VVAULT is the stateful home for constructs
+  - **Message Flow**: Browser → `/api/vvault/message` → VVAULT API → Ollama → transcript saved
+  - Key changes:
+    - Added `postMessage()` and `appendMessage()` to `vvaultConnector/vvaultApiClient.js`
+    - Added proxy routes in `server/routes/vvault.js`:
+      - `POST /api/vvault/message` - Proxies to VVAULT's `/api/chatty/message` for LLM inference
+      - `POST /api/vvault/transcript/:constructId/append` - Appends messages to transcripts
+    - Updated `src/lib/aiService.ts` to use VVAULT API instead of internal `/api/conversations`
+  - VVAULT handles: LLM inference (Ollama), transcript markdown saving, memory management
+  - Chatty handles: UI rendering, local session state only
+  - Transcript format: `**HH:MM:SS AM/PM TZ - Name** [ISO8601Z]: message`
 - **2026-01-20**: Sidebar simplification - removed "GPTS" section header
   - simForge moved into main navigation options (alongside Library, Code, VVAULT, Projects)
   - Removed redundant custom GPTs list from sidebar (constructs appear in Address Book instead)

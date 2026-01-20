@@ -3309,4 +3309,182 @@ router.get("/chat/:sessionId", requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * POST /vvault/message - Proxy to VVAULT's /api/chatty/message for LLM inference
+ * 
+ * Chatty should call this endpoint to send messages, which proxies to VVAULT.
+ * VVAULT handles: LLM inference (Ollama), transcript saving, memory management.
+ * 
+ * Request body:
+ * - constructId: string (e.g., "zen-001")
+ * - message: string (user's message)
+ * - userId?: string (optional, uses authenticated user if not provided)
+ * 
+ * Response:
+ * - success: boolean
+ * - response: string (LLM response)
+ * - construct_id: string
+ */
+router.post("/message", async (req, res) => {
+  const userId = validateUser(res, req.user);
+  if (!userId) return;
+
+  const { constructId, message, threadId, sessionId } = req.body || {};
+
+  if (!constructId) {
+    return res.status(400).json({ success: false, error: "Missing constructId" });
+  }
+
+  if (!message || message.trim() === '') {
+    return res.status(400).json({ success: false, error: "Missing message content" });
+  }
+
+  const VVAULT_API_BASE_URL = process.env.VVAULT_API_BASE_URL;
+  
+  if (!VVAULT_API_BASE_URL) {
+    console.error('❌ [VVAULT Proxy] VVAULT_API_BASE_URL not configured');
+    return res.status(503).json({ 
+      success: false, 
+      error: "VVAULT API not configured. Cannot process message." 
+    });
+  }
+
+  try {
+    // Derive session ID if not provided (format: {constructId}_chat_with_{constructId})
+    const effectiveSessionId = sessionId || threadId || `${constructId}_chat_with_${constructId}`;
+    
+    console.log(`📤 [VVAULT Proxy] Forwarding message to VVAULT for construct: ${constructId}, session: ${effectiveSessionId}`);
+    
+    const baseUrl = VVAULT_API_BASE_URL.replace(/\/$/, '');
+    
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000); // 60 second timeout for LLM
+    
+    try {
+      // VVAULT handles: LLM inference, transcript saving, memory management
+      const vvaultResponse = await fetch(`${baseUrl}/api/chatty/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          constructId,
+          message,
+          userId: req.user?.email || userId,
+          sessionId: effectiveSessionId,
+          userName: req.user?.name || 'Devon'
+        }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeout);
+
+      if (!vvaultResponse.ok) {
+        const errorText = await vvaultResponse.text();
+        console.error(`❌ [VVAULT Proxy] VVAULT API returned ${vvaultResponse.status}: ${errorText}`);
+        return res.status(vvaultResponse.status).json({
+          success: false,
+          error: `VVAULT API error: ${vvaultResponse.status}`,
+          details: errorText
+        });
+      }
+
+      const data = await vvaultResponse.json();
+      
+      console.log(`✅ [VVAULT Proxy] Got response from VVAULT for ${constructId}:`, {
+        success: data.success,
+        responseLength: data.response?.length || 0
+      });
+
+      return res.json(data);
+    } catch (fetchError) {
+      clearTimeout(timeout);
+      
+      if (fetchError.name === 'AbortError') {
+        console.error(`❌ [VVAULT Proxy] Request timed out for ${constructId}`);
+        return res.status(504).json({
+          success: false,
+          error: "VVAULT API request timed out"
+        });
+      }
+      
+      throw fetchError;
+    }
+  } catch (error) {
+    console.error(`❌ [VVAULT Proxy] Failed to proxy message to VVAULT:`, error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to communicate with VVAULT",
+      details: error.message
+    });
+  }
+});
+
+/**
+ * POST /vvault/transcript/:constructId/append - Append message to transcript via VVAULT
+ * 
+ * More efficient than fetching/replacing whole transcript.
+ * Calls VVAULT's /api/chatty/transcript/:id/message endpoint.
+ */
+router.post("/transcript/:constructId/append", async (req, res) => {
+  const userId = validateUser(res, req.user);
+  if (!userId) return;
+
+  const { constructId } = req.params;
+  const { role, content, name, timestamp } = req.body || {};
+
+  if (!role) {
+    return res.status(400).json({ success: false, error: "Missing role" });
+  }
+
+  if (!content || content.trim() === '') {
+    return res.status(400).json({ success: false, error: "Missing content" });
+  }
+
+  const VVAULT_API_BASE_URL = process.env.VVAULT_API_BASE_URL;
+  
+  if (!VVAULT_API_BASE_URL) {
+    console.error('❌ [VVAULT Proxy] VVAULT_API_BASE_URL not configured');
+    return res.status(503).json({ 
+      success: false, 
+      error: "VVAULT API not configured" 
+    });
+  }
+
+  try {
+    console.log(`📝 [VVAULT Proxy] Appending ${role} message to ${constructId}`);
+    
+    const baseUrl = VVAULT_API_BASE_URL.replace(/\/$/, '');
+    
+    const vvaultResponse = await fetch(`${baseUrl}/api/chatty/transcript/${constructId}/message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        role,
+        content,
+        name,
+        timestamp: timestamp || new Date().toISOString()
+      })
+    });
+
+    if (!vvaultResponse.ok) {
+      const errorText = await vvaultResponse.text();
+      console.error(`❌ [VVAULT Proxy] Append failed: ${vvaultResponse.status}: ${errorText}`);
+      return res.status(vvaultResponse.status).json({
+        success: false,
+        error: `VVAULT API error: ${vvaultResponse.status}`,
+        details: errorText
+      });
+    }
+
+    const data = await vvaultResponse.json();
+    console.log(`✅ [VVAULT Proxy] Message appended to ${constructId}`);
+    return res.json(data);
+  } catch (error) {
+    console.error(`❌ [VVAULT Proxy] Failed to append message:`, error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to append message via VVAULT"
+    });
+  }
+});
+
 export default router;
