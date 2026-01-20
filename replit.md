@@ -49,6 +49,13 @@ docs/
 ```
 
 ## Recent Changes
+- **2026-01-20**: Parser improvements for VVAULT transcript formats
+  - Parser in `vvaultApiClient.js` now handles both formats:
+    - VVAULT format: "You said:" / "Synth said:" / "[Name] said:"
+    - Timestamp format: "HH:MM:SS AM/PM TZ - Name [ISO_TIMESTAMP]: message"
+  - Regex updated to handle multiword speaker names (e.g., "Devon Woodson")
+  - Speaker matching uses `.startsWith('devon')` for flexibility
+  - **Note**: zen-001 transcript only has 4 proper message pairs; rest is legacy test data
 - **2026-01-20**: Fixed raw markdown rendering issue in chat messages
   - **Root cause**: `mapChatMessageToThreadMessage()` in Layout.tsx was treating string content as a packets array
   - **Fix**: Added type checking to distinguish between string content (from VVAULT) and packet arrays (from live chat)

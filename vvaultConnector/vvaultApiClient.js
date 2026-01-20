@@ -180,6 +180,7 @@ function stripSurroundingQuotes(content) {
 /**
  * Parse markdown transcript into messages array
  * Handles multiple formats:
+ * - VVAULT timestamp format: "10:42:22 AM EST - Devon [2025-12-18T15:42:22.552Z]: message"
  * - VVAULT format: "You said:" / "Synth said:" / "Zen said:" / "[Name] said:"
  * - Chatty format: "**User**:" / "**Assistant**:" / "**Zen**:"
  * 
@@ -193,8 +194,24 @@ function parseMarkdownToMessages(content) {
   const lines = content.split('\n');
   let currentRole = null;
   let currentContent = [];
+  let currentTimestamp = null;
   let messageIndex = 0;
   let inMetadataBlock = false;
+
+  // Helper to save current message
+  function saveCurrentMessage() {
+    if (currentRole && currentContent.length) {
+      const msgContent = currentContent.join('\n').trim();
+      if (msgContent) {
+        messages.push({
+          id: `msg_${messageIndex++}`,
+          role: currentRole,
+          content: stripSurroundingQuotes(msgContent),
+          timestamp: currentTimestamp || new Date().toISOString()
+        });
+      }
+    }
+  }
 
   for (const line of lines) {
     // Skip metadata block
@@ -208,10 +225,33 @@ function parseMarkdownToMessages(content) {
     }
     if (inMetadataBlock) continue;
     
-    // Skip header lines
+    // Skip header lines and metadata
     if (line.startsWith('#') || line.startsWith('**Created') || 
         line.startsWith('**Session') || line.startsWith('**Construct') ||
-        line.trim() === '---') {
+        line.trim() === '---' || line.startsWith('[Maintain tone:')) {
+      continue;
+    }
+
+    // VVAULT timestamp format: "10:42:22 AM EST - Devon [2025-12-18T15:42:22.552Z]: message"
+    // Also handles names with spaces: "10:42:22 AM EST - Devon Woodson [2025-12-18T15:42:22.552Z]: message"
+    // Pattern: TIME - NAME [ISO_TIMESTAMP]: CONTENT
+    const timestampMatch = line.match(/^\d{1,2}:\d{2}:\d{2}\s*(?:AM|PM)?\s*(?:[A-Z]{2,4})?\s*-\s*([A-Za-z][A-Za-z\s\-]*?)\s*\[([^\]]+)\]:\s*(.*)$/i);
+    
+    if (timestampMatch) {
+      // Save previous message first
+      saveCurrentMessage();
+      
+      const speaker = timestampMatch[1].trim().toLowerCase();
+      const isoTimestamp = timestampMatch[2];
+      const msgContent = timestampMatch[3];
+      
+      // Determine role based on speaker name
+      // User names typically start with "devon" (may have last name), "you", "user"
+      // Construct names = assistant
+      const isUser = speaker.startsWith('devon') || speaker === 'you' || speaker === 'user';
+      currentRole = isUser ? 'user' : 'assistant';
+      currentTimestamp = isoTimestamp;
+      currentContent = msgContent ? [msgContent] : [];
       continue;
     }
 
@@ -225,34 +265,14 @@ function parseMarkdownToMessages(content) {
     const assistantMatch = line.match(/^\*\*(?:Assistant|Zen|Synth|Katana|Lin)\*\*:\s*(.*)$/i);
 
     if (youSaidMatch || userMatch) {
-      // Save previous message
-      if (currentRole && currentContent.length) {
-        const msgContent = currentContent.join('\n').trim();
-        if (msgContent) {
-          messages.push({
-            id: `msg_${messageIndex++}`,
-            role: currentRole,
-            content: stripSurroundingQuotes(msgContent),
-            timestamp: new Date().toISOString()
-          });
-        }
-      }
+      saveCurrentMessage();
       currentRole = 'user';
+      currentTimestamp = new Date().toISOString();
       currentContent = userMatch ? [userMatch[1]] : [];
     } else if (nameSaidMatch || assistantMatch) {
-      // Save previous message
-      if (currentRole && currentContent.length) {
-        const msgContent = currentContent.join('\n').trim();
-        if (msgContent) {
-          messages.push({
-            id: `msg_${messageIndex++}`,
-            role: currentRole,
-            content: stripSurroundingQuotes(msgContent),
-            timestamp: new Date().toISOString()
-          });
-        }
-      }
+      saveCurrentMessage();
       currentRole = 'assistant';
+      currentTimestamp = new Date().toISOString();
       currentContent = assistantMatch ? [assistantMatch[1]] : [];
     } else if (currentRole && line.trim()) {
       // Continuation of current message
@@ -261,17 +281,7 @@ function parseMarkdownToMessages(content) {
   }
 
   // Don't forget the last message
-  if (currentRole && currentContent.length) {
-    const msgContent = currentContent.join('\n').trim();
-    if (msgContent) {
-      messages.push({
-        id: `msg_${messageIndex++}`,
-        role: currentRole,
-        content: stripSurroundingQuotes(msgContent),
-        timestamp: new Date().toISOString()
-      });
-    }
-  }
+  saveCurrentMessage();
 
   return messages;
 }
