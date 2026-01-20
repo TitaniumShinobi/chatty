@@ -1,70 +1,133 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate, useOutletContext } from 'react-router-dom'
-import ReactMarkdown from 'react-markdown'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import type { Components } from 'react-markdown'
-import remarkBreaks from 'remark-breaks'
-import rehypeRaw from 'rehype-raw'
-import { R } from '../runtime/render'
-import { MessageOptionsMenu } from '../components/MessageOptionsMenu'
-import { VVAULTConversationManager } from '../lib/vvaultConversationManager'
-import { getUserId } from '../lib/auth'
+import React, { useState, useEffect, useRef } from "react";
+import { useParams, useNavigate, useOutletContext } from "react-router-dom";
+import ReactMarkdown from "react-markdown";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import type { Components } from "react-markdown";
+import remarkBreaks from "remark-breaks";
+import rehypeRaw from "rehype-raw";
+import { R } from "../runtime/render";
+import { MessageOptionsMenu } from "../components/MessageOptionsMenu";
+import { VVAULTConversationManager } from "../lib/vvaultConversationManager";
+import { getUserId } from "../lib/auth";
 
 type Message = {
-  id: string
-  role: 'user' | 'assistant'
-  text?: string
-  packets?: import('../types').AssistantPacket[]
-  ts: number
-  files?: { name: string; size: number }[]
-  typing?: boolean  // For typing indicators
-}
+  id: string;
+  role: "user" | "assistant";
+  text?: string;
+  packets?: import("../types").AssistantPacket[];
+  ts: number;
+  files?: { name: string; size: number }[];
+  typing?: boolean; // For typing indicators
+};
 
-type Thread = { id: string; title: string; messages: Message[]; constructId?: string } // Added constructId property
+type Thread = {
+  id: string;
+  title: string;
+  messages: Message[];
+  constructId?: string;
+}; // Added constructId property
 
 // Markdown components for user messages (styled for bubble with #ADA587 background and #ffffeb text)
 const userMessageMarkdownComponents: Components = {
   // Code blocks with syntax highlighting (styled for user bubble)
   code({ node, inline, className, children, ...props }: any) {
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Chat.tsx:29',message:'code component entry',data:{inline,className,codeLength:String(children).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    fetch("http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "Chat.tsx:29",
+        message: "code component entry",
+        data: { inline, className, codeLength: String(children).length },
+        timestamp: Date.now(),
+        sessionId: "debug-session",
+        runId: "run1",
+        hypothesisId: "A",
+      }),
+    }).catch(() => {});
     // #endregion
-    const match = /language-(\w+)/.exec(className || '')
-    const code = String(children).replace(/\n$/, '')
-    
+    const match = /language-(\w+)/.exec(className || "");
+    const code = String(children).replace(/\n$/, "");
+
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Chat.tsx:32',message:'match result',data:{hasMatch:!!match,matchValue:match?.[1]||null,codePreview:code.substring(0,50)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    fetch("http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "Chat.tsx:32",
+        message: "match result",
+        data: {
+          hasMatch: !!match,
+          matchValue: match?.[1] || null,
+          codePreview: code.substring(0, 50),
+        },
+        timestamp: Date.now(),
+        sessionId: "debug-session",
+        runId: "run1",
+        hypothesisId: "A",
+      }),
+    }).catch(() => {});
     // #endregion
-    
+
     // Code block with language - use SyntaxHighlighter
     if (!inline && match) {
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Chat.tsx:34',message:'taking SyntaxHighlighter path',data:{language:match[1]},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      fetch(
+        "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location: "Chat.tsx:34",
+            message: "taking SyntaxHighlighter path",
+            data: { language: match[1] },
+            timestamp: Date.now(),
+            sessionId: "debug-session",
+            runId: "run1",
+            hypothesisId: "A",
+          }),
+        },
+      ).catch(() => {});
       // #endregion
       return (
-        <div className="relative group my-4" style={{ width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'hidden', boxSizing: 'border-box' }}>
+        <div
+          className="relative group my-4"
+          style={{
+            width: "100%",
+            maxWidth: "min(90vw, 520px)",
+            minWidth: 0,
+            overflow: "hidden",
+            boxSizing: "border-box",
+          }}
+        >
           <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
             <button
               onClick={() => {
                 navigator.clipboard?.writeText(code).catch(() => {
-                  const textArea = document.createElement('textarea')
-                  textArea.value = code
-                  textArea.style.position = 'fixed'
-                  textArea.style.left = '-999999px'
-                  document.body.appendChild(textArea)
-                  textArea.select()
-                  document.execCommand('copy')
-                  document.body.removeChild(textArea)
-                })
+                  const textArea = document.createElement("textarea");
+                  textArea.value = code;
+                  textArea.style.position = "fixed";
+                  textArea.style.left = "-999999px";
+                  document.body.appendChild(textArea);
+                  textArea.select();
+                  document.execCommand("copy");
+                  document.body.removeChild(textArea);
+                });
               }}
               className="px-2 py-1 rounded text-xs transition-colors"
-              style={{ 
-                backgroundColor: 'rgba(255, 255, 255, 0.2)', 
-                color: '#ffffeb'
+              style={{
+                backgroundColor: "rgba(255, 255, 255, 0.2)",
+                color: "#ffffeb",
               }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.3)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.backgroundColor =
+                  "rgba(255, 255, 255, 0.3)")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.backgroundColor =
+                  "rgba(255, 255, 255, 0.2)")
+              }
               title="Copy code"
             >
               Copy
@@ -73,14 +136,14 @@ const userMessageMarkdownComponents: Components = {
           <div
             className="rounded-lg"
             style={{
-              width: '100%',
-              maxWidth: '100%',
+              width: "100%",
+              maxWidth: "min(90vw, 520px)",
               minWidth: 0,
-              backgroundColor: '#2d2d2d',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
-              overflowX: 'auto',
-              overflowY: 'hidden',
-              boxSizing: 'border-box',
+              backgroundColor: "#2d2d2d",
+              boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
+              overflowX: "auto",
+              overflowY: "hidden",
+              boxSizing: "border-box",
             }}
           >
             <SyntaxHighlighter
@@ -90,13 +153,13 @@ const userMessageMarkdownComponents: Components = {
               className="rounded-lg"
               customStyle={{
                 margin: 0,
-                fontSize: '14px',
-                lineHeight: '1.5',
-                padding: '1rem',
-                display: 'block',
-                whiteSpace: 'pre',
+                fontSize: "14px",
+                lineHeight: "1.5",
+                padding: "1rem",
+                display: "block",
+                whiteSpace: "pre",
                 minWidth: 0,
-                width: '100%',
+                width: "100%",
               }}
               {...props}
             >
@@ -104,37 +167,70 @@ const userMessageMarkdownComponents: Components = {
             </SyntaxHighlighter>
           </div>
         </div>
-      )
+      );
     }
-    
+
     // Plain text code block (no language) - use <pre> element
     if (!inline && !match) {
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Chat.tsx:96',message:'taking plain text pre path',data:{codeLength:code.length,codePreview:code.substring(0,100)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      fetch(
+        "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location: "Chat.tsx:96",
+            message: "taking plain text pre path",
+            data: {
+              codeLength: code.length,
+              codePreview: code.substring(0, 100),
+            },
+            timestamp: Date.now(),
+            sessionId: "debug-session",
+            runId: "run1",
+            hypothesisId: "B",
+          }),
+        },
+      ).catch(() => {});
       // #endregion
       return (
-        <div className="relative group my-4" style={{ width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'hidden', boxSizing: 'border-box' }}>
+        <div
+          className="relative group my-4"
+          style={{
+            width: "100%",
+            maxWidth: "min(90vw, 520px)",
+            minWidth: 0,
+            overflow: "hidden",
+            boxSizing: "border-box",
+          }}
+        >
           <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
             <button
               onClick={() => {
                 navigator.clipboard?.writeText(code).catch(() => {
-                  const textArea = document.createElement('textarea')
-                  textArea.value = code
-                  textArea.style.position = 'fixed'
-                  textArea.style.left = '-999999px'
-                  document.body.appendChild(textArea)
-                  textArea.select()
-                  document.execCommand('copy')
-                  document.body.removeChild(textArea)
-                })
+                  const textArea = document.createElement("textarea");
+                  textArea.value = code;
+                  textArea.style.position = "fixed";
+                  textArea.style.left = "-999999px";
+                  document.body.appendChild(textArea);
+                  textArea.select();
+                  document.execCommand("copy");
+                  document.body.removeChild(textArea);
+                });
               }}
               className="px-2 py-1 rounded text-xs transition-colors"
-              style={{ 
-                backgroundColor: 'rgba(255, 255, 255, 0.2)', 
-                color: '#ffffeb'
+              style={{
+                backgroundColor: "rgba(255, 255, 255, 0.2)",
+                color: "#ffffeb",
               }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.3)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.backgroundColor =
+                  "rgba(255, 255, 255, 0.3)")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.backgroundColor =
+                  "rgba(255, 255, 255, 0.2)")
+              }
               title="Copy code"
             >
               Copy
@@ -143,591 +239,798 @@ const userMessageMarkdownComponents: Components = {
           <div
             className="rounded-lg"
             style={{
-              width: '100%',
-              maxWidth: '100%',
+              width: "100%",
+              maxWidth: "min(90vw, 520px)",
               minWidth: 0,
-              backgroundColor: '#2d2d2d',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
-              overflowX: 'auto',
-              overflowY: 'hidden',
-              boxSizing: 'border-box',
+              backgroundColor: "#2d2d2d",
+              boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
+              overflowX: "auto",
+              overflowY: "hidden",
+              boxSizing: "border-box",
             }}
           >
             <pre
               className="font-mono rounded-lg"
               style={{
                 margin: 0,
-                padding: '1rem',
-                fontSize: '14px',
-                lineHeight: '1.5',
-                color: '#ffffeb',
-                whiteSpace: 'pre',
-                overflowX: 'auto',
-                display: 'block',
-                width: '100%',
-                maxWidth: '100%',
+                padding: "1rem",
+                fontSize: "14px",
+                lineHeight: "1.5",
+                color: "#ffffeb",
+                whiteSpace: "pre",
+                overflowX: "auto",
+                display: "block",
+                width: "100%",
+                maxWidth: "100%",
                 minWidth: 0,
-                boxSizing: 'border-box',
+                boxSizing: "border-box",
               }}
             >
               {code}
             </pre>
           </div>
         </div>
-      )
+      );
     }
-    
+
     // Inline code
     return (
-      <code 
-        className="px-1.5 py-0.5 rounded text-sm font-mono" 
-        style={{ 
-          backgroundColor: 'rgba(0, 0, 0, 0.15)', 
-          color: '#ffffeb',
-          overflowWrap: 'break-word',
-          wordWrap: 'break-word',
-          whiteSpace: 'pre-wrap',
+      <code
+        className="px-1.5 py-0.5 rounded text-sm font-mono"
+        style={{
+          backgroundColor: "rgba(0, 0, 0, 0.15)",
+          color: "#ffffeb",
+          overflowWrap: "break-word",
+          wordWrap: "break-word",
+          whiteSpace: "pre-wrap",
         }}
       >
         {children}
       </code>
-    )
+    );
   },
-  
+
   // Bold text
   strong: ({ children }) => (
-    <strong className="font-bold" style={{ color: '#ffffeb' }}>{children}</strong>
+    <strong className="font-bold" style={{ color: "#ffffeb" }}>
+      {children}
+    </strong>
   ),
-  
+
   // Italic text
   em: ({ children }) => (
-    <em className="italic" style={{ color: '#ffffeb' }}>{children}</em>
+    <em className="italic" style={{ color: "#ffffeb" }}>
+      {children}
+    </em>
   ),
-  
+
   // Strikethrough
   del: ({ children }) => (
-    <del className="line-through" style={{ color: '#ffffeb', opacity: 0.7 }}>{children}</del>
+    <del className="line-through" style={{ color: "#ffffeb", opacity: 0.7 }}>
+      {children}
+    </del>
   ),
-  
+
   // Paragraphs
   p: ({ children }) => (
-    <p className="mb-2 last:mb-0 leading-relaxed" style={{ color: '#ffffeb' }}>{children}</p>
+    <p className="mb-2 last:mb-0 leading-relaxed" style={{ color: "#ffffeb" }}>
+      {children}
+    </p>
   ),
-  
+
   // Lists
   ul: ({ children }) => (
-    <ul className="list-disc list-outside mb-2 ml-4 space-y-1" style={{ color: '#ffffeb' }}>{children}</ul>
+    <ul
+      className="list-disc list-outside mb-2 ml-4 space-y-1"
+      style={{ color: "#ffffeb" }}
+    >
+      {children}
+    </ul>
   ),
   ol: ({ children }) => (
-    <ol className="list-decimal list-outside mb-2 ml-4 space-y-1" style={{ color: '#ffffeb' }}>{children}</ol>
+    <ol
+      className="list-decimal list-outside mb-2 ml-4 space-y-1"
+      style={{ color: "#ffffeb" }}
+    >
+      {children}
+    </ol>
   ),
   li: ({ children }) => (
-    <li className="pl-1" style={{ color: '#ffffeb' }}>{children}</li>
+    <li className="pl-1" style={{ color: "#ffffeb" }}>
+      {children}
+    </li>
   ),
-  
+
   // Links
   a: ({ href, children }) => (
-    <a 
-      href={href} 
-      target="_blank" 
+    <a
+      href={href}
+      target="_blank"
       rel="noopener noreferrer"
       className="underline"
-      style={{ color: '#ffffeb', opacity: 0.9 }}
+      style={{ color: "#ffffeb", opacity: 0.9 }}
     >
       {children}
     </a>
   ),
-  
+
   // Blockquotes
   blockquote: ({ children }) => (
-    <blockquote 
-      className="border-l-2 pl-3 italic my-2" 
-      style={{ 
-        borderColor: 'rgba(255, 255, 255, 0.3)', 
-        color: '#ffffeb', 
-        opacity: 0.9 
+    <blockquote
+      className="border-l-2 pl-3 italic my-2"
+      style={{
+        borderColor: "rgba(255, 255, 255, 0.3)",
+        color: "#ffffeb",
+        opacity: 0.9,
       }}
     >
       {children}
     </blockquote>
   ),
-  
+
   // Headers (smaller for bubble)
   h1: ({ children }) => (
-    <h1 className="text-xl font-bold mb-2 mt-2" style={{ color: '#ffffeb' }}>{children}</h1>
+    <h1 className="text-xl font-bold mb-2 mt-2" style={{ color: "#ffffeb" }}>
+      {children}
+    </h1>
   ),
   h2: ({ children }) => (
-    <h2 className="text-lg font-bold mb-1 mt-2" style={{ color: '#ffffeb' }}>{children}</h2>
+    <h2 className="text-lg font-bold mb-1 mt-2" style={{ color: "#ffffeb" }}>
+      {children}
+    </h2>
   ),
   h3: ({ children }) => (
-    <h3 className="text-base font-bold mb-1 mt-1" style={{ color: '#ffffeb' }}>{children}</h3>
+    <h3 className="text-base font-bold mb-1 mt-1" style={{ color: "#ffffeb" }}>
+      {children}
+    </h3>
   ),
   h4: ({ children }) => (
-    <h4 className="text-sm font-semibold mb-1 mt-1" style={{ color: '#ffffeb' }}>{children}</h4>
+    <h4
+      className="text-sm font-semibold mb-1 mt-1"
+      style={{ color: "#ffffeb" }}
+    >
+      {children}
+    </h4>
   ),
   h5: ({ children }) => (
-    <h5 className="text-sm font-semibold mb-0.5 mt-1" style={{ color: '#ffffeb' }}>{children}</h5>
+    <h5
+      className="text-sm font-semibold mb-0.5 mt-1"
+      style={{ color: "#ffffeb" }}
+    >
+      {children}
+    </h5>
   ),
   h6: ({ children }) => (
-    <h6 className="text-xs font-semibold mb-0.5 mt-1" style={{ color: '#ffffeb' }}>{children}</h6>
+    <h6
+      className="text-xs font-semibold mb-0.5 mt-1"
+      style={{ color: "#ffffeb" }}
+    >
+      {children}
+    </h6>
   ),
-  
+
   // Horizontal rule
   hr: () => (
-    <hr className="my-2" style={{ borderColor: 'rgba(255, 255, 255, 0.3)', opacity: 0.3 }} />
+    <hr
+      className="my-2"
+      style={{ borderColor: "rgba(255, 255, 255, 0.3)", opacity: 0.3 }}
+    />
   ),
-}
+};
 
 interface LayoutContext {
-  threads: Thread[]
-  sendMessage: (threadId: string, text: string, files: File[]) => void
-  renameThread: (threadId: string, title: string) => void
-  newThread: (options?: { title?: string; starter?: string; files?: File[] }) => void | Promise<any>
-  reloadThreadMessages?: (threadId: string) => Promise<void>
-  user?: any
+  threads: Thread[];
+  sendMessage: (threadId: string, text: string, files: File[]) => void;
+  renameThread: (threadId: string, title: string) => void;
+  newThread: (options?: {
+    title?: string;
+    starter?: string;
+    files?: File[];
+  }) => void | Promise<any>;
+  reloadThreadMessages?: (threadId: string) => Promise<void>;
+  user?: any;
 }
 
 export default function Chat() {
-  const { threads, sendMessage: onSendMessage, reloadThreadMessages, newThread, user } = useOutletContext<LayoutContext>()
-  const { threadId } = useParams<{ threadId: string }>()
-  const navigate = useNavigate()
-  const [text, setText] = useState('')
-  const [files, setFiles] = useState<File[]>([])
-  const [isFocused, setIsFocused] = useState(false)
-  const [isReloading, setIsReloading] = useState(false)
-  const [reloadAttempted, setReloadAttempted] = useState(false)
-  const [removedMessages, setRemovedMessages] = useState<Set<string>>(new Set())
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const messagesContainerRef = useRef<HTMLDivElement>(null)
-  const [zenMarkdown, setZenMarkdown] = useState<string | null>(null)
-  const [zenMarkdownError, setZenMarkdownError] = useState<string | null>(null)
-  const [isZenMarkdownLoading, setIsZenMarkdownLoading] = useState(false)
-  
+  const {
+    threads,
+    sendMessage: onSendMessage,
+    reloadThreadMessages,
+    newThread,
+    user,
+  } = useOutletContext<LayoutContext>();
+  const { threadId } = useParams<{ threadId: string }>();
+  const navigate = useNavigate();
+  const [text, setText] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [isFocused, setIsFocused] = useState(false);
+  const [isReloading, setIsReloading] = useState(false);
+  const [reloadAttempted, setReloadAttempted] = useState(false);
+  const [removedMessages, setRemovedMessages] = useState<Set<string>>(
+    new Set(),
+  );
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const [zenMarkdown, setZenMarkdown] = useState<string | null>(null);
+  const [zenMarkdownError, setZenMarkdownError] = useState<string | null>(null);
+  const [isZenMarkdownLoading, setIsZenMarkdownLoading] = useState(false);
+
   // Dev toggle for showing raw vs filtered output (only in development)
-  const isDev = process.env.NODE_ENV === 'development'
+  const isDev = process.env.NODE_ENV === "development";
   const [showDevInfo, setShowDevInfo] = useState(() => {
     if (isDev) {
-      const stored = localStorage.getItem('chatty-dev-toggle')
-      return stored === 'true'
+      const stored = localStorage.getItem("chatty-dev-toggle");
+      return stored === "true";
     }
-    return false
-  })
-  
+    return false;
+  });
+
   useEffect(() => {
     if (isDev) {
-      localStorage.setItem('chatty-dev-toggle', showDevInfo.toString())
+      localStorage.setItem("chatty-dev-toggle", showDevInfo.toString());
     }
-  }, [showDevInfo, isDev])
+  }, [showDevInfo, isDev]);
 
-  const thread = threads.find(t => t.id === threadId) || 
-                 threads.find(t => {
-                   // Handle transformed IDs from routeIdForThread
-                   if (t.isPrimary && t.constructId) {
-                     const transformedId = `${t.constructId}_chat_with_${t.constructId}`;
-                     return transformedId === threadId;
-                   }
-                   return false;
-                 });
+  const thread =
+    threads.find((t) => t.id === threadId) ||
+    threads.find((t) => {
+      // Handle transformed IDs from routeIdForThread
+      if (t.isPrimary && t.constructId) {
+        const transformedId = `${t.constructId}_chat_with_${t.constructId}`;
+        return transformedId === threadId;
+      }
+      return false;
+    });
 
-  const isZenSessionThread = Boolean(threadId && threadId.startsWith('zen-001_chat_with_'));
+  const isZenSessionThread = Boolean(
+    threadId && threadId.startsWith("zen-001_chat_with_"),
+  );
 
   // Debug: Log thread details when found
   if (thread) {
-    console.log('📋 [Chat] Thread found with details:', {
+    console.log("📋 [Chat] Thread found with details:", {
       id: thread.id,
       title: thread.title,
       messageCount: thread.messages?.length || 0,
-      messages: thread.messages?.map((m, i) => ({
-        index: i,
-        id: m.id,
-        role: m.role,
-        hasText: !!m.text,
-        textLength: m.text?.length || 0,
-        hasPackets: !!m.packets,
-        packetsCount: m.packets?.length || 0,
-        textPreview: m.text ? m.text.substring(0, 100) : (m.packets?.[0]?.payload?.content?.substring(0, 100) || 'no content')
-      })) || []
+      messages:
+        thread.messages?.map((m, i) => ({
+          index: i,
+          id: m.id,
+          role: m.role,
+          hasText: !!m.text,
+          textLength: m.text?.length || 0,
+          hasPackets: !!m.packets,
+          packetsCount: m.packets?.length || 0,
+          textPreview: m.text
+            ? m.text.substring(0, 100)
+            : m.packets?.[0]?.payload?.content?.substring(0, 100) ||
+              "no content",
+        })) || [],
     });
   }
 
   useEffect(() => {
-    console.log('🔍 [Chat] Thread lookup:', {
+    console.log("🔍 [Chat] Thread lookup:", {
       threadId,
       found: !!thread,
-      threadIds: threads.map(t => t.id),
-      threadConstructIds: threads.map(t => t.constructId),
+      threadIds: threads.map((t) => t.id),
+      threadConstructIds: threads.map((t) => t.constructId),
       messageCount: thread?.messages?.length || 0,
-      messages: thread?.messages?.map(m => ({
-        id: m.id,
-        role: m.role,
-        textPreview: (m.text || '').substring(0, 50)
-      })) || []
+      messages:
+        thread?.messages?.map((m) => ({
+          id: m.id,
+          role: m.role,
+          textPreview: (m.text || "").substring(0, 50),
+        })) || [],
     });
-    
+
     if (!thread && threadId) {
       if (isZenSessionThread) {
-        console.warn('⚠️ [Chat] Zen thread not found yet - loading transcript fallback', { threadId });
+        console.warn(
+          "⚠️ [Chat] Zen thread not found yet - loading transcript fallback",
+          { threadId },
+        );
         return;
       }
-      console.warn('⚠️ [Chat] Thread not found, redirecting');
-      navigate('/app');
+      console.warn("⚠️ [Chat] Thread not found, redirecting");
+      navigate("/app");
     }
-  }, [thread, threadId, navigate, threads, isZenSessionThread])
+  }, [thread, threadId, navigate, threads, isZenSessionThread]);
 
   // Auto-scroll when thread loads or changes
   useEffect(() => {
     if (thread && thread.messages.length > 0) {
       // Scroll to bottom when thread loads or changes
-      setTimeout(() => scrollToBottom(false), 100)
+      setTimeout(() => scrollToBottom(false), 100);
     }
-  }, [thread?.id, thread?.messages.length])
+  }, [thread?.id, thread?.messages.length]);
 
   // Auto-scroll when new messages are added
   useEffect(() => {
     if (thread && thread.messages.length > 0) {
       // Scroll when messages array changes (new message added)
-      scrollToBottom(true)
+      scrollToBottom(true);
     }
-  }, [thread?.messages])
+  }, [thread?.messages]);
 
   useEffect(() => {
-    if (thread || !threadId || !isZenSessionThread) return
+    if (thread || !threadId || !isZenSessionThread) return;
 
-    let cancelled = false
+    let cancelled = false;
 
     const loadZenTranscript = async () => {
-      setIsZenMarkdownLoading(true)
-      setZenMarkdown(null)
-      setZenMarkdownError(null)
+      setIsZenMarkdownLoading(true);
+      setZenMarkdown(null);
+      setZenMarkdownError(null);
 
       try {
-        const response = await fetch(`http://localhost:5000/api/vvault/chat/${encodeURIComponent(threadId)}`, {
-          credentials: 'include'
-        })
-        const data = await response.json()
+        const response = await fetch(
+          `http://localhost:5000/api/vvault/chat/${encodeURIComponent(threadId)}`,
+          {
+            credentials: "include",
+          },
+        );
+        const data = await response.json();
 
         if (!response.ok || !data.ok) {
-          throw new Error(data?.error || response.statusText || 'Failed to load Zen transcript')
+          throw new Error(
+            data?.error ||
+              response.statusText ||
+              "Failed to load Zen transcript",
+          );
         }
 
         if (!cancelled) {
-          setZenMarkdown(data.content || '')
+          setZenMarkdown(data.content || "");
         }
       } catch (error) {
         if (!cancelled) {
-          setZenMarkdownError(error instanceof Error ? error.message : String(error))
+          setZenMarkdownError(
+            error instanceof Error ? error.message : String(error),
+          );
         }
       } finally {
         if (!cancelled) {
-          setIsZenMarkdownLoading(false)
+          setIsZenMarkdownLoading(false);
         }
       }
-    }
+    };
 
-    loadZenTranscript()
+    loadZenTranscript();
     return () => {
-      cancelled = true
-    }
-  }, [thread, threadId, isZenSessionThread])
+      cancelled = true;
+    };
+  }, [thread, threadId, isZenSessionThread]);
 
   // Hydration check: If thread has no messages, attempt to reload
   useEffect(() => {
     if (!thread || !threadId || !reloadThreadMessages) return;
-    
+
     // If thread has no messages, attempt to reload (only once per threadId)
     if (thread.messages.length === 0 && !isReloading && !reloadAttempted) {
-      console.log('⚠️ [Chat] Thread has no messages, attempting reload...', {
+      console.log("⚠️ [Chat] Thread has no messages, attempting reload...", {
         threadId: thread.id,
         urlThreadId: threadId,
         title: thread.title,
         constructId: thread.constructId,
         threadsCount: threads.length,
-        allThreadIds: threads.map(t => t.id)
+        allThreadIds: threads.map((t) => t.id),
       });
       setIsReloading(true);
       setReloadAttempted(true);
-      
+
       // Add timeout to prevent infinite loading
       const timeoutId = setTimeout(() => {
-        console.warn('⏱️ [Chat] Reload timeout after 10s - resetting loading state');
+        console.warn(
+          "⏱️ [Chat] Reload timeout after 10s - resetting loading state",
+        );
         setIsReloading(false);
       }, 10000); // 10 second timeout
-      
+
       reloadThreadMessages(threadId)
         .then(() => {
           clearTimeout(timeoutId);
-          console.log('✅ [Chat] Reload function completed');
+          console.log("✅ [Chat] Reload function completed");
           // Don't set isReloading to false immediately - let React re-render with updated threads
           // The thread will update and messages.length > 0 will prevent this from running again
         })
         .catch((error) => {
           clearTimeout(timeoutId);
-          console.error('❌ [Chat] Failed to reload thread messages:', error);
+          console.error("❌ [Chat] Failed to reload thread messages:", error);
           setIsReloading(false);
         });
     } else if (thread.messages.length > 0 && isReloading) {
       // If messages are now present, clear loading state
-      console.log(`✅ [Chat] Messages now present (${thread.messages.length}), clearing loading state`);
+      console.log(
+        `✅ [Chat] Messages now present (${thread.messages.length}), clearing loading state`,
+      );
       setIsReloading(false);
     }
-  }, [thread?.id, thread?.messages.length, threadId, reloadThreadMessages, threads.length, isReloading, reloadAttempted]) // Watch threads.length to detect updates
+  }, [
+    thread?.id,
+    thread?.messages.length,
+    threadId,
+    reloadThreadMessages,
+    threads.length,
+    isReloading,
+    reloadAttempted,
+  ]); // Watch threads.length to detect updates
 
   // Auto-resize textarea
   const adjustTextareaHeight = () => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
-      const scrollHeight = textareaRef.current.scrollHeight
-      const maxHeight = 15 * 24 // 15 lines * 24px line height
-      textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
+      textareaRef.current.style.height = "auto";
+      const scrollHeight = textareaRef.current.scrollHeight;
+      const maxHeight = 15 * 24; // 15 lines * 24px line height
+      textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
     }
-  }
+  };
 
   useEffect(() => {
-    adjustTextareaHeight()
-  }, [text])
+    adjustTextareaHeight();
+  }, [text]);
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setText(e.target.value)
-  }
+    setText(e.target.value);
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
     }
-  }
+  };
 
-  const handleFocus = () => setIsFocused(true)
-  const handleBlur = () => setIsFocused(false)
+  const handleFocus = () => setIsFocused(true);
+  const handleBlur = () => setIsFocused(false);
 
   if (!thread) {
     if (isZenSessionThread) {
-      if (isZenMarkdownLoading || threads.length === 0) {
+      if (isZenMarkdownLoading) {
         return (
-          <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
+          <div
+            className="flex flex-col h-full"
+            style={{ backgroundColor: "var(--chatty-bg-main)" }}
+          >
             <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
-              <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--chatty-text)' }}>Loading Zen…</h2>
-              <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Connecting to VVAULT storage.</p>
+              <h2
+                className="text-xl font-semibold mb-2"
+                style={{ color: "var(--chatty-text)" }}
+              >
+                Loading Zen transcript…
+              </h2>
+              <p style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
+                Fetching the saved markdown from VVAULT.
+              </p>
             </div>
           </div>
-        )
+        );
       }
 
       if (zenMarkdownError) {
         return (
-          <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
+          <div
+            className="flex flex-col h-full"
+            style={{ backgroundColor: "var(--chatty-bg-main)" }}
+          >
             <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
-              <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--chatty-text)' }}>Unable to load Zen transcript</h2>
-              <p className="mb-4" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>{zenMarkdownError}</p>
-              <button 
+              <h2
+                className="text-xl font-semibold mb-2"
+                style={{ color: "var(--chatty-text)" }}
+              >
+                Unable to load Zen transcript
+              </h2>
+              <p
+                className="mb-4"
+                style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+              >
+                {zenMarkdownError}
+              </p>
+              <button
                 className="px-4 py-2 rounded-lg transition-colors"
-                style={{ 
-                  backgroundColor: 'var(--chatty-button)',
-                  color: 'var(--chatty-text-inverse, #ffffeb)',
-                  border: '1px solid var(--chatty-line)'
+                style={{
+                  backgroundColor: "var(--chatty-button)",
+                  color: "var(--chatty-text-inverse, #ffffeb)",
+                  border: "1px solid var(--chatty-line)",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--chatty-hover)'
+                  e.currentTarget.style.backgroundColor = "var(--chatty-hover)";
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--chatty-button)'
+                  e.currentTarget.style.backgroundColor =
+                    "var(--chatty-button)";
                 }}
-                onClick={() => navigate('/app')}
+                onClick={() => navigate("/app")}
               >
                 Go Home
               </button>
             </div>
           </div>
-        )
+        );
       }
 
       if (zenMarkdown) {
         return (
-          <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
+          <div
+            className="flex flex-col h-full"
+            style={{ backgroundColor: "var(--chatty-bg-main)" }}
+          >
             <div className="flex-1 overflow-auto p-6">
-              <h2 className="text-2xl font-semibold mb-4" style={{ color: 'var(--chatty-text)' }}>Zen transcript</h2>
-              <div className="prose max-w-none break-words" style={{ color: 'var(--chatty-text)', lineHeight: 1.7 }}>
-                <ReactMarkdown remarkPlugins={[remarkBreaks]}>{zenMarkdown}</ReactMarkdown>
+              <h2
+                className="text-2xl font-semibold mb-4"
+                style={{ color: "var(--chatty-text)" }}
+              >
+                Zen transcript
+              </h2>
+              <div
+                className="prose max-w-none break-words"
+                style={{ color: "var(--chatty-text)", lineHeight: 1.7 }}
+              >
+                <ReactMarkdown remarkPlugins={[remarkBreaks]}>
+                  {zenMarkdown}
+                </ReactMarkdown>
               </div>
             </div>
           </div>
-        )
+        );
       }
 
       return (
-        <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
+        <div
+          className="flex flex-col h-full"
+          style={{ backgroundColor: "var(--chatty-bg-main)" }}
+        >
           <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
-            <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--chatty-text)' }}>Zen transcript unavailable</h2>
-            <p style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>We couldn't render the saved transcript right now.</p>
-            <button 
+            <h2
+              className="text-xl font-semibold mb-2"
+              style={{ color: "var(--chatty-text)" }}
+            >
+              Zen transcript unavailable
+            </h2>
+            <p style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
+              We couldn't render the saved transcript right now.
+            </p>
+            <button
               className="px-4 py-2 rounded-lg transition-colors"
-              style={{ 
-                backgroundColor: 'var(--chatty-button)',
-                color: 'var(--chatty-text-inverse, #ffffeb)',
-                border: '1px solid var(--chatty-line)'
+              style={{
+                backgroundColor: "var(--chatty-button)",
+                color: "var(--chatty-text-inverse, #ffffeb)",
+                border: "1px solid var(--chatty-line)",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--chatty-hover)'
+                e.currentTarget.style.backgroundColor = "var(--chatty-hover)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--chatty-button)'
+                e.currentTarget.style.backgroundColor = "var(--chatty-button)";
               }}
-              onClick={() => navigate('/app')}
+              onClick={() => navigate("/app")}
             >
               Go Home
             </button>
           </div>
         </div>
-      )
+      );
     }
 
     return (
-      <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
+      <div
+        className="flex flex-col h-full"
+        style={{ backgroundColor: "var(--chatty-bg-main)" }}
+      >
         <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
-          <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--chatty-text)' }}>Thread not found</h2>
-          <p className="mb-4" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>This conversation could not be found.</p>
-          <button 
+          <h2
+            className="text-xl font-semibold mb-2"
+            style={{ color: "var(--chatty-text)" }}
+          >
+            Thread not found
+          </h2>
+          <p
+            className="mb-4"
+            style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+          >
+            This conversation could not be found.
+          </p>
+          <button
             className="px-4 py-2 rounded-lg transition-colors"
-            style={{ 
-              backgroundColor: 'var(--chatty-button)',
-              color: 'var(--chatty-text-inverse, #ffffeb)',
-              border: '1px solid var(--chatty-line)'
+            style={{
+              backgroundColor: "var(--chatty-button)",
+              color: "var(--chatty-text-inverse, #ffffeb)",
+              border: "1px solid var(--chatty-line)",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = 'var(--chatty-hover)'
+              e.currentTarget.style.backgroundColor = "var(--chatty-hover)";
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'var(--chatty-button)'
+              e.currentTarget.style.backgroundColor = "var(--chatty-button)";
             }}
-            onClick={() => navigate('/app')}
+            onClick={() => navigate("/app")}
           >
             Go Home
           </button>
         </div>
       </div>
-    )
+    );
   }
 
   function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = Array.from(e.target.files ?? [])
-    setFiles(prev => [...prev, ...f])
-    e.currentTarget.value = ''
+    const f = Array.from(e.target.files ?? []);
+    setFiles((prev) => [...prev, ...f]);
+    e.currentTarget.value = "";
   }
 
   function handleSend() {
-    if (!text.trim() && files.length === 0) return
-    if (!thread) return
-    
+    if (!text.trim() && files.length === 0) return;
+    if (!thread) return;
+
     // If editing a message, we need to replace the last user message
     if (editingMessageId) {
       // Find the message being edited
-      const messageIndex = thread.messages.findIndex(m => m.id === editingMessageId)
+      const messageIndex = thread.messages.findIndex(
+        (m) => m.id === editingMessageId,
+      );
       if (messageIndex !== -1) {
         // Remove all messages after the edited message (including the assistant response)
         // This will be handled by rewinding to before the assistant response
         // For now, just send the new message which will append it
         // The rewind should happen before sending
-        const assistantResponseIndex = messageIndex + 1
+        const assistantResponseIndex = messageIndex + 1;
         if (assistantResponseIndex < thread.messages.length) {
           // Rewind to before assistant response, then send new message
           handleRewind(assistantResponseIndex).then(() => {
-            onSendMessage(thread.id, text.trim(), files)
-            setEditingMessageId(null)
-            setText('')
-            setFiles([])
+            onSendMessage(thread.id, text.trim(), files);
+            setEditingMessageId(null);
+            setText("");
+            setFiles([]);
             if (textareaRef.current) {
-              textareaRef.current.style.height = 'auto'
+              textareaRef.current.style.height = "auto";
             }
-          })
-          return
+          });
+          return;
         }
       }
-      setEditingMessageId(null)
+      setEditingMessageId(null);
     }
-    
-    onSendMessage(thread.id, text.trim(), files)
-    setText('')
-    setFiles([])
+
+    onSendMessage(thread.id, text.trim(), files);
+    setText("");
+    setFiles([]);
     // Reset textarea height
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = "auto";
     }
   }
 
-  const isUser = (role: string) => role === 'user'
+  const isUser = (role: string) => role === "user";
+
+  const assistantCodeStyles = `
+    .assistant-code-scope,
+    .assistant-code-scope * {
+      border: none !important;
+      outline: none !important;
+      box-shadow: none !important;
+      background: transparent;
+    }
+    .assistant-code-scope pre {
+      display: block;
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      overflow-x: auto;
+      overflow-y: hidden;
+      white-space: pre !important;
+      word-break: normal !important;
+      overflow-wrap: normal !important;
+      word-wrap: normal !important;
+      background: #2d2d2d;
+      color: #ffffeb;
+      border-radius: 12px;
+      padding: 12px;
+      margin: 12px 0;
+      font-size: 15px;
+      line-height: 1.45;
+    }
+    .assistant-code-scope code {
+      white-space: pre !important;
+      word-break: normal !important;
+      overflow-wrap: normal !important;
+      word-wrap: normal !important;
+      background: transparent;
+    }
+    .assistant-code-scope pre::-webkit-scrollbar {
+      height: 10px;
+    }
+    .assistant-code-scope pre::-webkit-scrollbar-track {
+      background: #2d2d2d;
+      border-radius: 12px;
+    }
+    .assistant-code-scope pre::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.25);
+      border-radius: 12px;
+    }
+    .assistant-code-scope pre::-webkit-scrollbar-thumb:hover {
+      background: rgba(255,255,255,0.35);
+    }
+  `;
 
   // Action handlers for message options menu
   const handleCopyMessage = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(text)
-      console.log('✅ [Chat] Message copied to clipboard')
+      await navigator.clipboard.writeText(text);
+      console.log("✅ [Chat] Message copied to clipboard");
     } catch (error) {
-      console.error('❌ [Chat] Failed to copy message:', error)
-      alert('Failed to copy message to clipboard')
+      console.error("❌ [Chat] Failed to copy message:", error);
+      alert("Failed to copy message to clipboard");
     }
-  }
+  };
 
   const handleCarryPrompt = (text: string) => {
     if (newThread) {
-      newThread({ starter: text })
-      navigate('/app')
+      newThread({ starter: text });
+      navigate("/app");
     }
-  }
+  };
 
   const handlePinMessage = async (message: Message, destination?: string) => {
-    if (!user || !threadId) return
-    
+    if (!user || !threadId) return;
+
     try {
-      const conversationManager = VVAULTConversationManager.getInstance()
-      const userId = getUserId(user)
-      
+      const conversationManager = VVAULTConversationManager.getInstance();
+      const userId = getUserId(user);
+
       // Extract message text
-      let messageText = message.text || ''
+      let messageText = message.text || "";
       if (!isUser(message.role) && message.packets) {
         messageText = message.packets
-          .map((p: any) => p?.payload?.content || '')
-          .join('\n')
+          .map((p: any) => p?.payload?.content || "")
+          .join("\n");
       }
-      
-      const pinDestination = destination || 'pins.md'
-      await conversationManager.pinMessage(userId, message, pinDestination, threadId)
-      console.log(`✅ [Chat] Message pinned to ${pinDestination}`)
+
+      const pinDestination = destination || "pins.md";
+      await conversationManager.pinMessage(
+        userId,
+        message,
+        pinDestination,
+        threadId,
+      );
+      console.log(`✅ [Chat] Message pinned to ${pinDestination}`);
     } catch (error) {
-      console.error('❌ [Chat] Failed to pin message:', error)
-      alert('Failed to pin message')
+      console.error("❌ [Chat] Failed to pin message:", error);
+      alert("Failed to pin message");
     }
-  }
+  };
 
   const handleRemoveMessage = (messageId: string) => {
-    setRemovedMessages(prev => new Set([...prev, messageId]))
-    console.log(`✅ [Chat] Message ${messageId} marked as removed`)
-  }
+    setRemovedMessages((prev) => new Set([...prev, messageId]));
+    console.log(`✅ [Chat] Message ${messageId} marked as removed`);
+  };
 
   const handleRewind = async (messageIndex: number): Promise<void> => {
-    if (!thread || !threadId) return
-    
+    if (!thread || !threadId) return;
+
     // Slice messages array up to (but not including) messageIndex
-    const truncatedMessages = thread.messages.slice(0, messageIndex)
-    
+    const truncatedMessages = thread.messages.slice(0, messageIndex);
+
     // Update thread state (this will be handled by Layout.tsx if we add rewindToMessage)
     // For now, we'll reload the thread which should sync with VVAULT
     if (reloadThreadMessages) {
-      await reloadThreadMessages(threadId)
+      await reloadThreadMessages(threadId);
     }
-    
-    console.log(`✅ [Chat] Conversation rewound to before message index ${messageIndex}`)
-  }
+
+    console.log(
+      `✅ [Chat] Conversation rewound to before message index ${messageIndex}`,
+    );
+  };
 
   const handleEditMessage = (message: Message) => {
-    if (!message.text) return
-    
-    setText(message.text)
-    setEditingMessageId(message.id)
-    textareaRef.current?.focus()
-    console.log(`✅ [Chat] Message ${message.id} loaded for editing`)
-  }
+    if (!message.text) return;
+
+    setText(message.text);
+    setEditingMessageId(message.id);
+    textareaRef.current?.focus();
+    console.log(`✅ [Chat] Message ${message.id} loaded for editing`);
+  };
 
   const handleReportMessage = async (message: Message) => {
     try {
@@ -737,94 +1040,248 @@ export default function Chat() {
         threadId: threadId,
         role: message.role,
         timestamp: new Date().toISOString(),
-        content: message.text || (message.packets ? JSON.stringify(message.packets) : '')
-      }
-      
-      console.warn('🚩 [Chat] Message reported:', reportData)
-      
+        content:
+          message.text ||
+          (message.packets ? JSON.stringify(message.packets) : ""),
+      };
+
+      console.warn("🚩 [Chat] Message reported:", reportData);
+
       // Optionally send to dev endpoint
-      await fetch('/api/dev/report-message', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/dev/report-message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(reportData),
-        credentials: 'include'
+        credentials: "include",
       }).catch(() => {
         // Silently fail if endpoint doesn't exist
-      })
-      
-      alert('Message reported for review')
+      });
+
+      alert("Message reported for review");
     } catch (error) {
-      console.error('❌ [Chat] Failed to report message:', error)
+      console.error("❌ [Chat] Failed to report message:", error);
     }
-  }
+  };
 
   const handleRequestId = (message: Message) => {
-    const messageId = message.id
+    const messageId = message.id;
     const fullInfo = {
       messageId,
       threadId: threadId,
       timestamp: message.ts,
-      role: message.role
-    }
-    
+      role: message.role,
+    };
+
     // Copy ID to clipboard
-    navigator.clipboard.writeText(messageId).then(() => {
-      alert(`Message ID: ${messageId}\n\n(Copied to clipboard)\n\nFull info: ${JSON.stringify(fullInfo, null, 2)}`)
-    }).catch(() => {
-      alert(`Message ID: ${messageId}\n\nFull info: ${JSON.stringify(fullInfo, null, 2)}`)
-    })
-  }
+    navigator.clipboard
+      .writeText(messageId)
+      .then(() => {
+        alert(
+          `Message ID: ${messageId}\n\n(Copied to clipboard)\n\nFull info: ${JSON.stringify(fullInfo, null, 2)}`,
+        );
+      })
+      .catch(() => {
+        alert(
+          `Message ID: ${messageId}\n\nFull info: ${JSON.stringify(fullInfo, null, 2)}`,
+        );
+      });
+  };
 
   // Check if message is removed
   const isMessageRemoved = (messageId: string) => {
-    return removedMessages.has(messageId)
-  }
+    return removedMessages.has(messageId);
+  };
 
   // Format timestamp for display
   const formatMessageTimestamp = (ts: number): string => {
-    const date = new Date(ts)
-    const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const messageDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
-    
+    const date = new Date(ts);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const messageDate = new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+    );
+
     // If today, show just time
     if (messageDate.getTime() === today.getTime()) {
-      return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+      return date.toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
     }
-    
+
     // If yesterday
-    const yesterday = new Date(today)
-    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
     if (messageDate.getTime() === yesterday.getTime()) {
-      return `Yesterday ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+      return `Yesterday ${date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}`;
     }
-    
+
     // If this week, show day and time
-    const daysDiff = Math.floor((today.getTime() - messageDate.getTime()) / (1000 * 60 * 60 * 24))
+    const daysDiff = Math.floor(
+      (today.getTime() - messageDate.getTime()) / (1000 * 60 * 60 * 24),
+    );
     if (daysDiff < 7) {
-      return date.toLocaleDateString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true })
+      return date.toLocaleDateString("en-US", {
+        weekday: "short",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
     }
-    
+
     // Otherwise show full date and time
-    return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
-  }
+    return date.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
 
   // Scroll to bottom of messages
   const scrollToBottom = (smooth = true) => {
     if (messagesContainerRef.current) {
       messagesContainerRef.current.scrollTo({
         top: messagesContainerRef.current.scrollHeight,
-        behavior: smooth ? 'smooth' : 'auto'
-      })
+        behavior: smooth ? "smooth" : "auto",
+      });
     }
-  }
+  };
+
+  const renderUserContent = (messageText?: string) => {
+    const trimmed = messageText?.trim();
+    let isJson = false;
+    let prettyJson = "";
+
+    if (trimmed && (trimmed.startsWith("{") || trimmed.startsWith("["))) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        prettyJson = JSON.stringify(parsed, null, 2);
+        isJson = true;
+      } catch {
+        isJson = false;
+      }
+    }
+
+    if (isJson) {
+      const code = prettyJson;
+      return (
+        <div
+          className="relative group my-3"
+          style={{
+            width: "100%",
+            maxWidth: "min(90vw, 520px)",
+            minWidth: 0,
+            overflow: "hidden",
+            boxSizing: "border-box",
+          }}
+        >
+          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+            <button
+              onClick={() => {
+                navigator.clipboard?.writeText(code).catch(() => {
+                  const textArea = document.createElement("textarea");
+                  textArea.value = code;
+                  textArea.style.position = "fixed";
+                  textArea.style.left = "-999999px";
+                  document.body.appendChild(textArea);
+                  textArea.select();
+                  document.execCommand("copy");
+                  document.body.removeChild(textArea);
+                });
+              }}
+              className="px-2 py-1 rounded text-xs transition-colors"
+              style={{
+                backgroundColor: "rgba(255, 255, 255, 0.2)",
+                color: "#ffffeb",
+              }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.backgroundColor =
+                  "rgba(255, 255, 255, 0.3)")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.backgroundColor =
+                  "rgba(255, 255, 255, 0.2)")
+              }
+              title="Copy JSON"
+            >
+              Copy
+            </button>
+          </div>
+          <div
+            className="rounded-lg"
+            style={{
+              width: "100%",
+              maxWidth: "100%",
+              minWidth: 0,
+              backgroundColor: "#2d2d2d",
+              boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
+              overflowX: "auto",
+              overflowY: "hidden",
+              boxSizing: "border-box",
+            }}
+          >
+            <pre
+              className="font-mono rounded-lg"
+              style={{
+                margin: 0,
+                padding: "1rem",
+                fontSize: "14px",
+                lineHeight: "1.5",
+                color: "#ffffeb",
+                whiteSpace: "pre",
+                overflowX: "auto",
+                overflowY: "auto",
+                maxHeight: "360px",
+                display: "block",
+                width: "100%",
+                maxWidth: "100%",
+                minWidth: 0,
+                boxSizing: "border-box",
+              }}
+            >
+              {code}
+            </pre>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <ReactMarkdown
+        components={userMessageMarkdownComponents}
+        remarkPlugins={[remarkBreaks]}
+        rehypePlugins={[rehypeRaw]}
+        className="prose"
+        style={{ width: "100%", minWidth: 0, maxWidth: "100%" }}
+      >
+        {messageText || ""}
+      </ReactMarkdown>
+    );
+  };
 
   return (
-    <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
+    <div
+      className="flex flex-col h-full"
+      style={{ backgroundColor: "var(--chatty-bg-main)" }}
+    >
       {/* Dev Toggle (only in development) */}
       {isDev && (
-        <div className="px-4 py-2 border-b flex items-center gap-2" style={{ borderColor: 'var(--chatty-line)', backgroundColor: 'var(--chatty-bg-secondary)' }}>
-          <label className="flex items-center gap-2 cursor-pointer text-xs" style={{ color: 'var(--chatty-text)' }}>
+        <div
+          className="px-4 py-2 border-b flex items-center gap-2"
+          style={{
+            borderColor: "var(--chatty-line)",
+            backgroundColor: "var(--chatty-bg-secondary)",
+          }}
+        >
+          <label
+            className="flex items-center gap-2 cursor-pointer text-xs"
+            style={{ color: "var(--chatty-text)" }}
+          >
             <input
               type="checkbox"
               checked={showDevInfo}
@@ -834,7 +1291,10 @@ export default function Chat() {
             <span>Show Dev Info</span>
           </label>
           {showDevInfo && (
-            <span className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
+            <span
+              className="text-xs"
+              style={{ color: "var(--chatty-text)", opacity: 0.6 }}
+            >
               (Raw response, filtering status, detected patterns)
             </span>
           )}
@@ -843,7 +1303,14 @@ export default function Chat() {
       <div ref={messagesContainerRef} className="flex-1 overflow-auto min-h-0">
         <div className="mb-2 px-4 pt-4">
           {files.length > 0 && (
-            <div className="inline-block px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: 'var(--chatty-button)', border: '1px solid var(--chatty-line)', color: 'var(--chatty-text-inverse, #ffffeb)' }}>
+            <div
+              className="inline-block px-3 py-2 rounded-lg text-xs"
+              style={{
+                backgroundColor: "var(--chatty-button)",
+                border: "1px solid var(--chatty-line)",
+                color: "var(--chatty-text-inverse, #ffffeb)",
+              }}
+            >
               Attached files ({files.length})
             </div>
           )}
@@ -852,234 +1319,353 @@ export default function Chat() {
         {/* Fallback UI for empty messages */}
         {thread.messages.length === 0 && !isReloading && (
           <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
-            <p className="text-lg mb-2" style={{ color: 'var(--chatty-text)' }}>Zen is listening.</p>
-            <p className="text-sm" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Say something to begin.</p>
+            <p className="text-lg mb-2" style={{ color: "var(--chatty-text)" }}>
+              Zen is listening.
+            </p>
+            <p
+              className="text-sm"
+              style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+            >
+              Say something to begin.
+            </p>
           </div>
         )}
 
         {/* Loading state while reloading */}
         {isReloading && (
           <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
-            <p className="text-sm" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Loading conversation...</p>
+            <p
+              className="text-sm"
+              style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+            >
+              Loading conversation...
+            </p>
           </div>
         )}
 
-        {thread.messages.length > 0 && thread.messages.map((m, index) => {
-          const user = isUser(m.role)
-          const isLatest = index === thread.messages.length - 1
-          const isRemoved = isMessageRemoved(m.id)
-          
-          // User messages: right-aligned with iMessage-style bubble
-          if (user) {
-            // Calculate dynamic max-width based on content length
-            const content = m.text || ''
-            const contentLength = content.length
-            let maxWidth = 'max-w-[85%] sm:max-w-[80%] md:max-w-[75%] lg:max-w-[70%]'
-            if (contentLength <= 20) {
-              maxWidth = 'max-w-[200px]'
-            } else if (contentLength <= 100) {
-              maxWidth = 'max-w-[300px] sm:max-w-[400px]'
-            }
-            
-            return (
-              <div key={m.id} className="group relative flex items-end gap-3 py-3 px-4 flex-row-reverse">
-                <div className="flex flex-col items-end">
-                  <div 
-                    className={`px-4 py-3 shadow-sm transition-colors inline-block ${maxWidth} ml-auto text-left relative`}
-                    style={{
-                      backgroundColor: '#ADA587',
-                      borderRadius: '22px 22px 6px 22px',
-                      border: '1px solid rgba(76, 61, 30, 0.18)',
-                      boxShadow: '0 1px 0 rgba(58, 46, 20, 0.12)',
-                      color: 'var(--chatty-text-inverse, #ffffeb)',
-                      overflow: 'hidden',
-                      minWidth: 0,
-                      boxSizing: 'border-box',
-                    }}
-                  >
-                    {isRemoved ? (
-                      <div className="opacity-50 italic" style={{ color: '#ffffeb' }}>[Message Removed]</div>
-                    ) : (
-                      <>
-                        <div className="break-words" style={{ maxWidth: '100%', minWidth: 0, overflowX: 'auto', overflowY: 'hidden', width: '100%' }}>
-                          {/* #region agent log */}
-                          {(() => {
-                            fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Chat.tsx:900',message:'rendering user message markdown',data:{textLength:m.text?.length||0,hasCodeBlock:!!m.text?.includes('```')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-                            return null;
-                          })()}
-                          {/* #endregion */}
-                          <ReactMarkdown
-                            components={userMessageMarkdownComponents}
-                            remarkPlugins={[remarkBreaks]}
-                            rehypePlugins={[rehypeRaw]}
-                            className="prose"
-                            style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}
-                          >
-                            {m.text || ''}
-                          </ReactMarkdown>
-                        </div>
-                        {!!m.files?.length && (
-                          <div className="mt-2 space-y-1">
-                            {m.files.map((f, i) => (
-                              <div key={i} className="text-xs" style={{ opacity: 0.7, color: '#ffffeb' }}>
-                                {f.name} <span className="opacity-60">({Math.round(f.size / 1024)} KB)</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  <div className="mt-1 flex items-center gap-2">
-                    <span 
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-xs"
-                      style={{ color: '#ADA587' }}
+        {thread.messages.length > 0 &&
+          thread.messages.map((m, index) => {
+            const user = isUser(m.role);
+            const isLatest = index === thread.messages.length - 1;
+            const isRemoved = isMessageRemoved(m.id);
+
+            // User messages: right-aligned with iMessage-style bubble
+            if (user) {
+              // Calculate dynamic max-width based on content length
+              const content = m.text || "";
+              const contentLength = content.length;
+              let maxWidth =
+                "max-w-[85%] sm:max-w-[80%] md:max-w-[75%] lg:max-w-[70%]";
+              if (contentLength <= 20) {
+                maxWidth = "max-w-[200px]";
+              } else if (contentLength <= 100) {
+                maxWidth = "max-w-[300px] sm:max-w-[400px]";
+              }
+
+              return (
+                <div
+                  key={m.id}
+                  className="group relative flex items-end gap-3 py-3 px-4 flex-row-reverse"
+                >
+                  <div className="flex flex-col items-end">
+                    <div
+                      className={`px-4 py-3 shadow-sm transition-colors inline-block ${maxWidth} ml-auto text-left relative`}
+                      style={{
+                        backgroundColor: "#ADA587",
+                        borderRadius: "22px 22px 6px 22px",
+                        border: "1px solid rgba(76, 61, 30, 0.18)",
+                        boxShadow: "0 1px 0 rgba(58, 46, 20, 0.12)",
+                        color: "var(--chatty-text-inverse, #ffffeb)",
+                        overflow: "hidden",
+                        minWidth: 0,
+                        boxSizing: "border-box",
+                      }}
                     >
-                      {formatMessageTimestamp(m.ts)}
-                    </span>
+                      {isRemoved ? (
+                        <div
+                          className="opacity-50 italic"
+                          style={{ color: "#ffffeb" }}
+                        >
+                          [Message Removed]
+                        </div>
+                      ) : (
+                        <>
+                          <div
+                            className="break-words"
+                            style={{
+                              maxWidth: "100%",
+                              minWidth: 0,
+                              overflowX: "auto",
+                              overflowY: "hidden",
+                              width: "100%",
+                            }}
+                          >
+                            {/* #region agent log */}
+                            {(() => {
+                              fetch(
+                                "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
+                                {
+                                  method: "POST",
+                                  headers: {
+                                    "Content-Type": "application/json",
+                                  },
+                                  body: JSON.stringify({
+                                    location: "Chat.tsx:900",
+                                    message: "rendering user message markdown",
+                                    data: {
+                                      textLength: m.text?.length || 0,
+                                      hasCodeBlock: !!m.text?.includes("```"),
+                                    },
+                                    timestamp: Date.now(),
+                                    sessionId: "debug-session",
+                                    runId: "run1",
+                                    hypothesisId: "C",
+                                  }),
+                                },
+                              ).catch(() => {});
+                              return null;
+                            })()}
+                            {/* #endregion */}
+                            {renderUserContent(m.text)}
+                          </div>
+                          {!!m.files?.length && (
+                            <div className="mt-2 space-y-1">
+                              {m.files.map((f, i) => (
+                                <div
+                                  key={i}
+                                  className="text-xs"
+                                  style={{ opacity: 0.7, color: "#ffffeb" }}
+                                >
+                                  {f.name}{" "}
+                                  <span className="opacity-60">
+                                    ({Math.round(f.size / 1024)} KB)
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    <div className="mt-1 flex items-center gap-2">
+                      <span
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+                        style={{ color: "#ADA587" }}
+                      >
+                        {formatMessageTimestamp(m.ts)}
+                      </span>
+                      <MessageOptionsMenu
+                        message={m}
+                        isUser={true}
+                        isLatest={isLatest}
+                        messageIndex={index}
+                        threadId={threadId || ""}
+                        onCopy={handleCopyMessage}
+                        onCarryPrompt={handleCarryPrompt}
+                        onPin={handlePinMessage}
+                        onRemove={handleRemoveMessage}
+                        onRewind={handleRewind}
+                        onEdit={isLatest ? handleEditMessage : undefined}
+                        alignRight={true}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            // AI/Construct messages: left-aligned, full screen width, no bubble styling
+            const formatGenerationTime = (ms: number): string => {
+              const totalSeconds = ms / 1000;
+              if (totalSeconds < 60) {
+                // Show seconds with 1 decimal for quick responses (e.g., "3.2s")
+                return `${totalSeconds.toFixed(1)}s`;
+              } else {
+                // Show mm:ss for longer generations (e.g., "01:23")
+                const minutes = Math.floor(totalSeconds / 60);
+                const seconds = Math.floor(totalSeconds % 60);
+                return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+              }
+            };
+
+            const responseTimeMs = (m as any).metadata?.responseTimeMs;
+            const formattedResponseTime = responseTimeMs
+              ? formatGenerationTime(responseTimeMs)
+              : null;
+
+            return (
+              <div
+                key={m.id}
+                className="group relative flex items-start gap-3 py-3 px-4"
+              >
+                <div className="flex flex-col items-start text-left w-full">
+                  {formattedResponseTime && (
+                    <div
+                      className="text-xs mb-1"
+                      style={{
+                        color: "var(--chatty-text)",
+                        opacity: 0.55,
+                      }}
+                    >
+                      Generated in {formattedResponseTime}
+                    </div>
+                  )}
+                  {isRemoved ? (
+                    <div
+                      className="whitespace-normal w-full opacity-50 italic"
+                      style={{ color: "var(--chatty-text)" }}
+                    >
+                      [Message Removed]
+                    </div>
+                  ) : (
+                    <div
+                      className="whitespace-normal w-full assistant-code-scope"
+                      style={{
+                        color: "var(--chatty-text)",
+                        overflow: "hidden",
+                        maxWidth: "100%",
+                      }}
+                    >
+                      <style
+                        dangerouslySetInnerHTML={{
+                          __html: assistantCodeStyles,
+                        }}
+                      />
+                      <R
+                        packets={
+                          Array.isArray((m as any).packets)
+                            ? (m as any).packets
+                            : [
+                                // fallback for legacy/invalid assistant messages
+                                {
+                                  op: "answer.v1",
+                                  payload: {
+                                    content:
+                                      (m as any).text ?? "Legacy message",
+                                  },
+                                },
+                              ]
+                        }
+                      />
+                      {/* Dev Info (only in development and when toggle is on) */}
+                      {isDev && showDevInfo && (
+                        <div
+                          className="mt-2 p-2 rounded text-xs font-mono"
+                          style={{
+                            backgroundColor: "var(--chatty-bg-secondary)",
+                            border: "1px solid var(--chatty-line)",
+                            opacity: 0.7,
+                          }}
+                        >
+                          <div style={{ color: "var(--chatty-text)" }}>
+                            <div>
+                              <strong>Message ID:</strong> {m.id}
+                            </div>
+                            <div>
+                              <strong>Packets:</strong>{" "}
+                              {Array.isArray((m as any).packets)
+                                ? (m as any).packets.length
+                                : 0}
+                            </div>
+                            {(m as any).metadata && (
+                              <>
+                                <div>
+                                  <strong>Model:</strong>{" "}
+                                  {(m as any).metadata.model || "unknown"}
+                                </div>
+                                <div>
+                                  <strong>Response Time:</strong>{" "}
+                                  {formattedResponseTime || "N/A"}
+                                </div>
+                                {(m as any).metadata.orchestration_status && (
+                                  <div>
+                                    <strong>Orchestration:</strong>{" "}
+                                    {(m as any).metadata.orchestration_status}
+                                  </div>
+                                )}
+                              </>
+                            )}
+                            {m.text && (
+                              <div className="mt-1">
+                                <strong>Text Length:</strong> {m.text.length}{" "}
+                                chars
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {!!m.files?.length && (
+                    <div className="mt-2 space-y-1">
+                      {m.files.map((f, i) => (
+                        <div
+                          key={i}
+                          className="text-xs"
+                          style={{ opacity: 0.7 }}
+                        >
+                          {f.name}{" "}
+                          <span className="opacity-60">
+                            ({Math.round(f.size / 1024)} KB)
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-1 flex items-center gap-2">
                     <MessageOptionsMenu
                       message={m}
-                      isUser={true}
+                      isUser={false}
                       isLatest={isLatest}
                       messageIndex={index}
-                      threadId={threadId || ''}
+                      threadId={threadId || ""}
                       onCopy={handleCopyMessage}
                       onCarryPrompt={handleCarryPrompt}
                       onPin={handlePinMessage}
                       onRemove={handleRemoveMessage}
                       onRewind={handleRewind}
-                      onEdit={isLatest ? handleEditMessage : undefined}
-                      alignRight={true}
+                      onReport={handleReportMessage}
+                      onRequestId={handleRequestId}
+                      alignRight={false}
                     />
+                    <span
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+                      style={{ color: "#ADA587" }}
+                    >
+                      {formatMessageTimestamp(m.ts)}
+                    </span>
                   </div>
                 </div>
               </div>
-            )
-          }
-          
-          // AI/Construct messages: left-aligned, full screen width, no bubble styling
-          const formatGenerationTime = (ms: number): string => {
-            const totalSeconds = ms / 1000
-            if (totalSeconds < 60) {
-              // Show seconds with 1 decimal for quick responses (e.g., "3.2s")
-              return `${totalSeconds.toFixed(1)}s`
-            } else {
-              // Show mm:ss for longer generations (e.g., "01:23")
-              const minutes = Math.floor(totalSeconds / 60)
-              const seconds = Math.floor(totalSeconds % 60)
-              return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-            }
-          }
-          
-          const responseTimeMs = (m as any).metadata?.responseTimeMs
-          const formattedResponseTime = responseTimeMs ? formatGenerationTime(responseTimeMs) : null
-          
-          return (
-            <div key={m.id} className="group relative flex items-start gap-3 py-3 px-4">
-              <div className="flex flex-col items-start text-left w-full">
-                {formattedResponseTime && (
-                  <div 
-                    className="text-xs mb-1" 
-                    style={{ 
-                      color: 'var(--chatty-text)', 
-                      opacity: 0.55 
-                    }}
-                  >
-                    Generated in {formattedResponseTime}
-            </div>
-                )}
-                {isRemoved ? (
-                  <div className="whitespace-normal w-full opacity-50 italic" style={{ color: 'var(--chatty-text)' }}>
-                    [Message Removed]
-                  </div>
-                ) : (
-                  <div className="whitespace-normal w-full" style={{ color: 'var(--chatty-text)', overflow: 'hidden', maxWidth: '100%' }}>
-                    <R
-                      packets={
-                        Array.isArray((m as any).packets)
-                          ? (m as any).packets
-                          : [
-                              // fallback for legacy/invalid assistant messages
-                              { op: 'answer.v1', payload: { content: (m as any).text ?? 'Legacy message' } }
-                            ]
-                      }
-                    />
-                    {/* Dev Info (only in development and when toggle is on) */}
-                    {isDev && showDevInfo && (
-                      <div className="mt-2 p-2 rounded text-xs font-mono" style={{ backgroundColor: 'var(--chatty-bg-secondary)', border: '1px solid var(--chatty-line)', opacity: 0.7 }}>
-                        <div style={{ color: 'var(--chatty-text)' }}>
-                          <div><strong>Message ID:</strong> {m.id}</div>
-                          <div><strong>Packets:</strong> {Array.isArray((m as any).packets) ? (m as any).packets.length : 0}</div>
-                          {(m as any).metadata && (
-                            <>
-                              <div><strong>Model:</strong> {(m as any).metadata.model || 'unknown'}</div>
-                              <div><strong>Response Time:</strong> {formattedResponseTime || 'N/A'}</div>
-                              {(m as any).metadata.orchestration_status && (
-                                <div><strong>Orchestration:</strong> {(m as any).metadata.orchestration_status}</div>
-                              )}
-                            </>
-                          )}
-                          {m.text && (
-                            <div className="mt-1"><strong>Text Length:</strong> {m.text.length} chars</div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              {!!m.files?.length && (
-                <div className="mt-2 space-y-1">
-                  {m.files.map((f, i) => (
-                      <div key={i} className="text-xs" style={{ opacity: 0.7 }}>
-                      {f.name} <span className="opacity-60">({Math.round(f.size / 1024)} KB)</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="mt-1 flex items-center gap-2">
-                <MessageOptionsMenu
-                  message={m}
-                  isUser={false}
-                  isLatest={isLatest}
-                  messageIndex={index}
-                  threadId={threadId || ''}
-                  onCopy={handleCopyMessage}
-                  onCarryPrompt={handleCarryPrompt}
-                  onPin={handlePinMessage}
-                  onRemove={handleRemoveMessage}
-                  onRewind={handleRewind}
-                  onReport={handleReportMessage}
-                  onRequestId={handleRequestId}
-                  alignRight={false}
-                />
-                <span 
-                  className="opacity-0 group-hover:opacity-100 transition-opacity text-xs"
-                  style={{ color: '#ADA587' }}
-                >
-                  {formatMessageTimestamp(m.ts)}
-                </span>
-              </div>
-            </div>
-          </div>
-          )
-        })}
+            );
+          })}
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="grid grid-cols-[32px_1fr_80px] gap-3 p-4 border-t flex-shrink-0" style={{ borderColor: 'var(--chatty-line)' }}>
-        <input 
-          type="file" 
-          multiple 
-          onChange={handleFiles} 
-          className="hidden" 
-          id="filepick" 
+      <div
+        className="grid grid-cols-[32px_1fr_80px] gap-3 p-4 border-t flex-shrink-0"
+        style={{ borderColor: "var(--chatty-line)" }}
+      >
+        <input
+          type="file"
+          multiple
+          onChange={handleFiles}
+          className="hidden"
+          id="filepick"
         />
-        <label 
-          htmlFor="filepick" 
-          className="w-8 h-10 rounded-lg flex items-center justify-center cursor-pointer transition-colors" 
-          style={{ backgroundColor: 'var(--chatty-button)', border: '1px solid var(--chatty-line)' }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--chatty-hover)'}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--chatty-button)'}
+        <label
+          htmlFor="filepick"
+          className="w-8 h-10 rounded-lg flex items-center justify-center cursor-pointer transition-colors"
+          style={{
+            backgroundColor: "var(--chatty-button)",
+            border: "1px solid var(--chatty-line)",
+          }}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.backgroundColor = "var(--chatty-hover)")
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.backgroundColor = "var(--chatty-button)")
+          }
           title="Attach files"
         >
           📎
@@ -1093,29 +1679,33 @@ export default function Chat() {
           onBlur={handleBlur}
           placeholder="Message Chatty…"
           className="w-full min-h-10 max-h-96 resize-none p-3 rounded-lg outline-none text-base leading-relaxed font-inherit transition-all"
-          style={{ 
-            backgroundColor: 'var(--chatty-bg-main)',
-            border: isFocused ? '1px solid var(--chatty-button)' : '1px solid var(--chatty-line)',
-            color: 'var(--chatty-text)',
-            boxShadow: isFocused ? '0 0 0 2px rgba(173, 165, 135, 0.2)' : 'none'
+          style={{
+            backgroundColor: "var(--chatty-bg-main)",
+            border: isFocused
+              ? "1px solid var(--chatty-button)"
+              : "1px solid var(--chatty-line)",
+            color: "var(--chatty-text)",
+            boxShadow: isFocused
+              ? "0 0 0 2px rgba(173, 165, 135, 0.2)"
+              : "none",
           }}
           rows={1}
         />
         <button
           className="rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{ 
-            backgroundColor: 'var(--chatty-button)',
-            border: '1px solid var(--chatty-line)',
-            color: 'var(--chatty-text-inverse, #ffffeb)'
+          style={{
+            backgroundColor: "var(--chatty-button)",
+            border: "1px solid var(--chatty-line)",
+            color: "var(--chatty-text-inverse, #ffffeb)",
           }}
           onMouseEnter={(e) => {
             if (!e.currentTarget.disabled) {
-              e.currentTarget.style.backgroundColor = 'var(--chatty-hover)'
+              e.currentTarget.style.backgroundColor = "var(--chatty-hover)";
             }
           }}
           onMouseLeave={(e) => {
             if (!e.currentTarget.disabled) {
-              e.currentTarget.style.backgroundColor = 'var(--chatty-button)'
+              e.currentTarget.style.backgroundColor = "var(--chatty-button)";
             }
           }}
           disabled={!text.trim() && files.length === 0}
@@ -1125,9 +1715,12 @@ export default function Chat() {
         </button>
       </div>
 
-      <div className="text-center text-xs py-2 px-4 flex-shrink-0" style={{ color: 'var(--chatty-text)', opacity: 0.5 }}>
+      <div
+        className="text-center text-xs py-2 px-4 flex-shrink-0"
+        style={{ color: "var(--chatty-text)", opacity: 0.5 }}
+      >
         Chatty can make mistakes. Consider checking important information.
       </div>
     </div>
-  )
+  );
 }
