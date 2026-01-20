@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { SidebarProps } from "../types";
 import { cn } from "../lib/utils";
-import { GPTCreator } from "../lib/gptCreator";
 import { ThemeToggleButton } from "./ThemeToggleButton";
 import { useTheme } from "../lib/ThemeContext";
 import { Z_LAYERS } from "../lib/zLayers";
@@ -40,7 +39,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   hasBlockingOverlay = false,
   isVVAULTConnected = true,
 }) => {
-  const [gptCreator] = useState(() => GPTCreator.getInstance());
   const navigate = useNavigate();
   const location = useLocation();
   const { actualTheme } = useTheme();
@@ -382,20 +380,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             <FolderPlus size={16} />
             {!collapsed && <span>Projects</span>}
           </button>
-        </div>
-      </div>
 
-      {/* GPTs Section */}
-      <div className={cn(collapsed ? "px-3 pb-3" : "px-4 pb-4")}>
-        {!collapsed && (
-          <h3
-            className="text-xs font-medium uppercase tracking-wide mb-2"
-            style={{ color: "var(--chatty-text)", opacity: 0.7 }}
-          >
-            GPTs
-          </h3>
-        )}
-        <div className="space-y-1">
           <button
             onClick={() => {
               if (onOpenExplore) return onOpenExplore();
@@ -418,40 +403,6 @@ const Sidebar: React.FC<SidebarProps> = ({
             />
             {!collapsed && <span>simForge</span>}
           </button>
-
-          {/* Custom GPTs */}
-          {gptCreator
-            .getAllPersonalities()
-            .filter((p) => p.id !== "default-chatty")
-            .slice(0, 2)
-            .map((personality) => (
-              <button
-                key={personality.id}
-                onClick={() => {
-                  gptCreator.setActivePersonality(personality.id);
-                  onNewConversationWithGPT(personality.id);
-                }}
-                className={cn(
-                  "flex items-center w-full py-2 text-left text-sm rounded-md transition-colors",
-                  collapsed ? "justify-center px-0 gap-0" : "gap-3 px-3",
-                )}
-                style={{ color: "var(--chatty-text)" }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor =
-                    "var(--chatty-highlight)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "transparent";
-                }}
-              >
-                <div className="w-6 h-6 bg-gray-800 rounded-full flex items-center justify-center">
-                  <span className="text-white text-xs font-bold">
-                    {personality.name.charAt(0)}
-                  </span>
-                </div>
-                {!collapsed && <span>{personality.name}</span>}
-              </button>
-            ))}
         </div>
       </div>
 

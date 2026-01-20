@@ -49,6 +49,10 @@ docs/
 ```
 
 ## Recent Changes
+- **2026-01-20**: Sidebar simplification - removed "GPTS" section header
+  - simForge moved into main navigation options (alongside Library, Code, VVAULT, Projects)
+  - Removed redundant custom GPTs list from sidebar (constructs appear in Address Book instead)
+  - Chatty uses singleton threads per construct model, not ChatGPT's "GPTs section + multiple chats" model
 - **2026-01-20**: GPT creation now bootstraps conversation in Supabase (ChatGPT model)
   - When a GPT is created via GPTCreator, a conversation scaffold is automatically created in Supabase
   - This ensures the new GPT immediately appears as a contact in the Address Book
