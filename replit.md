@@ -49,6 +49,14 @@ docs/
 ```
 
 ## Recent Changes
+- **2026-01-20**: Katana identity and Address Book integration
+  - Embedded identities added for all constructs (katana-001, zen-001, lin-001)
+  - API-first pattern: VVAULT API → Embedded fallback → null
+  - Katana's full personality from KATANA_UNIFIED_PERSONALITY_HIERARCHY.md
+  - Address Book filtering: shows Zen (primary) + Katana (custom GPT), excludes Lin
+  - Key files:
+    - `server/lib/identityLoader.js` - Identity loading with embedded fallback
+    - `src/components/Layout.tsx` - Address Book filtering logic
 - **2026-01-19**: VVAULT API Integration (API-first architecture)
   - VVAULT API is now the canonical source for conversation transcripts
   - Priority: VVAULT API → Supabase (fallback only when API unavailable)
