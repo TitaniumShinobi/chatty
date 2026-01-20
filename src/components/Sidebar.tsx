@@ -395,7 +395,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               <img
                 src={simforgeIcon}
                 alt="simForge"
-                className="w-[31px] h-[31px] object-contain"
+                className="w-[39px] h-[39px] object-contain"
                 style={{
                   transform: collapsed ? "scale(1.15)" : "scale(1)",
                   transformOrigin: "center",
