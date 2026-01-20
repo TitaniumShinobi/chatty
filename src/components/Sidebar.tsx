@@ -279,7 +279,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Navigation Options - Flat List Style */}
-      <div className={cn(collapsed ? "px-3 pb-3" : "px-4 pb-4")}>
+      <div className={cn(collapsed ? "px-3 pb-3" : "pl-[13px] pr-4 pb-4")}>
         <div className="space-y-1">
           <button
             onClick={() => {
@@ -410,7 +410,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       <div
         className={cn(
           "flex-1 overflow-y-auto",
-          collapsed ? "px-3 pb-3" : "px-4 pb-4",
+          collapsed ? "px-3 pb-3" : "pl-[13px] pr-4 pb-4",
         )}
       >
         {!collapsed && (
