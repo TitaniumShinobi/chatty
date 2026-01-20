@@ -49,6 +49,11 @@ docs/
 ```
 
 ## Recent Changes
+- **2026-01-20**: Chat UI rendering fixes and code cleanup
+  - Fixed VVAULT transcript parsing: Added `stripSurroundingQuotes()` in `vvaultApiClient.js` to remove literal quote characters from message content
+  - Cleaned up debug logging code in `Chat.tsx` (removed leftover fetch calls to localhost:7242)
+  - Vite configuration restored: Port 5000, host 0.0.0.0, API proxy to port 3000
+  - **Pending**: VVAULT needs `/api/identity/{constructId}` endpoint to serve identity files for user-created GPTs like Katana
 - **2026-01-20**: Identity loading architecture and Address Book
   - Identity loading priority: VVAULT API → Filesystem → System construct fallback
   - System constructs (Zen, Lin only): Have embedded fallback for resilience

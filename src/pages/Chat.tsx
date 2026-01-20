@@ -32,64 +32,11 @@ type Thread = {
 const userMessageMarkdownComponents: Components = {
   // Code blocks with syntax highlighting (styled for user bubble)
   code({ node, inline, className, children, ...props }: any) {
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "Chat.tsx:29",
-        message: "code component entry",
-        data: { inline, className, codeLength: String(children).length },
-        timestamp: Date.now(),
-        sessionId: "debug-session",
-        runId: "run1",
-        hypothesisId: "A",
-      }),
-    }).catch(() => {});
-    // #endregion
     const match = /language-(\w+)/.exec(className || "");
     const code = String(children).replace(/\n$/, "");
 
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "Chat.tsx:32",
-        message: "match result",
-        data: {
-          hasMatch: !!match,
-          matchValue: match?.[1] || null,
-          codePreview: code.substring(0, 50),
-        },
-        timestamp: Date.now(),
-        sessionId: "debug-session",
-        runId: "run1",
-        hypothesisId: "A",
-      }),
-    }).catch(() => {});
-    // #endregion
-
     // Code block with language - use SyntaxHighlighter
     if (!inline && match) {
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: "Chat.tsx:34",
-            message: "taking SyntaxHighlighter path",
-            data: { language: match[1] },
-            timestamp: Date.now(),
-            sessionId: "debug-session",
-            runId: "run1",
-            hypothesisId: "A",
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
       return (
         <div
           className="relative group my-4"
@@ -172,27 +119,6 @@ const userMessageMarkdownComponents: Components = {
 
     // Plain text code block (no language) - use <pre> element
     if (!inline && !match) {
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: "Chat.tsx:96",
-            message: "taking plain text pre path",
-            data: {
-              codeLength: code.length,
-              codePreview: code.substring(0, 100),
-            },
-            timestamp: Date.now(),
-            sessionId: "debug-session",
-            runId: "run1",
-            hypothesisId: "B",
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
       return (
         <div
           className="relative group my-4"
@@ -1400,32 +1326,6 @@ export default function Chat() {
                               width: "100%",
                             }}
                           >
-                            {/* #region agent log */}
-                            {(() => {
-                              fetch(
-                                "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-                                {
-                                  method: "POST",
-                                  headers: {
-                                    "Content-Type": "application/json",
-                                  },
-                                  body: JSON.stringify({
-                                    location: "Chat.tsx:900",
-                                    message: "rendering user message markdown",
-                                    data: {
-                                      textLength: m.text?.length || 0,
-                                      hasCodeBlock: !!m.text?.includes("```"),
-                                    },
-                                    timestamp: Date.now(),
-                                    sessionId: "debug-session",
-                                    runId: "run1",
-                                    hypothesisId: "C",
-                                  }),
-                                },
-                              ).catch(() => {});
-                              return null;
-                            })()}
-                            {/* #endregion */}
                             {renderUserContent(m.text)}
                           </div>
                           {!!m.files?.length && (
