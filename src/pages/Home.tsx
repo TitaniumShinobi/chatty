@@ -26,10 +26,9 @@ export default function Home() {
   const navigate = useNavigate()
   const { activeThemeScript } = useTheme()
   const isChristmasTheme = activeThemeScript?.id === 'christmas'
-  const [user, setUser] = useState<User | null>(null)
+  const [, setUser] = useState<User | null>(null)
   const [greeting, setGreeting] = useState('')
   const [inputValue, setInputValue] = useState('')
-  const INACTIVITY_DELAY_MS = 60000
   const primaryHoverFrames = useMemo(
     () => isChristmasTheme ? [
       chattyChristmas,
@@ -404,7 +403,6 @@ export default function Home() {
         const timeContext = await getTimeContext();
         
         const hour = timeContext.hour;
-        const partOfDay = timeContext.partOfDay;
         const isWeekend = timeContext.isWeekend;
         
         let prompts: Array<{ emoji: string; text: string }> = [];
