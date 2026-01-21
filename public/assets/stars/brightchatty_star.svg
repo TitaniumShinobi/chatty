@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="500" viewBox="0 0 500 500">
+  <defs>
+    <radialGradient id="starGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff6b9d"/>
+      <stop offset="60%" stop-color="#ff4d82"/>
+      <stop offset="100%" stop-color="#d63d6a"/>
+    </radialGradient>
+  </defs>
+  <path 
+    fill="url(#starGlow)" 
+    d="M250 25 L295 175 L450 190 L335 290 L370 445 L250 370 L130 445 L165 290 L50 190 L205 175 Z"
+  />
+</svg>

@@ -327,19 +327,14 @@
     animation: chatty-starburst-cw 14s linear infinite;
   }
 
-  /* Make stars visible by default during Christmas theme */
-  .theme-script-christmas .chatty-starburst {
-    opacity: 0.8;
-  }
-
+  /* Hide decorative overlays during Christmas theme - they clash with the Christmas star */
+  .theme-script-christmas .chatty-starburst,
   .theme-script-christmas .chatty-starburst-ray-left,
-  .theme-script-christmas .chatty-starburst-ray-right {
-    opacity: 0.7;
-  }
-
+  .theme-script-christmas .chatty-starburst-ray-right,
   .theme-script-christmas .chatty-starburst-nova-left,
   .theme-script-christmas .chatty-starburst-nova-right {
-    opacity: 0.9;
+    opacity: 0 !important;
+    display: none;
   }
 
   /* Default hover behavior - hide main star, show overlay stars */

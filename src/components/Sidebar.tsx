@@ -131,42 +131,46 @@ const Sidebar: React.FC<SidebarProps> = ({
                   alt="Chatty"
                   className="chatty-star w-full h-full object-contain"
                 />
-                <img
-                  src="/assets/stars/fourpointray.svg"
-                  alt=""
-                  aria-hidden="true"
-                  className="chatty-starburst chatty-starburst-ray-left"
-                />
-                <img
-                  src="/assets/stars/fourpointray.svg"
-                  alt=""
-                  aria-hidden="true"
-                  className="chatty-starburst chatty-starburst-ray-right"
-                />
-                <img
-                  src="/assets/stars/fourpointstarburst.svg"
-                  alt=""
-                  aria-hidden="true"
-                  className="chatty-starburst chatty-starburst-left"
-                />
-                <img
-                  src="/assets/stars/fourpointstarburst.svg"
-                  alt=""
-                  aria-hidden="true"
-                  className="chatty-starburst chatty-starburst-right"
-                />
-                <img
-                  src="/assets/stars/fourpointnova.svg"
-                  alt=""
-                  aria-hidden="true"
-                  className="chatty-starburst chatty-starburst-nova-left"
-                />
-                <img
-                  src="/assets/stars/fourpointnova.svg"
-                  alt=""
-                  aria-hidden="true"
-                  className="chatty-starburst chatty-starburst-nova-right"
-                />
+                {!isChristmasTheme && (
+                  <>
+                    <img
+                      src="/assets/stars/fourpointray.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-ray-left"
+                    />
+                    <img
+                      src="/assets/stars/fourpointray.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-ray-right"
+                    />
+                    <img
+                      src="/assets/stars/fourpointstarburst.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-left"
+                    />
+                    <img
+                      src="/assets/stars/fourpointstarburst.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-right"
+                    />
+                    <img
+                      src="/assets/stars/fourpointnova.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-nova-left"
+                    />
+                    <img
+                      src="/assets/stars/fourpointnova.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-nova-right"
+                    />
+                  </>
+                )}
               </div>
             </button>
 
@@ -223,42 +227,46 @@ const Sidebar: React.FC<SidebarProps> = ({
                   alt="Chatty"
                   className="chatty-star w-full h-full object-contain"
                 />
-                <img
-                  src="/assets/stars/fourpointray.svg"
-                  alt=""
-                  aria-hidden="true"
-                  className="chatty-starburst chatty-starburst-ray-left"
-                />
-                <img
-                  src="/assets/stars/fourpointray.svg"
-                  alt=""
-                  aria-hidden="true"
-                  className="chatty-starburst chatty-starburst-ray-right"
-                />
-                <img
-                  src="/assets/stars/fourpointstarburst.svg"
-                  alt=""
-                  aria-hidden="true"
-                  className="chatty-starburst chatty-starburst-left"
-                />
-                <img
-                  src="/assets/stars/fourpointstarburst.svg"
-                  alt=""
-                  aria-hidden="true"
-                  className="chatty-starburst chatty-starburst-right"
-                />
-                <img
-                  src="/assets/stars/fourpointnova.svg"
-                  alt=""
-                  aria-hidden="true"
-                  className="chatty-starburst chatty-starburst-nova-left"
-                />
-                <img
-                  src="/assets/stars/fourpointnova.svg"
-                  alt=""
-                  aria-hidden="true"
-                  className="chatty-starburst chatty-starburst-nova-right"
-                />
+                {!isChristmasTheme && (
+                  <>
+                    <img
+                      src="/assets/stars/fourpointray.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-ray-left"
+                    />
+                    <img
+                      src="/assets/stars/fourpointray.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-ray-right"
+                    />
+                    <img
+                      src="/assets/stars/fourpointstarburst.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-left"
+                    />
+                    <img
+                      src="/assets/stars/fourpointstarburst.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-right"
+                    />
+                    <img
+                      src="/assets/stars/fourpointnova.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-nova-left"
+                    />
+                    <img
+                      src="/assets/stars/fourpointnova.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-nova-right"
+                    />
+                  </>
+                )}
               </div>
             </button>
 
