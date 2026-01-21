@@ -49,6 +49,12 @@ docs/
 ```
 
 ## Recent Changes
+- **2026-01-21**: VVAULT Transfer Audit (Aurora as VVAULT's AI)
+  - Created comprehensive audit: `docs/VVAULT_TRANSFER_AUDIT.md`
+  - Identified 86 files of AI functionality to transfer from Chatty to VVAULT
+  - Aurora will handle: orchestration, persona routing (Lin undertone), identity enforcement, memory, inference
+  - Chatty becomes thin UI: components, theme, auth, API clients calling VVAULT
+  - Key VVAULT endpoints needed: `/api/aurora/orchestrate`, `/api/aurora/persona-route`, `/api/aurora/memory/*`
 - **2026-01-20**: Sunrise/Sunset-based Auto Theme
   - Renamed "System" theme to "Auto" - now follows real sunrise/sunset times, not OS preference
   - Uses `suncalc` library to calculate actual sunrise/sunset for user's location
