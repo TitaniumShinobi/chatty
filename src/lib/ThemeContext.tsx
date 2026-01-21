@@ -42,6 +42,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
   const [sunTimes, setSunTimes] = useState<{ sunrise: Date; sunset: Date } | null>(null)
   const [themeScriptSetting, setThemeScriptSetting] = useState<ThemeScriptId>('auto')
   const [activeThemeScript, setActiveThemeScript] = useState<ThemeScript | null>(null)
+  const [themeInitialized, setThemeInitialized] = useState(false)
   const availableThemeScripts = getAvailableThemeScripts()
 
   // === GEOLOCATION - Get user's location for accurate sunrise/sunset ===
@@ -138,6 +139,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
         setThemeScriptSetting(globalScriptSetting as ThemeScriptId)
       }
     }
+    setThemeInitialized(true)
   }, [user])
 
   // === THEME SCRIPT DETECTION ===
@@ -170,14 +172,15 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
     }
   }, [themeScriptSetting, availableThemeScripts])
 
-  // Save theme script setting to localStorage
+  // Save theme script setting to localStorage (only after initial load)
   useEffect(() => {
+    if (!themeInitialized) return
     if (user?.sub) {
       localStorage.setItem(`user_${user.sub}_themeScript`, themeScriptSetting)
     } else {
       localStorage.setItem('chatty-themeScript', themeScriptSetting)
     }
-  }, [themeScriptSetting, user])
+  }, [themeScriptSetting, user, themeInitialized])
 
   // Calculate actual theme
   const actualTheme = theme === 'auto' ? systemTheme : theme
@@ -208,14 +211,15 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
   }, [theme, systemTheme])
   // === THEME APPLICATION - END ===
 
-  // Save theme to localStorage when it changes
+  // Save theme to localStorage when it changes (only after initial load)
   useEffect(() => {
+    if (!themeInitialized) return
     if (user?.sub) {
       localStorage.setItem(`user_${user.sub}_theme`, theme)
     } else {
       localStorage.setItem('chatty-theme', theme)
     }
-  }, [theme, user])
+  }, [theme, user, themeInitialized])
 
   return (
     <ThemeContext.Provider value={{ 
