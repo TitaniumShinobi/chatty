@@ -247,32 +247,88 @@
     transition: opacity 0.3s ease;
   }
 
+  /* Default: No animations - stars are static */
   .chatty-starburst-left {
-    animation: chatty-starburst-ccw 7s linear infinite;
     transform: rotate(0deg);
   }
 
   .chatty-starburst-right {
-    animation: chatty-starburst-cw 7s linear infinite;
     transform: rotate(45deg);
   }
 
-  .chatty-starburst-nova-left,
+  .chatty-starburst-nova-left {
+    width: 90%;
+    height: 90%;
+    opacity: 0;
+    z-index: 5; /* Adjusted z-index for nova elements */
+    transform: rotate(0deg);
+  }
+
   .chatty-starburst-nova-right {
     width: 90%;
     height: 90%;
     opacity: 0;
     z-index: 5; /* Adjusted z-index for nova elements */
+    transform: rotate(45deg);
   }
 
-  .chatty-starburst-ray-left,
+  .chatty-starburst-ray-left {
+    width: 90%;
+    height: 90%;
+    opacity: 0;
+    z-index: 8; /* Adjusted z-index for ray elements */
+    transform: rotate(0deg);
+  }
+
   .chatty-starburst-ray-right {
     width: 90%;
     height: 90%;
     opacity: 0;
     z-index: 8; /* Adjusted z-index for ray elements */
+    transform: rotate(45deg);
   }
 
+  /* Christmas Theme - Animated Stars (only on hover) with tiered timing */
+  .theme-script-christmas .chatty-star-wrapper:hover .chatty-starburst-left {
+    animation: chatty-starburst-ccw 7s linear infinite;
+  }
+
+  .theme-script-christmas .chatty-star-wrapper:hover .chatty-starburst-right {
+    animation: chatty-starburst-cw 7s linear infinite;
+  }
+
+  .theme-script-christmas .chatty-star-wrapper:hover .chatty-starburst-nova-left {
+    animation: chatty-starburst-ccw 28s linear infinite;
+  }
+
+  .theme-script-christmas .chatty-star-wrapper:hover .chatty-starburst-nova-right {
+    animation: chatty-starburst-cw 28s linear infinite;
+  }
+
+  .theme-script-christmas .chatty-star-wrapper:hover .chatty-starburst-ray-left {
+    animation: chatty-starburst-ccw 14s linear infinite;
+  }
+
+  .theme-script-christmas .chatty-star-wrapper:hover .chatty-starburst-ray-right {
+    animation: chatty-starburst-cw 14s linear infinite;
+  }
+
+  /* Make stars visible by default during Christmas theme */
+  .theme-script-christmas .chatty-starburst {
+    opacity: 0.8;
+  }
+
+  .theme-script-christmas .chatty-starburst-ray-left,
+  .theme-script-christmas .chatty-starburst-ray-right {
+    opacity: 0.7;
+  }
+
+  .theme-script-christmas .chatty-starburst-nova-left,
+  .theme-script-christmas .chatty-starburst-nova-right {
+    opacity: 0.9;
+  }
+
+  /* Default hover behavior - hide main star, show overlay stars */
   .chatty-star-wrapper:hover .chatty-star {
     opacity: 0;
   }
@@ -291,22 +347,29 @@
     opacity: 0.9;
   }
 
-  /* Hover animations: Rays at 14s (calmer, out of phase with 7s starburst) */
-  .chatty-star-wrapper:hover .chatty-starburst-ray-left {
-    animation: chatty-starburst-ccw 14s linear infinite;
+  /* Default theme hover animations: All at 7s (synchronized rotation) */
+  .chatty-star-wrapper:hover .chatty-starburst-left {
+    animation: chatty-starburst-ccw 7s linear infinite;
   }
 
-  .chatty-star-wrapper:hover .chatty-starburst-ray-right {
-    animation: chatty-starburst-cw 14s linear infinite;
+  .chatty-star-wrapper:hover .chatty-starburst-right {
+    animation: chatty-starburst-cw 7s linear infinite;
   }
 
-  /* Hover animations: Novas at 28s (slowest, whisper behind the starburst) */
   .chatty-star-wrapper:hover .chatty-starburst-nova-left {
-    animation: chatty-starburst-ccw 28s linear infinite;
+    animation: chatty-starburst-ccw 7s linear infinite;
   }
 
   .chatty-star-wrapper:hover .chatty-starburst-nova-right {
-    animation: chatty-starburst-cw 28s linear infinite;
+    animation: chatty-starburst-cw 7s linear infinite;
+  }
+
+  .chatty-star-wrapper:hover .chatty-starburst-ray-left {
+    animation: chatty-starburst-ccw 7s linear infinite;
+  }
+
+  .chatty-star-wrapper:hover .chatty-starburst-ray-right {
+    animation: chatty-starburst-cw 7s linear infinite;
   }
 
   @keyframes chatty-starburst-cw {
