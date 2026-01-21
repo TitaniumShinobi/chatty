@@ -291,6 +291,24 @@
     opacity: 0.9;
   }
 
+  /* Hover animations: Rays at 14s (calmer, out of phase with 7s starburst) */
+  .chatty-star-wrapper:hover .chatty-starburst-ray-left {
+    animation: chatty-starburst-ccw 14s linear infinite;
+  }
+
+  .chatty-star-wrapper:hover .chatty-starburst-ray-right {
+    animation: chatty-starburst-cw 14s linear infinite;
+  }
+
+  /* Hover animations: Novas at 28s (slowest, whisper behind the starburst) */
+  .chatty-star-wrapper:hover .chatty-starburst-nova-left {
+    animation: chatty-starburst-ccw 28s linear infinite;
+  }
+
+  .chatty-star-wrapper:hover .chatty-starburst-nova-right {
+    animation: chatty-starburst-cw 28s linear infinite;
+  }
+
   @keyframes chatty-starburst-cw {
     from {
       transform: rotate(0deg);
