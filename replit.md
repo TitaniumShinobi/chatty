@@ -49,6 +49,19 @@ docs/
 ```
 
 ## Recent Changes
+- **2026-01-21**: Theme System - Appearance + Theme Rows in Settings
+  - Renamed "Theme" to "Appearance" (controls Auto/Light/Dark mode)
+  - Added new "Theme" row for color scheme selection (None/Auto/Christmas)
+  - Calendar-driven themes: Auto detects seasonal themes based on date
+  - Christmas theme: Active Dec 1 - Jan 6
+    - Deep forest green background (#0f1f0f)
+    - Cloud lemon starbursts (#ffffeb), white novas (#ffffff), gold rays (#ffd700)
+    - Tiered star animations on hover: 7s starbursts, 14s rays, 28s novas
+  - Key files:
+    - `src/lib/calendarThemeService.ts` - Theme detection and Christmas script definition
+    - `src/lib/ThemeContext.tsx` - Added activeThemeScript, themeScriptSetting state
+    - `src/components/settings/GeneralTab.tsx` - Updated UI with Appearance + Theme rows
+    - `src/index.css` - Christmas theme CSS variable overrides
 - **2026-01-21**: VVAULT Transfer Audit (Aurora as VVAULT's AI)
   - Created comprehensive audit: `docs/VVAULT_TRANSFER_AUDIT.md`
   - Identified 86 files of AI functionality to transfer from Chatty to VVAULT
