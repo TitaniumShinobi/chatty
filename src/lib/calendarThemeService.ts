@@ -38,7 +38,7 @@ export function getChristmasThemeScript(): ThemeScript {
       startMonth: 12,
       startDay: 1,
       endMonth: 1,
-      endDay: 6
+      endDay: 31
     },
     colors: {
       night: {

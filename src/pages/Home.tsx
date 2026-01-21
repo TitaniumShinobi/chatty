@@ -177,6 +177,12 @@ export default function Home() {
     []
   )
   const [logoSrc, setLogoSrc] = useState(primaryHoverFrames[0])
+  
+  // Update logo when Christmas theme changes
+  useEffect(() => {
+    setLogoSrc(primaryHoverFrames[0])
+  }, [isChristmasTheme, primaryHoverFrames])
+  
   const logoTimerRef = useRef<number | null>(null)
   const inactivityTimerRef = useRef<number | null>(null)
   const inactivityStartTimeRef = useRef<number | null>(null)
