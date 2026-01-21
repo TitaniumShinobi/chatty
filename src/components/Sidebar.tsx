@@ -57,10 +57,14 @@ const Sidebar: React.FC<SidebarProps> = ({
   const simforgeIcon = (() => {
     const active = isActiveRoute("/app/explore");
     if (actualTheme === "night") {
-      return active ? "/assets/simforge_day.svg" : "/assets/simforge_night.svg";
+      return active
+        ? "/assets/icons/simforge_day.svg"
+        : "/assets/icons/simforge_night.svg";
     }
     // day theme
-    return active ? "/assets/simforge_night.svg" : "/assets/simforge_day.svg";
+    return active
+      ? "/assets/icons/simforge_night.svg"
+      : "/assets/icons/simforge_day.svg";
   })();
 
   const navButtonStyle = (path: string) => ({
