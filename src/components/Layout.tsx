@@ -3317,6 +3317,8 @@ export default function Layout() {
               onShowGPTCreator={() => navigate("/app/gpts/new")}
               onShowGPTs={() => navigate("/app/gpts")}
               onOpenProjects={handleProjectsClick}
+              collapsed={collapsed}
+              onToggleCollapsed={() => setCollapsed(!collapsed)}
               currentUser={user}
               onLogout={handleLogout}
               onShowSettings={() => setIsSettingsOpen(true)}

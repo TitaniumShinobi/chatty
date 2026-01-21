@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useOutletContext, useNavigate } from 'react-router-dom'
 import { fetchMe, type User } from '../lib/auth'
 import { Layers, Mic, Plus } from 'lucide-react'
+import { useTheme } from '../lib/ThemeContext'
 
 interface LayoutContext {
   threads: any[]
@@ -19,12 +20,22 @@ export default function Home() {
   // #endregion
   const { threads, sendMessage, newThread } = useOutletContext<LayoutContext>()
   const navigate = useNavigate()
+  const { activeThemeScript } = useTheme()
+  const isChristmasTheme = activeThemeScript?.id === 'christmas'
   const [user, setUser] = useState<User | null>(null)
   const [greeting, setGreeting] = useState('')
   const [inputValue, setInputValue] = useState('')
   const INACTIVITY_DELAY_MS = 60000
   const primaryHoverFrames = useMemo(
-    () => [
+    () => isChristmasTheme ? [
+      '/assets/logo/christmas/Chatty_Christmas.svg',
+      '/assets/logo/christmas/collapseToggle_Christmas/chatty_collapsed_1_Christmas.svg',
+      '/assets/logo/christmas/collapseToggle_Christmas/chatty_collapsed_2_Christmas.svg',
+      '/assets/logo/christmas/collapseToggle_Christmas/chatty_collapsed_3_Christmas.svg',
+      '/assets/logo/christmas/collapseToggle_Christmas/chatty_collapsed_4_Christmas.svg',
+      '/assets/logo/christmas/collapseToggle_Christmas/chatty_collapsed_Christmas.svg',
+      '/assets/logo/christmas/Chatty_Christmas.svg'
+    ] : [
       '/assets/logo/Chatty.png',
       '/assets/logo/chatty_collapsed_1.png',
       '/assets/logo/chatty_collapsed_2.png',
@@ -33,126 +44,129 @@ export default function Home() {
       '/assets/logo/chatty_collapsed.png',
       '/assets/logo/Chatty.png'
     ],
-    []
+    [isChristmasTheme]
   )
+  const baseLogo = isChristmasTheme ? '/assets/logo/christmas/Chatty_Christmas.svg' : '/assets/logo/Chatty.png'
+  const inactivityBase = isChristmasTheme ? '/assets/logo/christmas/inactivityAnimations_Christmas' : '/assets/logo'
+  const ext = isChristmasTheme ? '_Christmas.svg' : '.png'
   const letterConfigs = useMemo(
     () => [
       {
         frames: [
-          '/assets/logo/Chatty.png',
-          "/assets/logo/'C'hatty.png",
-          "/assets/logo/'C'hatty_1.png",
-          "/assets/logo/'C'hatty.png",
-          "/assets/logo/'C'hatty_2.png",
-          "/assets/logo/'C'hatty_1.png",
-          "/assets/logo/'C'hatty.png",
-          "/assets/logo/'C'hatty_2.png",
-          "/assets/logo/'C'hatty_1.png",
-          "/assets/logo/'C'hatty.png",
-          "/assets/logo/'C'hatty_2.png",
-          "/assets/logo/'C'hatty.png",
-          '/assets/logo/Chatty.png'
+          baseLogo,
+          `${inactivityBase}/'C'hatty${ext}`,
+          `${inactivityBase}/'C'hatty_1${ext}`,
+          `${inactivityBase}/'C'hatty${ext}`,
+          `${inactivityBase}/'C'hatty_2${ext}`,
+          `${inactivityBase}/'C'hatty_1${ext}`,
+          `${inactivityBase}/'C'hatty${ext}`,
+          `${inactivityBase}/'C'hatty_2${ext}`,
+          `${inactivityBase}/'C'hatty_1${ext}`,
+          `${inactivityBase}/'C'hatty${ext}`,
+          `${inactivityBase}/'C'hatty_2${ext}`,
+          `${inactivityBase}/'C'hatty${ext}`,
+          baseLogo
         ],
         holdMs: 1000,
         stepMs: 80
       },
       {
         frames: [
-          '/assets/logo/Chatty.png',
-          "/assets/logo/c'H'atty.png",
-          "/assets/logo/c'H'atty_1.png",
-          "/assets/logo/c'H'atty.png",
-          "/assets/logo/c'H'atty_2.png",
-          "/assets/logo/c'H'atty_1.png",
-          "/assets/logo/c'H'atty.png",
-          "/assets/logo/c'H'atty_2.png",
-          "/assets/logo/c'H'atty_1.png",
-          "/assets/logo/c'H'atty.png",
-          "/assets/logo/c'H'atty_2.png",
-          "/assets/logo/c'H'atty.png",
-          '/assets/logo/Chatty.png'
+          baseLogo,
+          `${inactivityBase}/c'H'atty${ext}`,
+          `${inactivityBase}/c'H'atty_1${ext}`,
+          `${inactivityBase}/c'H'atty${ext}`,
+          `${inactivityBase}/c'H'atty_2${ext}`,
+          `${inactivityBase}/c'H'atty_1${ext}`,
+          `${inactivityBase}/c'H'atty${ext}`,
+          `${inactivityBase}/c'H'atty_2${ext}`,
+          `${inactivityBase}/c'H'atty_1${ext}`,
+          `${inactivityBase}/c'H'atty${ext}`,
+          `${inactivityBase}/c'H'atty_2${ext}`,
+          `${inactivityBase}/c'H'atty${ext}`,
+          baseLogo
         ],
         holdMs: 1000,
         stepMs: 80
       },
       {
         frames: [
-          '/assets/logo/Chatty.png',
-          "/assets/logo/ch'A'tty.png",
-          "/assets/logo/ch'A'tty_1.png",
-          "/assets/logo/ch'A'tty.png",
-          "/assets/logo/ch'A'tty_2.png",
-          "/assets/logo/ch'A'tty_1.png",
-          "/assets/logo/ch'A'tty.png",
-          "/assets/logo/ch'A'tty_2.png",
-          "/assets/logo/ch'A'tty_1.png",
-          "/assets/logo/ch'A'tty.png",
-          "/assets/logo/ch'A'tty_2.png",
-          "/assets/logo/ch'A'tty.png",
-          '/assets/logo/Chatty.png'
+          baseLogo,
+          `${inactivityBase}/ch'A'tty${ext}`,
+          `${inactivityBase}/ch'A'tty_1${ext}`,
+          `${inactivityBase}/ch'A'tty${ext}`,
+          `${inactivityBase}/ch'A'tty_2${ext}`,
+          `${inactivityBase}/ch'A'tty_1${ext}`,
+          `${inactivityBase}/ch'A'tty${ext}`,
+          `${inactivityBase}/ch'A'tty_2${ext}`,
+          `${inactivityBase}/ch'A'tty_1${ext}`,
+          `${inactivityBase}/ch'A'tty${ext}`,
+          `${inactivityBase}/ch'A'tty_2${ext}`,
+          `${inactivityBase}/ch'A'tty${ext}`,
+          baseLogo
         ],
         holdMs: 1000,
         stepMs: 80
       },
       {
         frames: [
-          '/assets/logo/Chatty.png',
-          "/assets/logo/cha'T'ty.png",
-          "/assets/logo/cha'T'ty_1.png",
-          "/assets/logo/cha'T'ty.png",
-          "/assets/logo/cha'T'ty_2.png",
-          "/assets/logo/cha'T'ty_1.png",
-          "/assets/logo/cha'T'ty.png",
-          "/assets/logo/cha'T'ty_2.png",
-          "/assets/logo/cha'T'ty_1.png",
-          "/assets/logo/cha'T'ty.png",
-          "/assets/logo/cha'T'ty_2.png",
-          "/assets/logo/cha'T'ty.png",
-          '/assets/logo/Chatty.png'
+          baseLogo,
+          `${inactivityBase}/cha'T'ty${ext}`,
+          `${inactivityBase}/cha'T'ty_1${ext}`,
+          `${inactivityBase}/cha'T'ty${ext}`,
+          `${inactivityBase}/cha'T'ty_2${ext}`,
+          `${inactivityBase}/cha'T'ty_1${ext}`,
+          `${inactivityBase}/cha'T'ty${ext}`,
+          `${inactivityBase}/cha'T'ty_2${ext}`,
+          `${inactivityBase}/cha'T'ty_1${ext}`,
+          `${inactivityBase}/cha'T'ty${ext}`,
+          `${inactivityBase}/cha'T'ty_2${ext}`,
+          `${inactivityBase}/cha'T'ty${ext}`,
+          baseLogo
         ],
         holdMs: 1000,
         stepMs: 80
       },
       {
         frames: [
-          '/assets/logo/Chatty.png',
-          "/assets/logo/chat'T'y.png",
-          "/assets/logo/chat'T'y_1.png",
-          "/assets/logo/chat'T'y.png",
-          "/assets/logo/chat'T'y_2.png",
-          "/assets/logo/chat'T'y_1.png",
-          "/assets/logo/chat'T'y.png",
-          "/assets/logo/chat'T'y_2.png",
-          "/assets/logo/chat'T'y_1.png",
-          "/assets/logo/chat'T'y.png",
-          "/assets/logo/chat'T'y_2.png",
-          "/assets/logo/chat'T'y.png",
-          '/assets/logo/Chatty.png'
+          baseLogo,
+          isChristmasTheme ? `${inactivityBase}/Chat'T'y${ext}` : `${inactivityBase}/Chat'T'y.png`,
+          isChristmasTheme ? `${inactivityBase}/Chat'T'y_1${ext}` : `${inactivityBase}/chat'T'y_1.png`,
+          isChristmasTheme ? `${inactivityBase}/Chat'T'y${ext}` : `${inactivityBase}/Chat'T'y.png`,
+          isChristmasTheme ? `${inactivityBase}/Chat'T'y_2${ext}` : `${inactivityBase}/chat'T'y_2.png`,
+          isChristmasTheme ? `${inactivityBase}/Chat'T'y_1${ext}` : `${inactivityBase}/chat'T'y_1.png`,
+          isChristmasTheme ? `${inactivityBase}/Chat'T'y${ext}` : `${inactivityBase}/Chat'T'y.png`,
+          isChristmasTheme ? `${inactivityBase}/Chat'T'y_2${ext}` : `${inactivityBase}/chat'T'y_2.png`,
+          isChristmasTheme ? `${inactivityBase}/Chat'T'y_1${ext}` : `${inactivityBase}/chat'T'y_1.png`,
+          isChristmasTheme ? `${inactivityBase}/Chat'T'y${ext}` : `${inactivityBase}/Chat'T'y.png`,
+          isChristmasTheme ? `${inactivityBase}/Chat'T'y_2${ext}` : `${inactivityBase}/chat'T'y_2.png`,
+          isChristmasTheme ? `${inactivityBase}/Chat'T'y${ext}` : `${inactivityBase}/Chat'T'y.png`,
+          baseLogo
         ],
         holdMs: 1000,
         stepMs: 80
       },
       {
         frames: [
-          '/assets/logo/Chatty.png',
-          "/assets/logo/chatt'Y'.png",
-          "/assets/logo/chatt'Y'_1.png",
-          "/assets/logo/chatt'Y'.png",
-          "/assets/logo/chatt'Y'_2.png",
-          "/assets/logo/chatt'Y'_1.png",
-          "/assets/logo/chatt'Y'.png",
-          "/assets/logo/chatt'Y'_2.png",
-          "/assets/logo/chatt'Y'_1.png",
-          "/assets/logo/chatt'Y'.png",
-          "/assets/logo/chatt'Y'_2.png",
-          "/assets/logo/chatt'Y'.png",
-          '/assets/logo/Chatty.png'
+          baseLogo,
+          `${inactivityBase}/Chatt'Y'${ext}`,
+          `${inactivityBase}/Chatt'Y'_1${ext}`,
+          `${inactivityBase}/Chatt'Y'${ext}`,
+          `${inactivityBase}/Chatt'Y'_2${ext}`,
+          `${inactivityBase}/Chatt'Y'_1${ext}`,
+          `${inactivityBase}/Chatt'Y'${ext}`,
+          `${inactivityBase}/Chatt'Y'_2${ext}`,
+          `${inactivityBase}/Chatt'Y'_1${ext}`,
+          `${inactivityBase}/Chatt'Y'${ext}`,
+          `${inactivityBase}/Chatt'Y'_2${ext}`,
+          `${inactivityBase}/Chatt'Y'${ext}`,
+          baseLogo
         ],
         holdMs: 1000,
         stepMs: 80
       }
     ],
-    []
+    [isChristmasTheme, baseLogo, inactivityBase, ext]
   )
   const letterScheduleMs = useMemo(
     () => [60000, 120000, 180000, 240000, 300000, 360000],

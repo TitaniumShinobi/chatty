@@ -41,7 +41,12 @@ const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { actualTheme } = useTheme();
+  const { actualTheme, activeThemeScript } = useTheme();
+  
+  const isChristmasTheme = activeThemeScript?.id === 'christmas';
+  const starImage = isChristmasTheme 
+    ? "/assets/stars/brightchatty_star.svg" 
+    : "/assets/stars/chatty_star.png";
 
   const isActiveRoute = useMemo(
     () => (path: string) => location.pathname === path,
@@ -122,7 +127,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 )}
               >
                 <img
-                  src="/assets/stars/chatty_star.png"
+                  src={starImage}
                   alt="Chatty"
                   className="chatty-star w-full h-full object-contain"
                 />
@@ -214,7 +219,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 )}
               >
                 <img
-                  src="/assets/stars/chatty_star.png"
+                  src={starImage}
                   alt="Chatty"
                   className="chatty-star w-full h-full object-contain"
                 />
