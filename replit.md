@@ -49,6 +49,13 @@ docs/
 ```
 
 ## Recent Changes
+- **2026-01-21**: Christmas Theme Enhancements
+  - Sidebar star now uses `brightchatty_star.svg` when Christmas theme is active
+  - Home page collapse animation uses Christmas SVG frames from `assets/logo/christmas/collapseToggle_Christmas/`
+  - Inactivity animations use Christmas SVG frames from `assets/logo/christmas/inactivityAnimations_Christmas/`
+  - Fixed sidebar collapse toggle by passing `collapsed` and `onToggleCollapsed` props
+  - Fixed asset path casing: `Chat'T'y.png` (capital C) vs `chat'T'y_1.png` (lowercase c)
+  - Key files: `src/pages/Home.tsx`, `src/components/Sidebar.tsx`, `src/components/Layout.tsx`
 - **2026-01-21**: Theme System - Appearance + Theme Rows in Settings
   - Renamed "Theme" to "Appearance" (controls Auto/Light/Dark mode)
   - Added new "Theme" row for color scheme selection (None/Auto/Christmas)
