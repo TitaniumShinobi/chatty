@@ -32,21 +32,21 @@ export default function Home() {
   const INACTIVITY_DELAY_MS = 60000
   const primaryHoverFrames = useMemo(
     () => isChristmasTheme ? [
-      '/assets/logo/christmas/Chatty_Christmas.svg',
-      '/assets/logo/christmas/collapseToggle_Christmas/chatty_collapsed_1_Christmas.svg',
-      '/assets/logo/christmas/collapseToggle_Christmas/chatty_collapsed_2_Christmas.svg',
-      '/assets/logo/christmas/collapseToggle_Christmas/chatty_collapsed_3_Christmas.svg',
-      '/assets/logo/christmas/collapseToggle_Christmas/chatty_collapsed_4_Christmas.svg',
-      '/assets/logo/christmas/collapseToggle_Christmas/chatty_collapsed_Christmas.svg',
-      '/assets/logo/christmas/Chatty_Christmas.svg'
+      chattyChristmas,
+      chattyChristmas,
+      chattyChristmas,
+      chattyChristmas,
+      chattyChristmas,
+      chattyChristmas,
+      chattyChristmas
     ] : [
-      '/assets/logo/Chatty.png',
-      '/assets/logo/chatty_collapsed_1.png',
-      '/assets/logo/chatty_collapsed_2.png',
-      '/assets/logo/chatty_collapsed_3.png',
-      '/assets/logo/chatty_collapsed_4.png',
-      '/assets/logo/chatty_collapsed.png',
-      '/assets/logo/Chatty.png'
+      chattyLogo,
+      chattyLogo,
+      chattyLogo,
+      chattyLogo,
+      chattyLogo,
+      chattyLogo,
+      chattyLogo
     ],
     [isChristmasTheme]
   )
