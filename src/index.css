@@ -36,6 +36,20 @@
   --chatty-status-error: #dc2626; /* Red for errors */
 }
 
+/* Christmas Theme - Deep forest green night palette */
+.theme-script-christmas[data-theme="night"],
+.theme-script-christmas:root.night-mode,
+[data-theme="night"].theme-script-christmas,
+:root.night-mode.theme-script-christmas {
+  --chatty-bg-main: #0f1f0f; /* Deep forest green */
+  --chatty-bg-sidebar: #0f1f0f;
+  --chatty-bg-message: #152515; /* Slightly lighter forest */
+  --chatty-highlight: #1a2d1a; /* Forest highlight */
+  --chatty-star-starburst-color: #ffffeb; /* Cloud lemon starbursts */
+  --chatty-star-nova-color: #ffffff; /* White nova */
+  --chatty-star-ray-color: #ffd700; /* Gold rays */
+}
+
 @layer base {
   * {
     @apply border-app-yellow-800;
