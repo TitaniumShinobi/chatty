@@ -4,6 +4,10 @@ import { fetchMe, type User } from '../lib/auth'
 import { Layers, Mic, Plus } from 'lucide-react'
 import { useTheme } from '../lib/ThemeContext'
 
+// Logo assets
+import chattyChristmas from '@assets/logo/christmas/Chatty_Christmas.svg'
+import chattyLogo from '@assets/logo/Chatty.png'
+
 interface LayoutContext {
   threads: any[]
   sendMessage: (threadId: string, text: string, files: File[]) => void
@@ -46,7 +50,7 @@ export default function Home() {
     ],
     [isChristmasTheme]
   )
-  const baseLogo = isChristmasTheme ? '/assets/logo/christmas/Chatty_Christmas.svg' : '/assets/logo/Chatty.png'
+  const baseLogo = isChristmasTheme ? chattyChristmas : chattyLogo
   const inactivityBase = isChristmasTheme ? '/assets/logo/christmas/inactivityAnimations_Christmas' : '/assets/logo'
   const ext = isChristmasTheme ? '_Christmas.svg' : '.png'
   const letterConfigs = useMemo(

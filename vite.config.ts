@@ -52,6 +52,11 @@ export default defineConfig({
   },
   resolve: {
     alias: [
+      // Assets folder alias
+      {
+        find: "@assets",
+        replacement: path.resolve(__dirname, "assets"),
+      },
       // Redirect Node.js-only modules to browser-friendly stubs
       {
         find: "better-sqlite3",
