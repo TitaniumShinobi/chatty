@@ -1,14 +1,20 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import SunCalc from 'suncalc'
 import { type User } from './auth'
+import { getActiveThemeScript, getAvailableThemeScripts, isThemeScriptActive, type ThemeScript } from './calendarThemeService'
 
 export type Theme = 'light' | 'night' | 'auto'
+export type ThemeScriptId = 'none' | 'auto' | string
 
 interface ThemeContextType {
   theme: Theme
   setTheme: (theme: Theme) => void
-  actualTheme: 'light' | 'night' // The actual resolved theme (when system is selected)
+  actualTheme: 'light' | 'night'
   sunTimes?: { sunrise: Date; sunset: Date } | null
+  activeThemeScript: ThemeScript | null
+  themeScriptSetting: ThemeScriptId
+  setThemeScriptSetting: (setting: ThemeScriptId) => void
+  availableThemeScripts: ThemeScript[]
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
@@ -34,6 +40,9 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
   const [systemTheme, setSystemTheme] = useState<'light' | 'night'>('light')
   const [coords, setCoords] = useState<{ lat: number; lng: number }>(DEFAULT_COORDS)
   const [sunTimes, setSunTimes] = useState<{ sunrise: Date; sunset: Date } | null>(null)
+  const [themeScriptSetting, setThemeScriptSetting] = useState<ThemeScriptId>('auto')
+  const [activeThemeScript, setActiveThemeScript] = useState<ThemeScript | null>(null)
+  const availableThemeScripts = getAvailableThemeScripts()
 
   // === GEOLOCATION - Get user's location for accurate sunrise/sunset ===
   useEffect(() => {
@@ -104,18 +113,20 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
   useEffect(() => {
     if (user?.sub) {
       const savedTheme = localStorage.getItem(`user_${user.sub}_theme`)
-      // Migration: convert old 'system' to new 'auto'
+      const savedScriptSetting = localStorage.getItem(`user_${user.sub}_themeScript`)
       if (savedTheme === 'system') {
         setTheme('auto')
       } else if (savedTheme && (savedTheme === 'light' || savedTheme === 'night' || savedTheme === 'auto')) {
         setTheme(savedTheme)
       } else {
-        setTheme('auto') // Default to auto (sunrise/sunset based)
+        setTheme('auto')
+      }
+      if (savedScriptSetting) {
+        setThemeScriptSetting(savedScriptSetting as ThemeScriptId)
       }
     } else {
-      // For non-logged-in users, check global preference
       const globalTheme = localStorage.getItem('chatty-theme')
-      // Migration: convert old 'system' to new 'auto'
+      const globalScriptSetting = localStorage.getItem('chatty-themeScript')
       if (globalTheme === 'system') {
         setTheme('auto')
       } else if (globalTheme && (globalTheme === 'light' || globalTheme === 'night' || globalTheme === 'auto')) {
@@ -123,8 +134,50 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
       } else {
         setTheme('auto')
       }
+      if (globalScriptSetting) {
+        setThemeScriptSetting(globalScriptSetting as ThemeScriptId)
+      }
     }
   }, [user])
+
+  // === THEME SCRIPT DETECTION ===
+  useEffect(() => {
+    let script: ThemeScript | null = null
+    
+    if (themeScriptSetting === 'none') {
+      script = null
+    } else if (themeScriptSetting === 'auto') {
+      script = getActiveThemeScript()
+    } else {
+      const found = availableThemeScripts.find(s => s.id === themeScriptSetting)
+      if (found && isThemeScriptActive(found)) {
+        script = found
+      } else if (found) {
+        script = found
+      }
+    }
+    
+    setActiveThemeScript(script)
+    
+    const root = document.documentElement
+    availableThemeScripts.forEach(s => {
+      root.classList.remove(`theme-script-${s.id}`)
+    })
+    
+    if (script) {
+      root.classList.add(`theme-script-${script.id}`)
+      console.log('[Theme] Applied theme script:', script.id)
+    }
+  }, [themeScriptSetting, availableThemeScripts])
+
+  // Save theme script setting to localStorage
+  useEffect(() => {
+    if (user?.sub) {
+      localStorage.setItem(`user_${user.sub}_themeScript`, themeScriptSetting)
+    } else {
+      localStorage.setItem('chatty-themeScript', themeScriptSetting)
+    }
+  }, [themeScriptSetting, user])
 
   // Calculate actual theme
   const actualTheme = theme === 'auto' ? systemTheme : theme
@@ -165,7 +218,16 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
   }, [theme, user])
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, actualTheme, sunTimes }}>
+    <ThemeContext.Provider value={{ 
+      theme, 
+      setTheme, 
+      actualTheme, 
+      sunTimes,
+      activeThemeScript,
+      themeScriptSetting,
+      setThemeScriptSetting,
+      availableThemeScripts
+    }}>
       {children}
     </ThemeContext.Provider>
   )

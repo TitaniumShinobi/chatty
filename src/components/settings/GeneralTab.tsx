@@ -8,6 +8,8 @@ import {
   Sun,
   Moon,
   Sunrise,
+  Sparkles,
+  TreePine,
 } from "lucide-react";
 import { useSettings } from "../../context/SettingsContext";
 import { useTheme } from "../../lib/ThemeContext";
@@ -16,7 +18,7 @@ import { Z_LAYERS } from "../../lib/zLayers";
 
 const GeneralTab: React.FC = () => {
   const { settings, updateGeneral } = useSettings();
-  const { setTheme, theme, sunTimes } = useTheme();
+  const { setTheme, theme, sunTimes, themeScriptSetting, setThemeScriptSetting, availableThemeScripts, activeThemeScript } = useTheme();
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
   const themeOptions = [
@@ -94,11 +96,11 @@ const GeneralTab: React.FC = () => {
         General
       </h3>
       <div className="space-y-3">
-        {/* Theme */}
+        {/* Appearance (Light/Dark/Auto) */}
         <div className="relative dropdown-container">
           <div
             className="flex items-center justify-between p-3 cursor-pointer transition-colors"
-            onClick={() => handleDropdownToggle("theme")}
+            onClick={() => handleDropdownToggle("appearance")}
           >
             <div className="flex items-center gap-3">
               <Palette
@@ -109,7 +111,7 @@ const GeneralTab: React.FC = () => {
                 className="text-sm transition-colors hover:opacity-80"
                 style={{ color: "var(--chatty-text)" }}
               >
-                Theme
+                Appearance
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -133,7 +135,7 @@ const GeneralTab: React.FC = () => {
               </span>
             </div>
           </div>
-          {openDropdown === "theme" && (
+          {openDropdown === "appearance" && (
             <div
               className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-lg border w-48"
               style={{
@@ -177,6 +179,137 @@ const GeneralTab: React.FC = () => {
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+
+        {/* Theme (Color Scheme) */}
+        <div className="relative dropdown-container">
+          <div
+            className="flex items-center justify-between p-3 cursor-pointer transition-colors"
+            onClick={() => handleDropdownToggle("themeScript")}
+          >
+            <div className="flex items-center gap-3">
+              <Sparkles
+                size={16}
+                style={{ color: "var(--chatty-icon)", opacity: 0.7 }}
+              />
+              <span
+                className="text-sm transition-colors hover:opacity-80"
+                style={{ color: "var(--chatty-text)" }}
+              >
+                Theme
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {activeThemeScript && (
+                <span
+                  className="text-xs px-2 py-0.5 rounded"
+                  style={{ 
+                    backgroundColor: "var(--chatty-highlight)", 
+                    color: "var(--chatty-text)",
+                    opacity: 0.8 
+                  }}
+                >
+                  Active
+                </span>
+              )}
+              <span
+                className="text-sm"
+                style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+              >
+                {themeScriptSetting === 'none' ? 'None' : 
+                 themeScriptSetting === 'auto' ? 'Auto' :
+                 availableThemeScripts.find(s => s.id === themeScriptSetting)?.name || themeScriptSetting}
+              </span>
+              <span style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
+                ›
+              </span>
+            </div>
+          </div>
+          {openDropdown === "themeScript" && (
+            <div
+              className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-lg border w-56"
+              style={{
+                backgroundColor: "var(--chatty-bg-main)",
+                borderColor: "var(--chatty-line)",
+                zIndex: Z_LAYERS.popover,
+              }}
+            >
+              <div
+                className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-100 transition-colors"
+                style={{
+                  backgroundColor: themeScriptSetting === 'none' ? "#feffaf" : "transparent",
+                }}
+                onClick={() => {
+                  setThemeScriptSetting('none');
+                  setOpenDropdown(null);
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <Palette size={16} style={{ color: "var(--chatty-icon)", opacity: 0.7 }} />
+                  <span className="text-sm" style={{ color: "var(--chatty-text)" }}>
+                    None
+                  </span>
+                </div>
+                {themeScriptSetting === 'none' && (
+                  <Check size={16} style={{ color: "var(--chatty-text)" }} />
+                )}
+              </div>
+              <div
+                className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-100 transition-colors"
+                style={{
+                  backgroundColor: themeScriptSetting === 'auto' ? "#feffaf" : "transparent",
+                }}
+                onClick={() => {
+                  setThemeScriptSetting('auto');
+                  setOpenDropdown(null);
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <Sparkles size={16} style={{ color: "var(--chatty-icon)", opacity: 0.7 }} />
+                  <div>
+                    <span className="text-sm" style={{ color: "var(--chatty-text)" }}>
+                      Auto
+                    </span>
+                    <p className="text-xs" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>
+                      Calendar-based themes
+                    </p>
+                  </div>
+                </div>
+                {themeScriptSetting === 'auto' && (
+                  <Check size={16} style={{ color: "var(--chatty-text)" }} />
+                )}
+              </div>
+              <div className="border-t" style={{ borderColor: "var(--chatty-line)" }} />
+              {availableThemeScripts.map((script) => (
+                <div
+                  key={script.id}
+                  className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-100 transition-colors"
+                  style={{
+                    backgroundColor: themeScriptSetting === script.id ? "#feffaf" : "transparent",
+                  }}
+                  onClick={() => {
+                    setThemeScriptSetting(script.id);
+                    setOpenDropdown(null);
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <TreePine size={16} style={{ color: "#228B22", opacity: 0.9 }} />
+                    <div>
+                      <span className="text-sm" style={{ color: "var(--chatty-text)" }}>
+                        {script.name}
+                      </span>
+                      <p className="text-xs" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>
+                        Dec 1 - Jan 6
+                      </p>
+                    </div>
+                  </div>
+                  {themeScriptSetting === script.id && (
+                    <Check size={16} style={{ color: "var(--chatty-text)" }} />
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
