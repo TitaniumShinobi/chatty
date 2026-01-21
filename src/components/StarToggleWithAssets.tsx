@@ -25,6 +25,7 @@ const StarToggleWithAssets: React.FC<StarToggleProps> = ({
   const [showEightPoint, setShowEightPoint] = useState(toggled); // Initialize based on current toggle state
   const leftStarRef = useRef<HTMLImageElement>(null);
   const rightStarRef = useRef<HTMLImageElement>(null);
+  const novaStarRef = useRef<HTMLImageElement>(null);
 
   // Sync showEightPoint with toggled prop when component mounts or toggled changes externally
   // But only if not currently animating (to preserve animation timing when clicking)
@@ -105,14 +106,18 @@ const StarToggleWithAssets: React.FC<StarToggleProps> = ({
           opacity: disabled ? 0.5 : 1
         }}
         onMouseEnter={() => {
-          // Apply filter to both stars simultaneously
-          if (leftStarRef.current) leftStarRef.current.style.filter = 'hue-rotate(20deg) saturate(1.2) brightness(1.1)';
-          if (rightStarRef.current) rightStarRef.current.style.filter = 'hue-rotate(20deg) saturate(1.2) brightness(1.1)';
+          // Apply filter to all stars simultaneously (including nova when toggled)
+          const hoverFilter = 'hue-rotate(20deg) saturate(1.2) brightness(1.1)';
+          if (leftStarRef.current) leftStarRef.current.style.filter = hoverFilter;
+          if (rightStarRef.current) rightStarRef.current.style.filter = hoverFilter;
+          if (novaStarRef.current) novaStarRef.current.style.filter = hoverFilter;
         }}
         onMouseLeave={() => {
-          // Remove filter from both stars
+          // Remove filter from all stars
           if (leftStarRef.current) leftStarRef.current.style.filter = 'none';
           if (rightStarRef.current) rightStarRef.current.style.filter = 'none';
+          // Nova star returns to its default glow filter
+          if (novaStarRef.current) novaStarRef.current.style.filter = 'hue-rotate(200deg) saturate(1.5) brightness(1.2)';
         }}
       >
       {/* Left Star (4-point) - cartwheels to right, disappears when toggled */}
@@ -125,7 +130,7 @@ const StarToggleWithAssets: React.FC<StarToggleProps> = ({
           left: toggled ? 'calc(100% - 12px)' : leftPosition,
           transform: toggled ? 'translateX(-50%) rotate(405deg)' : 'translateX(0) rotate(0deg)',
           transformOrigin: 'center',
-          transition: 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
+          transition: 'left 0.6s cubic-bezier(0.4, 0, 0.2, 1), transform 0.6s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1), filter 0.2s ease-in-out',
           zIndex: 2,
           filter: 'none',
           color: '#e294bc',
@@ -146,7 +151,7 @@ const StarToggleWithAssets: React.FC<StarToggleProps> = ({
           filter: 'none',
           color: '#e294bc',
           opacity: toggled && showEightPoint ? 0 : 1,
-          transition: 'opacity 0.1s ease-in-out'
+          transition: 'opacity 0.1s ease-in-out, filter 0.2s ease-in-out'
         }}
         aria-hidden="true"
       />
@@ -154,6 +159,7 @@ const StarToggleWithAssets: React.FC<StarToggleProps> = ({
       {/* Eight Point Nova Star - appears when toggled */}
       {toggled && showEightPoint && (
         <img
+          ref={novaStarRef}
           src={EightPointNova}
           alt="eight-point nova star"
           className={`absolute top-1 ${config.star}`}
@@ -163,7 +169,7 @@ const StarToggleWithAssets: React.FC<StarToggleProps> = ({
             filter: 'hue-rotate(200deg) saturate(1.5) brightness(1.2)',
             color: '#4A90E2',
             opacity: 1,
-            transition: 'all 0.2s ease-in-out'
+            transition: 'filter 0.2s ease-in-out, opacity 0.2s ease-in-out'
           }}
           aria-hidden="true"
         />
