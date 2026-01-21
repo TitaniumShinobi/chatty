@@ -482,58 +482,10 @@ class IdentityService {
           }));
 
         if (conversationPairs.length > 0) {
-          // Try to import DeepTranscriptParser (TypeScript file, may need compilation)
-          try {
-            const { DeepTranscriptParser } = await import('../../src/engine/transcript/DeepTranscriptParser.js');
-            const parser = new DeepTranscriptParser('phi3:latest'); // Use default model
-            
-            // Extract memory anchors
-            memoryAnchors = await parser.findMemoryAnchors(conversationPairs);
-            anchorsExtracted = memoryAnchors.length;
-            
-            if (memoryAnchors.length > 0) {
-              console.log(`🔍 [IdentityService] Extracted ${memoryAnchors.length} memory anchors from transcript`);
-              
-              // Store anchors in blueprint (if IdentityMatcher is available)
-              try {
-                const { IdentityMatcher } = await import('../../src/engine/character/IdentityMatcher.js');
-                const matcher = new IdentityMatcher(VVAULT_ROOT);
-                
-                // Get or create blueprint
-                const blueprint = await matcher.loadPersonalityBlueprint(userId, 'gpt', constructCallsign) || {
-                  constructId: 'gpt',
-                  callsign: constructCallsign,
-                  coreTraits: [],
-                  speechPatterns: [],
-                  behavioralMarkers: [],
-                  worldview: [],
-                  memoryAnchors: [],
-                  personalIdentifiers: [],
-                  consistencyRules: []
-                };
-                
-                // Merge extracted anchors with existing blueprint anchors
-                const existingAnchors = new Map(blueprint.memoryAnchors.map(a => [a.anchor, a]));
-                for (const anchor of memoryAnchors) {
-                  const key = anchor.anchor;
-                  if (!existingAnchors.has(key) || existingAnchors.get(key).significance < anchor.significance) {
-                    existingAnchors.set(key, anchor);
-                  }
-                }
-                blueprint.memoryAnchors = Array.from(existingAnchors.values());
-                
-                // Persist updated blueprint
-                await matcher.persistPersonalityBlueprint(userId, 'gpt', constructCallsign, blueprint);
-                console.log(`✅ [IdentityService] Updated blueprint with ${blueprint.memoryAnchors.length} memory anchors`);
-              } catch (blueprintError) {
-                console.warn(`⚠️ [IdentityService] Could not update blueprint with anchors (non-critical):`, blueprintError.message);
-                // Continue - anchors are still extracted and can be used
-              }
-            }
-          } catch (parserError) {
-            console.warn(`⚠️ [IdentityService] Could not extract memory anchors (non-critical):`, parserError.message);
-            // Continue - still import conversation pairs even if anchor extraction fails
-          }
+          // DeepTranscriptParser and IdentityMatcher are development-only features
+          // They require TypeScript compilation and are not available in production builds
+          // Memory anchor extraction is skipped - would require pre-compiled engine modules
+          console.log(`ℹ️ [IdentityService] Found ${conversationPairs.length} conversation pairs for import`);
         }
       } catch (anchorError) {
         console.warn(`⚠️ [IdentityService] Anchor extraction error (non-critical, continuing import):`, anchorError.message);

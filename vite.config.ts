@@ -35,6 +35,13 @@ export default defineConfig({
   define: {
     global: "globalThis",
   },
+  build: {
+    rollupOptions: {
+      external: [
+        /^server\/.*/,
+      ],
+    },
+  },
   optimizeDeps: {
     exclude: [
       // Exclude Node.js-only modules from Vite's dependency optimization

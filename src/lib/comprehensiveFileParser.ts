@@ -138,9 +138,8 @@ export class ComprehensiveFileParser {
     'audio/mp4': { category: 'audio', language: 'm4a', extensions: ['.m4a'] },
     'audio/flac': { category: 'audio', language: 'flac', extensions: ['.flac'] },
 
-    // Video (duplicate removed)
+    // Video (additional)
     'video/x-msvideo': { category: 'video', language: 'avi', extensions: ['.avi'] },
-    'video/webm': { category: 'video', language: 'webm', extensions: ['.webm'] },
 
     // Fonts
     'font/ttf': { category: 'font', language: 'ttf', extensions: ['.ttf'] },

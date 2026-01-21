@@ -12,6 +12,8 @@
     "server": "cd server && npm run dev",
     "server:cli": "cd server && npm run cli",
     "build": "vite build",
+    "build:prod": "npm run build",
+    "start:prod": "NODE_ENV=production PORT=5000 npx tsx server/server.js",
     "preview": "vite preview",
     "cli": "npm run build && npx tsx src/cli/chatty-cli.ts",
     "terminal": "npm run build && npx tsx src/cli/chatty-cli.ts",

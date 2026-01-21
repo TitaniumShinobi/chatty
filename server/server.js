@@ -5,6 +5,11 @@ import cors from "cors";
 import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import { connectDB } from "./config/database.js";
 import { Store } from "./store.js";
 import { requireAuth } from "./middleware/auth.js";
@@ -155,6 +160,14 @@ app.set("trust proxy", 1);
 
 // Allow all origins in development for Replit proxy support
 app.use(cors({ origin: true, credentials: true }));
+
+// Serve static files in production (built frontend)
+const isProduction = process.env.NODE_ENV === 'production';
+if (isProduction) {
+  const distPath = path.join(__dirname, '../dist');
+  app.use(express.static(distPath));
+  console.log('📦 [Server] Serving static files from:', distPath);
+}
 
 // Rate limiting for auth endpoints
 const authLimiter = rateLimit({
@@ -832,6 +845,16 @@ console.log('✅ [Server] Chat App routes mounted at /api/app');
 
 function cryptoRandom() {
   return randomBytes(16).toString("hex");
+}
+
+// SPA catch-all: serve index.html for client-side routing in production
+if (isProduction) {
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) {
+      return next();
+    }
+    res.sendFile(path.join(__dirname, '../dist/index.html'));
+  });
 }
 
 const PORT = process.env.PORT || 3000;

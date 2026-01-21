@@ -442,10 +442,10 @@ export class VVAULTConversationManager {
 
         return response?.memories || [];
       } else {
-        // Server-side: directly use identityService
-        const { getIdentityService } = await import('../../server/services/identityService.js');
-        const identityService = getIdentityService();
-        return await identityService.queryIdentities(userId, constructCallsign, query, limit);
+        // Server-side path not available in browser bundle
+        // Server should use identityService directly, not through this manager
+        console.warn('⚠️ [VVAULTConversationManager] Server-side identity query not available in browser build');
+        return [];
       }
     } catch (error) {
       // #region agent log
