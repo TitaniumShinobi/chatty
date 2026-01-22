@@ -45,8 +45,10 @@ export async function routeMessage(
   agentId: string,
   message: string,
   context: OrchestrationContext = {}
-): Promise<OrchestrationResponse> {try {
-    // Call the Node.js bridge service via API endpointconst response = await fetch('/api/orchestration/route', {
+): Promise<OrchestrationResponse> {
+  try {
+    // Call the Node.js bridge service via API endpoint
+    const response = await fetch('/api/orchestration/route', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

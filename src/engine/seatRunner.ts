@@ -329,7 +329,8 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
       }
     );
     req.on('error', (err: any) => {
-      clearTimeout(timeoutId); // ✅ CLEAR ON ERRORconsole.error(`❌ [SeatRunner] Network request failed for ${opts.seat}:`, {
+      clearTimeout(timeoutId); // ✅ CLEAR ON ERROR
+      console.error(`❌ [SeatRunner] Network request failed for ${opts.seat}:`, {
         message: err.message,
         code: err.code,
         name: err.name,

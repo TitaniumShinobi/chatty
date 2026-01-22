@@ -1,5 +1,5 @@
 // Browser-compatible seat runner for web interface
-// This version uses fetch instead of Node.js modules
+// This version uses the server-side OpenRouter API instead of local Ollama
 
 export type Seat = 'smalltalk' | 'coding' | 'creative' | string;
 
@@ -10,9 +10,9 @@ interface SeatConfig {
 
 // Default configuration for browser environment
 const DEFAULT_CONFIG: SeatConfig = {
-  smalltalk: { tag: 'phi3:latest', role: 'general chat and synthesis' },
-  coding: { tag: 'deepseek-coder:latest', role: 'technical and code reasoning' },
-  creative: { tag: 'mistral:latest', role: 'creative language and storytelling' }
+  smalltalk: { tag: 'phi-3', role: 'general chat and synthesis' },
+  coding: { tag: 'deepseek-coder', role: 'technical and code reasoning' },
+  creative: { tag: 'mistral', role: 'creative language and storytelling' }
 };
 
 let cachedConfig: SeatConfig | undefined;
@@ -21,7 +21,6 @@ async function loadSeatConfig(): Promise<SeatConfig> {
   if (cachedConfig) return cachedConfig;
   
   try {
-    // Try to fetch models.json from the public directory
     const response = await fetch('/models.json');
     if (response.ok) {
       const config = await response.json() as SeatConfig;
@@ -32,30 +31,13 @@ async function loadSeatConfig(): Promise<SeatConfig> {
     console.warn('Failed to load models.json, using defaults:', error);
   }
   
-  // Fallback to default configuration
   cachedConfig = DEFAULT_CONFIG;
   return DEFAULT_CONFIG;
-}
-
-function envOverrideForSeat(seat: Seat): string | undefined {
-  // In browser, we can use Vite's environment variables
-  // e.g., VITE_OLLAMA_MODEL_CODING overrides coding seat
-  const key = `VITE_OLLAMA_MODEL_${seat.toUpperCase()}`;
-  return import.meta.env[key];
 }
 
 async function seatInfo(seat: Seat): Promise<SeatInfo | undefined> {
   const cfg = await loadSeatConfig();
   return cfg[seat];
-}
-
-async function resolveModel(seat: Seat, explicit?: string): Promise<string> {
-  if (explicit) return explicit;
-  const envSeat = envOverrideForSeat(seat);
-  if (envSeat) return envSeat;
-  const info = await seatInfo(seat);
-  if (!info) return 'phi3:latest';
-  return typeof info === 'string' ? info : info.tag;
 }
 
 export async function getSeatRole(seat: Seat): Promise<string | undefined> {
@@ -67,124 +49,97 @@ interface GenerateOptions {
   seat: Seat;
   prompt: string;
   modelOverride?: string;
-  host?: string; // http://localhost
-  port?: number; // 11434
-  timeout?: number; // Timeout in milliseconds (default: 30000)
-  retries?: number; // Max retries (default: 2)
+  systemPrompt?: string;
+  timeout?: number;
+  retries?: number;
 }
 
-export async function runSeat(opts: GenerateOptions): Promise<string> {const timeout = opts.timeout ?? 15000; // Default 15s to avoid verbose stalls
-  const maxRetries = opts.retries ?? 2; // 2 retries max
+export async function runSeat(opts: GenerateOptions): Promise<string> {
+  const timeout = opts.timeout ?? 30000; // Default 30s for cloud API
+  const maxRetries = opts.retries ?? 2;
   
-  // Use Vite proxy for Ollama to avoid CORS issues
-  const baseURL = '/ollama';const model = await resolveModel(opts.seat, opts.modelOverride);let lastError: Error | null = null;
-  let ollamaAvailable = false;
-
+  let lastError: Error | null = null;
+  
   // Retry loop with exponential backoff
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      // Quick availability check via /api/tags (only on first attempt)
+      // First check if cloud API is available
       if (attempt === 0) {
-        const tagsURL = `${baseURL}/api/tags`;
         try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s for availability check (increased from 5s)
+          const healthResponse = await fetch('/api/lin/health', {
+            method: 'GET',
+            credentials: 'include'
+          });
           
-          const tagsResponse = await fetch(tagsURL, { signal: controller.signal });
-          clearTimeout(timeoutId);
-          
-          if (tagsResponse.ok) {
-            ollamaAvailable = true;
-            const tagsJson = await tagsResponse.json();
-            if (Array.isArray(tagsJson.models)) {
-              const found = tagsJson.models.some((m: any) => m.name?.startsWith(model.split(":")[0]));
-              if (!found) {
-                const availableModels = tagsJson.models.map((m: any) => m.name).join(', ');
-                throw new Error(`ModelNotAvailable:${model}. Available models: ${availableModels || 'none'}`);
-              }
-            }
-          } else {
-            throw new Error(`Ollama service unavailable (status ${tagsResponse.status}). Make sure Ollama is running on localhost:11434.`);
+          if (!healthResponse.ok) {
+            console.warn('[SeatRunner] Cloud API health check failed, will still try...');
           }
-        } catch (error: any) {
-          // Handle availability check errors
-          if (error.name === 'AbortError') {
-            throw new Error(`Ollama service timeout. Make sure Ollama is running on localhost:11434 and accessible.`);
-          } else if (error.message?.includes('ModelNotAvailable')) {
-            throw error; // Re-throw model not available errors
-          } else if (error.message?.includes('Ollama service unavailable')) {
-            throw error; // Re-throw service unavailable errors
-          } else if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
-            throw new Error(`Cannot connect to Ollama service. Make sure Ollama is running on localhost:11434. Error: ${error.message}`);
-          } else {
-            console.warn('Model availability check failed, proceeding anyway:', error);
-            // Don't fail completely, but note that Ollama might not be available
-          }
+        } catch (error) {
+          console.warn('[SeatRunner] Cloud API health check error:', error);
         }
       }
-
-      const url = `${baseURL}/api/generate`;
-      const antiHedgePreamble = `Answer in one or two sentences. No hedging, no apologies, no \"as an AI\" disclaimers. If unknown, say \"No idea\" and stop.`;
-      const body = JSON.stringify({ 
-        model, 
-        prompt: `${antiHedgePreamble}\n\n${opts.prompt}`, 
-        stream: false,
-        options: {
-          temperature: 0.7,
-          top_p: 0.9,
-          num_predict: 2000 // Limit response length
-        }
-      });// Create AbortController for timeout
+      
+      // Call the server-side Lin chat endpoint
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
-
+      
       try {
-        const response = await fetch(url, {
+        const response = await fetch('/api/lin/generate', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body,
+          credentials: 'include',
+          body: JSON.stringify({
+            prompt: opts.prompt,
+            seat: opts.seat,
+            systemPrompt: opts.systemPrompt
+          }),
           signal: controller.signal,
-        });clearTimeout(timeoutId);
-
+        });
+        
+        clearTimeout(timeoutId);
+        
         if (!response.ok) {
-          const errorText = await response.text();let errorMessage = `Ollama error ${response.status}`;
+          const errorText = await response.text();
+          let errorMessage = `Cloud API error ${response.status}`;
           try {
             const errorJson = JSON.parse(errorText);
-            errorMessage = errorJson.error || errorMessage;
+            errorMessage = errorJson.error || errorJson.details || errorMessage;
           } catch {
             errorMessage = errorText || errorMessage;
           }
           throw new Error(errorMessage);
         }
-
-        const data = await response.json();if (!data.response) {
-          throw new Error('Empty response from Ollama. The model may not be responding correctly.');
-        }
-        return data.response;
-      } catch (error: any) {
-        clearTimeout(timeoutId);// Handle abort/timeout with better error message
-        if (error.name === 'AbortError') {
-          throw new Error(`Request timeout after ${timeout}ms. The model may be taking too long to respond. Try a faster model or increase timeout.`);
+        
+        const data = await response.json();
+        
+        if (!data.response) {
+          throw new Error('Empty response from cloud API');
         }
         
-        // Handle network errors
+        return data.response;
+      } catch (error: any) {
+        clearTimeout(timeoutId);
+        
+        if (error.name === 'AbortError') {
+          throw new Error(`Request timeout after ${timeout}ms. The API may be taking too long to respond.`);
+        }
+        
         if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
-          throw new Error(`Cannot connect to Ollama service. Make sure Ollama is running on localhost:11434.`);
+          throw new Error(`Cannot connect to cloud API service. Please check your connection.`);
         }
         
         throw error;
       }
     } catch (error: any) {
-      lastError = error;// Don't retry on certain errors
-      if (error.message?.includes('ModelNotAvailable') || 
-          error.message?.includes('timeout') ||
-          attempt === maxRetries) {
+      lastError = error;
+      
+      if (error.message?.includes('timeout') || attempt === maxRetries) {
         break;
       }
       
-      // Exponential backoff for retries (1s, 2s delays)
+      // Exponential backoff for retries
       if (attempt < maxRetries) {
         const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
         console.log(`Retrying ${opts.seat} seat (attempt ${attempt + 1}/${maxRetries}) after ${delay}ms delay...`);
@@ -192,8 +147,8 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {const tim
       }
     }
   }
-
-  // If we get here, all retries failedthrow new Error(`Seat ${opts.seat} failed after ${maxRetries} retries: ${lastError?.message || 'Unknown error'}`);
+  
+  throw new Error(`Seat ${opts.seat} failed after ${maxRetries} retries: ${lastError?.message || 'Unknown error'}`);
 }
 
 export { loadSeatConfig };
