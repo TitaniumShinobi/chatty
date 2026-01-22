@@ -113,13 +113,17 @@ export default function SimForge() {
     }
   }, [isCategoryDropdownOpen])
 
-  const loadData = async () => {try {
+  const loadData = async () => {
+    try {
       setIsLoading(true)
       // Load user's AIs
-      const userAIs = await aiService.getAllAIs()setUserGpts(userAIs)
+      const userAIs = await aiService.getAllAIs()
+      setUserGpts(userAIs)
       
       // Fetch store AIs from API
-      try {const storeAIs = await aiService.getStoreAIs()// Map store AIs to CommunityGPT format
+      try {
+        const storeAIs = await aiService.getStoreAIs()
+        // Map store AIs to CommunityGPT format
         const communityGPTs: CommunityGPT[] = storeAIs.map(ai => ({
           ...ai,
           author: 'Community', // TODO: Get actual author from user data
@@ -130,12 +134,15 @@ export default function SimForge() {
           isDownloaded: false,
           category: 'General', // TODO: Extract from metadata or capabilities
           tags: [] // TODO: Extract tags from metadata
-        }))setGpts(communityGPTs)
-      } catch (error) {console.error('Failed to load store AIs:', error)
+        }))
+        setGpts(communityGPTs)
+      } catch (error) {
+        console.error('Failed to load store AIs:', error)
         // Fallback to empty array if store fetch fails
         setGpts([])
       }
-    } catch (error) {console.error('Failed to load data:', error)
+    } catch (error) {
+      console.error('Failed to load data:', error)
     } finally {
       setIsLoading(false)
     }
