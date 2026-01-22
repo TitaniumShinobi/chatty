@@ -1,9 +1,9 @@
 <div align="center">
-  <img src="assets/chattynova.png" alt="Chatty Nova Star" width="200">
+  <img src="assets/stars/chattynova.png" alt="Chatty Nova Star" width="200">
 </div>
 
 <div align="left">
-  <img src="assets/chatty_collapsed.png" alt="Collapsed Chatty Logo" width="200">
+  <img src="assets/logo/collapseToggle/chatty_collapsed.png" alt="Collapsed Chatty Logo" width="200">
 </div>
 
 **Chatty** is a unified, persona-driven AI conversation platform with continuity, modular memory, and tone-specific rendering logic. Built for the local macOS desktop browser environment, Chatty enables fluid interactions with multiple AI constructs (Zen, Lin, Nova, and more) through a powerful UI that supports memory injection, tone overrides, JSON block inspection, and live code or markdown outputs.
