@@ -250,7 +250,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       {/* Top Section - Logo and Collapse */}
       <div className={collapsed ? "px-3 pt-3 pb-2" : "p-4"}>
         {!collapsed ? (
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 relative">
             <button
               onClick={() => navigate("/app")}
               className="flex items-center justify-center"
@@ -310,98 +310,100 @@ const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </button>
 
-            <div className="flex items-center gap-1 ml-auto relative">
-              {/* Global Search - Expandable from magnifying glass */}
-              {!isGlobalSearchExpanded ? (
-                <button
-                  onClick={() => setIsGlobalSearchExpanded(true)}
-                  className="p-2 rounded transition-colors hover:bg-[var(--chatty-highlight)]"
-                  style={{ color: "var(--chatty-text)" }}
-                  aria-label="Search Chatty"
-                  title="Search Chatty"
-                >
-                  <Search size={16} />
-                </button>
-              ) : (
-                <div className="absolute right-0 top-0 flex items-center" style={{ 
-                  width: 'calc(100% + 80px)',
-                  transform: 'translateX(-12px)',
-                  zIndex: 100
-                }}>
-                  <div 
-                    className="flex items-center gap-1 rounded-md px-2 py-1 w-full"
-                    style={{ 
-                      backgroundColor: 'var(--chatty-bg-input, var(--chatty-bg))',
-                      border: '1px solid var(--chatty-border)'
-                    }}
-                  >
-                    <Search size={14} style={{ color: 'var(--chatty-text)', opacity: 0.6 }} />
-                    <input
-                      ref={globalSearchInputRef}
-                      type="text"
-                      value={globalSearchQuery}
-                      onChange={(e) => setGlobalSearchQuery(e.target.value)}
-                      onKeyDown={handleGlobalSearchSubmit}
-                      onBlur={handleGlobalSearchBlur}
-                      placeholder="Search Chatty..."
-                      className="flex-1 bg-transparent outline-none text-sm"
-                      style={{ color: 'var(--chatty-text)' }}
-                    />
-                    <button
-                      onClick={() => {
-                        setIsGlobalSearchExpanded(false);
-                        setGlobalSearchQuery("");
-                      }}
-                      className="p-0.5 rounded hover:bg-[var(--chatty-highlight)]"
-                    >
-                      <X size={12} style={{ color: 'var(--chatty-text)' }} />
-                    </button>
-                  </div>
-                  {/* Auto-suggestions dropdown */}
-                  {globalSearchSuggestions.length > 0 && (
-                    <div 
-                      className="absolute top-full left-0 right-0 mt-1 rounded-md shadow-lg overflow-hidden"
-                      style={{ 
-                        backgroundColor: 'var(--chatty-bg-modal, var(--chatty-bg))',
-                        border: '1px solid var(--chatty-border)',
-                        zIndex: 101
-                      }}
-                    >
-                      {globalSearchSuggestions.map((suggestion, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => {
-                            setGlobalSearchQuery(suggestion);
-                            if (onOpenSearch) onOpenSearch();
-                            setIsGlobalSearchExpanded(false);
-                            setGlobalSearchQuery("");
-                          }}
-                          className="w-full px-3 py-2 text-left text-sm hover:bg-[var(--chatty-highlight)] transition-colors"
-                          style={{ color: 'var(--chatty-text)' }}
-                        >
-                          {suggestion}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+            <div className="flex items-center gap-1 ml-auto">
+              {/* Global Search - Magnifying glass button (always visible) */}
+              <button
+                onClick={() => setIsGlobalSearchExpanded(!isGlobalSearchExpanded)}
+                className="p-2 rounded transition-colors hover:bg-[var(--chatty-highlight)]"
+                style={{ color: "var(--chatty-text)" }}
+                aria-label="Search Chatty"
+                title="Search Chatty"
+              >
+                <Search size={16} />
+              </button>
               
               {/* Runtime dashboard button - auto-managed */}
-              {!isGlobalSearchExpanded && (
-                <button
-                  onClick={() => {}}
-                  className="p-2 rounded transition-colors opacity-50 cursor-not-allowed"
-                  style={{ color: "var(--chatty-text)" }}
-                  aria-label="Runtime auto-managed"
-                >
-                  <Gauge size={16} />
-                </button>
-              )}
-              {!isGlobalSearchExpanded && (
-                <ThemeToggleButton className="hover:bg-[var(--chatty-highlight)]" />
-              )}
+              <button
+                onClick={() => {}}
+                className="p-2 rounded transition-colors opacity-50 cursor-not-allowed"
+                style={{ color: "var(--chatty-text)" }}
+                aria-label="Runtime auto-managed"
+              >
+                <Gauge size={16} />
+              </button>
+              <ThemeToggleButton className="hover:bg-[var(--chatty-highlight)]" />
             </div>
+            
+            {/* Global Search Form - Fixed overlay next to Chatty star */}
+            {isGlobalSearchExpanded && (
+              <div 
+                className="absolute flex items-center"
+                style={{ 
+                  left: '48px',
+                  right: '140px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  zIndex: 100
+                }}
+              >
+                <div 
+                  className="flex items-center gap-2 rounded-md px-3 py-1.5 w-full shadow-lg"
+                  style={{ 
+                    backgroundColor: 'var(--chatty-bg-modal, var(--chatty-bg))',
+                    border: '1px solid var(--chatty-border)'
+                  }}
+                >
+                  <Search size={14} style={{ color: 'var(--chatty-text)', opacity: 0.6, flexShrink: 0 }} />
+                  <input
+                    ref={globalSearchInputRef}
+                    type="text"
+                    value={globalSearchQuery}
+                    onChange={(e) => setGlobalSearchQuery(e.target.value)}
+                    onKeyDown={handleGlobalSearchSubmit}
+                    onBlur={handleGlobalSearchBlur}
+                    placeholder="Search Chatty..."
+                    className="flex-1 bg-transparent outline-none text-sm min-w-0"
+                    style={{ color: 'var(--chatty-text)' }}
+                  />
+                  <button
+                    onClick={() => {
+                      setIsGlobalSearchExpanded(false);
+                      setGlobalSearchQuery("");
+                    }}
+                    className="p-1 rounded hover:bg-[var(--chatty-highlight)] flex-shrink-0"
+                  >
+                    <X size={14} style={{ color: 'var(--chatty-text)' }} />
+                  </button>
+                </div>
+                {/* Auto-suggestions dropdown */}
+                {globalSearchSuggestions.length > 0 && (
+                  <div 
+                    className="absolute top-full left-0 right-0 mt-1 rounded-md shadow-lg overflow-hidden"
+                    style={{ 
+                      backgroundColor: 'var(--chatty-bg-modal, var(--chatty-bg))',
+                      border: '1px solid var(--chatty-border)',
+                      zIndex: 101
+                    }}
+                  >
+                    {globalSearchSuggestions.map((suggestion, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => {
+                          setGlobalSearchQuery(suggestion);
+                          if (onOpenSearch) onOpenSearch();
+                          setIsGlobalSearchExpanded(false);
+                          setGlobalSearchQuery("");
+                        }}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-[var(--chatty-highlight)] transition-colors"
+                        style={{ color: 'var(--chatty-text)' }}
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <button
               className="p-1 rounded transition-colors"
