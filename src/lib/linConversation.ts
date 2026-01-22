@@ -663,6 +663,22 @@ export async function sendMessageToLin(
     gptConfig
   );
 
+  // Check if this is a simple greeting
+  const isGreeting = isSimpleGreeting(message);
+  console.log('🧠 [Lin] Is greeting?', isGreeting, 'Message:', message);
+
+  // STM: Create conversation context from recent messages
+  const stmContext = conversationHistory
+    .slice(-20)
+    .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
+    .join('\n');
+
+  // Build the full prompt
+  const fullPrompt = `${systemPrompt}
+
+${isGreeting ? 'NOTE: The user just sent a simple greeting. Respond conversationally and briefly - do not overwhelm them with setup instructions.' : ''}
+
+${stmContext ? `Recent conversation (STM):\n${stmContext}\n\n` : ''}User: ${message}
 
 
 Assistant:`;
@@ -687,7 +703,7 @@ Assistant:`;
   }
   
   // Tone drift detection with auto-retry
-  if (filteredAnalysis.driftDetected || this.detectMetaCommentary(assistantResponse)) {
+  if (filteredAnalysis.driftDetected || detectMetaCommentary(assistantResponse)) {
     console.warn(`⚠️ [Lin] Tone drift detected: ${filteredAnalysis.driftReason || 'Meta-commentary detected'}`);
     console.log('🔄 [Lin] Retrying with enhanced persona enforcement...');
     

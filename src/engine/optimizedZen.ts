@@ -225,7 +225,6 @@ export class OptimizedZenProcessor {
   }
 
   /**
-  /**
    * Process a message with optimized synth pipeline
    */
   async processMessage(
