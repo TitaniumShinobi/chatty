@@ -37,7 +37,7 @@ export function getChristmasThemeScript(): ThemeScript {
     activePeriod: {
       startMonth: 12,
       startDay: 1,
-      endMonth: 1,
+      endMonth: 12,
       endDay: 31
     },
     colors: {

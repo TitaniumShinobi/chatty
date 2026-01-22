@@ -301,7 +301,7 @@ const GeneralTab: React.FC = () => {
                         {script.name}
                       </span>
                       <p className="text-xs" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>
-                        Dec 1 - Jan 6
+                        Dec 1 - Dec 31
                       </p>
                     </div>
                   </div>
