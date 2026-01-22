@@ -49,6 +49,18 @@ docs/
 ```
 
 ## Recent Changes
+- **2026-01-22**: Dynamic Address Book & Instant GPT Sidebar Updates
+  - Changed Address Book from hardcoded inclusion list to dynamic exclusion filter
+  - Exclusion list: only `lin-001` (GPTCreator agent) is excluded
+  - All custom GPTs now automatically appear in Address Book without code changes
+  - Added `handleGPTCreated` callback for instant sidebar updates when GPTs are created
+  - Outlet context exposes `handleGPTCreated` and `forceRefreshConversations` to child pages
+  - GPTsPage and SimForge now trigger immediate sidebar thread creation on GPT creation
+  - Zen always sorted first in Address Book (blue pin badge)
+  - Key files:
+    - `src/components/Layout.tsx` - Dynamic filter and handleGPTCreated callback
+    - `src/pages/GPTsPage.tsx` - Uses outlet context for instant updates
+    - `src/pages/SimForge.tsx` - Uses outlet context for instant updates
 - **2026-01-22**: Dual-Provider Model Architecture (OpenRouter + Ollama)
   - Added hybrid cloud/self-hosted model support with provider-prefixed naming
   - Model format: `openrouter:{provider}/{model}` or `ollama:{model}:{size}`
