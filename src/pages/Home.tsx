@@ -29,25 +29,19 @@ export default function Home() {
   const [, setUser] = useState<User | null>(null)
   const [greeting, setGreeting] = useState('')
   const [inputValue, setInputValue] = useState('')
+  const collapseBase = isChristmasTheme ? '/assets/logo/christmas/collapseToggle_Christmas' : '/assets/logo/collapseToggle'
+  const collapseExt = isChristmasTheme ? '_Christmas.svg' : '.png'
   const primaryHoverFrames = useMemo(
-    () => isChristmasTheme ? [
-      chattyChristmas,
-      chattyChristmas,
-      chattyChristmas,
-      chattyChristmas,
-      chattyChristmas,
-      chattyChristmas,
-      chattyChristmas
-    ] : [
-      chattyLogo,
-      chattyLogo,
-      chattyLogo,
-      chattyLogo,
-      chattyLogo,
-      chattyLogo,
-      chattyLogo
+    () => [
+      isChristmasTheme ? chattyChristmas : chattyLogo,
+      `${collapseBase}/chatty_collapsed${collapseExt}`,
+      `${collapseBase}/chatty_collapsed_1${collapseExt}`,
+      `${collapseBase}/chatty_collapsed_2${collapseExt}`,
+      `${collapseBase}/chatty_collapsed_3${collapseExt}`,
+      `${collapseBase}/chatty_collapsed_4${collapseExt}`,
+      isChristmasTheme ? chattyChristmas : chattyLogo
     ],
-    [isChristmasTheme]
+    [isChristmasTheme, collapseBase, collapseExt]
   )
   const baseLogo = isChristmasTheme ? chattyChristmas : chattyLogo
   const inactivityBase = isChristmasTheme ? '/assets/logo/christmas/inactivityAnimations_Christmas' : '/assets/logo'
