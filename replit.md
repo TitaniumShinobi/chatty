@@ -49,6 +49,17 @@ docs/
 ```
 
 ## Recent Changes
+- **2026-01-22**: Dual-Provider Model Architecture (OpenRouter + Ollama)
+  - Added hybrid cloud/self-hosted model support with provider-prefixed naming
+  - Model format: `openrouter:{provider}/{model}` or `ollama:{model}:{size}`
+  - OpenRouter (cloud): Uses Replit AI Integration (AI_INTEGRATIONS_OPENROUTER_API_KEY)
+  - Ollama (self-hosted): Requires OLLAMA_HOST environment variable
+  - Key files:
+    - `src/lib/modelProviders.ts` - Model constants organized by provider and category
+    - `server/routes/linChat.js` - Multi-provider routing with health/models endpoints
+    - `docs/MODEL_PROVIDERS.md` - Comprehensive setup documentation
+  - Default models use OpenRouter for immediate cloud access
+  - GPTCreator model selection UI shows provider labels (Cloud/Self-hosted)
 - **2026-01-21**: Christmas Theme Enhancements
   - Sidebar star now uses `brightchatty_star.svg` when Christmas theme is active
   - Home page collapse animation uses Christmas SVG frames from `assets/logo/christmas/collapseToggle_Christmas/`
