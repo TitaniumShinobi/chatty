@@ -74,34 +74,24 @@ const Sidebar: React.FC<SidebarProps> = ({
     }
   }, [isAddressBookSearchActive]);
   
-  // Generate suggestions for global search based on actual conversation data
+  // Generate suggestions for global search - Chatty features only (not transcripts)
   useEffect(() => {
-    if (globalSearchQuery.length > 1) {
+    if (globalSearchQuery.length > 0) {
       const query = globalSearchQuery.toLowerCase();
       const suggestions: string[] = [];
       
-      // Search conversation titles
-      conversations.forEach(conv => {
-        if (conv.title?.toLowerCase().includes(query) && !suggestions.includes(conv.title)) {
-          suggestions.push(conv.title);
-        }
-      });
-      
-      // Search message content for keywords
-      conversations.forEach(conv => {
-        (conv.messages || []).forEach((msg: any) => {
-          const text = msg.text || msg.content || '';
-          if (text.toLowerCase().includes(query)) {
-            const preview = text.substring(0, 40) + (text.length > 40 ? '...' : '');
-            if (!suggestions.includes(preview)) {
-              suggestions.push(preview);
-            }
-          }
-        });
-      });
-      
-      // Add feature suggestions
-      const featureSuggestions = ["Settings", "Theme", "Library", "Projects", "VVAULT"];
+      // Chatty feature suggestions only
+      const featureSuggestions = [
+        "Settings", 
+        "Theme", 
+        "Library", 
+        "Projects", 
+        "VVAULT",
+        "Code",
+        "simForge",
+        "Address Book",
+        "GPT Creator"
+      ];
       featureSuggestions.forEach(feat => {
         if (feat.toLowerCase().includes(query) && !suggestions.includes(feat)) {
           suggestions.push(feat);
@@ -112,7 +102,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     } else {
       setGlobalSearchSuggestions([]);
     }
-  }, [globalSearchQuery, conversations]);
+  }, [globalSearchQuery]);
   
   // Helper to extract text from message (handles both text and packet content)
   const extractMessageText = useCallback((msg: any): string => {
@@ -381,7 +371,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     onChange={(e) => setGlobalSearchQuery(e.target.value)}
                     onKeyDown={handleGlobalSearchSubmit}
                     onBlur={handleGlobalSearchBlur}
-                    placeholder="Search Chatty..."
+                    placeholder="Search features..."
                     className="flex-1 bg-transparent outline-none text-sm min-w-0"
                     style={{ color: 'var(--chatty-text)' }}
                   />
