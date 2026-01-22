@@ -26,6 +26,7 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [editingConfig, setEditingConfig] = useState<AIConfig | null>(null);
   const [avatarBlobs, setAvatarBlobs] = useState<Record<string, string>>({});
+  const [failedAvatars, setFailedAvatars] = useState<Set<string>>(new Set());
 
   // Load avatars as blobs (fallback if proxy fails)
   useEffect(() => {
@@ -344,7 +345,7 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
                 >
                   {/* Avatar on LEFT */}
                   <div className="w-12 h-12 rounded-full flex items-center justify-center overflow-hidden">
-                    {avatarSrc ? (
+                    {avatarSrc && !failedAvatars.has(ai.id) ? (
                       <img
                         src={avatarSrc}
                         alt={ai.name}
@@ -359,16 +360,11 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
                             `✅ [AIsPage] Avatar loaded successfully for ${ai.name}`,
                           );
                         }}
-                        onError={(e) => {
-                          console.error(
-                            `❌ [AIsPage] Failed to load avatar for ${ai.name}:`,
-                            {
-                              avatarUrl: ai.avatar,
-                              blobUrl: avatarBlobs[ai.id],
-                              currentSrc: e.currentTarget.currentSrc,
-                            },
+                        onError={() => {
+                          console.warn(
+                            `⚠️ [AIsPage] Avatar failed to load for ${ai.name}, showing fallback`,
                           );
-                          e.currentTarget.style.display = "none";
+                          setFailedAvatars(prev => new Set(prev).add(ai.id));
                         }}
                       />
                     ) : (
