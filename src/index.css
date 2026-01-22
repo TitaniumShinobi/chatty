@@ -356,7 +356,7 @@
     opacity: 0.9;
   }
 
-  /* Default theme hover animations: All at 7s (synchronized rotation) */
+  /* Default theme hover animations: Starburst=7s, Ray=14s, Nova=28s */
   .chatty-star-wrapper:hover .chatty-starburst-left {
     animation: chatty-starburst-ccw 7s linear infinite;
   }
@@ -366,19 +366,19 @@
   }
 
   .chatty-star-wrapper:hover .chatty-starburst-nova-left {
-    animation: chatty-starburst-ccw 7s linear infinite;
+    animation: chatty-starburst-ccw 28s linear infinite;
   }
 
   .chatty-star-wrapper:hover .chatty-starburst-nova-right {
-    animation: chatty-starburst-cw 7s linear infinite;
+    animation: chatty-starburst-cw 28s linear infinite;
   }
 
   .chatty-star-wrapper:hover .chatty-starburst-ray-left {
-    animation: chatty-starburst-ccw 7s linear infinite;
+    animation: chatty-starburst-ccw 14s linear infinite;
   }
 
   .chatty-star-wrapper:hover .chatty-starburst-ray-right {
-    animation: chatty-starburst-cw 7s linear infinite;
+    animation: chatty-starburst-cw 14s linear infinite;
   }
 
   @keyframes chatty-starburst-cw {
