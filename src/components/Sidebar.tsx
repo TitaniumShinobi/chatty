@@ -310,41 +310,61 @@ const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </button>
 
-            <div className="flex items-center gap-1 ml-auto">
-              {/* Global Search - Magnifying glass button (always visible) */}
-              <button
-                onClick={() => setIsGlobalSearchExpanded(!isGlobalSearchExpanded)}
-                className="p-2 rounded transition-colors hover:bg-[var(--chatty-highlight)]"
-                style={{ color: "var(--chatty-text)" }}
-                aria-label="Search Chatty"
-                title="Search Chatty"
-              >
-                <Search size={16} />
-              </button>
-              
-              {/* Runtime dashboard button - auto-managed */}
-              <button
-                onClick={() => {}}
-                className="p-2 rounded transition-colors opacity-50 cursor-not-allowed"
-                style={{ color: "var(--chatty-text)" }}
-                aria-label="Runtime auto-managed"
-              >
-                <Gauge size={16} />
-              </button>
-              <ThemeToggleButton className="hover:bg-[var(--chatty-highlight)]" />
-            </div>
+            {/* Right side icons - hidden when search is expanded */}
+            {!isGlobalSearchExpanded && (
+              <>
+                <div className="flex items-center gap-1 ml-auto">
+                  {/* Global Search - Magnifying glass button */}
+                  <button
+                    onClick={() => setIsGlobalSearchExpanded(true)}
+                    className="p-2 rounded transition-colors hover:bg-[var(--chatty-highlight)]"
+                    style={{ color: "var(--chatty-text)" }}
+                    aria-label="Search Chatty"
+                    title="Search Chatty"
+                  >
+                    <Search size={16} />
+                  </button>
+                  
+                  {/* Runtime dashboard button - auto-managed */}
+                  <button
+                    onClick={() => {}}
+                    className="p-2 rounded transition-colors opacity-50 cursor-not-allowed"
+                    style={{ color: "var(--chatty-text)" }}
+                    aria-label="Runtime auto-managed"
+                  >
+                    <Gauge size={16} />
+                  </button>
+                  <ThemeToggleButton className="hover:bg-[var(--chatty-highlight)]" />
+                </div>
+
+                <button
+                  className="p-1 rounded transition-colors"
+                  style={{ color: "var(--chatty-text)" }}
+                  onClick={onToggleCollapsed}
+                  aria-label="Collapse sidebar"
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor =
+                      "var(--chatty-highlight)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "transparent";
+                  }}
+                >
+                  <PanelLeftClose
+                    size={16}
+                    style={{
+                      transition: "transform 0.2s ease",
+                      transform: "rotate(0deg)",
+                    }}
+                  />
+                </button>
+              </>
+            )}
             
-            {/* Global Search Form - Fixed overlay next to Chatty star */}
+            {/* Global Search Form - Replaces all icons when active */}
             {isGlobalSearchExpanded && (
               <div 
-                className="absolute flex items-center"
-                style={{ 
-                  left: '48px',
-                  right: '140px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  zIndex: 100
-                }}
+                className="flex items-center flex-1 ml-2"
               >
                 <div 
                   className="flex items-center gap-2 rounded-md px-3 py-1.5 w-full shadow-lg"
@@ -378,7 +398,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 {/* Auto-suggestions dropdown */}
                 {globalSearchSuggestions.length > 0 && (
                   <div 
-                    className="absolute top-full left-0 right-0 mt-1 rounded-md shadow-lg overflow-hidden"
+                    className="absolute top-full left-12 right-4 mt-1 rounded-md shadow-lg overflow-hidden"
                     style={{ 
                       backgroundColor: 'var(--chatty-bg-modal, var(--chatty-bg))',
                       border: '1px solid var(--chatty-border)',
@@ -404,28 +424,6 @@ const Sidebar: React.FC<SidebarProps> = ({
                 )}
               </div>
             )}
-
-            <button
-              className="p-1 rounded transition-colors"
-              style={{ color: "var(--chatty-text)" }}
-              onClick={onToggleCollapsed}
-              aria-label="Collapse sidebar"
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor =
-                  "var(--chatty-highlight)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "transparent";
-              }}
-            >
-              <PanelLeftClose
-                size={16}
-                style={{
-                  transition: "transform 0.2s ease",
-                  transform: "rotate(0deg)",
-                }}
-              />
-            </button>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-3">
