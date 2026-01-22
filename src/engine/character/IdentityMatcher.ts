@@ -53,13 +53,7 @@ export class IdentityMatcher {
       runId: 'fix-identity-matcher',
       hypothesisId: 'E'
     };
-    // Fire and forget - constructors cannot be async
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(logData)
-    }).catch(() => {});
-    // #endregion
+    // Fire and forget - constructors cannot be async// #endregion
     this.vvaultRoot = vvaultRoot;
   }
 

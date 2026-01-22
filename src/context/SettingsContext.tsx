@@ -282,15 +282,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 };
 
 export const useSettings = (): SettingsContextType => {
-  const context = useContext(SettingsContext);
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SettingsContext.tsx:267',message:'useSettings called',data:{hasContext:context!==undefined,contextType:context?'SettingsContextType':'undefined'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
-  if (context === undefined) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SettingsContext.tsx:269',message:'useSettings ERROR - no context',data:{stack:new Error().stack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
-    throw new Error('useSettings must be used within a SettingsProvider');
+  const context = useContext(SettingsContext);if (context === undefined) {throw new Error('useSettings must be used within a SettingsProvider');
   }
   return context;
 };

@@ -159,12 +159,7 @@ async function syncGPTsToDatabase(userId) {
   for (const gpt of gpts) {
     try {
       // Check if already exists in database
-      const existing = await aiManager.getAIByCallsign(gpt.constructCallsign, userId);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'syncGPTsFromVVAULT.js:132',message:'checking existing GPT',data:{constructCallsign:gpt.constructCallsign,exists:!!existing,existingId:existing?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-run',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
-      
-      if (existing) {
+      const existing = await aiManager.getAIByCallsign(gpt.constructCallsign, userId);if (existing) {
         console.log(`⏭️  [Sync] Skipping ${gpt.constructCallsign} - already in database as ${existing.id}`);
         skipped.push({
           constructCallsign: gpt.constructCallsign,
@@ -192,11 +187,7 @@ async function syncGPTsToDatabase(userId) {
         console.log(`🏪 [Sync] Syncing ${gpt.constructCallsign} as store GPT (privacy='store')`);
       }
       
-      const ai = await aiManager.createAI(aiData);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'syncGPTsFromVVAULT.js:183',message:'GPT created in database',data:{constructCallsign:gpt.constructCallsign,aiId:ai.id,privacy:ai.privacy},timestamp:Date.now(),sessionId:'debug-session',runId:'sync-run',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
-      console.log(`✅ [Sync] Created database entry for ${gpt.constructCallsign} → ${ai.id}`);
+      const ai = await aiManager.createAI(aiData);console.log(`✅ [Sync] Created database entry for ${gpt.constructCallsign} → ${ai.id}`);
       
       // Ensure all required files exist
       try {

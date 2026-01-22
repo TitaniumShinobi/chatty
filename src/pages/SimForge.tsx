@@ -113,29 +113,13 @@ export default function SimForge() {
     }
   }, [isCategoryDropdownOpen])
 
-  const loadData = async () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SimForge.tsx:116',message:'loadData entry',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
-    // #endregion
-    try {
+  const loadData = async () => {try {
       setIsLoading(true)
       // Load user's AIs
-      const userAIs = await aiService.getAllAIs()
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SimForge.tsx:121',message:'userAIs loaded',data:{count:userAIs.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
-      // #endregion
-      setUserGpts(userAIs)
+      const userAIs = await aiService.getAllAIs()setUserGpts(userAIs)
       
       // Fetch store AIs from API
-      try {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SimForge.tsx:125',message:'calling getStoreAIs',data:{baseUrl:aiService.baseUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
-        // #endregion
-        const storeAIs = await aiService.getStoreAIs()
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SimForge.tsx:126',message:'getStoreAIs returned',data:{count:storeAIs.length,ids:storeAIs.map(a=>a.id)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-        // #endregion
-        // Map store AIs to CommunityGPT format
+      try {const storeAIs = await aiService.getStoreAIs()// Map store AIs to CommunityGPT format
         const communityGPTs: CommunityGPT[] = storeAIs.map(ai => ({
           ...ai,
           author: 'Community', // TODO: Get actual author from user data
@@ -146,24 +130,12 @@ export default function SimForge() {
           isDownloaded: false,
           category: 'General', // TODO: Extract from metadata or capabilities
           tags: [] // TODO: Extract tags from metadata
-        }))
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SimForge.tsx:138',message:'setting gpts state',data:{count:communityGPTs.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-        // #endregion
-        setGpts(communityGPTs)
-      } catch (error) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SimForge.tsx:140',message:'getStoreAIs error',data:{error:error.message,errorName:error.name,stack:error.stack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
-        // #endregion
-        console.error('Failed to load store AIs:', error)
+        }))setGpts(communityGPTs)
+      } catch (error) {console.error('Failed to load store AIs:', error)
         // Fallback to empty array if store fetch fails
         setGpts([])
       }
-    } catch (error) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SimForge.tsx:145',message:'loadData error',data:{error:error.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
-      // #endregion
-      console.error('Failed to load data:', error)
+    } catch (error) {console.error('Failed to load data:', error)
     } finally {
       setIsLoading(false)
     }

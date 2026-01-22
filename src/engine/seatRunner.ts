@@ -43,12 +43,7 @@ let httpsAgent: any = undefined;
  * Lazy-load Node.js modules only when needed (Node.js environment only)
  */
 async function loadNodeModules() {
-  console.log(`🔍 [SeatRunner] loadNodeModules called - isBrowser: ${isBrowser}`);
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'seatRunner.ts:45', message: 'loadNodeModules entry', data: { isBrowser, alreadyLoaded: !!nodeModules.fs }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'J' }) }).catch(() => { });
-  // #endregion
-  
-  if (isBrowser) {
+  console.log(`🔍 [SeatRunner] loadNodeModules called - isBrowser: ${isBrowser}`);if (isBrowser) {
     console.error('❌ [SeatRunner] Cannot load Node.js modules in browser');
     throw new Error('Cannot load Node.js modules in browser');
   }
@@ -71,21 +66,13 @@ async function loadNodeModules() {
     console.log(`✅ [SeatRunner] Loaded node:https`);
     nodeModules.HttpAgent = nodeModules.http.Agent;
     nodeModules.HttpsAgent = nodeModules.https.Agent;
-    console.log(`✅ [SeatRunner] All Node.js modules loaded successfully`);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'seatRunner.ts:62', message: 'loadNodeModules success', data: { hasFs: !!nodeModules.fs, hasHttp: !!nodeModules.http }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'J' }) }).catch(() => { });
-    // #endregion
-  } catch (importError: any) {
+    console.log(`✅ [SeatRunner] All Node.js modules loaded successfully`);} catch (importError: any) {
     console.error(`❌ [SeatRunner] Failed to load Node.js modules:`, {
       message: importError?.message,
       name: importError?.name,
       stack: importError?.stack,
       code: importError?.code
-    });
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'seatRunner.ts:70', message: 'loadNodeModules failed', data: { errorMessage: importError?.message, errorName: importError?.name, errorCode: importError?.code }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'J' }) }).catch(() => { });
-    // #endregion
-    throw importError;
+    });throw importError;
   }
 
   // Initialize agents lazily
@@ -252,32 +239,16 @@ interface GenerateOptions {
  * - Timeout protection prevents resource leaks
  */
 export async function runSeat(opts: GenerateOptions): Promise<string> {
-  console.log(`🚀 [SeatRunner] runSeat called - seat: ${opts.seat}, modelOverride: ${opts.modelOverride || 'none'}, isBrowser: ${isBrowser}`);
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'seatRunner.ts:197', message: 'runSeat entry', data: { host: opts.host, port: opts.port, seat: opts.seat, modelOverride: opts.modelOverride, isBrowser }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'K' }) }).catch(() => { });
-  // #endregion
-
-  const host = (opts.host ?? envVars?.OLLAMA_HOST ?? 'http://localhost').replace(/\/$/, '');
+  console.log(`🚀 [SeatRunner] runSeat called - seat: ${opts.seat}, modelOverride: ${opts.modelOverride || 'none'}, isBrowser: ${isBrowser}`);const host = (opts.host ?? envVars?.OLLAMA_HOST ?? 'http://localhost').replace(/\/$/, '');
   const port = (opts.port ?? Number(envVars?.OLLAMA_PORT)) || DEFAULT_OLLAMA_PORT;
   const model = await resolveModel(opts.seat, opts.modelOverride);
   const timeout = opts.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS;
-  console.log(`🔧 [SeatRunner] Resolved - host: ${host}, port: ${port}, model: ${model}, timeout: ${timeout}ms, isBrowser: ${isBrowser}`);
-
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'seatRunner.ts:92', message: 'after host/port resolution', data: { host, port, model, isBrowser }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
-  // #endregion
-
-  // quick availability check via /api/tags
+  console.log(`🔧 [SeatRunner] Resolved - host: ${host}, port: ${port}, model: ${model}, timeout: ${timeout}ms, isBrowser: ${isBrowser}`);// quick availability check via /api/tags
   // Ensure host includes protocol for URL parsing, but don't add port if already present
   const baseUrl = host.startsWith('http') ? host : `http://${host}`;
   // Check if baseUrl already has a port
   const urlHasPort = /:\d+/.test(baseUrl.split('/')[2] || '');
-  const tagsURL = urlHasPort ? `${baseUrl}/api/tags` : `${baseUrl}:${port}/api/tags`;
-
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'seatRunner.ts:98', message: 'URL construction', data: { baseUrl, urlHasPort, tagsURL }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
-  // #endregion
-  try {
+  const tagsURL = urlHasPort ? `${baseUrl}/api/tags` : `${baseUrl}:${port}/api/tags`;try {
     const tagsJson = await fetchJSON(tagsURL, DEFAULT_FETCH_TIMEOUT_MS);
     if (Array.isArray(tagsJson.models)) {
       // const found = tagsJson.models.some((m: any) => m.name?.startsWith(model.split(":")[0]));
@@ -289,13 +260,7 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
 
   // Reuse baseUrl from above for the main API call
   const url = urlHasPort ? `${baseUrl}/api/generate` : `${baseUrl}:${port}/api/generate`;
-  const body = JSON.stringify({ model, prompt: opts.prompt, stream: false });
-
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'seatRunner.ts:110', message: 'before request', data: { url, bodyLength: body.length, isBrowser }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
-  // #endregion
-
-  if (isBrowser) {
+  const body = JSON.stringify({ model, prompt: opts.prompt, stream: false });if (isBrowser) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     try {
@@ -321,22 +286,10 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
   // Node.js: Use URL object and proper http.request options format
   const nodeMods = await loadNodeModules();
   const urlObj = new URL(url);
-  console.log(`🌐 [SeatRunner] Making HTTP request to ${urlObj.hostname}:${urlObj.port || DEFAULT_OLLAMA_PORT}${urlObj.pathname}`);
-
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'seatRunner.ts:127', message: 'URL parsed', data: { hostname: urlObj.hostname, port: urlObj.port, protocol: urlObj.protocol, pathname: urlObj.pathname, fullUrl: urlObj.href }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
-  // #endregion
-
-  return new Promise<string>((resolve, reject) => {
+  console.log(`🌐 [SeatRunner] Making HTTP request to ${urlObj.hostname}:${urlObj.port || DEFAULT_OLLAMA_PORT}${urlObj.pathname}`);return new Promise<string>((resolve, reject) => {
     // Use port from URL, or default to 11434 for Ollama (not 80)
     const requestPort = urlObj.port || DEFAULT_OLLAMA_PORT;
-    console.log(`📤 [SeatRunner] Creating HTTP request - hostname: ${urlObj.hostname}, port: ${requestPort}, path: ${urlObj.pathname}`);
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'seatRunner.ts:133', message: 'request options', data: { hostname: urlObj.hostname, requestPort, pathname: urlObj.pathname, protocol: urlObj.protocol }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
-    // #endregion
-
-    const requester = urlObj.protocol === 'https:' ? nodeMods.https!.request : nodeMods.http!.request;
+    console.log(`📤 [SeatRunner] Creating HTTP request - hostname: ${urlObj.hostname}, port: ${requestPort}, path: ${urlObj.pathname}`);const requester = urlObj.protocol === 'https:' ? nodeMods.https!.request : nodeMods.http!.request;
 
     const timeoutId = setTimeout(() => {
       req.destroy(); // Abort request
@@ -357,11 +310,7 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
       },
       (res) => {
         clearTimeout(timeoutId); // ✅ CLEAR ON SUCCESS
-        console.log(`📥 [SeatRunner] Response received - status: ${res.statusCode}`);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'seatRunner.ts:148', message: 'response received', data: { statusCode: res.statusCode, headers: Object.keys(res.headers) }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'D' }) }).catch(() => { });
-        // #endregion
-        let data = '';
+        console.log(`📥 [SeatRunner] Response received - status: ${res.statusCode}`);let data = '';
         res.on('data', (chunk) => (data += chunk));
         res.on('end', () => {
           if (res.statusCode && res.statusCode >= 400) {
@@ -372,27 +321,15 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
           }
           try {
             const parsed = JSON.parse(data);
-            console.log(`✅ [SeatRunner] Response parsed successfully (response length: ${parsed.response?.length || 0} chars)`);
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'seatRunner.ts:156', message: 'response parsed', data: { hasResponse: !!parsed.response, responseLength: parsed.response?.length || 0 }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'D' }) }).catch(() => { });
-            // #endregion
-            resolve(parsed.response ?? '');
-          } catch (err: any) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'seatRunner.ts:160', message: 'JSON parse error', data: { error: err.message, dataPreview: data.substring(0, 100) }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'D' }) }).catch(() => { });
-            // #endregion
-            console.error(`❌ [SeatRunner] JSON parse error: ${err.message}. Raw data: ${data.substring(0, 100)}...`);
+            console.log(`✅ [SeatRunner] Response parsed successfully (response length: ${parsed.response?.length || 0} chars)`);resolve(parsed.response ?? '');
+          } catch (err: any) {console.error(`❌ [SeatRunner] JSON parse error: ${err.message}. Raw data: ${data.substring(0, 100)}...`);
             reject(err);
           }
         });
       }
     );
     req.on('error', (err: any) => {
-      clearTimeout(timeoutId); // ✅ CLEAR ON ERROR
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'seatRunner.ts:167', message: 'request error', data: { error: err.message, code: err.code }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'E' }) }).catch(() => { });
-      // #endregion
-      console.error(`❌ [SeatRunner] Network request failed for ${opts.seat}:`, {
+      clearTimeout(timeoutId); // ✅ CLEAR ON ERRORconsole.error(`❌ [SeatRunner] Network request failed for ${opts.seat}:`, {
         message: err.message,
         code: err.code,
         name: err.name,

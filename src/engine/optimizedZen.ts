@@ -281,35 +281,19 @@ export class OptimizedZenProcessor {
         console.warn('[OptimizedZenProcessor] Failed to load user personalization:', error);
       }
 
-      // Identity loading
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:228', message: 'processMessage: identity check', data: { hasIdentityParam: !!identity, identityPrompt: !!identity?.prompt, identityConditioning: !!identity?.conditioning }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'E' }) }).catch(() => { });
-      // #endregion
-      if (identity) {
+      // Identity loadingif (identity) {
         console.log(`✅ [OptimizedZenProcessor] Using provided identity:`, {
           hasPrompt: !!identity.prompt,
           hasConditioning: !!identity.conditioning,
           promptLength: identity.prompt?.length || 0,
           conditioningLength: identity.conditioning?.length || 0
-        });
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:236', message: 'processMessage: setting identity from param', data: { promptLength: identity.prompt?.length || 0, conditioningLength: identity.conditioning?.length || 0 }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'E' }) }).catch(() => { });
-        // #endregion
-        this.identity = identity;
+        });this.identity = identity;
       } else {
-        console.log(`🔄 [OptimizedZenProcessor] No identity provided, attempting to load...`);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:239', message: 'processMessage: no identity param, calling loadZenIdentity', data: { userId }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'E' }) }).catch(() => { });
-        // #endregion
-        await this.loadZenIdentity(userId);
+        console.log(`🔄 [OptimizedZenProcessor] No identity provided, attempting to load...`);await this.loadZenIdentity(userId);
         console.log(`✅ [OptimizedZenProcessor] Identity loaded:`, {
           hasPrompt: !!this.identity.prompt,
           hasConditioning: !!this.identity.conditioning
-        });
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:243', message: 'processMessage: identity loaded from loadZenIdentity', data: { hasPrompt: !!this.identity.prompt, hasConditioning: !!this.identity.conditioning }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'E' }) }).catch(() => { });
-        // #endregion
-      }
+        });}
 
       // Check Ollama
       if (!this.config.skipOllamaCheck) {
@@ -347,17 +331,8 @@ export class OptimizedZenProcessor {
       });
 
       // Process
-      console.log(`🚀 [OptimizedZenProcessor] Calling processWithTimeout with timeout: ${this.config.timeoutMs}ms`);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:271', message: 'calling processWithTimeout', data: { messageLength: userMessage.length, contextLength: JSON.stringify(context).length }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
-      // #endregion
-      const response = await this.processWithTimeout(userMessage, context);
-      console.log(`✅ [OptimizedZenProcessor] processWithTimeout returned response (${response.length} chars)`);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:274', message: 'processWithTimeout returned', data: { responseLength: response.length }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
-      // #endregion
-
-      // Apply post-processing filters
+      console.log(`🚀 [OptimizedZenProcessor] Calling processWithTimeout with timeout: ${this.config.timeoutMs}ms`);const response = await this.processWithTimeout(userMessage, context);
+      console.log(`✅ [OptimizedZenProcessor] processWithTimeout returned response (${response.length} chars)`);// Apply post-processing filters
       let filteredResponse = response;
 
       // 1. Remove quotation marks and narrator leaks using OutputFilter
@@ -499,13 +474,7 @@ export class OptimizedZenProcessor {
 
     } catch (error: any) {
       this.metrics.processingTime = Date.now() - this.metrics.startTime;
-      const processingDuration = this.metrics.processingTime;
-
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:277', message: 'processMessage catch block', data: { errorMessage: error?.message, errorName: error?.name, hasStack: !!error?.stack, userId, messageLength: userMessage.length }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
-      // #endregion
-
-      // Detailed error logging for diagnosis
+      const processingDuration = this.metrics.processingTime;// Detailed error logging for diagnosis
       console.error('❌ [OptimizedZenProcessor] Processing failed after', processingDuration, 'ms');
       console.error('❌ [OptimizedZenProcessor] Error details:', {
         message: error.message,
@@ -524,16 +493,8 @@ export class OptimizedZenProcessor {
       });
 
       if (this.config.enableTimeoutFallback) {
-        console.log('🔄 [OptimizedZenProcessor] Attempting timeout fallback...');
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:295', message: 'calling generateTimeoutFallback', data: { originalError: error?.message }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
-        // #endregion
-        const fallbackResponse = await this.generateTimeoutFallback(userMessage, error);
-        this.metrics.fallbackUsed = true;
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:298', message: 'generateTimeoutFallback returned', data: { fallbackLength: fallbackResponse.length }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
-        // #endregion
-        console.log(`✅ [OptimizedZenProcessor] Fallback response generated (${fallbackResponse.length} chars)`);
+        console.log('🔄 [OptimizedZenProcessor] Attempting timeout fallback...');const fallbackResponse = await this.generateTimeoutFallback(userMessage, error);
+        this.metrics.fallbackUsed = true;console.log(`✅ [OptimizedZenProcessor] Fallback response generated (${fallbackResponse.length} chars)`);
         return { response: fallbackResponse, metrics: this.metrics };
       }
       throw error;
@@ -647,11 +608,7 @@ export class OptimizedZenProcessor {
   /**
    * Build a seat-specific prompt that carries identity + conditioning so helpers stay in-character.
    */
-  private buildSeatPrompt(seat: string, userMessage: string, context: any): string {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:427', message: 'buildSeatPrompt entry', data: { seat, hasIdentityPrompt: !!this.identity.prompt, hasIdentityConditioning: !!this.identity.conditioning, promptLength: this.identity.prompt?.length || 0, conditioningLength: this.identity.conditioning?.length || 0 }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'D' }) }).catch(() => { });
-    // #endregion
-    const role = getSeatRole(seat) ?? seat;
+  private buildSeatPrompt(seat: string, userMessage: string, context: any): string {const role = getSeatRole(seat) ?? seat;
     const baseIdentity = this.identity.prompt
       ? this.identity.prompt.trim()
       : 'YOU ARE ZEN (zen-001), primary Chatty construct orchestrating DeepSeek (coding), Mistral (creative), and Phi3 (conversational). Stay in-character and grounded.';
@@ -695,45 +652,23 @@ export class OptimizedZenProcessor {
 You are acting as the ${role} expert seat. Provide domain-specific analysis only; no smalltalk.
 
 ${contextBits.length ? contextBits.join('\n\n') + '\n\n' : ''}User message:
-${userMessage}`.trim();
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:445', message: 'buildSeatPrompt result', data: { seat, usingIdentityPrompt: !!this.identity.prompt, usingConditioning: !!this.identity.conditioning, seatPromptLength: seatPrompt.length }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'D' }) }).catch(() => { });
-    // #endregion
-
-    return seatPrompt;
+${userMessage}`.trim();return seatPrompt;
   }
 
   /**
    * Process message with timeout protection
    */
   private async processWithTimeout(userMessage: string, context: any): Promise<string> {
-    console.log(`🔄 [OptimizedZenProcessor] processWithTimeout called (timeout: ${this.config.timeoutMs}ms)`);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:412', message: 'processWithTimeout entry', data: { timeoutMs: this.config.timeoutMs }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'D' }) }).catch(() => { });
-    // #endregion
-    const timeoutPromise = new Promise<never>((_, reject) => {
+    console.log(`🔄 [OptimizedZenProcessor] processWithTimeout called (timeout: ${this.config.timeoutMs}ms)`);const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => {
         console.error(`⏱️ [OptimizedZenProcessor] Processing timeout after ${this.config.timeoutMs}ms`);
         reject(new Error('Processing timeout'));
       }, this.config.timeoutMs);
-    });
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:419', message: 'calling runOptimizedZen', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'D' }) }).catch(() => { });
-    // #endregion
-    const processPromise = this.runOptimizedZen(userMessage, context);
+    });const processPromise = this.runOptimizedZen(userMessage, context);
     try {
-      const result = await Promise.race([processPromise, timeoutPromise]);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:422', message: 'runOptimizedZen completed', data: { resultLength: result.length }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'D' }) }).catch(() => { });
-      // #endregion
-      console.log(`✅ [OptimizedZenProcessor] processWithTimeout completed successfully (${result.length} chars)`);
+      const result = await Promise.race([processPromise, timeoutPromise]);console.log(`✅ [OptimizedZenProcessor] processWithTimeout completed successfully (${result.length} chars)`);
       return result;
-    } catch (error: any) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:425', message: 'processWithTimeout catch', data: { errorMessage: error?.message, errorName: error?.name, isTimeout: error?.message?.includes('timeout') }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'E' }) }).catch(() => { });
-      // #endregion
-      console.error(`❌ [OptimizedZenProcessor] processWithTimeout failed:`, {
+    } catch (error: any) {console.error(`❌ [OptimizedZenProcessor] processWithTimeout failed:`, {
         message: error.message,
         name: error.name
       });
@@ -745,12 +680,7 @@ ${userMessage}`.trim();
    * Run optimized zen processing - STRICT 3-SEAT PARALLEL FLOW
    */
   private async runOptimizedZen(userMessage: string, context: any): Promise<string> {
-    console.log(`🚀 [OptimizedZenProcessor] runOptimizedZen called - Starting 3-seat parallel flow`);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:437', message: 'runOptimizedZen entry', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'F' }) }).catch(() => { });
-    // #endregion
-    
-    // TRIAD VALIDATION: Check all 3 seats are active before synthesis
+    console.log(`🚀 [OptimizedZenProcessor] runOptimizedZen called - Starting 3-seat parallel flow`);// TRIAD VALIDATION: Check all 3 seats are active before synthesis
     try {
       const { triadSanityCheck, routeToLinRecovery } = await import('../lib/orchestration/triad_sanity_check');
       const triadStatus = await triadSanityCheck(userMessage, 'zen-001');
@@ -800,17 +730,9 @@ ${userMessage}`.trim();
           modelOverride: modelTag
         }, 5000);
         const seatDuration = Date.now() - seatStartTime;
-        console.log(`✅ [OptimizedZenProcessor] ${seat} seat succeeded in ${seatDuration}ms (${result.length} chars)`);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:495', message: 'seat execution succeeded', data: { seat, resultLength: result.length }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'G' }) }).catch(() => { });
-        // #endregion
-        return result;
+        console.log(`✅ [OptimizedZenProcessor] ${seat} seat succeeded in ${seatDuration}ms (${result.length} chars)`);return result;
       } catch (err: any) {
-        const seatDuration = Date.now() - seatStartTime;
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:498', message: 'seat execution failed', data: { seat, errorMessage: err?.message, errorName: err?.name, model: getTag(seat) }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'G' }) }).catch(() => { });
-        // #endregion
-        console.error(`❌ [OptimizedZenProcessor] ${seat} seat failed after ${seatDuration}ms:`, {
+        const seatDuration = Date.now() - seatStartTime;console.error(`❌ [OptimizedZenProcessor] ${seat} seat failed after ${seatDuration}ms:`, {
           message: err.message,
           name: err.name,
           stack: err.stack,
@@ -1378,26 +1300,14 @@ I apologize, but I'm experiencing some technical difficulties with my full proce
 ${this.generateSimpleResponse(userMessage)}`;
 
     try {
-      console.log('🔄 [OptimizedZenProcessor] Attempting fallback Ollama call to phi3...');
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:951', message: 'calling fallback Ollama', data: { model: 'phi3:latest' }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'H' }) }).catch(() => { });
-      // #endregion
-      // Use a single fast model for fallback
+      console.log('🔄 [OptimizedZenProcessor] Attempting fallback Ollama call to phi3...');// Use a single fast model for fallback
       const fallbackResponse = await this.runSeatWithTimeout({
         seat: 'smalltalk',
         prompt: fallbackPrompt,
         modelOverride: 'phi3:latest'
-      }, 10000);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:958', message: 'fallback Ollama succeeded', data: { responseLength: fallbackResponse.length }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'H' }) }).catch(() => { });
-      // #endregion
-      console.log(`✅ [OptimizedZenProcessor] Fallback Ollama call succeeded (${fallbackResponse.length} chars)`);
+      }, 10000);console.log(`✅ [OptimizedZenProcessor] Fallback Ollama call succeeded (${fallbackResponse.length} chars)`);
       return fallbackResponse;
-    } catch (fallbackError: any) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'optimizedZen.ts:960', message: 'fallback Ollama failed', data: { errorMessage: fallbackError?.message, errorName: fallbackError?.name }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'I' }) }).catch(() => { });
-      // #endregion
-      // Ultimate fallback
+    } catch (fallbackError: any) {// Ultimate fallback
       console.error('❌ [OptimizedZenProcessor] Fallback Ollama call also failed:', {
         message: fallbackError?.message,
         name: fallbackError?.name,

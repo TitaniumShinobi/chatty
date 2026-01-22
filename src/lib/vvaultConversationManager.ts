@@ -403,29 +403,12 @@ export class VVAULTConversationManager {
     query: string,
     limit: number = 10,
     settings?: { personalization?: { allowMemory?: boolean } }
-  ): Promise<Array<{ context: string; response: string; timestamp: string; relevance: number }>> {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'vvaultConversationManager.ts:373', message: 'loadMemoriesForConstruct entry', data: { userId, constructCallsign, query, limit, hasSettings: !!settings, allowMemory: settings?.personalization?.allowMemory }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
-    // #endregion
-
-    // Check if memory is allowed
-    const { checkMemoryPermission } = await import('./memoryPermission');
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'vvaultConversationManager.ts:382', message: 'Before checkMemoryPermission', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
-    // #endregion
-    if (!checkMemoryPermission(settings, 'loadMemoriesForConstruct')) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'vvaultConversationManager.ts:384', message: 'Memory permission denied', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
-      // #endregion
-      return []; // Return empty array when memory is disabled
+  ): Promise<Array<{ context: string; response: string; timestamp: string; relevance: number }>> {// Check if memory is allowed
+    const { checkMemoryPermission } = await import('./memoryPermission');if (!checkMemoryPermission(settings, 'loadMemoriesForConstruct')) {return []; // Return empty array when memory is disabled
     }
 
     try {
-      if (this.isBrowserEnv()) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'vvaultConversationManager.ts:388', message: 'Browser env - before browserRequest', data: { constructCallsign, query, limit }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
-        // #endregion
-        // Query identity via API
+      if (this.isBrowserEnv()) {// Query identity via API
         const params = new URLSearchParams({
           constructCallsign,
           query,
@@ -435,23 +418,14 @@ export class VVAULTConversationManager {
         const response = await this.browserRequest<{ memories: Array<{ context: string; response: string; timestamp: string; relevance: number }> }>(
           `/identity/query?${params.toString()}`,
           { method: 'GET' }
-        );
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'vvaultConversationManager.ts:400', message: 'After browserRequest', data: { memoryCount: response?.memories?.length || 0 }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
-        // #endregion
-
-        return response?.memories || [];
+        );return response?.memories || [];
       } else {
         // Server-side path not available in browser bundle
         // Server should use identityService directly, not through this manager
         console.warn('⚠️ [VVAULTConversationManager] Server-side identity query not available in browser build');
         return [];
       }
-    } catch (error) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'vvaultConversationManager.ts:407', message: 'Error in loadMemoriesForConstruct', data: { errorMessage: error instanceof Error ? error.message : String(error) }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
-      // #endregion
-      console.error('❌ Failed to load identity for construct:', error);
+    } catch (error) {console.error('❌ Failed to load identity for construct:', error);
       // Return empty array on error (don't break conversation flow)
       return [];
     }

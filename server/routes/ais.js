@@ -107,21 +107,9 @@ router.get('/', async (req, res) => {
 });
 
 // Get all store/public AIs (for SimForge)
-router.get('/store', async (req, res) => {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'routes/ais.js:110',message:'GET /store entry',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
-  // #endregion
-  try {
-    const storeAIs = await aiManager.getStoreAIs();
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'routes/ais.js:113',message:'getStoreAIs returned',data:{count:storeAIs.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
-    res.json({ success: true, ais: storeAIs });
-  } catch (error) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'routes/ais.js:115',message:'GET /store error',data:{error:error.message,stack:error.stack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
-    // #endregion
-    console.error('Error fetching store AIs:', error);
+router.get('/store', async (req, res) => {try {
+    const storeAIs = await aiManager.getStoreAIs();res.json({ success: true, ais: storeAIs });
+  } catch (error) {console.error('Error fetching store AIs:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

@@ -45,16 +45,8 @@ export async function routeMessage(
   agentId: string,
   message: string,
   context: OrchestrationContext = {}
-): Promise<OrchestrationResponse> {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'orchestrationBridge.ts:44',message:'routeMessage: entry',data:{agentId,messageLength:message.length,hasContext:Object.keys(context).length>0},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'F'})}).catch(()=>{});
-  // #endregion
-  try {
-    // Call the Node.js bridge service via API endpoint
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'orchestrationBridge.ts:51',message:'routeMessage: calling API endpoint',data:{agentId,url:'/api/orchestration/route'},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'G'})}).catch(()=>{});
-    // #endregion
-    const response = await fetch('/api/orchestration/route', {
+): Promise<OrchestrationResponse> {try {
+    // Call the Node.js bridge service via API endpointconst response = await fetch('/api/orchestration/route', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -72,16 +64,8 @@ export async function routeMessage(
       throw new Error(error.error || `HTTP ${response.status}`);
     }
 
-    const result = await response.json();
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'orchestrationBridge.ts:69',message:'routeMessage: API response received',data:{agentId,status:result.status,ok:response.ok},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'H'})}).catch(()=>{});
-    // #endregion
-    return result as OrchestrationResponse;
-  } catch (error) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'orchestrationBridge.ts:72',message:'routeMessage: API error',data:{agentId,error:error instanceof Error?error.message:String(error)},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'I'})}).catch(()=>{});
-    // #endregion
-    // Return error response instead of throwing
+    const result = await response.json();return result as OrchestrationResponse;
+  } catch (error) {// Return error response instead of throwing
     return {
       agent_id: agentId,
       response: `Orchestration failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -107,9 +91,7 @@ export async function routeMessageWithFallback(
   fallbackHandler?: (agentId: string, message: string, context: OrchestrationContext) => Promise<any>
 ): Promise<OrchestrationResponse | any> {
   // #region agent log
-  const enabled = isOrchestrationEnabled();
-  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'orchestrationBridge.ts:91',message:'routeMessageWithFallback: entry',data:{agentId,enabled,hasFallback:!!fallbackHandler},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'J'})}).catch(()=>{});
-  // #endregion
+  const enabled = isOrchestrationEnabled();// #endregion
   // Check if orchestration is enabled
   if (!enabled) {
     if (fallbackHandler) {
@@ -127,17 +109,8 @@ export async function routeMessageWithFallback(
     
     // If orchestration returned an error status, try fallback
     if (result.status === 'error' && fallbackHandler) {
-      console.warn(`[OrchestrationBridge] Orchestration returned error status, using fallback`);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'orchestrationBridge.ts:113',message:'routeMessageWithFallback: using fallback due to error',data:{agentId,status:result.status},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'K'})}).catch(()=>{});
-      // #endregion
-      return await fallbackHandler(agentId, message, context);
-    }
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'orchestrationBridge.ts:118',message:'routeMessageWithFallback: returning orchestration result',data:{agentId,status:result.status},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'L'})}).catch(()=>{});
-    // #endregion
-    return result;
+      console.warn(`[OrchestrationBridge] Orchestration returned error status, using fallback`);return await fallbackHandler(agentId, message, context);
+    }return result;
   } catch (error) {
     console.warn(`[OrchestrationBridge] Orchestration failed: ${error}. Using fallback.`);
     

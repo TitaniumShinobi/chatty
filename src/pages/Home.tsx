@@ -33,9 +33,7 @@ const DEFAULT_ZEN_CANONICAL_SESSION_ID = 'zen-001_chat_with_zen-001';
 
 export default function Home() {
   // #region agent log
-  const outletContext = useOutletContext<LayoutContext>();
-  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Home.tsx:16',message:'useOutletContext result',data:{outletContext:outletContext,isUndefined:outletContext===undefined,hasThreads:!!outletContext?.threads,threadsType:typeof outletContext?.threads},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-  // #endregion
+  const outletContext = useOutletContext<LayoutContext>();// #endregion
   const { threads, sendMessage, newThread } = useOutletContext<LayoutContext>()
   const navigate = useNavigate()
   const { activeThemeScript } = useTheme()

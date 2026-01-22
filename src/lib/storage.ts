@@ -271,19 +271,11 @@ export class StorageManager {
         // Handle case where personality is stored as array [id, object] instead of just object
         const personalityObj = Array.isArray(personality) ? personality[1] : personality;
         
-        if (!personalityObj || typeof personalityObj !== 'object') {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:271',message:'storage: personality validation failed - not object',data:{personality,personalityObj,personalityType:typeof personalityObj},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-          // #endregion
-          console.log('🔍 Validation failed: personality is not an object:', personality)
+        if (!personalityObj || typeof personalityObj !== 'object') {console.log('🔍 Validation failed: personality is not an object:', personality)
           return false;
         }
         // Only require id and name, instructions can be optional
-        if (!personalityObj.id || !personalityObj.name) {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:276',message:'storage: personality validation failed - missing id or name',data:{personality,personalityObj,hasId:!!personalityObj.id,hasName:!!personalityObj.name,personalityKeys:Object.keys(personalityObj)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-          // #endregion
-          console.log('🔍 Validation failed: personality missing id or name:', personality)
+        if (!personalityObj.id || !personalityObj.name) {console.log('🔍 Validation failed: personality missing id or name:', personality)
           return false;
         }
       }

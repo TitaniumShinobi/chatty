@@ -28,11 +28,7 @@ const DEFAULT_TIMEOUT_MS = 5000;
  * @param {number} timeoutMs - Timeout in milliseconds (default: 5000)
  * @returns {Promise<object>} Orchestration response with agent_id, response, status
  */
-export async function routeViaOrchestration(agentId, message, context = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/orchestrationBridge.js:31',message:'routeViaOrchestration: entry',data:{agentId,messageLength:message.length,contextKeys:Object.keys(context).length,timeoutMs},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'R'})}).catch(()=>{});
-  // #endregion
-  return new Promise((resolve, reject) => {
+export async function routeViaOrchestration(agentId, message, context = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {return new Promise((resolve, reject) => {
     // Validate inputs
     if (!agentId || typeof agentId !== 'string') {
       reject(new Error('agentId must be a non-empty string'));
@@ -42,13 +38,7 @@ export async function routeViaOrchestration(agentId, message, context = {}, time
     if (!message || typeof message !== 'string') {
       reject(new Error('message must be a non-empty string'));
       return;
-    }
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/orchestrationBridge.js:45',message:'routeViaOrchestration: spawning Python process',data:{agentId,cliPath:ORCHESTRATION_CLI_PATH},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'S'})}).catch(()=>{});
-    // #endregion
-    
-    // Spawn Python process
+    }// Spawn Python process
     const pythonProcess = spawn('python3', [
       '-m', 'orchestration.cli',
       agentId,
@@ -63,19 +53,11 @@ export async function routeViaOrchestration(agentId, message, context = {}, time
     
     // Collect stdout
     pythonProcess.stdout.on('data', (data) => {
-      stdout += data.toString();
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/orchestrationBridge.js:58',message:'routeViaOrchestration: stdout data received',data:{agentId,dataLength:data.length,stdoutLength:stdout.length},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'T'})}).catch(()=>{});
-      // #endregion
-    });
+      stdout += data.toString();});
     
     // Collect stderr
     pythonProcess.stderr.on('data', (data) => {
-      stderr += data.toString();
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/orchestrationBridge.js:63',message:'routeViaOrchestration: stderr data received',data:{agentId,dataLength:data.length},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'U'})}).catch(()=>{});
-      // #endregion
-    });
+      stderr += data.toString();});
     
     // Set timeout
     const timeout = setTimeout(() => {
@@ -85,13 +67,7 @@ export async function routeViaOrchestration(agentId, message, context = {}, time
     
     // Handle process completion
     pythonProcess.on('close', (code) => {
-      clearTimeout(timeout);
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/orchestrationBridge.js:74',message:'routeViaOrchestration: Python process closed',data:{agentId,exitCode:code,stdoutLength:stdout.length,stderrLength:stderr.length},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'V'})}).catch(()=>{});
-      // #endregion
-      
-      if (code !== 0) {
+      clearTimeout(timeout);if (code !== 0) {
         // Try to parse error from stderr
         let errorMessage = `Python process exited with code ${code}`;
         try {
@@ -110,16 +86,8 @@ export async function routeViaOrchestration(agentId, message, context = {}, time
       
       // Parse response
       try {
-        const result = JSON.parse(stdout.trim());
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/orchestrationBridge.js:95',message:'routeViaOrchestration: parsing result',data:{agentId,status:result.status,agent_id:result.agent_id},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'W'})}).catch(()=>{});
-        // #endregion
-        resolve(result);
-      } catch (e) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'services/orchestrationBridge.js:99',message:'routeViaOrchestration: parse error',data:{agentId,error:e.message,stdoutPreview:stdout.substring(0,100)},timestamp:Date.now(),sessionId:'orchestration-test',runId:'test-run-1',hypothesisId:'X'})}).catch(()=>{});
-        // #endregion
-        reject(new Error(`Failed to parse orchestration response: ${e.message}. Output: ${stdout}`));
+        const result = JSON.parse(stdout.trim());resolve(result);
+      } catch (e) {reject(new Error(`Failed to parse orchestration response: ${e.message}. Output: ${stdout}`));
       }
     });
     

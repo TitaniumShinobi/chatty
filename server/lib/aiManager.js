@@ -976,16 +976,8 @@ export class AIManager {
   }
 
   // Get all AIs with privacy='store' (for SimForge/public store)
-  async getStoreAIs() {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiManager.js:894',message:'getStoreAIs entry',data:{hasDb:!!this.db},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
-    // #endregion
-    try {
-      if (!this.db) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiManager.js:897',message:'database not initialized',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
-        // #endregion
-        throw new Error('Database not initialized');
+  async getStoreAIs() {try {
+      if (!this.db) {throw new Error('Database not initialized');
       }
 
       // Query both ais and gpts tables for AIs with privacy='store'
@@ -995,17 +987,11 @@ export class AIManager {
         ORDER BY updated_at DESC
       `);
       const aisRows = aisStmt.all();
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiManager.js:906',message:'ais query result',data:{count:aisRows.length,ids:aisRows.map(r=>r.id),privacyValues:aisRows.map(r=>r.privacy),rows:aisRows.map(r=>({id:r.id,name:r.name,privacy:r.privacy}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
       
       // Debug: Also check total count and privacy distribution
       const totalAIs = this.db.prepare('SELECT COUNT(*) as count FROM ais').get();
       const privacyDist = this.db.prepare('SELECT privacy, COUNT(*) as count FROM ais GROUP BY privacy').all();
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiManager.js:918',message:'database stats',data:{totalAIs:totalAIs.count,privacyDist},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
-
+      
       const gptsStmt = this.db.prepare(`
         SELECT * FROM gpts 
         WHERE privacy = 'store' 
@@ -1014,23 +1000,13 @@ export class AIManager {
       let gptsRows = [];
       try {
         gptsRows = gptsStmt.all();
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiManager.js:915',message:'gpts query result',data:{count:gptsRows.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-        // #endregion
       } catch (error) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiManager.js:917',message:'gpts query error',data:{error:error.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
-        // #endregion
         // gpts table might not exist or might not have privacy column yet
         console.log(`ℹ️ [AIManager] Could not query gpts table for store AIs: ${error.message}`);
       }
 
       // Combine results
       const allRows = [...aisRows, ...gptsRows];
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiManager.js:922',message:'combined rows',data:{totalCount:allRows.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
-
       const storeAIs = [];
       for (const row of allRows) {
         try {
@@ -1109,16 +1085,10 @@ export class AIManager {
           console.error(`❌ [AIManager] Error processing store AI ${row.id}:`, error);
         }
       }
-
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiManager.js:987',message:'getStoreAIs success',data:{count:storeAIs.length,ids:storeAIs.map(a=>a.id)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
+      
       console.log(`📊 [AIManager] Found ${storeAIs.length} store AIs`);
       return storeAIs;
     } catch (error) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiManager.js:990',message:'getStoreAIs exception',data:{error:error.message,stack:error.stack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
-      // #endregion
       console.error('❌ [AIManager] Error fetching store AIs:', error);
       throw error;
     }

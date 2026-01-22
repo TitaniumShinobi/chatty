@@ -239,28 +239,7 @@ export default function Layout() {
   const initialPathRef = useRef(location.pathname);
 
   useEffect(() => {
-    console.log("📚 [Layout.tsx] Threads updated (length):", threads.length);
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "Layout.tsx:137",
-        message: "Layout: threads updated",
-        data: {
-          threadCount: threads.length,
-          threadIds: threads.map((t) => t.id),
-          threadTitles: threads.map((t) => t.title),
-        },
-        timestamp: Date.now(),
-        sessionId: "debug-session",
-        runId: "run1",
-        hypothesisId: "B",
-      }),
-    }).catch(() => {});
-    // #endregion
-
-    // Expose threads to window for message recovery (if browser is still open)
+    console.log("📚 [Layout.tsx] Threads updated (length):", threads.length);// Expose threads to window for message recovery (if browser is still open)
     // This allows recovery from React state if server restarts before messages are saved
     if (typeof window !== "undefined") {
       (window as any).__CHATTY_THREADS__ = threads;
@@ -294,27 +273,6 @@ export default function Layout() {
   }, [location.pathname]);
   const activeRuntimeId = (location.state as any)?.activeRuntimeId || null;
 
-  // #region agent log
-  useEffect(() => {
-    fetch("http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "Layout.tsx:147",
-        message: "Layout: activeRuntimeId state",
-        data: {
-          activeRuntimeId,
-          pathname: location.pathname,
-          state: location.state,
-        },
-        timestamp: Date.now(),
-        sessionId: "debug-session",
-        runId: "run2",
-        hypothesisId: "F",
-      }),
-    }).catch(() => {});
-  }, [activeRuntimeId, location.pathname, location.state]);
-  // #endregion
   const shareConversation = useMemo(
     () => threads.find((thread) => thread.id === shareConversationId) || null,
     [threads, shareConversationId],
@@ -623,48 +581,7 @@ export default function Layout() {
   function filterByActiveRuntime(
     threadList: Thread[],
     activeRuntimeId?: string | null,
-  ) {
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "Layout.tsx:286",
-        message: "filterByActiveRuntime: entry",
-        data: {
-          activeRuntimeId,
-          threadCount: threadList.length,
-          threadIds: threadList.map((t) => t.id),
-          threadConstructIds: threadList.map((t) => t.constructId),
-          threadRuntimeIds: threadList.map((t) => t.runtimeId),
-        },
-        timestamp: Date.now(),
-        sessionId: "debug-session",
-        runId: "run2",
-        hypothesisId: "G",
-      }),
-    }).catch(() => {});
-    // #endregion
-    if (!activeRuntimeId) {
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: "Layout.tsx:287",
-            message: "filterByActiveRuntime: no activeRuntimeId, returning all",
-            data: { threadCount: threadList.length },
-            timestamp: Date.now(),
-            sessionId: "debug-session",
-            runId: "run2",
-            hypothesisId: "G",
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
-      return threadList;
+  ) {if (!activeRuntimeId) {return threadList;
     }
     const target = activeRuntimeId.toLowerCase();
     const normalizedTarget = normalizeConstructId(target);
@@ -677,58 +594,8 @@ export default function Layout() {
         construct === normalizedTarget ||
         runtime === target ||
         normalizedIdHint === normalizedTarget ||
-        idHint === target;
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: "Layout.tsx:293",
-            message: "filterByActiveRuntime: thread check",
-            data: {
-              threadId: thread.id,
-              threadTitle: thread.title,
-              construct,
-              runtime,
-              idHint,
-              normalizedIdHint,
-              target,
-              normalizedTarget,
-              matches,
-            },
-            timestamp: Date.now(),
-            sessionId: "debug-session",
-            runId: "run2",
-            hypothesisId: "G",
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
-      return matches;
-    });
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "Layout.tsx:295",
-        message: "filterByActiveRuntime: result",
-        data: {
-          target,
-          filteredCount: filtered.length,
-          filteredIds: filtered.map((t) => t.id),
-          originalCount: threadList.length,
-        },
-        timestamp: Date.now(),
-        sessionId: "debug-session",
-        runId: "run2",
-        hypothesisId: "G",
-      }),
-    }).catch(() => {});
-    // #endregion
-    return filtered;
+        idHint === target;return matches;
+    });return filtered;
   }
 
   function routeIdForThread(threadId: string, threadList: Thread[]) {
@@ -845,26 +712,7 @@ export default function Layout() {
         // Load VVAULT conversations with timeout protection (but don't race - wait for actual result)
         let vvaultConversations: any[] = [];
         let backendUnavailable = false;
-        try {
-          // #region agent log
-          fetch(
-            "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                location: "Layout.tsx:413",
-                message: "Layout: calling loadAllConversations",
-                data: { vvaultUserId, userId: me.email || userId },
-                timestamp: Date.now(),
-                sessionId: "debug-session",
-                runId: "run2",
-                hypothesisId: "I",
-              }),
-            },
-          ).catch(() => {});
-          // #endregion
-          const vvaultPromise =
+        try {const vvaultPromise =
             conversationManager.loadAllConversations(vvaultUserId);
 
           // Use Promise.race but track which one won
@@ -877,32 +725,7 @@ export default function Layout() {
           }, 15000); // Increased to 15s, but don't resolve with empty array
 
           try {
-            vvaultConversations = await vvaultPromise;
-            // #region agent log
-            fetch(
-              "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  location: "Layout.tsx:423",
-                  message: "Layout: loadAllConversations completed",
-                  data: {
-                    count: vvaultConversations.length,
-                    conversationIds: vvaultConversations.map(
-                      (c) => c.sessionId,
-                    ),
-                    conversationTitles: vvaultConversations.map((c) => c.title),
-                  },
-                  timestamp: Date.now(),
-                  sessionId: "debug-session",
-                  runId: "run2",
-                  hypothesisId: "I",
-                }),
-              },
-            ).catch(() => {});
-            // #endregion
-            clearTimeout(timeoutId); // Cancel timeout if promise resolves first
+            vvaultConversations = await vvaultPromise;clearTimeout(timeoutId); // Cancel timeout if promise resolves first
             if (timeoutFired) {
               console.log(
                 "✅ [Layout.tsx] VVAULT loading completed after timeout warning",
@@ -942,36 +765,7 @@ export default function Layout() {
                 timestamp: m.timestamp,
               })) || [],
           });
-        });
-
-        // #region agent log
-        fetch(
-          "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              location: "Layout.tsx:418",
-              message: "Layout: VVAULT conversations received",
-              data: {
-                count: vvaultConversations.length,
-                conversations: vvaultConversations.map((c) => ({
-                  sessionId: c.sessionId,
-                  title: c.title,
-                  constructId: c.constructId,
-                  messageCount: c.messages?.length || 0,
-                })),
-              },
-              timestamp: Date.now(),
-              sessionId: "debug-session",
-              runId: "run1",
-              hypothesisId: "C",
-            }),
-          },
-        ).catch(() => {});
-        // #endregion
-
-        const loadedThreads: Thread[] = vvaultConversations.map((conv) => {
+        });const loadedThreads: Thread[] = vvaultConversations.map((conv) => {
           // Debug: Log raw conversation data before mapping
           console.log(`🔍 [Layout] Mapping conversation:`, {
             sessionId: conv.sessionId,
@@ -988,57 +782,10 @@ export default function Layout() {
           });
 
           // Normalize title: strip "Chat with " prefix and callsigns for address book display
-          let normalizedTitle = conv.title || "Zen";
-          // #region agent log
-          fetch(
-            "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                location: "Layout.tsx:422",
-                message: "Layout: title before normalization",
-                data: {
-                  originalTitle: conv.title,
-                  sessionId: conv.sessionId,
-                  constructId: conv.constructId,
-                },
-                timestamp: Date.now(),
-                sessionId: "debug-session",
-                runId: "run1",
-                hypothesisId: "C",
-              }),
-            },
-          ).catch(() => {});
-          // #endregion
-          // Remove "Chat with " prefix if present
+          let normalizedTitle = conv.title || "Zen";// Remove "Chat with " prefix if present
           normalizedTitle = normalizedTitle.replace(/^Chat with /i, "");
           // Extract construct name (remove callsigns like "-001")
-          normalizedTitle = normalizedTitle.replace(/-\d{3,}$/i, "");
-          // #region agent log
-          fetch(
-            "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                location: "Layout.tsx:426",
-                message: "Layout: title after normalization",
-                data: {
-                  normalizedTitle,
-                  originalTitle: conv.title,
-                  sessionId: conv.sessionId,
-                },
-                timestamp: Date.now(),
-                sessionId: "debug-session",
-                runId: "run1",
-                hypothesisId: "C",
-              }),
-            },
-          ).catch(() => {});
-          // #endregion
-
-          const constructId =
+          normalizedTitle = normalizedTitle.replace(/-\d{3,}$/i, "");const constructId =
             conv.constructId ||
             conv.importMetadata?.constructId ||
             conv.importMetadata?.connectedConstructId ||
@@ -1188,88 +935,16 @@ export default function Layout() {
           loadedThreads.some((t) => t.id === preferredUrlThreadId);
 
         let filteredThreads =
-          filterThreadsWithCanonicalPreference(loadedThreads);
-        // #region agent log
-        fetch(
-          "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              location: "Layout.tsx:492",
-              message: "Layout: after filterThreadsWithCanonicalPreference",
-              data: {
-                filteredCount: filteredThreads.length,
-                filteredIds: filteredThreads.map((t) => t.id),
-                filteredTitles: filteredThreads.map((t) => t.title),
-                loadedCount: loadedThreads.length,
-              },
-              timestamp: Date.now(),
-              sessionId: "debug-session",
-              runId: "run2",
-              hypothesisId: "G",
-            }),
-          },
-        ).catch(() => {});
-        // #endregion
-        const zenCanonicalThread = getCanonicalThreadForKeys(loadedThreads, [
+          filterThreadsWithCanonicalPreference(loadedThreads);const zenCanonicalThread = getCanonicalThreadForKeys(loadedThreads, [
           "zen",
           "zen-001",
         ]);
         const zenCanonicalHasMessages = Boolean(
           zenCanonicalThread && (zenCanonicalThread.messages?.length ?? 0) > 0,
-        );
-        // #region agent log
-        fetch(
-          "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              location: "Layout.tsx:494",
-              message: "Layout: before filterByActiveRuntime",
-              data: {
-                activeRuntimeId,
-                filteredCount: filteredThreads.length,
-                zenCanonicalThread: zenCanonicalThread?.id,
-                zenHasMessages: zenCanonicalHasMessages,
-              },
-              timestamp: Date.now(),
-              sessionId: "debug-session",
-              runId: "run2",
-              hypothesisId: "G",
-            }),
-          },
-        ).catch(() => {});
-        // #endregion
-        let runtimeScopedThreads = filterByActiveRuntime(
+        );let runtimeScopedThreads = filterByActiveRuntime(
           filteredThreads,
           activeRuntimeId,
-        );
-        // #region agent log
-        fetch(
-          "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              location: "Layout.tsx:495",
-              message: "Layout: after filterByActiveRuntime",
-              data: {
-                runtimeScopedCount: runtimeScopedThreads.length,
-                runtimeScopedIds: runtimeScopedThreads.map((t) => t.id),
-                runtimeScopedTitles: runtimeScopedThreads.map((t) => t.title),
-                activeRuntimeId,
-              },
-              timestamp: Date.now(),
-              sessionId: "debug-session",
-              runId: "run2",
-              hypothesisId: "G",
-            }),
-          },
-        ).catch(() => {});
-        // #endregion
-        const backendDown = backendUnavailable || isBackendUnavailable;
+        );const backendDown = backendUnavailable || isBackendUnavailable;
 
         // VVAULT-FIRST PATTERN: Never create local fallbacks when backend is down
         // This ensures single source of truth in Supabase/VVAULT
@@ -1408,33 +1083,7 @@ export default function Layout() {
           });
         }
 
-        console.log("🔄 [Layout.tsx] Setting threads in state...");
-        // #region agent log
-        fetch(
-          "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              location: "Layout.tsx:629",
-              message: "Layout: setThreads called",
-              data: {
-                sortedThreadsCount: sortedThreads.length,
-                sortedThreadsIds: sortedThreads.map((t) => t.id),
-                sortedThreadsTitles: sortedThreads.map((t) => t.title),
-                sortedThreadsConstructIds: sortedThreads.map(
-                  (t) => t.constructId,
-                ),
-              },
-              timestamp: Date.now(),
-              sessionId: "debug-session",
-              runId: "run2",
-              hypothesisId: "H",
-            }),
-          },
-        ).catch(() => {});
-        // #endregion
-        setThreads(sortedThreads);
+        console.log("🔄 [Layout.tsx] Setting threads in state...");setThreads(sortedThreads);
 
         const urlRuntimeHint = extractRuntimeKeyFromThreadId(urlThreadId);
         const shouldRedirectToCanonical = Boolean(
@@ -2002,43 +1651,8 @@ export default function Layout() {
     }
 
     // Dynamic persona detection + context lock
-    // #region agent log
     const envValue = import.meta.env.VITE_PERSONA_DETECTION_ENABLED;
-    fetch("http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "Layout.tsx:1061",
-        message: "sendMessage: checking persona detection env var",
-        data: {
-          envValue,
-          hasImportMeta: typeof import.meta !== "undefined",
-          hasEnv: typeof import.meta.env !== "undefined",
-        },
-        timestamp: Date.now(),
-        sessionId: "debug-session",
-        runId: "verify-fix",
-        hypothesisId: "A",
-      }),
-    }).catch(() => {});
-    // #endregion
-    const detectionEnabled = (envValue ?? "true") !== "false";
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "Layout.tsx:1065",
-        message: "sendMessage: detectionEnabled calculated",
-        data: { detectionEnabled, envValue },
-        timestamp: Date.now(),
-        sessionId: "debug-session",
-        runId: "verify-fix",
-        hypothesisId: "A",
-      }),
-    }).catch(() => {});
-    // #endregion
-    let detectedPersona:
+    const detectionEnabled = (envValue ?? "true") !== "false";let detectedPersona:
       | import("../engine/character/PersonaDetectionEngine").PersonaSignal
       | undefined;
     let personaContextLock:
@@ -2048,81 +1662,11 @@ export default function Layout() {
     let effectiveConstructId: string | null = thread.constructId || null;
 
     if (detectionEnabled) {
-      try {
-        // #region agent log
-        fetch(
-          "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              location: "Layout.tsx:1088",
-              message: "sendMessage: starting persona detection",
-              data: {
-                detectionEnabled,
-                hasWorkspaceContextBuilder:
-                  typeof WorkspaceContextBuilder !== "undefined",
-                isClass: typeof WorkspaceContextBuilder === "function",
-              },
-              timestamp: Date.now(),
-              sessionId: "debug-session",
-              runId: "fix-workspace-builder",
-              hypothesisId: "B",
-            }),
-          },
-        ).catch(() => {});
-        // #endregion
-        const workspaceBuilder = new WorkspaceContextBuilder();
-        // #region agent log
-        fetch(
-          "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              location: "Layout.tsx:1091",
-              message: "sendMessage: WorkspaceContextBuilder instantiated",
-              data: {
-                hasInstance: !!workspaceBuilder,
-                hasBuildMethod:
-                  typeof workspaceBuilder?.buildWorkspaceContext === "function",
-              },
-              timestamp: Date.now(),
-              sessionId: "debug-session",
-              runId: "fix-workspace-builder",
-              hypothesisId: "B",
-            }),
-          },
-        ).catch(() => {});
-        // #endregion
-        const workspaceContext = await workspaceBuilder.buildWorkspaceContext(
+      try {const workspaceBuilder = new WorkspaceContextBuilder();const workspaceContext = await workspaceBuilder.buildWorkspaceContext(
           user.id || user.sub || "",
           threadId,
           threads as any,
-        );
-        // #region agent log
-        fetch(
-          "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              location: "Layout.tsx:1096",
-              message: "sendMessage: workspaceContext built successfully",
-              data: {
-                hasContext: !!workspaceContext,
-                hasCurrentThread: !!workspaceContext?.currentThread,
-              },
-              timestamp: Date.now(),
-              sessionId: "debug-session",
-              runId: "fix-workspace-builder",
-              hypothesisId: "B",
-            }),
-          },
-        ).catch(() => {});
-        // #endregion
-
-        const conversationHistory = thread.messages.map((m) => {
+        );const conversationHistory = thread.messages.map((m) => {
           if (m.role === "assistant") {
             const payload = (m.packets || [])
               .map((p) => p?.payload?.content || "")
@@ -2492,34 +2036,7 @@ export default function Layout() {
           "❌ [Layout.tsx] Persona lock active but system prompt missing; aborting send",
         );
         return;
-      }
-
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: "Layout.tsx:1322",
-            message: "sendMessage: calling aiService.processMessage",
-            data: {
-              inputLength: input.length,
-              hasFiles: !!files,
-              filesCount: files?.length || 0,
-              effectiveConstructId,
-              hasPersonaSystemPrompt: !!personaSystemPrompt,
-              threadId,
-            },
-            timestamp: Date.now(),
-            sessionId: "debug-session",
-            runId: "fix-processmessage",
-            hypothesisId: "D",
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
-      const raw = await aiService.processMessage(
+      }const raw = await aiService.processMessage(
         input,
         files,
         {
@@ -2573,29 +2090,7 @@ export default function Layout() {
           },
           onFinalUpdate: async (
             finalPackets: import("../types").AssistantPacket[],
-          ) => {
-            // #region agent log
-            fetch(
-              "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  location: "Layout.tsx:1373",
-                  message: "sendMessage: onFinalUpdate called",
-                  data: {
-                    packetsCount: finalPackets.length,
-                    firstPacketOp: finalPackets[0]?.op,
-                  },
-                  timestamp: Date.now(),
-                  sessionId: "debug-session",
-                  runId: "fix-processmessage",
-                  hypothesisId: "D",
-                }),
-              },
-            ).catch(() => {});
-            // #endregion
-            const responseTimeMs = Date.now() - responseStart;
+          ) => {const responseTimeMs = Date.now() - responseStart;
             const filteredThinking: string[] = [];
 
             // Extract content from packets before saving
@@ -2801,30 +2296,6 @@ export default function Layout() {
         }
       }
     } catch (error) {
-      // #region agent log
-      const errorDetails = {
-        errorMessage: error instanceof Error ? error.message : String(error),
-        errorStack: error instanceof Error ? error.stack : undefined,
-        errorName: error instanceof Error ? error.name : typeof error,
-        errorType: error?.constructor?.name,
-      };
-      fetch(
-        "http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: "Layout.tsx:1460",
-            message: "sendMessage: error caught in main catch block",
-            data: errorDetails,
-            timestamp: Date.now(),
-            sessionId: "debug-session",
-            runId: "fix-workspace-builder",
-            hypothesisId: "C",
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
       console.error("❌ [Layout.tsx] Error in sendMessage:", error);
       // Handle error by replacing typing message with error
       const errorMsg: Message = {
@@ -3268,24 +2739,7 @@ export default function Layout() {
 
   function toggleSidebar() {
     setCollapsed((s) => !s);
-  }
-
-  // #region agent log
-  fetch("http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      location: "Layout.tsx:1796",
-      message: "Layout render - checking provider structure",
-      data: { hasUser: !!user, pathname: location.pathname },
-      timestamp: Date.now(),
-      sessionId: "debug-session",
-      runId: "run1",
-      hypothesisId: "H2",
-    }),
-  }).catch(() => {});
-  // #endregion
-  return (
+  }return (
     <SettingsProvider>
       <ThemeProvider user={user}>
         <div

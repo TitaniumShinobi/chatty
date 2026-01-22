@@ -114,17 +114,6 @@ r.post("/:id/messages", async (req, res) => {
     console.log(`   Conversation ID: ${req.params.id}`);
     console.log(`   User ID: ${req.user.id}`);
     console.log(`   Message: "${req.body.message || req.body.content}"`);
-    console.log(`   Body:`, JSON.stringify(req.body, null, 2));
-    // #region agent log - Entry point verification
-    try {
-      const { promises: fs } = await import('fs');
-      const entryLog = { location: 'conversations.js:110', message: 'POST /:id/messages entry', data: { conversationId: req.params.id, userId: req.user.id, constructId: req.body.constructId }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'ENTRY' };
-      await fs.appendFile('/Users/devonwoodson/Documents/GitHub/.cursor/debug.log', JSON.stringify(entryLog) + '\n');
-      console.log('✅✅✅ [DEBUG] Entry log written to file - THIS PROVES CODE IS EXECUTING ✅✅✅');
-    } catch (e) {
-      console.error('❌❌❌ [DEBUG] Entry log failed:', e.message, e.stack);
-    }
-    // #endregion
 
     // Store the user message
     const userMessage = await Store.createMessage(req.user.id, req.params.id, req.body);
@@ -148,17 +137,9 @@ r.post("/:id/messages", async (req, res) => {
     // Pre-load identity (prompt/conditioning) for Zen/Lin so it is available even when orchestration is off
     let identityFiles = null;
     if (constructId === 'zen-001' || constructId === 'zen' || constructId === 'lin-001' || constructId === 'lin') {
-      try {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'conversations.js:133', message: 'loading identity', data: { userId: req.user.id, constructId }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'F' }) }).catch(() => { });
-        // #endregion
-        console.log(`🔍 [Conversations API] Attempting to import identityLoader...`);
+      try {console.log(`🔍 [Conversations API] Attempting to import identityLoader...`);
         const identityLoader = await import('../lib/identityLoader.js');
-        console.log(`✅ [Conversations API] identityLoader imported successfully, calling loadIdentityFiles...`);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'conversations.js:137', message: 'identityLoader imported', data: { hasLoadIdentityFiles: !!identityLoader.loadIdentityFiles }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'F' }) }).catch(() => { });
-        // #endregion
-        // Load undertone capsule for lin-001 (mandatory layer)
+        console.log(`✅ [Conversations API] identityLoader imported successfully, calling loadIdentityFiles...`);// Load undertone capsule for lin-001 (mandatory layer)
         const includeUndertone = constructId === 'lin-001' || constructId === 'lin';
         identityFiles = await identityLoader.loadIdentityFiles(req.user.id, constructId, includeUndertone);
         console.log(`✅ [Conversations API] Identity loaded:`, { 
@@ -166,37 +147,7 @@ r.post("/:id/messages", async (req, res) => {
           hasConditioning: !!identityFiles?.conditioning,
           hasUndertone: !!identityFiles?.undertone 
         });
-        console.log(`🔍 [Conversations API] IdentityFiles value after load:`, {
-          isNull: identityFiles === null,
-          isUndefined: identityFiles === undefined,
-          type: typeof identityFiles,
-          hasPrompt: !!identityFiles?.prompt,
-          hasConditioning: !!identityFiles?.conditioning,
-          promptLength: identityFiles?.prompt?.length || 0,
-          conditioningLength: identityFiles?.conditioning?.length || 0
-        });
-        // #region agent log - Direct file write to ensure we capture this
-        const logEntry143 = { location: 'conversations.js:143', message: 'identity loaded', data: { hasPrompt: !!identityFiles?.prompt, hasConditioning: !!identityFiles?.conditioning, promptLength: identityFiles?.prompt?.length || 0, conditioningLength: identityFiles?.conditioning?.length || 0, isNull: identityFiles === null, isUndefined: identityFiles === undefined }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'F' };
-        // Write directly to file first, then try fetch
-        try {
-          const { promises: fs } = await import('fs');
-          await fs.appendFile('/Users/devonwoodson/Documents/GitHub/.cursor/debug.log', JSON.stringify(logEntry143) + '\n');
-          console.log('✅ [DEBUG] Log written to file: conversations.js:143');
-        } catch (fileErr) {
-          console.error('❌ [DEBUG] File write failed:', fileErr.message);
-        }
-        // Also try fetch
-        try {
-          await fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logEntry143) });
-        } catch (e) {
-          console.error('Debug log fetch failed:', e.message);
-        }
-        // #endregion
-      } catch (identityError) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'conversations.js:145', message: 'identity load failed', data: { error: identityError.message, errorName: identityError.name, stack: identityError.stack, code: identityError.code }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'F' }) }).catch(() => { });
-        // #endregion
-        console.error(`❌ [Conversations API] Failed to load identity for ${constructId}:`, identityError);
+      } catch (identityError) {console.error(`❌ [Conversations API] Failed to load identity for ${constructId}:`, identityError);
         console.error(`❌ [Conversations API] Error details:`, {
           message: identityError.message,
           name: identityError.name,
@@ -215,8 +166,6 @@ r.post("/:id/messages", async (req, res) => {
         const missingList = missingIdentityParts.join(' and ');
         const errMessage = `Zen identity incomplete (${missingList}). DeepSeek, Mistral, and Phi3 require prompt.txt + conditioning.txt before orchestration can run. Restore ${missingList} in the identity directory and retry.`;
         console.error(`❌ [Conversations API] ${errMessage}`);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'conversations.js:185', message: 'identity missing error', data: { constructId, missing: missingIdentityParts }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'F' }) }).catch(() => { });
         return res.status(500).json({
           ok: false,
           error: errMessage,
@@ -229,21 +178,11 @@ r.post("/:id/messages", async (req, res) => {
     // Optional: Use orchestration if enabled and constructId is zen or lin
     const useOrchestration = req.body.useOrchestration !== false &&
       (constructId === 'zen-001' || constructId === 'zen' ||
-        constructId === 'lin-001' || constructId === 'lin');
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'routes/conversations.js:59', message: 'conversations: orchestration check', data: { constructId, useOrchestration, gptId }, timestamp: Date.now(), sessionId: 'orchestration-test', runId: 'test-run-1', hypothesisId: 'AC' }) }).catch(() => { });
-    // #endregion
-
-    if (useOrchestration) {
+        constructId === 'lin-001' || constructId === 'lin');if (useOrchestration) {
       try {
         const { routeViaOrchestration, isOrchestrationEnabled } = await import('../services/orchestrationBridge.js');
 
-        const enabled = isOrchestrationEnabled();
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'routes/conversations.js:67', message: 'conversations: orchestration enabled check', data: { enabled, constructId }, timestamp: Date.now(), sessionId: 'orchestration-test', runId: 'test-run-1', hypothesisId: 'AD' }) }).catch(() => { });
-        // #endregion
-        if (enabled) {
+        const enabled = isOrchestrationEnabled();if (enabled) {
           // Extract agent ID from constructId
           const agentId = constructId.replace(/-001$/, '').replace(/-\d+$/, '') || 'zen';
           const message = req.body.message || req.body.content;
@@ -259,13 +198,7 @@ r.post("/:id/messages", async (req, res) => {
 
           if (identityFiles) {
             identityContext.identity = identityFiles;
-          }
-
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'routes/conversations.js:74', message: 'conversations: calling routeViaOrchestration', data: { agentId, constructId, messageLength: message.length, hasIdentity: !!identityContext.identity }, timestamp: Date.now(), sessionId: 'orchestration-test', runId: 'test-run-1', hypothesisId: 'AE' }) }).catch(() => { });
-          // #endregion
-
-          let orchestrationResult = await routeViaOrchestration(
+          }let orchestrationResult = await routeViaOrchestration(
             agentId,
             message,
             identityContext
@@ -318,9 +251,6 @@ r.post("/:id/messages", async (req, res) => {
                 const processor = new OptimizedZenProcessor(brain, config);
 
                 // Run processor with correct signature: (userMessage, conversationHistory[], userId, identityFiles)
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'conversations.js:231', message: 'orchestration delegation: calling processMessage', data: { hasIdentityFiles: !!identityFiles, hasPrompt: !!identityFiles?.prompt, hasConditioning: !!identityFiles?.conditioning }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
-                // #endregion
                 const zenResponse = await processor.processMessage(
                   req.body.message || req.body.content,
                   conversationHistory,
@@ -355,13 +285,7 @@ r.post("/:id/messages", async (req, res) => {
             }
 
             if (orchestrationResult.response) {
-              console.log(`✅ [Conversations API] Orchestration returned response for ${agentId}`);
-
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'routes/conversations.js:85', message: 'conversations: orchestration success', data: { agentId, status: orchestrationResult.status, responseLength: orchestrationResult.response.length }, timestamp: Date.now(), sessionId: 'orchestration-test', runId: 'test-run-1', hypothesisId: 'AF' }) }).catch(() => { });
-              // #endregion
-
-              // Store the AI response
+              console.log(`✅ [Conversations API] Orchestration returned response for ${agentId}`);// Store the AI response
               const aiMessage = await Store.createMessage(req.user.id, req.params.id, {
                 message: orchestrationResult.response,
                 content: orchestrationResult.response,
@@ -379,39 +303,17 @@ r.post("/:id/messages", async (req, res) => {
             }
           } else {
             console.warn(`⚠️ [Conversations API] Orchestration returned error status, falling back to direct routing`);
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'routes/conversations.js:114', message: 'conversations: orchestration error status, fallback', data: { agentId, status: orchestrationResult.status }, timestamp: Date.now(), sessionId: 'orchestration-test', runId: 'test-run-1', hypothesisId: 'AG' }) }).catch(() => { });
-            // #endregion
           }
         }
       } catch (orchestrationError) {
         console.warn(`⚠️ [Conversations API] Orchestration failed, falling back to direct routing:`, orchestrationError.message);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'routes/conversations.js:118', message: 'conversations: orchestration exception, fallback', data: { error: orchestrationError.message, constructId }, timestamp: Date.now(), sessionId: 'orchestration-test', runId: 'test-run-1', hypothesisId: 'AH' }) }).catch(() => { });
-        // #endregion
-        // Fall through to direct routing
       }
     }
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'routes/conversations.js:123', message: 'conversations: using direct GPT runtime', data: { gptId, constructId }, timestamp: Date.now(), sessionId: 'orchestration-test', runId: 'test-run-1', hypothesisId: 'AI' }) }).catch(() => { });
-    // #endregion
-
+    
     // 🔒 HARD-FORCE ZEN DELEGATION - Bypass all template/placeholder logic
     console.log(`🔍 [Conversations API] Checking Zen delegation - constructId: "${constructId}"`);
-    console.log(`🔍 [Conversations API] Zen match check:`, {
-      constructId,
-      matchesZen: (constructId === 'zen-001' || constructId === 'zen'),
-      willDelegate: (constructId === 'zen-001' || constructId === 'zen')
-    });
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'conversations.js:308', message: 'checking zen delegation', data: { constructId, matches: constructId === 'zen-001' || constructId === 'zen' }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'G' }) }).catch(() => { });
-    // #endregion
+    
     if (constructId === 'zen-001' || constructId === 'zen') {
-      console.log(`🚀 [Conversations API] ZEN DETECTED - Entering hard-force delegation path`);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'conversations.js:310', message: 'ZEN DETECTED - entering delegation', data: { constructId }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'G' }) }).catch(() => { });
-      // #endregion
       console.log('🚀 [Conversations API] ZEN DETECTED - Forcing OptimizedZenProcessor delegation');
 
       try {
@@ -447,42 +349,12 @@ r.post("/:id/messages", async (req, res) => {
         const processor = new OptimizedZenProcessor(brain, config);
 
         console.log('💬 [Conversations API] Processing message through OptimizedZenProcessor...');
-        console.log(`🔍 [Conversations API] IdentityFiles before processMessage:`, {
-          isNull: identityFiles === null,
-          isUndefined: identityFiles === undefined,
-          hasPrompt: !!identityFiles?.prompt,
-          hasConditioning: !!identityFiles?.conditioning,
-          promptLength: identityFiles?.prompt?.length || 0,
-          conditioningLength: identityFiles?.conditioning?.length || 0,
-          identityFilesType: typeof identityFiles
-        });
-        // #region agent log - Direct file write to ensure we capture this
-        const logEntry365 = { location: 'conversations.js:365', message: 'calling processMessage', data: { messageLength: (req.body.message || req.body.content || '').length, historyLength: conversationHistory.length, hasIdentity: !!identityFiles, identityFilesType: typeof identityFiles, promptLength: identityFiles?.prompt?.length || 0, conditioningLength: identityFiles?.conditioning?.length || 0, isNull: identityFiles === null, isUndefined: identityFiles === undefined }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'G' };
-        // Write directly to file first, then try fetch
-        try {
-          const { promises: fs } = await import('fs');
-          await fs.appendFile('/Users/devonwoodson/Documents/GitHub/.cursor/debug.log', JSON.stringify(logEntry365) + '\n');
-          console.log('✅ [DEBUG] Log written to file: conversations.js:365');
-        } catch (fileErr) {
-          console.error('❌ [DEBUG] File write failed:', fileErr.message);
-        }
-        // Also try fetch
-        try {
-          await fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(logEntry365) });
-        } catch (e) {
-          console.error('Debug log fetch failed:', e.message);
-        }
-        // #endregion
         const zenResponse = await processor.processMessage(
           req.body.message || req.body.content,
           conversationHistory,
           req.user.id,
           identityFiles
-        );
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'conversations.js:348', message: 'processMessage returned', data: { responseLength: zenResponse.response.length, hasMetrics: !!zenResponse.metrics }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'G' }) }).catch(() => { });
-        // #endregion
-        console.log(`✅ [Conversations API] OptimizedZenProcessor returned response (${zenResponse.response.length} chars)`);
+        );console.log(`✅ [Conversations API] OptimizedZenProcessor returned response (${zenResponse.response.length} chars)`);
 
         const aiMessage = await Store.createMessage(req.user.id, req.params.id, {
           content: zenResponse.response,
