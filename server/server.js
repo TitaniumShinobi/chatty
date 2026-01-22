@@ -25,6 +25,7 @@ import orchestrationRoutes from "./routes/orchestration.js";
 import diagnosticsRoutes from "./routes/diagnostics.js";
 import chatRoutes from './routes/chat.js';
 import linChatRoutes from './routes/linChat.js';
+import vsiRoutes from './routes/vsi.js';
 import { initializeChromaDB, shutdownChromaDB, getChromaDBService } from "./services/chromadbService.js";
 import { getChatService } from "./services/chatService.js";
 
@@ -820,6 +821,10 @@ app.use("/api/ais", requireAuth, aiRoutes);
 // Mount VVAULT routes with auth
 app.use("/api/vvault", requireAuth, vvaultRoutes);
 console.log('✅ [Server] VVAULT routes mounted at /api/vvault');
+
+// Mount VSI (Verified Sentient Intelligence) routes
+app.use("/api/vsi", vsiRoutes);
+console.log('✅ [Server] VSI zero-trust routes mounted at /api/vsi');
 
 // Mount unrestricted conversation routes with auth
 app.use("/api/conversation", requireAuth, unrestrictedConversationRoutes);
