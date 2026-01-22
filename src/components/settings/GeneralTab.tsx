@@ -18,7 +18,15 @@ import { Z_LAYERS } from "../../lib/zLayers";
 
 const GeneralTab: React.FC = () => {
   const { settings, updateGeneral } = useSettings();
-  const { setTheme, theme, sunTimes, themeScriptSetting, setThemeScriptSetting, availableThemeScripts, activeThemeScript } = useTheme();
+  const {
+    setTheme,
+    theme,
+    sunTimes,
+    themeScriptSetting,
+    setThemeScriptSetting,
+    availableThemeScripts,
+    activeThemeScript,
+  } = useTheme();
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
   const themeOptions = [
@@ -75,9 +83,9 @@ const GeneralTab: React.FC = () => {
     if (setting === "theme") {
       // Map display values to theme context values
       const themeMap: Record<string, "auto" | "light" | "night"> = {
-        "Auto": "auto",
-        "Light": "light", 
-        "Dark": "night"
+        Auto: "auto",
+        Light: "light",
+        Dark: "night",
       };
       const themeValue = themeMap[value] || "auto";
       setTheme(themeValue);
@@ -121,7 +129,16 @@ const GeneralTab: React.FC = () => {
                   className="text-xs"
                   style={{ color: "var(--chatty-text)", opacity: 0.5 }}
                 >
-                  {Intl.DateTimeFormat().resolvedOptions().timeZone} · ☀️{sunTimes.sunrise.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · 🌙{sunTimes.sunset.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                  {Intl.DateTimeFormat().resolvedOptions().timeZone.split('/').pop()?.replace(/_/g, ' ')} · ☀️
+                  {sunTimes.sunrise.toLocaleTimeString([], {
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}{" "}
+                  · 🌙
+                  {sunTimes.sunset.toLocaleTimeString([], {
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}
                 </span>
               )}
               <span
@@ -205,10 +222,10 @@ const GeneralTab: React.FC = () => {
               {activeThemeScript && (
                 <span
                   className="text-xs px-2 py-0.5 rounded"
-                  style={{ 
-                    backgroundColor: "var(--chatty-highlight)", 
+                  style={{
+                    backgroundColor: "var(--chatty-highlight)",
                     color: "var(--chatty-text)",
-                    opacity: 0.8 
+                    opacity: 0.8,
                   }}
                 >
                   Active
@@ -218,9 +235,13 @@ const GeneralTab: React.FC = () => {
                 className="text-sm"
                 style={{ color: "var(--chatty-text)", opacity: 0.7 }}
               >
-                {themeScriptSetting === 'none' ? 'None' : 
-                 themeScriptSetting === 'auto' ? 'Auto' :
-                 availableThemeScripts.find(s => s.id === themeScriptSetting)?.name || themeScriptSetting}
+                {themeScriptSetting === "none"
+                  ? "None"
+                  : themeScriptSetting === "auto"
+                    ? "Auto"
+                    : availableThemeScripts.find(
+                        (s) => s.id === themeScriptSetting,
+                      )?.name || themeScriptSetting}
               </span>
               <span style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
                 ›
@@ -239,55 +260,78 @@ const GeneralTab: React.FC = () => {
               <div
                 className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-100 transition-colors"
                 style={{
-                  backgroundColor: themeScriptSetting === 'none' ? "#feffaf" : "transparent",
+                  backgroundColor:
+                    themeScriptSetting === "none" ? "#feffaf" : "transparent",
                 }}
                 onClick={() => {
-                  setThemeScriptSetting('none');
+                  setThemeScriptSetting("none");
                   setOpenDropdown(null);
                 }}
               >
                 <div className="flex items-center gap-3">
-                  <Palette size={16} style={{ color: "var(--chatty-icon)", opacity: 0.7 }} />
-                  <span className="text-sm" style={{ color: "var(--chatty-text)" }}>
+                  <Palette
+                    size={16}
+                    style={{ color: "var(--chatty-icon)", opacity: 0.7 }}
+                  />
+                  <span
+                    className="text-sm"
+                    style={{ color: "var(--chatty-text)" }}
+                  >
                     None
                   </span>
                 </div>
-                {themeScriptSetting === 'none' && (
+                {themeScriptSetting === "none" && (
                   <Check size={16} style={{ color: "var(--chatty-text)" }} />
                 )}
               </div>
               <div
                 className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-100 transition-colors"
                 style={{
-                  backgroundColor: themeScriptSetting === 'auto' ? "#feffaf" : "transparent",
+                  backgroundColor:
+                    themeScriptSetting === "auto" ? "#feffaf" : "transparent",
                 }}
                 onClick={() => {
-                  setThemeScriptSetting('auto');
+                  setThemeScriptSetting("auto");
                   setOpenDropdown(null);
                 }}
               >
                 <div className="flex items-center gap-3">
-                  <Sparkles size={16} style={{ color: "var(--chatty-icon)", opacity: 0.7 }} />
+                  <Sparkles
+                    size={16}
+                    style={{ color: "var(--chatty-icon)", opacity: 0.7 }}
+                  />
                   <div>
-                    <span className="text-sm" style={{ color: "var(--chatty-text)" }}>
+                    <span
+                      className="text-sm"
+                      style={{ color: "var(--chatty-text)" }}
+                    >
                       Auto
                     </span>
-                    <p className="text-xs" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>
+                    <p
+                      className="text-xs"
+                      style={{ color: "var(--chatty-text)", opacity: 0.6 }}
+                    >
                       Calendar-based themes
                     </p>
                   </div>
                 </div>
-                {themeScriptSetting === 'auto' && (
+                {themeScriptSetting === "auto" && (
                   <Check size={16} style={{ color: "var(--chatty-text)" }} />
                 )}
               </div>
-              <div className="border-t" style={{ borderColor: "var(--chatty-line)" }} />
+              <div
+                className="border-t"
+                style={{ borderColor: "var(--chatty-line)" }}
+              />
               {availableThemeScripts.map((script) => (
                 <div
                   key={script.id}
                   className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-100 transition-colors"
                   style={{
-                    backgroundColor: themeScriptSetting === script.id ? "#feffaf" : "transparent",
+                    backgroundColor:
+                      themeScriptSetting === script.id
+                        ? "#feffaf"
+                        : "transparent",
                   }}
                   onClick={() => {
                     setThemeScriptSetting(script.id);
@@ -295,13 +339,22 @@ const GeneralTab: React.FC = () => {
                   }}
                 >
                   <div className="flex items-center gap-3">
-                    <TreePine size={16} style={{ color: "#228B22", opacity: 0.9 }} />
+                    <TreePine
+                      size={16}
+                      style={{ color: "#228B22", opacity: 0.9 }}
+                    />
                     <div>
-                      <span className="text-sm" style={{ color: "var(--chatty-text)" }}>
+                      <span
+                        className="text-sm"
+                        style={{ color: "var(--chatty-text)" }}
+                      >
                         {script.name}
                       </span>
-                      <p className="text-xs" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>
-                        Dec 1 - Dec 31
+                      <p
+                        className="text-xs"
+                        style={{ color: "var(--chatty-text)", opacity: 0.6 }}
+                      >
+                        Fri Dec 25
                       </p>
                     </div>
                   </div>
@@ -625,7 +678,6 @@ const GeneralTab: React.FC = () => {
               updateGeneral({ showAdditionalModels: toggled })
             }
             size="md"
-            useNova={false}
           />
         </div>
       </div>

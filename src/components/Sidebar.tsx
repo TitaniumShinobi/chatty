@@ -19,7 +19,7 @@ import { ThemeToggleButton } from "./ThemeToggleButton";
 import { useTheme } from "../lib/ThemeContext";
 
 // Star assets
-import brightchattyStar from "@assets/stars/brightchatty_star.svg";
+import litchattyStar from "@assets/stars/litChatty_star.svg";
 import chattyStar from "@assets/stars/chatty_star.png";
 import { Z_LAYERS } from "../lib/zLayers";
 
@@ -48,7 +48,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const { actualTheme, activeThemeScript } = useTheme();
   
   const isChristmasTheme = activeThemeScript?.id === 'christmas';
-  const starImage = isChristmasTheme ? brightchattyStar : chattyStar;
+  const starImage = isChristmasTheme ? litchattyStar : chattyStar;
 
   const isActiveRoute = useMemo(
     () => (path: string) => location.pathname === path,
