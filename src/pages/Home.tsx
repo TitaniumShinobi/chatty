@@ -8,6 +8,20 @@ import { useTheme } from '../lib/ThemeContext'
 import chattyChristmas from '@assets/logo/christmas/Chatty_Christmas.svg'
 import chattyLogo from '@assets/logo/Chatty.png'
 
+// Collapse animation frames (default theme)
+import collapseFrame0 from '@assets/logo/collapseToggle/chatty_collapsed.png'
+import collapseFrame1 from '@assets/logo/collapseToggle/chatty_collapsed_1.png'
+import collapseFrame2 from '@assets/logo/collapseToggle/chatty_collapsed_2.png'
+import collapseFrame3 from '@assets/logo/collapseToggle/chatty_collapsed_3.png'
+import collapseFrame4 from '@assets/logo/collapseToggle/chatty_collapsed_4.png'
+
+// Collapse animation frames (Christmas theme)
+import collapseChristmas0 from '@assets/logo/christmas/collapseToggle_Christmas/chatty_collapsed_Christmas.svg'
+import collapseChristmas1 from '@assets/logo/christmas/collapseToggle_Christmas/chatty_collapsed_1_Christmas.svg'
+import collapseChristmas2 from '@assets/logo/christmas/collapseToggle_Christmas/chatty_collapsed_2_Christmas.svg'
+import collapseChristmas3 from '@assets/logo/christmas/collapseToggle_Christmas/chatty_collapsed_3_Christmas.svg'
+import collapseChristmas4 from '@assets/logo/christmas/collapseToggle_Christmas/chatty_collapsed_4_Christmas.svg'
+
 interface LayoutContext {
   threads: any[]
   sendMessage: (threadId: string, text: string, files: File[]) => void
@@ -29,19 +43,25 @@ export default function Home() {
   const [, setUser] = useState<User | null>(null)
   const [greeting, setGreeting] = useState('')
   const [inputValue, setInputValue] = useState('')
-  const collapseBase = isChristmasTheme ? '/assets/logo/christmas/collapseToggle_Christmas' : '/assets/logo/collapseToggle'
-  const collapseExt = isChristmasTheme ? '_Christmas.svg' : '.png'
   const primaryHoverFrames = useMemo(
-    () => [
-      isChristmasTheme ? chattyChristmas : chattyLogo,
-      `${collapseBase}/chatty_collapsed${collapseExt}`,
-      `${collapseBase}/chatty_collapsed_1${collapseExt}`,
-      `${collapseBase}/chatty_collapsed_2${collapseExt}`,
-      `${collapseBase}/chatty_collapsed_3${collapseExt}`,
-      `${collapseBase}/chatty_collapsed_4${collapseExt}`,
-      isChristmasTheme ? chattyChristmas : chattyLogo
+    () => isChristmasTheme ? [
+      chattyChristmas,
+      collapseChristmas0,
+      collapseChristmas1,
+      collapseChristmas2,
+      collapseChristmas3,
+      collapseChristmas4,
+      chattyChristmas
+    ] : [
+      chattyLogo,
+      collapseFrame0,
+      collapseFrame1,
+      collapseFrame2,
+      collapseFrame3,
+      collapseFrame4,
+      chattyLogo
     ],
-    [isChristmasTheme, collapseBase, collapseExt]
+    [isChristmasTheme]
   )
   const baseLogo = isChristmasTheme ? chattyChristmas : chattyLogo
   const inactivityBase = isChristmasTheme ? '/assets/logo/christmas/inactivityAnimations_Christmas' : '/assets/logo'
