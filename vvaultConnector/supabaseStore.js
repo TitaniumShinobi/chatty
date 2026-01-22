@@ -134,9 +134,14 @@ async function readConversationsFromVVAULTApi(userEmailOrId, constructId = null)
 
     // List all constructs and fetch their transcripts
     const constructs = await vvaultApi.listConstructs();
-    if (!constructs || constructs.length === 0) {
+    if (constructs === null) {
+      // API call failed (503, timeout, etc) - return null to trigger Supabase fallback
+      console.log('⚠️ [SupabaseStore] VVAULT API unreachable, will use Supabase fallback');
+      return null;
+    }
+    if (constructs.length === 0) {
       console.log('⚠️ [SupabaseStore] VVAULT API returned no constructs');
-      return []; // Return empty array, not null - API is reachable but no data
+      return []; // Return empty array - API is reachable but no data
     }
 
     // Deduplicate constructs by construct_id

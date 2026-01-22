@@ -807,20 +807,25 @@ export default function Layout() {
 
           // Map messages with validation
           const mappedMessages = (conv.messages || [])
-            .map((msg: any) => {
-              if (!msg || !msg.id) {
-                console.warn("⚠️ [Layout] Invalid message found:", msg);
+            .map((msg: any, idx: number) => {
+              if (!msg || (!msg.content && !msg.text)) {
+                console.warn("⚠️ [Layout] Invalid message found (no content):", msg);
                 return null;
               }
+              // Generate ID if not present (messages from Supabase may not have IDs)
+              const messageId = msg.id || `${conv.sessionId}_msg_${idx}_${Date.now()}`;
+              const messageContent = msg.content || msg.text || "";
+              const messageTimestamp = msg.timestamp || msg.ts || new Date().toISOString();
+              
               return {
-                id: msg.id,
+                id: messageId,
                 role: msg.role,
-                text: msg.content,
+                text: messageContent,
                 packets:
                   msg.role === "assistant"
-                    ? [{ op: "answer.v1", payload: { content: msg.content } }]
+                    ? [{ op: "answer.v1", payload: { content: messageContent } }]
                     : undefined,
-                ts: new Date(msg.timestamp).getTime(),
+                ts: typeof messageTimestamp === 'number' ? messageTimestamp : new Date(messageTimestamp).getTime(),
                 metadata: msg.metadata || undefined,
                 responseTimeMs: msg.metadata?.responseTimeMs,
                 thinkingLog: msg.metadata?.thinkingLog,
