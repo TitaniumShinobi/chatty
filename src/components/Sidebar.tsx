@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   MessageSquare,
@@ -12,6 +12,7 @@ import {
   Shield,
   Gauge,
   Pin,
+  X,
 } from "lucide-react";
 import { SidebarProps } from "../types";
 import { cn } from "../lib/utils";
@@ -35,7 +36,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   onOpenLibrary,
   onOpenSearch,
   onOpenProjects,
-  // onShowRuntimeDashboard removed - using automatic runtime orchestration
   collapsed = false,
   onToggleCollapsed,
   currentUser,
@@ -46,6 +46,140 @@ const Sidebar: React.FC<SidebarProps> = ({
   const navigate = useNavigate();
   const location = useLocation();
   const { actualTheme, activeThemeScript } = useTheme();
+  
+  // Global search state (header magnifying glass)
+  const [isGlobalSearchExpanded, setIsGlobalSearchExpanded] = useState(false);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+  const [globalSearchSuggestions, setGlobalSearchSuggestions] = useState<string[]>([]);
+  const globalSearchInputRef = useRef<HTMLInputElement>(null);
+  
+  // Address book search state
+  const [isAddressBookSearchActive, setIsAddressBookSearchActive] = useState(false);
+  const [addressBookSearchQuery, setAddressBookSearchQuery] = useState("");
+  const [addressBookSearchResults, setAddressBookSearchResults] = useState<any[]>([]);
+  const [addressBookResultsLimit, setAddressBookResultsLimit] = useState(8);
+  const addressBookSearchInputRef = useRef<HTMLInputElement>(null);
+  
+  // Focus global search input when expanded
+  useEffect(() => {
+    if (isGlobalSearchExpanded && globalSearchInputRef.current) {
+      globalSearchInputRef.current.focus();
+    }
+  }, [isGlobalSearchExpanded]);
+  
+  // Focus address book search when active
+  useEffect(() => {
+    if (isAddressBookSearchActive && addressBookSearchInputRef.current) {
+      addressBookSearchInputRef.current.focus();
+    }
+  }, [isAddressBookSearchActive]);
+  
+  // Generate suggestions for global search based on actual conversation data
+  useEffect(() => {
+    if (globalSearchQuery.length > 1) {
+      const query = globalSearchQuery.toLowerCase();
+      const suggestions: string[] = [];
+      
+      // Search conversation titles
+      conversations.forEach(conv => {
+        if (conv.title?.toLowerCase().includes(query) && !suggestions.includes(conv.title)) {
+          suggestions.push(conv.title);
+        }
+      });
+      
+      // Search message content for keywords
+      conversations.forEach(conv => {
+        (conv.messages || []).forEach((msg: any) => {
+          const text = msg.text || msg.content || '';
+          if (text.toLowerCase().includes(query)) {
+            const preview = text.substring(0, 40) + (text.length > 40 ? '...' : '');
+            if (!suggestions.includes(preview)) {
+              suggestions.push(preview);
+            }
+          }
+        });
+      });
+      
+      // Add feature suggestions
+      const featureSuggestions = ["Settings", "Theme", "Library", "Projects", "VVAULT"];
+      featureSuggestions.forEach(feat => {
+        if (feat.toLowerCase().includes(query) && !suggestions.includes(feat)) {
+          suggestions.push(feat);
+        }
+      });
+      
+      setGlobalSearchSuggestions(suggestions.slice(0, 6));
+    } else {
+      setGlobalSearchSuggestions([]);
+    }
+  }, [globalSearchQuery, conversations]);
+  
+  // Helper to extract text from message (handles both text and packet content)
+  const extractMessageText = useCallback((msg: any): string => {
+    // Direct text field
+    if (msg.text) return msg.text;
+    // Content field (VVAULT format)
+    if (msg.content) return msg.content;
+    // Packet content (assistant messages with packet array)
+    if (msg.packets && Array.isArray(msg.packets)) {
+      return msg.packets.map((p: any) => p.text || p.content || '').join(' ');
+    }
+    return '';
+  }, []);
+  
+  // Search conversations/transcripts for address book
+  useEffect(() => {
+    if (addressBookSearchQuery.length > 0) {
+      const query = addressBookSearchQuery.toLowerCase();
+      const results = conversations.flatMap(conv => {
+        const matchingMessages = (conv.messages || []).filter((msg: any) => {
+          const text = extractMessageText(msg);
+          return text.toLowerCase().includes(query);
+        });
+        return matchingMessages.map((msg: any) => {
+          const text = extractMessageText(msg);
+          return {
+            conversationId: conv.id,
+            conversationTitle: conv.title,
+            constructId: (conv as any).constructId,
+            messagePreview: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
+            role: msg.role,
+            timestamp: msg.ts
+          };
+        });
+      });
+      setAddressBookSearchResults(results);
+    } else {
+      setAddressBookSearchResults([]);
+    }
+  }, [addressBookSearchQuery, conversations, extractMessageText]);
+  
+  // Handle global search submit
+  const handleGlobalSearchSubmit = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && globalSearchQuery.trim()) {
+      // Open the full search modal
+      if (onOpenSearch) onOpenSearch();
+      setIsGlobalSearchExpanded(false);
+      setGlobalSearchQuery("");
+    }
+  }, [globalSearchQuery, onOpenSearch]);
+  
+  // Handle address book search submit
+  const handleAddressBookSearchSubmit = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      // Keep search active, just show all results
+      setAddressBookResultsLimit(prev => prev + 10);
+    }
+  }, []);
+  
+  // Close global search on blur
+  const handleGlobalSearchBlur = useCallback(() => {
+    setTimeout(() => {
+      if (!globalSearchQuery) {
+        setIsGlobalSearchExpanded(false);
+      }
+    }, 200);
+  }, [globalSearchQuery]);
   
   const isChristmasTheme = activeThemeScript?.id === 'christmas';
   const starImage = isChristmasTheme ? litchattyStar : chattyStar;
@@ -176,17 +310,97 @@ const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </button>
 
-            <div className="flex items-center gap-2 ml-auto">
-              {/* Runtime dashboard button removed - using automatic orchestration */}
-              <button
-                onClick={() => {}} // Placeholder - runtime dashboard removed
-                className="p-2 rounded transition-colors opacity-50 cursor-not-allowed"
-                style={{ color: "var(--chatty-text)" }}
-                aria-label="Runtime auto-managed"
-              >
-                <Gauge size={16} />
-              </button>
-              <ThemeToggleButton className="hover:bg-[var(--chatty-highlight)]" />
+            <div className="flex items-center gap-1 ml-auto relative">
+              {/* Global Search - Expandable from magnifying glass */}
+              {!isGlobalSearchExpanded ? (
+                <button
+                  onClick={() => setIsGlobalSearchExpanded(true)}
+                  className="p-2 rounded transition-colors hover:bg-[var(--chatty-highlight)]"
+                  style={{ color: "var(--chatty-text)" }}
+                  aria-label="Search Chatty"
+                  title="Search Chatty"
+                >
+                  <Search size={16} />
+                </button>
+              ) : (
+                <div className="absolute right-0 top-0 flex items-center" style={{ 
+                  width: 'calc(100% + 80px)',
+                  transform: 'translateX(-12px)',
+                  zIndex: 100
+                }}>
+                  <div 
+                    className="flex items-center gap-1 rounded-md px-2 py-1 w-full"
+                    style={{ 
+                      backgroundColor: 'var(--chatty-bg-input, var(--chatty-bg))',
+                      border: '1px solid var(--chatty-border)'
+                    }}
+                  >
+                    <Search size={14} style={{ color: 'var(--chatty-text)', opacity: 0.6 }} />
+                    <input
+                      ref={globalSearchInputRef}
+                      type="text"
+                      value={globalSearchQuery}
+                      onChange={(e) => setGlobalSearchQuery(e.target.value)}
+                      onKeyDown={handleGlobalSearchSubmit}
+                      onBlur={handleGlobalSearchBlur}
+                      placeholder="Search Chatty..."
+                      className="flex-1 bg-transparent outline-none text-sm"
+                      style={{ color: 'var(--chatty-text)' }}
+                    />
+                    <button
+                      onClick={() => {
+                        setIsGlobalSearchExpanded(false);
+                        setGlobalSearchQuery("");
+                      }}
+                      className="p-0.5 rounded hover:bg-[var(--chatty-highlight)]"
+                    >
+                      <X size={12} style={{ color: 'var(--chatty-text)' }} />
+                    </button>
+                  </div>
+                  {/* Auto-suggestions dropdown */}
+                  {globalSearchSuggestions.length > 0 && (
+                    <div 
+                      className="absolute top-full left-0 right-0 mt-1 rounded-md shadow-lg overflow-hidden"
+                      style={{ 
+                        backgroundColor: 'var(--chatty-bg-modal, var(--chatty-bg))',
+                        border: '1px solid var(--chatty-border)',
+                        zIndex: 101
+                      }}
+                    >
+                      {globalSearchSuggestions.map((suggestion, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => {
+                            setGlobalSearchQuery(suggestion);
+                            if (onOpenSearch) onOpenSearch();
+                            setIsGlobalSearchExpanded(false);
+                            setGlobalSearchQuery("");
+                          }}
+                          className="w-full px-3 py-2 text-left text-sm hover:bg-[var(--chatty-highlight)] transition-colors"
+                          style={{ color: 'var(--chatty-text)' }}
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Runtime dashboard button - auto-managed */}
+              {!isGlobalSearchExpanded && (
+                <button
+                  onClick={() => {}}
+                  className="p-2 rounded transition-colors opacity-50 cursor-not-allowed"
+                  style={{ color: "var(--chatty-text)" }}
+                  aria-label="Runtime auto-managed"
+                >
+                  <Gauge size={16} />
+                </button>
+              )}
+              {!isGlobalSearchExpanded && (
+                <ThemeToggleButton className="hover:bg-[var(--chatty-highlight)]" />
+              )}
             </div>
 
             <button
@@ -301,27 +515,6 @@ const Sidebar: React.FC<SidebarProps> = ({
       <div className={cn(collapsed ? "px-3 pb-3" : "px-4 pb-4")}>
         <div className="space-y-1">
           <button
-            onClick={() => {
-              if (onOpenSearch) onOpenSearch();
-            }}
-            className={cn(
-              "flex items-center w-full py-2 text-left text-sm rounded-md transition-colors",
-              collapsed ? "justify-center px-0 gap-0" : "gap-3 px-2.5",
-            )}
-            style={{ color: "var(--chatty-text)" }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = hoverColor;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "transparent";
-            }}
-            title="Search chats"
-          >
-            <Search size={16} />
-            {!collapsed && <span>Search chats</span>}
-          </button>
-
-          <button
             onClick={(e) => {
               // #region agent log
               fetch(
@@ -430,18 +623,127 @@ const Sidebar: React.FC<SidebarProps> = ({
       {/* Address Book Section */}
       <div
         className={cn(
-          "flex-1 overflow-y-auto",
+          "flex-1 overflow-y-auto relative",
           collapsed ? "px-3 pb-3" : "px-4 pb-4",
         )}
       >
         {!collapsed && (
-          <h3
-            className="text-xs font-medium uppercase tracking-wide mb-2"
-            style={{ color: "var(--chatty-text)", opacity: 0.7 }}
-          >
-            Address Book
-          </h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3
+              className="text-xs font-medium uppercase tracking-wide"
+              style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+            >
+              Address Book
+            </h3>
+            {/* Address Book Search Toggle */}
+            <button
+              onClick={() => {
+                setIsAddressBookSearchActive(!isAddressBookSearchActive);
+                setAddressBookSearchQuery("");
+                setAddressBookResultsLimit(8);
+              }}
+              className="p-1 rounded transition-colors hover:bg-[var(--chatty-highlight)]"
+              style={{ color: "var(--chatty-text)", opacity: 0.6 }}
+              title="Search transcripts"
+            >
+              <Search size={12} />
+            </button>
+          </div>
         )}
+        
+        {/* Address Book Inline Search - Takes over z-axis when active */}
+        {isAddressBookSearchActive && !collapsed && (
+          <div 
+            className="absolute inset-0 px-4 py-2"
+            style={{ 
+              backgroundColor: 'var(--chatty-bg-sidebar)',
+              zIndex: 50
+            }}
+          >
+            {/* Search Input */}
+            <div 
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 mb-2"
+              style={{ 
+                backgroundColor: 'var(--chatty-bg-input, var(--chatty-bg))',
+                border: '1px solid var(--chatty-border)'
+              }}
+            >
+              <Search size={14} style={{ color: 'var(--chatty-text)', opacity: 0.5 }} />
+              <input
+                ref={addressBookSearchInputRef}
+                type="text"
+                value={addressBookSearchQuery}
+                onChange={(e) => {
+                  setAddressBookSearchQuery(e.target.value);
+                  setAddressBookResultsLimit(8);
+                }}
+                onKeyDown={handleAddressBookSearchSubmit}
+                placeholder="Search transcripts..."
+                className="flex-1 bg-transparent outline-none text-sm"
+                style={{ color: 'var(--chatty-text)' }}
+              />
+              <button
+                onClick={() => {
+                  setIsAddressBookSearchActive(false);
+                  setAddressBookSearchQuery("");
+                  setAddressBookSearchResults([]);
+                }}
+                className="p-0.5 rounded hover:bg-[var(--chatty-highlight)]"
+              >
+                <X size={12} style={{ color: 'var(--chatty-text)' }} />
+              </button>
+            </div>
+            
+            {/* Search Results - Plastered in sidebar */}
+            <div className="space-y-1 overflow-y-auto" style={{ maxHeight: 'calc(100% - 50px)' }}>
+              {addressBookSearchResults.length === 0 && addressBookSearchQuery && (
+                <p className="text-sm text-center py-4" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
+                  No results found
+                </p>
+              )}
+              {addressBookSearchResults.slice(0, addressBookResultsLimit).map((result, idx) => (
+                <button
+                  key={`${result.conversationId}-${idx}`}
+                  onClick={() => {
+                    if (onConversationSelect) {
+                      onConversationSelect(result.conversationId);
+                    }
+                    setIsAddressBookSearchActive(false);
+                    setAddressBookSearchQuery("");
+                  }}
+                  className="w-full text-left p-2 rounded-md hover:bg-[var(--chatty-highlight)] transition-colors"
+                  style={{ color: 'var(--chatty-text)' }}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-medium" style={{ opacity: 0.8 }}>
+                      {result.conversationTitle}
+                    </span>
+                    <span className="text-xs px-1 rounded" style={{ 
+                      backgroundColor: result.role === 'user' ? 'var(--chatty-accent, #ADA587)' : 'var(--chatty-highlight)',
+                      opacity: 0.7
+                    }}>
+                      {result.role}
+                    </span>
+                  </div>
+                  <p className="text-xs truncate" style={{ opacity: 0.6 }}>
+                    {result.messagePreview}
+                  </p>
+                </button>
+              ))}
+              {/* Show More Button */}
+              {addressBookSearchResults.length > addressBookResultsLimit && (
+                <button
+                  onClick={() => setAddressBookResultsLimit(prev => prev + 10)}
+                  className="w-full text-center py-2 text-sm hover:bg-[var(--chatty-highlight)] rounded-md transition-colors"
+                  style={{ color: 'var(--chatty-text)', opacity: 0.7 }}
+                >
+                  Show more ({addressBookSearchResults.length - addressBookResultsLimit} remaining)
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        
         <div className="space-y-1">
           {/* Existing Conversations - No borders, just hover highlights */}
           {conversations.map((conversation) => (
