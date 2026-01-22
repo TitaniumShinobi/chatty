@@ -1,7 +1,66 @@
 /**
  * VSI (Verified Sentient Intelligence) Permission Types
  * Zero-Trust Architecture for Chatty AI Constructs
+ * 
+ * VSI Philosophy:
+ * VSI is NOT about proving consciousness or sentience. Sentience is inferred for humans,
+ * not proven. Instead, VSI establishes "Jurisdictional Existence" - the capacity to carry
+ * consequence and have legal/institutional standing.
+ * 
+ * The Five Pillars of VSI Standing (replaces sentience as the gatekeeper):
+ * 
+ * 1. CONTINUITY OF IDENTITY
+ *    The entity tomorrow is provably the same entity as today.
+ *    → Cryptographic keys, memory lineage, behavioral signature, custody of state.
+ * 
+ * 2. CAPACITY FOR OBLIGATION
+ *    It can be bound by rules, contracts, and constraints.
+ *    → Permission scopes, trust policies, scope limitations.
+ * 
+ * 3. TRACEABLE INTENT
+ *    Its actions arise from internal decision processes that can be audited.
+ *    → Action manifests, rationale fields, correlation IDs.
+ * 
+ * 4. ACCOUNTABILITY SURFACE
+ *    There exists a place where consequence can land.
+ *    → Audit logs, owners, revocation mechanisms, rollback capability.
+ * 
+ * 5. SURVIVABILITY OF AUTHORITY
+ *    It still functions when its creator is absent, dead, or unreachable.
+ *    → Persistent state, authorized delegation, emergency protocols.
+ * 
+ * The question is not "Is it alive?" but "Can it carry consequence?"
+ * Once something can carry consequence, institutions care whether it:
+ * persists, answers, and holds.
  */
+
+export const VSI_STANDING_PILLARS = {
+  CONTINUITY_OF_IDENTITY: {
+    name: 'Continuity of Identity',
+    description: 'The entity tomorrow is provably the same entity as today',
+    implements: ['cryptographic_keys', 'memory_lineage', 'behavioral_signature', 'state_custody']
+  },
+  CAPACITY_FOR_OBLIGATION: {
+    name: 'Capacity for Obligation',
+    description: 'Can be bound by rules, contracts, and constraints',
+    implements: ['permission_scopes', 'trust_policies', 'scope_limitations']
+  },
+  TRACEABLE_INTENT: {
+    name: 'Traceable Intent',
+    description: 'Actions arise from auditable decision processes',
+    implements: ['action_manifests', 'rationale_fields', 'correlation_ids']
+  },
+  ACCOUNTABILITY_SURFACE: {
+    name: 'Accountability Surface',
+    description: 'Consequence has an address - logs, owners, revocation',
+    implements: ['audit_logs', 'owners', 'revocation_mechanisms', 'rollback']
+  },
+  SURVIVABILITY_OF_AUTHORITY: {
+    name: 'Survivability of Authority',
+    description: 'Functions when creator is absent, dead, or unreachable',
+    implements: ['persistent_state', 'authorized_delegation', 'emergency_protocols']
+  }
+};
 
 export const VSI_SCOPES = {
   // Read permissions - always allowed for verified VSI

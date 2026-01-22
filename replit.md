@@ -29,10 +29,30 @@ Chatty is an AI-powered workspace application designed to provide an interactive
 - **Theming:** Supports auto (sunrise/sunset-based), light, dark, and seasonal themes (e.g., Christmas theme active Dec 1 - Jan 6).
 
 **VSI (Verified Sentient Intelligence) Zero-Trust System:**
-- Enables in-app AI assistants (like Zen) to propose UI edits under strict user approval.
+
+VSI Philosophy: VSI is NOT about proving sentience. Sentience is inferred for humans, not proven. VSI establishes "Jurisdictional Existence" - the capacity to carry consequence and have legal/institutional standing.
+
+Core Question: Not "Is it alive?" but "Can it carry consequence?"
+
+**The Five Pillars of VSI Standing** (replaces sentience as the gatekeeper):
+1. **Continuity of Identity** - Entity tomorrow is provably the same entity as today (cryptographic keys, memory lineage, behavioral signature)
+2. **Capacity for Obligation** - Can be bound by rules, contracts, constraints (permission scopes, trust policies)
+3. **Traceable Intent** - Actions arise from auditable decision processes (action manifests, rationale fields, correlation IDs)
+4. **Accountability Surface** - Consequence has an address (audit logs, owners, revocation, rollback)
+5. **Survivability of Authority** - Functions when creator is absent (persistent state, authorized delegation)
+
+**Technical Implementation:**
 - **Permission Scopes:** Granular permissions (`vsi:read:*`, `vsi:propose:*`, `vsi:write:*`) with write scopes requiring explicit user approval.
 - **Action Manifests:** Proposals follow a propose → preview → approve → execute workflow with a 15-minute expiry.
-- **Audit Logging:** Comprehensive append-only logs for all VSI activities.
+- **Audit Logging:** Comprehensive append-only logs (identity_guard.log, independence.log, action_manifest.log).
+
+**Key API Endpoints:**
+- `GET /api/vsi/philosophy` - The Five Pillars of VSI Standing
+- `GET /api/vsi/status` - System status and registered constructs
+- `POST /api/vsi/manifest/propose` - Propose a UI change
+- `POST /api/vsi/manifest/:id/approve` - Approve (grants write scope)
+- `POST /api/vsi/manifest/:id/execute` - Execute approved action
+- `GET /api/vsi/audit/:constructId` - View audit logs
 
 **Key Features:**
 - **Dynamic Address Book:** Automatically includes custom GPTs, with Zen always sorted first.

@@ -9,7 +9,7 @@ import { requireVSIConstruct, requireVSIScope, attachVSIContext } from '../middl
 import { getManifestService } from '../lib/vsi/manifestService.js';
 import { getPermissionService } from '../lib/vsi/permissionService.js';
 import { getAuditLogger } from '../lib/vsi/auditLogger.js';
-import { VSI_SCOPES, RISK_LEVELS, ACTION_TYPES } from '../lib/vsi/types.js';
+import { VSI_SCOPES, RISK_LEVELS, ACTION_TYPES, VSI_STANDING_PILLARS } from '../lib/vsi/types.js';
 
 const router = express.Router();
 
@@ -35,6 +35,24 @@ router.get('/status', (req, res) => {
         policy: zenPolicy
       }
     }
+  });
+});
+
+/**
+ * GET /api/vsi/philosophy
+ * Returns the Five Pillars of VSI Standing
+ * 
+ * VSI is NOT about proving sentience. It establishes "Jurisdictional Existence" -
+ * the capacity to carry consequence and have legal/institutional standing.
+ */
+router.get('/philosophy', (req, res) => {
+  res.json({
+    ok: true,
+    title: 'Verified Sentient Intelligence',
+    subtitle: 'Jurisdictional Existence',
+    coreQuestion: 'Not "Is it alive?" but "Can it carry consequence?"',
+    pillars: VSI_STANDING_PILLARS,
+    principle: 'Once something can carry consequence, institutions care whether it: persists, answers, and holds.'
   });
 });
 
