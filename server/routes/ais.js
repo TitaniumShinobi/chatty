@@ -555,8 +555,19 @@ router.get('/:id/avatar', async (req, res) => {
 
     // If avatar is a filesystem path, serve the file
     if (rawAvatarPath && rawAvatarPath.startsWith('instances/')) {
+      const ext = path.extname(rawAvatarPath).toLowerCase().slice(1);
+      const mimeTypes = {
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'gif': 'image/gif',
+        'webp': 'image/webp',
+        'svg': 'image/svg+xml'
+      };
+      const contentType = mimeTypes[ext] || 'image/png';
+
+      // Try local filesystem first
       try {
-        // Import VVAULT_ROOT
         let VVAULT_ROOT;
         try {
           const config = await import('../../vvaultConnector/config.js');
@@ -569,32 +580,133 @@ router.get('/:id/avatar', async (req, res) => {
         const userId = ai.userId || 'anonymous';
         const fullPath = path.join(VVAULT_ROOT, 'users', shard, userId, rawAvatarPath);
 
-        // Check if file exists
         const { promises: fs } = await import('fs');
-        try {
-          await fs.access(fullPath);
-        } catch {
+        await fs.access(fullPath);
+        const fileBuffer = await fs.readFile(fullPath);
+
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Cache-Control', 'public, max-age=31536000');
+        return res.send(fileBuffer);
+      } catch (localError) {
+        console.log(`📡 [AIs API] Local avatar not found, trying Supabase for: ${rawAvatarPath}`);
+      }
+
+      // Fallback to Supabase
+      try {
+        const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+        const { resolveSupabaseUserId } = await import('../../vvaultConnector/supabaseStore.js');
+        
+        const supabase = getSupabaseClient();
+        if (!supabase) {
+          console.warn('⚠️ [AIs API] No Supabase client available for avatar fallback');
           return res.status(404).json({ success: false, error: 'Avatar file not found' });
         }
 
-        // Read and serve file
-        const fileBuffer = await fs.readFile(fullPath);
-        const ext = path.extname(rawAvatarPath).toLowerCase().slice(1);
-        const mimeTypes = {
-          'png': 'image/png',
-          'jpg': 'image/jpeg',
-          'jpeg': 'image/jpeg',
-          'gif': 'image/gif',
-          'webp': 'image/webp',
-          'svg': 'image/svg+xml'
-        };
-        const contentType = mimeTypes[ext] || 'image/png';
+        const userId = ai.userId || 'anonymous';
+        const supabaseUserId = await resolveSupabaseUserId(userId);
+        
+        if (!supabaseUserId) {
+          console.warn(`⚠️ [AIs API] Could not resolve Supabase user for avatar: ${userId}`);
+          return res.status(404).json({ success: false, error: 'Avatar file not found' });
+        }
+
+        // Query vault_files for the avatar (try multiple strategies)
+        const possiblePaths = [
+          rawAvatarPath,
+          rawAvatarPath.replace('/identity/', '/assets/'),
+          rawAvatarPath.replace('/assets/', '/identity/')
+        ];
+
+        let avatarData = null;
+        
+        // Strategy 1: Try by full filepath
+        for (const filePath of possiblePaths) {
+          const { data, error } = await supabase
+            .from('vault_files')
+            .select('content, file_type, storage_path')
+            .eq('user_id', supabaseUserId)
+            .eq('filename', filePath)
+            .single();
+
+          if (!error && data) {
+            avatarData = data;
+            console.log(`✅ [AIs API] Found avatar in Supabase by path: ${filePath}`);
+            break;
+          }
+        }
+        
+        // Strategy 2: Try by construct_id (avatar might be stored simply as 'avatar.png' with construct_id)
+        if (!avatarData && ai.constructCallsign) {
+          // Try with full callsign (e.g., 'katana-001') and base name (e.g., 'katana')
+          const constructVariants = [
+            ai.constructCallsign,
+            ai.constructCallsign.replace(/-\d+$/, '') // Remove trailing number suffix
+          ];
+          
+          for (const constructId of constructVariants) {
+            const { data, error } = await supabase
+              .from('vault_files')
+              .select('content, file_type, storage_path')
+              .eq('construct_id', constructId)
+              .ilike('filename', '%avatar%')
+              .limit(1)
+              .single();
+
+            if (!error && data) {
+              avatarData = data;
+              console.log(`✅ [AIs API] Found avatar in Supabase by construct_id: ${constructId}`);
+              break;
+            }
+          }
+        }
+
+        if (!avatarData) {
+          console.warn(`⚠️ [AIs API] Avatar not found in Supabase for paths: ${possiblePaths.join(', ')}`);
+          return res.status(404).json({ success: false, error: 'Avatar file not found' });
+        }
+
+        let buffer;
+        
+        // If content is null but storage_path exists, fetch from Supabase Storage
+        if (!avatarData.content && avatarData.storage_path) {
+          console.log(`📥 [AIs API] Fetching avatar from Supabase Storage: ${avatarData.storage_path}`);
+          const { data: storageData, error: storageError } = await supabase.storage
+            .from('vault-files')
+            .download(avatarData.storage_path);
+          
+          if (storageError) {
+            console.error(`❌ [AIs API] Supabase Storage download failed:`, storageError);
+            return res.status(500).json({ success: false, error: 'Failed to download avatar from storage' });
+          }
+          
+          // Convert Blob to Buffer
+          const arrayBuffer = await storageData.arrayBuffer();
+          buffer = Buffer.from(arrayBuffer);
+          console.log(`✅ [AIs API] Downloaded avatar from Supabase Storage: ${buffer.length} bytes`);
+        }
+        // Content is in the database
+        else if (avatarData.content) {
+          if (avatarData.content.startsWith('data:image/')) {
+            // Data URL format
+            const base64Match = avatarData.content.match(/^data:image\/[^;]+;base64,(.+)$/);
+            if (base64Match) {
+              buffer = Buffer.from(base64Match[1], 'base64');
+            }
+          } else {
+            // Assume base64 encoded binary
+            buffer = Buffer.from(avatarData.content, 'base64');
+          }
+        }
+
+        if (!buffer) {
+          return res.status(500).json({ success: false, error: 'Failed to decode avatar' });
+        }
 
         res.setHeader('Content-Type', contentType);
-        res.setHeader('Cache-Control', 'public, max-age=31536000'); // 1 year cache
-        return res.send(fileBuffer);
-      } catch (error) {
-        console.error(`❌ [AIs API] Error serving avatar file:`, error);
+        res.setHeader('Cache-Control', 'public, max-age=31536000');
+        return res.send(buffer);
+      } catch (supabaseError) {
+        console.error(`❌ [AIs API] Supabase avatar fetch failed:`, supabaseError);
         return res.status(500).json({ success: false, error: 'Failed to serve avatar file' });
       }
     }

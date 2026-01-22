@@ -167,6 +167,10 @@ docs/
   - Zen appears immediately on login (system-guaranteed)
   - Added deletion protection for primary construct
   - VVAULT merge preserves canonical Zen
+- **2026-01-22**: Fixed avatar loading from Supabase Storage
+  - Avatar endpoint now uses correct bucket name: `vault-files` (not `vault`)
+  - When `content` field is null, fetches binary from Supabase Storage using `storage_path`
+  - Storage path format: `{supabase_user_id}/{chatty_user_id}/instances/{construct-id}/identity/avatar.png`
 
 ## User Preferences
 - Primary construct: Zen (not Synth)
