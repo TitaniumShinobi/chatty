@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   Plus,
   Bot,
+  ImageOff,
   Trash2,
   Lock,
   Copy,
@@ -345,7 +346,9 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
                 >
                   {/* Avatar on LEFT */}
                   <div className="w-12 h-12 rounded-full flex items-center justify-center overflow-hidden">
-                    {avatarSrc && !failedAvatars.has(ai.id) ? (
+                    {failedAvatars.has(ai.id) ? (
+                      <ImageOff size={20} style={{ color: "#ef4444" }} />
+                    ) : avatarSrc ? (
                       <img
                         src={avatarSrc}
                         alt={ai.name}
@@ -362,7 +365,7 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
                         }}
                         onError={() => {
                           console.warn(
-                            `⚠️ [AIsPage] Avatar failed to load for ${ai.name}, showing fallback`,
+                            `⚠️ [AIsPage] Avatar failed to load for ${ai.name}`,
                           );
                           setFailedAvatars(prev => new Set(prev).add(ai.id));
                         }}
