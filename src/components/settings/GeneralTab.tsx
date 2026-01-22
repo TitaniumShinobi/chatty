@@ -129,16 +129,18 @@ const GeneralTab: React.FC = () => {
                   className="text-xs"
                   style={{ color: "var(--chatty-text)", opacity: 0.5 }}
                 >
-                  {Intl.DateTimeFormat().resolvedOptions().timeZone.split('/').pop()?.replace(/_/g, ' ')} · ☀️
-                  {sunTimes.sunrise.toLocaleTimeString([], {
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}{" "}
-                  · 🌙
-                  {sunTimes.sunset.toLocaleTimeString([], {
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}
+                  {Intl.DateTimeFormat().resolvedOptions().timeZone.split('/').pop()?.replace(/_/g, ' ')} · {(() => {
+                    const now = new Date();
+                    const isAfterSunrise = now > sunTimes.sunrise;
+                    const isAfterSunset = now > sunTimes.sunset;
+                    if (!isAfterSunrise) {
+                      return `Sunrise ${sunTimes.sunrise.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+                    } else if (!isAfterSunset) {
+                      return `Sunset ${sunTimes.sunset.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+                    } else {
+                      return `Sunrise ${sunTimes.sunrise.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+                    }
+                  })()}
                 </span>
               )}
               <span
