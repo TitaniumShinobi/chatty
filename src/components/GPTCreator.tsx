@@ -27,14 +27,13 @@ import { useSettings } from "../context/SettingsContext";
 import Cropper from "react-easy-crop";
 import { Z_LAYERS } from "../lib/zLayers";
 import {
-  TriadFailureError,
-  MemoryRetrievalError,
-  CapsuleLoadError,
-  BlueprintLoadError,
-  PromptAssemblyError,
   getUserFriendlyErrorMessage,
   isOrchestrationError,
 } from "../engine/orchestration/OrchestrationErrors";
+import {
+  OPENROUTER_MODELS,
+  OLLAMA_MODELS,
+} from "../lib/modelProviders";
 
 interface GPTCreatorProps {
   isVisible: boolean;
@@ -81,7 +80,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [persistenceEnabled, setPersistenceEnabled] = useState(true);
   const [stmEnabled, setStmEnabled] = useState(true);
   const [ltmEnabled, setLtmEnabled] = useState(true);
-  const [isLoadingScripts, setIsLoadingScripts] = useState(false);
+  const [_isLoadingScripts, _setIsLoadingScripts] = useState(false);
 
   // Workspace context (auto-loaded like Copilot reads code files)
   const [workspaceContext, setWorkspaceContext] = useState<{
@@ -111,10 +110,10 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       imageGeneration: false,
       codeInterpreter: true,
     },
-    modelId: "phi3:latest",
-    conversationModel: "phi3:latest",
-    creativeModel: "mistral:latest",
-    codingModel: "deepseek-coder:latest",
+    modelId: "openrouter:microsoft/phi-3-mini-128k-instruct",
+    conversationModel: "openrouter:microsoft/phi-3-mini-128k-instruct",
+    creativeModel: "openrouter:mistralai/mistral-7b-instruct",
+    codingModel: "openrouter:deepseek/deepseek-coder-33b-instruct",
   });
 
   // File management
@@ -680,9 +679,9 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     if (orchestrationMode === "lin") {
       setConfig((prev) => ({
         ...prev,
-        conversationModel: "phi3:latest",
-        creativeModel: "mistral:latest",
-        codingModel: "deepseek-coder:latest",
+        conversationModel: "openrouter:microsoft/phi-3-mini-128k-instruct",
+        creativeModel: "openrouter:mistralai/mistral-7b-instruct",
+        codingModel: "openrouter:deepseek/deepseek-coder-33b-instruct",
       }));
     }
   }, [orchestrationMode]);
@@ -703,10 +702,10 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         imageGeneration: false,
         codeInterpreter: true,
       },
-      modelId: "phi3:latest",
-      conversationModel: "phi3:latest",
-      creativeModel: "mistral:latest",
-      codingModel: "deepseek-coder:latest",
+      modelId: "openrouter:microsoft/phi-3-mini-128k-instruct",
+      conversationModel: "openrouter:microsoft/phi-3-mini-128k-instruct",
+      creativeModel: "openrouter:mistralai/mistral-7b-instruct",
+      codingModel: "openrouter:deepseek/deepseek-coder-33b-instruct",
       hasPersistentMemory: true, // VVAULT integration - defaults to true
     });
     setFiles([]);
@@ -1224,7 +1223,7 @@ ${stmContext ? `Recent conversation (STM):\n${stmContext}\n\n` : ""}User: ${user
 Assistant:`;
 
       // Use a creative model for GPT creation assistance (better at brainstorming and design)
-      const selectedModel = "mistral:latest"; // Use creative model for creation assistance
+      const selectedModel = "openrouter:mistralai/mistral-7b-instruct"; // Use creative model for creation assistance
       // Using model for generation
 
       const startTime = Date.now();
@@ -1488,7 +1487,7 @@ Assistant:`;
 
       // Process with the selected conversation model
       const selectedModel =
-        config.conversationModel || config.modelId || "phi3:latest";
+        config.conversationModel || config.modelId || "openrouter:microsoft/phi-3-mini-128k-instruct";
       // Preview using model
 
       const response = await runSeat({
@@ -2922,7 +2921,7 @@ ALWAYS:
                             Conversation
                           </label>
                           <select
-                            value={config.conversationModel || "phi3:latest"}
+                            value={config.conversationModel || "openrouter:meta-llama/llama-3.1-8b-instruct"}
                             onChange={(e) =>
                               setConfig((prev) => ({
                                 ...prev,
@@ -2937,554 +2936,23 @@ ALWAYS:
                               width: "250px",
                             }}
                           >
-                            <option value="aya:8b">Aya 8B</option>
-                            <option value="aya:35b">Aya 35B</option>
-                            <option value="aya-expanse:8b">
-                              Aya Expanse 8B
-                            </option>
-                            <option value="aya-expanse:32b">
-                              Aya Expanse 32B
-                            </option>
-                            <option value="alfred:40b">Alfred 40B</option>
-                            <option value="athene-v2:72b">Athene V2 72B</option>
-                            <option value="bakllava:7b">BakLLaVA 7B</option>
-                            <option value="bespoke-minicheck:7b">
-                              Bespoke MiniCheck 7B
-                            </option>
-                            <option value="cogito:3b">Cogito 3B</option>
-                            <option value="cogito:8b">Cogito 8B</option>
-                            <option value="cogito:14b">Cogito 14B</option>
-                            <option value="cogito:32b">Cogito 32B</option>
-                            <option value="cogito:70b">Cogito 70B</option>
-                            <option value="command-a:111b">
-                              Command A 111B
-                            </option>
-                            <option value="command-r:35b">Command R 35B</option>
-                            <option value="command-r-plus:104b">
-                              Command R+ 104B
-                            </option>
-                            <option value="command-r7b:7b">
-                              Command R7B 7B
-                            </option>
-                            <option value="command-r7b-arabic:7b">
-                              Command R7B Arabic 7B
-                            </option>
-                            <option value="deepseek-llm:7b">
-                              DeepSeek LLM 7B
-                            </option>
-                            <option value="deepseek-llm:67b">
-                              DeepSeek LLM 67B
-                            </option>
-                            <option value="deepseek-r1:1.5b">
-                              DeepSeek R1 1.5B
-                            </option>
-                            <option value="deepseek-r1:7b">
-                              DeepSeek R1 7B
-                            </option>
-                            <option value="deepseek-r1:8b">
-                              DeepSeek R1 8B
-                            </option>
-                            <option value="deepseek-r1:14b">
-                              DeepSeek R1 14B
-                            </option>
-                            <option value="deepseek-r1:32b">
-                              DeepSeek R1 32B
-                            </option>
-                            <option value="deepseek-r1:70b">
-                              DeepSeek R1 70B
-                            </option>
-                            <option value="deepseek-r1:671b">
-                              DeepSeek R1 671B
-                            </option>
-                            <option value="deepseek-v2:16b">
-                              DeepSeek V2 16B
-                            </option>
-                            <option value="deepseek-v2:236b">
-                              DeepSeek V2 236B
-                            </option>
-                            <option value="deepseek-v2.5:236b">
-                              DeepSeek V2.5 236B
-                            </option>
-                            <option value="deepseek-v3:671b">
-                              DeepSeek V3 671B
-                            </option>
-                            <option value="deepseek-v3.1:671b">
-                              DeepSeek V3.1 671B
-                            </option>
-                            <option value="dbrx:132b">DBRX 132B</option>
-                            <option value="dolphin-llama3:8b">
-                              Dolphin Llama 3 8B
-                            </option>
-                            <option value="dolphin-llama3:70b">
-                              Dolphin Llama 3 70B
-                            </option>
-                            <option value="dolphin-mistral:7b">
-                              Dolphin Mistral 7B
-                            </option>
-                            <option value="dolphin-phi:2.7b">
-                              Dolphin Phi 2.7B
-                            </option>
-                            <option value="dolphin3:8b">Dolphin 3 8B</option>
-                            <option value="everythinglm:13b">
-                              EverythingLM 13B
-                            </option>
-                            <option value="exaone-deep:2.4b">
-                              EXAONE Deep 2.4B
-                            </option>
-                            <option value="exaone-deep:7.8b">
-                              EXAONE Deep 7.8B
-                            </option>
-                            <option value="exaone-deep:32b">
-                              EXAONE Deep 32B
-                            </option>
-                            <option value="exaone3.5:2.4b">
-                              EXAONE 3.5 2.4B
-                            </option>
-                            <option value="exaone3.5:7.8b">
-                              EXAONE 3.5 7.8B
-                            </option>
-                            <option value="exaone3.5:32b">
-                              EXAONE 3.5 32B
-                            </option>
-                            <option value="falcon:7b">Falcon 7B</option>
-                            <option value="falcon:40b">Falcon 40B</option>
-                            <option value="falcon:180b">Falcon 180B</option>
-                            <option value="falcon2:11b">Falcon 2 11B</option>
-                            <option value="falcon3:1b">Falcon 3 1B</option>
-                            <option value="falcon3:3b">Falcon 3 3B</option>
-                            <option value="falcon3:7b">Falcon 3 7B</option>
-                            <option value="falcon3:10b">Falcon 3 10B</option>
-                            <option value="gemma:2b">Gemma 2B</option>
-                            <option value="gemma:7b">Gemma 7B</option>
-                            <option value="gemma2:2b">Gemma 2 2B</option>
-                            <option value="gemma2:9b">Gemma 2 9B</option>
-                            <option value="gemma2:27b">Gemma 2 27B</option>
-                            <option value="gemma3:270m">Gemma 3 270M</option>
-                            <option value="gemma3:1b">Gemma 3 1B</option>
-                            <option value="gemma3:4b">Gemma 3 4B</option>
-                            <option value="gemma3:12b">Gemma 3 12B</option>
-                            <option value="gemma3:27b">Gemma 3 27B</option>
-                            <option value="gemma3n:e2b">Gemma 3n E2B</option>
-                            <option value="gemma3n:e4b">Gemma 3n E4B</option>
-                            <option value="glm4:9b">GLM 4 9B</option>
-                            <option value="goliath:70b">Goliath 70B</option>
-                            <option value="granite-embedding:30m">
-                              Granite Embedding 30M
-                            </option>
-                            <option value="granite-embedding:278m">
-                              Granite Embedding 278M
-                            </option>
-                            <option value="granite3-dense:2b">
-                              Granite 3 Dense 2B
-                            </option>
-                            <option value="granite3-dense:8b">
-                              Granite 3 Dense 8B
-                            </option>
-                            <option value="granite3-guardian:2b">
-                              Granite 3 Guardian 2B
-                            </option>
-                            <option value="granite3-guardian:8b">
-                              Granite 3 Guardian 8B
-                            </option>
-                            <option value="granite3-moe:1b">
-                              Granite 3 MoE 1B
-                            </option>
-                            <option value="granite3-moe:3b">
-                              Granite 3 MoE 3b
-                            </option>
-                            <option value="granite3.1-dense:2b">
-                              Granite 3.1 Dense 2B
-                            </option>
-                            <option value="granite3.1-dense:8b">
-                              Granite 3.1 Dense 8B
-                            </option>
-                            <option value="granite3.1-moe:1b">
-                              Granite 3.1 MoE 1B
-                            </option>
-                            <option value="granite3.1-moe:3b">
-                              Granite 3.1 MoE 3B
-                            </option>
-                            <option value="granite3.2:2b">
-                              Granite 3.2 2B
-                            </option>
-                            <option value="granite3.2:8b">
-                              Granite 3.2 8B
-                            </option>
-                            <option value="granite3.2-vision:2b">
-                              Granite 3.2 Vision 2B
-                            </option>
-                            <option value="granite3.3:2b">
-                              Granite 3.3 2B
-                            </option>
-                            <option value="granite3.3:8b">
-                              Granite 3.3 8B
-                            </option>
-                            <option value="granite4:2b">Granite 4 2B</option>
-                            <option value="granite4:8b">Granite 4 8B</option>
-                            <option value="gpt-oss:20b">GPT-OSS 20B</option>
-                            <option value="gpt-oss:120b">GPT-OSS 120B</option>
-                            <option value="hermes3:3b">Hermes 3 3B</option>
-                            <option value="hermes3:8b">Hermes 3 8B</option>
-                            <option value="hermes3:70b">Hermes 3 70B</option>
-                            <option value="hermes3:405b">Hermes 3 405B</option>
-                            <option value="internlm2:1m">InternLM 2 1M</option>
-                            <option value="internlm2:1.8b">
-                              InternLM 2 1.8B
-                            </option>
-                            <option value="internlm2:7b">InternLM 2 7B</option>
-                            <option value="internlm2:20b">
-                              InternLM 2 20B
-                            </option>
-                            <option value="kimi-k2:cloud">Kimi K2 Cloud</option>
-                            <option value="llama-guard3:1b">
-                              Llama Guard 3 1B
-                            </option>
-                            <option value="llama-guard3:8b">
-                              Llama Guard 3 8B
-                            </option>
-                            <option value="llama-pro:8b">Llama Pro 8B</option>
-                            <option value="llama-pro:70b">Llama Pro 70B</option>
-                            <option value="llama2:7b">Llama 2 7B</option>
-                            <option value="llama2:13b">Llama 2 13B</option>
-                            <option value="llama2:70b">Llama 2 70B</option>
-                            <option value="llama2-chinese:7b">
-                              Llama 2 Chinese 7B
-                            </option>
-                            <option value="llama2-chinese:13b">
-                              Llama 2 Chinese 13B
-                            </option>
-                            <option value="llama2-uncensored:7b">
-                              Llama 2 Uncensored 7B
-                            </option>
-                            <option value="llama2-uncensored:70b">
-                              Llama 2 Uncensored 70B
-                            </option>
-                            <option value="llama3:8b">Llama 3 8B</option>
-                            <option value="llama3:70b">Llama 3 70B</option>
-                            <option value="llama3-chatqa:8b">
-                              Llama 3 ChatQA 8B
-                            </option>
-                            <option value="llama3-chatqa:70b">
-                              Llama 3 ChatQA 70B
-                            </option>
-                            <option value="llama3-gradient:8b">
-                              Llama 3 Gradient 8B
-                            </option>
-                            <option value="llama3-gradient:70b">
-                              Llama 3 Gradient 70B
-                            </option>
-                            <option value="llama3-groq-tool-use:8b">
-                              Llama 3 Groq Tool Use 8B
-                            </option>
-                            <option value="llama3-groq-tool-use:70b">
-                              Llama 3 Groq Tool Use 70B
-                            </option>
-                            <option value="llama3.1:8b">Llama 3.1 8B</option>
-                            <option value="llama3.1:70b">Llama 3.1 70B</option>
-                            <option value="llama3.1:405b">
-                              Llama 3.1 405B
-                            </option>
-                            <option value="llama3.2:1b">Llama 3.2 1B</option>
-                            <option value="llama3.2:3b">Llama 3.2 3B</option>
-                            <option value="llama3.2-vision:11b">
-                              Llama 3.2 Vision 11B
-                            </option>
-                            <option value="llama3.2-vision:90b">
-                              Llama 3.2 Vision 90B
-                            </option>
-                            <option value="llama3.3:70b">Llama 3.3 70B</option>
-                            <option value="llama4:16x17b">
-                              Llama 4 16x17B
-                            </option>
-                            <option value="llama4:128x17b">
-                              Llama 4 128x17B
-                            </option>
-                            <option value="llava:7b">LLaVA 7B</option>
-                            <option value="llava:13b">LLaVA 13B</option>
-                            <option value="llava:34b">LLaVA 34B</option>
-                            <option value="llava-llama3:8b">
-                              LLaVA Llama 3 8B
-                            </option>
-                            <option value="llava-phi3:3.8b">
-                              LLaVA Phi 3 3.8B
-                            </option>
-                            <option value="magistral:24b">Magistral 24B</option>
-                            <option value="marco-o1:7b">Marco O1 7B</option>
-                            <option value="mathstral:7b">Mathstral 7B</option>
-                            <option value="meditron:7b">Meditron 7B</option>
-                            <option value="meditron:70b">Meditron 70B</option>
-                            <option value="medllama2:7b">MedLlama 2 7B</option>
-                            <option value="megadolphin:120b">
-                              MegaDolphin 120B
-                            </option>
-                            <option value="minicpm-v:8b">MiniCPM V 8B</option>
-                            <option value="mistral:latest">
-                              Mistral Latest
-                            </option>
-                            <option value="mistral:7b">Mistral 7B</option>
-                            <option value="mistral-large:123b">
-                              Mistral Large 123B
-                            </option>
-                            <option value="mistral-nemo:12b">
-                              Mistral Nemo 12B
-                            </option>
-                            <option value="mistral-small:22b">
-                              Mistral Small 22B
-                            </option>
-                            <option value="mistral-small:24b">
-                              Mistral Small 24B
-                            </option>
-                            <option value="mistral-small3.1:24b">
-                              Mistral Small 3.1 24B
-                            </option>
-                            <option value="mistral-small3.2:24b">
-                              Mistral Small 3.2 24B
-                            </option>
-                            <option value="mistrallite:7b">
-                              MistralLite 7B
-                            </option>
-                            <option value="mixtral:8x7b">Mixtral 8x7B</option>
-                            <option value="mixtral:8x22b">Mixtral 8x22B</option>
-                            <option value="moondream:1.8b">
-                              Moondream 1.8B
-                            </option>
-                            <option value="mxbai-embed-large:335m">
-                              MXBai Embed Large 335M
-                            </option>
-                            <option value="nemotron:70b">Nemotron 70B</option>
-                            <option value="nemotron-mini:4b">
-                              Nemotron Mini 4B
-                            </option>
-                            <option value="neural-chat:7b">
-                              Neural Chat 7B
-                            </option>
-                            <option value="notus:7b">Notus 7B</option>
-                            <option value="notux:8x7b">Notux 8x7B</option>
-                            <option value="nous-hermes:7b">
-                              Nous Hermes 7B
-                            </option>
-                            <option value="nous-hermes:13b">
-                              Nous Hermes 13B
-                            </option>
-                            <option value="nous-hermes2:10.7b">
-                              Nous Hermes 2 10.7B
-                            </option>
-                            <option value="nous-hermes2:34b">
-                              Nous Hermes 2 34B
-                            </option>
-                            <option value="nous-hermes2-mixtral:8x7b">
-                              Nous Hermes 2 Mixtral 8x7B
-                            </option>
-                            <option value="nuextract:3.8b">
-                              Nuextract 3.8B
-                            </option>
-                            <option value="olmo2:7b">OLMo 2 7B</option>
-                            <option value="olmo2:13b">OLMo 2 13B</option>
-                            <option value="open-orca-platypus2:13b">
-                              Open Orca Platypus 2 13B
-                            </option>
-                            <option value="openchat:7b">OpenChat 7B</option>
-                            <option value="openhermes:7b">OpenHermes 7B</option>
-                            <option value="openthinker:7b">
-                              OpenThinker 7B
-                            </option>
-                            <option value="openthinker:32b">
-                              OpenThinker 32B
-                            </option>
-                            <option value="orca-mini:3b">Orca Mini 3B</option>
-                            <option value="orca-mini:7b">Orca Mini 7B</option>
-                            <option value="orca-mini:13b">Orca Mini 13B</option>
-                            <option value="orca-mini:70b">Orca Mini 70B</option>
-                            <option value="orca2:7b">Orca 2 7B</option>
-                            <option value="orca2:13b">Orca 2 13B</option>
-                            <option value="phi:2.7b">Phi 2.7B</option>
-                            <option value="phi3:latest">Phi 3 Latest</option>
-                            <option value="phi3:3.8b">Phi 3 3.8B</option>
-                            <option value="phi3:14b">Phi 3 14B</option>
-                            <option value="phi3.5:3.8b">Phi 3.5 3.8B</option>
-                            <option value="phi4:14b">Phi 4 14B</option>
-                            <option value="phi4-mini:3.8b">
-                              Phi 4 Mini 3.8B
-                            </option>
-                            <option value="phi4-mini-reasoning:3.8b">
-                              Phi 4 Mini Reasoning 3.8B
-                            </option>
-                            <option value="phi4-reasoning:14b">
-                              Phi 4 Reasoning 14B
-                            </option>
-                            <option value="qwen:0.5b">Qwen 0.5B</option>
-                            <option value="qwen:1.8b">Qwen 1.8B</option>
-                            <option value="qwen:4b">Qwen 4B</option>
-                            <option value="qwen:7b">Qwen 7B</option>
-                            <option value="qwen:14b">Qwen 14B</option>
-                            <option value="qwen:32b">Qwen 32B</option>
-                            <option value="qwen:72b">Qwen 72B</option>
-                            <option value="qwen:110b">Qwen 110B</option>
-                            <option value="qwen2:0.5b">Qwen 2 0.5B</option>
-                            <option value="qwen2:1.5b">Qwen 2 1.5B</option>
-                            <option value="qwen2:7b">Qwen 2 7B</option>
-                            <option value="qwen2:72b">Qwen 2 72B</option>
-                            <option value="qwen2-math:1.5b">
-                              Qwen 2 Math 1.5B
-                            </option>
-                            <option value="qwen2-math:7b">
-                              Qwen 2 Math 7B
-                            </option>
-                            <option value="qwen2-math:72b">
-                              Qwen 2 Math 72B
-                            </option>
-                            <option value="qwen2.5:0.5b">Qwen 2.5 0.5B</option>
-                            <option value="qwen2.5:1.5b">Qwen 2.5 1.5B</option>
-                            <option value="qwen2.5:3b">Qwen 2.5 3B</option>
-                            <option value="qwen2.5:7b">Qwen 2.5 7B</option>
-                            <option value="qwen2.5:14b">Qwen 2.5 14B</option>
-                            <option value="qwen2.5:32b">Qwen 2.5 32B</option>
-                            <option value="qwen2.5:72b">Qwen 2.5 72B</option>
-                            <option value="qwen2.5vl:3b">Qwen 2.5 VL 3B</option>
-                            <option value="qwen2.5vl:7b">Qwen 2.5 VL 7B</option>
-                            <option value="qwen2.5vl:32b">
-                              Qwen 2.5 VL 32B
-                            </option>
-                            <option value="qwen2.5vl:72b">
-                              Qwen 2.5 VL 72b
-                            </option>
-                            <option value="qwen3:0.6b">Qwen 3 0.6B</option>
-                            <option value="qwen3:1.7b">Qwen 3 1.7B</option>
-                            <option value="qwen3:4b">Qwen 3 4B</option>
-                            <option value="qwen3:8b">Qwen 3 8B</option>
-                            <option value="qwen3:14b">Qwen 3 14B</option>
-                            <option value="qwen3:30b">Qwen 3 30B</option>
-                            <option value="qwen3:32b">Qwen 3 32B</option>
-                            <option value="qwen3:235b">Qwen 3 235B</option>
-                            <option value="qwen3-embedding:0.6b">
-                              Qwen 3 Embedding 0.6B
-                            </option>
-                            <option value="qwen3-embedding:4b">
-                              Qwen 3 Embedding 4B
-                            </option>
-                            <option value="qwen3-embedding:8b">
-                              Qwen 3 Embedding 8B
-                            </option>
-                            <option value="qwq:32b">QwQ 32B</option>
-                            <option value="r1-1776:70b">R1 1776 70B</option>
-                            <option value="r1-1776:671b">R1 1776 671B</option>
-                            <option value="reflection:70b">
-                              Reflection 70B
-                            </option>
-                            <option value="sailor2:1b">Sailor 2 1B</option>
-                            <option value="sailor2:8b">Sailor 2 8B</option>
-                            <option value="sailor2:20b">Sailor 2 20B</option>
-                            <option value="samantha-mistral:7b">
-                              Samantha Mistral 7B
-                            </option>
-                            <option value="shieldgemma:2b">
-                              ShieldGemma 2B
-                            </option>
-                            <option value="shieldgemma:9b">
-                              ShieldGemma 9B
-                            </option>
-                            <option value="shieldgemma:27b">
-                              ShieldGemma 27B
-                            </option>
-                            <option value="smallthinker:3b">
-                              SmallThinker 3B
-                            </option>
-                            <option value="smollm:135m">SmolLM 135M</option>
-                            <option value="smollm:360m">SmolLM 360M</option>
-                            <option value="smollm:1.7b">SmolLM 1.7B</option>
-                            <option value="smollm2:135m">SmolLM 2 135M</option>
-                            <option value="smollm2:360m">SmolLM 2 360M</option>
-                            <option value="smollm2:1.7b">SmolLM 2 1.7B</option>
-                            <option value="solar:10.7b">Solar 10.7B</option>
-                            <option value="solar-pro:22b">Solar Pro 22B</option>
-                            <option value="starling-lm:7b">
-                              Starling LM 7B
-                            </option>
-                            <option value="stable-beluga:7b">
-                              Stable Beluga 7B
-                            </option>
-                            <option value="stable-beluga:13b">
-                              Stable Beluga 13B
-                            </option>
-                            <option value="stable-beluga:70b">
-                              Stable Beluga 70B
-                            </option>
-                            <option value="stablelm-zephyr:3b">
-                              StableLM Zephyr 3B
-                            </option>
-                            <option value="stablelm2:1.6b">
-                              StableLM 2 1.6B
-                            </option>
-                            <option value="stablelm2:12b">
-                              StableLM 2 12B
-                            </option>
-                            <option value="tinydolphin:1.1b">
-                              TinyDolphin 1.1B
-                            </option>
-                            <option value="tinyllama:1.1b">
-                              TinyLlama 1.1B
-                            </option>
-                            <option value="tulu3:8b">Tulu 3 8B</option>
-                            <option value="tulu3:70b">Tulu 3 70B</option>
-                            <option value="vicuna:7b">Vicuna 7B</option>
-                            <option value="vicuna:13b">Vicuna 13B</option>
-                            <option value="vicuna:33b">Vicuna 33B</option>
-                            <option value="wizard-math:7b">
-                              Wizard Math 7b
-                            </option>
-                            <option value="wizard-math:13b">
-                              Wizard Math 13B
-                            </option>
-                            <option value="wizard-math:70b">
-                              Wizard Math 70B
-                            </option>
-                            <option value="wizard-vicuna:13b">
-                              Wizard Vicuna 13B
-                            </option>
-                            <option value="wizard-vicuna-uncensored:7b">
-                              Wizard Vicuna Uncensored 7B
-                            </option>
-                            <option value="wizard-vicuna-uncensored:13b">
-                              Wizard Vicuna Uncensored 13B
-                            </option>
-                            <option value="wizard-vicuna-uncensored:30b">
-                              Wizard Vicuna Uncensored 30B
-                            </option>
-                            <option value="wizardlm:7b">WizardLM 7B</option>
-                            <option value="wizardlm:13b">WizardLM 13B</option>
-                            <option value="wizardlm:70b">WizardLM 70B</option>
-                            <option value="wizardlm-uncensored:13b">
-                              WizardLM Uncensored 13B
-                            </option>
-                            <option value="wizardlm2:7b">WizardLM 2 7B</option>
-                            <option value="wizardlm2:8x22b">
-                              WizardLM 2 8x22B
-                            </option>
-                            <option value="wizardcoder:33b">
-                              WizardCoder 33B
-                            </option>
-                            <option value="xwinlm:7b">XwinLM 7B</option>
-                            <option value="xwinlm:13b">XwinLM 13B</option>
-                            <option value="yarn-llama2:7b">
-                              Yarn Llama 2 7B
-                            </option>
-                            <option value="yarn-llama2:13b">
-                              Yarn Llama 2 13B
-                            </option>
-                            <option value="yarn-mistral:7b">
-                              Yarn Mistral 7B
-                            </option>
-                            <option value="yi:6b">Yi 6B</option>
-                            <option value="yi:9b">Yi 9B</option>
-                            <option value="yi:34b">Yi 34B</option>
-                            <option value="yi-coder:1.5b">Yi Coder 1.5B</option>
-                            <option value="yi-coder:9b">Yi Coder 9B</option>
-                            <option value="zephyr:7b">Zephyr 7B</option>
-                            <option value="zephyr:141b">Zephyr 141B</option>
+                            <optgroup label="☁️ OpenRouter (Cloud)">
+                              {OPENROUTER_MODELS.map((m) => (
+                                <option key={m.value} value={m.value}>{m.label}</option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="🖥️ Ollama (Self-Hosted)">
+                              {OLLAMA_MODELS.map((m) => (
+                                <option key={m.value} value={m.value}>{m.label}</option>
+                              ))}
+                            </optgroup>
                           </select>
+                          <p className="text-xs mt-1" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>
+                            OpenRouter = cloud API (works now) | Ollama = self-hosted (requires VM setup)
+                          </p>
                         </div>
 
-                        {/* Creative Model */}
+                        {/* Creative Model - PLACEHOLDER_CREATIVE_START */}
                         <div>
                           <label
                             className="block text-sm font-medium mb-2"
@@ -3493,7 +2961,7 @@ ALWAYS:
                             Creative
                           </label>
                           <select
-                            value={config.creativeModel || "mistral:latest"}
+                            value={config.creativeModel || "openrouter:mistralai/mistral-7b-instruct"}
                             onChange={(e) =>
                               setConfig((prev) => ({
                                 ...prev,
@@ -3508,545 +2976,16 @@ ALWAYS:
                               width: "250px",
                             }}
                           >
-                            <option value="aya:8b">Aya 8B</option>
-                            <option value="aya:35b">Aya 35B</option>
-                            <option value="aya-expanse:8b">
-                              Aya Expanse 8B
-                            </option>
-                            <option value="aya-expanse:32b">
-                              Aya Expanse 32B
-                            </option>
-                            <option value="alfred:40b">Alfred 40B</option>
-                            <option value="athene-v2:72b">Athene V2 72B</option>
-                            <option value="bakllava:7b">BakLLaVA 7B</option>
-                            <option value="bespoke-minicheck:7b">
-                              Bespoke MiniCheck 7B
-                            </option>
-                            <option value="cogito:3b">Cogito 3B</option>
-                            <option value="cogito:8b">Cogito 8B</option>
-                            <option value="cogito:14b">Cogito 14B</option>
-                            <option value="cogito:32b">Cogito 32B</option>
-                            <option value="cogito:70b">Cogito 70B</option>
-                            <option value="command-a:111b">
-                              Command A 111B
-                            </option>
-                            <option value="command-r:35b">Command R 35B</option>
-                            <option value="command-r-plus:104b">
-                              Command R+ 104B
-                            </option>
-                            <option value="command-r7b:7b">
-                              Command R7B 7B
-                            </option>
-                            <option value="command-r7b-arabic:7b">
-                              Command R7B Arabic 7B
-                            </option>
-                            <option value="deepseek-llm:7b">
-                              DeepSeek LLM 7B
-                            </option>
-                            <option value="deepseek-llm:67b">
-                              DeepSeek LLM 67B
-                            </option>
-                            <option value="deepseek-r1:1.5b">
-                              DeepSeek R1 1.5B
-                            </option>
-                            <option value="deepseek-r1:7b">
-                              DeepSeek R1 7B
-                            </option>
-                            <option value="deepseek-r1:8b">
-                              DeepSeek R1 8B
-                            </option>
-                            <option value="deepseek-r1:14b">
-                              DeepSeek R1 14B
-                            </option>
-                            <option value="deepseek-r1:32b">
-                              DeepSeek R1 32B
-                            </option>
-                            <option value="deepseek-r1:70b">
-                              DeepSeek R1 70B
-                            </option>
-                            <option value="deepseek-r1:671b">
-                              DeepSeek R1 671B
-                            </option>
-                            <option value="deepseek-v2:16b">
-                              DeepSeek V2 16B
-                            </option>
-                            <option value="deepseek-v2:236b">
-                              DeepSeek V2 236B
-                            </option>
-                            <option value="deepseek-v2.5:236b">
-                              DeepSeek V2.5 236B
-                            </option>
-                            <option value="deepseek-v3:671b">
-                              DeepSeek V3 671B
-                            </option>
-                            <option value="deepseek-v3.1:671b">
-                              DeepSeek V3.1 671B
-                            </option>
-                            <option value="dbrx:132b">DBRX 132B</option>
-                            <option value="dolphin-llama3:8b">
-                              Dolphin Llama 3 8B
-                            </option>
-                            <option value="dolphin-llama3:70b">
-                              Dolphin Llama 3 70B
-                            </option>
-                            <option value="dolphin-mistral:7b">
-                              Dolphin Mistral 7B
-                            </option>
-                            <option value="dolphin-phi:2.7b">
-                              Dolphin Phi 2.7B
-                            </option>
-                            <option value="dolphin3:8b">Dolphin 3 8B</option>
-                            <option value="everythinglm:13b">
-                              EverythingLM 13B
-                            </option>
-                            <option value="exaone-deep:2.4b">
-                              EXAONE Deep 2.4B
-                            </option>
-                            <option value="exaone-deep:7.8b">
-                              EXAONE Deep 7.8B
-                            </option>
-                            <option value="exaone-deep:32b">
-                              EXAONE Deep 32B
-                            </option>
-                            <option value="exaone3.5:2.4b">
-                              EXAONE 3.5 2.4B
-                            </option>
-                            <option value="exaone3.5:7.8b">
-                              EXAONE 3.5 7.8B
-                            </option>
-                            <option value="exaone3.5:32b">
-                              EXAONE 3.5 32B
-                            </option>
-                            <option value="falcon:7b">Falcon 7B</option>
-                            <option value="falcon:40b">Falcon 40B</option>
-                            <option value="falcon:180b">Falcon 180B</option>
-                            <option value="falcon2:11b">Falcon 2 11B</option>
-                            <option value="falcon3:1b">Falcon 3 1B</option>
-                            <option value="falcon3:3b">Falcon 3 3B</option>
-                            <option value="falcon3:7b">Falcon 3 7B</option>
-                            <option value="falcon3:10b">Falcon 3 10B</option>
-                            <option value="gemma:2b">Gemma 2B</option>
-                            <option value="gemma:7b">Gemma 7B</option>
-                            <option value="gemma2:2b">Gemma 2 2B</option>
-                            <option value="gemma2:9b">Gemma 2 9B</option>
-                            <option value="gemma2:27b">Gemma 2 27B</option>
-                            <option value="gemma3:270m">Gemma 3 270M</option>
-                            <option value="gemma3:1b">Gemma 3 1B</option>
-                            <option value="gemma3:4b">Gemma 3 4B</option>
-                            <option value="gemma3:12b">Gemma 3 12B</option>
-                            <option value="gemma3:27b">Gemma 3 27B</option>
-                            <option value="gemma3n:e2b">Gemma 3n E2B</option>
-                            <option value="gemma3n:e4b">Gemma 3n E4B</option>
-                            <option value="glm4:9b">GLM 4 9B</option>
-                            <option value="goliath:70b">Goliath 70B</option>
-                            <option value="granite-embedding:30m">
-                              Granite Embedding 30M
-                            </option>
-                            <option value="granite-embedding:278m">
-                              Granite Embedding 278M
-                            </option>
-                            <option value="granite3-dense:2b">
-                              Granite 3 Dense 2B
-                            </option>
-                            <option value="granite3-dense:8b">
-                              Granite 3 Dense 8B
-                            </option>
-                            <option value="granite3-guardian:2b">
-                              Granite 3 Guardian 2B
-                            </option>
-                            <option value="granite3-guardian:8b">
-                              Granite 3 Guardian 8B
-                            </option>
-                            <option value="granite3-moe:1b">
-                              Granite 3 MoE 1B
-                            </option>
-                            <option value="granite3-moe:3b">
-                              Granite 3 MoE 3b
-                            </option>
-                            <option value="granite3.1-dense:2b">
-                              Granite 3.1 Dense 2B
-                            </option>
-                            <option value="granite3.1-dense:8b">
-                              Granite 3.1 Dense 8B
-                            </option>
-                            <option value="granite3.1-moe:1b">
-                              Granite 3.1 MoE 1B
-                            </option>
-                            <option value="granite3.1-moe:3b">
-                              Granite 3.1 MoE 3B
-                            </option>
-                            <option value="granite3.2:2b">
-                              Granite 3.2 2B
-                            </option>
-                            <option value="granite3.2:8b">
-                              Granite 3.2 8B
-                            </option>
-                            <option value="granite3.2-vision:2b">
-                              Granite 3.2 Vision 2B
-                            </option>
-                            <option value="granite3.3:2b">
-                              Granite 3.3 2B
-                            </option>
-                            <option value="granite3.3:8b">
-                              Granite 3.3 8B
-                            </option>
-                            <option value="granite4:2b">Granite 4 2B</option>
-                            <option value="granite4:8b">Granite 4 8B</option>
-                            <option value="gpt-oss:20b">GPT-OSS 20B</option>
-                            <option value="gpt-oss:120b">GPT-OSS 120B</option>
-                            <option value="hermes3:3b">Hermes 3 3B</option>
-                            <option value="hermes3:8b">Hermes 3 8B</option>
-                            <option value="hermes3:70b">Hermes 3 70B</option>
-                            <option value="hermes3:405b">Hermes 3 405B</option>
-                            <option value="internlm2:1m">InternLM 2 1M</option>
-                            <option value="internlm2:1.8b">
-                              InternLM 2 1.8B
-                            </option>
-                            <option value="internlm2:7b">InternLM 2 7B</option>
-                            <option value="internlm2:20b">
-                              InternLM 2 20B
-                            </option>
-                            <option value="kimi-k2:cloud">Kimi K2 Cloud</option>
-                            <option value="llama-guard3:1b">
-                              Llama Guard 3 1B
-                            </option>
-                            <option value="llama-guard3:8b">
-                              Llama Guard 3 8B
-                            </option>
-                            <option value="llama-pro:8b">Llama Pro 8B</option>
-                            <option value="llama-pro:70b">Llama Pro 70B</option>
-                            <option value="llama2:7b">Llama 2 7B</option>
-                            <option value="llama2:13b">Llama 2 13B</option>
-                            <option value="llama2:70b">Llama 2 70B</option>
-                            <option value="llama2-chinese:7b">
-                              Llama 2 Chinese 7B
-                            </option>
-                            <option value="llama2-chinese:13b">
-                              Llama 2 Chinese 13B
-                            </option>
-                            <option value="llama2-uncensored:7b">
-                              Llama 2 Uncensored 7B
-                            </option>
-                            <option value="llama2-uncensored:70b">
-                              Llama 2 Uncensored 70B
-                            </option>
-                            <option value="llama3:8b">Llama 3 8B</option>
-                            <option value="llama3:70b">Llama 3 70B</option>
-                            <option value="llama3-chatqa:8b">
-                              Llama 3 ChatQA 8B
-                            </option>
-                            <option value="llama3-chatqa:70b">
-                              Llama 3 ChatQA 70B
-                            </option>
-                            <option value="llama3-gradient:8b">
-                              Llama 3 Gradient 8B
-                            </option>
-                            <option value="llama3-gradient:70b">
-                              Llama 3 Gradient 70B
-                            </option>
-                            <option value="llama3-groq-tool-use:8b">
-                              Llama 3 Groq Tool Use 8B
-                            </option>
-                            <option value="llama3-groq-tool-use:70b">
-                              Llama 3 Groq Tool Use 70B
-                            </option>
-                            <option value="llama3.1:8b">Llama 3.1 8B</option>
-                            <option value="llama3.1:70b">Llama 3.1 70B</option>
-                            <option value="llama3.1:405b">
-                              Llama 3.1 405B
-                            </option>
-                            <option value="llama3.2:1b">Llama 3.2 1B</option>
-                            <option value="llama3.2:3b">Llama 3.2 3B</option>
-                            <option value="llama3.2-vision:11b">
-                              Llama 3.2 Vision 11B
-                            </option>
-                            <option value="llama3.2-vision:90b">
-                              Llama 3.2 Vision 90B
-                            </option>
-                            <option value="llama3.3:70b">Llama 3.3 70B</option>
-                            <option value="llama4:16x17b">
-                              Llama 4 16x17B
-                            </option>
-                            <option value="llama4:128x17b">
-                              Llama 4 128x17B
-                            </option>
-                            <option value="llava:7b">LLaVA 7B</option>
-                            <option value="llava:13b">LLaVA 13B</option>
-                            <option value="llava:34b">LLaVA 34B</option>
-                            <option value="llava-llama3:8b">
-                              LLaVA Llama 3 8B
-                            </option>
-                            <option value="llava-phi3:3.8b">
-                              LLaVA Phi 3 3.8B
-                            </option>
-                            <option value="magistral:24b">Magistral 24B</option>
-                            <option value="marco-o1:7b">Marco O1 7B</option>
-                            <option value="mathstral:7b">Mathstral 7B</option>
-                            <option value="meditron:7b">Meditron 7B</option>
-                            <option value="meditron:70b">Meditron 70B</option>
-                            <option value="medllama2:7b">MedLlama 2 7B</option>
-                            <option value="megadolphin:120b">
-                              MegaDolphin 120B
-                            </option>
-                            <option value="minicpm-v:8b">MiniCPM V 8B</option>
-                            <option value="mistral:latest">
-                              Mistral Latest
-                            </option>
-                            <option value="mistral:7b">Mistral 7B</option>
-                            <option value="mistral-large:123b">
-                              Mistral Large 123B
-                            </option>
-                            <option value="mistral-nemo:12b">
-                              Mistral Nemo 12B
-                            </option>
-                            <option value="mistral-small:22b">
-                              Mistral Small 22B
-                            </option>
-                            <option value="mistral-small:24b">
-                              Mistral Small 24B
-                            </option>
-                            <option value="mistral-small3.1:24b">
-                              Mistral Small 3.1 24B
-                            </option>
-                            <option value="mistral-small3.2:24b">
-                              Mistral Small 3.2 24B
-                            </option>
-                            <option value="mistrallite:7b">
-                              MistralLite 7B
-                            </option>
-                            <option value="mixtral:8x7b">Mixtral 8x7B</option>
-                            <option value="mixtral:8x22b">Mixtral 8x22B</option>
-                            <option value="moondream:1.8b">
-                              Moondream 1.8B
-                            </option>
-                            <option value="mxbai-embed-large:335m">
-                              MXBai Embed Large 335M
-                            </option>
-                            <option value="nemotron:70b">Nemotron 70B</option>
-                            <option value="nemotron-mini:4b">
-                              Nemotron Mini 4B
-                            </option>
-                            <option value="neural-chat:7b">
-                              Neural Chat 7B
-                            </option>
-                            <option value="notus:7b">Notus 7B</option>
-                            <option value="notux:8x7b">Notux 8x7B</option>
-                            <option value="nous-hermes:7b">
-                              Nous Hermes 7B
-                            </option>
-                            <option value="nous-hermes:13b">
-                              Nous Hermes 13B
-                            </option>
-                            <option value="nous-hermes2:10.7b">
-                              Nous Hermes 2 10.7B
-                            </option>
-                            <option value="nous-hermes2:34b">
-                              Nous Hermes 2 34B
-                            </option>
-                            <option value="nous-hermes2-mixtral:8x7b">
-                              Nous Hermes 2 Mixtral 8x7B
-                            </option>
-                            <option value="nuextract:3.8b">
-                              Nuextract 3.8B
-                            </option>
-                            <option value="olmo2:7b">OLMo 2 7B</option>
-                            <option value="olmo2:13b">OLMo 2 13B</option>
-                            <option value="open-orca-platypus2:13b">
-                              Open Orca Platypus 2 13B
-                            </option>
-                            <option value="openchat:7b">OpenChat 7B</option>
-                            <option value="openhermes:7b">OpenHermes 7B</option>
-                            <option value="openthinker:7b">
-                              OpenThinker 7B
-                            </option>
-                            <option value="openthinker:32b">
-                              OpenThinker 32B
-                            </option>
-                            <option value="orca-mini:3b">Orca Mini 3B</option>
-                            <option value="orca-mini:7b">Orca Mini 7B</option>
-                            <option value="orca-mini:13b">Orca Mini 13B</option>
-                            <option value="orca-mini:70b">Orca Mini 70B</option>
-                            <option value="orca2:7b">Orca 2 7B</option>
-                            <option value="orca2:13b">Orca 2 13B</option>
-                            <option value="phi:2.7b">Phi 2.7B</option>
-                            <option value="phi3:latest">Phi 3 Latest</option>
-                            <option value="phi3:3.8b">Phi 3 3.8B</option>
-                            <option value="phi3:14b">Phi 3 14B</option>
-                            <option value="phi3.5:3.8b">Phi 3.5 3.8B</option>
-                            <option value="phi4:14b">Phi 4 14B</option>
-                            <option value="phi4-mini:3.8b">
-                              Phi 4 Mini 3.8B
-                            </option>
-                            <option value="phi4-mini-reasoning:3.8b">
-                              Phi 4 Mini Reasoning 3.8B
-                            </option>
-                            <option value="phi4-reasoning:14b">
-                              Phi 4 Reasoning 14B
-                            </option>
-                            <option value="qwen:0.5b">Qwen 0.5B</option>
-                            <option value="qwen:1.8b">Qwen 1.8B</option>
-                            <option value="qwen:4b">Qwen 4B</option>
-                            <option value="qwen:7b">Qwen 7B</option>
-                            <option value="qwen:14b">Qwen 14B</option>
-                            <option value="qwen:32b">Qwen 32B</option>
-                            <option value="qwen:72b">Qwen 72B</option>
-                            <option value="qwen:110b">Qwen 110B</option>
-                            <option value="qwen2:0.5b">Qwen 2 0.5B</option>
-                            <option value="qwen2:1.5b">Qwen 2 1.5B</option>
-                            <option value="qwen2:7b">Qwen 2 7B</option>
-                            <option value="qwen2:72b">Qwen 2 72B</option>
-                            <option value="qwen2-math:1.5b">
-                              Qwen 2 Math 1.5B
-                            </option>
-                            <option value="qwen2-math:7b">
-                              Qwen 2 Math 7B
-                            </option>
-                            <option value="qwen2-math:72b">
-                              Qwen 2 Math 72B
-                            </option>
-                            <option value="qwen2.5:0.5b">Qwen 2.5 0.5B</option>
-                            <option value="qwen2.5:1.5b">Qwen 2.5 1.5B</option>
-                            <option value="qwen2.5:3b">Qwen 2.5 3B</option>
-                            <option value="qwen2.5:7b">Qwen 2.5 7B</option>
-                            <option value="qwen2.5:14b">Qwen 2.5 14B</option>
-                            <option value="qwen2.5:32b">Qwen 2.5 32B</option>
-                            <option value="qwen2.5:72b">Qwen 2.5 72B</option>
-                            <option value="qwen2.5vl:3b">Qwen 2.5 VL 3B</option>
-                            <option value="qwen2.5vl:7b">Qwen 2.5 VL 7B</option>
-                            <option value="qwen2.5vl:32b">
-                              Qwen 2.5 VL 32B
-                            </option>
-                            <option value="qwen2.5vl:72b">
-                              Qwen 2.5 VL 72b
-                            </option>
-                            <option value="qwen3:0.6b">Qwen 3 0.6B</option>
-                            <option value="qwen3:1.7b">Qwen 3 1.7B</option>
-                            <option value="qwen3:4b">Qwen 3 4B</option>
-                            <option value="qwen3:8b">Qwen 3 8B</option>
-                            <option value="qwen3:14b">Qwen 3 14B</option>
-                            <option value="qwen3:30b">Qwen 3 30B</option>
-                            <option value="qwen3:32b">Qwen 3 32B</option>
-                            <option value="qwen3:235b">Qwen 3 235B</option>
-                            <option value="qwen3-embedding:0.6b">
-                              Qwen 3 Embedding 0.6B
-                            </option>
-                            <option value="qwen3-embedding:4b">
-                              Qwen 3 Embedding 4B
-                            </option>
-                            <option value="qwen3-embedding:8b">
-                              Qwen 3 Embedding 8B
-                            </option>
-                            <option value="qwq:32b">QwQ 32B</option>
-                            <option value="r1-1776:70b">R1 1776 70B</option>
-                            <option value="r1-1776:671b">R1 1776 671B</option>
-                            <option value="reflection:70b">
-                              Reflection 70B
-                            </option>
-                            <option value="sailor2:1b">Sailor 2 1B</option>
-                            <option value="sailor2:8b">Sailor 2 8B</option>
-                            <option value="sailor2:20b">Sailor 2 20B</option>
-                            <option value="samantha-mistral:7b">
-                              Samantha Mistral 7B
-                            </option>
-                            <option value="shieldgemma:2b">
-                              ShieldGemma 2B
-                            </option>
-                            <option value="shieldgemma:9b">
-                              ShieldGemma 9B
-                            </option>
-                            <option value="shieldgemma:27b">
-                              ShieldGemma 27B
-                            </option>
-                            <option value="smallthinker:3b">
-                              SmallThinker 3B
-                            </option>
-                            <option value="smollm:135m">SmolLM 135M</option>
-                            <option value="smollm:360m">SmolLM 360M</option>
-                            <option value="smollm:1.7b">SmolLM 1.7B</option>
-                            <option value="smollm2:135m">SmolLM 2 135M</option>
-                            <option value="smollm2:360m">SmolLM 2 360M</option>
-                            <option value="smollm2:1.7b">SmolLM 2 1.7B</option>
-                            <option value="solar:10.7b">Solar 10.7B</option>
-                            <option value="solar-pro:22b">Solar Pro 22B</option>
-                            <option value="starling-lm:7b">
-                              Starling LM 7B
-                            </option>
-                            <option value="stable-beluga:7b">
-                              Stable Beluga 7B
-                            </option>
-                            <option value="stable-beluga:13b">
-                              Stable Beluga 13B
-                            </option>
-                            <option value="stable-beluga:70b">
-                              Stable Beluga 70B
-                            </option>
-                            <option value="stablelm-zephyr:3b">
-                              StableLM Zephyr 3B
-                            </option>
-                            <option value="stablelm2:1.6b">
-                              StableLM 2 1.6B
-                            </option>
-                            <option value="stablelm2:12b">
-                              StableLM 2 12B
-                            </option>
-                            <option value="tinydolphin:1.1b">
-                              TinyDolphin 1.1B
-                            </option>
-                            <option value="tinyllama:1.1b">
-                              TinyLlama 1.1B
-                            </option>
-                            <option value="tulu3:8b">Tulu 3 8B</option>
-                            <option value="tulu3:70b">Tulu 3 70B</option>
-                            <option value="vicuna:7b">Vicuna 7B</option>
-                            <option value="vicuna:13b">Vicuna 13B</option>
-                            <option value="vicuna:33b">Vicuna 33B</option>
-                            <option value="wizard-math:7b">
-                              Wizard Math 7b
-                            </option>
-                            <option value="wizard-math:13b">
-                              Wizard Math 13B
-                            </option>
-                            <option value="wizard-math:70b">
-                              Wizard Math 70B
-                            </option>
-                            <option value="wizard-vicuna:13b">
-                              Wizard Vicuna 13B
-                            </option>
-                            <option value="wizard-vicuna-uncensored:7b">
-                              Wizard Vicuna Uncensored 7B
-                            </option>
-                            <option value="wizard-vicuna-uncensored:13b">
-                              Wizard Vicuna Uncensored 13B
-                            </option>
-                            <option value="wizard-vicuna-uncensored:30b">
-                              Wizard Vicuna Uncensored 30B
-                            </option>
-                            <option value="wizardlm:7b">WizardLM 7B</option>
-                            <option value="wizardlm:13b">WizardLM 13B</option>
-                            <option value="wizardlm:70b">WizardLM 70B</option>
-                            <option value="wizardlm-uncensored:13b">
-                              WizardLM Uncensored 13B
-                            </option>
-                            <option value="wizardlm2:7b">WizardLM 2 7B</option>
-                            <option value="wizardlm2:8x22b">
-                              WizardLM 2 8x22B
-                            </option>
-                            <option value="xwinlm:7b">XwinLM 7B</option>
-                            <option value="xwinlm:13b">XwinLM 13B</option>
-                            <option value="yarn-llama2:7b">
-                              Yarn Llama 2 7B
-                            </option>
-                            <option value="yarn-llama2:13b">
-                              Yarn Llama 2 13B
-                            </option>
-                            <option value="yarn-mistral:7b">
-                              Yarn Mistral 7B
-                            </option>
-                            <option value="yi:6b">Yi 6B</option>
-                            <option value="yi:9b">Yi 9B</option>
-                            <option value="yi:34b">Yi 34B</option>
-                            <option value="zephyr:7b">Zephyr 7B</option>
-                            <option value="zephyr:141b">Zephyr 141B</option>
+                            <optgroup label="☁️ OpenRouter (Cloud)">
+                              {OPENROUTER_MODELS.filter(m => m.category === 'creative' || m.category === 'general').map((m) => (
+                                <option key={m.value} value={m.value}>{m.label}</option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="🖥️ Ollama (Self-Hosted)">
+                              {OLLAMA_MODELS.filter(m => m.category === 'creative' || m.category === 'general').map((m) => (
+                                <option key={m.value} value={m.value}>{m.label}</option>
+                              ))}
+                            </optgroup>
                           </select>
                         </div>
 
@@ -4059,9 +2998,7 @@ ALWAYS:
                             Coding
                           </label>
                           <select
-                            value={
-                              config.codingModel || "deepseek-coder:latest"
-                            }
+                            value={config.codingModel || "openrouter:deepseek/deepseek-coder-33b-instruct"}
                             onChange={(e) =>
                               setConfig((prev) => ({
                                 ...prev,
@@ -4076,94 +3013,16 @@ ALWAYS:
                               width: "250px",
                             }}
                           >
-                            <option value="codebooga:34b">CodeBooga 34B</option>
-                            <option value="codegemma:2b">CodeGemma 2B</option>
-                            <option value="codegemma:7b">CodeGemma 7B</option>
-                            <option value="codeqwen:7b">CodeQwen 7B</option>
-                            <option value="codellama:7b">CodeLlama 7B</option>
-                            <option value="codellama:13b">CodeLlama 13B</option>
-                            <option value="codellama:34b">CodeLlama 34B</option>
-                            <option value="codellama:70b">CodeLlama 70B</option>
-                            <option value="codestral:22b">Codestral 22B</option>
-                            <option value="deepcoder:1.5b">
-                              DeepCoder 1.5B
-                            </option>
-                            <option value="deepcoder:14b">DeepCoder 14B</option>
-                            <option value="deepseek-coder:latest">
-                              DeepSeek Coder Latest
-                            </option>
-                            <option value="deepseek-coder:1.3b">
-                              DeepSeek Coder 1.3B
-                            </option>
-                            <option value="deepseek-coder:6.7b">
-                              DeepSeek Coder 6.7B
-                            </option>
-                            <option value="deepseek-coder:33b">
-                              DeepSeek Coder 33B
-                            </option>
-                            <option value="deepseek-coder-v2:16b">
-                              DeepSeek Coder V2 16B
-                            </option>
-                            <option value="deepseek-coder-v2:236b">
-                              DeepSeek Coder V2 236B
-                            </option>
-                            <option value="dolphincoder:7b">
-                              DolphinCoder 7B
-                            </option>
-                            <option value="dolphincoder:15b">
-                              DolphinCoder 15B
-                            </option>
-                            <option value="magicoder:7b">Magicoder 7B</option>
-                            <option value="opencoder:1.5b">
-                              OpenCoder 1.5B
-                            </option>
-                            <option value="opencoder:8b">OpenCoder 8B</option>
-                            <option value="phind-codellama:34b">
-                              Phind CodeLlama 34B
-                            </option>
-                            <option value="qwen2.5-coder:0.5b">
-                              Qwen 2.5 Coder 0.5B
-                            </option>
-                            <option value="qwen2.5-coder:1.5b">
-                              Qwen 2.5 Coder 1.5B
-                            </option>
-                            <option value="qwen2.5-coder:3b">
-                              Qwen 2.5 Coder 3B
-                            </option>
-                            <option value="qwen2.5-coder:7b">
-                              Qwen 2.5 Coder 7B
-                            </option>
-                            <option value="qwen2.5-coder:14b">
-                              Qwen 2.5 Coder 14B
-                            </option>
-                            <option value="qwen2.5-coder:32b">
-                              Qwen 2.5 Coder 32B
-                            </option>
-                            <option value="qwen3-coder:30b">
-                              Qwen 3 Coder 30B
-                            </option>
-                            <option value="qwen3-coder:480b">
-                              Qwen 3 Coder 480B
-                            </option>
-                            <option value="stable-code:3b">
-                              Stable Code 3B
-                            </option>
-                            <option value="starcoder:1b">StarCoder 1B</option>
-                            <option value="starcoder:3b">StarCoder 3B</option>
-                            <option value="starcoder:7b">StarCoder 7B</option>
-                            <option value="starcoder:15b">StarCoder 15B</option>
-                            <option value="starcoder2:3b">
-                              StarCoder 2 3B
-                            </option>
-                            <option value="starcoder2:7b">
-                              StarCoder 2 7B
-                            </option>
-                            <option value="starcoder2:15b">
-                              StarCoder 2 15B
-                            </option>
-                            <option value="wizardcoder:33b">
-                              WizardCoder 33B
-                            </option>
+                            <optgroup label="☁️ OpenRouter (Cloud)">
+                              {OPENROUTER_MODELS.filter(m => m.category === 'coding').map((m) => (
+                                <option key={m.value} value={m.value}>{m.label}</option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="🖥️ Ollama (Self-Hosted)">
+                              {OLLAMA_MODELS.filter(m => m.category === 'coding').map((m) => (
+                                <option key={m.value} value={m.value}>{m.label}</option>
+                              ))}
+                            </optgroup>
                           </select>
                         </div>
                       </div>
