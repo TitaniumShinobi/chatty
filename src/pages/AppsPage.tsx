@@ -1,6 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import GridStore from "../components/GridStore";
+import Apps from "../components/Apps";
 
 const AppsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -14,7 +14,7 @@ const AppsPage: React.FC = () => {
   };
 
   return (
-    <GridStore 
+    <Apps 
       onClose={handleClose} 
       onSelectApp={handleSelectApp}
     />
