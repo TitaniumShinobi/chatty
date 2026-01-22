@@ -452,28 +452,6 @@ export class AIService {
       uiContext?: any;
     }
   ): Promise<any> {
-    // #region agent log
-    const logData = {
-      location: 'aiService.ts:439',
-      message: 'processMessage: method called',
-      data: {
-        inputLength: input.length,
-        hasFiles: !!files,
-        filesCount: files?.length || 0,
-        hasOnPartialUpdate: !!callbacks?.onPartialUpdate,
-        hasOnFinalUpdate: !!callbacks?.onFinalUpdate,
-        threadId: options?.threadId,
-        constructId: options?.constructId
-      },
-      timestamp: Date.now(),
-      sessionId: 'debug-session',
-      runId: 'fix-processmessage',
-      hypothesisId: 'D'
-    };
-    try {
-      await} catch {}
-    // #endregion
-
     // Use the conversations API endpoint which handles message processing
     try {
       const threadId = options?.threadId || 'zen-001_chat_with_zen-001';
@@ -619,10 +597,6 @@ export class AIService {
       return packets;
     } catch (error) {
       console.error('[AIService] Failed to process message:', error);
-      // #region agent log
-      try {
-        await} catch {}
-      // #endregion
       throw error;
     }
   }
