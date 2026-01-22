@@ -13,6 +13,7 @@ import {
   Gauge,
   Pin,
   X,
+  Grid3X3,
 } from "lucide-react";
 import { SidebarProps } from "../types";
 import { cn } from "../lib/utils";
@@ -606,6 +607,17 @@ const Sidebar: React.FC<SidebarProps> = ({
               />
             </div>
             {!collapsed && <span>simForge</span>}
+          </button>
+
+          <button
+            onClick={() => navigate("/app/apps")}
+            className={navButtonBase}
+            style={navButtonStyle("/app/apps")}
+            onMouseEnter={(e) => handleNavHover(e, "/app/apps", true)}
+            onMouseLeave={(e) => handleNavHover(e, "/app/apps", false)}
+          >
+            <Grid3X3 size={16} />
+            {!collapsed && <span>Apps</span>}
           </button>
         </div>
       </div>

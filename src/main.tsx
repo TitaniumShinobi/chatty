@@ -13,6 +13,7 @@ import CodePage from './pages/CodePage'
 import SimForge from './pages/SimForge'
 import SearchPage from './pages/SearchPage'
 import ProjectsPage from './pages/ProjectsPage'
+import AppsPage from './pages/AppsPage'
 import { ThemeProvider } from './lib/ThemeContext'
 import './index.css'
 
@@ -41,6 +42,7 @@ const app = (
           <Route path="codex" element={<CodePage />} />
           <Route path="search" element={<SearchPage />} />
           <Route path="projects" element={<ProjectsPage />} />
+          <Route path="apps" element={<AppsPage />} />
         </Route>
       </Routes>
     </BrowserRouter>
