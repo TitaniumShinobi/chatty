@@ -364,7 +364,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             {/* Global Search Form - Replaces all icons when active */}
             {isGlobalSearchExpanded && (
               <div 
-                className="flex items-center flex-1 ml-2"
+                className="flex items-center flex-1 -ml-1"
               >
                 <div 
                   className="flex items-center gap-2 rounded-md px-3 py-1.5 w-full shadow-lg"
