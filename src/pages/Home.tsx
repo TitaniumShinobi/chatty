@@ -354,7 +354,7 @@ export default function Home() {
     hoverLockedRef.current = true
     runFrameSequence(primaryHoverFrames, () => {
       hoverLockedRef.current = false
-    }, 80, 80)
+    }, 20, 20)
   }
 
   const stopLogoCycle = () => {
