@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import {
   Plus,
   Bot,
@@ -18,10 +18,16 @@ interface AIsPageProps {
   initialOpen?: boolean;
 }
 
+interface LayoutContext {
+  handleGPTCreated?: (gptConfig: { constructId?: string; constructCallsign?: string; name?: string }) => void;
+  forceRefreshConversations?: () => void;
+}
+
 export default function AIsPage({ initialOpen = false }: AIsPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const aiService = AIService.getInstance();
+  const layoutContext = useOutletContext<LayoutContext>();
   const [isCreatorOpen, setCreatorOpen] = useState(initialOpen);
   const [ais, setAIs] = useState<AIConfig[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -258,8 +264,18 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
     loadAIs(); // Refresh the list
   };
 
-  const handleAICreated = () => {
+  const handleAICreated = (aiConfig?: unknown) => {
     loadAIs(); // Refresh the list
+    
+    // Notify Layout to add thread to sidebar immediately
+    if (layoutContext?.handleGPTCreated && aiConfig && typeof aiConfig === 'object') {
+      const config = aiConfig as { constructCallsign?: string; id?: string; name?: string };
+      layoutContext.handleGPTCreated({
+        constructId: config.constructCallsign || config.id,
+        constructCallsign: config.constructCallsign,
+        name: config.name,
+      });
+    }
   };
 
   return (

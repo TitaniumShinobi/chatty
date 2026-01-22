@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
+import { useNavigate, useOutletContext } from 'react-router-dom'
 import { Plus, Bot, Search, Star, Users, TrendingUp, Filter, Grid, List, ChevronDown, Check } from 'lucide-react'
 import GPTCreator from '../components/GPTCreator'
 import { AIService, AIConfig } from '../lib/aiService'
@@ -16,9 +16,15 @@ interface CommunityGPT extends AIConfig {
   tags: string[]
 }
 
+interface LayoutContext {
+  handleGPTCreated?: (gptConfig: { constructId?: string; constructCallsign?: string; name?: string }) => void;
+  forceRefreshConversations?: () => void;
+}
+
 export default function SimForge() {
   const navigate = useNavigate()
   const aiService = AIService.getInstance()
+  const layoutContext = useOutletContext<LayoutContext>()
   const [isCreatorOpen, setCreatorOpen] = useState(false)
   const [gpts, setGpts] = useState<CommunityGPT[]>([])
   const [userGpts, setUserGpts] = useState<AIConfig[]>([])
@@ -510,7 +516,18 @@ export default function SimForge() {
       <GPTCreator
         isVisible={isCreatorOpen}
         onClose={handleClose}
-        onGPTCreated={loadData}
+        onGPTCreated={(gptConfig: unknown) => {
+          loadData();
+          // Notify Layout to add thread to sidebar immediately
+          if (layoutContext?.handleGPTCreated && gptConfig && typeof gptConfig === 'object') {
+            const config = gptConfig as { constructCallsign?: string; id?: string; name?: string };
+            layoutContext.handleGPTCreated({
+              constructId: config.constructCallsign || config.id,
+              constructCallsign: config.constructCallsign,
+              name: config.name,
+            });
+          }
+        }}
       />
     </div>
   )

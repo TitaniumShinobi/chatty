@@ -278,12 +278,13 @@ export default function Layout() {
     [threads, shareConversationId],
   );
   const synthAddressBookThreads = useMemo(() => {
-    // Address Book constructs: Zen (primary) + custom GPTs like Katana
+    // Address Book: Zen (primary) + ALL custom GPTs
     // Lin is excluded - she's the GPTCreator create tab agent/undertone stabilizer
-    const ADDRESS_BOOK_CONSTRUCTS = ['zen-001', 'katana-001'];
+    // Any thread with a constructId is a construct contact (except lin-001)
+    const EXCLUDED_CONSTRUCTS = ['lin-001'];
     
     const addressBookThreads = threads.filter((t) => 
-      t.constructId && ADDRESS_BOOK_CONSTRUCTS.includes(t.constructId)
+      t.constructId && !EXCLUDED_CONSTRUCTS.includes(t.constructId)
     );
     
     console.log(`📖 [Layout] Address Book filter: ${addressBookThreads.length} threads from ${threads.length} total`, 
@@ -1426,6 +1427,66 @@ export default function Layout() {
       setIsLoading(false);
     }
   }, [user, isRetryingVVAULT, forceRefreshConversations, threads.length]);
+
+  // Handler for when a new GPT is created - adds thread to sidebar immediately
+  const handleGPTCreated = useCallback((gptConfig: { 
+    constructId?: string; 
+    constructCallsign?: string; 
+    name?: string; 
+  }) => {
+    const constructId = gptConfig.constructId || gptConfig.constructCallsign;
+    if (!constructId) {
+      console.warn("⚠️ [Layout] handleGPTCreated called without constructId");
+      forceRefreshConversations();
+      return;
+    }
+
+    const sessionId = `${constructId}_chat_with_${constructId}`;
+    const now = Date.now();
+    
+    // Check if thread already exists
+    const existingThread = threads.find(
+      (t) => t.id === sessionId || t.constructId === constructId
+    );
+    
+    if (existingThread) {
+      console.log(`📖 [Layout] Thread for ${constructId} already exists`);
+      return;
+    }
+
+    // Create new thread for this GPT
+    const newGPTThread: Thread = {
+      id: sessionId,
+      title: gptConfig.name || constructId,
+      messages: [],
+      createdAt: now,
+      updatedAt: now,
+      archived: false,
+      importMetadata: null,
+      constructId,
+      runtimeId: constructId,
+      isPrimary: false,
+      canonicalForRuntime: null,
+    };
+
+    console.log(`✅ [Layout] Adding new GPT thread to sidebar: ${constructId}`);
+    setThreads((prev) => {
+      // Add new thread, but keep Zen first
+      const zenThread = prev.find(
+        (t) => t.id === DEFAULT_ZEN_CANONICAL_SESSION_ID ||
+               t.constructId === DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID
+      );
+      const otherThreads = prev.filter(
+        (t) => t.id !== DEFAULT_ZEN_CANONICAL_SESSION_ID &&
+               t.constructId !== DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID
+      );
+      
+      if (zenThread) {
+        return [zenThread, newGPTThread, ...otherThreads];
+      }
+      return [newGPTThread, ...prev];
+    });
+  }, [threads, forceRefreshConversations]);
 
   type ThreadInitOptions = {
     title?: string;
@@ -2809,6 +2870,8 @@ export default function Layout() {
                 navigate,
                 reloadThreadMessages,
                 user,
+                handleGPTCreated,
+                forceRefreshConversations,
               }}
             />
           </main>
