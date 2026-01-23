@@ -4056,7 +4056,7 @@ ALWAYS:
                             {message.role === "user" ? (
                               <><span className="font-medium text-app-text-800">You:</span> {message.content}</>
                             ) : (
-                              <><span className="font-medium text-app-orange-500">{gptName || 'Assistant'}:</span> {message.content}</>
+                              <><span className="font-medium text-app-orange-500">{config.name || 'Assistant'}:</span> {message.content}</>
                             )}
                           </p>
                         </div>
