@@ -88,8 +88,10 @@ router.post('/save', async (req, res) => {
         continue;
       }
       
-      // VVAULT path format: /vvault/users/shard_0000/{userId}/instances/{constructId}/chatgpt/{filename}
-      const filename = `vvault/users/shard_0000/${userIdentifier}/instances/${constructCallsign}/chatgpt/${transcript.name}`;
+      // VVAULT path format: /vvault/users/shard_0000/{userId}/instances/{constructId}/{source}/{filename}
+      // Source can be: chatgpt, gemini, grok, copilot, claude, other
+      const transcriptSource = transcript.source || 'chatgpt';
+      const filename = `vvault/users/shard_0000/${userIdentifier}/instances/${constructCallsign}/${transcriptSource}/${transcript.name}`;
       const contentHash = sha256(transcript.content);
       
       const { error: saveError } = await supabase
@@ -106,7 +108,8 @@ router.post('/save', async (req, res) => {
             type: transcript.type,
             uploadedAt: new Date().toISOString(),
             constructCallsign,
-            source: 'chatty-upload',
+            source: transcriptSource,
+            uploadSource: 'chatty-upload',
           },
         }, {
           onConflict: 'user_id,filename',

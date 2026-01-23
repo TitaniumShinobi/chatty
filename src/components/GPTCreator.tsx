@@ -130,8 +130,18 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
   // Transcript upload
   const transcriptInputRef = useRef<HTMLInputElement>(null);
-  const [transcripts, setTranscripts] = useState<Array<{id: string; name: string; content: string; type: string}>>([]);
+  const [transcripts, setTranscripts] = useState<Array<{id: string; name: string; content: string; type: string; source?: string}>>([]);
   const [isUploadingTranscripts, setIsUploadingTranscripts] = useState(false);
+  const [transcriptSource, setTranscriptSource] = useState<string>('chatgpt');
+  
+  const TRANSCRIPT_SOURCES = [
+    { value: 'chatgpt', label: 'ChatGPT' },
+    { value: 'gemini', label: 'Gemini' },
+    { value: 'grok', label: 'Grok' },
+    { value: 'copilot', label: 'Copilot' },
+    { value: 'claude', label: 'Claude' },
+    { value: 'other', label: 'Other' },
+  ];
 
   // Avatar cropping
   const [showCropModal, setShowCropModal] = useState(false);
@@ -937,6 +947,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
             name: file.name,
             content,
             type: ext,
+            source: transcriptSource,
           });
         } else if (ext === 'pdf') {
           const formData = new FormData();
@@ -956,6 +967,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
                 name: file.name,
                 content: result.content,
                 type: 'pdf',
+                source: transcriptSource,
               });
               if (result.isPdfPlaceholder) {
                 console.log(`ℹ️ PDF ${file.name}: ${result.message}`);
@@ -967,6 +979,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
                 name: file.name,
                 content: `[PDF content from ${file.name} - extraction pending]`,
                 type: 'pdf',
+                source: transcriptSource,
               });
             }
           } catch (pdfError) {
@@ -976,6 +989,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
               name: file.name,
               content: `[PDF content from ${file.name} - extraction pending]`,
               type: 'pdf',
+              source: transcriptSource,
             });
           }
         }
@@ -3275,6 +3289,33 @@ ALWAYS:
                         Upload conversation transcripts to give your GPT access
                         to past interactions (.md, .txt, .rtf, .pdf)
                       </p>
+                      
+                      {/* Source selector */}
+                      <div className="flex items-center gap-3 mb-3">
+                        <label
+                          className="text-xs"
+                          style={{ color: "var(--chatty-text)", opacity: 0.8 }}
+                        >
+                          Source:
+                        </label>
+                        <select
+                          value={transcriptSource}
+                          onChange={(e) => setTranscriptSource(e.target.value)}
+                          className="px-3 py-1.5 rounded text-sm"
+                          style={{
+                            backgroundColor: "var(--chatty-bg-message)",
+                            color: "var(--chatty-text)",
+                            border: "1px solid var(--chatty-border)",
+                          }}
+                        >
+                          {TRANSCRIPT_SOURCES.map((src) => (
+                            <option key={src.value} value={src.value}>
+                              {src.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      
                       <input
                         type="file"
                         ref={transcriptInputRef}
