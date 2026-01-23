@@ -28,6 +28,7 @@ import ShareConversationModal from "./ShareConversationModal";
 import ZenGuidance from "./ZenGuidance";
 import { useZenGuidance } from "../hooks/useZenGuidance";
 import { AIService } from "../lib/aiService";
+import { GPTService, type GPTConfig } from "../lib/gptService";
 import type { UIContextSnapshot, Message as ChatMessage } from "../types";
 import { WorkspaceContextBuilder } from "../engine/context/WorkspaceContextBuilder";
 import { safeMode, safeImport } from "../lib/safeMode";
@@ -215,6 +216,7 @@ export default function Layout() {
   const location = useLocation();
 
   const [threads, setThreads] = useState<Thread[]>([]);
+  const [userGPTs, setUserGPTs] = useState<GPTConfig[]>([]);
   const [storageFailureInfo, setStorageFailureInfo] = useState<{
     reason: string;
     key?: string;
@@ -278,31 +280,39 @@ export default function Layout() {
     [threads, shareConversationId],
   );
   const synthAddressBookThreads = useMemo(() => {
-    // Address Book: Zen (primary) + ALL custom GPTs
+    // Address Book: Custom GPTs only (Zen is a nav item, not an address book contact)
     // Lin is excluded - she's the GPTCreator create tab agent/undertone stabilizer
-    // Any thread with a constructId is a construct contact (except lin-001)
-    const EXCLUDED_CONSTRUCTS = ['lin-001'];
+    // Zen is excluded - it's a system-level nav item now
+    const EXCLUDED_CONSTRUCTS = ['lin-001', 'zen-001', 'zen'];
     
-    const addressBookThreads = threads.filter((t) => 
+    // Get threads that have a constructId (excluding system constructs)
+    const conversationThreads = threads.filter((t) => 
       t.constructId && !EXCLUDED_CONSTRUCTS.includes(t.constructId)
     );
     
-    console.log(`📖 [Layout] Address Book filter: ${addressBookThreads.length} threads from ${threads.length} total`, 
-      addressBookThreads.map(t => ({ id: t.id, title: t.title, constructId: t.constructId })));
+    // Create contact cards for GPTs that don't have a conversation thread yet
+    const existingConstructIds = new Set(conversationThreads.map(t => t.constructId));
+    const gptContactCards: Thread[] = userGPTs
+      .filter(gpt => gpt.constructCallsign && !existingConstructIds.has(gpt.constructCallsign))
+      .map(gpt => ({
+        id: `${gpt.constructCallsign}_contact`,
+        title: gpt.name,
+        messages: [],
+        createdAt: new Date(gpt.createdAt).getTime(),
+        updatedAt: new Date(gpt.updatedAt).getTime(),
+        archived: false,
+        constructId: gpt.constructCallsign || gpt.id,
+        runtimeId: gpt.constructCallsign || gpt.id,
+        isPrimary: false,
+      }));
     
-    // Ensure Zen appears first (primary construct)
-    const zenThread = addressBookThreads.find(
-      (t) => t.id === DEFAULT_ZEN_CANONICAL_SESSION_ID ||
-             t.constructId === DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID
-    );
+    const allContacts = [...conversationThreads, ...gptContactCards];
     
-    if (zenThread) {
-      const otherThreads = addressBookThreads.filter(t => t.id !== zenThread.id);
-      return [zenThread, ...otherThreads];
-    }
+    console.log(`📖 [Layout] Address Book filter: ${allContacts.length} contacts (${conversationThreads.length} threads + ${gptContactCards.length} GPT cards)`, 
+      allContacts.map(t => ({ id: t.id, title: t.title, constructId: t.constructId })));
     
-    return addressBookThreads;
-  }, [threads]);
+    return allContacts;
+  }, [threads, userGPTs]);
 
   // Calculate hasBlockingOverlay early (before any early returns)
   const hasBlockingOverlay =
@@ -673,6 +683,17 @@ export default function Layout() {
         }
 
         setUser(me);
+
+        // Load user's custom GPTs for Address Book contact cards
+        console.log("🤖 [Layout.tsx] Loading user GPTs for Address Book...");
+        try {
+          const gptService = GPTService.getInstance();
+          const gpts = await gptService.getAllGPTs();
+          setUserGPTs(gpts);
+          console.log(`✅ [Layout.tsx] Loaded ${gpts.length} custom GPTs:`, gpts.map(g => g.name));
+        } catch (gptError) {
+          console.warn("⚠️ [Layout.tsx] Failed to load GPTs (non-fatal):", gptError);
+        }
 
         console.log(
           "📚 [Layout.tsx] Loading conversations from VVAULT filesystem...",
