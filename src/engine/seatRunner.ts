@@ -25,6 +25,59 @@ const BATCH_DELAY_MS = 100;
 /** Default connection timeout in milliseconds */
 const DEFAULT_CONNECTION_TIMEOUT_MS = 60000;
 
+/** OpenRouter model mappings for seats when Ollama is unavailable */
+const OPENROUTER_SEAT_MODELS: Record<string, string> = {
+  smalltalk: 'microsoft/phi-3-mini-128k-instruct',
+  creative: 'mistralai/mistral-7b-instruct',
+  coding: 'deepseek/deepseek-coder-33b-instruct'
+};
+
+/**
+ * Check if OpenRouter is configured and available
+ */
+function isOpenRouterAvailable(): boolean {
+  return !!(envVars?.AI_INTEGRATIONS_OPENROUTER_API_KEY || envVars?.OPENROUTER_API_KEY);
+}
+
+/**
+ * Call OpenRouter API as fallback when Ollama isn't available
+ */
+async function callOpenRouter(seat: string, prompt: string): Promise<string> {
+  const apiKey = envVars?.AI_INTEGRATIONS_OPENROUTER_API_KEY || envVars?.OPENROUTER_API_KEY;
+  const baseURL = envVars?.AI_INTEGRATIONS_OPENROUTER_BASE_URL || envVars?.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+  
+  if (!apiKey) {
+    throw new Error('OpenRouter API key not configured');
+  }
+  
+  const model = OPENROUTER_SEAT_MODELS[seat] || OPENROUTER_SEAT_MODELS.smalltalk;
+  console.log(`🌐 [SeatRunner] Using OpenRouter fallback - model: ${model}, seat: ${seat}`);
+  
+  const response = await fetch(`${baseURL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 2048,
+      temperature: 0.7,
+    }),
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenRouter error ${response.status}: ${errorText}`);
+  }
+  
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content || '';
+  console.log(`✅ [SeatRunner] OpenRouter response received (${content.length} chars)`);
+  return content;
+}
+
 // Lazy-loaded Node.js modules (only loaded when actually needed in Node.js)
 let nodeModules: {
   fs?: typeof import('node:fs');
@@ -239,7 +292,21 @@ interface GenerateOptions {
  * - Timeout protection prevents resource leaks
  */
 export async function runSeat(opts: GenerateOptions): Promise<string> {
-  console.log(`🚀 [SeatRunner] runSeat called - seat: ${opts.seat}, modelOverride: ${opts.modelOverride || 'none'}, isBrowser: ${isBrowser}`);const host = (opts.host ?? envVars?.OLLAMA_HOST ?? 'http://localhost').replace(/\/$/, '');
+  console.log(`🚀 [SeatRunner] runSeat called - seat: ${opts.seat}, modelOverride: ${opts.modelOverride || 'none'}, isBrowser: ${isBrowser}`);
+  
+  // Check if we should use OpenRouter directly (no Ollama configured)
+  const ollamaHost = opts.host ?? envVars?.OLLAMA_HOST;
+  if (!ollamaHost && isOpenRouterAvailable()) {
+    console.log(`🌐 [SeatRunner] No Ollama configured, using OpenRouter directly for ${opts.seat}`);
+    try {
+      return await callOpenRouter(opts.seat, opts.prompt);
+    } catch (openRouterErr: any) {
+      console.error(`❌ [SeatRunner] OpenRouter failed:`, openRouterErr.message);
+      throw openRouterErr;
+    }
+  }
+  
+  const host = (ollamaHost ?? 'http://localhost').replace(/\/$/, '');
   const port = (opts.port ?? Number(envVars?.OLLAMA_PORT)) || DEFAULT_OLLAMA_PORT;
   const model = await resolveModel(opts.seat, opts.modelOverride);
   const timeout = opts.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS;
