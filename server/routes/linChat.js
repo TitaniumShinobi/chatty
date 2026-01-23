@@ -76,10 +76,15 @@ async function callOpenRouter(model, messages, options = {}) {
 /**
  * Load transcripts from Supabase for memory injection
  * @param {string} constructId - Construct callsign (e.g., 'katana-001')
- * @param {string} userEmail - User's email for Supabase lookup
+ * @param {string} userEmail - User's email for Supabase lookup (required for security)
  * @returns {Promise<string>} Formatted memory context
  */
-async function loadTranscriptMemories(constructId, userEmail = 'dwoodson92@gmail.com') {
+async function loadTranscriptMemories(constructId, userEmail) {
+  // Security: Require authenticated user email
+  if (!userEmail) {
+    console.log('⚠️ [LinChat Memory] No user email provided - memory access denied');
+    return '';
+  }
   try {
     const supabase = getSupabaseClient();
     if (!supabase) {
@@ -211,9 +216,9 @@ async function callOllama(model, messages, options = {}) {
  * POST /api/lin/generate
  * Generate a response using the appropriate provider
  * 
- * Optional params for memory injection:
+ * Memory injection (enabled when constructId is provided):
  *   - constructId: Construct callsign for memory lookup
- *   - userEmail: User email for Supabase lookup (defaults to dev user)
+ *   - User email is taken from authenticated session (req.user.email)
  */
 router.post('/generate', async (req, res) => {
   try {
@@ -222,12 +227,20 @@ router.post('/generate', async (req, res) => {
       seat = 'creative', 
       systemPrompt, 
       model: requestedModel,
-      constructId,
-      userEmail = req.user?.email || 'dwoodson92@gmail.com'
+      constructId
     } = req.body;
+    
+    // Get authenticated user email for secure memory access
+    const userEmail = req.user?.email;
     
     if (!prompt) {
       return res.status(400).json({ error: 'Prompt is required' });
+    }
+
+    // Security: Require authentication when memory access is requested
+    if (constructId && !userEmail) {
+      console.log('🔒 [Lin Chat] Memory access denied - authentication required');
+      return res.status(401).json({ error: 'Authentication required for memory-enhanced responses' });
     }
 
     // Determine which model to use
@@ -236,12 +249,12 @@ router.post('/generate', async (req, res) => {
     
     console.log(`🎭 [Lin Chat] Generating response using ${provider}:${model} (${seat} seat)`);
     if (constructId) {
-      console.log(`🧠 [Lin Chat] Memory injection enabled for construct: ${constructId}`);
+      console.log(`🧠 [Lin Chat] Memory injection enabled for construct: ${constructId} (user: ${userEmail})`);
     }
 
-    // Load transcript memories if constructId provided
+    // Load transcript memories if constructId provided and user authenticated
     let memoryContext = '';
-    if (constructId) {
+    if (constructId && userEmail) {
       memoryContext = await loadTranscriptMemories(constructId, userEmail);
     }
 
