@@ -5,9 +5,6 @@ import {
   MessageSquare,
   Trash2,
   Search,
-  Library,
-  Clock,
-  FolderPlus,
   PanelLeftClose,
   Shield,
   Gauge,
@@ -502,64 +499,47 @@ const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      {/* Navigation Options - Flat List Style */}
+      {/* Navigation Options - Streamlined Default Items */}
       <div className={cn(collapsed ? "px-3 pb-3" : "px-4 pb-4")}>
         <div className="space-y-1">
-          <button
-            onClick={(e) => {
-              // #region agent log
-              fetch(
-                "http://127.0.0.1:7243/ingest/9aa5e079-2a3d-44e1-a152-645d01668332",
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    location: "Sidebar.tsx:287",
-                    message: "Library button click",
-                    data: {
-                      hasBlockingOverlay,
-                      clientX: e.clientX,
-                      clientY: e.clientY,
-                      buttonRect: e.currentTarget.getBoundingClientRect(),
-                      zIndex: window.getComputedStyle(
-                        e.currentTarget as HTMLElement,
-                      ).zIndex,
-                      parentZIndex: window.getComputedStyle(
-                        e.currentTarget.parentElement as HTMLElement,
-                      ).zIndex,
-                    },
-                    timestamp: Date.now(),
-                    sessionId: "debug-session",
-                    runId: "run1",
-                    hypothesisId: "B",
-                  }),
-                },
-              ).catch(() => {});
-              // #endregion
-              if (onOpenLibrary) onOpenLibrary();
-            }}
-            className={navButtonBase}
-            style={navButtonStyle("/app/library")}
-            onMouseEnter={(e) => handleNavHover(e, "/app/library", true)}
-            onMouseLeave={(e) => handleNavHover(e, "/app/library", false)}
-          >
-            <Library size={16} />
-            {!collapsed && <span>Library</span>}
-          </button>
-
+          {/* Zen - Primary Construct (Default) */}
           <button
             onClick={() => {
-              if (onOpenCodex) onOpenCodex();
+              // Find or create Zen conversation
+              const zenConv = conversations.find((c: any) => c.constructId === "zen-001");
+              if (zenConv && onConversationSelect) {
+                onConversationSelect(zenConv.id);
+              } else if (onNewConversationWithGPT) {
+                onNewConversationWithGPT("zen-001");
+              }
             }}
             className={navButtonBase}
-            style={navButtonStyle("/app/codex")}
-            onMouseEnter={(e) => handleNavHover(e, "/app/codex", true)}
-            onMouseLeave={(e) => handleNavHover(e, "/app/codex", false)}
+            style={{
+              backgroundColor: conversations.some((c: any) => c.constructId === "zen-001" && c.id === currentConversationId) 
+                ? activeNavColor 
+                : "transparent",
+              color: conversations.some((c: any) => c.constructId === "zen-001" && c.id === currentConversationId)
+                ? "var(--chatty-text-inverse, #ffffeb)"
+                : "var(--chatty-text)",
+            }}
+            onMouseEnter={(e) => {
+              const isZenActive = conversations.some((c: any) => c.constructId === "zen-001" && c.id === currentConversationId);
+              if (!isZenActive) {
+                e.currentTarget.style.backgroundColor = hoverColor;
+              }
+            }}
+            onMouseLeave={(e) => {
+              const isZenActive = conversations.some((c: any) => c.constructId === "zen-001" && c.id === currentConversationId);
+              if (!isZenActive) {
+                e.currentTarget.style.backgroundColor = "transparent";
+              }
+            }}
           >
-            <Clock size={16} />
-            {!collapsed && <span>Code</span>}
+            <MessageSquare size={16} />
+            {!collapsed && <span>Zen</span>}
           </button>
 
+          {/* VVAULT (Default) */}
           <button
             onClick={() => navigate("/app/vvault")}
             className={navButtonBase}
@@ -571,19 +551,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             {!collapsed && <span>VVAULT</span>}
           </button>
 
-          <button
-            onClick={() => {
-              if (onOpenProjects) onOpenProjects();
-            }}
-            className={navButtonBase}
-            style={navButtonStyle("/app/projects")}
-            onMouseEnter={(e) => handleNavHover(e, "/app/projects", true)}
-            onMouseLeave={(e) => handleNavHover(e, "/app/projects", false)}
-          >
-            <FolderPlus size={16} />
-            {!collapsed && <span>Projects</span>}
-          </button>
-
+          {/* simForge (Default) */}
           <button
             onClick={() => {
               if (onOpenExplore) return onOpenExplore();
@@ -609,6 +577,10 @@ const Sidebar: React.FC<SidebarProps> = ({
             {!collapsed && <span>simForge</span>}
           </button>
 
+          {/* Library (Conditional - only shows if user has uploaded docs/media) */}
+          {/* TODO: Add hasLibraryContent prop to conditionally show this */}
+          
+          {/* + More - Links to Apps page */}
           <button
             onClick={() => navigate("/app/apps")}
             className={navButtonBase}
@@ -617,7 +589,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             onMouseLeave={(e) => handleNavHover(e, "/app/apps", false)}
           >
             <Grid3X3 size={16} />
-            {!collapsed && <span>Apps</span>}
+            {!collapsed && <span>+ More</span>}
           </button>
         </div>
       </div>
