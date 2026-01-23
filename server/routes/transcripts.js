@@ -88,25 +88,53 @@ router.post('/save', async (req, res) => {
       const transcriptSource = transcript.source || 'chatgpt';
       const filename = `vvault/users/shard_0000/${userIdentifier}/instances/${constructCallsign}/${transcriptSource}/${transcript.name}`;
       
-      const { error: saveError } = await supabase
+      // Check if file already exists
+      const { data: existing } = await supabase
         .from('vault_files')
-        .upsert({
-          user_id: userId,
-          filename,
-          content: transcript.content,
-          file_type: 'transcript',
-          construct_id: constructCallsign,
-          metadata: {
-            originalName: transcript.name,
-            type: transcript.type,
-            uploadedAt: new Date().toISOString(),
-            constructCallsign,
-            source: transcriptSource,
-            uploadSource: 'chatty-upload',
-          },
-        }, {
-          onConflict: 'user_id,filename',
-        });
+        .select('id')
+        .eq('user_id', userId)
+        .eq('filename', filename)
+        .maybeSingle();
+      
+      let saveError;
+      if (existing) {
+        // Update existing file
+        const { error } = await supabase
+          .from('vault_files')
+          .update({
+            content: transcript.content,
+            metadata: {
+              originalName: transcript.name,
+              type: transcript.type,
+              uploadedAt: new Date().toISOString(),
+              constructCallsign,
+              source: transcriptSource,
+              uploadSource: 'chatty-upload',
+            },
+          })
+          .eq('id', existing.id);
+        saveError = error;
+      } else {
+        // Insert new file
+        const { error } = await supabase
+          .from('vault_files')
+          .insert({
+            user_id: userId,
+            filename,
+            content: transcript.content,
+            file_type: 'transcript',
+            construct_id: constructCallsign,
+            metadata: {
+              originalName: transcript.name,
+              type: transcript.type,
+              uploadedAt: new Date().toISOString(),
+              constructCallsign,
+              source: transcriptSource,
+              uploadSource: 'chatty-upload',
+            },
+          });
+        saveError = error;
+      }
       
       if (saveError) {
         console.error(`❌ [Transcripts] Failed to save ${transcript.name}:`, saveError);
