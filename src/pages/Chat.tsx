@@ -534,8 +534,13 @@ export default function Chat() {
   useEffect(() => {
     if (!thread || !threadId || !reloadThreadMessages) return;
 
+    // Check if this is a brand new singleton conversation (bootstrapped with no real messages)
+    const isNewSingletonConversation = thread.id.includes('_chat_with_') || 
+      thread.id.startsWith('session_');
+    
     // If thread has no messages, attempt to reload (only once per threadId)
-    if (thread.messages.length === 0 && !isReloading && !reloadAttempted) {
+    // Skip reload for new singleton conversations - they're genuinely empty
+    if (thread.messages.length === 0 && !isReloading && !reloadAttempted && !isNewSingletonConversation) {
       console.log("⚠️ [Chat] Thread has no messages, attempting reload...", {
         threadId: thread.id,
         urlThreadId: threadId,
@@ -553,14 +558,13 @@ export default function Chat() {
           "⏱️ [Chat] Reload timeout after 10s - resetting loading state",
         );
         setIsReloading(false);
-      }, 10000); // 10 second timeout
+      }, 3000); // 3 second timeout (reduced from 10s)
 
       reloadThreadMessages(threadId)
         .then(() => {
           clearTimeout(timeoutId);
           console.log("✅ [Chat] Reload function completed");
-          // Don't set isReloading to false immediately - let React re-render with updated threads
-          // The thread will update and messages.length > 0 will prevent this from running again
+          setIsReloading(false);
         })
         .catch((error) => {
           clearTimeout(timeoutId);
@@ -1246,7 +1250,7 @@ export default function Chat() {
         {thread.messages.length === 0 && !isReloading && (
           <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
             <p className="text-lg mb-2" style={{ color: "var(--chatty-text)" }}>
-              Zen is listening.
+              {thread.title || thread.constructId || 'Your assistant'} is listening.
             </p>
             <p
               className="text-sm"
