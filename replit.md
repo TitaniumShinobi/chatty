@@ -64,6 +64,7 @@ Core Question: Not "Is it alive?" but "Can it carry consequence?"
 - **Platform Connectors Architecture:** Extensible connector pattern for future OAuth integrations with AI platforms (Convai, Inworld AI, Gemini). See `src/lib/connectors/` and `docs/PLATFORM_INTEGRATIONS.md`.
 
 ## Recent Changes (January 2026)
+- **GPT Seat Memory Injection:** GPT constructs (like Katana) now access transcript memories during conversations. When constructId is passed to Lin Chat, the system loads up to 10 transcripts from Supabase, extracts 50 memory snippets, and injects them into the system prompt. Katana now remembers Devon and references past conversations about Nova, trafficking, legal filings, etc. Flow: `GPTCreator → browserSeatRunner → Lin Chat → loadTranscriptMemories → Supabase vault_files`. Security: Requires authenticated session (401 for unauth), no hardcoded email fallback.
 - **OpenRouter Free-Tier Model Update:** Updated seat models to use verified working free-tier models. See `docs/MODEL_PROVIDERS.md` for full configuration. Current seats:
   - smalltalk: `meta-llama/llama-3.3-70b-instruct:free`
   - creative: `google/gemini-2.0-flash-exp:free`
