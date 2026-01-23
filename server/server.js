@@ -27,6 +27,7 @@ import chatRoutes from './routes/chat.js';
 import linChatRoutes from './routes/linChat.js';
 import vsiRoutes from './routes/vsi.js';
 import gptsRoutes from './routes/gpts.js';
+import transcriptsRoutes from './routes/transcripts.js';
 import { initializeChromaDB, shutdownChromaDB, getChromaDBService } from "./services/chromadbService.js";
 import { getChatService } from "./services/chatService.js";
 
@@ -857,6 +858,10 @@ console.log('✅ [Server] Lin Chat routes mounted at /api/lin');
 // GPT Creator routes
 app.use("/api/gpts", requireAuth, gptsRoutes);
 console.log('✅ [Server] GPT routes mounted at /api/gpts');
+
+// Transcripts routes (for ChatGPT/memory uploads)
+app.use("/api/transcripts", requireAuth, transcriptsRoutes);
+console.log('✅ [Server] Transcripts routes mounted at /api/transcripts');
 
 function cryptoRandom() {
   return randomBytes(16).toString("hex");

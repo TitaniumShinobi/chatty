@@ -128,6 +128,11 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [avatarFileName, setAvatarFileName] = useState<string | null>(null);
 
+  // Transcript upload
+  const transcriptInputRef = useRef<HTMLInputElement>(null);
+  const [transcripts, setTranscripts] = useState<Array<{id: string; name: string; content: string; type: string}>>([]);
+  const [isUploadingTranscripts, setIsUploadingTranscripts] = useState(false);
+
   // Avatar cropping
   const [showCropModal, setShowCropModal] = useState(false);
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
@@ -897,6 +902,136 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
   const goToFilePage = (page: number) => {
     setFilePage(Math.max(1, Math.min(page, totalFilePages)));
+  };
+
+  // Handle transcript file upload
+  const handleTranscriptUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const uploadedFiles = e.target.files;
+    if (!uploadedFiles || uploadedFiles.length === 0) return;
+
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB limit for text files
+    const MAX_PDF_SIZE = 10 * 1024 * 1024; // 10MB limit for PDFs
+
+    setIsUploadingTranscripts(true);
+    const newTranscripts: Array<{id: string; name: string; content: string; type: string}> = [];
+    const skippedFiles: string[] = [];
+
+    try {
+      for (const file of Array.from(uploadedFiles)) {
+        const ext = file.name.split('.').pop()?.toLowerCase() || '';
+        
+        // Check file size
+        if (ext === 'pdf' && file.size > MAX_PDF_SIZE) {
+          skippedFiles.push(`${file.name} (exceeds 10MB limit)`);
+          continue;
+        } else if (['md', 'txt', 'rtf'].includes(ext) && file.size > MAX_FILE_SIZE) {
+          skippedFiles.push(`${file.name} (exceeds 5MB limit)`);
+          continue;
+        }
+        
+        // Read text-based files directly
+        if (['md', 'txt', 'rtf'].includes(ext)) {
+          const content = await file.text();
+          newTranscripts.push({
+            id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            name: file.name,
+            content,
+            type: ext,
+          });
+        } else if (ext === 'pdf') {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('constructCallsign', config.constructCallsign || selectedAI?.constructCallsign || '');
+          
+          try {
+            const response = await fetch('/api/transcripts/extract-pdf', {
+              method: 'POST',
+              body: formData,
+            });
+            
+            if (response.ok) {
+              const result = await response.json();
+              newTranscripts.push({
+                id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                name: file.name,
+                content: result.content,
+                type: 'pdf',
+              });
+              if (result.isPdfPlaceholder) {
+                console.log(`ℹ️ PDF ${file.name}: ${result.message}`);
+              }
+            } else {
+              console.warn(`Failed to extract PDF: ${file.name}`);
+              newTranscripts.push({
+                id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                name: file.name,
+                content: `[PDF content from ${file.name} - extraction pending]`,
+                type: 'pdf',
+              });
+            }
+          } catch (pdfError) {
+            console.warn(`PDF extraction failed for ${file.name}:`, pdfError);
+            newTranscripts.push({
+              id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+              name: file.name,
+              content: `[PDF content from ${file.name} - extraction pending]`,
+              type: 'pdf',
+            });
+          }
+        }
+      }
+
+      setTranscripts(prev => [...prev, ...newTranscripts]);
+      
+      // Save transcripts to Supabase if we have a construct
+      const constructId = config.constructCallsign || selectedAI?.constructCallsign;
+      if (constructId && newTranscripts.length > 0) {
+        try {
+          const saveResponse = await fetch('/api/transcripts/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              constructCallsign: constructId,
+              transcripts: newTranscripts,
+            }),
+          });
+          
+          if (!saveResponse.ok) {
+            const errorText = await saveResponse.text();
+            console.warn('Failed to save transcripts:', errorText);
+            setError('Transcripts added locally but failed to sync to cloud storage.');
+          } else {
+            const saveResult = await saveResponse.json();
+            
+            if (saveResult.failed && saveResult.failed.length > 0) {
+              console.warn('Some transcripts failed to save:', saveResult.failed);
+              setError(`Saved ${saveResult.saved} transcripts. ${saveResult.failed.length} failed to save.`);
+            } else {
+              console.log(`✅ Saved ${saveResult.saved} transcripts for ${constructId}`);
+            }
+          }
+        } catch (saveError) {
+          console.warn('Failed to save transcripts to backend:', saveError);
+          setError('Transcripts added locally but failed to sync to cloud storage.');
+        }
+      }
+      
+      if (skippedFiles.length > 0) {
+        setError(`Skipped files: ${skippedFiles.join(', ')}`);
+      }
+    } catch (error: any) {
+      console.error('Transcript upload error:', error);
+      setError(error.message || 'Failed to upload transcripts');
+    } finally {
+      setIsUploadingTranscripts(false);
+      if (transcriptInputRef.current) {
+        transcriptInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleRemoveTranscript = (transcriptId: string) => {
+    setTranscripts(prev => prev.filter(t => t.id !== transcriptId));
   };
 
   const addConversationStarter = () => {
@@ -3004,7 +3139,7 @@ ALWAYS:
                       </div>
                     )}
 
-                    {/* Memories */}
+                    {/* Memories / Transcripts */}
                     <div>
                       <label
                         className="block text-sm font-medium mb-2"
@@ -3017,38 +3152,70 @@ ALWAYS:
                         style={{ color: "var(--chatty-text)", opacity: 0.7 }}
                       >
                         Upload conversation transcripts to give your GPT access
-                        to past interactions
+                        to past interactions (.md, .txt, .rtf, .pdf)
                       </p>
+                      <input
+                        type="file"
+                        ref={transcriptInputRef}
+                        onChange={handleTranscriptUpload}
+                        accept=".md,.txt,.rtf,.pdf"
+                        multiple
+                        className="hidden"
+                      />
                       <button
-                        onClick={() => {
-                          // TODO: Implement transcript upload
-                          // Upload transcripts clicked
-                        }}
+                        onClick={() => transcriptInputRef.current?.click()}
+                        disabled={isUploadingTranscripts}
                         className="px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
                         style={{
                           border: "none",
                           backgroundColor: "var(--chatty-bg-message)",
                           color: "var(--chatty-text)",
+                          opacity: isUploadingTranscripts ? 0.5 : 1,
                         }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor =
-                            "var(--chatty-highlight)";
+                          if (!isUploadingTranscripts) {
+                            e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
+                          }
                         }}
                         onMouseLeave={(e) => {
                           e.currentTarget.style.backgroundColor = "var(--chatty-bg-message)";
                         }}
                       >
                         <Upload size={16} />
-                        Upload Transcripts
+                        {isUploadingTranscripts ? 'Uploading...' : 'Upload Transcripts'}
                       </button>
+                      
+                      {/* Show uploaded transcripts */}
+                      {transcripts.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          <p className="text-xs" style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
+                            {transcripts.length} transcript{transcripts.length !== 1 ? 's' : ''} uploaded:
+                          </p>
+                          {transcripts.map((t) => (
+                            <div 
+                              key={t.id} 
+                              className="flex items-center justify-between p-2 rounded"
+                              style={{ backgroundColor: "var(--chatty-bg-message)" }}
+                            >
+                              <span className="text-sm truncate flex-1" style={{ color: "var(--chatty-text)" }}>
+                                {t.name}
+                              </span>
+                              <button
+                                onClick={() => handleRemoveTranscript(t.id)}
+                                className="ml-2 p-1 rounded hover:bg-red-500/20"
+                                style={{ color: "var(--chatty-text)" }}
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      
                       {workspaceContext.memories &&
                         workspaceContext.memories.length > 0 && (
                           <div className="mt-2">
-                            <button
-                              onClick={() => {
-                                // TODO: Navigate to memories view
-                                // View memories clicked
-                              }}
+                            <span
                               className="text-xs"
                               style={{
                                 color: "var(--chatty-text)",
@@ -3059,8 +3226,8 @@ ALWAYS:
                               {workspaceContext.memories.length !== 1
                                 ? "s"
                                 : ""}{" "}
-                              ready &gt;
-                            </button>
+                              ready
+                            </span>
                           </div>
                         )}
                     </div>
