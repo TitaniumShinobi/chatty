@@ -32,11 +32,27 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 ```
 
 ### 3. Available Models
-See `src/lib/modelProviders.ts` for the full list. Key models include:
-- `openrouter:meta-llama/llama-3.1-70b-instruct` - General purpose
-- `openrouter:deepseek/deepseek-coder-33b-instruct` - Coding
-- `openrouter:mistralai/mistral-7b-instruct` - Creative/chat
-- `openrouter:microsoft/phi-3-mini-128k-instruct` - Fast/small
+See `src/lib/modelProviders.ts` for the full list. 
+
+#### Default Seat Models (January 2026)
+| Seat | Model | Purpose |
+|------|-------|---------|
+| `smalltalk` | `meta-llama/llama-3.3-70b-instruct:free` | Casual conversation, greetings |
+| `creative` | `google/gemini-2.0-flash-exp:free` | Creative writing, storytelling |
+| `coding` | `deepseek/deepseek-chat` | Code generation, technical help |
+
+#### Free Tier Models
+Models with `:free` suffix are available at no cost (rate-limited):
+- `meta-llama/llama-3.3-70b-instruct:free` - General purpose
+- `google/gemini-2.0-flash-exp:free` - Fast multimodal
+- `deepseek/deepseek-chat` - Coding (free without suffix)
+- `deepseek/deepseek-r1:free` - Reasoning
+
+#### Deprecated/Non-existent Models (Do Not Use)
+- ~~`microsoft/phi-3-mini-128k-instruct:free`~~ - Does not exist
+- ~~`mistralai/mistral-7b-instruct:free`~~ - May not exist
+
+To find current free models: https://openrouter.ai/collections/free-models
 
 ---
 
@@ -167,7 +183,8 @@ Examples:
 ### OpenRouter Issues
 - **401 Unauthorized**: Check API key is set correctly
 - **429 Rate Limited**: Add credits or reduce request rate
-- **Model not found**: Verify model name matches OpenRouter's naming
+- **404 No endpoints found**: Model ID is incorrect or doesn't exist - verify at openrouter.ai/models
+- **"Seat X failed after N retries"**: Check model names in `linChat.js` and `seatRunner.ts` are valid
 
 ### Ollama Issues
 - **Connection refused**: Ensure Ollama server is running and accessible

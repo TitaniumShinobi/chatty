@@ -64,6 +64,10 @@ Core Question: Not "Is it alive?" but "Can it carry consequence?"
 - **Platform Connectors Architecture:** Extensible connector pattern for future OAuth integrations with AI platforms (Convai, Inworld AI, Gemini). See `src/lib/connectors/` and `docs/PLATFORM_INTEGRATIONS.md`.
 
 ## Recent Changes (January 2026)
+- **OpenRouter Free-Tier Model Update:** Updated seat models to use verified working free-tier models. See `docs/MODEL_PROVIDERS.md` for full configuration. Current seats:
+  - smalltalk: `meta-llama/llama-3.3-70b-instruct:free`
+  - creative: `google/gemini-2.0-flash-exp:free`
+  - coding: `deepseek/deepseek-chat`
 - **Rubricated Message Design:** GPTCreator Create tab and Preview panel now use a clean "text on wall" message format with speaker labels (rubrication) instead of chat bubbles. Format: `Speaker: message content` with colored labels (cyan #00aeef for constructs, muted for user). This creates a cleaner, document-like reading experience.
 - **Transcript Cloud Sync Fix:** Fixed Supabase transcript upload errors by replacing upsert with check-then-insert/update pattern and increasing request body limit to 50MB for large files.
 - **Dynamic Transcript Count Badge:** Added real-time file count badge to the right of "Upload Transcripts" button showing total files held for the current construct (both staged and existing). Badge highlights with accent color when new files are staged.
