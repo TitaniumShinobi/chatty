@@ -3139,99 +3139,6 @@ ALWAYS:
                       </div>
                     )}
 
-                    {/* Memories / Transcripts */}
-                    <div>
-                      <label
-                        className="block text-sm font-medium mb-2"
-                        style={{ color: "var(--chatty-text)" }}
-                      >
-                        Memories
-                      </label>
-                      <p
-                        className="text-xs mb-3"
-                        style={{ color: "var(--chatty-text)", opacity: 0.7 }}
-                      >
-                        Upload conversation transcripts to give your GPT access
-                        to past interactions (.md, .txt, .rtf, .pdf)
-                      </p>
-                      <input
-                        type="file"
-                        ref={transcriptInputRef}
-                        onChange={handleTranscriptUpload}
-                        accept=".md,.txt,.rtf,.pdf"
-                        multiple
-                        className="hidden"
-                      />
-                      <button
-                        onClick={() => transcriptInputRef.current?.click()}
-                        disabled={isUploadingTranscripts}
-                        className="px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                        style={{
-                          border: "none",
-                          backgroundColor: "var(--chatty-bg-message)",
-                          color: "var(--chatty-text)",
-                          opacity: isUploadingTranscripts ? 0.5 : 1,
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!isUploadingTranscripts) {
-                            e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = "var(--chatty-bg-message)";
-                        }}
-                      >
-                        <Upload size={16} />
-                        {isUploadingTranscripts ? 'Uploading...' : 'Upload Transcripts'}
-                      </button>
-                      
-                      {/* Show uploaded transcripts */}
-                      {transcripts.length > 0 && (
-                        <div className="mt-3 space-y-2">
-                          <p className="text-xs" style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
-                            {transcripts.length} transcript{transcripts.length !== 1 ? 's' : ''} uploaded:
-                          </p>
-                          {transcripts.map((t) => (
-                            <div 
-                              key={t.id} 
-                              className="flex items-center justify-between p-2 rounded"
-                              style={{ backgroundColor: "var(--chatty-bg-message)" }}
-                            >
-                              <span className="text-sm truncate flex-1" style={{ color: "var(--chatty-text)" }}>
-                                {t.name}
-                              </span>
-                              <button
-                                onClick={() => handleRemoveTranscript(t.id)}
-                                className="ml-2 p-1 rounded hover:bg-red-500/20"
-                                style={{ color: "var(--chatty-text)" }}
-                              >
-                                <X size={14} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      
-                      {workspaceContext.memories &&
-                        workspaceContext.memories.length > 0 && (
-                          <div className="mt-2">
-                            <span
-                              className="text-xs"
-                              style={{
-                                color: "var(--chatty-text)",
-                                opacity: 0.7,
-                              }}
-                            >
-                              {workspaceContext.memories.length} memory file
-                              {workspaceContext.memories.length !== 1
-                                ? "s"
-                                : ""}{" "}
-                              ready
-                            </span>
-                          </div>
-                        )}
-                    </div>
-
                     {/* Conversation Starters */}
                     <div>
                       <label className="block text-sm font-medium mb-2 text-app-text-900">
@@ -3351,6 +3258,99 @@ ALWAYS:
                           )}
                         </div>
                       )}
+                    </div>
+
+                    {/* Memories / Transcripts */}
+                    <div>
+                      <label
+                        className="block text-sm font-medium mb-2"
+                        style={{ color: "var(--chatty-text)" }}
+                      >
+                        Memories
+                      </label>
+                      <p
+                        className="text-xs mb-3"
+                        style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+                      >
+                        Upload conversation transcripts to give your GPT access
+                        to past interactions (.md, .txt, .rtf, .pdf)
+                      </p>
+                      <input
+                        type="file"
+                        ref={transcriptInputRef}
+                        onChange={handleTranscriptUpload}
+                        accept=".md,.txt,.rtf,.pdf"
+                        multiple
+                        className="hidden"
+                      />
+                      <button
+                        onClick={() => transcriptInputRef.current?.click()}
+                        disabled={isUploadingTranscripts}
+                        className="px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                        style={{
+                          border: "none",
+                          backgroundColor: "var(--chatty-bg-message)",
+                          color: "var(--chatty-text)",
+                          opacity: isUploadingTranscripts ? 0.5 : 1,
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isUploadingTranscripts) {
+                            e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = "var(--chatty-bg-message)";
+                        }}
+                      >
+                        <Upload size={16} />
+                        {isUploadingTranscripts ? 'Uploading...' : 'Upload Transcripts'}
+                      </button>
+                      
+                      {/* Show uploaded transcripts */}
+                      {transcripts.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          <p className="text-xs" style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
+                            {transcripts.length} transcript{transcripts.length !== 1 ? 's' : ''} uploaded:
+                          </p>
+                          {transcripts.map((t) => (
+                            <div 
+                              key={t.id} 
+                              className="flex items-center justify-between p-2 rounded"
+                              style={{ backgroundColor: "var(--chatty-bg-message)" }}
+                            >
+                              <span className="text-sm truncate flex-1" style={{ color: "var(--chatty-text)" }}>
+                                {t.name}
+                              </span>
+                              <button
+                                onClick={() => handleRemoveTranscript(t.id)}
+                                className="ml-2 p-1 rounded hover:bg-red-500/20"
+                                style={{ color: "var(--chatty-text)" }}
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      
+                      {workspaceContext.memories &&
+                        workspaceContext.memories.length > 0 && (
+                          <div className="mt-2">
+                            <span
+                              className="text-xs"
+                              style={{
+                                color: "var(--chatty-text)",
+                                opacity: 0.7,
+                              }}
+                            >
+                              {workspaceContext.memories.length} memory file
+                              {workspaceContext.memories.length !== 1
+                                ? "s"
+                                : ""}{" "}
+                              ready
+                            </span>
+                          </div>
+                        )}
                     </div>
 
                     {/* Capabilities */}
