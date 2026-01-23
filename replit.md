@@ -64,7 +64,7 @@ Core Question: Not "Is it alive?" but "Can it carry consequence?"
 - **Platform Connectors Architecture:** Extensible connector pattern for future OAuth integrations with AI platforms (Convai, Inworld AI, Gemini). See `src/lib/connectors/` and `docs/PLATFORM_INTEGRATIONS.md`.
 
 ## Recent Changes (January 2026)
-- **Rubricated Message Design:** GPTCreator Create tab and Preview panel now use a clean "text on wall" message format with speaker labels (rubrication) instead of chat bubbles. Format: `Speaker: message content` with colored labels (orange for constructs, muted for user). This creates a cleaner, document-like reading experience.
+- **Rubricated Message Design:** GPTCreator Create tab and Preview panel now use a clean "text on wall" message format with speaker labels (rubrication) instead of chat bubbles. Format: `Speaker: message content` with colored labels (cyan #00aeef for constructs, muted for user). This creates a cleaner, document-like reading experience.
 - **Transcript Cloud Sync Fix:** Fixed Supabase transcript upload errors by replacing upsert with check-then-insert/update pattern and increasing request body limit to 50MB for large files.
 - **Dynamic Transcript Count Badge:** Added real-time file count badge to the right of "Upload Transcripts" button showing total files held for the current construct (both staged and existing). Badge highlights with accent color when new files are staged.
 - **Expanded Transcript Sources:** Added Chai, Character.AI, DeepSeek, and manual naming option to the transcript source dropdown. Full list: ChatGPT, Gemini, Grok, Copilot, Claude, Chai, Character.AI, DeepSeek, Other (manual).
