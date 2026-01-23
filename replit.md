@@ -60,6 +60,8 @@ Core Question: Not "Is it alive?" but "Can it carry consequence?"
 - **GPT Creation Workflow:** Bootstraps conversations in Supabase upon GPT creation for immediate Address Book visibility.
 - **Identity Loading:** Prioritizes VVAULT API for construct identities, with filesystem and system construct fallbacks.
 - **Robust Transcript Parsing:** Handles various VVAULT and Chatty transcript formats, including bold markdown timestamps and multiword speaker names.
+- **Multi-Platform Transcript Upload:** Upload transcripts from ChatGPT, Gemini, Grok, Copilot, Claude with source selection. Transcripts stored at VVAULT path: `vvault/users/shard_0000/{userId}/instances/{constructId}/{source}/{filename}`
+- **Platform Connectors Architecture:** Extensible connector pattern for future OAuth integrations with AI platforms (Convai, Inworld AI, Gemini). See `src/lib/connectors/` and `docs/PLATFORM_INTEGRATIONS.md`.
 
 ## External Dependencies
 - **VVAULT API:** Primary API for AI inference, memory management, and conversation transcripts.
