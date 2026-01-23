@@ -30,10 +30,7 @@ import {
   getUserFriendlyErrorMessage,
   isOrchestrationError,
 } from "../engine/orchestration/OrchestrationErrors";
-import {
-  OPENROUTER_MODELS,
-  OLLAMA_MODELS,
-} from "../lib/modelProviders";
+import { OPENROUTER_MODELS, OLLAMA_MODELS } from "../lib/modelProviders";
 
 interface GPTCreatorProps {
   isVisible: boolean;
@@ -130,31 +127,45 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
   // Transcript upload
   const transcriptInputRef = useRef<HTMLInputElement>(null);
-  const [transcripts, setTranscripts] = useState<Array<{id: string; name: string; content: string; type: string; source?: string}>>([]);
-  const [existingTranscripts, setExistingTranscripts] = useState<Record<string, Array<{name: string; type: string; source: string; uploadedAt: string}>>>({});
+  const [transcripts, setTranscripts] = useState<
+    Array<{
+      id: string;
+      name: string;
+      content: string;
+      type: string;
+      source?: string;
+    }>
+  >([]);
+  const [existingTranscripts, setExistingTranscripts] = useState<
+    Record<
+      string,
+      Array<{ name: string; type: string; source: string; uploadedAt: string }>
+    >
+  >({});
   const [isUploadingTranscripts, setIsUploadingTranscripts] = useState(false);
-  const [isLoadingExistingTranscripts, setIsLoadingExistingTranscripts] = useState(false);
-  const [transcriptSource, setTranscriptSource] = useState<string>('chatgpt');
-  
+  const [isLoadingExistingTranscripts, setIsLoadingExistingTranscripts] =
+    useState(false);
+  const [transcriptSource, setTranscriptSource] = useState<string>("chatgpt");
+
   const TRANSCRIPT_SOURCES = [
-    { value: 'chatgpt', label: 'ChatGPT', icon: '🤖' },
-    { value: 'gemini', label: 'Gemini', icon: '✨' },
-    { value: 'grok', label: 'Grok', icon: '🔮' },
-    { value: 'copilot', label: 'Copilot', icon: '🪁' },
-    { value: 'claude', label: 'Claude', icon: '🎭' },
-    { value: 'chai', label: 'Chai', icon: '🍵' },
-    { value: 'character.ai', label: 'Character.AI', icon: '👤' },
-    { value: 'deepseek', label: 'DeepSeek', icon: '🔍' },
-    { value: 'other', label: 'Other (manual)', icon: '📝' },
+    { value: "chatgpt", label: "ChatGPT", icon: "🤖" },
+    { value: "gemini", label: "Gemini", icon: "✨" },
+    { value: "grok", label: "Grok", icon: "🔮" },
+    { value: "copilot", label: "Copilot", icon: "🪁" },
+    { value: "claude", label: "Claude", icon: "🎭" },
+    { value: "chai", label: "Chai", icon: "🍵" },
+    { value: "character.ai", label: "Character.AI", icon: "👤" },
+    { value: "deepseek", label: "DeepSeek", icon: "🔍" },
+    { value: "other", label: "Other (manual)", icon: "📝" },
   ];
-  
+
   const getSourceIcon = (source: string) => {
-    const found = TRANSCRIPT_SOURCES.find(s => s.value === source);
-    return found?.icon || '📄';
+    const found = TRANSCRIPT_SOURCES.find((s) => s.value === source);
+    return found?.icon || "📄";
   };
-  
+
   const getSourceLabel = (source: string) => {
-    const found = TRANSCRIPT_SOURCES.find(s => s.value === source);
+    const found = TRANSCRIPT_SOURCES.find((s) => s.value === source);
     return found?.label || source;
   };
 
@@ -400,29 +411,35 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   // Fetch existing transcripts when construct changes
   useEffect(() => {
     const fetchExistingTranscripts = async () => {
-      const constructId = config.constructCallsign || initialConfig?.constructCallsign;
+      const constructId =
+        config.constructCallsign || initialConfig?.constructCallsign;
       if (!constructId || !isVisible) return;
-      
+
       setIsLoadingExistingTranscripts(true);
       try {
-        const response = await fetch(`/api/transcripts/list/${encodeURIComponent(constructId)}`, {
-          credentials: 'include',
-        });
-        
+        const response = await fetch(
+          `/api/transcripts/list/${encodeURIComponent(constructId)}`,
+          {
+            credentials: "include",
+          },
+        );
+
         if (response.ok) {
           const data = await response.json();
           if (data.success && data.bySource) {
             setExistingTranscripts(data.bySource);
-            console.log(`📚 [Transcripts] Loaded ${data.transcripts?.length || 0} existing transcripts for ${constructId}`);
+            console.log(
+              `📚 [Transcripts] Loaded ${data.transcripts?.length || 0} existing transcripts for ${constructId}`,
+            );
           }
         }
       } catch (err) {
-        console.warn('Failed to fetch existing transcripts:', err);
+        console.warn("Failed to fetch existing transcripts:", err);
       } finally {
         setIsLoadingExistingTranscripts(false);
       }
     };
-    
+
     fetchExistingTranscripts();
   }, [isVisible, config.constructCallsign, initialConfig?.constructCallsign]);
 
@@ -959,7 +976,9 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   };
 
   // Handle transcript file upload
-  const handleTranscriptUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTranscriptUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const uploadedFiles = e.target.files;
     if (!uploadedFiles || uploadedFiles.length === 0) return;
 
@@ -967,24 +986,32 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     const MAX_PDF_SIZE = 10 * 1024 * 1024; // 10MB limit for PDFs
 
     setIsUploadingTranscripts(true);
-    const newTranscripts: Array<{id: string; name: string; content: string; type: string}> = [];
+    const newTranscripts: Array<{
+      id: string;
+      name: string;
+      content: string;
+      type: string;
+    }> = [];
     const skippedFiles: string[] = [];
 
     try {
       for (const file of Array.from(uploadedFiles)) {
-        const ext = file.name.split('.').pop()?.toLowerCase() || '';
-        
+        const ext = file.name.split(".").pop()?.toLowerCase() || "";
+
         // Check file size
-        if (ext === 'pdf' && file.size > MAX_PDF_SIZE) {
+        if (ext === "pdf" && file.size > MAX_PDF_SIZE) {
           skippedFiles.push(`${file.name} (exceeds 10MB limit)`);
           continue;
-        } else if (['md', 'txt', 'rtf'].includes(ext) && file.size > MAX_FILE_SIZE) {
+        } else if (
+          ["md", "txt", "rtf"].includes(ext) &&
+          file.size > MAX_FILE_SIZE
+        ) {
           skippedFiles.push(`${file.name} (exceeds 5MB limit)`);
           continue;
         }
-        
+
         // Read text-based files directly
-        if (['md', 'txt', 'rtf'].includes(ext)) {
+        if (["md", "txt", "rtf"].includes(ext)) {
           const content = await file.text();
           newTranscripts.push({
             id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -993,24 +1020,27 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
             type: ext,
             source: transcriptSource,
           });
-        } else if (ext === 'pdf') {
+        } else if (ext === "pdf") {
           const formData = new FormData();
-          formData.append('file', file);
-          formData.append('constructCallsign', config.constructCallsign || initialConfig?.constructCallsign || '');
-          
+          formData.append("file", file);
+          formData.append(
+            "constructCallsign",
+            config.constructCallsign || initialConfig?.constructCallsign || "",
+          );
+
           try {
-            const response = await fetch('/api/transcripts/extract-pdf', {
-              method: 'POST',
+            const response = await fetch("/api/transcripts/extract-pdf", {
+              method: "POST",
               body: formData,
             });
-            
+
             if (response.ok) {
               const result = await response.json();
               newTranscripts.push({
                 id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
                 name: file.name,
                 content: result.content,
-                type: 'pdf',
+                type: "pdf",
                 source: transcriptSource,
               });
               if (result.isPdfPlaceholder) {
@@ -1022,7 +1052,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
                 id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
                 name: file.name,
                 content: `[PDF content from ${file.name} - extraction pending]`,
-                type: 'pdf',
+                type: "pdf",
                 source: transcriptSource,
               });
             }
@@ -1032,64 +1062,76 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
               id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
               name: file.name,
               content: `[PDF content from ${file.name} - extraction pending]`,
-              type: 'pdf',
+              type: "pdf",
               source: transcriptSource,
             });
           }
         }
       }
 
-      setTranscripts(prev => [...prev, ...newTranscripts]);
-      
+      setTranscripts((prev) => [...prev, ...newTranscripts]);
+
       // Save transcripts to Supabase if we have a construct
-      const constructId = config.constructCallsign || initialConfig?.constructCallsign;
+      const constructId =
+        config.constructCallsign || initialConfig?.constructCallsign;
       if (constructId && newTranscripts.length > 0) {
         try {
-          const saveResponse = await fetch('/api/transcripts/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+          const saveResponse = await fetch("/api/transcripts/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               constructCallsign: constructId,
               transcripts: newTranscripts,
             }),
           });
-          
+
           if (!saveResponse.ok) {
             const errorText = await saveResponse.text();
-            console.warn('Failed to save transcripts:', errorText);
-            setError('Transcripts added locally but failed to sync to cloud storage.');
+            console.warn("Failed to save transcripts:", errorText);
+            setError(
+              "Transcripts added locally but failed to sync to cloud storage.",
+            );
           } else {
             const saveResult = await saveResponse.json();
-            
+
             if (saveResult.failed && saveResult.failed.length > 0) {
-              console.warn('Some transcripts failed to save:', saveResult.failed);
-              setError(`Saved ${saveResult.saved} transcripts. ${saveResult.failed.length} failed to save.`);
+              console.warn(
+                "Some transcripts failed to save:",
+                saveResult.failed,
+              );
+              setError(
+                `Saved ${saveResult.saved} transcripts. ${saveResult.failed.length} failed to save.`,
+              );
             } else {
-              console.log(`✅ Saved ${saveResult.saved} transcripts for ${constructId}`);
+              console.log(
+                `✅ Saved ${saveResult.saved} transcripts for ${constructId}`,
+              );
             }
           }
         } catch (saveError) {
-          console.warn('Failed to save transcripts to backend:', saveError);
-          setError('Transcripts added locally but failed to sync to cloud storage.');
+          console.warn("Failed to save transcripts to backend:", saveError);
+          setError(
+            "Transcripts added locally but failed to sync to cloud storage.",
+          );
         }
       }
-      
+
       if (skippedFiles.length > 0) {
-        setError(`Skipped files: ${skippedFiles.join(', ')}`);
+        setError(`Skipped files: ${skippedFiles.join(", ")}`);
       }
     } catch (error: any) {
-      console.error('Transcript upload error:', error);
-      setError(error.message || 'Failed to upload transcripts');
+      console.error("Transcript upload error:", error);
+      setError(error.message || "Failed to upload transcripts");
     } finally {
       setIsUploadingTranscripts(false);
       if (transcriptInputRef.current) {
-        transcriptInputRef.current.value = '';
+        transcriptInputRef.current.value = "";
       }
     }
   };
 
   const handleRemoveTranscript = (transcriptId: string) => {
-    setTranscripts(prev => prev.filter(t => t.id !== transcriptId));
+    setTranscripts((prev) => prev.filter((t) => t.id !== transcriptId));
   };
 
   const addConversationStarter = () => {
@@ -1680,7 +1722,9 @@ Assistant:`;
 
       // Process with the selected conversation model
       const selectedModel =
-        config.conversationModel || config.modelId || "openrouter:microsoft/phi-3-mini-128k-instruct";
+        config.conversationModel ||
+        config.modelId ||
+        "openrouter:microsoft/phi-3-mini-128k-instruct";
       // Preview using model
 
       const response = await runSeat({
@@ -2652,15 +2696,25 @@ ALWAYS:
                           return createMessages.length === 0
                             ? null
                             : createMessages.map((message, index) => (
-                                <div
-                                  key={index}
-                                  className="mb-3"
-                                >
+                                <div key={index} className="mb-3">
                                   <p className="text-sm text-app-text-900 whitespace-pre-wrap">
                                     {message.role === "user" ? (
-                                      <><span className="font-medium text-app-text-800">You:</span> {message.content}</>
+                                      <>
+                                        <span className="font-medium text-app-text-800">
+                                          You:
+                                        </span>{" "}
+                                        {message.content}
+                                      </>
                                     ) : (
-                                      <><span className="font-medium" style={{ color: '#00aeef' }}>Lin:</span> {message.content}</>
+                                      <>
+                                        <span
+                                          className="font-medium"
+                                          style={{ color: "#00aeef" }}
+                                        >
+                                          Lin:
+                                        </span>{" "}
+                                        {message.content}
+                                      </>
                                     )}
                                   </p>
                                 </div>
@@ -2680,7 +2734,7 @@ ALWAYS:
                               className="text-app-green-400"
                             />
                             <span className="text-sm font-medium text-app-text-900">
-                              Knowledge Files
+                              Knowledge
                             </span>
                             <span className="text-xs text-app-text-800">
                               ({files.length})
@@ -3086,7 +3140,10 @@ ALWAYS:
                             Conversation
                           </label>
                           <select
-                            value={config.conversationModel || "openrouter:meta-llama/llama-3.1-8b-instruct"}
+                            value={
+                              config.conversationModel ||
+                              "openrouter:meta-llama/llama-3.1-8b-instruct"
+                            }
                             onChange={(e) =>
                               setConfig((prev) => ({
                                 ...prev,
@@ -3103,17 +3160,28 @@ ALWAYS:
                           >
                             <optgroup label="☁️ OpenRouter (Cloud)">
                               {OPENROUTER_MODELS.map((m) => (
-                                <option key={m.value} value={m.value}>{m.label}</option>
+                                <option key={m.value} value={m.value}>
+                                  {m.label}
+                                </option>
                               ))}
                             </optgroup>
                             <optgroup label="🖥️ Ollama (Self-Hosted)">
                               {OLLAMA_MODELS.map((m) => (
-                                <option key={m.value} value={m.value}>{m.label}</option>
+                                <option key={m.value} value={m.value}>
+                                  {m.label}
+                                </option>
                               ))}
                             </optgroup>
                           </select>
-                          <p className="text-xs mt-1" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>
-                            OpenRouter = cloud API (works now) | Ollama = self-hosted (requires VM setup)
+                          <p
+                            className="text-xs mt-1"
+                            style={{
+                              color: "var(--chatty-text)",
+                              opacity: 0.6,
+                            }}
+                          >
+                            OpenRouter = cloud API (works now) | Ollama =
+                            self-hosted (requires VM setup)
                           </p>
                         </div>
 
@@ -3126,7 +3194,10 @@ ALWAYS:
                             Creative
                           </label>
                           <select
-                            value={config.creativeModel || "openrouter:mistralai/mistral-7b-instruct"}
+                            value={
+                              config.creativeModel ||
+                              "openrouter:mistralai/mistral-7b-instruct"
+                            }
                             onChange={(e) =>
                               setConfig((prev) => ({
                                 ...prev,
@@ -3142,13 +3213,25 @@ ALWAYS:
                             }}
                           >
                             <optgroup label="☁️ OpenRouter (Cloud)">
-                              {OPENROUTER_MODELS.filter(m => m.category === 'creative' || m.category === 'general').map((m) => (
-                                <option key={m.value} value={m.value}>{m.label}</option>
+                              {OPENROUTER_MODELS.filter(
+                                (m) =>
+                                  m.category === "creative" ||
+                                  m.category === "general",
+                              ).map((m) => (
+                                <option key={m.value} value={m.value}>
+                                  {m.label}
+                                </option>
                               ))}
                             </optgroup>
                             <optgroup label="🖥️ Ollama (Self-Hosted)">
-                              {OLLAMA_MODELS.filter(m => m.category === 'creative' || m.category === 'general').map((m) => (
-                                <option key={m.value} value={m.value}>{m.label}</option>
+                              {OLLAMA_MODELS.filter(
+                                (m) =>
+                                  m.category === "creative" ||
+                                  m.category === "general",
+                              ).map((m) => (
+                                <option key={m.value} value={m.value}>
+                                  {m.label}
+                                </option>
                               ))}
                             </optgroup>
                           </select>
@@ -3163,7 +3246,10 @@ ALWAYS:
                             Coding
                           </label>
                           <select
-                            value={config.codingModel || "openrouter:deepseek/deepseek-coder-33b-instruct"}
+                            value={
+                              config.codingModel ||
+                              "openrouter:deepseek/deepseek-coder-33b-instruct"
+                            }
                             onChange={(e) =>
                               setConfig((prev) => ({
                                 ...prev,
@@ -3179,13 +3265,21 @@ ALWAYS:
                             }}
                           >
                             <optgroup label="☁️ OpenRouter (Cloud)">
-                              {OPENROUTER_MODELS.filter(m => m.category === 'coding').map((m) => (
-                                <option key={m.value} value={m.value}>{m.label}</option>
+                              {OPENROUTER_MODELS.filter(
+                                (m) => m.category === "coding",
+                              ).map((m) => (
+                                <option key={m.value} value={m.value}>
+                                  {m.label}
+                                </option>
                               ))}
                             </optgroup>
                             <optgroup label="🖥️ Ollama (Self-Hosted)">
-                              {OLLAMA_MODELS.filter(m => m.category === 'coding').map((m) => (
-                                <option key={m.value} value={m.value}>{m.label}</option>
+                              {OLLAMA_MODELS.filter(
+                                (m) => m.category === "coding",
+                              ).map((m) => (
+                                <option key={m.value} value={m.value}>
+                                  {m.label}
+                                </option>
                               ))}
                             </optgroup>
                           </select>
@@ -3210,9 +3304,10 @@ ALWAYS:
                               placeholder="Add a conversation starter"
                               className="flex-1 p-2 rounded focus:outline-none focus:ring-2 focus:ring-app-green-500"
                               style={{
-                                backgroundColor: 'var(--chatty-input-bg, #3a3520)',
-                                color: 'var(--chatty-text)',
-                                border: 'none',
+                                backgroundColor:
+                                  "var(--chatty-input-bg, #3a3520)",
+                                color: "var(--chatty-text)",
+                                border: "none",
                               }}
                             />
                             <button
@@ -3235,7 +3330,7 @@ ALWAYS:
                     {/* File Upload */}
                     <div>
                       <label className="block text-sm font-medium mb-2 text-app-text-900">
-                        Knowledge Files
+                        Knowledge
                       </label>
                       <p className="text-xs text-app-text-800 mb-2">
                         Upload files to give your GPT access to specific
@@ -3329,7 +3424,7 @@ ALWAYS:
                         Upload conversation transcripts to give your GPT access
                         to past interactions (.md, .txt, .rtf, .pdf)
                       </p>
-                      
+
                       {/* Source selector */}
                       <div className="flex items-center gap-3 mb-3">
                         <label
@@ -3355,7 +3450,7 @@ ALWAYS:
                           ))}
                         </select>
                       </div>
-                      
+
                       <input
                         type="file"
                         ref={transcriptInputRef}
@@ -3364,7 +3459,7 @@ ALWAYS:
                         multiple
                         className="hidden"
                       />
-                      
+
                       {/* Upload button + dynamic file count badge */}
                       <div className="flex items-center gap-3">
                         <button
@@ -3379,40 +3474,59 @@ ALWAYS:
                           }}
                           onMouseEnter={(e) => {
                             if (!isUploadingTranscripts) {
-                              e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
+                              e.currentTarget.style.backgroundColor =
+                                "var(--chatty-highlight)";
                             }
                           }}
                           onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = "var(--chatty-bg-message)";
+                            e.currentTarget.style.backgroundColor =
+                              "var(--chatty-bg-message)";
                           }}
                         >
                           <Upload size={16} />
-                          {isUploadingTranscripts ? 'Uploading...' : 'Upload Transcripts'}
+                          {isUploadingTranscripts
+                            ? "Uploading..."
+                            : "Upload Transcripts"}
                         </button>
-                        
+
                         {/* Dynamic transcript count badge - shows total staged + existing files for this construct */}
                         {(() => {
-                          const existingCount = Object.values(existingTranscripts).reduce((sum, arr) => sum + arr.length, 0);
+                          const existingCount = Object.values(
+                            existingTranscripts,
+                          ).reduce((sum, arr) => sum + arr.length, 0);
                           const stagedCount = transcripts.length;
                           const totalCount = existingCount + stagedCount;
-                          
+
                           if (totalCount > 0 || isLoadingExistingTranscripts) {
                             return (
-                              <div 
+                              <div
                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium"
                                 style={{
-                                  backgroundColor: stagedCount > 0 ? "var(--chatty-accent)" : "var(--chatty-bg-message)",
-                                  color: stagedCount > 0 ? "#fff" : "var(--chatty-text)",
-                                  opacity: isLoadingExistingTranscripts ? 0.6 : 1,
+                                  backgroundColor:
+                                    stagedCount > 0
+                                      ? "var(--chatty-accent)"
+                                      : "var(--chatty-bg-message)",
+                                  color:
+                                    stagedCount > 0
+                                      ? "#fff"
+                                      : "var(--chatty-text)",
+                                  opacity: isLoadingExistingTranscripts
+                                    ? 0.6
+                                    : 1,
                                 }}
                               >
                                 {isLoadingExistingTranscripts ? (
                                   <span>Loading...</span>
                                 ) : (
                                   <>
-                                    <span>{totalCount} file{totalCount !== 1 ? 's' : ''}</span>
+                                    <span>
+                                      {totalCount} file
+                                      {totalCount !== 1 ? "s" : ""}
+                                    </span>
                                     {stagedCount > 0 && existingCount > 0 && (
-                                      <span style={{ opacity: 0.7 }}>({stagedCount} new)</span>
+                                      <span style={{ opacity: 0.7 }}>
+                                        ({stagedCount} new)
+                                      </span>
                                     )}
                                   </>
                                 )}
@@ -3422,22 +3536,35 @@ ALWAYS:
                           return null;
                         })()}
                       </div>
-                      
+
                       {/* Show newly uploaded transcripts (this session) */}
                       {transcripts.length > 0 && (
                         <div className="mt-3 space-y-2">
-                          <p className="text-xs font-medium" style={{ color: "var(--chatty-text)", opacity: 0.8 }}>
+                          <p
+                            className="text-xs font-medium"
+                            style={{
+                              color: "var(--chatty-text)",
+                              opacity: 0.8,
+                            }}
+                          >
                             Just uploaded ({transcripts.length}):
                           </p>
                           {transcripts.map((t) => (
-                            <div 
-                              key={t.id} 
+                            <div
+                              key={t.id}
                               className="flex items-center justify-between p-2 rounded"
-                              style={{ backgroundColor: "var(--chatty-bg-message)" }}
+                              style={{
+                                backgroundColor: "var(--chatty-bg-message)",
+                              }}
                             >
                               <div className="flex items-center gap-2 flex-1 min-w-0">
-                                <span className="text-sm">{getSourceIcon(t.source || 'other')}</span>
-                                <span className="text-sm truncate" style={{ color: "var(--chatty-text)" }}>
+                                <span className="text-sm">
+                                  {getSourceIcon(t.source || "other")}
+                                </span>
+                                <span
+                                  className="text-sm truncate"
+                                  style={{ color: "var(--chatty-text)" }}
+                                >
                                   {t.name}
                                 </span>
                               </div>
@@ -3452,52 +3579,80 @@ ALWAYS:
                           ))}
                         </div>
                       )}
-                      
+
                       {/* Show existing transcripts from database, grouped by source */}
                       {isLoadingExistingTranscripts ? (
                         <div className="mt-3">
-                          <span className="text-xs" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>
+                          <span
+                            className="text-xs"
+                            style={{
+                              color: "var(--chatty-text)",
+                              opacity: 0.6,
+                            }}
+                          >
                             Loading existing transcripts...
                           </span>
                         </div>
-                      ) : Object.keys(existingTranscripts).length > 0 && (
-                        <div className="mt-4 space-y-3">
-                          <p className="text-xs font-medium" style={{ color: "var(--chatty-text)", opacity: 0.8 }}>
-                            Stored transcripts:
-                          </p>
-                          {Object.entries(existingTranscripts).map(([source, files]) => (
-                            <div key={source} className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm">{getSourceIcon(source)}</span>
-                                <span className="text-xs font-medium" style={{ color: "var(--chatty-text)" }}>
-                                  {getSourceLabel(source)} ({files.length})
-                                </span>
-                              </div>
-                              <div className="pl-6 space-y-1">
-                                {files.slice(0, 5).map((f, idx) => (
-                                  <div 
-                                    key={`${source}-${idx}`}
-                                    className="text-xs py-1 px-2 rounded truncate"
-                                    style={{ 
-                                      backgroundColor: "var(--chatty-bg-message)", 
-                                      color: "var(--chatty-text)",
-                                      opacity: 0.9,
-                                    }}
-                                  >
-                                    {f.name}
+                      ) : (
+                        Object.keys(existingTranscripts).length > 0 && (
+                          <div className="mt-4 space-y-3">
+                            <p
+                              className="text-xs font-medium"
+                              style={{
+                                color: "var(--chatty-text)",
+                                opacity: 0.8,
+                              }}
+                            >
+                              Stored transcripts:
+                            </p>
+                            {Object.entries(existingTranscripts).map(
+                              ([source, files]) => (
+                                <div key={source} className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm">
+                                      {getSourceIcon(source)}
+                                    </span>
+                                    <span
+                                      className="text-xs font-medium"
+                                      style={{ color: "var(--chatty-text)" }}
+                                    >
+                                      {getSourceLabel(source)} ({files.length})
+                                    </span>
                                   </div>
-                                ))}
-                                {files.length > 5 && (
-                                  <span className="text-xs" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>
-                                    +{files.length - 5} more
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                                  <div className="pl-6 space-y-1">
+                                    {files.slice(0, 5).map((f, idx) => (
+                                      <div
+                                        key={`${source}-${idx}`}
+                                        className="text-xs py-1 px-2 rounded truncate"
+                                        style={{
+                                          backgroundColor:
+                                            "var(--chatty-bg-message)",
+                                          color: "var(--chatty-text)",
+                                          opacity: 0.9,
+                                        }}
+                                      >
+                                        {f.name}
+                                      </div>
+                                    ))}
+                                    {files.length > 5 && (
+                                      <span
+                                        className="text-xs"
+                                        style={{
+                                          color: "var(--chatty-text)",
+                                          opacity: 0.6,
+                                        }}
+                                      >
+                                        +{files.length - 5} more
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              ),
+                            )}
+                          </div>
+                        )
                       )}
-                      
+
                       {workspaceContext.memories &&
                         workspaceContext.memories.length > 0 && (
                           <div className="mt-2">
@@ -4054,9 +4209,22 @@ ALWAYS:
                         <div key={index}>
                           <p className="text-sm text-app-text-900 whitespace-pre-wrap">
                             {message.role === "user" ? (
-                              <><span className="font-medium text-app-text-800">You:</span> {message.content}</>
+                              <>
+                                <span className="font-medium text-app-text-800">
+                                  You:
+                                </span>{" "}
+                                {message.content}
+                              </>
                             ) : (
-                              <><span className="font-medium" style={{ color: '#00aeef' }}>{config.name || 'Assistant'}:</span> {message.content}</>
+                              <>
+                                <span
+                                  className="font-medium"
+                                  style={{ color: "#00aeef" }}
+                                >
+                                  {config.name || "Assistant"}:
+                                </span>{" "}
+                                {message.content}
+                              </>
                             )}
                           </p>
                         </div>
