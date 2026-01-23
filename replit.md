@@ -64,8 +64,10 @@ Core Question: Not "Is it alive?" but "Can it carry consequence?"
 - **Platform Connectors Architecture:** Extensible connector pattern for future OAuth integrations with AI platforms (Convai, Inworld AI, Gemini). See `src/lib/connectors/` and `docs/PLATFORM_INTEGRATIONS.md`.
 
 ## Recent Changes (January 2026)
+- **Dynamic Transcript Count Badge:** Added real-time file count badge to the right of "Upload Transcripts" button showing total files held for the current construct (both staged and existing). Badge highlights with accent color when new files are staged.
+- **Expanded Transcript Sources:** Added Chai, Character.AI, DeepSeek, and manual naming option to the transcript source dropdown. Full list: ChatGPT, Gemini, Grok, Copilot, Claude, Chai, Character.AI, DeepSeek, Other (manual).
 - **Fixed Critical Routing Bug:** Resolved blank screens on nested routes (`/app/explore`, `/app/gpts`) caused by undefined `selectedAI` variable in GPTCreator.tsx. The error crashed the component tree - replaced with `initialConfig` prop.
-- **Multi-Platform Transcript Upload:** Added source selection dropdown (ChatGPT, Gemini, Grok, Copilot, Claude) for transcript uploads with VVAULT path structure: `.../{constructId}/{source}/{filename}`
+- **Multi-Platform Transcript Upload:** Transcripts stored in Supabase with VVAULT path structure: `vvault/users/shard_0000/{userId}/instances/{constructId}/{source}/{filename}`
 - **Platform Connectors Architecture:** Created extensible BaseConnector pattern and ConvaiConnector implementation for future OAuth integrations.
 
 ## External Dependencies

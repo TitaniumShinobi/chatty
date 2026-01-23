@@ -142,7 +142,10 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     { value: 'grok', label: 'Grok', icon: '🔮' },
     { value: 'copilot', label: 'Copilot', icon: '🪁' },
     { value: 'claude', label: 'Claude', icon: '🎭' },
-    { value: 'other', label: 'Other', icon: '📄' },
+    { value: 'chai', label: 'Chai', icon: '🍵' },
+    { value: 'character.ai', label: 'Character.AI', icon: '👤' },
+    { value: 'deepseek', label: 'DeepSeek', icon: '🔍' },
+    { value: 'other', label: 'Other (manual)', icon: '📝' },
   ];
   
   const getSourceIcon = (source: string) => {
@@ -3365,28 +3368,64 @@ ALWAYS:
                         multiple
                         className="hidden"
                       />
-                      <button
-                        onClick={() => transcriptInputRef.current?.click()}
-                        disabled={isUploadingTranscripts}
-                        className="px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                        style={{
-                          border: "none",
-                          backgroundColor: "var(--chatty-bg-message)",
-                          color: "var(--chatty-text)",
-                          opacity: isUploadingTranscripts ? 0.5 : 1,
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!isUploadingTranscripts) {
-                            e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
+                      
+                      {/* Upload button + dynamic file count badge */}
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => transcriptInputRef.current?.click()}
+                          disabled={isUploadingTranscripts}
+                          className="px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                          style={{
+                            border: "none",
+                            backgroundColor: "var(--chatty-bg-message)",
+                            color: "var(--chatty-text)",
+                            opacity: isUploadingTranscripts ? 0.5 : 1,
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!isUploadingTranscripts) {
+                              e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = "var(--chatty-bg-message)";
+                          }}
+                        >
+                          <Upload size={16} />
+                          {isUploadingTranscripts ? 'Uploading...' : 'Upload Transcripts'}
+                        </button>
+                        
+                        {/* Dynamic transcript count badge - shows total staged + existing files for this construct */}
+                        {(() => {
+                          const existingCount = Object.values(existingTranscripts).reduce((sum, arr) => sum + arr.length, 0);
+                          const stagedCount = transcripts.length;
+                          const totalCount = existingCount + stagedCount;
+                          
+                          if (totalCount > 0 || isLoadingExistingTranscripts) {
+                            return (
+                              <div 
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium"
+                                style={{
+                                  backgroundColor: stagedCount > 0 ? "var(--chatty-accent)" : "var(--chatty-bg-message)",
+                                  color: stagedCount > 0 ? "#fff" : "var(--chatty-text)",
+                                  opacity: isLoadingExistingTranscripts ? 0.6 : 1,
+                                }}
+                              >
+                                {isLoadingExistingTranscripts ? (
+                                  <span>Loading...</span>
+                                ) : (
+                                  <>
+                                    <span>{totalCount} file{totalCount !== 1 ? 's' : ''}</span>
+                                    {stagedCount > 0 && existingCount > 0 && (
+                                      <span style={{ opacity: 0.7 }}>({stagedCount} new)</span>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            );
                           }
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = "var(--chatty-bg-message)";
-                        }}
-                      >
-                        <Upload size={16} />
-                        {isUploadingTranscripts ? 'Uploading...' : 'Upload Transcripts'}
-                      </button>
+                          return null;
+                        })()}
+                      </div>
                       
                       {/* Show newly uploaded transcripts (this session) */}
                       {transcripts.length > 0 && (
