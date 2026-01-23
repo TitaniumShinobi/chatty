@@ -1,15 +1,10 @@
 import express from 'express';
 import multer from 'multer';
 import { getSupabaseClient } from '../lib/supabaseClient.js';
-import crypto from 'crypto';
 
 const router = express.Router();
 
 const MAX_TEXT_SIZE = 5 * 1024 * 1024; // 5MB for text files
-
-function sha256(content) {
-  return crypto.createHash('sha256').update(content || '').digest('hex');
-}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -92,7 +87,6 @@ router.post('/save', async (req, res) => {
       // Source can be: chatgpt, gemini, grok, copilot, claude, other
       const transcriptSource = transcript.source || 'chatgpt';
       const filename = `vvault/users/shard_0000/${userIdentifier}/instances/${constructCallsign}/${transcriptSource}/${transcript.name}`;
-      const contentHash = sha256(transcript.content);
       
       const { error: saveError } = await supabase
         .from('vault_files')
@@ -102,7 +96,6 @@ router.post('/save', async (req, res) => {
           content: transcript.content,
           file_type: 'transcript',
           construct_id: constructCallsign,
-          content_hash: contentHash,
           metadata: {
             originalName: transcript.name,
             type: transcript.type,
