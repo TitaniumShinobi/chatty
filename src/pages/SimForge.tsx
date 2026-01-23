@@ -99,6 +99,7 @@ export default function SimForge() {
   ]
 
   useEffect(() => {
+    console.log('[SimForge] Component mounted, loading data...')
     loadData()
   }, [])
 
@@ -120,15 +121,20 @@ export default function SimForge() {
   }, [isCategoryDropdownOpen])
 
   const loadData = async () => {
+    console.log('[SimForge] loadData starting...')
     try {
       setIsLoading(true)
       // Load user's AIs
+      console.log('[SimForge] Fetching user AIs...')
       const userAIs = await aiService.getAllAIs()
+      console.log('[SimForge] Got user AIs:', userAIs?.length || 0)
       setUserGpts(userAIs)
       
       // Fetch store AIs from API
       try {
+        console.log('[SimForge] Fetching store AIs...')
         const storeAIs = await aiService.getStoreAIs()
+        console.log('[SimForge] Got store AIs:', storeAIs?.length || 0)
         // Map store AIs to CommunityGPT format
         const communityGPTs: CommunityGPT[] = storeAIs.map(ai => ({
           ...ai,
@@ -143,13 +149,14 @@ export default function SimForge() {
         }))
         setGpts(communityGPTs)
       } catch (error) {
-        console.error('Failed to load store AIs:', error)
+        console.error('[SimForge] Failed to load store AIs:', error)
         // Fallback to empty array if store fetch fails
         setGpts([])
       }
     } catch (error) {
-      console.error('Failed to load data:', error)
+      console.error('[SimForge] Failed to load data:', error)
     } finally {
+      console.log('[SimForge] loadData complete, isLoading = false')
       setIsLoading(false)
     }
   }
@@ -204,8 +211,10 @@ export default function SimForge() {
       }
     })
 
+  console.log('[SimForge] Rendering component, isLoading:', isLoading, 'filteredGpts:', filteredGpts.length)
+  
   return (
-    <div className="h-full flex flex-col" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
+    <div className="h-full w-full overflow-y-auto" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
       {/* Header */}
       <div className="p-6 border-b" style={{ borderColor: 'var(--chatty-line)' }}>
         <div className="flex items-center justify-between mb-4">

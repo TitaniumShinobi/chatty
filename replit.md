@@ -63,6 +63,11 @@ Core Question: Not "Is it alive?" but "Can it carry consequence?"
 - **Multi-Platform Transcript Upload:** Upload transcripts from ChatGPT, Gemini, Grok, Copilot, Claude with source selection. Transcripts stored at VVAULT path: `vvault/users/shard_0000/{userId}/instances/{constructId}/{source}/{filename}`
 - **Platform Connectors Architecture:** Extensible connector pattern for future OAuth integrations with AI platforms (Convai, Inworld AI, Gemini). See `src/lib/connectors/` and `docs/PLATFORM_INTEGRATIONS.md`.
 
+## Recent Changes (January 2026)
+- **Fixed Critical Routing Bug:** Resolved blank screens on nested routes (`/app/explore`, `/app/gpts`) caused by undefined `selectedAI` variable in GPTCreator.tsx. The error crashed the component tree - replaced with `initialConfig` prop.
+- **Multi-Platform Transcript Upload:** Added source selection dropdown (ChatGPT, Gemini, Grok, Copilot, Claude) for transcript uploads with VVAULT path structure: `.../{constructId}/{source}/{filename}`
+- **Platform Connectors Architecture:** Created extensible BaseConnector pattern and ConvaiConnector implementation for future OAuth integrations.
+
 ## External Dependencies
 - **VVAULT API:** Primary API for AI inference, memory management, and conversation transcripts.
 - **Supabase:** Used for persistent storage of conversations and as a shared backend with VVAULT.

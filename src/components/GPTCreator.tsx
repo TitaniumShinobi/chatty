@@ -397,7 +397,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   // Fetch existing transcripts when construct changes
   useEffect(() => {
     const fetchExistingTranscripts = async () => {
-      const constructId = config.constructCallsign || selectedAI?.constructCallsign;
+      const constructId = config.constructCallsign || initialConfig?.constructCallsign;
       if (!constructId || !isVisible) return;
       
       setIsLoadingExistingTranscripts(true);
@@ -421,7 +421,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     };
     
     fetchExistingTranscripts();
-  }, [isVisible, config.constructCallsign, selectedAI?.constructCallsign]);
+  }, [isVisible, config.constructCallsign, initialConfig?.constructCallsign]);
 
   // Helper function to normalize avatar URL
   const normalizeAvatarUrl = (
@@ -993,7 +993,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         } else if (ext === 'pdf') {
           const formData = new FormData();
           formData.append('file', file);
-          formData.append('constructCallsign', config.constructCallsign || selectedAI?.constructCallsign || '');
+          formData.append('constructCallsign', config.constructCallsign || initialConfig?.constructCallsign || '');
           
           try {
             const response = await fetch('/api/transcripts/extract-pdf', {
@@ -1039,7 +1039,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       setTranscripts(prev => [...prev, ...newTranscripts]);
       
       // Save transcripts to Supabase if we have a construct
-      const constructId = config.constructCallsign || selectedAI?.constructCallsign;
+      const constructId = config.constructCallsign || initialConfig?.constructCallsign;
       if (constructId && newTranscripts.length > 0) {
         try {
           const saveResponse = await fetch('/api/transcripts/save', {
