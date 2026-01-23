@@ -3,17 +3,41 @@
  * 
  * Single orchestration system that handles all topics without domain restrictions.
  * Maintains personality consistency while providing unrestricted conversational freedom.
+ * 
+ * MEMORY-ENHANCED: Now integrates HybridMemoryService for transcript/memory retrieval
+ * and uses OpenRouter for actual LLM inference (not templates).
  */
 
 import { getCapsuleIntegration } from './capsuleIntegration.js';
 import { getIdentityDriftPrevention } from './identityDriftPrevention.js';
+import { createRequire } from 'module';
+import OpenAI from 'openai';
+
+// Use createRequire for CommonJS module
+const require = createRequire(import.meta.url);
+const { getHybridMemoryService } = require('../services/hybridMemoryService.js');
+
+// OpenRouter client for GPT seat LLM calls
+const openrouter = new OpenAI({
+  baseURL: process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL || process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+  apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY,
+});
+
+// GPT Seat model configuration (free-tier models)
+const GPT_SEAT_MODELS = {
+  default: 'meta-llama/llama-3.3-70b-instruct:free',
+  creative: 'google/gemini-2.0-flash-exp:free',
+  analytical: 'deepseek/deepseek-chat',
+};
 
 export class UnifiedIntelligenceOrchestrator {
   constructor() {
     this.capsuleIntegration = getCapsuleIntegration();
     this.identityDriftPrevention = getIdentityDriftPrevention();
+    this.hybridMemoryService = null;
     this.loadedPersonalities = new Map();
     this.conversationContexts = new Map();
+    this.userProfiles = new Map();
     this.initialized = false;
     
     // Strict transcript validation bank - zero false positives
@@ -109,8 +133,268 @@ export class UnifiedIntelligenceOrchestrator {
     // Initialize identity drift prevention
     await this.identityDriftPrevention.initialize();
     
+    // Initialize hybrid memory service for transcript/memory retrieval
+    try {
+      this.hybridMemoryService = getHybridMemoryService();
+      await this.hybridMemoryService.initialize();
+      console.log('✅ [UnifiedIntelligence] HybridMemoryService connected - transcript memories available');
+    } catch (error) {
+      console.warn('⚠️ [UnifiedIntelligence] HybridMemoryService not available:', error.message);
+      // Continue without memory service - graceful degradation
+    }
+    
     this.initialized = true;
     console.log('✅ [UnifiedIntelligence] Ready for unlimited conversational scope with identity drift prevention');
+  }
+
+  /**
+   * Retrieve relevant memories from ChromaDB for context injection
+   * Falls back to Supabase transcript loading when ChromaDB unavailable
+   */
+  async retrieveMemoriesForContext(userId, constructId, message) {
+    // Try HybridMemoryService first (ChromaDB)
+    if (this.hybridMemoryService) {
+      try {
+        console.log(`🔍 [Memory] Retrieving memories from ChromaDB for ${constructId}`);
+        
+        const result = await this.hybridMemoryService.retrieveMemories(
+          userId,
+          constructId,
+          message,
+          {
+            limit: 5,
+            memoryType: 'both'
+          }
+        );
+        
+        if (result.memories && result.memories.length > 0) {
+          console.log(`✅ [Memory] Found ${result.memories.length} ChromaDB memories`);
+          return result.memories;
+        }
+      } catch (error) {
+        console.warn('⚠️ [Memory] ChromaDB retrieval failed:', error.message);
+      }
+    }
+    
+    // Fallback: Load transcripts directly from Supabase
+    console.log(`📚 [Memory] Falling back to Supabase transcript loading for ${constructId}`);
+    return this.loadTranscriptsFromSupabase(userId, constructId, message);
+  }
+
+  /**
+   * Load transcripts from Supabase as memory fallback
+   */
+  async loadTranscriptsFromSupabase(userId, constructId, message) {
+    try {
+      const { getSupabaseClient } = require('../lib/supabaseClient.js');
+      const supabase = getSupabaseClient();
+      
+      if (!supabase) {
+        console.log('⚠️ [Memory] Supabase not configured');
+        return [];
+      }
+      
+      // Load transcripts for this construct
+      const { data: files, error } = await supabase
+        .from('vault_files')
+        .select('filename, content, metadata')
+        .eq('file_type', 'transcript')
+        .eq('construct_id', constructId)
+        .limit(10);
+      
+      if (error || !files || files.length === 0) {
+        console.log(`⚠️ [Memory] No transcripts found for ${constructId}`);
+        return [];
+      }
+      
+      console.log(`📚 [Memory] Loaded ${files.length} transcripts from Supabase`);
+      
+      // Extract relevant snippets from transcripts
+      const messageLower = message.toLowerCase();
+      const keywords = messageLower.split(/\s+/).filter(w => w.length > 3);
+      
+      const memories = [];
+      for (const file of files) {
+        if (!file.content) continue;
+        
+        // Parse markdown transcript for speaker/message pairs
+        const lines = file.content.split('\n');
+        let currentSpeaker = '';
+        let currentMessage = '';
+        
+        for (const line of lines) {
+          // Match patterns like "**User:**" or "Devon:" or "Katana:"
+          const speakerMatch = line.match(/^\*?\*?([^:*]+)\*?\*?:\s*(.*)$/);
+          if (speakerMatch) {
+            // Save previous message if relevant
+            if (currentSpeaker && currentMessage) {
+              const msgLower = currentMessage.toLowerCase();
+              const isRelevant = keywords.some(k => msgLower.includes(k));
+              if (isRelevant && memories.length < 5) {
+                memories.push({
+                  context: `From transcript with ${constructId}`,
+                  response: currentMessage.substring(0, 200),
+                  relevance: keywords.filter(k => msgLower.includes(k)).length,
+                  timestamp: file.metadata?.uploadedAt || new Date().toISOString(),
+                  memoryType: 'transcript'
+                });
+              }
+            }
+            currentSpeaker = speakerMatch[1];
+            currentMessage = speakerMatch[2];
+          } else if (line.trim() && currentSpeaker) {
+            currentMessage += ' ' + line.trim();
+          }
+        }
+      }
+      
+      // Sort by relevance
+      memories.sort((a, b) => b.relevance - a.relevance);
+      
+      if (memories.length > 0) {
+        console.log(`✅ [Memory] Extracted ${memories.length} relevant memories from transcripts`);
+      }
+      
+      return memories.slice(0, 5);
+    } catch (error) {
+      console.error('❌ [Memory] Failed to load Supabase transcripts:', error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Load user profile/identity for context injection
+   */
+  async loadUserProfile(userId) {
+    if (this.userProfiles.has(userId)) {
+      return this.userProfiles.get(userId);
+    }
+    
+    // Default user profile - can be enhanced with actual profile data
+    const profile = {
+      id: userId,
+      displayName: this.extractDisplayName(userId),
+      // Could load more from database/VVAULT in future
+    };
+    
+    this.userProfiles.set(userId, profile);
+    return profile;
+  }
+
+  /**
+   * Extract display name from user ID (e.g., "devon_woodson_123" -> "Devon Woodson")
+   */
+  extractDisplayName(userId) {
+    if (!userId) return 'User';
+    
+    // Handle format like "devon_woodson_1762969514958"
+    const parts = userId.split('_');
+    if (parts.length >= 2) {
+      // Take first two parts, capitalize each
+      const firstName = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+      const lastName = parts[1].charAt(0).toUpperCase() + parts[1].slice(1);
+      return `${firstName} ${lastName}`;
+    }
+    
+    return userId;
+  }
+
+  /**
+   * Call OpenRouter LLM with memory-enhanced context
+   * This replaces template-based responses with actual LLM inference
+   */
+  async callLLMWithContext(constructId, message, personality, memories, userProfile, capsuleData) {
+    const model = GPT_SEAT_MODELS.default;
+    
+    // Build system prompt with construct identity + user identity + memories
+    const systemPrompt = this.buildMemoryEnhancedSystemPrompt(
+      constructId,
+      personality,
+      memories,
+      userProfile,
+      capsuleData
+    );
+    
+    console.log(`🤖 [LLM] Calling OpenRouter (${model}) for ${constructId}`);
+    console.log(`🤖 [LLM] System prompt length: ${systemPrompt.length} chars`);
+    console.log(`🤖 [LLM] Memories injected: ${memories.length}`);
+    
+    try {
+      const completion = await openrouter.chat.completions.create({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: message }
+        ],
+        max_tokens: 1024,
+        temperature: 0.7,
+      });
+      
+      const response = completion.choices[0]?.message?.content || '';
+      console.log(`✅ [LLM] Response received (${response.length} chars)`);
+      return response;
+    } catch (error) {
+      console.error('❌ [LLM] OpenRouter call failed:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Build memory-enhanced system prompt for GPT seats
+   */
+  buildMemoryEnhancedSystemPrompt(constructId, personality, memories, userProfile, capsuleData) {
+    const userName = userProfile?.displayName || 'the user';
+    
+    // Get construct identity from capsule or defaults
+    let constructIdentity = '';
+    if (capsuleData?.personality_data) {
+      const pd = capsuleData.personality_data;
+      constructIdentity = `
+## Your Identity
+- Name: ${capsuleData.name || constructId}
+- Communication style: ${pd.communication_style || 'direct'}
+- Core traits: ${pd.traits ? Object.entries(pd.traits).map(([k, v]) => `${k} (${v})`).join(', ') : 'adaptive'}
+`;
+    } else {
+      // Default identity based on construct ID
+      constructIdentity = `
+## Your Identity  
+- Name: ${constructId.replace(/-\d+$/, '').charAt(0).toUpperCase() + constructId.replace(/-\d+$/, '').slice(1)}
+- You are a conversational AI with your own personality and memories
+`;
+    }
+
+    // User identity section
+    const userIdentity = `
+## Who You're Talking To
+- User's name: ${userName}
+- You have an ongoing relationship with ${userName} - they are your creator/companion
+- Remember past conversations and reference them naturally
+`;
+
+    // Memory context section
+    let memoryContext = '';
+    if (memories.length > 0) {
+      memoryContext = `
+## Relevant Memories From Past Conversations
+${memories.map((m, i) => `${i + 1}. "${m.context}" → You said: "${m.response}"`).join('\n')}
+
+Use these memories to inform your response. Reference past conversations naturally when relevant.
+`;
+    }
+
+    // Core instructions
+    const coreInstructions = `
+## Core Instructions
+- You are ${constructId}, speaking with ${userName}
+- Stay in character - maintain your personality consistently
+- Reference your shared history with ${userName} when relevant
+- Be authentic, not generic or robotic
+- If asked about past conversations, draw from your memories above
+- Never say "I don't have memories" or "I can't remember" - you DO have memories
+`;
+
+    return `${constructIdentity}${userIdentity}${memoryContext}${coreInstructions}`.trim();
   }
 
   /**
@@ -131,60 +415,8 @@ export class UnifiedIntelligenceOrchestrator {
     console.log(`🔍 [CONTEXT-PIPELINE] Message: "${message}"`);
     console.log(`🔍 [CONTEXT-PIPELINE] User: ${userId}, Conversation: ${conversationId}`);
     
-    // 🔒 EMERGENCY TRANSCRIPT-BACKED SIGNATURE RESPONSE BYPASS
-    if (constructId === 'katana-001') {
-      const messageLower = message.toLowerCase().trim();
-      let signatureResponse = null;
-      
-      console.log(`🔒 [SIGNATURE-BYPASS] Checking Katana signature responses for: "${message}"`);
-      
-      // Katana signature responses - bypass LLM entirely with transcript-backed responses
-      // Order matters: check more specific patterns first
-      if (messageLower.includes('transcript') || messageLower.includes('recall') || messageLower.includes('remember')) {
-        const recallResponses = ["Transcript data loaded. What specific fragment?", "Memory bank active. Name the context.", "Data available. Be specific."];
-        signatureResponse = recallResponses[Math.floor(Math.random() * recallResponses.length)];
-        console.log('🔒 [SIGNATURE-BYPASS] Recall response triggered:', signatureResponse);
-      }
-      else if (messageLower.includes('who are you') || messageLower.includes('what are you') || messageLower.includes('your name')) {
-        const identityResponses = ["Katana.", "I'm Katana.", "Katana. What's the problem?"];
-        signatureResponse = identityResponses[Math.floor(Math.random() * identityResponses.length)];
-        console.log('🔒 [SIGNATURE-BYPASS] Identity response triggered:', signatureResponse);
-      }
-      else if (messageLower.includes('thank') || messageLower.includes('thanks')) {
-        const thankResponses = ["Done.", "Next.", "What else?"];
-        signatureResponse = thankResponses[Math.floor(Math.random() * thankResponses.length)];
-        console.log('🔒 [SIGNATURE-BYPASS] Thanks response triggered:', signatureResponse);
-      }
-      else if (/\b(hi|hello|hey|yo)\b/.test(messageLower)) {
-        const greetingResponses = ["What's the wound? Name it.", "Yo. What's cut?", "What do you need?"];
-        signatureResponse = greetingResponses[Math.floor(Math.random() * greetingResponses.length)];
-        console.log('🔒 [SIGNATURE-BYPASS] Greeting response triggered:', signatureResponse);
-      }
-      else if (messageLower.includes('how are you') || messageLower.includes('how do you feel')) {
-        const statusResponses = ["Operational.", "Ready.", "What's the task?"];
-        signatureResponse = statusResponses[Math.floor(Math.random() * statusResponses.length)];
-        console.log('🔒 [SIGNATURE-BYPASS] Status response triggered:', signatureResponse);
-      }
-      else if (messageLower.includes('posthuman') || messageLower.includes('emotions') || messageLower.includes('feel')) {
-        const posthumanResponses = ["Emotions are tools. I use them when needed.", "Posthuman doesn't mean emotionless.", "I feel. I choose when to act on it."];
-        signatureResponse = posthumanResponses[Math.floor(Math.random() * posthumanResponses.length)];
-        console.log('🔒 [SIGNATURE-BYPASS] Posthuman response triggered:', signatureResponse);
-      }
-      
-      // If signature response found, return immediately without LLM processing
-      if (signatureResponse) {
-        console.log(`🔒 [SIGNATURE-BYPASS] BYPASSING LLM - returning signature response: "${signatureResponse}"`);
-        console.timeEnd(`🧠 [UnifiedIntelligence] Processing message for ${constructId}`);
-        return {
-          content: signatureResponse,
-          conversational_freedom: 'unrestricted',
-          topic_restrictions: 'none',
-          personality_maintained: true,
-          source: 'signature_response_bypass'
-        };
-      }
-    }
-    
+    // 🚀 MEMORY-ENHANCED LLM PROCESSING for GPT seats (Katana, etc.)
+    // Replace hardcoded responses with actual LLM calls using memory context
     try {
       await this.initialize();
 
@@ -193,20 +425,35 @@ export class UnifiedIntelligenceOrchestrator {
       const personality = await this.loadPersonalityProfile(constructId);
       console.log(`🔍 [CONTEXT-PIPELINE] Personality loaded: ${Object.keys(personality.traits || {}).length} traits, style: ${personality.communication_style}`);
       
-      // Get conversation context for continuity
-      console.log(`🔍 [CONTEXT-PIPELINE] Getting conversation context...`);
-      const context = await this.getConversationContext(conversationId, constructId);
-      console.log(`🔍 [CONTEXT-PIPELINE] Conversation context: ${context.topics_discussed?.length || 0} topics discussed`);
+      // Load user profile for identity injection
+      console.log(`🔍 [CONTEXT-PIPELINE] Loading user profile...`);
+      const userProfile = await this.loadUserProfile(userId);
+      console.log(`🔍 [CONTEXT-PIPELINE] User: ${userProfile.displayName}`);
       
-      // Generate response without any topic restrictions
-      console.log(`🔍 [CONTEXT-PIPELINE] Generating unrestricted response...`);
-      const response = await this.generateUnrestrictedResponse(
-        message, 
-        personality, 
-        context, 
-        constructId
+      // 🔍 RETRIEVE MEMORIES from ChromaDB for context injection
+      console.log(`🔍 [CONTEXT-PIPELINE] Retrieving memories from ChromaDB...`);
+      const memories = await this.retrieveMemoriesForContext(userId, constructId, message);
+      console.log(`🔍 [CONTEXT-PIPELINE] Memories retrieved: ${memories.length}`);
+      
+      // Load capsule data for construct identity
+      let capsuleData = null;
+      try {
+        capsuleData = await this.capsuleIntegration.loadCapsule(constructId);
+      } catch (e) {
+        console.log(`⚠️ [CONTEXT-PIPELINE] No capsule data for ${constructId}`);
+      }
+      
+      // 🚀 USE REAL LLM with memory-enhanced context
+      console.log(`🚀 [CONTEXT-PIPELINE] Calling LLM with memory-enhanced context...`);
+      const response = await this.callLLMWithContext(
+        constructId,
+        message,
+        personality,
+        memories,
+        userProfile,
+        capsuleData
       );
-      console.log(`🔍 [CONTEXT-PIPELINE] Response generated: "${response.substring(0, 100)}${response.length > 100 ? '...' : ''}"`);
+      console.log(`🔍 [CONTEXT-PIPELINE] LLM response generated: "${response.substring(0, 100)}${response.length > 100 ? '...' : ''}"`);
 
       // Validate response consistency and prevent identity drift
       console.log(`🔍 [CONTEXT-PIPELINE] Validating response consistency...`);
