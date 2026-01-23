@@ -19,6 +19,7 @@ import {
   Paperclip,
   Crop,
 } from "lucide-react";
+import JSZip from "jszip";
 import { GPTService, GPTConfig, GPTFile, GPTAction } from "../lib/gptService";
 import { AIService, AIConfig, AIFile, AIAction } from "../lib/aiService";
 import { VVAULTConversationManager } from "../lib/vvaultConversationManager";
@@ -145,9 +146,12 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [isUploadingTranscripts, setIsUploadingTranscripts] = useState(false);
   const [isLoadingExistingTranscripts, setIsLoadingExistingTranscripts] =
     useState(false);
-  const [transcriptSource, setTranscriptSource] = useState<string>("chatgpt");
+  const [transcriptSource, setTranscriptSource] = useState<string>("");
+  const [transcriptYear, setTranscriptYear] = useState<string>("");
+  const [transcriptMonth, setTranscriptMonth] = useState<string>("");
 
   const TRANSCRIPT_SOURCES = [
+    { value: "", label: "Select Platform (optional)", icon: "📁" },
     { value: "chatgpt", label: "ChatGPT", icon: "🤖" },
     { value: "gemini", label: "Gemini", icon: "✨" },
     { value: "grok", label: "Grok", icon: "🔮" },
@@ -156,7 +160,33 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     { value: "chai", label: "Chai", icon: "🍵" },
     { value: "character.ai", label: "Character.AI", icon: "👤" },
     { value: "deepseek", label: "DeepSeek", icon: "🔍" },
+    { value: "codex", label: "Codex", icon: "💻" },
+    { value: "github_copilot", label: "GitHub Copilot", icon: "🐙" },
     { value: "other", label: "Other (manual)", icon: "📝" },
+  ];
+
+  const TRANSCRIPT_YEARS = [
+    { value: "", label: "Year (optional)" },
+    { value: "2026", label: "2026" },
+    { value: "2025", label: "2025" },
+    { value: "2024", label: "2024" },
+    { value: "2023", label: "2023" },
+  ];
+
+  const TRANSCRIPT_MONTHS = [
+    { value: "", label: "Month (optional)" },
+    { value: "January", label: "January" },
+    { value: "February", label: "February" },
+    { value: "March", label: "March" },
+    { value: "April", label: "April" },
+    { value: "May", label: "May" },
+    { value: "June", label: "June" },
+    { value: "July", label: "July" },
+    { value: "August", label: "August" },
+    { value: "September", label: "September" },
+    { value: "October", label: "October" },
+    { value: "November", label: "November" },
+    { value: "December", label: "December" },
   ];
 
   const getSourceIcon = (source: string) => {
@@ -975,7 +1005,62 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     setFilePage(Math.max(1, Math.min(page, totalFilePages)));
   };
 
-  // Handle transcript file upload
+  // Build hierarchical path from dropdown selections
+  const buildTranscriptPath = (filename: string, zipPath?: string): string => {
+    if (zipPath) {
+      return zipPath;
+    }
+    const parts: string[] = [];
+    if (transcriptSource) parts.push(transcriptSource);
+    if (transcriptYear) parts.push(transcriptYear);
+    if (transcriptMonth) parts.push(transcriptMonth);
+    if (parts.length === 0) parts.push("transcripts");
+    parts.push(filename);
+    return parts.join("/");
+  };
+
+  // Extract source/year/month from zip file path
+  const parseZipPath = (
+    zipPath: string,
+  ): { source: string; year: string; month: string; filename: string } => {
+    const parts = zipPath.split("/").filter((p) => p && !p.startsWith("."));
+    const filename = parts.pop() || "";
+    let source = "";
+    let year = "";
+    let month = "";
+    for (const part of parts) {
+      if (/^\d{4}$/.test(part)) {
+        year = part;
+      } else if (
+        TRANSCRIPT_MONTHS.some(
+          (m) => m.value.toLowerCase() === part.toLowerCase(),
+        )
+      ) {
+        month =
+          TRANSCRIPT_MONTHS.find(
+            (m) => m.value.toLowerCase() === part.toLowerCase(),
+          )?.value || part;
+      } else if (
+        TRANSCRIPT_SOURCES.some(
+          (s) =>
+            s.value.toLowerCase() === part.toLowerCase() ||
+            s.label.toLowerCase() === part.toLowerCase().replace(/_/g, " "),
+        )
+      ) {
+        source =
+          TRANSCRIPT_SOURCES.find(
+            (s) =>
+              s.value.toLowerCase() === part.toLowerCase() ||
+              s.label.toLowerCase() === part.toLowerCase().replace(/_/g, " "),
+          )?.value || part;
+      } else if (!source) {
+        source = part.toLowerCase().replace(/\s+/g, "_");
+      }
+    }
+    return { source: source || "transcripts", year, month, filename };
+  };
+
+  // Handle transcript file upload (supports .zip, .md, .txt, .rtf, .pdf)
   const handleTranscriptUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
@@ -984,6 +1069,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
     const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB limit for text files
     const MAX_PDF_SIZE = 10 * 1024 * 1024; // 10MB limit for PDFs
+    const MAX_ZIP_SIZE = 100 * 1024 * 1024; // 100MB limit for zip files
 
     setIsUploadingTranscripts(true);
     const newTranscripts: Array<{
@@ -991,6 +1077,10 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       name: string;
       content: string;
       type: string;
+      source: string;
+      year?: string;
+      month?: string;
+      path: string;
     }> = [];
     const skippedFiles: string[] = [];
 
@@ -998,7 +1088,52 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       for (const file of Array.from(uploadedFiles)) {
         const ext = file.name.split(".").pop()?.toLowerCase() || "";
 
-        // Check file size
+        // Handle zip files - extract and preserve directory structure
+        if (ext === "zip") {
+          if (file.size > MAX_ZIP_SIZE) {
+            skippedFiles.push(`${file.name} (exceeds 100MB limit)`);
+            continue;
+          }
+          try {
+            const zip = await JSZip.loadAsync(file);
+            const entries = Object.keys(zip.files);
+            console.log(`📦 [Zip Upload] Extracting ${entries.length} entries from ${file.name}`);
+            for (const entryName of entries) {
+              const zipEntry = zip.files[entryName];
+              if (zipEntry.dir) continue;
+              const entryExt = entryName.split(".").pop()?.toLowerCase() || "";
+              if (!["md", "txt", "rtf"].includes(entryExt)) continue;
+              try {
+                const content = await zipEntry.async("text");
+                if (content.length > MAX_FILE_SIZE) {
+                  skippedFiles.push(`${entryName} (exceeds 5MB limit)`);
+                  continue;
+                }
+                const parsed = parseZipPath(entryName);
+                const entryFilename = parsed.filename || entryName.split("/").pop() || entryName;
+                newTranscripts.push({
+                  id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                  name: entryFilename,
+                  content,
+                  type: entryExt,
+                  source: parsed.source,
+                  year: parsed.year,
+                  month: parsed.month,
+                  path: entryName,
+                });
+              } catch (entryError) {
+                console.warn(`Failed to extract ${entryName}:`, entryError);
+                skippedFiles.push(`${entryName} (extraction failed)`);
+              }
+            }
+          } catch (zipError) {
+            console.error(`Failed to process zip file ${file.name}:`, zipError);
+            skippedFiles.push(`${file.name} (invalid zip file)`);
+          }
+          continue;
+        }
+
+        // Check file size for regular files
         if (ext === "pdf" && file.size > MAX_PDF_SIZE) {
           skippedFiles.push(`${file.name} (exceeds 10MB limit)`);
           continue;
@@ -1013,12 +1148,16 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         // Read text-based files directly
         if (["md", "txt", "rtf"].includes(ext)) {
           const content = await file.text();
+          const path = buildTranscriptPath(file.name);
           newTranscripts.push({
             id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             name: file.name,
             content,
             type: ext,
-            source: transcriptSource,
+            source: transcriptSource || "transcripts",
+            year: transcriptYear,
+            month: transcriptMonth,
+            path,
           });
         } else if (ext === "pdf") {
           const formData = new FormData();
@@ -1034,6 +1173,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
               body: formData,
             });
 
+            const path = buildTranscriptPath(file.name);
             if (response.ok) {
               const result = await response.json();
               newTranscripts.push({
@@ -1041,7 +1181,10 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
                 name: file.name,
                 content: result.content,
                 type: "pdf",
-                source: transcriptSource,
+                source: transcriptSource || "transcripts",
+                year: transcriptYear,
+                month: transcriptMonth,
+                path,
               });
               if (result.isPdfPlaceholder) {
                 console.log(`ℹ️ PDF ${file.name}: ${result.message}`);
@@ -1053,17 +1196,24 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
                 name: file.name,
                 content: `[PDF content from ${file.name} - extraction pending]`,
                 type: "pdf",
-                source: transcriptSource,
+                source: transcriptSource || "transcripts",
+                year: transcriptYear,
+                month: transcriptMonth,
+                path,
               });
             }
           } catch (pdfError) {
             console.warn(`PDF extraction failed for ${file.name}:`, pdfError);
+            const path = buildTranscriptPath(file.name);
             newTranscripts.push({
               id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
               name: file.name,
               content: `[PDF content from ${file.name} - extraction pending]`,
               type: "pdf",
-              source: transcriptSource,
+              source: transcriptSource || "transcripts",
+              year: transcriptYear,
+              month: transcriptMonth,
+              path,
             });
           }
         }
@@ -3423,46 +3573,115 @@ ALWAYS:
                         className="text-xs mb-3"
                         style={{ color: "var(--chatty-text)", opacity: 0.7 }}
                       >
-                        Upload conversation transcripts to give your GPT access
-                        to past interactions (.md, .txt, .rtf, .pdf)
+                        Upload conversation transcripts or a zip file to give your GPT access
+                        to past interactions. Zip files preserve directory structure.
                       </p>
 
-                      {/* Source selector */}
-                      <div className="flex items-center gap-3 mb-3">
-                        <label
-                          className="text-xs"
-                          style={{ color: "var(--chatty-text)", opacity: 0.8 }}
-                        >
-                          Source:
-                        </label>
+                      {/* Organization pipeline: Platform → Year → Month (all optional) */}
+                      <div className="flex flex-wrap items-center gap-2 mb-3">
                         <select
                           value={transcriptSource}
                           onChange={(e) => setTranscriptSource(e.target.value)}
-                          className="px-3 py-1.5 rounded text-sm"
+                          className="px-2 py-1.5 rounded text-xs"
                           style={{
                             backgroundColor: "var(--chatty-bg-message)",
                             color: "var(--chatty-text)",
                             border: "1px solid var(--chatty-border)",
+                            minWidth: "140px",
                           }}
                         >
                           {TRANSCRIPT_SOURCES.map((src) => (
                             <option key={src.value} value={src.value}>
-                              {src.label}
+                              {src.icon} {src.label}
                             </option>
                           ))}
                         </select>
+
+                        <select
+                          value={transcriptYear}
+                          onChange={(e) => setTranscriptYear(e.target.value)}
+                          className="px-2 py-1.5 rounded text-xs"
+                          style={{
+                            backgroundColor: "var(--chatty-bg-message)",
+                            color: "var(--chatty-text)",
+                            border: "1px solid var(--chatty-border)",
+                            minWidth: "100px",
+                          }}
+                        >
+                          {TRANSCRIPT_YEARS.map((yr) => (
+                            <option key={yr.value} value={yr.value}>
+                              {yr.label}
+                            </option>
+                          ))}
+                        </select>
+
+                        <select
+                          value={transcriptMonth}
+                          onChange={(e) => setTranscriptMonth(e.target.value)}
+                          className="px-2 py-1.5 rounded text-xs"
+                          style={{
+                            backgroundColor: "var(--chatty-bg-message)",
+                            color: "var(--chatty-text)",
+                            border: "1px solid var(--chatty-border)",
+                            minWidth: "110px",
+                          }}
+                          disabled={!transcriptYear}
+                        >
+                          {TRANSCRIPT_MONTHS.map((mo) => (
+                            <option key={mo.value} value={mo.value}>
+                              {mo.label}
+                            </option>
+                          ))}
+                        </select>
+
+                        {(transcriptSource || transcriptYear || transcriptMonth) && (
+                          <button
+                            onClick={() => {
+                              setTranscriptSource("");
+                              setTranscriptYear("");
+                              setTranscriptMonth("");
+                            }}
+                            className="px-2 py-1 rounded text-xs hover:opacity-80"
+                            style={{
+                              backgroundColor: "transparent",
+                              color: "var(--chatty-text)",
+                              opacity: 0.6,
+                            }}
+                            title="Clear organization"
+                          >
+                            Clear
+                          </button>
+                        )}
                       </div>
+
+                      {/* Path preview */}
+                      {(transcriptSource || transcriptYear || transcriptMonth) && (
+                        <div
+                          className="text-xs mb-3 px-2 py-1 rounded"
+                          style={{
+                            backgroundColor: "var(--chatty-bg-message)",
+                            color: "var(--chatty-text)",
+                            opacity: 0.8,
+                          }}
+                        >
+                          Path: {config.constructCallsign || "construct"}/
+                          {transcriptSource || "transcripts"}
+                          {transcriptYear && `/${transcriptYear}`}
+                          {transcriptMonth && `/${transcriptMonth}`}
+                          /filename.txt
+                        </div>
+                      )}
 
                       <input
                         type="file"
                         ref={transcriptInputRef}
                         onChange={handleTranscriptUpload}
-                        accept=".md,.txt,.rtf,.pdf"
+                        accept=".md,.txt,.rtf,.pdf,.zip"
                         multiple
                         className="hidden"
                       />
 
-                      {/* Upload button + dynamic file count badge */}
+                      {/* Upload buttons - individual files or zip */}
                       <div className="flex items-center gap-3">
                         <button
                           onClick={() => transcriptInputRef.current?.click()}
@@ -3484,11 +3703,12 @@ ALWAYS:
                             e.currentTarget.style.backgroundColor =
                               "var(--chatty-bg-message)";
                           }}
+                          title="Upload individual files (.md, .txt, .rtf, .pdf) or a zip file to preserve directory structure"
                         >
                           <Upload size={16} />
                           {isUploadingTranscripts
                             ? "Uploading..."
-                            : "Upload Transcripts"}
+                            : "Upload Files"}
                         </button>
 
                         {/* Dynamic transcript count badge - shows total staged + existing files for this construct */}

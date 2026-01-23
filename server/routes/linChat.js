@@ -75,11 +75,23 @@ async function callOpenRouter(model, messages, options = {}) {
 
 /**
  * Load transcripts from Supabase for memory injection
- * @param {string} constructId - Construct callsign (e.g., 'katana-001')
+ * Uses hierarchical path structure to prioritize recent and relevant memories
+ * 
+ * @param {string} constructId - Construct callsign (e.g., 'katana-001', 'nova-001')
  * @param {string} userEmail - User's email for Supabase lookup (required for security)
+ * @param {Object} options - Optional configuration
+ * @param {number} options.maxFiles - Maximum files to load (default: 25)
+ * @param {number} options.maxMemories - Maximum memory snippets to inject (default: 50)
+ * @param {string} options.platform - Filter to specific platform (e.g., 'chatgpt')
+ * @param {string} options.year - Filter to specific year
+ * @param {string} options.month - Filter to specific month
  * @returns {Promise<string>} Formatted memory context
  */
-async function loadTranscriptMemories(constructId, userEmail) {
+async function loadTranscriptMemories(constructId, userEmail, options = {}) {
+  // Increased defaults for constructs with 300+ transcripts
+  const maxFiles = options.maxFiles || 50;
+  const maxMemories = options.maxMemories || 100;
+  
   // Security: Require authenticated user email
   if (!userEmail) {
     console.log('⚠️ [LinChat Memory] No user email provided - memory access denied');
@@ -105,42 +117,77 @@ async function loadTranscriptMemories(constructId, userEmail) {
       return '';
     }
     
-    // Load transcripts for this construct
-    const { data: files, error } = await supabase
+    // Build query for transcripts
+    // Use construct_id column for reliable matching, fall back to filename pattern
+    let query = supabase
       .from('vault_files')
       .select('filename, content, metadata')
       .eq('user_id', user.id)
       .eq('file_type', 'transcript')
-      .ilike('filename', `%${constructId}%`)
+      .or(`construct_id.eq.${constructId},filename.ilike.%${constructId}%`);
+    
+    // Apply optional filters using metadata fields (more reliable than path parsing)
+    // Note: Supabase JSONB filtering with ->> operator for metadata fields
+    if (options.platform) {
+      // Filter by metadata.source or filename pattern (for backwards compatibility)
+      query = query.or(`metadata->>source.eq.${options.platform},filename.ilike.%/${options.platform}/%`);
+    }
+    if (options.year) {
+      query = query.or(`metadata->>year.eq.${options.year},filename.ilike.%/${options.year}/%`);
+    }
+    if (options.month) {
+      query = query.or(`metadata->>month.eq.${options.month},filename.ilike.%/${options.month}/%`);
+    }
+    
+    // Order by creation date (most recent first) with higher limit
+    const { data: files, error } = await query
       .order('created_at', { ascending: false })
-      .limit(10);
+      .limit(maxFiles);
     
     if (error || !files || files.length === 0) {
       console.log(`📚 [LinChat Memory] No transcripts found for ${constructId}`);
       return '';
     }
     
-    console.log(`📚 [LinChat Memory] Loading ${files.length} transcripts for ${constructId}`);
+    // Group files by platform/year/month for context
+    const groupedFiles = {};
+    for (const file of files) {
+      const source = file.metadata?.source || 'unknown';
+      const year = file.metadata?.year || '';
+      const month = file.metadata?.month || '';
+      const key = `${source}${year ? `/${year}` : ''}${month ? `/${month}` : ''}`;
+      if (!groupedFiles[key]) groupedFiles[key] = [];
+      groupedFiles[key].push(file);
+    }
+    
+    console.log(`📚 [LinChat Memory] Loading ${files.length} transcripts from ${Object.keys(groupedFiles).length} sources for ${constructId}`);
     
     // Extract conversation snippets from transcripts
     const memories = [];
+    const memoryBySource = {};
+    
     for (const file of files) {
       if (!file.content) continue;
+      
+      const source = file.metadata?.source || 'unknown';
+      const year = file.metadata?.year || '';
+      const month = file.metadata?.month || '';
+      const contextLabel = `[${source}${year ? ` ${year}` : ''}${month ? ` ${month}` : ''}]`;
       
       // Parse markdown transcript
       const lines = file.content.split('\n');
       let currentExchange = [];
       
       for (const line of lines) {
-        // Match patterns like "**User:**" or "Devon:" or "Katana:"
-        const speakerMatch = line.match(/^\*?\*?([^:*]+)\*?\*?:\s*(.*)$/);
+        // Match patterns like "**User:**" or "Devon:" or "Katana:" or "[timestamp] Speaker:"
+        const speakerMatch = line.match(/^\[?[^\]]*\]?\s*\*?\*?([^:*\[\]]+)\*?\*?:\s*(.*)$/);
         if (speakerMatch) {
           const speaker = speakerMatch[1].trim();
           const content = speakerMatch[2].trim();
-          if (content) {
+          if (content && content.length > 5) {
             currentExchange.push(`${speaker}: ${content}`);
             // Keep recent exchanges (rolling window)
-            if (currentExchange.length > 10) {
+            if (currentExchange.length > 8) {
               currentExchange.shift();
             }
           }
@@ -148,7 +195,13 @@ async function loadTranscriptMemories(constructId, userEmail) {
       }
       
       if (currentExchange.length > 0) {
-        memories.push(...currentExchange.slice(-5)); // Last 5 exchanges from each file
+        // Take last 3 exchanges from each file with source context
+        const fileMemories = currentExchange.slice(-3).map(m => `${contextLabel} ${m}`);
+        memories.push(...fileMemories);
+        
+        // Also track by source for structured output
+        if (!memoryBySource[source]) memoryBySource[source] = [];
+        memoryBySource[source].push(...currentExchange.slice(-3));
       }
     }
     
@@ -156,17 +209,16 @@ async function loadTranscriptMemories(constructId, userEmail) {
       return '';
     }
     
-    // Format as memory context
-    const memoryContext = `
-## MEMORY - Previous Conversations
-You have these memories from past conversations with this user:
-
-${memories.slice(0, 20).join('\n')}
-
-Use these memories to maintain continuity and reference past discussions when relevant.
-`;
+    // Build structured memory context with source organization
+    let memoryContext = `## MEMORY - Previous Conversations\n`;
+    memoryContext += `You have these memories from past conversations with this user across ${Object.keys(memoryBySource).length} platform(s):\n\n`;
     
-    console.log(`✅ [LinChat Memory] Injected ${memories.length} memory snippets`);
+    // Take the most recent memories up to the limit
+    memoryContext += memories.slice(0, maxMemories).join('\n');
+    
+    memoryContext += `\n\nUse these memories to maintain continuity and reference past discussions when relevant.`;
+    
+    console.log(`✅ [LinChat Memory] Injected ${Math.min(memories.length, maxMemories)} memory snippets from ${files.length} files`);
     return memoryContext;
   } catch (error) {
     console.error('❌ [LinChat Memory] Error loading memories:', error.message);
@@ -218,6 +270,12 @@ async function callOllama(model, messages, options = {}) {
  * 
  * Memory injection (enabled when constructId is provided):
  *   - constructId: Construct callsign for memory lookup
+ *   - memoryOptions: Optional configuration for memory retrieval
+ *     - maxFiles: Maximum transcript files to load (default: 50)
+ *     - maxMemories: Maximum memory snippets to inject (default: 100)
+ *     - platform: Filter to specific platform (e.g., 'chatgpt')
+ *     - year: Filter to specific year (e.g., '2025')
+ *     - month: Filter to specific month (e.g., 'December')
  *   - User email is taken from authenticated session (req.user.email)
  */
 router.post('/generate', async (req, res) => {
@@ -227,7 +285,8 @@ router.post('/generate', async (req, res) => {
       seat = 'creative', 
       systemPrompt, 
       model: requestedModel,
-      constructId
+      constructId,
+      memoryOptions = {}
     } = req.body;
     
     // Get authenticated user email for secure memory access
@@ -249,13 +308,14 @@ router.post('/generate', async (req, res) => {
     
     console.log(`🎭 [Lin Chat] Generating response using ${provider}:${model} (${seat} seat)`);
     if (constructId) {
-      console.log(`🧠 [Lin Chat] Memory injection enabled for construct: ${constructId} (user: ${userEmail})`);
+      const optionsStr = Object.keys(memoryOptions).length > 0 ? ` with options: ${JSON.stringify(memoryOptions)}` : '';
+      console.log(`🧠 [Lin Chat] Memory injection enabled for construct: ${constructId} (user: ${userEmail})${optionsStr}`);
     }
 
     // Load transcript memories if constructId provided and user authenticated
     let memoryContext = '';
     if (constructId && userEmail) {
-      memoryContext = await loadTranscriptMemories(constructId, userEmail);
+      memoryContext = await loadTranscriptMemories(constructId, userEmail, memoryOptions);
     }
 
     // Build enhanced system prompt with memories

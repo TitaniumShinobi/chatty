@@ -83,10 +83,59 @@ router.post('/save', async (req, res) => {
         continue;
       }
       
-      // VVAULT path format: /vvault/users/shard_0000/{userId}/instances/{constructId}/{source}/{filename}
-      // Source can be: chatgpt, gemini, grok, copilot, claude, other
-      const transcriptSource = transcript.source || 'chatgpt';
-      const filename = `vvault/users/shard_0000/${userIdentifier}/instances/${constructCallsign}/${transcriptSource}/${transcript.name}`;
+      // VVAULT hierarchical path format:
+      // - With organization: /vvault/users/shard_0000/{userId}/instances/{constructId}/{source}/{year}/{month}/{filename}
+      // - Without organization: /vvault/users/shard_0000/{userId}/instances/{constructId}/transcripts/{filename}
+      // - From zip: uses transcript.path directly (preserves original directory structure)
+      
+      // Parse source/year/month from zip path or use provided values
+      let transcriptSource = transcript.source || 'transcripts';
+      let transcriptYear = transcript.year || '';
+      let transcriptMonth = transcript.month || '';
+      
+      let filename;
+      
+      // If transcript has a path from zip extraction, parse and use it
+      if (transcript.path && transcript.path.includes('/')) {
+        // Parse source/year/month from zip path for metadata
+        const zipParts = transcript.path.split('/').filter(p => p && !p.startsWith('.'));
+        const months = ['january', 'february', 'march', 'april', 'may', 'june', 
+                        'july', 'august', 'september', 'october', 'november', 'december'];
+        
+        for (const part of zipParts) {
+          if (/^\d{4}$/.test(part)) {
+            transcriptYear = part;
+          } else if (months.includes(part.toLowerCase())) {
+            transcriptMonth = part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+          } else if (!transcriptSource || transcriptSource === 'transcripts') {
+            // First non-year, non-month segment is likely the platform
+            const normalizedPart = part.toLowerCase().replace(/\s+/g, '_');
+            if (['chatgpt', 'gemini', 'grok', 'copilot', 'claude', 'chai', 
+                 'character.ai', 'deepseek', 'codex', 'github_copilot'].includes(normalizedPart)) {
+              transcriptSource = normalizedPart;
+            } else if (part !== transcript.name && !part.includes('.')) {
+              transcriptSource = normalizedPart;
+            }
+          }
+        }
+        
+        // Preserve the zip directory structure
+        filename = `vvault/users/shard_0000/${userIdentifier}/instances/${constructCallsign}/${transcript.path}`;
+      } else {
+        // Build hierarchical path from dropdowns
+        let pathParts = [
+          'vvault/users/shard_0000',
+          userIdentifier,
+          'instances',
+          constructCallsign,
+          transcriptSource
+        ];
+        if (transcriptYear) pathParts.push(transcriptYear);
+        if (transcriptYear && transcriptMonth) pathParts.push(transcriptMonth);
+        pathParts.push(transcript.name);
+        
+        filename = pathParts.join('/');
+      }
       
       // Check if file already exists
       const { data: existing } = await supabase
@@ -109,6 +158,8 @@ router.post('/save', async (req, res) => {
               uploadedAt: new Date().toISOString(),
               constructCallsign,
               source: transcriptSource,
+              year: transcriptYear || null,
+              month: transcriptMonth || null,
               uploadSource: 'chatty-upload',
             },
           })
@@ -130,6 +181,8 @@ router.post('/save', async (req, res) => {
               uploadedAt: new Date().toISOString(),
               constructCallsign,
               source: transcriptSource,
+              year: transcriptYear || null,
+              month: transcriptMonth || null,
               uploadSource: 'chatty-upload',
             },
           });
@@ -190,15 +243,38 @@ router.get('/list/:constructCallsign', async (req, res) => {
     }
     
     const transcripts = (files || []).map(f => {
-      // Extract source from filename path or metadata
-      // Path format: vvault/users/shard_0000/{userId}/instances/{constructId}/{source}/{filename}
-      const pathParts = f.filename.split('/');
-      const sourceFromPath = pathParts.length >= 7 ? pathParts[6] : null;
+      // Prefer metadata for source/year/month (reliable), fall back to path parsing
+      let source = f.metadata?.source;
+      let year = f.metadata?.year;
+      let month = f.metadata?.month;
+      
+      // If metadata missing, parse from path
+      if (!source || source === 'transcripts') {
+        // Path format: vvault/users/shard_0000/{userId}/instances/{constructId}/{source}/{year?}/{month?}/{filename}
+        const pathParts = f.filename.split('/');
+        const constructIdx = pathParts.indexOf('instances');
+        if (constructIdx >= 0 && pathParts.length > constructIdx + 2) {
+          source = pathParts[constructIdx + 2];
+          // Check for year/month in subsequent parts
+          const months = ['january', 'february', 'march', 'april', 'may', 'june',
+                          'july', 'august', 'september', 'october', 'november', 'december'];
+          for (let i = constructIdx + 3; i < pathParts.length - 1; i++) {
+            const part = pathParts[i];
+            if (/^\d{4}$/.test(part) && !year) {
+              year = part;
+            } else if (months.includes(part.toLowerCase()) && !month) {
+              month = part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+            }
+          }
+        }
+      }
       
       return {
         name: f.metadata?.originalName || f.filename.split('/').pop(),
         type: f.metadata?.type || 'unknown',
-        source: f.metadata?.source || sourceFromPath || 'unknown',
+        source: source || 'unknown',
+        year: year || null,
+        month: month || null,
         uploadedAt: f.metadata?.uploadedAt || f.created_at,
         filename: f.filename,
       };
@@ -212,7 +288,17 @@ router.get('/list/:constructCallsign', async (req, res) => {
       return acc;
     }, {});
     
-    res.json({ success: true, transcripts, bySource });
+    // Also group by year/month for timeline view
+    const byTimeline = transcripts.reduce((acc, t) => {
+      if (t.year) {
+        const key = t.month ? `${t.year}/${t.month}` : t.year;
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(t);
+      }
+      return acc;
+    }, {});
+    
+    res.json({ success: true, transcripts, bySource, byTimeline });
   } catch (error) {
     console.error('❌ [Transcripts] List error:', error);
     res.status(500).json({ success: false, error: error.message });
