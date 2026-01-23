@@ -328,6 +328,160 @@ router.get('/list/:constructCallsign', async (req, res) => {
   }
 });
 
+// ContinuityGPT-style auto-organize: detect dates and sort into year/month folders
+router.post('/auto-organize/:constructCallsign', async (req, res) => {
+  try {
+    const { constructCallsign } = req.params;
+    const { defaultYear } = req.body; // Optional: default year if not detected
+    
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return res.status(500).json({ success: false, error: 'Supabase not configured' });
+    }
+    
+    const userEmail = req.user?.email || 'anonymous';
+    const userId = await resolveSupabaseUserId(supabase, userEmail);
+    
+    if (!userId) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+    
+    console.log(`🗂️ [ContinuityGPT] Auto-organizing transcripts for ${constructCallsign}...`);
+    
+    // Fetch all transcripts with content
+    const { data: files, error: filesError } = await supabase
+      .from('vault_files')
+      .select('id, filename, content, metadata, created_at')
+      .eq('user_id', userId)
+      .eq('file_type', 'transcript')
+      .eq('construct_id', constructCallsign);
+    
+    if (filesError) {
+      console.error('❌ [ContinuityGPT] Fetch error:', filesError);
+      return res.status(500).json({ success: false, error: filesError.message });
+    }
+    
+    if (!files || files.length === 0) {
+      return res.json({ success: true, organized: 0, message: 'No transcripts to organize' });
+    }
+    
+    console.log(`📁 [ContinuityGPT] Processing ${files.length} transcripts...`);
+    
+    const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'];
+    
+    const results = {
+      organized: 0,
+      skipped: 0,
+      failed: 0,
+      details: [],
+    };
+    
+    for (const file of files) {
+      try {
+        const content = file.content || '';
+        const filename = file.filename.split('/').pop();
+        
+        // Run date detection
+        const dateResult = extractStartDate(content, filename);
+        
+        let year = null;
+        let month = null;
+        
+        if (dateResult.startDate) {
+          // Parse the detected date
+          const date = new Date(dateResult.startDate);
+          if (!isNaN(date.getTime())) {
+            year = date.getFullYear().toString();
+            month = MONTHS[date.getMonth()];
+          }
+        }
+        
+        // Fall back to path-based detection or default year
+        if (!year) {
+          const pathResult = extractFromPath(file.filename);
+          if (pathResult.year) {
+            year = pathResult.year;
+            month = pathResult.month;
+          } else if (defaultYear) {
+            year = defaultYear;
+          }
+        }
+        
+        // Skip if no year could be determined
+        if (!year) {
+          results.skipped++;
+          results.details.push({
+            name: filename,
+            status: 'skipped',
+            reason: 'No date detected',
+            confidence: dateResult.confidence || 0,
+          });
+          continue;
+        }
+        
+        // Update metadata with detected date info
+        const updatedMetadata = {
+          ...file.metadata,
+          year,
+          month: month || null,
+          startDate: dateResult.startDate || null,
+          dateConfidence: dateResult.confidence || 0,
+          dateSource: dateResult.source || 'auto-organize',
+          datePattern: dateResult.pattern || null,
+          autoOrganizedAt: new Date().toISOString(),
+        };
+        
+        // Update the record in Supabase
+        const { error: updateError } = await supabase
+          .from('vault_files')
+          .update({ metadata: updatedMetadata })
+          .eq('id', file.id);
+        
+        if (updateError) {
+          console.error(`❌ [ContinuityGPT] Failed to update ${filename}:`, updateError);
+          results.failed++;
+          results.details.push({
+            name: filename,
+            status: 'failed',
+            error: updateError.message,
+          });
+        } else {
+          results.organized++;
+          results.details.push({
+            name: filename,
+            status: 'organized',
+            year,
+            month: month || 'Unknown',
+            startDate: dateResult.startDate,
+            confidence: dateResult.confidence || 0,
+          });
+          console.log(`✅ [ContinuityGPT] ${filename} → ${year}/${month || 'Unknown'} (conf: ${dateResult.confidence || 0})`);
+        }
+      } catch (fileError) {
+        console.error(`❌ [ContinuityGPT] Error processing file:`, fileError);
+        results.failed++;
+        results.details.push({
+          name: file.filename.split('/').pop(),
+          status: 'failed',
+          error: fileError.message,
+        });
+      }
+    }
+    
+    console.log(`🗂️ [ContinuityGPT] Complete: ${results.organized} organized, ${results.skipped} skipped, ${results.failed} failed`);
+    
+    res.json({
+      success: true,
+      ...results,
+      message: `Organized ${results.organized} of ${files.length} transcripts`,
+    });
+  } catch (error) {
+    console.error('❌ [ContinuityGPT] Auto-organize error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 router.post('/extract-pdf', upload.single('file'), async (req, res) => {
   try {
     const file = req.file;

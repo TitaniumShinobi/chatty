@@ -27,6 +27,7 @@ import { fetchMe, getUserId } from "../lib/auth";
 import { useSettings } from "../context/SettingsContext";
 import Cropper from "react-easy-crop";
 import { Z_LAYERS } from "../lib/zLayers";
+import { TranscriptFolderTree } from "./TranscriptFolderTree";
 import {
   getUserFriendlyErrorMessage,
   isOrchestrationError,
@@ -78,7 +79,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [persistenceEnabled, setPersistenceEnabled] = useState(true);
   const [stmEnabled, setStmEnabled] = useState(true);
   const [ltmEnabled, setLtmEnabled] = useState(true);
-  const [_isLoadingScripts, _setIsLoadingScripts] = useState(false);
+  const [isLoadingScripts, setIsLoadingScripts] = useState(false);
 
   // Workspace context (auto-loaded like Copilot reads code files)
   const [workspaceContext, setWorkspaceContext] = useState<{
@@ -143,9 +144,23 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       Array<{ name: string; type: string; source: string; uploadedAt: string }>
     >
   >({});
+  const [allTranscripts, setAllTranscripts] = useState<
+    Array<{
+      name: string;
+      type?: string;
+      source?: string;
+      year?: string | null;
+      month?: string | null;
+      startDate?: string | null;
+      dateConfidence?: number;
+      uploadedAt?: string;
+      filename?: string;
+    }>
+  >([]);
   const [isUploadingTranscripts, setIsUploadingTranscripts] = useState(false);
   const [isLoadingExistingTranscripts, setIsLoadingExistingTranscripts] =
     useState(false);
+  const [isAutoOrganizing, setIsAutoOrganizing] = useState(false);
   const [transcriptSource, setTranscriptSource] = useState<string>("");
   const [transcriptYear, setTranscriptYear] = useState<string>("");
   const [transcriptMonth, setTranscriptMonth] = useState<string>("");
@@ -456,8 +471,13 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
         if (response.ok) {
           const data = await response.json();
-          if (data.success && data.bySource) {
-            setExistingTranscripts(data.bySource);
+          if (data.success) {
+            if (data.bySource) {
+              setExistingTranscripts(data.bySource);
+            }
+            if (data.transcripts) {
+              setAllTranscripts(data.transcripts);
+            }
             console.log(
               `📚 [Transcripts] Loaded ${data.transcripts?.length || 0} existing transcripts for ${constructId}`,
             );
@@ -3802,7 +3822,7 @@ ALWAYS:
                         </div>
                       )}
 
-                      {/* Show existing transcripts from database, grouped by source */}
+                      {/* Show existing transcripts in hierarchical folder tree */}
                       {isLoadingExistingTranscripts ? (
                         <div className="mt-3">
                           <span
@@ -3816,61 +3836,80 @@ ALWAYS:
                           </span>
                         </div>
                       ) : (
-                        Object.keys(existingTranscripts).length > 0 && (
+                        allTranscripts.length > 0 && (
                           <div className="mt-4 space-y-3">
-                            <p
-                              className="text-xs font-medium"
-                              style={{
-                                color: "var(--chatty-text)",
-                                opacity: 0.8,
-                              }}
+                            <div className="flex items-center justify-between">
+                              <p
+                                className="text-xs font-medium"
+                                style={{
+                                  color: "var(--chatty-text)",
+                                  opacity: 0.8,
+                                }}
+                              >
+                                Stored transcripts:
+                              </p>
+                              <button
+                                onClick={async () => {
+                                  const constructId = config.constructCallsign || initialConfig?.constructCallsign;
+                                  if (!constructId) return;
+                                  
+                                  setIsAutoOrganizing(true);
+                                  try {
+                                    const response = await fetch(
+                                      `/api/transcripts/auto-organize/${encodeURIComponent(constructId)}`,
+                                      {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        credentials: "include",
+                                        body: JSON.stringify({ defaultYear: "2025" }),
+                                      }
+                                    );
+                                    
+                                    if (response.ok) {
+                                      const data = await response.json();
+                                      console.log(`🗂️ [ContinuityGPT] Auto-organize result:`, data);
+                                      
+                                      // Refresh transcript list
+                                      const listResponse = await fetch(
+                                        `/api/transcripts/list/${encodeURIComponent(constructId)}`,
+                                        { credentials: "include" }
+                                      );
+                                      if (listResponse.ok) {
+                                        const listData = await listResponse.json();
+                                        if (listData.success) {
+                                          if (listData.bySource) setExistingTranscripts(listData.bySource);
+                                          if (listData.transcripts) setAllTranscripts(listData.transcripts);
+                                        }
+                                      }
+                                    }
+                                  } catch (err) {
+                                    console.error("Auto-organize failed:", err);
+                                  } finally {
+                                    setIsAutoOrganizing(false);
+                                  }
+                                }}
+                                disabled={isAutoOrganizing}
+                                className="text-xs px-2 py-1 rounded flex items-center gap-1 transition-colors hover:opacity-80"
+                                style={{
+                                  backgroundColor: "var(--chatty-accent)",
+                                  color: "white",
+                                  opacity: isAutoOrganizing ? 0.5 : 1,
+                                }}
+                              >
+                                {isAutoOrganizing ? "Organizing..." : "Auto-Organize"}
+                              </button>
+                            </div>
+                            <div
+                              className="rounded-lg p-2 max-h-64 overflow-y-auto"
+                              style={{ backgroundColor: "var(--chatty-bg-message)" }}
                             >
-                              Stored transcripts:
-                            </p>
-                            {Object.entries(existingTranscripts).map(
-                              ([source, files]) => (
-                                <div key={source} className="space-y-1">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-sm">
-                                      {getSourceIcon(source)}
-                                    </span>
-                                    <span
-                                      className="text-xs font-medium"
-                                      style={{ color: "var(--chatty-text)" }}
-                                    >
-                                      {getSourceLabel(source)} ({files.length})
-                                    </span>
-                                  </div>
-                                  <div className="pl-6 space-y-1">
-                                    {files.slice(0, 5).map((f, idx) => (
-                                      <div
-                                        key={`${source}-${idx}`}
-                                        className="text-xs py-1 px-2 rounded truncate"
-                                        style={{
-                                          backgroundColor:
-                                            "var(--chatty-bg-message)",
-                                          color: "var(--chatty-text)",
-                                          opacity: 0.9,
-                                        }}
-                                      >
-                                        {f.name}
-                                      </div>
-                                    ))}
-                                    {files.length > 5 && (
-                                      <span
-                                        className="text-xs"
-                                        style={{
-                                          color: "var(--chatty-text)",
-                                          opacity: 0.6,
-                                        }}
-                                      >
-                                        +{files.length - 5} more
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              ),
-                            )}
+                              <TranscriptFolderTree
+                                transcripts={allTranscripts}
+                                onFileClick={(file) => {
+                                  console.log("📄 [Transcripts] File clicked:", file.name);
+                                }}
+                              />
+                            </div>
                           </div>
                         )
                       )}
