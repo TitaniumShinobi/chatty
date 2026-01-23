@@ -2733,19 +2733,11 @@ ALWAYS:
                         placeholder="Name your GPT"
                         className="w-full p-3 rounded-lg focus:outline-none chatty-placeholder"
                         style={{
-                          border: "1px solid var(--chatty-line)",
+                          border: "none",
                           backgroundColor: "var(--chatty-bg-message)",
                           color: "var(--chatty-text)",
                           caretColor: "var(--chatty-text)",
                         }}
-                        onFocus={(e) =>
-                          (e.currentTarget.style.borderColor =
-                            "var(--chatty-status-success)")
-                        }
-                        onBlur={(e) =>
-                          (e.currentTarget.style.borderColor =
-                            "var(--chatty-line)")
-                        }
                       />
                     </div>
 
@@ -2769,19 +2761,11 @@ ALWAYS:
                         placeholder="What does this GPT do?"
                         className="w-full p-3 rounded-lg focus:outline-none chatty-placeholder"
                         style={{
-                          border: "1px solid var(--chatty-line)",
+                          border: "none",
                           backgroundColor: "var(--chatty-bg-message)",
                           color: "var(--chatty-text)",
                           caretColor: "var(--chatty-text)",
                         }}
-                        onFocus={(e) =>
-                          (e.currentTarget.style.borderColor =
-                            "var(--chatty-status-success)")
-                        }
-                        onBlur={(e) =>
-                          (e.currentTarget.style.borderColor =
-                            "var(--chatty-line)")
-                        }
                       />
                     </div>
 
@@ -2805,19 +2789,11 @@ ALWAYS:
                         rows={6}
                         className="w-full p-3 rounded-lg focus:outline-none resize-none chatty-placeholder"
                         style={{
-                          border: "1px solid var(--chatty-line)",
+                          border: "none",
                           backgroundColor: "var(--chatty-bg-message)",
                           color: "var(--chatty-text)",
                           caretColor: "var(--chatty-text)",
                         }}
-                        onFocus={(e) =>
-                          (e.currentTarget.style.borderColor =
-                            "var(--chatty-status-success)")
-                        }
-                        onBlur={(e) =>
-                          (e.currentTarget.style.borderColor =
-                            "var(--chatty-line)")
-                        }
                       />
                     </div>
 
@@ -3050,8 +3026,8 @@ ALWAYS:
                         }}
                         className="px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
                         style={{
-                          border: "1px solid var(--chatty-line)",
-                          backgroundColor: "transparent",
+                          border: "none",
+                          backgroundColor: "var(--chatty-bg-message)",
                           color: "var(--chatty-text)",
                         }}
                         onMouseEnter={(e) => {
@@ -3059,7 +3035,7 @@ ALWAYS:
                             "var(--chatty-highlight)";
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = "transparent";
+                          e.currentTarget.style.backgroundColor = "var(--chatty-bg-message)";
                         }}
                       >
                         <Upload size={16} />
@@ -3108,7 +3084,7 @@ ALWAYS:
                               style={{
                                 backgroundColor: 'var(--chatty-input-bg, #3a3520)',
                                 color: 'var(--chatty-text)',
-                                border: '1px solid var(--chatty-line)',
+                                border: 'none',
                               }}
                             />
                             <button
