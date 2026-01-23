@@ -1,6 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { getSupabaseClient } from '../lib/supabaseClient.js';
+import { extractStartDate, extractFromPath } from '../lib/transcriptDateExtractor.js';
 
 const router = express.Router();
 
@@ -137,6 +138,13 @@ router.post('/save', async (req, res) => {
         filename = pathParts.join('/');
       }
       
+      // Auto-detect start date from transcript content (runs in milliseconds)
+      const dateResult = extractStartDate(transcript.content, transcript.name);
+      const detectedStartDate = dateResult.startDate || null;
+      const dateConfidence = dateResult.confidence || 0;
+      
+      console.log(`📅 [Transcripts] Date extraction for ${transcript.name}: ${detectedStartDate || 'null'} (${dateResult.processingTimeMs}ms, confidence: ${dateConfidence})`);
+      
       // Check if file already exists
       const { data: existing } = await supabase
         .from('vault_files')
@@ -160,6 +168,10 @@ router.post('/save', async (req, res) => {
               source: transcriptSource,
               year: transcriptYear || null,
               month: transcriptMonth || null,
+              startDate: detectedStartDate,
+              dateConfidence,
+              dateSource: dateResult.source || null,
+              datePattern: dateResult.pattern || null,
               uploadSource: 'chatty-upload',
             },
           })
@@ -183,6 +195,10 @@ router.post('/save', async (req, res) => {
               source: transcriptSource,
               year: transcriptYear || null,
               month: transcriptMonth || null,
+              startDate: detectedStartDate,
+              dateConfidence,
+              dateSource: dateResult.source || null,
+              datePattern: dateResult.pattern || null,
               uploadSource: 'chatty-upload',
             },
           });
@@ -275,6 +291,8 @@ router.get('/list/:constructCallsign', async (req, res) => {
         source: source || 'unknown',
         year: year || null,
         month: month || null,
+        startDate: f.metadata?.startDate || null,
+        dateConfidence: f.metadata?.dateConfidence || 0,
         uploadedAt: f.metadata?.uploadedAt || f.created_at,
         filename: f.filename,
       };
@@ -298,7 +316,12 @@ router.get('/list/:constructCallsign', async (req, res) => {
       return acc;
     }, {});
     
-    res.json({ success: true, transcripts, bySource, byTimeline });
+    // Group by detected start date for chronological ordering
+    const byStartDate = transcripts
+      .filter(t => t.startDate)
+      .sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+    
+    res.json({ success: true, transcripts, bySource, byTimeline, byStartDate });
   } catch (error) {
     console.error('❌ [Transcripts] List error:', error);
     res.status(500).json({ success: false, error: error.message });
