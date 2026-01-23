@@ -131,17 +131,29 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   // Transcript upload
   const transcriptInputRef = useRef<HTMLInputElement>(null);
   const [transcripts, setTranscripts] = useState<Array<{id: string; name: string; content: string; type: string; source?: string}>>([]);
+  const [existingTranscripts, setExistingTranscripts] = useState<Record<string, Array<{name: string; type: string; source: string; uploadedAt: string}>>>({});
   const [isUploadingTranscripts, setIsUploadingTranscripts] = useState(false);
+  const [isLoadingExistingTranscripts, setIsLoadingExistingTranscripts] = useState(false);
   const [transcriptSource, setTranscriptSource] = useState<string>('chatgpt');
   
   const TRANSCRIPT_SOURCES = [
-    { value: 'chatgpt', label: 'ChatGPT' },
-    { value: 'gemini', label: 'Gemini' },
-    { value: 'grok', label: 'Grok' },
-    { value: 'copilot', label: 'Copilot' },
-    { value: 'claude', label: 'Claude' },
-    { value: 'other', label: 'Other' },
+    { value: 'chatgpt', label: 'ChatGPT', icon: '🤖' },
+    { value: 'gemini', label: 'Gemini', icon: '✨' },
+    { value: 'grok', label: 'Grok', icon: '🔮' },
+    { value: 'copilot', label: 'Copilot', icon: '🪁' },
+    { value: 'claude', label: 'Claude', icon: '🎭' },
+    { value: 'other', label: 'Other', icon: '📄' },
   ];
+  
+  const getSourceIcon = (source: string) => {
+    const found = TRANSCRIPT_SOURCES.find(s => s.value === source);
+    return found?.icon || '📄';
+  };
+  
+  const getSourceLabel = (source: string) => {
+    const found = TRANSCRIPT_SOURCES.find(s => s.value === source);
+    return found?.label || source;
+  };
 
   // Avatar cropping
   const [showCropModal, setShowCropModal] = useState(false);
@@ -381,6 +393,35 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       loadWorkspaceContext();
     }
   }, [isVisible, config.constructCallsign, settings]); // Reload when constructCallsign changes
+
+  // Fetch existing transcripts when construct changes
+  useEffect(() => {
+    const fetchExistingTranscripts = async () => {
+      const constructId = config.constructCallsign || selectedAI?.constructCallsign;
+      if (!constructId || !isVisible) return;
+      
+      setIsLoadingExistingTranscripts(true);
+      try {
+        const response = await fetch(`/api/transcripts/list/${encodeURIComponent(constructId)}`, {
+          credentials: 'include',
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.bySource) {
+            setExistingTranscripts(data.bySource);
+            console.log(`📚 [Transcripts] Loaded ${data.transcripts?.length || 0} existing transcripts for ${constructId}`);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch existing transcripts:', err);
+      } finally {
+        setIsLoadingExistingTranscripts(false);
+      }
+    };
+    
+    fetchExistingTranscripts();
+  }, [isVisible, config.constructCallsign, selectedAI?.constructCallsign]);
 
   // Helper function to normalize avatar URL
   const normalizeAvatarUrl = (
@@ -3347,11 +3388,11 @@ ALWAYS:
                         {isUploadingTranscripts ? 'Uploading...' : 'Upload Transcripts'}
                       </button>
                       
-                      {/* Show uploaded transcripts */}
+                      {/* Show newly uploaded transcripts (this session) */}
                       {transcripts.length > 0 && (
                         <div className="mt-3 space-y-2">
-                          <p className="text-xs" style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
-                            {transcripts.length} transcript{transcripts.length !== 1 ? 's' : ''} uploaded:
+                          <p className="text-xs font-medium" style={{ color: "var(--chatty-text)", opacity: 0.8 }}>
+                            Just uploaded ({transcripts.length}):
                           </p>
                           {transcripts.map((t) => (
                             <div 
@@ -3359,9 +3400,12 @@ ALWAYS:
                               className="flex items-center justify-between p-2 rounded"
                               style={{ backgroundColor: "var(--chatty-bg-message)" }}
                             >
-                              <span className="text-sm truncate flex-1" style={{ color: "var(--chatty-text)" }}>
-                                {t.name}
-                              </span>
+                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                                <span className="text-sm">{getSourceIcon(t.source || 'other')}</span>
+                                <span className="text-sm truncate" style={{ color: "var(--chatty-text)" }}>
+                                  {t.name}
+                                </span>
+                              </div>
                               <button
                                 onClick={() => handleRemoveTranscript(t.id)}
                                 className="ml-2 p-1 rounded hover:bg-red-500/20"
@@ -3369,6 +3413,51 @@ ALWAYS:
                               >
                                 <X size={14} />
                               </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      
+                      {/* Show existing transcripts from database, grouped by source */}
+                      {isLoadingExistingTranscripts ? (
+                        <div className="mt-3">
+                          <span className="text-xs" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>
+                            Loading existing transcripts...
+                          </span>
+                        </div>
+                      ) : Object.keys(existingTranscripts).length > 0 && (
+                        <div className="mt-4 space-y-3">
+                          <p className="text-xs font-medium" style={{ color: "var(--chatty-text)", opacity: 0.8 }}>
+                            Stored transcripts:
+                          </p>
+                          {Object.entries(existingTranscripts).map(([source, files]) => (
+                            <div key={source} className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm">{getSourceIcon(source)}</span>
+                                <span className="text-xs font-medium" style={{ color: "var(--chatty-text)" }}>
+                                  {getSourceLabel(source)} ({files.length})
+                                </span>
+                              </div>
+                              <div className="pl-6 space-y-1">
+                                {files.slice(0, 5).map((f, idx) => (
+                                  <div 
+                                    key={`${source}-${idx}`}
+                                    className="text-xs py-1 px-2 rounded truncate"
+                                    style={{ 
+                                      backgroundColor: "var(--chatty-bg-message)", 
+                                      color: "var(--chatty-text)",
+                                      opacity: 0.9,
+                                    }}
+                                  >
+                                    {f.name}
+                                  </div>
+                                ))}
+                                {files.length > 5 && (
+                                  <span className="text-xs" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>
+                                    +{files.length - 5} more
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           ))}
                         </div>

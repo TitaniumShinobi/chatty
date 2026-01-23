@@ -168,13 +168,30 @@ router.get('/list/:constructCallsign', async (req, res) => {
       return res.status(500).json({ success: false, error: filesError.message });
     }
     
-    const transcripts = (files || []).map(f => ({
-      name: f.metadata?.originalName || f.filename.split('/').pop(),
-      type: f.metadata?.type || 'unknown',
-      uploadedAt: f.metadata?.uploadedAt || f.created_at,
-    }));
+    const transcripts = (files || []).map(f => {
+      // Extract source from filename path or metadata
+      // Path format: vvault/users/shard_0000/{userId}/instances/{constructId}/{source}/{filename}
+      const pathParts = f.filename.split('/');
+      const sourceFromPath = pathParts.length >= 7 ? pathParts[6] : null;
+      
+      return {
+        name: f.metadata?.originalName || f.filename.split('/').pop(),
+        type: f.metadata?.type || 'unknown',
+        source: f.metadata?.source || sourceFromPath || 'unknown',
+        uploadedAt: f.metadata?.uploadedAt || f.created_at,
+        filename: f.filename,
+      };
+    });
     
-    res.json({ success: true, transcripts });
+    // Group by source for frontend convenience
+    const bySource = transcripts.reduce((acc, t) => {
+      const src = t.source || 'unknown';
+      if (!acc[src]) acc[src] = [];
+      acc[src].push(t);
+      return acc;
+    }, {});
+    
+    res.json({ success: true, transcripts, bySource });
   } catch (error) {
     console.error('❌ [Transcripts] List error:', error);
     res.status(500).json({ success: false, error: error.message });
