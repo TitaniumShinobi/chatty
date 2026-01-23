@@ -360,6 +360,35 @@ export class GPTManager {
     };
   }
 
+  async getGPTByCallsign(constructCallsign) {
+    if (!constructCallsign) return null;
+    
+    const stmt = this.db.prepare('SELECT * FROM gpts WHERE construct_callsign = ? LIMIT 1');
+    const row = stmt.get(constructCallsign);
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      instructions: row.instructions,
+      conversationStarters: JSON.parse(row.conversation_starters || '[]'),
+      avatar: row.avatar,
+      capabilities: JSON.parse(row.capabilities || '{}'),
+      constructCallsign: row.construct_callsign,
+      modelId: row.model_id,
+      conversationModel: row.conversation_model,
+      creativeModel: row.creative_model,
+      codingModel: row.coding_model,
+      orchestrationMode: row.orchestration_mode || 'lin',
+      isActive: Boolean(row.is_active),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      userId: row.user_id
+    };
+  }
+
   async getAllGPTs(userId, originalUserId = null) {
     try {
       if (!this.db) {

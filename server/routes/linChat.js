@@ -16,8 +16,11 @@
 import express from 'express';
 import OpenAI from 'openai';
 import { getSupabaseClient } from '../lib/supabaseClient.js';
+import { GPTManager } from '../lib/gptManager.js';
+import { loadIdentityFiles } from '../lib/identityLoader.js';
 
 const router = express.Router();
+const gptManager = GPTManager.getInstance();
 
 // Initialize OpenRouter client using Replit AI Integrations
 const openrouter = new OpenAI({
@@ -312,16 +315,48 @@ router.post('/generate', async (req, res) => {
       console.log(`🧠 [Lin Chat] Memory injection enabled for construct: ${constructId} (user: ${userEmail})${optionsStr}`);
     }
 
+    // Load GPT identity (instructions) if constructId provided
+    let identityPrompt = '';
+    if (constructId) {
+      // First try to load from GPT database (custom GPTs like Katana)
+      const gpt = await gptManager.getGPTByCallsign(constructId);
+      if (gpt && gpt.instructions) {
+        identityPrompt = `# Identity: ${gpt.name}\n\nYou are ${gpt.name}. ${gpt.description || ''}\n\n${gpt.instructions}`;
+        console.log(`🎭 [LinChat] Loaded identity from GPT database: ${gpt.name} (${constructId})`);
+      } else {
+        // Fallback to identity files (for system constructs like Zen, Lin)
+        try {
+          const userId = req.user?.id || req.user?.sub || 'anonymous';
+          const identityFiles = await loadIdentityFiles(userId, constructId, false);
+          if (identityFiles?.prompt) {
+            identityPrompt = identityFiles.prompt;
+            if (identityFiles.conditioning) {
+              identityPrompt += `\n\n${identityFiles.conditioning}`;
+            }
+            console.log(`🎭 [LinChat] Loaded identity from files for: ${constructId}`);
+          }
+        } catch (err) {
+          console.warn(`⚠️ [LinChat] Could not load identity files for ${constructId}:`, err.message);
+        }
+      }
+    }
+
     // Load transcript memories if constructId provided and user authenticated
     let memoryContext = '';
     if (constructId && userEmail) {
       memoryContext = await loadTranscriptMemories(constructId, userEmail, memoryOptions);
     }
 
-    // Build enhanced system prompt with memories
-    let enhancedSystemPrompt = systemPrompt || '';
+    // Build enhanced system prompt: identity + passed systemPrompt + memories
+    let enhancedSystemPrompt = '';
+    if (identityPrompt) {
+      enhancedSystemPrompt = identityPrompt;
+    }
+    if (systemPrompt) {
+      enhancedSystemPrompt = enhancedSystemPrompt ? `${enhancedSystemPrompt}\n\n${systemPrompt}` : systemPrompt;
+    }
     if (memoryContext) {
-      enhancedSystemPrompt = `${enhancedSystemPrompt}\n\n${memoryContext}`;
+      enhancedSystemPrompt = enhancedSystemPrompt ? `${enhancedSystemPrompt}\n\n${memoryContext}` : memoryContext;
     }
 
     // Build messages array
