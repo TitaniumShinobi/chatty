@@ -24,6 +24,7 @@ import { Z_LAYERS } from "../lib/zLayers";
 
 const Sidebar: React.FC<SidebarProps> = ({
   conversations,
+  threads = [],
   currentConversationId,
   onConversationSelect,
   onNewConversationWithGPT,
@@ -505,31 +506,33 @@ const Sidebar: React.FC<SidebarProps> = ({
           {/* Zen - Primary Construct (Default) */}
           <button
             onClick={() => {
-              // Find or create Zen conversation
-              const zenConv = conversations.find((c: any) => c.constructId === "zen-001");
-              if (zenConv && onConversationSelect) {
-                onConversationSelect(zenConv.id);
+              // Find existing Zen conversation in threads (from VVAULT), or create new one
+              const zenThread = threads.find((t: any) => t.constructId === "zen-001");
+              if (zenThread && onConversationSelect) {
+                console.log(`🟢 [Sidebar] Opening existing Zen conversation: ${zenThread.id}`);
+                onConversationSelect(zenThread.id);
               } else if (onNewConversationWithGPT) {
+                console.log(`🆕 [Sidebar] Creating new Zen conversation`);
                 onNewConversationWithGPT("zen-001");
               }
             }}
             className={navButtonBase}
             style={{
-              backgroundColor: conversations.some((c: any) => c.constructId === "zen-001" && c.id === currentConversationId) 
+              backgroundColor: threads.some((t: any) => t.constructId === "zen-001" && t.id === currentConversationId) 
                 ? activeNavColor 
                 : "transparent",
-              color: conversations.some((c: any) => c.constructId === "zen-001" && c.id === currentConversationId)
+              color: threads.some((t: any) => t.constructId === "zen-001" && t.id === currentConversationId)
                 ? "var(--chatty-text-inverse, #ffffeb)"
                 : "var(--chatty-text)",
             }}
             onMouseEnter={(e) => {
-              const isZenActive = conversations.some((c: any) => c.constructId === "zen-001" && c.id === currentConversationId);
+              const isZenActive = threads.some((t: any) => t.constructId === "zen-001" && t.id === currentConversationId);
               if (!isZenActive) {
                 e.currentTarget.style.backgroundColor = hoverColor;
               }
             }}
             onMouseLeave={(e) => {
-              const isZenActive = conversations.some((c: any) => c.constructId === "zen-001" && c.id === currentConversationId);
+              const isZenActive = threads.some((t: any) => t.constructId === "zen-001" && t.id === currentConversationId);
               if (!isZenActive) {
                 e.currentTarget.style.backgroundColor = "transparent";
               }
