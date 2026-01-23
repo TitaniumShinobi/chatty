@@ -22,9 +22,9 @@ const openrouter = new OpenAI({
 
 // Default models for Lin's seats (OpenRouter versions)
 const DEFAULT_SEAT_MODELS = {
-  creative: 'openrouter:mistralai/mistral-7b-instruct:free',
-  coding: 'openrouter:deepseek/deepseek-chat:free', 
-  smalltalk: 'openrouter:microsoft/phi-3-mini-128k-instruct:free'
+  creative: 'openrouter:google/gemini-2.0-flash-exp:free',
+  coding: 'openrouter:deepseek/deepseek-chat', 
+  smalltalk: 'openrouter:meta-llama/llama-3.3-70b-instruct:free'
 };
 
 /**

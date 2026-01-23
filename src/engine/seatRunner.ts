@@ -27,9 +27,9 @@ const DEFAULT_CONNECTION_TIMEOUT_MS = 60000;
 
 /** OpenRouter model mappings for seats when Ollama is unavailable */
 const OPENROUTER_SEAT_MODELS: Record<string, string> = {
-  smalltalk: 'microsoft/phi-3-mini-128k-instruct:free',
-  creative: 'mistralai/mistral-7b-instruct:free',
-  coding: 'deepseek/deepseek-chat:free'
+  smalltalk: 'meta-llama/llama-3.3-70b-instruct:free',
+  creative: 'google/gemini-2.0-flash-exp:free',
+  coding: 'deepseek/deepseek-chat'
 };
 
 /**
