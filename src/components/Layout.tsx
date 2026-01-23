@@ -2799,6 +2799,17 @@ export default function Layout() {
       // Find the GPT name from userGPTs
       const gpt = userGPTs.find(g => g.constructCallsign === constructId);
       console.log(`📇 [Layout] GPT contact card clicked: ${constructId}`, gpt);
+      
+      // Check if there's already an existing conversation with this construct
+      const existingThread = threads.find((t: any) => t.constructId === constructId);
+      if (existingThread) {
+        console.log(`🟢 [Layout] Opening existing ${constructId} conversation: ${existingThread.id}`);
+        navigate(`/app/chat/${existingThread.id}`);
+        return;
+      }
+      
+      // No existing conversation - create a new one
+      console.log(`🆕 [Layout] No existing conversation for ${constructId}, creating new one`);
       startConversationWithConstruct(constructId, gpt?.name);
       return;
     }
