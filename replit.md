@@ -5,7 +5,8 @@ Chatty is an AI-powered workspace application designed to provide an interactive
 
 ## User Preferences
 - Primary construct: Zen (not Synth)
-- Address Book: Zen (primary with blue pin) + custom GPTs like Katana (chat contacts)
+- Sidebar Navigation: Zen, VVAULT, simForge (default items) + "+ More" linking to Apps page
+- Address Book: Shows custom GPTs only (e.g., Katana) - Zen is excluded as it's a system nav item
 - GPTCreator: Tool for creating/editing GPTs
 - GPTCreator Create Tab: Lin (conversational agent users speak to when creating GPTs)
 - Lin is also an undertone stabilizer that runs silently to stabilize other constructs

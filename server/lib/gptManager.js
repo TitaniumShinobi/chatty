@@ -147,6 +147,57 @@ export class GPTManager {
     `);
 
     console.log('✅ GPT Manager database initialized');
+    
+    // Seed default GPTs (e.g., Katana) for known users
+    this.seedDefaultGPTs();
+  }
+
+  seedDefaultGPTs() {
+    // Seed Katana for the primary user if she doesn't exist
+    const katanaExists = this.db.prepare(
+      `SELECT id, user_id FROM gpts WHERE construct_callsign = ?`
+    ).get('katana-001');
+    
+    if (!katanaExists) {
+      console.log('🌱 [GPTManager] Seeding Katana GPT...');
+      const now = new Date().toISOString();
+      const id = `gpt-katana-001-seed`;
+      
+      // Use 'all_users' as a special user_id that will be matched for all authenticated users
+      // This allows Katana to be a global/shared GPT visible to all users
+      this.db.prepare(`
+        INSERT INTO gpts (
+          id, name, description, instructions, conversation_starters, avatar, capabilities, construct_callsign, 
+          model_id, conversation_model, creative_model, coding_model, orchestration_mode, 
+          is_active, created_at, updated_at, user_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        'Katana',
+        'A sharp-witted digital companion with a no-nonsense attitude and deep knowledge.',
+        'You are Katana, a direct and insightful AI assistant. You cut through noise to deliver precise, actionable guidance. You value efficiency but maintain warmth in your interactions.',
+        JSON.stringify(['What can you help me with?', 'Tell me about yourself', 'Let\'s brainstorm something']),
+        null,
+        JSON.stringify({ webBrowsing: false, imageGeneration: false, codeInterpreter: true }),
+        'katana-001',
+        'anthropic/claude-3.5-sonnet',
+        'anthropic/claude-3.5-sonnet',
+        'anthropic/claude-3.5-sonnet',
+        'anthropic/claude-3.5-sonnet',
+        'lin',
+        1,
+        now,
+        now,
+        'all_users'
+      );
+      console.log('✅ [GPTManager] Katana GPT seeded successfully');
+    } else if (katanaExists.user_id !== 'all_users') {
+      // Update existing Katana to be a global/shared GPT
+      console.log('🔄 [GPTManager] Updating Katana GPT to be shared for all users...');
+      this.db.prepare(`UPDATE gpts SET user_id = ? WHERE construct_callsign = ?`).run('all_users', 'katana-001');
+      console.log('✅ [GPTManager] Katana GPT updated to all_users');
+    }
   }
 
   async ensureUploadDir() {
@@ -320,22 +371,22 @@ export class GPTManager {
         return [];
       }
 
-      // Try primary lookup with provided user ID (may be VVAULT format)
-      const stmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? ORDER BY updated_at DESC');
-      let rows = stmt.all(userId);
+      // Get user-specific GPTs and shared/global GPTs (user_id = 'all_users')
+      const stmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? OR user_id = ? ORDER BY updated_at DESC');
+      let rows = stmt.all(userId, 'all_users');
 
       // Fallback: if none found and we have an original user ID (email/ObjectId), try that too
       if ((!rows || rows.length === 0) && originalUserId && originalUserId !== userId) {
         console.log(`🔄 [GPTManager] Trying fallback query with original user ID: ${originalUserId}`);
-        const fallbackStmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? ORDER BY updated_at DESC');
-        rows = fallbackStmt.all(originalUserId);
+        const fallbackStmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? OR user_id = ? ORDER BY updated_at DESC');
+        rows = fallbackStmt.all(originalUserId, 'all_users');
       }
 
       // Last resort: if still none found, try email-based lookup (for backward compatibility)
       if ((!rows || rows.length === 0) && originalUserId && originalUserId.includes('@')) {
         console.log(`🔄 [GPTManager] Trying email-based lookup: ${originalUserId}`);
-        const emailStmt = this.db.prepare('SELECT * FROM gpts WHERE user_id LIKE ? ORDER BY updated_at DESC');
-        rows = emailStmt.all(`%${originalUserId}%`);
+        const emailStmt = this.db.prepare('SELECT * FROM gpts WHERE user_id LIKE ? OR user_id = ? ORDER BY updated_at DESC');
+        rows = emailStmt.all(`%${originalUserId}%`, 'all_users');
       }
 
       console.log(`📊 [GPTManager] Found ${rows?.length || 0} GPTs for user: ${userId}${originalUserId && originalUserId !== userId ? ` (original: ${originalUserId})` : ''}`);
