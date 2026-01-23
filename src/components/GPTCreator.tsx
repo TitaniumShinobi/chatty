@@ -2654,19 +2654,15 @@ ALWAYS:
                             : createMessages.map((message, index) => (
                                 <div
                                   key={index}
-                                  className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                                  className="mb-3"
                                 >
-                                  <div
-                                    className={`max-w-[80%] px-4 py-2 rounded-lg ${
-                                      message.role === "user"
-                                        ? "bg-app-chat-50 text-app-text-900"
-                                        : "bg-app-chat-50 text-app-text-900"
-                                    }`}
-                                  >
-                                    <p className="text-sm whitespace-pre-wrap">
-                                      {message.content}
-                                    </p>
-                                  </div>
+                                  <p className="text-sm text-app-text-900 whitespace-pre-wrap">
+                                    {message.role === "user" ? (
+                                      <><span className="font-medium text-app-text-800">You:</span> {message.content}</>
+                                    ) : (
+                                      <><span className="font-medium text-app-orange-500">Lin:</span> {message.content}</>
+                                    )}
+                                  </p>
                                 </div>
                               ));
                         })()}
@@ -4053,23 +4049,16 @@ ALWAYS:
                     </div>
                   )}
                   {previewMessages.length > 0 && (
-                    <div className="space-y-4 pb-4">
+                    <div className="space-y-3 pb-4">
                       {previewMessages.map((message, index) => (
-                        <div
-                          key={index}
-                          className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-                        >
-                          <div
-                            className={`max-w-[80%] p-3 rounded-lg ${
-                              message.role === "user"
-                                ? "bg-app-chat-50 text-app-text-900"
-                                : "bg-app-chat-50 text-app-text-900"
-                            }`}
-                          >
-                            <p className="text-sm whitespace-pre-wrap">
-                              {message.content}
-                            </p>
-                          </div>
+                        <div key={index}>
+                          <p className="text-sm text-app-text-900 whitespace-pre-wrap">
+                            {message.role === "user" ? (
+                              <><span className="font-medium text-app-text-800">You:</span> {message.content}</>
+                            ) : (
+                              <><span className="font-medium text-app-orange-500">{gptName || 'Assistant'}:</span> {message.content}</>
+                            )}
+                          </p>
                         </div>
                       ))}
                     </div>
