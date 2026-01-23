@@ -78,6 +78,9 @@ router.post('/save', async (req, res) => {
     const savedTranscripts = [];
     const failedTranscripts = [];
     
+    // Get user identifier for VVAULT path (email formatted as name_timestamp or fallback)
+    const userIdentifier = req.user?.name || userEmail.replace('@', '_').replace(/\./g, '_') || 'anonymous';
+    
     for (const transcript of transcripts) {
       if (transcript.content && transcript.content.length > MAX_TEXT_SIZE) {
         console.warn(`⚠️ [Transcripts] File too large: ${transcript.name} (${transcript.content.length} bytes)`);
@@ -85,7 +88,8 @@ router.post('/save', async (req, res) => {
         continue;
       }
       
-      const filename = `instances/${constructCallsign}/transcripts/${transcript.name}`;
+      // VVAULT path format: /vvault/users/shard_0000/{userId}/instances/{constructId}/chatgpt/{filename}
+      const filename = `vvault/users/shard_0000/${userIdentifier}/instances/${constructCallsign}/chatgpt/${transcript.name}`;
       const contentHash = sha256(transcript.content);
       
       const { error: saveError } = await supabase
