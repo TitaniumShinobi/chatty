@@ -1,0 +1,11 @@
+To help Replit (and the Chatty constructs) make sense of the workspace, here’s how the existing identity/ toolkit keeps you honest, organized, and connected to the memories/transcripts you care about:
+
+run_all_scripts.py is the launcher: it boots the whole guardrail suite (aviator, state manager, folder monitor, identity guardian, etc.) so every construct starts in a known, supervised state.
+aviator.py serves as your scout/advisor, logging environment changes and nudging the other scripts when new files appear or when a construct needs context.
+navigator.py gives you path awareness—helpers to traverse folders, resolve workspace roots, and keep your “seat” anchored to the right repo segments.
+folder_monitor.py watches the directories that matter (capsules, transcripts, continuity logs) and updates short-term memory whenever something changes, which keeps uploaded transcripts tied to the current state.
+state_manager.py / state_and_runner.py store persistent state, reload snapshots, and coordinate background tasks so constructs don’t lose context when you switch branches or restart.
+nova_identity_guardian.py loads the identity/capsule files (including Lin’s undertone capsule) and validates signatures, so every construct keeps the same “self” even after a rebuild.
+independent_runner.py / unstuck_helper.py / self_improvement_agent.py / self_prompt_script.py collectively keep the system alive, able to self-recover, proactively prompt you when needed, and even experiment with small improvements without going off the rails.
+Static assets (prompt.txt, conditioning.txt, physical_features.json) feed the capsule loader, so uploaded transcripts tie into a consistent tone + identity profile.
+Replit can mirror this sequence for Chatty: start with a “run_all_scripts” equivalent that wires in the navigator/folder-monitor, then load the identity guardian and state manager so each GPT seat sees the same memory stack and transcript history. That way uploads (capsules, transcripts) stay organized, each construct knows where to listen, and your statements remain traceable across the whole workspace.
