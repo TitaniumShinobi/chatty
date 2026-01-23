@@ -1,0 +1,38 @@
+Failed to load resource: net::ERR_CONNECTION_REFUSEDUnderstand this error
+injected.js:37 2026-01-23T06:56:32.840Z 🖼️ [AIsPage] Rendering avatar for ai-1819217b-d030-4547-baca-f2730e4d4491 (Katana): Object
+injected.js:37 2026-01-23T06:56:32.842Z Failed to load scripts: ReferenceError: setIsLoadingScripts is not defined
+    at loadScripts (GPTCreator.tsx:615:13)
+    at GPTCreator.tsx:640:9
+    at commitHookEffectListMount (chunk-NUMECXU6.js?v=37a34c60:16915:34)
+    at commitPassiveMountOnFiber (chunk-NUMECXU6.js?v=37a34c60:18156:19)
+    at commitPassiveMountEffects_complete (chunk-NUMECXU6.js?v=37a34c60:18129:17)
+    at commitPassiveMountEffects_begin (chunk-NUMECXU6.js?v=37a34c60:18119:15)
+    at commitPassiveMountEffects (chunk-NUMECXU6.js?v=37a34c60:18109:11)
+    at flushPassiveEffectsImpl (chunk-NUMECXU6.js?v=37a34c60:19490:11)
+    at flushPassiveEffects (chunk-NUMECXU6.js?v=37a34c60:19447:22)
+    at chunk-NUMECXU6.js?v=37a34c60:19328:17
+(anonymous) @ injected.js:37Understand this error
+GPTCreator.tsx:636 Uncaught (in promise) ReferenceError: setIsLoadingScripts is not defined
+    at loadScripts (GPTCreator.tsx:636:13)
+    at GPTCreator.tsx:640:9
+    at commitHookEffectListMount (chunk-NUMECXU6.js?v=37a34c60:16915:34)
+    at commitPassiveMountOnFiber (chunk-NUMECXU6.js?v=37a34c60:18156:19)
+    at commitPassiveMountEffects_complete (chunk-NUMECXU6.js?v=37a34c60:18129:17)
+    at commitPassiveMountEffects_begin (chunk-NUMECXU6.js?v=37a34c60:18119:15)
+    at commitPassiveMountEffects (chunk-NUMECXU6.js?v=37a34c60:18109:11)
+    at flushPassiveEffectsImpl (chunk-NUMECXU6.js?v=37a34c60:19490:11)
+    at flushPassiveEffects (chunk-NUMECXU6.js?v=37a34c60:19447:22)
+    at chunk-NUMECXU6.js?v=37a34c60:19328:17Understand this error
+94d431b5-8f54-4d21-bb1b-7a10108c3d0c-00-c4gy85t6dw04.spock.replit.dev/api/vvault/identity/blueprint?constructCallsign=katana-001:1  Failed to load resource: the server responded with a status of 500 (Internal Server Error)Understand this error
+94d431b5-8f54-4d21-bb1b-7a10108c3d0c-00-c4gy85t6dw04.spock.replit.dev/api/vvault/capsules/load?constructCallsign=katana-001:1  Failed to load resource: the server responded with a status of 404 (Not Found)Understand this error
+injected.js:37 2026-01-23T06:56:33.258Z [memoryPermission] Memory operation "loadMemoriesForConstruct" blocked: allowMemory is disabled
+injected.js:37 2026-01-23T06:56:33.704Z 📚 [Transcripts] Loaded 12 existing transcripts for katana-001
+injected.js:37 2026-01-23T06:56:34.079Z 📚 [Transcripts] Loaded 12 existing transcripts for katana-001
+94d431b5-8f54-4d21-bb1b-7a10108c3d0c-00-c4gy85t6dw04.spock.replit.dev/api/lin/generate:1  Failed to load resource: the server responded with a status of 500 (Internal Server Error)Understand this error
+injected.js:37 2026-01-23T06:56:37.164Z Retrying smalltalk seat (attempt 1/2) after 1000ms delay...
+94d431b5-8f54-4d21-bb1b-7a10108c3d0c-00-c4gy85t6dw04.spock.replit.dev/api/lin/generate:1  Failed to load resource: the server responded with a status of 500 (Internal Server Error)Understand this error
+injected.js:37 2026-01-23T06:56:38.370Z Retrying smalltalk seat (attempt 2/2) after 2000ms delay...
+94d431b5-8f54-4d21-bb1b-7a10108c3d0c-00-c4gy85t6dw04.spock.replit.dev/api/lin/generate:1  Failed to load resource: the server responded with a status of 500 (Internal Server Error)Understand this error
+injected.js:37 2026-01-23T06:56:40.695Z Error in preview: Error: Seat smalltalk failed after 2 retries: Failed to generate response
+    at runSeat (browserSeatRunner.ts:151:9)
+    at async handlePreviewSubmit (GPTCreator.tsx:1686:24)
