@@ -15,7 +15,7 @@ const StubTab: React.FC<StubTabProps> = ({ title, description, icon }) => {
       <div className="space-y-4">
         {icon && (
           <div className="flex justify-center mb-6">
-            <div className="p-4 rounded-full" style={{ backgroundColor: '#feffaf' }}>
+            <div className="p-4 rounded-full" style={{ backgroundColor: 'var(--chatty-highlight)' }}>
               {icon}
             </div>
           </div>

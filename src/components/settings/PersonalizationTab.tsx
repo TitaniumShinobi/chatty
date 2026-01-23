@@ -214,14 +214,14 @@ const PersonalizationTab: React.FC = () => {
 
         {/* Memory Toggle Info */}
         {!settings.personalization.allowMemory && (
-          <div className="p-3 rounded-lg" style={{ backgroundColor: '#fef3c7', borderColor: '#f59e0b' }}>
+          <div className="p-3 rounded-lg" style={{ backgroundColor: 'var(--chatty-highlight)', borderColor: 'var(--chatty-line)' }}>
             <div className="flex items-start gap-2">
-              <Brain size={16} style={{ color: '#f59e0b' }} />
+              <Brain size={16} style={{ color: 'var(--chatty-text)', opacity: 0.7 }} />
               <div>
-                <p className="text-sm font-medium" style={{ color: '#92400e' }}>
+                <p className="text-sm font-medium" style={{ color: 'var(--chatty-text)' }}>
                   Memory is currently disabled
                 </p>
-                <p className="text-xs mt-1" style={{ color: '#92400e', opacity: 0.8 }}>
+                <p className="text-xs mt-1" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
                   Enable "Allow memory" above to let Chatty learn from your conversations and provide more personalized responses.
                 </p>
               </div>

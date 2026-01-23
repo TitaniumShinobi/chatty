@@ -172,7 +172,7 @@ const GeneralTab: React.FC = () => {
                     style={{
                       backgroundColor:
                         settings.general.theme === option.value
-                          ? "#feffaf"
+                          ? "var(--chatty-highlight)"
                           : "transparent",
                     }}
                     onClick={() => handleOptionSelect("theme", option.value)}
@@ -263,7 +263,7 @@ const GeneralTab: React.FC = () => {
                 className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-100 transition-colors"
                 style={{
                   backgroundColor:
-                    themeScriptSetting === "none" ? "#feffaf" : "transparent",
+                    themeScriptSetting === "none" ? "var(--chatty-highlight)" : "transparent",
                 }}
                 onClick={() => {
                   setThemeScriptSetting("none");
@@ -290,7 +290,7 @@ const GeneralTab: React.FC = () => {
                 className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-100 transition-colors"
                 style={{
                   backgroundColor:
-                    themeScriptSetting === "auto" ? "#feffaf" : "transparent",
+                    themeScriptSetting === "auto" ? "var(--chatty-highlight)" : "transparent",
                 }}
                 onClick={() => {
                   setThemeScriptSetting("auto");
@@ -332,7 +332,7 @@ const GeneralTab: React.FC = () => {
                   style={{
                     backgroundColor:
                       themeScriptSetting === script.id
-                        ? "#feffaf"
+                        ? "var(--chatty-highlight)"
                         : "transparent",
                   }}
                   onClick={() => {
@@ -424,7 +424,7 @@ const GeneralTab: React.FC = () => {
                   style={{
                     backgroundColor:
                       settings.general.accentColor === option.value
-                        ? "#feffaf"
+                        ? "var(--chatty-highlight)"
                         : "transparent",
                   }}
                   onClick={() =>
@@ -498,7 +498,7 @@ const GeneralTab: React.FC = () => {
                   style={{
                     backgroundColor:
                       settings.general.language === option.value
-                        ? "#feffaf"
+                        ? "var(--chatty-highlight)"
                         : "transparent",
                   }}
                   onClick={() => handleOptionSelect("language", option.value)}
@@ -564,7 +564,7 @@ const GeneralTab: React.FC = () => {
                   style={{
                     backgroundColor:
                       settings.general.spokenLanguage === option.value
-                        ? "#feffaf"
+                        ? "var(--chatty-highlight)"
                         : "transparent",
                   }}
                   onClick={() =>
@@ -649,7 +649,7 @@ const GeneralTab: React.FC = () => {
                   style={{
                     backgroundColor:
                       settings.general.voice === option.value
-                        ? "#feffaf"
+                        ? "var(--chatty-highlight)"
                         : "transparent",
                   }}
                   onClick={() => handleOptionSelect("voice", option.value)}
