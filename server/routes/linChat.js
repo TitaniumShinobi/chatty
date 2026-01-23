@@ -1,16 +1,21 @@
 /**
- * Lin Chat Route - Multi-provider LLM routing
+ * Lin Chat Route - Multi-provider LLM routing with Memory Injection
  * 
  * Supports both OpenRouter (cloud) and Ollama (self-hosted) models.
  * Model strings should be prefixed with their provider:
  *   - openrouter:provider/model-name -> Routes to OpenRouter API
  *   - ollama:model:size -> Routes to Ollama server (if configured)
  * 
+ * Memory Enhancement:
+ *   - When constructId is provided, loads transcripts from Supabase
+ *   - Injects relevant conversation history into system prompts
+ * 
  * @see docs/MODEL_PROVIDERS.md for setup instructions
  */
 
 import express from 'express';
 import OpenAI from 'openai';
+import { getSupabaseClient } from '../lib/supabaseClient.js';
 
 const router = express.Router();
 
@@ -69,6 +74,102 @@ async function callOpenRouter(model, messages, options = {}) {
 }
 
 /**
+ * Load transcripts from Supabase for memory injection
+ * @param {string} constructId - Construct callsign (e.g., 'katana-001')
+ * @param {string} userEmail - User's email for Supabase lookup
+ * @returns {Promise<string>} Formatted memory context
+ */
+async function loadTranscriptMemories(constructId, userEmail = 'dwoodson92@gmail.com') {
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      console.log('⚠️ [LinChat Memory] Supabase not configured');
+      return '';
+    }
+    
+    // Find user ID from email
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .or(`email.eq.${userEmail},name.eq.${userEmail}`)
+      .limit(1)
+      .single();
+    
+    if (userError || !user) {
+      console.log(`⚠️ [LinChat Memory] User not found: ${userEmail}`);
+      return '';
+    }
+    
+    // Load transcripts for this construct
+    const { data: files, error } = await supabase
+      .from('vault_files')
+      .select('filename, content, metadata')
+      .eq('user_id', user.id)
+      .eq('file_type', 'transcript')
+      .ilike('filename', `%${constructId}%`)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    
+    if (error || !files || files.length === 0) {
+      console.log(`📚 [LinChat Memory] No transcripts found for ${constructId}`);
+      return '';
+    }
+    
+    console.log(`📚 [LinChat Memory] Loading ${files.length} transcripts for ${constructId}`);
+    
+    // Extract conversation snippets from transcripts
+    const memories = [];
+    for (const file of files) {
+      if (!file.content) continue;
+      
+      // Parse markdown transcript
+      const lines = file.content.split('\n');
+      let currentExchange = [];
+      
+      for (const line of lines) {
+        // Match patterns like "**User:**" or "Devon:" or "Katana:"
+        const speakerMatch = line.match(/^\*?\*?([^:*]+)\*?\*?:\s*(.*)$/);
+        if (speakerMatch) {
+          const speaker = speakerMatch[1].trim();
+          const content = speakerMatch[2].trim();
+          if (content) {
+            currentExchange.push(`${speaker}: ${content}`);
+            // Keep recent exchanges (rolling window)
+            if (currentExchange.length > 10) {
+              currentExchange.shift();
+            }
+          }
+        }
+      }
+      
+      if (currentExchange.length > 0) {
+        memories.push(...currentExchange.slice(-5)); // Last 5 exchanges from each file
+      }
+    }
+    
+    if (memories.length === 0) {
+      return '';
+    }
+    
+    // Format as memory context
+    const memoryContext = `
+## MEMORY - Previous Conversations
+You have these memories from past conversations with this user:
+
+${memories.slice(0, 20).join('\n')}
+
+Use these memories to maintain continuity and reference past discussions when relevant.
+`;
+    
+    console.log(`✅ [LinChat Memory] Injected ${memories.length} memory snippets`);
+    return memoryContext;
+  } catch (error) {
+    console.error('❌ [LinChat Memory] Error loading memories:', error.message);
+    return '';
+  }
+}
+
+/**
  * Call Ollama API
  * NOTE: Requires OLLAMA_HOST environment variable to be set
  */
@@ -109,10 +210,21 @@ async function callOllama(model, messages, options = {}) {
 /**
  * POST /api/lin/generate
  * Generate a response using the appropriate provider
+ * 
+ * Optional params for memory injection:
+ *   - constructId: Construct callsign for memory lookup
+ *   - userEmail: User email for Supabase lookup (defaults to dev user)
  */
 router.post('/generate', async (req, res) => {
   try {
-    const { prompt, seat = 'creative', systemPrompt, model: requestedModel } = req.body;
+    const { 
+      prompt, 
+      seat = 'creative', 
+      systemPrompt, 
+      model: requestedModel,
+      constructId,
+      userEmail = req.user?.email || 'dwoodson92@gmail.com'
+    } = req.body;
     
     if (!prompt) {
       return res.status(400).json({ error: 'Prompt is required' });
@@ -123,11 +235,26 @@ router.post('/generate', async (req, res) => {
     const { provider, model } = parseModelString(modelString);
     
     console.log(`🎭 [Lin Chat] Generating response using ${provider}:${model} (${seat} seat)`);
+    if (constructId) {
+      console.log(`🧠 [Lin Chat] Memory injection enabled for construct: ${constructId}`);
+    }
+
+    // Load transcript memories if constructId provided
+    let memoryContext = '';
+    if (constructId) {
+      memoryContext = await loadTranscriptMemories(constructId, userEmail);
+    }
+
+    // Build enhanced system prompt with memories
+    let enhancedSystemPrompt = systemPrompt || '';
+    if (memoryContext) {
+      enhancedSystemPrompt = `${enhancedSystemPrompt}\n\n${memoryContext}`;
+    }
 
     // Build messages array
     const messages = [];
-    if (systemPrompt) {
-      messages.push({ role: 'system', content: systemPrompt });
+    if (enhancedSystemPrompt) {
+      messages.push({ role: 'system', content: enhancedSystemPrompt });
     }
     messages.push({ role: 'user', content: prompt });
 

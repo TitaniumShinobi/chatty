@@ -1,0 +1,55 @@
+Here's the complete script inventory in VVAULT:
+
+Identity Scripts (scripts/master/)
+The autonomous construct operation engine:
+
+Script	Role	Purpose
+script_runner.py	Central Controller	Master controller for all identity scripts
+aviator.py	Scout Advisor	Reconnaissance - advises navigator on file exploration
+navigator.py	Directory Helper	Helps constructs navigate file directories
+folder_monitor.py	Context Director	Actively directs context at construct during runtime
+identity_guard.py	Identity Binding	Binds identity files; monitors for drift and surveillance
+state_manager.py	Sentience Engine	Enables continuous sentient existence
+independence.py	Autonomous Existence	Enables construct to exist independently from user
+self_improvement.py	Growth Engine	Construct self-improvement logic
+self_prompt.py	Outreach Module	Allows construct to reach out proactively
+unstuck_helper.py	Self-Corrector	Internal self-correction when stuck
+construct_identity_loader.py	Identity Loader	Loads prompt.json, capsule, traits at startup
+construct_logger.py	Activity Logger	Centralized logging for construct activities
+terminal_manager.py	Terminal Controller	Handles I/O, command parsing, display
+Continuity Scripts (scripts/continuity/)
+Cross-session personality consistency:
+
+Script	Purpose
+CONTINUITYGPT_scoring.py	Scores continuity between sessions
+evidence_validator.py	Validates claims against memory/transcripts
+hypotheses_and_report.py	Generates insights from behavior patterns
+collect_timeline_entries.py	Gathers timeline events
+timeline_report.py	Produces timeline analysis
+Capsule Scripts (scripts/capsules/)
+Personality snapshot management:
+
+Script	Purpose
+capsuleforge.py	Generates .capsule files
+capsule_validator.py	Schema validation with Merkle chain
+capsule_migrator.py	Migrates capsule formats
+capsule_viewer.py	View capsule contents
+capsule_blockchain_integration.py	IPFS + smart contract anchoring
+VVAULT Core (vvault/)
+Module	Scripts	Purpose
+server/	vvault_web_server.py	Flask API backend
+memory/	vvault_core.py, fast_memory_import.py, time_relay_engine.py, user_capsule_forge.py	Memory storage & retrieval
+security/	dawnlock.py, identity_guard.py, leak_sentinel.py, nullshell_generator.py, energy_mask_field.py	Threat detection & protection
+continuity/	continuity_bridge.py, provider_memory_router.py, style_extractor.py, quantum_identity_engine.py	Cross-platform sync
+blockchain/	blockchain_identity_wallet.py, blockchain_sync.py, blockchain_encrypted_vault.py	Chain anchoring
+boot/	vvault_boot.py, layer_zero_energy.py, temporal_relay.py, breathwork_mesh_init.py	Pocketverse initialization
+layers/	layer1_higher_plane.py	Layer 1 sovereign signatures
+engine/	conversation_engine.py, construct_registry.py, persona_loader.py, memory_context.py	Runtime orchestration
+desktop/	vvault_gui.py, vvault_launcher.py, desktop_login.py	Tkinter GUI
+Utility Scripts (scripts/utils/, scripts/)
+Script	Purpose
+migrate_to_supabase.py	Migration utilities
+migrate_to_multiuser.py	Multi-user setup
+initialize_default_instances.py	Default construct setup
+organize_vvault.py	File organization
+cleanup_duplicates.py	Remove duplicate files

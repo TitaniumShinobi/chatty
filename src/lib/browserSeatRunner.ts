@@ -52,6 +52,7 @@ interface GenerateOptions {
   systemPrompt?: string;
   timeout?: number;
   retries?: number;
+  constructId?: string;  // For memory injection from transcripts
 }
 
 export async function runSeat(opts: GenerateOptions): Promise<string> {
@@ -93,7 +94,8 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
           body: JSON.stringify({
             prompt: opts.prompt,
             seat: opts.seat,
-            systemPrompt: opts.systemPrompt
+            systemPrompt: opts.systemPrompt,
+            constructId: opts.constructId  // Pass for memory injection
           }),
           signal: controller.signal,
         });

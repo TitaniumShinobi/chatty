@@ -750,7 +750,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     adjustPreviewTextareaHeight();
   }, [previewInput]);
 
-  // Set default models when Chatty Lin mode is selected
+  // Set default models when Chatty's Lin mode is selected
   useEffect(() => {
     if (orchestrationMode === "lin") {
       setConfig((prev) => ({
@@ -1725,12 +1725,14 @@ Assistant:`;
         config.conversationModel ||
         config.modelId ||
         "openrouter:microsoft/phi-3-mini-128k-instruct";
-      // Preview using model
+      // Preview using model - pass constructId for memory injection
 
+      const constructIdForMemory = config.constructCallsign || initialConfig?.constructCallsign;
       const response = await runSeat({
         seat: "smalltalk",
         prompt: fullPrompt,
         modelOverride: selectedModel,
+        constructId: constructIdForMemory,  // Enable transcript memory injection
       });
 
       // Add AI response to preview conversation
@@ -3075,7 +3077,7 @@ ALWAYS:
                               }
                             }}
                           >
-                            Chatty Lin
+                            Lin
                           </button>
                           <button
                             onClick={() => setOrchestrationMode("custom")}
