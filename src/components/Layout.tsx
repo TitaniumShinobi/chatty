@@ -2729,6 +2729,58 @@ export default function Layout() {
     }
   }
 
+  async function startConversationWithConstruct(constructId: string, constructName?: string) {
+    console.log(`🚀 [Layout] Starting conversation with construct: ${constructId}`);
+    
+    if (!user) {
+      console.error("❌ Cannot create conversation: No user");
+      return null;
+    }
+
+    try {
+      const conversationManager = VVAULTConversationManager.getInstance();
+      const userId = getUserId(user);
+
+      if (!userId) {
+        console.error("❌ Cannot create conversation: No user ID");
+        return null;
+      }
+
+      // Create a new conversation with this specific construct
+      const newConversation = await conversationManager.createConversation(
+        userId,
+        constructName || constructId,
+        undefined,
+        constructId,
+      );
+
+      // Convert VVAULT conversation to Thread format
+      const thread: Thread = {
+        id: newConversation.id,
+        title: newConversation.title,
+        messages: newConversation.messages || [],
+        createdAt: newConversation.createdAt,
+        updatedAt: newConversation.updatedAt,
+        archived: newConversation.archived || false,
+        constructId: constructId,
+      };
+
+      setThreads((prev) => [thread, ...prev]);
+      navigate(`/app/chat/${thread.id}`);
+
+      console.log(`✅ Created new conversation with ${constructId}: ${thread.id}`);
+      return thread.id;
+    } catch (error) {
+      console.error(`❌ Failed to create conversation with ${constructId}:`, error);
+      // Fallback to local creation
+      const thread = createThread(constructName || constructId);
+      (thread as any).constructId = constructId;
+      setThreads((prev) => [thread, ...prev]);
+      navigate(`/app/chat/${thread.id}`);
+      return thread.id;
+    }
+  }
+
   function handleThreadClick(threadId: string) {
     console.log("🟡 [Layout] handleThreadClick START:", {
       threadId,
@@ -2740,6 +2792,16 @@ export default function Layout() {
         isPrimary: t.isPrimary,
       })),
     });
+
+    // Handle GPT contact cards (IDs ending with _contact)
+    if (threadId.endsWith('_contact')) {
+      const constructId = threadId.replace('_contact', '');
+      // Find the GPT name from userGPTs
+      const gpt = userGPTs.find(g => g.constructCallsign === constructId);
+      console.log(`📇 [Layout] GPT contact card clicked: ${constructId}`, gpt);
+      startConversationWithConstruct(constructId, gpt?.name);
+      return;
+    }
 
     const targetId = preferCanonicalThreadId(threadId, threads) || threadId;
     const routedId = routeIdForThread(targetId, threads);
@@ -2844,8 +2906,10 @@ export default function Layout() {
                 handleThreadClick(id);
               }}
               onNewConversation={newThread}
-              onNewConversationWithGPT={(gptId: string) => {
-                navigate("/app/gpts/new");
+              onNewConversationWithGPT={(constructId: string) => {
+                // Start a new conversation with this specific construct
+                console.log(`📱 [Layout] onNewConversationWithGPT called: ${constructId}`);
+                startConversationWithConstruct(constructId);
               }}
               onDeleteConversation={deleteThread}
               onRenameConversation={renameThread}
