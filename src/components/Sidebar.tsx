@@ -254,20 +254,6 @@ const Sidebar: React.FC<SidebarProps> = ({
         pointerEvents: sidebarPointerEvents,
       }}
     >
-      {/* Vertical line through star center - extends full sidebar height */}
-      <div 
-        style={{ 
-          position: 'absolute',
-          top: 0,
-          bottom: 0,
-          left: collapsed ? '28px' : '37px',
-          width: '1px',
-          backgroundColor: 'rgba(173, 165, 135, 0.15)',
-          pointerEvents: 'none'
-        }}
-        aria-hidden="true"
-      />
-      
       {/* Top Section - Logo and Collapse */}
       <div className={cn(collapsed ? "px-3 pt-3 pb-2" : "p-4", "relative z-10")}>
         {!collapsed ? (
