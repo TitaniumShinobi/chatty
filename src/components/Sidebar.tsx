@@ -260,7 +260,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           position: 'absolute',
           top: 0,
           bottom: 0,
-          left: collapsed ? '20px' : '23px',
+          left: collapsed ? '28px' : '37px',
           width: '1px',
           backgroundColor: 'rgba(173, 165, 135, 0.15)',
           pointerEvents: 'none'
