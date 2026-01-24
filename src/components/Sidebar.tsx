@@ -879,8 +879,15 @@ const Sidebar: React.FC<SidebarProps> = ({
         )}
 
         <div className="space-y-1">
-          {/* Existing Conversations - No borders, just hover highlights */}
-          {conversations.map((conversation) => (
+          {/* Existing Conversations - With avatars aligned to nav items */}
+          {conversations.map((conversation) => {
+            const avatar = (conversation as any).avatar;
+            const initial = conversation.title?.charAt(0)?.toUpperCase() || "?";
+            const avatarColors = ["#6B7280", "#8B5CF6", "#EC4899", "#F59E0B", "#10B981", "#3B82F6"];
+            const colorIndex = conversation.title?.charCodeAt(0) % avatarColors.length || 0;
+            const bgColor = avatarColors[colorIndex];
+            
+            return (
             <button
               key={conversation.id}
               onClick={(e) => {
@@ -912,7 +919,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                 }
               }}
               className={cn(
-                "flex items-center justify-between w-full px-3 py-2 text-left text-sm rounded-md transition-colors group",
+                navButtonBase,
+                "group",
                 conversation.id === currentConversationId &&
                   "text-[var(--chatty-text-inverse, #ffffeb)]",
               )}
@@ -941,53 +949,73 @@ const Sidebar: React.FC<SidebarProps> = ({
                 }
               }}
             >
-              <div className="flex items-center gap-2 flex-1 min-w-0">
-                <span className="truncate">{conversation.title}</span>
-                {/* Blue pin icon for Zen (primary construct) */}
-                {(conversation as any).isPrimary ||
-                (conversation as any).constructId === "zen-001" ? (
-                  <Pin
-                    size={12}
-                    className="text-blue-500 flex-shrink-0"
-                    style={{ color: "#3b82f6" }}
-                  />
-                ) : null}
-              </div>
-              {/* Hide delete button for primary construct (Zen) */}
-              {!(
-                (conversation as any).isPrimary ||
-                (conversation as any).constructId === "zen-001"
-              ) && (
-                <div
-                  role="button"
-                  tabIndex={0}
-                  className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all ml-2"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteConversation(conversation.id);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onDeleteConversation(conversation.id);
-                    }
-                  }}
-                  style={{ color: "var(--chatty-text)" }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor =
-                      "var(--chatty-highlight)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "transparent";
-                  }}
-                  aria-label={`Delete conversation ${conversation.title}`}
+              {/* Avatar - circular, aligned with nav icons */}
+              {avatar ? (
+                <img 
+                  src={avatar} 
+                  alt={conversation.title}
+                  className="w-4 h-4 rounded-full object-cover flex-shrink-0"
+                />
+              ) : (
+                <div 
+                  className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[8px] font-bold text-white"
+                  style={{ backgroundColor: bgColor }}
                 >
-                  <Trash2 size={12} />
+                  {initial}
                 </div>
               )}
+              {!collapsed && (
+                <>
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className="truncate">{conversation.title}</span>
+                    {/* Blue pin icon for Zen (primary construct) */}
+                    {(conversation as any).isPrimary ||
+                    (conversation as any).constructId === "zen-001" ? (
+                      <Pin
+                        size={12}
+                        className="text-blue-500 flex-shrink-0"
+                        style={{ color: "#3b82f6" }}
+                      />
+                    ) : null}
+                  </div>
+                  {/* Hide delete button for primary construct (Zen) */}
+                  {!(
+                    (conversation as any).isPrimary ||
+                    (conversation as any).constructId === "zen-001"
+                  ) && (
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all ml-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteConversation(conversation.id);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onDeleteConversation(conversation.id);
+                        }
+                      }}
+                      style={{ color: "var(--chatty-text)" }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor =
+                          "var(--chatty-highlight)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "transparent";
+                      }}
+                      aria-label={`Delete conversation ${conversation.title}`}
+                    >
+                      <Trash2 size={12} />
+                    </div>
+                  )}
+                </>
+              )}
             </button>
-          ))}
+          );
+          })}
 
           {/* Empty state - VVAULT connection status */}
           {conversations.length === 0 && (
