@@ -1,0 +1,80 @@
+This is almost certainly a config/logic bug in the Replit agent’s Katana integration, not OpenRouter itself, and the key is that the “smalltalk failed after 2 retries” path is falling back to a *paid* model (or a default model with no `:free` suffix), so every retry hits your billable tier instead of the free ones. [thecyberboardroom](https://thecyberboardroom.com/web/docs/platforms/index)
+
+## What is likely going wrong
+
+Given the snippet, Katana has at least three profiles:
+
+- smalltalk → `microsoft/phi-3-mini-128k-instruct:free`  
+- creative → `mistralai/mistral-7b-instruct:free`  
+- coding → `deepseek/deepseek-chat` (or `deepseek/deepseek-chat-v3-0324:free` if updated) [typingmind](https://www.typingmind.com/guide/openrouter/mistral-7b-instruct-free)
+
+The behavior you’re seeing implies:
+
+- The agent *thinks* it switched to `*:free` models but:
+  - Either the environment/config file it’s editing is not the one actually used at runtime, **or**
+  - The retry logic still calls a different model key (e.g. a “default” or “fallback” model without `:free`), **or**
+  - The OpenRouter key being used is a paid key with no free-routing rule, so any typo / missing `:free` silently routes to a paid model.
+
+Because you see “Seat smalltalk failed after 2 retries”, Katana is probably:
+
+1. Trying smalltalk → misconfigured model name → OpenRouter error → retry.  
+2. On failure, falling back to a default model (likely non‑free) that *does* respond and charge you.
+
+## How to immediately stop the money burn
+
+Do these first, before debugging anything else:
+
+- **1. Disable or revoke the OpenRouter key that Replit is using**
+  - Go to your OpenRouter dashboard → API Keys → either delete or rotate that key. [typingmind](https://www.typingmind.com/guide/openrouter/deepseek-chat-v3-0324-free)
+  - This instantly makes all further Katana calls fail instead of bill.
+
+- **2. Kill any Replit background agents**
+  - Stop the Replit run, close the agent / autosession if it’s looping on errors.
+  - If the agent is configured as a background “always on” service, disable that in the Replit “Secrets / Deployments / Always On” settings.
+
+- **3. Temporarily comment out OpenRouter calls in the Katana code**
+  - In the Replit project, find the Katana client code that hits `https://openrouter.ai/api/v1/chat/completions` and:
+    - Comment out the call, or
+    - Guard it with an env flag like `if (!process.env.OPENROUTER_KEY) throw new Error("OpenRouter disabled")`.
+
+That stops the leak while you fix the config.
+
+## Where to look in the code
+
+Focus on these spots in your Replit repo:
+
+- **Model mapping / config file**
+  - Search for:
+    - `phi-3-mini-128k-instruct`
+    - `mistral-7b-instruct`
+    - `deepseek-chat`
+    - `smalltalk`, `creative`, `coding`
+  - Verify the *exact* values used by the runtime are:
+    - `microsoft/phi-3-mini-128k-instruct:free` [thecyberboardroom](https://thecyberboardroom.com/web/docs/platforms/index)
+    - `mistralai/mistral-7b-instruct:free` [typingmind](https://www.typingmind.com/guide/openrouter/mistral-7b-instruct-free)
+    - `deepseek/deepseek-chat-v3-0324:free` (if you’re on that version) [typingmind](https://www.typingmind.com/guide/openrouter/deepseek-chat-v3-0324-free)
+
+- **Retry / fallback logic**
+  - Look for anything like:
+    - `onError`, `catch`, `retry`, `fallbackModel`, `defaultModel`.
+  - Check whether smalltalk failure calls something like:
+    - `model: defaultModel` or hard-coded `gpt-4*`, `claude-*`, or `deepseek/deepseek-chat` *without* `:free`.
+
+- **Environment / secrets in Replit**
+  - Open Replit “Secrets” and confirm:
+    - Only one `OPENROUTER_API_KEY` is set.
+    - There is no hard-coded model in environment variables that differs from your config file.
+  - If there is a “fallback model” env var, ensure it also ends in `:free`.
+
+## How to test safely without spending
+
+Once the key is revoked or replaced with a “dummy” key:
+
+- Re-run Katana and watch:
+  - The smalltalk call should now fail immediately with “invalid API key” from OpenRouter, which proves you’re hitting the expected client code path.
+- When you are ready to test with a real key again:
+  - Use OpenRouter’s dashboard “Logs” to verify:
+    - Only `microsoft/phi-3-mini-128k-instruct:free`, `mistralai/mistral-7b-instruct:free`, and `deepseek/deepseek-chat-v3-0324:free` appear. [thecyberboardroom](https://thecyberboardroom.com/web/docs/platforms/index)
+    - No GPT‑4 / Claude / other paid models get hit during smalltalk retries.
+
+If you want, paste the Katana/OpenRouter config (redact keys) and the smalltalk retry code path, and the exact log entries from OpenRouter that are charging you. With those three pieces, it’s possible to point to the exact line that’s falling back to a paid model and suggest a minimal patch.
