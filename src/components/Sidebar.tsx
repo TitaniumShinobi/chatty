@@ -582,6 +582,61 @@ const Sidebar: React.FC<SidebarProps> = ({
             {!collapsed && <span>Zen</span>}
           </button>
 
+          {/* Lin - System Construct (Character brainstorming / simForge guide) */}
+          <button
+            onClick={() => {
+              // Find existing Lin conversation in threads, or create new one
+              const linThread = threads.find(
+                (t: any) => t.constructId === "lin-001" || t.constructId === "lin",
+              );
+              if (linThread && onConversationSelect) {
+                console.log(
+                  `🟢 [Sidebar] Opening existing Lin conversation: ${linThread.id}`,
+                );
+                onConversationSelect(linThread.id);
+              } else if (onNewConversationWithGPT) {
+                console.log(`🆕 [Sidebar] Creating new Lin conversation`);
+                onNewConversationWithGPT("lin-001");
+              }
+            }}
+            className={navButtonBase}
+            style={{
+              backgroundColor: threads.some(
+                (t: any) =>
+                  (t.constructId === "lin-001" || t.constructId === "lin") && t.id === currentConversationId,
+              )
+                ? activeNavColor
+                : "transparent",
+              color: threads.some(
+                (t: any) =>
+                  (t.constructId === "lin-001" || t.constructId === "lin") && t.id === currentConversationId,
+              )
+                ? "var(--chatty-text-inverse, #ffffeb)"
+                : "var(--chatty-text)",
+            }}
+            onMouseEnter={(e) => {
+              const isLinActive = threads.some(
+                (t: any) =>
+                  (t.constructId === "lin-001" || t.constructId === "lin") && t.id === currentConversationId,
+              );
+              if (!isLinActive) {
+                e.currentTarget.style.backgroundColor = hoverColor;
+              }
+            }}
+            onMouseLeave={(e) => {
+              const isLinActive = threads.some(
+                (t: any) =>
+                  (t.constructId === "lin-001" || t.constructId === "lin") && t.id === currentConversationId,
+              );
+              if (!isLinActive) {
+                e.currentTarget.style.backgroundColor = "transparent";
+              }
+            }}
+          >
+            <MessageSquare size={16} />
+            {!collapsed && <span>Lin</span>}
+          </button>
+
           {/* VVAULT (Default) */}
           <button
             onClick={() => navigate("/app/vvault")}

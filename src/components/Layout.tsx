@@ -288,11 +288,14 @@ export default function Layout() {
     // Address Book: Custom GPTs only (Zen is a nav item, not an address book contact)
     // Lin is excluded - she's the GPTCreator create tab agent/undertone stabilizer
     // Zen is excluded - it's a system-level nav item now
-    const EXCLUDED_CONSTRUCTS = ['lin-001', 'zen-001', 'zen'];
+    const EXCLUDED_CONSTRUCTS = ['lin-001', 'zen-001', 'zen', 'lin'];
     
     // Get threads that have a constructId (excluding system constructs)
+    // Also filter out legacy files (those with .md in the title - raw filenames)
     const conversationThreads = threads.filter((t) => 
-      t.constructId && !EXCLUDED_CONSTRUCTS.includes(t.constructId)
+      t.constructId && 
+      !EXCLUDED_CONSTRUCTS.includes(t.constructId) &&
+      !t.title?.endsWith('.md')
     );
     
     // Create contact cards for GPTs that don't have a conversation thread yet
