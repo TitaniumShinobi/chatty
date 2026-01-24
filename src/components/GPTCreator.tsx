@@ -49,7 +49,9 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   initialConfig,
 }) => {
   const { settings } = useSettings();
-  const [activeTab, setActiveTab] = useState<"create" | "configure" | "forge">("create");
+  const [activeTab, setActiveTab] = useState<"create" | "configure" | "forge">(
+    "create",
+  );
   const [gptService] = useState(() => GPTService.getInstance());
   const [aiService] = useState(() => AIService.getInstance());
   const [isLoading, setIsLoading] = useState(false);
@@ -1118,7 +1120,9 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
           try {
             const zip = await JSZip.loadAsync(file);
             const entries = Object.keys(zip.files);
-            console.log(`📦 [Zip Upload] Extracting ${entries.length} entries from ${file.name}`);
+            console.log(
+              `📦 [Zip Upload] Extracting ${entries.length} entries from ${file.name}`,
+            );
             for (const entryName of entries) {
               const zipEntry = zip.files[entryName];
               if (zipEntry.dir) continue;
@@ -1131,7 +1135,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
                   continue;
                 }
                 const parsed = parseZipPath(entryName);
-                const entryFilename = parsed.filename || entryName.split("/").pop() || entryName;
+                const entryFilename =
+                  parsed.filename || entryName.split("/").pop() || entryName;
                 newTranscripts.push({
                   id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
                   name: entryFilename,
@@ -1898,12 +1903,13 @@ Assistant:`;
         "openrouter:microsoft/phi-3-mini-128k-instruct";
       // Preview using model - pass constructId for memory injection
 
-      const constructIdForMemory = config.constructCallsign || initialConfig?.constructCallsign;
+      const constructIdForMemory =
+        config.constructCallsign || initialConfig?.constructCallsign;
       const response = await runSeat({
         seat: "smalltalk",
         prompt: fullPrompt,
         modelOverride: selectedModel,
-        constructId: constructIdForMemory,  // Enable transcript memory injection
+        constructId: constructIdForMemory, // Enable transcript memory injection
       });
 
       // Add AI response to preview conversation
@@ -2824,9 +2830,7 @@ ALWAYS:
                         ? "2px solid #f97316"
                         : "2px solid transparent",
                     color:
-                      activeTab === "forge"
-                        ? "#f97316"
-                        : "var(--chatty-text)",
+                      activeTab === "forge" ? "#f97316" : "var(--chatty-text)",
                     opacity: activeTab === "forge" ? 1 : 0.85,
                   }}
                   onMouseEnter={(e) => {
@@ -2840,7 +2844,7 @@ ALWAYS:
                     }
                   }}
                 >
-                  🔥 Forge
+                  Forge
                 </button>
               </div>
 
@@ -3621,8 +3625,9 @@ ALWAYS:
                         className="text-xs mb-3"
                         style={{ color: "var(--chatty-text)", opacity: 0.7 }}
                       >
-                        Upload conversation transcripts or a zip file to give your GPT access
-                        to past interactions. Zip files preserve directory structure.
+                        Upload conversation transcripts or a zip file to give
+                        your GPT access to past interactions. Zip files preserve
+                        directory structure.
                       </p>
 
                       {/* Organization pipeline: Platform → Year → Month (all optional) */}
@@ -3682,7 +3687,9 @@ ALWAYS:
                           ))}
                         </select>
 
-                        {(transcriptSource || transcriptYear || transcriptMonth) && (
+                        {(transcriptSource ||
+                          transcriptYear ||
+                          transcriptMonth) && (
                           <button
                             onClick={() => {
                               setTranscriptSource("");
@@ -3703,7 +3710,9 @@ ALWAYS:
                       </div>
 
                       {/* Path preview */}
-                      {(transcriptSource || transcriptYear || transcriptMonth) && (
+                      {(transcriptSource ||
+                        transcriptYear ||
+                        transcriptMonth) && (
                         <div
                           className="text-xs mb-3 px-2 py-1 rounded"
                           style={{
@@ -3878,35 +3887,51 @@ ALWAYS:
                               </p>
                               <button
                                 onClick={async () => {
-                                  const constructId = config.constructCallsign || initialConfig?.constructCallsign;
+                                  const constructId =
+                                    config.constructCallsign ||
+                                    initialConfig?.constructCallsign;
                                   if (!constructId) return;
-                                  
+
                                   setIsAutoOrganizing(true);
                                   try {
                                     const response = await fetch(
                                       `/api/transcripts/auto-organize/${encodeURIComponent(constructId)}`,
                                       {
                                         method: "POST",
-                                        headers: { "Content-Type": "application/json" },
+                                        headers: {
+                                          "Content-Type": "application/json",
+                                        },
                                         credentials: "include",
-                                        body: JSON.stringify({ defaultYear: "2025" }),
-                                      }
+                                        body: JSON.stringify({
+                                          defaultYear: "2025",
+                                        }),
+                                      },
                                     );
-                                    
+
                                     if (response.ok) {
                                       const data = await response.json();
-                                      console.log(`🗂️ [ContinuityGPT] Auto-organize result:`, data);
-                                      
+                                      console.log(
+                                        `🗂️ [ContinuityGPT] Auto-organize result:`,
+                                        data,
+                                      );
+
                                       // Refresh transcript list
                                       const listResponse = await fetch(
                                         `/api/transcripts/list/${encodeURIComponent(constructId)}`,
-                                        { credentials: "include" }
+                                        { credentials: "include" },
                                       );
                                       if (listResponse.ok) {
-                                        const listData = await listResponse.json();
+                                        const listData =
+                                          await listResponse.json();
                                         if (listData.success) {
-                                          if (listData.bySource) setExistingTranscripts(listData.bySource);
-                                          if (listData.transcripts) setAllTranscripts(listData.transcripts);
+                                          if (listData.bySource)
+                                            setExistingTranscripts(
+                                              listData.bySource,
+                                            );
+                                          if (listData.transcripts)
+                                            setAllTranscripts(
+                                              listData.transcripts,
+                                            );
                                         }
                                       }
                                     }
@@ -3924,17 +3949,24 @@ ALWAYS:
                                   opacity: isAutoOrganizing ? 0.5 : 1,
                                 }}
                               >
-                                {isAutoOrganizing ? "Organizing..." : "Auto-Organize"}
+                                {isAutoOrganizing
+                                  ? "Organizing..."
+                                  : "Auto-Organize"}
                               </button>
                             </div>
                             <div
                               className="rounded-lg p-2 max-h-64 overflow-y-auto"
-                              style={{ backgroundColor: "var(--chatty-bg-message)" }}
+                              style={{
+                                backgroundColor: "var(--chatty-bg-message)",
+                              }}
                             >
                               <TranscriptFolderTree
                                 transcripts={allTranscripts}
                                 onFileClick={(file) => {
-                                  console.log("📄 [Transcripts] File clicked:", file.name);
+                                  console.log(
+                                    "📄 [Transcripts] File clicked:",
+                                    file.name,
+                                  );
                                 }}
                               />
                             </div>
@@ -4376,14 +4408,21 @@ ALWAYS:
                   // Forge Tab - Personality Extraction from Transcripts
                   <div className="flex-1 overflow-y-auto p-6">
                     <PersonalityForge
-                      constructCallsign={config.constructCallsign || config.name?.toLowerCase().replace(/\s+/g, '-') + '-001' || 'unknown'}
-                      constructName={config.name || 'Construct'}
+                      constructCallsign={
+                        config.constructCallsign ||
+                        config.name?.toLowerCase().replace(/\s+/g, "-") +
+                          "-001" ||
+                        "unknown"
+                      }
+                      constructName={config.name || "Construct"}
                       onIdentityForged={(result) => {
-                        console.log('[GPTCreator] Identity forged:', result);
-                        if (result.identityFiles?.['prompt.txt']) {
-                          setConfig(prev => ({
+                        console.log("[GPTCreator] Identity forged:", result);
+                        if (result.identityFiles?.["prompt.txt"]) {
+                          setConfig((prev) => ({
                             ...prev,
-                            instructions: result.identityFiles?.['prompt.txt'] || prev.instructions
+                            instructions:
+                              result.identityFiles?.["prompt.txt"] ||
+                              prev.instructions,
                           }));
                         }
                       }}
