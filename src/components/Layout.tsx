@@ -2860,17 +2860,25 @@ export default function Layout() {
       const gpt = userGPTs.find(g => g.constructCallsign === constructId);
       console.log(`📇 [Layout] GPT contact card clicked: ${constructId}`, gpt);
       
-      // Check if there's already an existing conversation with this construct
-      const existingThread = threads.find((t: any) => t.constructId === constructId);
-      if (existingThread) {
-        console.log(`🟢 [Layout] Opening existing ${constructId} conversation: ${existingThread.id}`);
-        navigate(`/app/chat/${existingThread.id}`);
-        return;
-      }
-      
-      // No existing conversation - create a new one
-      console.log(`🆕 [Layout] No existing conversation for ${constructId}, creating new one`);
-      startConversationWithConstruct(constructId, gpt?.name);
+      // Always use canonical format for GPT conversations
+      const canonicalId = `${constructId}_chat_with_${constructId}`;
+      console.log(`🎯 [Layout] Routing to canonical GPT conversation: ${canonicalId}`);
+      navigate(`/app/chat/${canonicalId}`);
+      return;
+    }
+
+    // Check if this is a GPT thread that should use canonical routing
+    const clickedThread = threads.find((t: any) => t.id === threadId);
+    if (clickedThread?.constructId && 
+        clickedThread.constructId !== 'zen-001' && 
+        clickedThread.constructId !== 'lin-001' &&
+        clickedThread.constructId !== 'zen' &&
+        clickedThread.constructId !== 'lin' &&
+        !threadId.includes('_chat_with_')) {
+      // Route GPT threads to canonical format
+      const canonicalId = `${clickedThread.constructId}_chat_with_${clickedThread.constructId}`;
+      console.log(`🎯 [Layout] Redirecting GPT thread to canonical: ${threadId} → ${canonicalId}`);
+      navigate(`/app/chat/${canonicalId}`);
       return;
     }
 
