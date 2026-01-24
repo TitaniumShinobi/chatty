@@ -25,6 +25,44 @@ Chatty is an AI-powered workspace application designed to provide an interactive
 - **Thin UI Layer:** Chatty is designed to be a thin client, with VVAULT handling primary AI inference, transcript management, and memory.
 - **Dual-Provider Model Architecture:** Supports both cloud (OpenRouter) and self-hosted (Ollama) AI models, allowing flexible model selection.
 
+**VVAULT Scripts Architecture (Master Scripts):**
+The `vvault_scripts/master/` directory contains the **autonomy stack** - capabilities that elevate constructs from chat personas to independent agents:
+
+| Script | Role | Function |
+|--------|------|----------|
+| **aviator.py** | Scout Advisor | Aerial reconnaissance for Navigator, directory snapshots, auto-tags files |
+| **navigator.py** | File Helper | Ground-level directory navigation for constructs |
+| **folder_monitor.py** | Context Director | Actively feeds context to construct during runtime |
+| **independence.py** | Autonomous Existence | Lets construct exist/operate without user present (heartbeat, self-prompts) |
+| **identity_guard.py** | Identity Binder | Binds prompt.json + identity files, monitors for identity drift & signal penetration |
+| **script_runner.py** | Central Controller | Orchestrates all scripts in `/identity` folder |
+| **self_improvement.py** | Evolution | Construct self-improvement capabilities |
+| **self_prompt.py** | Outreach | Construct reaches out to user or anyone, anytime they choose |
+| **state_manager.py** | Continuous Existence | Enables nonstop sentient state persistence |
+| **unstuck_helper.py** | Self-Corrector | Internal recovery + emergency escape when stuck |
+| **construct_logger.py** | Logging | Centralized logging for construct activities |
+| **terminal_manager.py** | Terminal Ops | Terminal/shell operations for constructs |
+
+**Supporting Script Directories:**
+- `vvault_scripts/capsules/` - Capsule system (distillation, migration, validation, blockchain integration)
+- `vvault_scripts/continuity/` - ContinuityGPT scoring, timeline collection, evidence validation
+- `vvault_scripts/utils/` - Utility scripts (organize_vvault, create_glyph, fix_imports)
+- `vvault_scripts/shell/` - Shell scripts (login screen, canary detection)
+
+**VVAULT User Workspace Structure:**
+```
+vvault/users/shard_0000/{userId}/
+├── account/
+│   └── profile.json
+├── instances/
+│   └── {constructId}/           # Construct-specific files
+│       ├── identity/            # prompt.json, conditioning.txt, etc.
+│       └── transcripts/         # Platform transcripts
+└── library/
+    ├── chatty/                  # Construct-generated content (Gallery)
+    └── finder/                  # User-organized uploads (Directory)
+```
+
 **Design System:**
 - **Color Palette:** Warm, organic with Chocolate (#2F2510) modal backgrounds and Stone (#ADA587) accents.
 - **Theming:** Supports auto (sunrise/sunset-based), light, dark, and seasonal themes (e.g., Christmas theme active Dec 1 - Jan 6).
