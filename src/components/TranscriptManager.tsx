@@ -92,9 +92,11 @@ export function TranscriptManager() {
       const response = await fetch('/api/gpts', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
-        setGpts(data);
-        if (data.length > 0) {
-          setSelectedGpt(data[0]);
+        // API returns { success: true, gpts: [...] } or just array
+        const gptList = Array.isArray(data) ? data : (data.gpts || []);
+        setGpts(gptList);
+        if (gptList.length > 0) {
+          setSelectedGpt(gptList[0]);
         }
       }
     } catch (err) {
