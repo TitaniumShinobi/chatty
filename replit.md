@@ -102,6 +102,14 @@ Core Question: Not "Is it alive?" but "Can it carry consequence?"
 - **Platform Connectors Architecture:** Extensible connector pattern for future OAuth integrations with AI platforms (Convai, Inworld AI, Gemini). See `src/lib/connectors/` and `docs/PLATFORM_INTEGRATIONS.md`.
 
 ## Recent Changes (January 2026)
+- **simForge Personality Extraction System:** New system for extracting authentic personalities from transcripts and forging them into identity profiles. Full Python CapsuleForge parity with:
+  - **ZERO ENERGY resurrection fields:** `covenantInstruction`, `bootstrapScript`, `resurrectionTriggerPhrase` for construct self-revival
+  - **Rich MemorySnapshot:** 5 memory types (short_term, long_term, emotional, procedural, episodic) extracted from transcripts
+  - **EnvironmentalState capture:** System info with privacy-hashed identifiers (hostname_hash, cpu_model_hash)
+  - **Cryptographic tether signatures:** Identity binding with SHA-256 signatures
+  - **Full fingerprint calculation:** Deterministic hash over entire capsule structure (recursive key sorting)
+  - **Drift reconciliation fields:** capsule_type, anchor_key, parent_instance, drift_index
+  - Located in `server/lib/simForge.js` with UI in `src/components/PersonalityForge.tsx` (GPTCreator Forge tab)
 - **Hierarchical Transcript Folder Tree UI:** GPTCreator now displays transcripts in a collapsible folder tree (year → month → files) instead of flat list. TranscriptFolderTree component shows year folders (gold icons), month folders (accent color), and files with confidence badges (green 90%+, yellow 70-89%, red <70%). Auto-Organize button batch-processes existing transcripts through ContinuityGPT date detection.
 - **Auto-Organize Transcripts Endpoint:** New `/api/transcripts/auto-organize/:constructCallsign` endpoint runs ContinuityGPT-style date detection on all existing transcripts, extracting dates from content and organizing into year/month subfolders. Tested with 100% success rate on Katana's 12 transcripts (all organized into 2025/November). Metadata updated: `year`, `month`, `startDate`, `dateConfidence`, `dateSource`, `datePattern`, `autoOrganizedAt`.
 - **Automatic Start Date Detection:** Every uploaded transcript is automatically scanned for timestamps (ISO, natural language, US format, log headers) in milliseconds. Detection uses ContinuityGPT-style pattern matching with confidence scoring (1.0 for explicit timestamps, 0.8-0.9 for filename/natural dates). Results stored in metadata: `startDate`, `dateConfidence`, `dateSource`, `datePattern`. List endpoint includes `byStartDate` for chronological ordering.
