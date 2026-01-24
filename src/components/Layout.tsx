@@ -324,7 +324,8 @@ export default function Layout() {
     const allContacts = [...conversationThreads, ...gptContactCards];
     
     console.log(`📖 [Layout] Address Book filter: ${allContacts.length} contacts (${conversationThreads.length} threads + ${gptContactCards.length} GPT cards)`, 
-      allContacts.map(t => ({ id: t.id, title: t.title, constructId: t.constructId })));
+      allContacts.map(t => ({ id: t.id, title: t.title, constructId: t.constructId, avatar: (t as any).avatar?.substring?.(0, 50) || (t as any).avatar })));
+    console.log(`🖼️ [Layout] userGPTs avatars:`, userGPTs.map(g => ({ name: g.name, constructCallsign: g.constructCallsign, avatar: g.avatar?.substring?.(0, 50) || g.avatar })));
     
     return allContacts;
   }, [threads, userGPTs]);
