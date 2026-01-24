@@ -803,6 +803,72 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     }
   }, [orchestrationMode]);
 
+  // Load Lin's conversation history from Supabase when GPTCreator opens
+  // Same pattern as Zen's canonical conversation loading
+  useEffect(() => {
+    const loadLinConversation = async () => {
+      if (!isVisible) return;
+      
+      try {
+        const user = await fetchMe().catch(() => null);
+        if (!user) {
+          console.log("📚 [Lin] No user, skipping conversation load");
+          return;
+        }
+        
+        const userEmail = user.email;
+        if (!userEmail) {
+          console.log("📚 [Lin] No user email, skipping conversation load");
+          return;
+        }
+        
+        console.log("📚 [Lin] Loading conversation from Supabase vault_files...");
+        
+        // Load Lin's canonical conversation from Supabase via VVAULT API
+        const response = await fetch("/api/vvault/conversations", {
+          method: "GET",
+          credentials: "include",
+        });
+        
+        if (!response.ok) {
+          console.warn("⚠️ [Lin] Failed to load conversations:", response.statusText);
+          return;
+        }
+        
+        const data = await response.json();
+        const conversations = data.conversations || [];
+        
+        // Find Lin's canonical conversation using exact sessionId matching
+        // The canonical sessionId follows the pattern: {constructId}_chat_with_{constructId}
+        const LIN_CANONICAL_SESSION_ID = "lin-001_chat_with_lin-001";
+        const linConversation = conversations.find((conv: any) => 
+          conv.sessionId === LIN_CANONICAL_SESSION_ID ||
+          conv.constructId === "lin-001" ||
+          (conv.sessionId && conv.sessionId.startsWith("lin-001"))
+        );
+        
+        if (linConversation && linConversation.messages?.length > 0) {
+          console.log(`✅ [Lin] Loaded ${linConversation.messages.length} messages from canonical conversation (sessionId: ${linConversation.sessionId})`);
+          
+          // Convert to createMessages format
+          const loadedMessages = linConversation.messages.map((msg: any) => ({
+            role: msg.role as "user" | "assistant",
+            content: msg.content || "",
+            timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+          }));
+          
+          setCreateMessages(loadedMessages);
+        } else {
+          console.log("📚 [Lin] No existing conversation found, starting fresh");
+        }
+      } catch (error) {
+        console.error("❌ [Lin] Error loading conversation:", error);
+      }
+    };
+    
+    loadLinConversation();
+  }, [isVisible]);
+
   // TODO: Accept external capsule data via SimForge injection
   // This will allow future use of structured capsules as source material to pre-fill GPT configuration
 
@@ -1819,6 +1885,58 @@ Assistant:`;
           "❌ [Lin] LTM: Error storing message pair in ChromaDB:",
           storeError,
         );
+        // Don't fail the conversation if storage fails
+      }
+
+      // Save to Lin's canonical conversation file in Supabase vault_files
+      // Same pattern as Zen's conversation persistence
+      const LIN_CANONICAL_SESSION_ID = "lin-001_chat_with_lin-001";
+      const linMetadata = {
+        constructId: "lin-001",
+        constructName: "Lin",
+        constructCallsign: "lin-001",
+      };
+      
+      try {
+        const saveResponse = await fetch(`/api/vvault/conversations/${LIN_CANONICAL_SESSION_ID}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            role: "user",
+            content: userMessage,
+            timestamp: new Date(userTimestamp).toISOString(),
+            title: "Chat with Lin",
+            constructId: "lin-001",
+            constructName: "Lin",
+            constructCallsign: "lin-001",
+            metadata: linMetadata,
+          }),
+        });
+        
+        if (saveResponse.ok) {
+          // Save assistant response too
+          await fetch(`/api/vvault/conversations/${LIN_CANONICAL_SESSION_ID}/messages`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({
+              role: "assistant",
+              content: assistantResponse,
+              timestamp: new Date().toISOString(),
+              title: "Chat with Lin",
+              constructId: "lin-001",
+              constructName: "Lin",
+              constructCallsign: "lin-001",
+              metadata: linMetadata,
+            }),
+          });
+          console.log("✅ [Lin] Saved message pair to canonical vault_files");
+        } else {
+          console.warn("⚠️ [Lin] Failed to save to vault_files:", saveResponse.statusText);
+        }
+      } catch (saveError) {
+        console.error("❌ [Lin] Error saving to vault_files:", saveError);
         // Don't fail the conversation if storage fails
       }
 
