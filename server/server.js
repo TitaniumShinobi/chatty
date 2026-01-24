@@ -539,19 +539,32 @@ app.post("/api/user/initialize-registry", requireAuth, async (req, res) => {
 app.get("/api/profile-image/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
-
-    // Get user from session to verify access
+    
+    // Handle hardcoded dev user in development mode (same logic as /api/me)
     const raw = req.cookies?.[COOKIE_NAME];
-    if (!raw) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
+    const isHardcodedDev = process.env.NODE_ENV === 'development' && !raw && userId === 'hardcoded_dev_user';
+    
+    let user;
+    if (isHardcodedDev) {
+      // Use hardcoded dev user data
+      user = {
+        email: 'dwoodson92@gmail.com',
+        name: 'Devon Woodson',
+        sub: 'hardcoded_dev_user'
+      };
+    } else {
+      // Get user from session to verify access
+      if (!raw) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
 
-    const user = jwt.verify(raw, JWT_SECRET);
+      user = jwt.verify(raw, JWT_SECRET);
 
-    // Accept sub/id/uid from token for matching
-    const tokenUserId = user.sub || user.id || user.uid;
-    if (!tokenUserId || tokenUserId !== userId) {
-      return res.status(403).json({ error: "Forbidden" });
+      // Accept sub/id/uid from token for matching
+      const tokenUserId = user.sub || user.id || user.uid;
+      if (!tokenUserId || tokenUserId !== userId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
     }
 
     // Choose image: explicit OAuth picture first, otherwise gravatar/identicon from email

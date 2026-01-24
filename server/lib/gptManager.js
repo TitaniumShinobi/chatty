@@ -198,6 +198,29 @@ export class GPTManager {
       this.db.prepare(`UPDATE gpts SET user_id = ? WHERE construct_callsign = ?`).run('all_users', 'katana-001');
       console.log('✅ [GPTManager] Katana GPT updated to all_users');
     }
+    
+    // Auto-generate avatars for any GPTs that don't have one
+    this.autoGenerateMissingAvatars();
+  }
+  
+  autoGenerateMissingAvatars() {
+    try {
+      const gptsWithoutAvatars = this.db.prepare(`
+        SELECT id, name FROM gpts WHERE avatar IS NULL OR avatar = ''
+      `).all();
+      
+      if (gptsWithoutAvatars.length > 0) {
+        console.log(`🎨 [GPTManager] Generating avatars for ${gptsWithoutAvatars.length} GPTs without avatars...`);
+        
+        for (const gpt of gptsWithoutAvatars) {
+          const avatar = this.generateAvatar(gpt.name, '');
+          this.db.prepare(`UPDATE gpts SET avatar = ? WHERE id = ?`).run(avatar, gpt.id);
+          console.log(`✅ [GPTManager] Generated avatar for ${gpt.name}`);
+        }
+      }
+    } catch (error) {
+      console.error('⚠️ [GPTManager] Error auto-generating avatars:', error.message);
+    }
   }
 
   async ensureUploadDir() {
