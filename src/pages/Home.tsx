@@ -32,8 +32,6 @@ interface LayoutContext {
 const DEFAULT_ZEN_CANONICAL_SESSION_ID = "zen-001_chat_with_zen-001";
 
 export default function Home() {
-  // #region agent log
-  const outletContext = useOutletContext<LayoutContext>(); // #endregion
   const { threads, sendMessage, newThread } = useOutletContext<LayoutContext>();
   const navigate = useNavigate();
   const { activeThemeScript } = useTheme();
@@ -392,8 +390,8 @@ export default function Home() {
       () => {
         hoverLockedRef.current = false;
       },
-      20,
-      20,
+      80,
+      80,
     );
   };
 
