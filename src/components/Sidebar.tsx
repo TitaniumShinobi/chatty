@@ -254,13 +254,27 @@ const Sidebar: React.FC<SidebarProps> = ({
         pointerEvents: sidebarPointerEvents,
       }}
     >
+      {/* Vertical line through star center - extends full sidebar height */}
+      <div 
+        style={{ 
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          left: collapsed ? '20px' : '23px',
+          width: '1px',
+          backgroundColor: 'rgba(173, 165, 135, 0.15)',
+          pointerEvents: 'none'
+        }}
+        aria-hidden="true"
+      />
+      
       {/* Top Section - Logo and Collapse */}
-      <div className={collapsed ? "px-3 pt-3 pb-2" : "p-4"}>
+      <div className={cn(collapsed ? "px-3 pt-3 pb-2" : "p-4", "relative z-10")}>
         {!collapsed ? (
           <div className="flex items-center justify-between gap-3 relative">
             <button
               onClick={() => navigate("/app")}
-              className="flex items-center justify-center"
+              className="flex items-center justify-center relative z-10"
               aria-label="Go to home"
             >
               <div
