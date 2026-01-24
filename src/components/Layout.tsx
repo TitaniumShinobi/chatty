@@ -28,6 +28,7 @@ import ShareConversationModal from "./ShareConversationModal";
 import ZenGuidance from "./ZenGuidance";
 import { useZenGuidance } from "../hooks/useZenGuidance";
 import { AIService } from "../lib/aiService";
+import { bootstrapConstructs } from "../lib/masterScripts";
 import { GPTService, type GPTConfig } from "../lib/gptService";
 import type { UIContextSnapshot, Message as ChatMessage } from "../types";
 import { WorkspaceContextBuilder } from "../engine/context/WorkspaceContextBuilder";
@@ -690,13 +691,28 @@ export default function Layout() {
 
         // Load user's custom GPTs for Address Book contact cards
         console.log("🤖 [Layout.tsx] Loading user GPTs for Address Book...");
+        let gpts: GPTConfig[] = [];
         try {
           const gptService = GPTService.getInstance();
-          const gpts = await gptService.getAllGPTs();
+          gpts = await gptService.getAllGPTs();
           setUserGPTs(gpts);
           console.log(`✅ [Layout.tsx] Loaded ${gpts.length} custom GPTs:`, gpts.map(g => g.name));
         } catch (gptError) {
           console.warn("⚠️ [Layout.tsx] Failed to load GPTs (non-fatal):", gptError);
+        }
+
+        // Bootstrap constructs with master scripts (autonomy stack)
+        try {
+          const constructIds = ["zen-001", "lin-001", ...gpts.map((g: GPTConfig) => g.callsign || `${g.name.toLowerCase()}-001`)];
+          console.log("🚀 [Layout.tsx] Bootstrapping constructs:", constructIds);
+          const bootstrapResult = await bootstrapConstructs(constructIds);
+          if (bootstrapResult.success) {
+            console.log(`✅ [Layout.tsx] Bootstrapped ${bootstrapResult.constructs.length} constructs with master scripts`);
+          } else {
+            console.warn("⚠️ [Layout.tsx] Some constructs failed to bootstrap:", bootstrapResult.errors);
+          }
+        } catch (bootstrapError) {
+          console.warn("⚠️ [Layout.tsx] Master scripts bootstrap failed (non-fatal):", bootstrapError);
         }
 
         console.log(

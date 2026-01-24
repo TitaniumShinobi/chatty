@@ -278,37 +278,53 @@ router.post('/:constructId/activity', (req, res) => {
 /**
  * Initialize system constructs on startup
  * POST /api/master/bootstrap
- * Body: { userId }
+ * Body: { constructIds } (optional - defaults to system constructs)
  */
 router.post('/bootstrap', async (req, res) => {
   try {
-    const { userId } = req.body;
+    const { constructIds } = req.body;
+    const userId = req.user?.sub || req.user?.id || req.user?.email || 'anonymous';
     
-    if (!userId) {
-      return res.status(400).json({ success: false, error: 'userId required' });
-    }
+    console.log(`🚀 [MasterScripts] Bootstrap request for user: ${userId}, constructs:`, constructIds);
     
-    // Initialize Zen, Lin, and any existing GPTs
-    const systemConstructs = ['zen-001', 'lin-001'];
-    const initialized = [];
+    // Use provided constructIds or default to system constructs
+    const targetConstructs = constructIds && constructIds.length > 0 
+      ? constructIds 
+      : ['zen-001', 'lin-001'];
     
-    for (const constructId of systemConstructs) {
+    const results = [];
+    const errors = [];
+    
+    for (const constructId of targetConstructs) {
       try {
-        await masterScriptsManager.initializeConstruct(constructId, userId);
-        initialized.push(constructId);
+        const construct = await masterScriptsManager.initializeConstruct(constructId, userId);
+        results.push({
+          constructId,
+          initialized: true,
+          lastHeartbeat: construct.initializedAt,
+          identityBound: true,
+          capabilities: ['identityGuard', 'stateManager', 'aviator', 'navigator', 'unstuckHelper', 'independentRunner']
+        });
+        console.log(`✅ [MasterScripts] Initialized ${constructId}`);
       } catch (err) {
         console.warn(`⚠️ [MasterScripts] Failed to initialize ${constructId}:`, err.message);
+        results.push({
+          constructId,
+          initialized: false,
+          capabilities: []
+        });
+        errors.push(`${constructId}: ${err.message}`);
       }
     }
     
     res.json({ 
-      success: true, 
-      message: 'System constructs bootstrapped',
-      initialized 
+      success: true,
+      constructs: results,
+      errors: errors.length > 0 ? errors : undefined
     });
   } catch (error) {
     console.error('❌ [MasterScripts API] Bootstrap error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, constructs: [], errors: [error.message] });
   }
 });
 
