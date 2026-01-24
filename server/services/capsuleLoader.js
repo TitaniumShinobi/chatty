@@ -5,8 +5,8 @@
  * Hardlocks capsules into their respective GPTs by injecting capsule data into system prompts.
  */
 
-const fs = require('fs').promises;
-const path = require('path');
+import { promises as fs } from 'fs';
+import path from 'path';
 
 class CapsuleLoader {
   /**
@@ -16,8 +16,8 @@ class CapsuleLoader {
    */
   async loadCapsule(userId, constructCallsign, vvaultRoot) {
     try {
-      // Resolve VVAULT user ID
-      const { resolveVVAULTUserId } = require('../../vvaultConnector/writeTranscript.js');
+      // Resolve VVAULT user ID (dynamic import for ESM compatibility)
+      const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
       const vvaultUserId = await resolveVVAULTUserId(userId, null, false, null);
       if (!vvaultUserId) {
         throw new Error(`Cannot resolve VVAULT user ID for: ${userId}`);
@@ -160,7 +160,7 @@ function getCapsuleLoader() {
   return instance;
 }
 
-module.exports = {
+export {
   CapsuleLoader,
   getCapsuleLoader
 };
