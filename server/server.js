@@ -487,6 +487,7 @@ app.get("/api/me", (req, res) => {
       email: 'dwoodson92@gmail.com',
       name: 'Devon Woodson',
       sub: 'hardcoded_dev_user',
+      picture: 'https://lh3.googleusercontent.com/a/ACg8ocJpPPXiVRy_87jE8Jd_K3sGy8nYB-q4H8uE0VzNxLcr7NB0Ov0=s96-c',
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours
     };

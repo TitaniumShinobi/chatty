@@ -1070,11 +1070,12 @@ const Sidebar: React.FC<SidebarProps> = ({
               collapsed ? "justify-center" : "hover:bg-gray-100",
             )}
           >
-            {currentUser.sub || currentUser.id || currentUser.uid ? (
+            {currentUser.picture ? (
               <img
-                src={`/api/profile-image/${currentUser.sub || currentUser.id || currentUser.uid}`}
+                src={currentUser.picture}
                 alt={currentUser.name}
                 className="w-8 h-8 rounded-full flex-shrink-0 object-cover"
+                referrerPolicy="no-referrer"
                 onError={(e) => {
                   e.currentTarget.style.display = "none";
                   const fallback = e.currentTarget
@@ -1086,10 +1087,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             <div
               className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0"
               style={{
-                display:
-                  currentUser.sub || currentUser.id || currentUser.uid
-                    ? "none"
-                    : "flex",
+                display: currentUser.picture ? "none" : "flex",
               }}
             >
               <span className="text-white text-sm font-medium">
