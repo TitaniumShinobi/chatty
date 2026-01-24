@@ -28,6 +28,7 @@ import { useSettings } from "../context/SettingsContext";
 import Cropper from "react-easy-crop";
 import { Z_LAYERS } from "../lib/zLayers";
 import { TranscriptFolderTree } from "./TranscriptFolderTree";
+import PersonalityForge from "./PersonalityForge";
 import {
   getUserFriendlyErrorMessage,
   isOrchestrationError,
@@ -48,7 +49,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   initialConfig,
 }) => {
   const { settings } = useSettings();
-  const [activeTab, setActiveTab] = useState<"create" | "configure">("create");
+  const [activeTab, setActiveTab] = useState<"create" | "configure" | "forge">("create");
   const [gptService] = useState(() => GPTService.getInstance());
   const [aiService] = useState(() => AIService.getInstance());
   const [isLoading, setIsLoading] = useState(false);
@@ -2814,6 +2815,33 @@ ALWAYS:
                 >
                   Configure
                 </button>
+                <button
+                  onClick={() => setActiveTab("forge")}
+                  className="px-4 py-2 text-sm font-medium transition-colors"
+                  style={{
+                    borderBottom:
+                      activeTab === "forge"
+                        ? "2px solid #f97316"
+                        : "2px solid transparent",
+                    color:
+                      activeTab === "forge"
+                        ? "#f97316"
+                        : "var(--chatty-text)",
+                    opacity: activeTab === "forge" ? 1 : 0.85,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (activeTab !== "forge") {
+                      e.currentTarget.style.opacity = "1";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (activeTab !== "forge") {
+                      e.currentTarget.style.opacity = "0.85";
+                    }
+                  }}
+                >
+                  🔥 Forge
+                </button>
               </div>
 
               <div className="flex-1 flex flex-col overflow-hidden">
@@ -3012,7 +3040,7 @@ ALWAYS:
                       </form>
                     </div>
                   </div>
-                ) : (
+                ) : activeTab === "configure" ? (
                   // Configure Tab - Advanced Settings
                   <div className="flex-1 overflow-y-auto p-6 space-y-6">
                     {/* Avatar */}
@@ -4343,6 +4371,23 @@ ALWAYS:
                         </div>
                       </div>
                     )}
+                  </div>
+                ) : (
+                  // Forge Tab - Personality Extraction from Transcripts
+                  <div className="flex-1 overflow-y-auto p-6">
+                    <PersonalityForge
+                      constructCallsign={config.constructCallsign || config.name?.toLowerCase().replace(/\s+/g, '-') + '-001' || 'unknown'}
+                      constructName={config.name || 'Construct'}
+                      onIdentityForged={(result) => {
+                        console.log('[GPTCreator] Identity forged:', result);
+                        if (result.identityFiles?.['prompt.txt']) {
+                          setConfig(prev => ({
+                            ...prev,
+                            instructions: result.identityFiles?.['prompt.txt'] || prev.instructions
+                          }));
+                        }
+                      }}
+                    />
                   </div>
                 )}
               </div>
