@@ -638,6 +638,15 @@ export default function Layout() {
 
   function routeIdForThread(threadId: string, threadList: Thread[]) {
     const thread = threadList.find((t) => t.id === threadId);
+    // Route GPT threads (non-Zen, non-Lin) to canonical format
+    if (thread?.constructId && 
+        thread.constructId !== 'zen-001' && 
+        thread.constructId !== 'lin-001' &&
+        thread.constructId !== 'zen' &&
+        thread.constructId !== 'lin' &&
+        !threadId.includes('_chat_with_')) {
+      return `${thread.constructId}_chat_with_${thread.constructId}`;
+    }
     if (thread && thread.isPrimary && thread.constructId) {
       return `${thread.constructId}_chat_with_${thread.constructId}`;
     }
