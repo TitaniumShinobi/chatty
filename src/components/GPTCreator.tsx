@@ -838,13 +838,25 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         const data = await response.json();
         const conversations = data.conversations || [];
         
+        // Debug: Log all available conversations to help troubleshoot
+        console.log(`📚 [Lin] Available conversations (${conversations.length}):`, 
+          conversations.map((c: any) => ({
+            sessionId: c.sessionId,
+            constructId: c.constructId,
+            title: c.title,
+            messageCount: c.messages?.length || 0
+          }))
+        );
+        
         // Find Lin's canonical conversation using exact sessionId matching
         // The canonical sessionId follows the pattern: {constructId}_chat_with_{constructId}
         const LIN_CANONICAL_SESSION_ID = "lin-001_chat_with_lin-001";
         const linConversation = conversations.find((conv: any) => 
           conv.sessionId === LIN_CANONICAL_SESSION_ID ||
           conv.constructId === "lin-001" ||
-          (conv.sessionId && conv.sessionId.startsWith("lin-001"))
+          (conv.sessionId && conv.sessionId.startsWith("lin-001")) ||
+          conv.title?.toLowerCase() === "lin" ||
+          conv.constructName?.toLowerCase() === "lin"
         );
         
         if (linConversation && linConversation.messages?.length > 0) {
@@ -859,7 +871,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
           
           setCreateMessages(loadedMessages);
         } else {
-          console.log("📚 [Lin] No existing conversation found, starting fresh");
+          console.log("📚 [Lin] No existing conversation found in vault_files, starting fresh");
+          console.log("💡 [Lin] New messages will be saved to instances/lin-001/chatty/chat_with_lin-001.md");
         }
       } catch (error) {
         console.error("❌ [Lin] Error loading conversation:", error);

@@ -1,5 +1,11 @@
 // @ts-nocheck
-import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import React, {
+  useMemo,
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+} from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   MessageSquare,
@@ -45,64 +51,69 @@ const Sidebar: React.FC<SidebarProps> = ({
   const navigate = useNavigate();
   const location = useLocation();
   const { actualTheme, activeThemeScript } = useTheme();
-  
+
   // Global search state (header magnifying glass)
   const [isGlobalSearchExpanded, setIsGlobalSearchExpanded] = useState(false);
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
-  const [globalSearchSuggestions, setGlobalSearchSuggestions] = useState<string[]>([]);
+  const [globalSearchSuggestions, setGlobalSearchSuggestions] = useState<
+    string[]
+  >([]);
   const globalSearchInputRef = useRef<HTMLInputElement>(null);
-  
+
   // Address book search state
-  const [isAddressBookSearchActive, setIsAddressBookSearchActive] = useState(false);
+  const [isAddressBookSearchActive, setIsAddressBookSearchActive] =
+    useState(false);
   const [addressBookSearchQuery, setAddressBookSearchQuery] = useState("");
-  const [addressBookSearchResults, setAddressBookSearchResults] = useState<any[]>([]);
+  const [addressBookSearchResults, setAddressBookSearchResults] = useState<
+    any[]
+  >([]);
   const [addressBookResultsLimit, setAddressBookResultsLimit] = useState(8);
   const addressBookSearchInputRef = useRef<HTMLInputElement>(null);
-  
+
   // Focus global search input when expanded
   useEffect(() => {
     if (isGlobalSearchExpanded && globalSearchInputRef.current) {
       globalSearchInputRef.current.focus();
     }
   }, [isGlobalSearchExpanded]);
-  
+
   // Focus address book search when active
   useEffect(() => {
     if (isAddressBookSearchActive && addressBookSearchInputRef.current) {
       addressBookSearchInputRef.current.focus();
     }
   }, [isAddressBookSearchActive]);
-  
+
   // Generate suggestions for global search - Chatty features only (not transcripts)
   useEffect(() => {
     if (globalSearchQuery.length > 0) {
       const query = globalSearchQuery.toLowerCase();
       const suggestions: string[] = [];
-      
+
       // Chatty feature suggestions only
       const featureSuggestions = [
-        "Settings", 
-        "Theme", 
-        "Library", 
-        "Projects", 
+        "Settings",
+        "Theme",
+        "Library",
+        "Projects",
         "VVAULT",
         "Code",
         "simForge",
         "Address Book",
-        "GPT Creator"
+        "GPT Creator",
       ];
-      featureSuggestions.forEach(feat => {
+      featureSuggestions.forEach((feat) => {
         if (feat.toLowerCase().includes(query) && !suggestions.includes(feat)) {
           suggestions.push(feat);
         }
       });
-      
+
       setGlobalSearchSuggestions(suggestions.slice(0, 6));
     } else {
       setGlobalSearchSuggestions([]);
     }
   }, [globalSearchQuery]);
-  
+
   // Helper to extract text from message (handles both text and packet content)
   const extractMessageText = useCallback((msg: any): string => {
     // Direct text field
@@ -111,16 +122,16 @@ const Sidebar: React.FC<SidebarProps> = ({
     if (msg.content) return msg.content;
     // Packet content (assistant messages with packet array)
     if (msg.packets && Array.isArray(msg.packets)) {
-      return msg.packets.map((p: any) => p.text || p.content || '').join(' ');
+      return msg.packets.map((p: any) => p.text || p.content || "").join(" ");
     }
-    return '';
+    return "";
   }, []);
-  
+
   // Search conversations/transcripts for address book
   useEffect(() => {
     if (addressBookSearchQuery.length > 0) {
       const query = addressBookSearchQuery.toLowerCase();
-      const results = conversations.flatMap(conv => {
+      const results = conversations.flatMap((conv) => {
         const matchingMessages = (conv.messages || []).filter((msg: any) => {
           const text = extractMessageText(msg);
           return text.toLowerCase().includes(query);
@@ -131,9 +142,10 @@ const Sidebar: React.FC<SidebarProps> = ({
             conversationId: conv.id,
             conversationTitle: conv.title,
             constructId: (conv as any).constructId,
-            messagePreview: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
+            messagePreview:
+              text.substring(0, 100) + (text.length > 100 ? "..." : ""),
             role: msg.role,
-            timestamp: msg.ts
+            timestamp: msg.ts,
           };
         });
       });
@@ -142,25 +154,31 @@ const Sidebar: React.FC<SidebarProps> = ({
       setAddressBookSearchResults([]);
     }
   }, [addressBookSearchQuery, conversations, extractMessageText]);
-  
+
   // Handle global search submit
-  const handleGlobalSearchSubmit = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && globalSearchQuery.trim()) {
-      // Open the full search modal
-      if (onOpenSearch) onOpenSearch();
-      setIsGlobalSearchExpanded(false);
-      setGlobalSearchQuery("");
-    }
-  }, [globalSearchQuery, onOpenSearch]);
-  
+  const handleGlobalSearchSubmit = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" && globalSearchQuery.trim()) {
+        // Open the full search modal
+        if (onOpenSearch) onOpenSearch();
+        setIsGlobalSearchExpanded(false);
+        setGlobalSearchQuery("");
+      }
+    },
+    [globalSearchQuery, onOpenSearch],
+  );
+
   // Handle address book search submit
-  const handleAddressBookSearchSubmit = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      // Keep search active, just show all results
-      setAddressBookResultsLimit(prev => prev + 10);
-    }
-  }, []);
-  
+  const handleAddressBookSearchSubmit = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter") {
+        // Keep search active, just show all results
+        setAddressBookResultsLimit((prev) => prev + 10);
+      }
+    },
+    [],
+  );
+
   // Close global search on blur
   const handleGlobalSearchBlur = useCallback(() => {
     setTimeout(() => {
@@ -169,8 +187,8 @@ const Sidebar: React.FC<SidebarProps> = ({
       }
     }, 200);
   }, [globalSearchQuery]);
-  
-  const isChristmasTheme = activeThemeScript?.id === 'christmas';
+
+  const isChristmasTheme = activeThemeScript?.id === "christmas";
   const starImage = isChristmasTheme ? litchattyStar : chattyStar;
 
   const isActiveRoute = useMemo(
@@ -313,7 +331,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   >
                     <Search size={16} />
                   </button>
-                  
+
                   {/* Runtime dashboard button - auto-managed */}
                   <button
                     onClick={() => {}}
@@ -349,20 +367,25 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </button>
               </>
             )}
-            
+
             {/* Global Search Form - Replaces all icons when active */}
             {isGlobalSearchExpanded && (
-              <div 
-                className="flex items-center flex-1 -ml-3"
-              >
-                <div 
+              <div className="flex items-center flex-1 -ml-3">
+                <div
                   className="flex items-center gap-2 rounded-md px-3 py-1.5 w-full shadow-lg"
-                  style={{ 
-                    backgroundColor: 'var(--chatty-bg-modal, var(--chatty-bg))',
-                    border: '1px solid var(--chatty-border)'
+                  style={{
+                    backgroundColor: "var(--chatty-bg-modal, var(--chatty-bg))",
+                    border: "1px solid var(--chatty-border)",
                   }}
                 >
-                  <Search size={14} style={{ color: 'var(--chatty-text)', opacity: 0.6, flexShrink: 0 }} />
+                  <Search
+                    size={14}
+                    style={{
+                      color: "var(--chatty-text)",
+                      opacity: 0.6,
+                      flexShrink: 0,
+                    }}
+                  />
                   <input
                     ref={globalSearchInputRef}
                     type="text"
@@ -372,7 +395,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     onBlur={handleGlobalSearchBlur}
                     placeholder="Search features..."
                     className="flex-1 bg-transparent outline-none text-sm min-w-0"
-                    style={{ color: 'var(--chatty-text)' }}
+                    style={{ color: "var(--chatty-text)" }}
                   />
                   <button
                     onClick={() => {
@@ -381,17 +404,18 @@ const Sidebar: React.FC<SidebarProps> = ({
                     }}
                     className="p-1 rounded hover:bg-[var(--chatty-highlight)] flex-shrink-0"
                   >
-                    <X size={14} style={{ color: 'var(--chatty-text)' }} />
+                    <X size={14} style={{ color: "var(--chatty-text)" }} />
                   </button>
                 </div>
                 {/* Auto-suggestions dropdown */}
                 {globalSearchSuggestions.length > 0 && (
-                  <div 
+                  <div
                     className="absolute top-full left-12 right-4 mt-1 rounded-md shadow-lg overflow-hidden"
-                    style={{ 
-                      backgroundColor: 'var(--chatty-bg-modal, var(--chatty-bg))',
-                      border: '1px solid var(--chatty-border)',
-                      zIndex: 101
+                    style={{
+                      backgroundColor:
+                        "var(--chatty-bg-modal, var(--chatty-bg))",
+                      border: "1px solid var(--chatty-border)",
+                      zIndex: 101,
                     }}
                   >
                     {globalSearchSuggestions.map((suggestion, idx) => (
@@ -404,7 +428,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                           setGlobalSearchQuery("");
                         }}
                         className="w-full px-3 py-2 text-left text-sm hover:bg-[var(--chatty-highlight)] transition-colors"
-                        style={{ color: 'var(--chatty-text)' }}
+                        style={{ color: "var(--chatty-text)" }}
                       >
                         {suggestion}
                       </button>
@@ -507,9 +531,13 @@ const Sidebar: React.FC<SidebarProps> = ({
           <button
             onClick={() => {
               // Find existing Zen conversation in threads (from VVAULT), or create new one
-              const zenThread = threads.find((t: any) => t.constructId === "zen-001");
+              const zenThread = threads.find(
+                (t: any) => t.constructId === "zen-001",
+              );
               if (zenThread && onConversationSelect) {
-                console.log(`🟢 [Sidebar] Opening existing Zen conversation: ${zenThread.id}`);
+                console.log(
+                  `🟢 [Sidebar] Opening existing Zen conversation: ${zenThread.id}`,
+                );
                 onConversationSelect(zenThread.id);
               } else if (onNewConversationWithGPT) {
                 console.log(`🆕 [Sidebar] Creating new Zen conversation`);
@@ -518,21 +546,33 @@ const Sidebar: React.FC<SidebarProps> = ({
             }}
             className={navButtonBase}
             style={{
-              backgroundColor: threads.some((t: any) => t.constructId === "zen-001" && t.id === currentConversationId) 
-                ? activeNavColor 
+              backgroundColor: threads.some(
+                (t: any) =>
+                  t.constructId === "zen-001" && t.id === currentConversationId,
+              )
+                ? activeNavColor
                 : "transparent",
-              color: threads.some((t: any) => t.constructId === "zen-001" && t.id === currentConversationId)
+              color: threads.some(
+                (t: any) =>
+                  t.constructId === "zen-001" && t.id === currentConversationId,
+              )
                 ? "var(--chatty-text-inverse, #ffffeb)"
                 : "var(--chatty-text)",
             }}
             onMouseEnter={(e) => {
-              const isZenActive = threads.some((t: any) => t.constructId === "zen-001" && t.id === currentConversationId);
+              const isZenActive = threads.some(
+                (t: any) =>
+                  t.constructId === "zen-001" && t.id === currentConversationId,
+              );
               if (!isZenActive) {
                 e.currentTarget.style.backgroundColor = hoverColor;
               }
             }}
             onMouseLeave={(e) => {
-              const isZenActive = threads.some((t: any) => t.constructId === "zen-001" && t.id === currentConversationId);
+              const isZenActive = threads.some(
+                (t: any) =>
+                  t.constructId === "zen-001" && t.id === currentConversationId,
+              );
               if (!isZenActive) {
                 e.currentTarget.style.backgroundColor = "transparent";
               }
@@ -591,12 +631,21 @@ const Sidebar: React.FC<SidebarProps> = ({
             onMouseEnter={(e) => handleNavHover(e, "/app/library", true)}
             onMouseLeave={(e) => handleNavHover(e, "/app/library", false)}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
             </svg>
             {!collapsed && <span>Library</span>}
           </button>
-          
+
           {/* + More - Links to Apps page */}
           <button
             onClick={() => navigate("/app/apps")}
@@ -606,7 +655,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             onMouseLeave={(e) => handleNavHover(e, "/app/apps", false)}
           >
             <Grid3X3 size={16} />
-            {!collapsed && <span>+ More</span>}
+            {!collapsed && <span>Get More</span>}
           </button>
         </div>
       </div>
@@ -641,25 +690,28 @@ const Sidebar: React.FC<SidebarProps> = ({
             </button>
           </div>
         )}
-        
+
         {/* Address Book Inline Search - Takes over z-axis when active */}
         {isAddressBookSearchActive && !collapsed && (
-          <div 
+          <div
             className="absolute inset-0 px-4 py-2"
-            style={{ 
-              backgroundColor: 'var(--chatty-bg-sidebar)',
-              zIndex: 50
+            style={{
+              backgroundColor: "var(--chatty-bg-sidebar)",
+              zIndex: 50,
             }}
           >
             {/* Search Input */}
-            <div 
+            <div
               className="flex items-center gap-2 rounded-md px-2 py-1.5 mb-2"
-              style={{ 
-                backgroundColor: 'var(--chatty-bg-input, var(--chatty-bg))',
-                border: '1px solid var(--chatty-border)'
+              style={{
+                backgroundColor: "var(--chatty-bg-input, var(--chatty-bg))",
+                border: "1px solid var(--chatty-border)",
               }}
             >
-              <Search size={14} style={{ color: 'var(--chatty-text)', opacity: 0.5 }} />
+              <Search
+                size={14}
+                style={{ color: "var(--chatty-text)", opacity: 0.5 }}
+              />
               <input
                 ref={addressBookSearchInputRef}
                 type="text"
@@ -671,7 +723,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 onKeyDown={handleAddressBookSearchSubmit}
                 placeholder="Search transcripts..."
                 className="flex-1 bg-transparent outline-none text-sm"
-                style={{ color: 'var(--chatty-text)' }}
+                style={{ color: "var(--chatty-text)" }}
               />
               <button
                 onClick={() => {
@@ -681,60 +733,82 @@ const Sidebar: React.FC<SidebarProps> = ({
                 }}
                 className="p-0.5 rounded hover:bg-[var(--chatty-highlight)]"
               >
-                <X size={12} style={{ color: 'var(--chatty-text)' }} />
+                <X size={12} style={{ color: "var(--chatty-text)" }} />
               </button>
             </div>
-            
+
             {/* Search Results - Plastered in sidebar */}
-            <div className="space-y-1 overflow-y-auto" style={{ maxHeight: 'calc(100% - 50px)' }}>
-              {addressBookSearchResults.length === 0 && addressBookSearchQuery && (
-                <p className="text-sm text-center py-4" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
-                  No results found
-                </p>
-              )}
-              {addressBookSearchResults.slice(0, addressBookResultsLimit).map((result, idx) => (
-                <button
-                  key={`${result.conversationId}-${idx}`}
-                  onClick={() => {
-                    if (onConversationSelect) {
-                      onConversationSelect(result.conversationId);
-                    }
-                    setIsAddressBookSearchActive(false);
-                    setAddressBookSearchQuery("");
-                  }}
-                  className="w-full text-left p-2 rounded-md hover:bg-[var(--chatty-highlight)] transition-colors"
-                  style={{ color: 'var(--chatty-text)' }}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-medium" style={{ opacity: 0.8 }}>
-                      {result.conversationTitle}
-                    </span>
-                    <span className="text-xs px-1 rounded" style={{ 
-                      backgroundColor: result.role === 'user' ? 'var(--chatty-accent, #ADA587)' : 'var(--chatty-highlight)',
-                      opacity: 0.7
-                    }}>
-                      {result.role}
-                    </span>
-                  </div>
-                  <p className="text-xs truncate" style={{ opacity: 0.6 }}>
-                    {result.messagePreview}
+            <div
+              className="space-y-1 overflow-y-auto"
+              style={{ maxHeight: "calc(100% - 50px)" }}
+            >
+              {addressBookSearchResults.length === 0 &&
+                addressBookSearchQuery && (
+                  <p
+                    className="text-sm text-center py-4"
+                    style={{ color: "var(--chatty-text)", opacity: 0.6 }}
+                  >
+                    No results found
                   </p>
-                </button>
-              ))}
+                )}
+              {addressBookSearchResults
+                .slice(0, addressBookResultsLimit)
+                .map((result, idx) => (
+                  <button
+                    key={`${result.conversationId}-${idx}`}
+                    onClick={() => {
+                      if (onConversationSelect) {
+                        onConversationSelect(result.conversationId);
+                      }
+                      setIsAddressBookSearchActive(false);
+                      setAddressBookSearchQuery("");
+                    }}
+                    className="w-full text-left p-2 rounded-md hover:bg-[var(--chatty-highlight)] transition-colors"
+                    style={{ color: "var(--chatty-text)" }}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span
+                        className="text-xs font-medium"
+                        style={{ opacity: 0.8 }}
+                      >
+                        {result.conversationTitle}
+                      </span>
+                      <span
+                        className="text-xs px-1 rounded"
+                        style={{
+                          backgroundColor:
+                            result.role === "user"
+                              ? "var(--chatty-accent, #ADA587)"
+                              : "var(--chatty-highlight)",
+                          opacity: 0.7,
+                        }}
+                      >
+                        {result.role}
+                      </span>
+                    </div>
+                    <p className="text-xs truncate" style={{ opacity: 0.6 }}>
+                      {result.messagePreview}
+                    </p>
+                  </button>
+                ))}
               {/* Show More Button */}
               {addressBookSearchResults.length > addressBookResultsLimit && (
                 <button
-                  onClick={() => setAddressBookResultsLimit(prev => prev + 10)}
+                  onClick={() =>
+                    setAddressBookResultsLimit((prev) => prev + 10)
+                  }
                   className="w-full text-center py-2 text-sm hover:bg-[var(--chatty-highlight)] rounded-md transition-colors"
-                  style={{ color: 'var(--chatty-text)', opacity: 0.7 }}
+                  style={{ color: "var(--chatty-text)", opacity: 0.7 }}
                 >
-                  Show more ({addressBookSearchResults.length - addressBookResultsLimit} remaining)
+                  Show more (
+                  {addressBookSearchResults.length - addressBookResultsLimit}{" "}
+                  remaining)
                 </button>
               )}
             </div>
           </div>
         )}
-        
+
         <div className="space-y-1">
           {/* Existing Conversations - No borders, just hover highlights */}
           {conversations.map((conversation) => (
