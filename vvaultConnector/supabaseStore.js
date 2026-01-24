@@ -232,6 +232,17 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
       console.log(`🔍 [SupabaseStore] Found ${chattyFiles.length} chatty-path files`);
     }
     
+    // Query 3: Look for chat_with_*.md files without path prefix (legacy uploads)
+    const { data: legacyFiles, error: legacyError } = await supabase
+      .from('vault_files')
+      .select('*')
+      .like('filename', 'chat_with_%.md')
+      .order('created_at', { ascending: false });
+    
+    if (!legacyError && legacyFiles) {
+      console.log(`🔍 [SupabaseStore] Found ${legacyFiles.length} legacy chat files (any user)`);
+    }
+    
     // Merge results, avoiding duplicates
     const allFiles = [...(data || [])];
     const existingFilenames = new Set(allFiles.map(f => f.filename));
@@ -239,6 +250,13 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
       if (!existingFilenames.has(file.filename)) {
         allFiles.push(file);
         console.log(`➕ [SupabaseStore] Added chatty file: ${file.filename}`);
+      }
+    }
+    for (const file of (legacyFiles || [])) {
+      if (!existingFilenames.has(file.filename)) {
+        allFiles.push(file);
+        existingFilenames.add(file.filename);
+        console.log(`➕ [SupabaseStore] Added legacy file: ${file.filename} (user: ${file.user_id})`);
       }
     }
 
