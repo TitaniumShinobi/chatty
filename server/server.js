@@ -407,6 +407,12 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       headers: { Authorization: `Bearer ${tokenRes.access_token}` }
     }).then(r => r.json());
     // Google returns: {sub, email, name, picture, given_name, family_name, locale, email_verified}
+    console.log('🖼️ [OAuth] Google user info received:', {
+      email: user.email,
+      name: user.name,
+      picture: user.picture ? `${user.picture.substring(0, 50)}...` : 'NO PICTURE',
+      hasPicture: !!user.picture
+    });
 
     // 3) persist user to DB and issue session
     const profile = {
@@ -481,13 +487,13 @@ app.get("/api/me", (req, res) => {
   const isHardcodedDev = process.env.NODE_ENV === 'development' && !req.cookies?.[COOKIE_NAME];
   
   if (isHardcodedDev) {
-    console.log('🔓 [Auth] Using hardcoded development user for /api/me');
+    console.log('🔓 [Auth] Using hardcoded development user for /api/me (no OAuth session - use real login for profile picture)');
     const hardcodedUser = {
       id: 'devon_woodson_1762969514958',
       email: 'dwoodson92@gmail.com',
       name: 'Devon Woodson',
       sub: 'hardcoded_dev_user',
-      picture: 'https://lh3.googleusercontent.com/a/ACg8ocJpPPXiVRy_87jE8Jd_K3sGy8nYB-q4H8uE0VzNxLcr7NB0Ov0=s96-c',
+      // Note: No picture for hardcoded dev user - use real OAuth login to get profile picture
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours
     };
