@@ -596,7 +596,7 @@ export default function Home() {
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Ask Chatty"
+            placeholder="Ask Zen anything..."
             className="flex-1 bg-transparent outline-none text-lg chatty-placeholder"
             style={{ color: "var(--chatty-text)" }}
           />
