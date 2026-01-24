@@ -292,11 +292,17 @@ export default function Layout() {
     
     // Get threads that have a constructId (excluding system constructs)
     // Also filter out legacy files (those with .md in the title - raw filenames)
-    const conversationThreads = threads.filter((t) => 
-      t.constructId && 
-      !EXCLUDED_CONSTRUCTS.includes(t.constructId) &&
-      !t.title?.endsWith('.md')
-    );
+    // Enhance with avatar from matching GPT
+    const conversationThreads = threads
+      .filter((t) => 
+        t.constructId && 
+        !EXCLUDED_CONSTRUCTS.includes(t.constructId) &&
+        !t.title?.endsWith('.md')
+      )
+      .map(t => {
+        const matchingGPT = userGPTs.find(gpt => gpt.constructCallsign === t.constructId);
+        return matchingGPT?.avatar ? { ...t, avatar: matchingGPT.avatar } : t;
+      });
     
     // Create contact cards for GPTs that don't have a conversation thread yet
     const existingConstructIds = new Set(conversationThreads.map(t => t.constructId));
@@ -312,6 +318,7 @@ export default function Layout() {
         constructId: gpt.constructCallsign || gpt.id,
         runtimeId: gpt.constructCallsign || gpt.id,
         isPrimary: false,
+        avatar: gpt.avatar,
       }));
     
     const allContacts = [...conversationThreads, ...gptContactCards];
