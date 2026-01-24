@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, Suspense, lazy } from 'react'
 import { Database, FileText, Users, Clock, CheckCircle, AlertCircle, RefreshCw, Link2, ExternalLink, Unlink } from 'lucide-react'
+
+const TranscriptManager = lazy(() => import('../components/TranscriptManager').then(m => ({ default: m.TranscriptManager })))
 
 interface VVAULTStats {
   totalUsers: number
@@ -18,6 +20,8 @@ interface VVAULTAccountStatus {
 }
 
 export default function VVAULTPage() {
+  console.log('🏦 [VVAULTPage] Rendering VVAULTPage component');
+  
   const [stats, setStats] = useState<VVAULTStats>({
     totalUsers: 0,
     totalSessions: 0,
@@ -165,9 +169,9 @@ export default function VVAULTPage() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-[var(--chatty-bg-main)] text-[var(--chatty-text)] relative">
+    <div className="flex flex-col min-h-screen h-full bg-[var(--chatty-bg-main)] text-[var(--chatty-text)] relative">
       {/* Custom CSS for watermark animation */}
-      <style jsx>{`
+      <style>{`
         @keyframes vvault-pulse {
           0%, 100% { opacity: 0.2; }
           50% { opacity: 0.35; }
@@ -291,24 +295,23 @@ export default function VVAULTPage() {
           </div>
         )}
 
-        {isLoading ? (
-          <div className="flex items-center justify-center h-64">
-            <RefreshCw size={24} className="animate-spin" style={{ color: 'var(--chatty-text)', opacity: 0.7 }} />
-            <span className="ml-2" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
-              Loading VVAULT data...
+        {/* Transcript Manager - always shown since it uses Supabase directly */}
+        <div className="rounded-lg border border-[var(--chatty-line)] p-6 mb-6" style={{ backgroundColor: 'var(--chatty-bg-sidebar)', opacity: 0.9 }}>
+          <Suspense fallback={<div className="text-center py-4" style={{ color: 'var(--chatty-text)' }}>Loading Transcript Manager...</div>}>
+            <TranscriptManager />
+          </Suspense>
+        </div>
+
+        {isLoading && (
+          <div className="flex items-center justify-center py-8">
+            <RefreshCw size={20} className="animate-spin" style={{ color: 'var(--chatty-text)', opacity: 0.5 }} />
+            <span className="ml-2 text-sm" style={{ color: 'var(--chatty-text)', opacity: 0.5 }}>
+              Loading VVAULT account status...
             </span>
           </div>
-        ) : accountStatus && !accountStatus.linked ? (
-          <div className="text-center py-12">
-            <Database size={48} className="mx-auto mb-4" style={{ color: 'var(--chatty-text)', opacity: 0.5 }} />
-            <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--chatty-text)' }}>
-              No VVAULT Account Linked
-            </h3>
-            <p className="text-sm mb-6" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
-              Link your VVAULT account to start storing conversations
-            </p>
-          </div>
-        ) : (
+        )}
+
+        {accountStatus?.linked && (
           <div className="space-y-6">
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

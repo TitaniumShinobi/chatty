@@ -214,6 +214,9 @@ export default function Layout() {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  
+  // Debug: Log URL on every render
+  console.log(`🔗 [Layout.tsx] Render - window.location.pathname: "${typeof window !== 'undefined' ? window.location.pathname : 'SSR'}", location.pathname: "${location.pathname}"`);
 
   const [threads, setThreads] = useState<Thread[]>([]);
   const [userGPTs, setUserGPTs] = useState<GPTConfig[]>([]);
@@ -238,7 +241,8 @@ export default function Layout() {
     files: File[];
   } | null>(null);
   const hasAuthenticatedRef = useRef(false);
-  const initialPathRef = useRef(location.pathname);
+  // Use window.location.pathname for initial path since React Router's location may be stale on first render
+  const initialPathRef = useRef(typeof window !== 'undefined' ? window.location.pathname : location.pathname);
 
   useEffect(() => {
     console.log("📚 [Layout.tsx] Threads updated (length):", threads.length);// Expose threads to window for message recovery (if browser is still open)
@@ -1136,49 +1140,66 @@ export default function Layout() {
           }
         }
 
-        // Only navigate to conversation if user is already on a specific chat route
-        // If on /app or /app/, show home page instead
+        // Navigation logic - respect non-chat routes like /app/vvault, /app/gpts, /app/explore
+        // Use window.location.pathname for current URL since React location may be stale in async callback
+        const currentPath = window.location.pathname;
         const initialPath = initialPathRef.current;
-        const isAppRoot = initialPath === "/app" || initialPath === "/app/";
-        const isChatRoute =
-          initialPath.startsWith("/app/chat") && initialPath !== "/app/chat";
-        const shouldFocusFirstConversation = isChatRoute && !isAppRoot;
-
-        if (
-          !didNavigateToCanonical &&
-          sortedThreads.length > 0 &&
-          shouldFocusFirstConversation
-        ) {
-          const firstThread = sortedThreads[0];
-          const targetPath = `/app/chat/${routeIdForThread(firstThread.id, sortedThreads)}`;
-          console.log(
-            `🎯 [Layout.tsx] Preparing to show conversation: ${firstThread.title} (${firstThread.id})`,
-          );
-          if (location.pathname !== targetPath) {
-            console.log(`🎯 [Layout.tsx] Navigating to: ${targetPath}`);
-            navigate(targetPath, { state: { activeRuntimeId } });
-          } else {
-            console.log(`📍 [Layout.tsx] Already on route: ${targetPath}`);
-          }
-        } else if (isAppRoot) {
-          // Show home page when landing on /app
-          if (location.pathname !== "/app") {
-            console.log("🏠 [Layout.tsx] Navigating to home page");
-            navigate("/app");
-          } else {
-            console.log("📍 [Layout.tsx] Already on home page");
-          }
-        } else if (sortedThreads.length === 0) {
-          console.warn(
-            "⚠️ [Layout.tsx] No threads to navigate to - showing home page",
-          );
-          if (location.pathname !== "/app") {
-            navigate("/app");
-          }
+        
+        console.log(`🔍 [Layout.tsx] Navigation check - currentPath: "${currentPath}", initialPath: "${initialPath}"`);
+        
+        // Check if current path is a non-chat page that should NOT be navigated away from
+        const isNonChatRoute = currentPath.startsWith('/app/') && 
+          !currentPath.startsWith('/app/chat') && 
+          currentPath !== '/app' && 
+          currentPath !== '/app/';
+        
+        console.log(`🔍 [Layout.tsx] isNonChatRoute: ${isNonChatRoute}`);
+        
+        if (isNonChatRoute) {
+          // User is on a specific page like /app/vvault, /app/gpts - do NOT navigate away
+          console.log(`🧭 [Layout.tsx] Preserving non-chat route: ${currentPath}`);
         } else {
-          console.log(
-            "🧭 [Layout.tsx] Preserving current route (non-chat destination detected)",
-          );
+          const isAppRoot = initialPath === "/app" || initialPath === "/app/";
+          const isChatRoute =
+            initialPath.startsWith("/app/chat") && initialPath !== "/app/chat";
+          const shouldFocusFirstConversation = isChatRoute && !isAppRoot;
+
+          if (
+            !didNavigateToCanonical &&
+            sortedThreads.length > 0 &&
+            shouldFocusFirstConversation
+          ) {
+            const firstThread = sortedThreads[0];
+            const targetPath = `/app/chat/${routeIdForThread(firstThread.id, sortedThreads)}`;
+            console.log(
+              `🎯 [Layout.tsx] Preparing to show conversation: ${firstThread.title} (${firstThread.id})`,
+            );
+            if (currentPath !== targetPath) {
+              console.log(`🎯 [Layout.tsx] Navigating to: ${targetPath}`);
+              navigate(targetPath, { state: { activeRuntimeId } });
+            } else {
+              console.log(`📍 [Layout.tsx] Already on route: ${targetPath}`);
+            }
+          } else if (isAppRoot) {
+            // Show home page when landing on /app
+            if (currentPath !== "/app") {
+              console.log("🏠 [Layout.tsx] Navigating to home page");
+              navigate("/app");
+            } else {
+              console.log("📍 [Layout.tsx] Already on home page");
+            }
+          } else if (sortedThreads.length === 0) {
+            console.warn(
+              "⚠️ [Layout.tsx] No threads to navigate to - showing home page",
+            );
+            if (currentPath !== "/app") {
+              navigate("/app");
+            }
+          } else {
+            console.log(
+              "🧭 [Layout.tsx] Preserving current route (non-chat destination detected)",
+            );
+          }
         }
       } catch (error) {
         hasAuthenticatedRef.current = false;
@@ -2893,8 +2914,34 @@ export default function Layout() {
     // TODO: Scroll to specific message
   }
 
+  // Check if we're on a non-chat route that should render even during auth loading
+  const isNonChatRouteRender = ["/app/gpts", "/app/explore", "/app/vvault", "/app/library", "/app/codex"].some(
+    (r) => window.location.pathname.startsWith(r)
+  );
+
+  // For chat routes, require user authentication
+  // For non-chat routes (VVAULT, GPTs, etc.), show loading state while auth completes
   if (!user) {
-    return null; // Will redirect to login
+    console.log('🔒 [Layout] No user, isNonChatRoute:', isNonChatRouteRender, 'path:', window.location.pathname);
+    if (isNonChatRouteRender) {
+        // Show minimal loading state for non-chat routes while auth completes
+      return (
+        <div style={{ 
+          display: 'flex', 
+          height: '100vh', 
+          width: '100vw',
+          alignItems: 'center', 
+          justifyContent: 'center',
+          backgroundColor: 'var(--chatty-bg-main, #2F2510)',
+          color: 'var(--chatty-text, #ADA587)'
+        }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '14px', opacity: 0.7 }}>Loading...</div>
+          </div>
+        </div>
+      );
+    }
+    return null; // Will redirect to login for chat routes only
   }
 
   function toggleSidebar() {

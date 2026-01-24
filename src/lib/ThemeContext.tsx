@@ -35,9 +35,22 @@ interface ThemeProviderProps {
 // Default coordinates (Atlanta, GA - Devon's approximate location based on EST timezone)
 const DEFAULT_COORDS = { lat: 33.749, lng: -84.388 }
 
+// Calculate initial theme based on time of day (before component mounts)
+function getInitialSystemTheme(): 'light' | 'night' {
+  const now = new Date()
+  const savedLat = typeof window !== 'undefined' ? localStorage.getItem('chatty_user_lat') : null
+  const savedLng = typeof window !== 'undefined' ? localStorage.getItem('chatty_user_lng') : null
+  const coords = savedLat && savedLng 
+    ? { lat: parseFloat(savedLat), lng: parseFloat(savedLng) }
+    : DEFAULT_COORDS
+  const times = SunCalc.getTimes(now, coords.lat, coords.lng)
+  const isDay = now >= times.sunrise && now < times.sunset
+  return isDay ? 'light' : 'night'
+}
+
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) => {
   const [theme, setTheme] = useState<Theme>('auto')
-  const [systemTheme, setSystemTheme] = useState<'light' | 'night'>('light')
+  const [systemTheme, setSystemTheme] = useState<'light' | 'night'>(getInitialSystemTheme)
   const [coords, setCoords] = useState<{ lat: number; lng: number }>(DEFAULT_COORDS)
   const [sunTimes, setSunTimes] = useState<{ sunrise: Date; sunset: Date } | null>(null)
   const [themeScriptSetting, setThemeScriptSetting] = useState<ThemeScriptId>('auto')
