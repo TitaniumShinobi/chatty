@@ -230,6 +230,109 @@ router.post('/save', async (req, res) => {
   }
 });
 
+router.post('/append-preview', async (req, res) => {
+  try {
+    const { constructCallsign, constructName, messages, source } = req.body;
+    
+    if (!constructCallsign || !messages || !Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'constructCallsign and messages array required' 
+      });
+    }
+    
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return res.status(500).json({ success: false, error: 'Supabase not configured' });
+    }
+    
+    const userEmail = req.user?.email;
+    if (!userEmail) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+    
+    const supabaseUserId = await resolveSupabaseUserId(supabase, userEmail);
+    if (!supabaseUserId) {
+      return res.status(404).json({ success: false, error: 'User not found in Supabase' });
+    }
+    
+    console.log(`📝 [Transcripts] Appending ${messages.length} preview messages to ${constructCallsign}`);
+    
+    // Format messages as markdown transcript
+    const now = new Date();
+    const timestamp = now.toISOString().replace(/[:.]/g, '-');
+    const formattedDate = now.toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+    
+    let transcriptContent = `# Preview Conversation with ${constructName || constructCallsign}\n`;
+    transcriptContent += `**Date:** ${formattedDate}\n`;
+    transcriptContent += `**Source:** ${source || 'chatty-preview'}\n\n---\n\n`;
+    
+    for (const msg of messages) {
+      const speaker = msg.role === 'user' ? 'User' : (constructName || constructCallsign);
+      const msgTime = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : '';
+      transcriptContent += `**${speaker}${msgTime ? ` (${msgTime})` : ''}:** ${msg.content}\n\n`;
+    }
+    
+    // Build the VVAULT path (always use 'chatty-preview' for preview conversations)
+    const year = now.getFullYear().toString();
+    const month = now.toLocaleString('en-US', { month: 'long' });
+    const filename = `preview_${timestamp}.md`;
+    const previewSource = 'chatty-preview';
+    const vvaultPath = `instances/${constructCallsign}/${previewSource}/${year}/${month}/${filename}`;
+    
+    // Extract date info for metadata
+    const dateInfo = {
+      year,
+      month,
+      startDate: now.toISOString(),
+      dateConfidence: 1.0,
+      dateSource: 'session_timestamp'
+    };
+    
+    // Save to Supabase vault_files
+    const { data, error } = await supabase
+      .from('vault_files')
+      .insert({
+        user_id: supabaseUserId,
+        filename: vvaultPath,
+        content: transcriptContent,
+        file_type: 'transcript',
+        metadata: {
+          construct_id: constructCallsign,
+          construct_name: constructName || constructCallsign,
+          source: previewSource,
+          message_count: messages.length,
+          ...dateInfo,
+          created_at: now.toISOString(),
+          is_preview: true
+        }
+      })
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('❌ [Transcripts] Failed to save preview:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+    
+    console.log(`✅ [Transcripts] Saved preview transcript: ${vvaultPath}`);
+    
+    res.json({
+      success: true,
+      message: `Saved ${messages.length} messages to transcript`,
+      path: vvaultPath,
+      id: data.id
+    });
+  } catch (error) {
+    console.error('❌ [Transcripts] Append preview error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 router.get('/list/:constructCallsign', async (req, res) => {
   try {
     const { constructCallsign } = req.params;

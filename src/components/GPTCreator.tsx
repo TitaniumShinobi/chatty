@@ -232,10 +232,14 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
   // Preview
   const [previewMessages, setPreviewMessages] = useState<
-    Array<{ role: "user" | "assistant"; content: string }>
+    Array<{ role: "user" | "assistant"; content: string; timestamp?: number }>
   >([]);
   const [previewInput, setPreviewInput] = useState("");
   const [isPreviewGenerating, setIsPreviewGenerating] = useState(false);
+  
+  // Exit confirmation (save preview conversation)
+  const [showExitConfirmation, setShowExitConfirmation] = useState(false);
+  const [isSavingPreview, setIsSavingPreview] = useState(false);
   const [createMessages, setCreateMessages] = useState<
     Array<{
       role: "user" | "assistant";
@@ -770,25 +774,9 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     loadScripts();
   }, [config.id, isVisible, initialConfig]);
 
-  // Clear preview when config changes significantly
-  useEffect(() => {
-    if (previewMessages.length > 0) {
-      // Only clear if it's not the first message (keep initial state)
-      const hasSignificantChanges =
-        config.name || config.description || config.instructions;
-      if (hasSignificantChanges) {
-        setPreviewMessages([]);
-      }
-    }
-  }, [
-    config.name,
-    config.description,
-    config.instructions,
-    config.modelId,
-    config.conversationModel,
-    config.creativeModel,
-    config.codingModel,
-  ]);
+  // NOTE: Removed auto-clear of preview messages on config changes
+  // Preview conversations are valuable and should persist throughout the session
+  // Users can now choose to save or discard when exiting GPTCreator
 
   // Note: Removed useEffect that was clearing createMessages when config became complete
   // This was causing the chat to disappear after the first exchange
@@ -845,6 +833,69 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     setCreateInput("");
     setError(null);
     setActiveTab("create");
+  };
+
+  // Handle close with confirmation if preview messages exist
+  const handleCloseWithConfirmation = () => {
+    if (previewMessages.length > 0) {
+      setShowExitConfirmation(true);
+    } else {
+      onClose();
+    }
+  };
+
+  // Save preview conversation to construct's transcript in Supabase
+  const savePreviewConversation = async () => {
+    if (previewMessages.length === 0 || !config.callsign) {
+      console.log('[GPTCreator] No preview messages to save or missing callsign');
+      onClose();
+      return;
+    }
+
+    setIsSavingPreview(true);
+    try {
+      // Format messages for transcript
+      const now = Date.now();
+      const formattedMessages = previewMessages.map((msg, idx) => ({
+        role: msg.role,
+        content: msg.content,
+        timestamp: msg.timestamp || now - (previewMessages.length - idx) * 1000
+      }));
+
+      // Append to the construct's canonical transcript via API
+      const response = await fetch('/api/transcripts/append-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          constructCallsign: config.callsign,
+          constructName: config.name || config.callsign,
+          messages: formattedMessages,
+          source: 'chatty-preview'
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('[GPTCreator] Failed to save preview:', error);
+      } else {
+        console.log(`[GPTCreator] Saved ${previewMessages.length} preview messages to transcript`);
+      }
+    } catch (error) {
+      console.error('[GPTCreator] Error saving preview conversation:', error);
+    } finally {
+      setIsSavingPreview(false);
+      setShowExitConfirmation(false);
+      setPreviewMessages([]);
+      onClose();
+    }
+  };
+
+  // Discard preview and close
+  const discardPreviewAndClose = () => {
+    setShowExitConfirmation(false);
+    setPreviewMessages([]);
+    onClose();
   };
 
   const handleSave = async () => {
@@ -1815,10 +1866,10 @@ Assistant:`;
     setPreviewInput("");
     setIsPreviewGenerating(true);
 
-    // Add user message to preview conversation
+    // Add user message to preview conversation (with timestamp for saving)
     setPreviewMessages((prev) => [
       ...prev,
-      { role: "user", content: userMessage },
+      { role: "user", content: userMessage, timestamp: Date.now() },
     ]);
 
     try {
@@ -1912,10 +1963,10 @@ Assistant:`;
         constructId: constructIdForMemory, // Enable transcript memory injection
       });
 
-      // Add AI response to preview conversation
+      // Add AI response to preview conversation (with timestamp for saving)
       setPreviewMessages((prev) => [
         ...prev,
-        { role: "assistant", content: response.trim() },
+        { role: "assistant", content: response.trim(), timestamp: Date.now() },
       ]);
 
       // Try to extract GPT configuration from the conversation
@@ -1940,6 +1991,7 @@ Assistant:`;
         {
           role: "assistant",
           content: errorMessage,
+          timestamp: Date.now(),
         },
       ]);
     } finally {
@@ -2621,13 +2673,14 @@ ALWAYS:
   return createPortal(
     <>
       {/* Backdrop - blocks all interaction, uses critical z-index */}
+      {/* NOTE: Backdrop click now triggers confirmation if preview messages exist */}
       <div
         className="fixed inset-0 bg-black bg-opacity-50"
         style={{
           zIndex: Z_LAYERS.critical,
           pointerEvents: "auto",
         }}
-        onClick={onClose}
+        onClick={handleCloseWithConfirmation}
       />
 
       {/* Modal Container */}
@@ -2663,7 +2716,7 @@ ALWAYS:
           <div className="flex items-center justify-between p-4">
             <div className="flex items-center gap-3">
               <button
-                onClick={onClose}
+                onClick={handleCloseWithConfirmation}
                 className="p-2 rounded-lg"
                 style={{
                   color: "var(--chatty-text)",
@@ -5107,6 +5160,74 @@ ALWAYS:
             </div>
           </div>
         </>
+      )}
+
+      {/* Exit Confirmation Modal - Save/Discard Preview Conversation */}
+      {/* NOTE: Backdrop does NOT close this modal - requires explicit button choice */}
+      {showExitConfirmation && (
+        <div
+          className="fixed inset-0 flex items-center justify-center"
+          style={{ zIndex: Z_LAYERS.critical + 10 }}
+        >
+          <div 
+            className="absolute inset-0 bg-black bg-opacity-60"
+          />
+          <div
+            className="relative rounded-lg p-6 max-w-md mx-4 shadow-xl"
+            style={{
+              backgroundColor: "var(--chatty-bg-main)",
+              border: "1px solid var(--chatty-border)",
+            }}
+          >
+            <h3 
+              className="text-lg font-semibold mb-3"
+              style={{ color: "var(--chatty-text)" }}
+            >
+              Save Preview Conversation?
+            </h3>
+            <p 
+              className="text-sm mb-5"
+              style={{ color: "var(--chatty-text)", opacity: 0.8 }}
+            >
+              You have {previewMessages.length} message{previewMessages.length !== 1 ? 's' : ''} in the preview. 
+              Would you like to save this conversation to {config.name || 'this construct'}'s transcript history?
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={discardPreviewAndClose}
+                disabled={isSavingPreview}
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                style={{
+                  backgroundColor: "transparent",
+                  color: "var(--chatty-text)",
+                  border: "1px solid var(--chatty-border)",
+                  opacity: isSavingPreview ? 0.5 : 1,
+                }}
+              >
+                Discard
+              </button>
+              <button
+                onClick={savePreviewConversation}
+                disabled={isSavingPreview}
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                style={{
+                  backgroundColor: "#ADA587",
+                  color: "#2F2510",
+                  opacity: isSavingPreview ? 0.7 : 1,
+                }}
+              >
+                {isSavingPreview ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save & Exit'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>,
     document.body,
