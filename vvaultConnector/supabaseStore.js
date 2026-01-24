@@ -206,6 +206,7 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
       return [];
     }
 
+    // Query 1: Get files marked as 'conversation' type
     let query = supabase
       .from('vault_files')
       .select('*')
@@ -218,13 +219,35 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
     }
 
     const { data, error } = await query;
+    
+    // Query 2: Also get files matching chatty path pattern (may have different file_type)
+    const { data: chattyFiles, error: chattyError } = await supabase
+      .from('vault_files')
+      .select('*')
+      .eq('user_id', supabaseUserId)
+      .like('filename', 'instances/%/chatty/%')
+      .order('created_at', { ascending: false });
+    
+    if (!chattyError && chattyFiles) {
+      console.log(`🔍 [SupabaseStore] Found ${chattyFiles.length} chatty-path files`);
+    }
+    
+    // Merge results, avoiding duplicates
+    const allFiles = [...(data || [])];
+    const existingFilenames = new Set(allFiles.map(f => f.filename));
+    for (const file of (chattyFiles || [])) {
+      if (!existingFilenames.has(file.filename)) {
+        allFiles.push(file);
+        console.log(`➕ [SupabaseStore] Added chatty file: ${file.filename}`);
+      }
+    }
 
     if (error) {
       console.error('❌ [SupabaseStore] Read error:', error.message);
-      return null;
+      // Continue with chatty files if main query failed
     }
 
-    const conversations = (data || []).map(file => {
+    const conversations = allFiles.map(file => {
       const metadata = typeof file.metadata === 'string' 
         ? JSON.parse(file.metadata) 
         : (file.metadata || {});
