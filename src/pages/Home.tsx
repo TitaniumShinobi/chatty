@@ -373,12 +373,12 @@ export default function Home() {
           onComplete?.();
           return;
         }
-        const nextDelay = hoverFrameRef.current === 1 ? holdFirstMs : stepMs;
+        const nextDelay = nextIndex === 1 ? holdFirstMs : stepMs;
         advance(nextDelay);
       }, delay);
     };
     setLogoSrc(frames[0]);
-    advance(holdFirstMs);
+    advance(stepMs);
   };
 
   const startLogoCycle = () => {
