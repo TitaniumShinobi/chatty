@@ -5,7 +5,6 @@ import {
   FileText,
   File as FileIcon,
   Music2,
-  Download,
   Trash2,
   Search,
   LayoutGrid,
@@ -19,13 +18,15 @@ import {
   ChevronDown,
   Clock,
   Star,
-  Users,
-  X
+  X,
+  FolderOpen,
+  Sparkles,
+  AlertCircle
 } from 'lucide-react'
-import { useTheme } from '../lib/ThemeContext'
 import { cn } from '../lib/utils'
 
 type MediaKind = 'image' | 'video' | 'audio' | 'pdf' | 'document' | 'file' | 'folder'
+type LibraryTab = 'directory' | 'gallery'
 
 interface MediaItem {
   id: string
@@ -38,6 +39,8 @@ interface MediaItem {
   lastOpened?: number
   conversationId?: string
   conversationTitle?: string
+  source?: 'user' | 'construct'
+  constructId?: string
   isFolder?: boolean
   parentId?: string
 }
@@ -49,6 +52,12 @@ interface FolderItem {
   color?: string
 }
 
+interface StorageInfo {
+  used: number
+  total: number
+  isPaused: boolean
+}
+
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg)$/i
 const VIDEO_EXT = /\.(mp4|mov|avi|mkv|webm)$/i
 const PDF_EXT = /\.pdf$/i
@@ -56,17 +65,21 @@ const AUDIO_EXT = /\.(mp3|wav|m4a|aac|flac|ogg)$/i
 const DOC_EXT = /\.(doc|docx|txt|md|rtf)$/i
 
 export default function LibraryPage() {
-  const { actualTheme } = useTheme()
-  const [mediaItems, setMediaItems] = useState<MediaItem[]>([])
+  const [activeTab, setActiveTab] = useState<LibraryTab>('directory')
+  const [directoryItems, setDirectoryItems] = useState<MediaItem[]>([])
+  const [galleryItems, setGalleryItems] = useState<MediaItem[]>([])
   const [folders, setFolders] = useState<FolderItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [showNewMenu, setShowNewMenu] = useState(false)
-  const [storageUsed, setStorageUsed] = useState({ used: 0, total: 15 * 1024 * 1024 * 1024 }) // 15GB default
+  const [storage, setStorage] = useState<StorageInfo>({ 
+    used: 0, 
+    total: 15 * 1024 * 1024 * 1024, // 15GB default
+    isPaused: false 
+  })
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const folderInputRef = useRef<HTMLInputElement>(null)
   const newMenuRef = useRef<HTMLDivElement>(null)
 
   const normalizeType = (rawType: string, title: string): MediaKind => {
@@ -92,76 +105,99 @@ export default function LibraryPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Load media files
+  // Load library files from VVAULT paths
   useEffect(() => {
-    const loadMedia = async () => {
+    const loadLibrary = async () => {
       try {
         setIsLoading(true)
-        const response = await fetch('/api/library/media', { credentials: 'include' })
-        if (!response.ok) throw new Error('Failed to load media files')
-
-        const data = await response.json()
-        if (data.ok && data.media) {
-          const mapped: MediaItem[] = data.media.map((item: any) => ({
-            id: item.id,
-            type: normalizeType(item.type, item.title),
-            title: item.title,
-            url: item.url,
-            thumbnail: item.thumbnail,
-            size: item.size,
-            createdAt: item.createdAt,
-            lastOpened: item.lastOpened || item.createdAt,
-            conversationTitle: item.conversationTitle
-          }))
-          setMediaItems(mapped)
-          
-          // Calculate storage
-          const totalUsed = mapped.reduce((acc, item) => acc + (item.size || 0), 0)
-          setStorageUsed(prev => ({ ...prev, used: totalUsed }))
-        } else {
-          setMediaItems([])
+        
+        // Load Directory files (user uploads) - library/finder/*
+        const dirResponse = await fetch('/api/library/directory', { credentials: 'include' })
+        if (dirResponse.ok) {
+          const data = await dirResponse.json()
+          if (data.ok && data.files) {
+            const mapped: MediaItem[] = data.files.map((item: any) => ({
+              id: item.id,
+              type: normalizeType(item.type, item.title || item.name),
+              title: item.title || item.name,
+              url: item.url,
+              thumbnail: item.thumbnail,
+              size: item.size || 0,
+              createdAt: item.createdAt || Date.now(),
+              lastOpened: item.lastOpened || item.createdAt,
+              source: 'user'
+            }))
+            setDirectoryItems(mapped)
+          }
         }
         
-        // Load folders
-        if (data.folders) {
-          setFolders(data.folders)
-        } else {
-          // Default suggested folders
-          setFolders([
-            { id: 'documents', name: 'Documents', itemCount: 0, color: '#4285f4' },
-            { id: 'images', name: 'Images', itemCount: 0, color: '#ea4335' },
-            { id: 'transcripts', name: 'Transcripts', itemCount: 0, color: '#34a853' },
-          ])
+        // Load Gallery files (construct created) - library/chatty/*
+        const galResponse = await fetch('/api/library/gallery', { credentials: 'include' })
+        if (galResponse.ok) {
+          const data = await galResponse.json()
+          if (data.ok && data.files) {
+            const mapped: MediaItem[] = data.files.map((item: any) => ({
+              id: item.id,
+              type: normalizeType(item.type, item.title || item.name),
+              title: item.title || item.name,
+              url: item.url,
+              thumbnail: item.thumbnail,
+              size: item.size || 0,
+              createdAt: item.createdAt || Date.now(),
+              lastOpened: item.lastOpened,
+              source: 'construct',
+              constructId: item.constructId
+            }))
+            setGalleryItems(mapped)
+          }
         }
-      } catch (error) {
-        console.error('Failed to load library:', error)
-        setMediaItems([])
+        
+        // Load storage info
+        const storageResponse = await fetch('/api/library/storage', { credentials: 'include' })
+        if (storageResponse.ok) {
+          const data = await storageResponse.json()
+          if (data.ok) {
+            setStorage({
+              used: data.used || 0,
+              total: data.total || 15 * 1024 * 1024 * 1024,
+              isPaused: data.isPaused || false
+            })
+          }
+        }
+        
+        // Default folders for Directory
         setFolders([
           { id: 'documents', name: 'Documents', itemCount: 0, color: '#4285f4' },
           { id: 'images', name: 'Images', itemCount: 0, color: '#ea4335' },
-          { id: 'transcripts', name: 'Transcripts', itemCount: 0, color: '#34a853' },
+          { id: 'data', name: 'Data Files', itemCount: 0, color: '#34a853' },
         ])
+        
+      } catch (error) {
+        console.error('Failed to load library:', error)
       } finally {
         setIsLoading(false)
       }
     }
-    loadMedia()
+    loadLibrary()
   }, [])
 
+  // Current items based on active tab
+  const currentItems = activeTab === 'directory' ? directoryItems : galleryItems
+
   const filteredItems = useMemo(() => {
-    if (!searchQuery) return mediaItems
+    if (!searchQuery) return currentItems
     const query = searchQuery.toLowerCase()
-    return mediaItems.filter(item =>
+    return currentItems.filter(item =>
       item.title.toLowerCase().includes(query) ||
       item.conversationTitle?.toLowerCase().includes(query)
     )
-  }, [mediaItems, searchQuery])
+  }, [currentItems, searchQuery])
 
-  // Sort by last opened for "Suggested files"
+  // Sort by last opened
   const suggestedFiles = useMemo(() => {
     return [...filteredItems]
       .sort((a, b) => (b.lastOpened || b.createdAt) - (a.lastOpened || a.createdAt))
-      .slice(0, 10)
+      .slice(0, 12)
   }, [filteredItems])
 
   const formatRelativeDate = (timestamp: number) => {
@@ -173,12 +209,12 @@ export default function LibraryPage() {
       const hours = Math.floor(diff / (1000 * 60 * 60))
       if (hours === 0) {
         const mins = Math.floor(diff / (1000 * 60))
-        return mins <= 1 ? 'Just now' : `${mins} minutes ago`
+        return mins <= 1 ? 'Just now' : `${mins}m ago`
       }
-      return hours === 1 ? '1 hour ago' : `${hours} hours ago`
+      return `${hours}h ago`
     }
     if (days === 1) return 'Yesterday'
-    if (days < 7) return `${days} days ago`
+    if (days < 7) return `${days}d ago`
     
     const date = new Date(timestamp)
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -196,8 +232,13 @@ export default function LibraryPage() {
     const files = e.target.files
     if (!files || files.length === 0) return
     
-    // TODO: Implement file upload
-    console.log('Uploading files:', files)
+    if (storage.isPaused) {
+      alert('Storage is paused. Please upgrade your plan or clear some files.')
+      return
+    }
+    
+    // TODO: Implement file upload to VVAULT library/finder/
+    console.log('Uploading files to Directory:', files)
     setShowNewMenu(false)
   }
 
@@ -249,17 +290,24 @@ export default function LibraryPage() {
         className="aspect-[4/3] flex items-center justify-center relative"
         style={{ backgroundColor: 'var(--chatty-bg)' }}
       >
-        {item.type === 'image' && item.thumbnail ? (
+        {item.type === 'image' && (item.thumbnail || item.url) ? (
           <img 
             src={item.thumbnail || item.url} 
             alt={item.title} 
             className="w-full h-full object-cover"
           />
+        ) : item.type === 'video' && item.thumbnail ? (
+          <div className="relative w-full h-full">
+            <img src={item.thumbnail} alt={item.title} className="w-full h-full object-cover" />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+              <Video size={32} className="text-white" />
+            </div>
+          </div>
         ) : item.type === 'pdf' || item.type === 'document' ? (
           <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: '#f8f9fa' }}>
             <div className="text-center p-4">
               {getFileIcon(item.type, 48)}
-              <div className="mt-2 text-xs opacity-50 line-clamp-3" style={{ color: '#5f6368' }}>
+              <div className="mt-2 text-xs opacity-50 line-clamp-2" style={{ color: '#5f6368' }}>
                 {item.title}
               </div>
             </div>
@@ -267,6 +315,15 @@ export default function LibraryPage() {
         ) : (
           <div className="flex items-center justify-center" style={{ color: 'var(--chatty-text)', opacity: 0.5 }}>
             {getFileIcon(item.type, 48)}
+          </div>
+        )}
+        
+        {/* Construct badge for Gallery items */}
+        {item.source === 'construct' && (
+          <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-xs flex items-center gap-1" 
+            style={{ backgroundColor: 'rgba(0,0,0,0.6)', color: 'white' }}>
+            <Sparkles size={12} />
+            AI Generated
           </div>
         )}
         
@@ -291,10 +348,10 @@ export default function LibraryPage() {
               {item.title}
             </h4>
             <p className="text-xs mt-1 flex items-center gap-1" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
-              <span className="w-5 h-5 rounded-full bg-[var(--chatty-accent)] flex items-center justify-center text-white text-[10px]">
-                Y
+              <span className="w-4 h-4 rounded-full bg-[var(--chatty-accent)] flex items-center justify-center text-white text-[10px]">
+                {item.source === 'construct' ? '✦' : 'Y'}
               </span>
-              You opened • {formatRelativeDate(item.lastOpened || item.createdAt)}
+              {item.source === 'construct' ? 'Created' : 'You opened'} • {formatRelativeDate(item.lastOpened || item.createdAt)}
             </p>
           </div>
         </div>
@@ -316,6 +373,11 @@ export default function LibraryPage() {
         <h4 className="text-sm font-medium truncate" style={{ color: 'var(--chatty-text)' }}>
           {folder.name}
         </h4>
+        {folder.itemCount > 0 && (
+          <p className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
+            {folder.itemCount} items
+          </p>
+        )}
       </div>
       <button className="p-1 rounded hover:bg-[var(--chatty-highlight)]">
         <MoreVertical size={16} style={{ color: 'var(--chatty-text)', opacity: 0.6 }} />
@@ -343,12 +405,14 @@ export default function LibraryPage() {
       <div className="flex items-center gap-3 flex-1 min-w-0">
         {getFileIcon(item.type, 20)}
         <span className="text-sm truncate" style={{ color: 'var(--chatty-text)' }}>{item.title}</span>
-      </div>
-      <div className="text-xs w-32 truncate" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
-        {item.conversationTitle || '—'}
+        {item.source === 'construct' && (
+          <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ backgroundColor: 'var(--chatty-accent)', color: 'white' }}>
+            AI
+          </span>
+        )}
       </div>
       <div className="text-xs w-28" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
-        You opened • {formatRelativeDate(item.lastOpened || item.createdAt)}
+        {formatRelativeDate(item.lastOpened || item.createdAt)}
       </div>
       <button className="p-1 rounded hover:bg-[var(--chatty-highlight)]">
         <MoreVertical size={16} style={{ color: 'var(--chatty-text)', opacity: 0.5 }} />
@@ -356,7 +420,7 @@ export default function LibraryPage() {
     </div>
   )
 
-  const storagePercent = (storageUsed.used / storageUsed.total) * 100
+  const storagePercent = (storage.used / storage.total) * 100
 
   return (
     <div className="h-full flex" style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
@@ -365,89 +429,89 @@ export default function LibraryPage() {
         className="w-60 flex-shrink-0 flex flex-col p-4 border-r"
         style={{ borderColor: 'var(--chatty-border)' }}
       >
-        {/* New Button */}
-        <div className="relative mb-6" ref={newMenuRef}>
-          <button
-            onClick={() => setShowNewMenu(!showNewMenu)}
-            className="flex items-center gap-3 px-6 py-3 rounded-2xl shadow-md transition-all hover:shadow-lg"
-            style={{ 
-              backgroundColor: 'var(--chatty-bg-message)',
-              color: 'var(--chatty-text)'
-            }}
-          >
-            <Plus size={24} />
-            <span className="font-medium">New</span>
-            <ChevronDown size={16} className="ml-auto" />
-          </button>
-          
-          {showNewMenu && (
-            <div 
-              className="absolute top-full left-0 mt-2 w-56 rounded-lg shadow-xl overflow-hidden z-50"
+        {/* New Button - only show in Directory tab */}
+        {activeTab === 'directory' && (
+          <div className="relative mb-6" ref={newMenuRef}>
+            <button
+              onClick={() => setShowNewMenu(!showNewMenu)}
+              className="flex items-center gap-3 px-6 py-3 rounded-2xl shadow-md transition-all hover:shadow-lg"
               style={{ 
-                backgroundColor: 'var(--chatty-bg-modal, var(--chatty-bg-message))',
-                border: '1px solid var(--chatty-border)'
+                backgroundColor: 'var(--chatty-bg-message)',
+                color: 'var(--chatty-text)'
               }}
             >
-              <button 
-                onClick={handleNewFolder}
-                className="flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-[var(--chatty-highlight)] transition-colors"
-                style={{ color: 'var(--chatty-text)' }}
+              <Plus size={24} />
+              <span className="font-medium">New</span>
+              <ChevronDown size={16} className="ml-auto" />
+            </button>
+            
+            {showNewMenu && (
+              <div 
+                className="absolute top-full left-0 mt-2 w-56 rounded-lg shadow-xl overflow-hidden z-50"
+                style={{ 
+                  backgroundColor: 'var(--chatty-bg-modal, var(--chatty-bg-message))',
+                  border: '1px solid var(--chatty-border)'
+                }}
               >
-                <FolderPlus size={20} />
-                New folder
-              </button>
-              <div className="h-px" style={{ backgroundColor: 'var(--chatty-border)' }} />
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-[var(--chatty-highlight)] transition-colors"
-                style={{ color: 'var(--chatty-text)' }}
-              >
-                <Upload size={20} />
-                File upload
-              </button>
-              <button 
-                onClick={() => folderInputRef.current?.click()}
-                className="flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-[var(--chatty-highlight)] transition-colors"
-                style={{ color: 'var(--chatty-text)' }}
-              >
-                <FolderPlus size={20} />
-                Folder upload
-              </button>
-            </div>
-          )}
-          
-          <input 
-            ref={fileInputRef}
-            type="file" 
-            multiple 
-            className="hidden"
-            onChange={handleFileUpload}
-          />
-          <input 
-            ref={folderInputRef}
-            type="file" 
-            multiple
-            className="hidden"
-            onChange={handleFileUpload}
-          />
-        </div>
+                <button 
+                  onClick={handleNewFolder}
+                  className="flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-[var(--chatty-highlight)] transition-colors"
+                  style={{ color: 'var(--chatty-text)' }}
+                >
+                  <FolderPlus size={20} />
+                  New folder
+                </button>
+                <div className="h-px" style={{ backgroundColor: 'var(--chatty-border)' }} />
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-[var(--chatty-highlight)] transition-colors"
+                  style={{ color: 'var(--chatty-text)' }}
+                >
+                  <Upload size={20} />
+                  Upload files
+                </button>
+              </div>
+            )}
+            
+            <input 
+              ref={fileInputRef}
+              type="file" 
+              multiple 
+              className="hidden"
+              onChange={handleFileUpload}
+            />
+          </div>
+        )}
 
-        {/* Quick Access */}
+        {/* Tab Navigation */}
         <nav className="space-y-1 flex-1">
           <button 
-            className="flex items-center gap-3 w-full px-3 py-2 rounded-full text-sm hover:bg-[var(--chatty-highlight)] transition-colors"
+            onClick={() => setActiveTab('directory')}
+            className={cn(
+              "flex items-center gap-3 w-full px-3 py-2.5 rounded-full text-sm transition-colors",
+              activeTab === 'directory' && "bg-[var(--chatty-highlight)]"
+            )}
             style={{ color: 'var(--chatty-text)' }}
           >
-            <HardDrive size={18} />
-            My Library
+            <FolderOpen size={18} />
+            Directory
+            <span className="ml-auto text-xs opacity-60">{directoryItems.length}</span>
           </button>
           <button 
-            className="flex items-center gap-3 w-full px-3 py-2 rounded-full text-sm hover:bg-[var(--chatty-highlight)] transition-colors"
+            onClick={() => setActiveTab('gallery')}
+            className={cn(
+              "flex items-center gap-3 w-full px-3 py-2.5 rounded-full text-sm transition-colors",
+              activeTab === 'gallery' && "bg-[var(--chatty-highlight)]"
+            )}
             style={{ color: 'var(--chatty-text)' }}
           >
-            <Users size={18} />
-            Shared with me
+            <Sparkles size={18} />
+            Gallery
+            <span className="ml-auto text-xs opacity-60">{galleryItems.length}</span>
           </button>
+          
+          <div className="h-px my-3" style={{ backgroundColor: 'var(--chatty-border)' }} />
+          
           <button 
             className="flex items-center gap-3 w-full px-3 py-2 rounded-full text-sm hover:bg-[var(--chatty-highlight)] transition-colors"
             style={{ color: 'var(--chatty-text)' }}
@@ -476,6 +540,11 @@ export default function LibraryPage() {
           <div className="flex items-center gap-2 mb-2">
             <HardDrive size={16} style={{ color: 'var(--chatty-text)', opacity: 0.7 }} />
             <span className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>Storage</span>
+            {storage.isPaused && (
+              <span className="ml-auto px-1.5 py-0.5 rounded text-[10px] bg-red-500 text-white">
+                PAUSED
+              </span>
+            )}
           </div>
           <div 
             className="h-1 rounded-full overflow-hidden mb-2"
@@ -485,13 +554,20 @@ export default function LibraryPage() {
               className="h-full rounded-full transition-all"
               style={{ 
                 width: `${Math.min(storagePercent, 100)}%`,
-                backgroundColor: storagePercent > 90 ? '#ea4335' : 'var(--chatty-accent, #4285f4)'
+                backgroundColor: storage.isPaused ? '#ea4335' : storagePercent > 90 ? '#fbbc04' : 'var(--chatty-accent, #4285f4)'
               }}
             />
           </div>
           <p className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
-            {formatStorageSize(storageUsed.used)} of {formatStorageSize(storageUsed.total)} used
+            {formatStorageSize(storage.used)} of {formatStorageSize(storage.total)} used
           </p>
+          
+          {storage.isPaused && (
+            <div className="mt-2 p-2 rounded text-xs flex items-start gap-2" style={{ backgroundColor: 'rgba(234,67,53,0.1)', color: '#ea4335' }}>
+              <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+              <span>Storage paused. Update payment to continue.</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -512,7 +588,7 @@ export default function LibraryPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search in Library"
+              placeholder={`Search in ${activeTab === 'directory' ? 'Directory' : 'Gallery'}`}
               className="flex-1 bg-transparent outline-none text-sm"
               style={{ color: 'var(--chatty-text)' }}
             />
@@ -550,16 +626,23 @@ export default function LibraryPage() {
             </div>
           ) : (
             <>
-              {/* Welcome */}
-              <h1 className="text-2xl font-normal mb-6" style={{ color: 'var(--chatty-text)' }}>
-                Welcome to Library
-              </h1>
+              {/* Tab Header */}
+              <div className="mb-6">
+                <h1 className="text-2xl font-normal" style={{ color: 'var(--chatty-text)' }}>
+                  {activeTab === 'directory' ? 'Directory' : 'Gallery'}
+                </h1>
+                <p className="text-sm mt-1" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
+                  {activeTab === 'directory' 
+                    ? 'Your uploaded documents — reference these in any conversation' 
+                    : 'AI-generated content from Zen and your GPTs'}
+                </p>
+              </div>
 
-              {/* Suggested Folders */}
-              {folders.length > 0 && (
+              {/* Suggested Folders - only in Directory */}
+              {activeTab === 'directory' && folders.length > 0 && (
                 <section className="mb-8">
                   <h2 className="text-sm font-medium mb-4" style={{ color: 'var(--chatty-text)' }}>
-                    Suggested folders
+                    Folders
                   </h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {folders.map(renderFolderCard)}
@@ -567,33 +650,47 @@ export default function LibraryPage() {
                 </section>
               )}
 
-              {/* Suggested Files */}
+              {/* Files */}
               <section>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-sm font-medium" style={{ color: 'var(--chatty-text)' }}>
-                    Suggested files
+                    {activeTab === 'directory' ? 'Recent files' : 'Recent creations'}
                   </h2>
                 </div>
                 
                 {suggestedFiles.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
-                    <Image size={64} style={{ color: 'var(--chatty-text)', opacity: 0.3 }} />
-                    <h3 className="text-lg font-medium mt-4" style={{ color: 'var(--chatty-text)' }}>
-                      No files yet
-                    </h3>
-                    <p className="text-sm mt-2" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
-                      Upload files to see them here
-                    </p>
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="mt-4 px-6 py-2 rounded-full text-sm font-medium transition-colors"
-                      style={{ 
-                        backgroundColor: 'var(--chatty-accent, #4285f4)',
-                        color: 'white'
-                      }}
-                    >
-                      Upload files
-                    </button>
+                    {activeTab === 'directory' ? (
+                      <>
+                        <FolderOpen size={64} style={{ color: 'var(--chatty-text)', opacity: 0.3 }} />
+                        <h3 className="text-lg font-medium mt-4" style={{ color: 'var(--chatty-text)' }}>
+                          No documents yet
+                        </h3>
+                        <p className="text-sm mt-2 max-w-md" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
+                          Upload files to build your document pool. Zen and your GPTs can reference these in any conversation — no re-uploading needed.
+                        </p>
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="mt-4 px-6 py-2 rounded-full text-sm font-medium transition-colors"
+                          style={{ 
+                            backgroundColor: 'var(--chatty-accent, #4285f4)',
+                            color: 'white'
+                          }}
+                        >
+                          Upload files
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles size={64} style={{ color: 'var(--chatty-text)', opacity: 0.3 }} />
+                        <h3 className="text-lg font-medium mt-4" style={{ color: 'var(--chatty-text)' }}>
+                          No creations yet
+                        </h3>
+                        <p className="text-sm mt-2 max-w-md" style={{ color: 'var(--chatty-text)', opacity: 0.6 }}>
+                          When Zen or your GPTs generate images, videos, or other media, they'll appear here automatically.
+                        </p>
+                      </>
+                    )}
                   </div>
                 ) : viewMode === 'grid' ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
@@ -605,12 +702,12 @@ export default function LibraryPage() {
                   </div>
                 )}
                 
-                {filteredItems.length > 10 && (
+                {filteredItems.length > 12 && (
                   <button 
                     className="mt-4 text-sm font-medium"
                     style={{ color: 'var(--chatty-accent, #4285f4)' }}
                   >
-                    View more
+                    View all {filteredItems.length} files
                   </button>
                 )}
               </section>
