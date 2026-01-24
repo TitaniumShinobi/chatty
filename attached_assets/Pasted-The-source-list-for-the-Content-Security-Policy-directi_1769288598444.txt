@@ -1,0 +1,439 @@
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+/~:1 The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+/~:1 The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+/~:1 The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+ [Coframe] Replit Enterprise watcher loaded
+ 
+      /////////////////////
+   ///////////////////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////        Curious and driven?
+  ///////////////@@@@@@@///////        Work with us!
+  ///////////////@@@@@@@///////
+  ///////////////@@@@@@@///////        https://join.replit.com/hack.with.us
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@#//////////////
+   ///////////////////////////
+      /////////////////////
+      
+ Download the Apollo DevTools for a better development experience: https://chrome.google.com/webstore/detail/apollo-client-developer-t/jdkknkkbebbapilgoeccciglkfbmbnfm
+ [ai-chat] Creating connection with chat proxy enabled
+(anonymous) @ 074c1fd804d63154.js:2
+ [LaunchDarkly] LaunchDarkly client initialized
+ [ai-chat] Creating connection with chat proxy enabled
+(anonymous) @ 074c1fd804d63154.js:2
+ Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
+z @ ed1e693c96a75807.js:2
+ Unrecognized feature: 'ambient-light-sensor'.
+z @ ed1e693c96a75807.js:2
+ Unrecognized feature: 'battery'.
+z @ ed1e693c96a75807.js:2
+ Unrecognized feature: 'execution-while-not-rendered'.
+z @ ed1e693c96a75807.js:2
+ Unrecognized feature: 'execution-while-out-of-viewport'.
+z @ ed1e693c96a75807.js:2
+ Unrecognized feature: 'layout-animations'.
+z @ ed1e693c96a75807.js:2
+ Unrecognized feature: 'legacy-image-formats'.
+z @ ed1e693c96a75807.js:2
+ Unrecognized feature: 'navigation-override'.
+z @ ed1e693c96a75807.js:2
+ Unrecognized feature: 'oversized-images'.
+z @ ed1e693c96a75807.js:2
+ Unrecognized feature: 'publickey-credentials'.
+z @ ed1e693c96a75807.js:2
+ Unrecognized feature: 'speaker-selection'.
+z @ ed1e693c96a75807.js:2
+ Unrecognized feature: 'unoptimized-images'.
+z @ ed1e693c96a75807.js:2
+ Unrecognized feature: 'unsized-media'.
+z @ ed1e693c96a75807.js:2
+ Unrecognized feature: 'pointer-lock'.
+z @ ed1e693c96a75807.js:2
+ Allow attribute will take precedence over 'allowfullscreen'.
+z @ ed1e693c96a75807.js:2
+ Allow attribute will take precedence over 'allowpaymentrequest'.
+z @ ed1e693c96a75807.js:2
+graphql:1  Failed to load resource: net::ERR_CONNECTION_CLOSED
+ [Coframe] Mutation callback infinite loop protection triggered, disconnecting mutation observer Object
+(anonymous) @ 074c1fd804d63154.js:2
+A.<computed> @ a68807f19f1f619c.js:2
+o @ cf.js?config=%257B%2…22startTime%252…:10
+error @ cf.js?config=%257B%2…22startTime%252…:10
+(anonymous) @ cf.js?config=%257B%2…22startTime%252…:10
+ Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
+z @ ed1e693c96a75807.js:2
+(anonymous) @ ed1e693c96a75807.js:2
+iA @ ed1e693c96a75807.js:2
+iV @ ed1e693c96a75807.js:2
+iU @ ed1e693c96a75807.js:2
+i_ @ ed1e693c96a75807.js:2
+C @ ed1e693c96a75807.js:2
+M @ ed1e693c96a75807.js:2
+ Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
+z @ ed1e693c96a75807.js:2
+workspace_iframe.html?initialPath=%2F&id=%3Arff%3A:32 Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
+workspace_iframe.html?initialPath=%2F&id=%3Arff%3A:32 Unrecognized feature: 'ambient-light-sensor'.
+workspace_iframe.html?initialPath=%2F&id=%3Arff%3A:32 Unrecognized feature: 'battery'.
+workspace_iframe.html?initialPath=%2F&id=%3Arff%3A:32 Unrecognized feature: 'execution-while-not-rendered'.
+workspace_iframe.html?initialPath=%2F&id=%3Arff%3A:32 Unrecognized feature: 'execution-while-out-of-viewport'.
+workspace_iframe.html?initialPath=%2F&id=%3Arff%3A:32 Unrecognized feature: 'layout-animations'.
+workspace_iframe.html?initialPath=%2F&id=%3Arff%3A:32 Unrecognized feature: 'legacy-image-formats'.
+workspace_iframe.html?initialPath=%2F&id=%3Arff%3A:32 Unrecognized feature: 'navigation-override'.
+workspace_iframe.html?initialPath=%2F&id=%3Arff%3A:32 Unrecognized feature: 'oversized-images'.
+workspace_iframe.html?initialPath=%2F&id=%3Arff%3A:32 Unrecognized feature: 'publickey-credentials'.
+workspace_iframe.html?initialPath=%2F&id=%3Arff%3A:32 Unrecognized feature: 'speaker-selection'.
+workspace_iframe.html?initialPath=%2F&id=%3Arff%3A:32 Unrecognized feature: 'unoptimized-images'.
+workspace_iframe.html?initialPath=%2F&id=%3Arff%3A:32 Unrecognized feature: 'unsized-media'.
+workspace_iframe.html?initialPath=%2F&id=%3Arff%3A:32 Allow attribute will take precedence over 'allowfullscreen'.
+workspace_iframe.html?initialPath=%2F&id=%3Arff%3A:32 Allow attribute will take precedence over 'allowpaymentrequest'.
+injected.js:37 2026-01-24T21:00:25.925Z 🔍 [App.tsx] Render - isLoading: true user: null
+injected.js:37 2026-01-24T21:00:25.925Z ⏳ [App.tsx] Rendering loading state
+injected.js:37 2026-01-24T21:00:25.930Z 🔍 [App.tsx] Auth effect starting
+injected.js:37 2026-01-24T21:00:25.930Z ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+(anonymous) @ injected.js:37
+injected.js:37 2026-01-24T21:00:25.930Z ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+(anonymous) @ injected.js:37
+injected.js:37 2026-01-24T21:00:25.930Z [Theme] Using saved location: [object Object]
+injected.js:37 2026-01-24T21:00:25.930Z [Theme] Sunrise/Sunset detection: [object Object]
+injected.js:37 2026-01-24T21:00:25.933Z [Theme] Applying theme: [object Object]
+injected.js:37 2026-01-24T21:00:25.933Z [Theme] Sunrise/Sunset detection: [object Object]
+injected.js:37 2026-01-24T21:00:26.067Z ✅ [App.tsx] Backend health check passed
+injected.js:37 2026-01-24T21:00:26.067Z ⏳ [App.tsx] fetchMe() starting
+injected.js:37 2026-01-24T21:00:26.173Z ✅ [App.tsx] fetchMe() resolved: user: dwoodson92@gmail.com
+injected.js:37 2026-01-24T21:00:26.173Z 🛑 [App.tsx] Auth effect complete - isLoading → false
+injected.js:37 2026-01-24T21:00:26.173Z 🔍 [App.tsx] Render - isLoading: false user: dwoodson92@gmail.com (hardcoded_dev_user)
+injected.js:37 2026-01-24T21:00:26.174Z ➡️ [App.tsx] User exists; redirecting to /app
+injected.js:37 2026-01-24T21:00:27.952Z 🔗 [Layout.tsx] Render - window.location.pathname: "/app", location.pathname: "/app"
+injected.js:37 2026-01-24T21:00:27.952Z 📖 [Layout] Address Book filter: 0 contacts (0 threads + 0 GPT cards) 
+injected.js:37 2026-01-24T21:00:27.952Z 🖼️ [Layout] userGPTs avatars: 
+injected.js:37 2026-01-24T21:00:27.952Z 🔒 [Layout] No user, isNonChatRoute: false path: /app
+injected.js:37 2026-01-24T21:00:27.952Z 📚 [Layout.tsx] Threads updated (length): 0
+injected.js:37 2026-01-24T21:00:27.952Z [Layout] hasBlockingOverlay: false [object Object]
+injected.js:37 2026-01-24T21:00:27.953Z 🔍 [Layout.tsx] Auth effect starting
+injected.js:37 2026-01-24T21:00:27.953Z ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+(anonymous) @ injected.js:37
+injected.js:37 2026-01-24T21:00:27.953Z ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+(anonymous) @ injected.js:37
+injected.js:37 2026-01-24T21:00:27.953Z [Theme] Using saved location: [object Object]
+injected.js:37 2026-01-24T21:00:27.953Z [Theme] Sunrise/Sunset detection: [object Object]
+injected.js:37 2026-01-24T21:00:27.953Z [Theme] Applying theme: [object Object]
+injected.js:37 2026-01-24T21:00:27.953Z 🔗 [Layout.tsx] Render - window.location.pathname: "/app", location.pathname: "/app"
+injected.js:37 2026-01-24T21:00:27.953Z 📖 [Layout] Address Book filter: 0 contacts (0 threads + 0 GPT cards) 
+injected.js:37 2026-01-24T21:00:27.953Z 🖼️ [Layout] userGPTs avatars: 
+injected.js:37 2026-01-24T21:00:27.953Z 🔒 [Layout] No user, isNonChatRoute: false path: /app
+injected.js:37 2026-01-24T21:00:27.953Z 📚 [Layout.tsx] Threads updated (length): 0
+injected.js:37 2026-01-24T21:00:27.953Z [Theme] Sunrise/Sunset detection: [object Object]
+127.0.0.1:7243/ingest/9aa5e079-2a3d-44e1-a152-645d01668332:1  Failed to load resource: net::ERR_CONNECTION_REFUSED
+injected.js:37 2026-01-24T21:00:28.053Z ✅ [Layout.tsx] fetchMe() resolved: user: dwoodson92@gmail.com
+injected.js:37 2026-01-24T21:00:28.053Z 🤖 [Layout.tsx] Loading user GPTs for Address Book...
+injected.js:37 2026-01-24T21:00:28.053Z [AIService] Running in browser mode with limited dependency resolution
+injected.js:37 2026-01-24T21:00:28.053Z 🔗 [Layout.tsx] Render - window.location.pathname: "/app", location.pathname: "/app"
+injected.js:37 2026-01-24T21:00:28.063Z [Theme] Using saved location: [object Object]
+injected.js:37 2026-01-24T21:00:28.063Z [Theme] Sunrise/Sunset detection: [object Object]
+injected.js:37 2026-01-24T21:00:28.063Z [Theme] Applying theme: [object Object]
+injected.js:37 2026-01-24T21:00:28.063Z 🔗 [Layout.tsx] Render - window.location.pathname: "/app", location.pathname: "/app"
+injected.js:37 2026-01-24T21:00:28.063Z 📖 [Layout] Address Book filter: 0 contacts (0 threads + 0 GPT cards) 
+injected.js:37 2026-01-24T21:00:28.063Z 🖼️ [Layout] userGPTs avatars: 
+injected.js:37 2026-01-24T21:00:28.065Z [Theme] Sunrise/Sunset detection: [object Object]
+injected.js:37 2026-01-24T21:00:28.065Z 📚 [Layout.tsx] Threads updated (length): 0
+injected.js:37 2026-01-24T21:00:28.164Z ✅ [Layout.tsx] Loaded 1 custom GPTs: Katana
+injected.js:37 2026-01-24T21:00:28.164Z 🚀 [Layout.tsx] Bootstrapping constructs: zen-001,lin-001,katana-001
+injected.js:37 2026-01-24T21:00:28.166Z 🔗 [Layout.tsx] Render - window.location.pathname: "/app", location.pathname: "/app"
+injected.js:37 2026-01-24T21:00:28.166Z 📖 [Layout] Address Book filter: 1 contacts (0 threads + 1 GPT cards) [object Object]
+injected.js:37 2026-01-24T21:00:28.166Z 🖼️ [Layout] userGPTs avatars: [object Object]
+injected.js:37 2026-01-24T21:00:28.271Z ✅ [Layout.tsx] Bootstrapped 3 constructs with master scripts
+injected.js:37 2026-01-24T21:00:28.271Z 📚 [Layout.tsx] Loading conversations from VVAULT filesystem...
+injected.js:37 2026-01-24T21:00:29.481Z 📁 [Layout.tsx] VVAULT root: /Users/devonwoodson/Documents/GitHub/vvault
+injected.js:37 2026-01-24T21:00:29.481Z 📁 [Layout.tsx] User instances directory: /Users/devonwoodson/Documents/GitHub/vvault/users/shard_0000/hardcoded_dev_user/instances/
+injected.js:37 2026-01-24T21:00:29.481Z 📁 [Layout.tsx] Using email for VVAULT lookup: dwoodson92@gmail.com
+injected.js:37 2026-01-24T21:00:29.481Z 🌐 [VVAULT] browserRequest /conversations GET
+injected.js:37 2026-01-24T21:00:29.921Z 📚 [Layout.tsx] VVAULT returned: [object Object],[object Object],[object Object],[object Object],[object Object]
+injected.js:37 2026-01-24T21:00:29.921Z 📋 [Layout] Conversation 1: [object Object]
+injected.js:37 2026-01-24T21:00:29.921Z 📋 [Layout] Conversation 2: [object Object]
+injected.js:37 2026-01-24T21:00:29.921Z 📋 [Layout] Conversation 3: [object Object]
+injected.js:37 2026-01-24T21:00:29.921Z 📋 [Layout] Conversation 4: [object Object]
+injected.js:37 2026-01-24T21:00:29.921Z 📋 [Layout] Conversation 5: [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z 🔍 [Layout] Mapping conversation: [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z ✅ [Layout] Mapped conversation "Katana": [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z 🔍 [Layout] Mapping conversation: [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z ✅ [Layout] Mapped conversation "zen": [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z 🔄 [Layout] Normalized Zen thread ID: session_1769137985373_20e6lla → zen-001_chat_with_zen-001
+injected.js:37 2026-01-24T21:00:29.922Z 🔍 [Layout] Mapping conversation: [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z ✅ [Layout] Mapped conversation "chat_with_zen-001.md": [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z 🔄 [Layout] Normalized Zen thread ID: chat_with_zen-001 → zen-001_chat_with_zen-001
+injected.js:37 2026-01-24T21:00:29.922Z 🔍 [Layout] Mapping conversation: [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z ✅ [Layout] Mapped conversation "chat_with_katana-001.md": [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z 🔍 [Layout] Mapping conversation: [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z ✅ [Layout] Mapped conversation "chat_with_lin-001.md": [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z ✅ [Layout.tsx] Loaded 5 conversations from VVAULT
+injected.js:37 2026-01-24T21:00:29.922Z 📊 [Layout] Thread "Katana" (session_1769137981447_vodhuc3): 0 messages [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z 📊 [Layout] Thread "zen" (zen-001_chat_with_zen-001): 5 messages [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z 🔍 [Layout] ZEN THREAD FOUND: [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z 📊 [Layout] Thread "chat_with_zen-001.md" (zen-001_chat_with_zen-001): 0 messages [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z 🔍 [Layout] ZEN THREAD FOUND: [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z 📊 [Layout] Thread "chat_with_katana-001.md" (chat_with_katana-001): 0 messages [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z 📊 [Layout] Thread "chat_with_lin-001.md" (chat_with_lin-001): 0 messages [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z ✅ [Layout.tsx] Found 5 existing conversations - continuing
+injected.js:37 2026-01-24T21:00:29.922Z ✅ [Layout.tsx] Prepared 5 conversations
+injected.js:37 2026-01-24T21:00:29.922Z 🔍 [Layout.tsx] Threads state after loading: [object Object],[object Object],[object Object],[object Object],[object Object]
+injected.js:37 2026-01-24T21:00:29.922Z 🔍 [Layout.tsx] Number of threads: 5
+injected.js:37 2026-01-24T21:00:29.922Z 🔍 [Layout.tsx] First thread details: [object Object]
+injected.js:37 2026-01-24T21:00:29.922Z 🔄 [Layout.tsx] Setting threads in state...
+injected.js:37 2026-01-24T21:00:29.922Z 🔍 [Layout.tsx] Navigation check - currentPath: "/app", initialPath: "/app"
+injected.js:37 2026-01-24T21:00:29.922Z 🔍 [Layout.tsx] isNonChatRoute: false
+injected.js:37 2026-01-24T21:00:29.922Z 📍 [Layout.tsx] Already on home page
+injected.js:37 2026-01-24T21:00:29.923Z 🛑 [Layout.tsx] Auth effect complete - isLoading → false
+injected.js:37 2026-01-24T21:00:29.924Z 🔗 [Layout.tsx] Render - window.location.pathname: "/app", location.pathname: "/app"
+injected.js:37 2026-01-24T21:00:29.924Z 📖 [Layout] Address Book filter: 1 contacts (1 threads + 0 GPT cards) [object Object]
+injected.js:37 2026-01-24T21:00:29.924Z 🖼️ [Layout] userGPTs avatars: [object Object]
+injected.js:37 2026-01-24T21:00:29.926Z 📚 [Layout.tsx] Threads updated (length): 5
+injected.js:37 2026-01-24T21:00:29.927Z ℹ️ Skipping bulk saveUserConversations in browser
+injected.js:37 2026-01-24T21:01:27.956Z [Theme] Sunrise/Sunset detection: [object Object]
+injected.js:37 2026-01-24T21:01:28.067Z [Theme] Sunrise/Sunset detection: [object Object]
+injected.js:37 2026-01-24T21:01:33.309Z 🔗 [Layout.tsx] Render - window.location.pathname: "/app", location.pathname: "/app"
+injected.js:37 2026-01-24T21:01:33.317Z [Layout] hasBlockingOverlay: true [object Object]
+127.0.0.1:7243/ingest/9aa5e079-2a3d-44e1-a152-645d01668332:1  Failed to load resource: net::ERR_CONNECTION_REFUSED
+injected.js:37 2026-01-24T21:01:36.675Z 🔗 [Layout.tsx] Render - window.location.pathname: "/app", location.pathname: "/app"
+injected.js:37 2026-01-24T21:01:36.681Z [Layout] hasBlockingOverlay: false [object Object]
+injected.js:37 2026-01-24T21:01:36.681Z 🗑️ Clearing all data from VVAULT for user: hardcoded_dev_user
+injected.js:37 2026-01-24T21:01:36.681Z 🌐 [VVAULT] browserRequest /conversations GET
+127.0.0.1:7243/ingest/9aa5e079-2a3d-44e1-a152-645d01668332:1  Failed to load resource: net::ERR_CONNECTION_REFUSED
+injected.js:37 2026-01-24T21:01:36.799Z 🔍 [App.tsx] Render - isLoading: true user: null
+injected.js:37 2026-01-24T21:01:36.799Z ⏳ [App.tsx] Rendering loading state
+injected.js:37 2026-01-24T21:01:36.800Z 🔍 [App.tsx] Auth effect starting
+injected.js:37 2026-01-24T21:01:38.604Z 🔗 [Layout.tsx] Render - window.location.pathname: "/app", location.pathname: "/app"
+injected.js:37 2026-01-24T21:01:38.604Z 📖 [Layout] Address Book filter: 0 contacts (0 threads + 0 GPT cards) Array(0)
+injected.js:37 2026-01-24T21:01:38.604Z 🖼️ [Layout] userGPTs avatars: Array(0)
+injected.js:37 2026-01-24T21:01:38.604Z 🔒 [Layout] No user, isNonChatRoute: false path: /app
+injected.js:37 2026-01-24T21:01:38.604Z 📚 [Layout.tsx] Threads updated (length): 0
+injected.js:37 2026-01-24T21:01:38.604Z [Layout] hasBlockingOverlay: false Object
+injected.js:37 2026-01-24T21:01:38.604Z 🔍 [Layout.tsx] Auth effect starting
+injected.js:37 2026-01-24T21:01:38.604Z ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+(anonymous) @ injected.js:37
+injected.js:37 2026-01-24T21:01:38.604Z ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+(anonymous) @ injected.js:37
+injected.js:37 2026-01-24T21:01:38.604Z [Theme] Using saved location: Object
+injected.js:37 2026-01-24T21:01:38.604Z [Theme] Sunrise/Sunset detection: Object
+injected.js:37 2026-01-24T21:01:38.604Z [Theme] Applying theme: Object
+injected.js:37 2026-01-24T21:01:38.604Z 🔗 [Layout.tsx] Render - window.location.pathname: "/app", location.pathname: "/app"
+injected.js:37 2026-01-24T21:01:38.604Z 📖 [Layout] Address Book filter: 0 contacts (0 threads + 0 GPT cards) Array(0)
+injected.js:37 2026-01-24T21:01:38.604Z 🖼️ [Layout] userGPTs avatars: Array(0)
+injected.js:37 2026-01-24T21:01:38.604Z 🔒 [Layout] No user, isNonChatRoute: false path: /app
+injected.js:37 2026-01-24T21:01:38.604Z 📚 [Layout.tsx] Threads updated (length): 0
+injected.js:37 2026-01-24T21:01:38.604Z [Theme] Sunrise/Sunset detection: Object
+127.0.0.1:7243/ingest/9aa5e079-2a3d-44e1-a152-645d01668332:1  Failed to load resource: net::ERR_CONNECTION_REFUSED
+injected.js:37 2026-01-24T21:01:38.707Z ✅ [Layout.tsx] fetchMe() resolved: user: dwoodson92@gmail.com
+injected.js:37 2026-01-24T21:01:38.707Z 🤖 [Layout.tsx] Loading user GPTs for Address Book...
+injected.js:37 2026-01-24T21:01:38.707Z [AIService] Running in browser mode with limited dependency resolution
+injected.js:37 2026-01-24T21:01:38.708Z 🔗 [Layout.tsx] Render - window.location.pathname: "/app", location.pathname: "/app"
+injected.js:37 2026-01-24T21:01:38.711Z [Theme] Using saved location: Object
+injected.js:37 2026-01-24T21:01:38.711Z [Theme] Sunrise/Sunset detection: Object
+injected.js:37 2026-01-24T21:01:38.711Z [Theme] Applying theme: Object
+injected.js:37 2026-01-24T21:01:38.711Z 🔗 [Layout.tsx] Render - window.location.pathname: "/app", location.pathname: "/app"
+injected.js:37 2026-01-24T21:01:38.711Z 📖 [Layout] Address Book filter: 0 contacts (0 threads + 0 GPT cards) Array(0)
+injected.js:37 2026-01-24T21:01:38.711Z 🖼️ [Layout] userGPTs avatars: Array(0)
+injected.js:37 2026-01-24T21:01:38.712Z [Theme] Sunrise/Sunset detection: Object
+injected.js:37 2026-01-24T21:01:38.712Z 📚 [Layout.tsx] Threads updated (length): 0
+injected.js:37 2026-01-24T21:01:38.831Z ✅ [Layout.tsx] Loaded 1 custom GPTs: Array(1)
+injected.js:37 2026-01-24T21:01:38.831Z 🚀 [Layout.tsx] Bootstrapping constructs: Array(3)
+injected.js:37 2026-01-24T21:01:38.832Z 🔗 [Layout.tsx] Render - window.location.pathname: "/app", location.pathname: "/app"
+injected.js:37 2026-01-24T21:01:38.832Z 📖 [Layout] Address Book filter: 1 contacts (0 threads + 1 GPT cards) Array(1)
+injected.js:37 2026-01-24T21:01:38.832Z 🖼️ [Layout] userGPTs avatars: Array(1)
+injected.js:37 2026-01-24T21:01:38.952Z ✅ [Layout.tsx] Bootstrapped 3 constructs with master scripts
+injected.js:37 2026-01-24T21:01:38.952Z 📚 [Layout.tsx] Loading conversations from VVAULT filesystem...
+injected.js:37 2026-01-24T21:01:40.169Z 📁 [Layout.tsx] VVAULT root: /Users/devonwoodson/Documents/GitHub/vvault
+injected.js:37 2026-01-24T21:01:40.169Z 📁 [Layout.tsx] User instances directory: /Users/devonwoodson/Documents/GitHub/vvault/users/shard_0000/hardcoded_dev_user/instances/
+injected.js:37 2026-01-24T21:01:40.169Z 📁 [Layout.tsx] Using email for VVAULT lookup: dwoodson92@gmail.com
+injected.js:37 2026-01-24T21:01:40.170Z 🌐 [VVAULT] browserRequest /conversations GET
+injected.js:37 2026-01-24T21:01:40.589Z 📚 [Layout.tsx] VVAULT returned: Array(5)
+injected.js:37 2026-01-24T21:01:40.589Z 📋 [Layout] Conversation 1: Object
+injected.js:37 2026-01-24T21:01:40.589Z 📋 [Layout] Conversation 2: Object
+injected.js:37 2026-01-24T21:01:40.589Z 📋 [Layout] Conversation 3: Object
+injected.js:37 2026-01-24T21:01:40.589Z 📋 [Layout] Conversation 4: Object
+injected.js:37 2026-01-24T21:01:40.590Z 📋 [Layout] Conversation 5: Object
+injected.js:37 2026-01-24T21:01:40.590Z 🔍 [Layout] Mapping conversation: Object
+injected.js:37 2026-01-24T21:01:40.590Z ✅ [Layout] Mapped conversation "Katana": Object
+injected.js:37 2026-01-24T21:01:40.590Z 🔍 [Layout] Mapping conversation: Object
+injected.js:37 2026-01-24T21:01:40.590Z ✅ [Layout] Mapped conversation "zen": Object
+injected.js:37 2026-01-24T21:01:40.590Z 🔄 [Layout] Normalized Zen thread ID: session_1769137985373_20e6lla → zen-001_chat_with_zen-001
+injected.js:37 2026-01-24T21:01:40.590Z 🔍 [Layout] Mapping conversation: Object
+injected.js:37 2026-01-24T21:01:40.590Z ✅ [Layout] Mapped conversation "chat_with_zen-001.md": Object
+injected.js:37 2026-01-24T21:01:40.590Z 🔄 [Layout] Normalized Zen thread ID: chat_with_zen-001 → zen-001_chat_with_zen-001
+injected.js:37 2026-01-24T21:01:40.590Z 🔍 [Layout] Mapping conversation: Object
+injected.js:37 2026-01-24T21:01:40.590Z ✅ [Layout] Mapped conversation "chat_with_katana-001.md": Object
+injected.js:37 2026-01-24T21:01:40.590Z 🔍 [Layout] Mapping conversation: Object
+injected.js:37 2026-01-24T21:01:40.590Z ✅ [Layout] Mapped conversation "chat_with_lin-001.md": Object
+injected.js:37 2026-01-24T21:01:40.590Z ✅ [Layout.tsx] Loaded 5 conversations from VVAULT
+injected.js:37 2026-01-24T21:01:40.590Z 📊 [Layout] Thread "Katana" (session_1769137981447_vodhuc3): 0 messages Object
+injected.js:37 2026-01-24T21:01:40.590Z 📊 [Layout] Thread "zen" (zen-001_chat_with_zen-001): 5 messages Object
+injected.js:37 2026-01-24T21:01:40.591Z 🔍 [Layout] ZEN THREAD FOUND: Object
+injected.js:37 2026-01-24T21:01:40.591Z 📊 [Layout] Thread "chat_with_zen-001.md" (zen-001_chat_with_zen-001): 0 messages Object
+injected.js:37 2026-01-24T21:01:40.591Z 🔍 [Layout] ZEN THREAD FOUND: Object
+injected.js:37 2026-01-24T21:01:40.591Z 📊 [Layout] Thread "chat_with_katana-001.md" (chat_with_katana-001): 0 messages Object
+injected.js:37 2026-01-24T21:01:40.591Z 📊 [Layout] Thread "chat_with_lin-001.md" (chat_with_lin-001): 0 messages Object
+injected.js:37 2026-01-24T21:01:40.591Z ✅ [Layout.tsx] Found 5 existing conversations - continuing
+injected.js:37 2026-01-24T21:01:40.591Z ✅ [Layout.tsx] Prepared 5 conversations
+injected.js:37 2026-01-24T21:01:40.591Z 🔍 [Layout.tsx] Threads state after loading: Array(5)
+injected.js:37 2026-01-24T21:01:40.591Z 🔍 [Layout.tsx] Number of threads: 5
+injected.js:37 2026-01-24T21:01:40.591Z 🔍 [Layout.tsx] First thread details: Object
+injected.js:37 2026-01-24T21:01:40.591Z 🔄 [Layout.tsx] Setting threads in state...
+injected.js:37 2026-01-24T21:01:40.591Z 🔍 [Layout.tsx] Navigation check - currentPath: "/app", initialPath: "/app"
+injected.js:37 2026-01-24T21:01:40.591Z 🔍 [Layout.tsx] isNonChatRoute: false
+injected.js:37 2026-01-24T21:01:40.591Z 📍 [Layout.tsx] Already on home page
+injected.js:37 2026-01-24T21:01:40.591Z 🛑 [Layout.tsx] Auth effect complete - isLoading → false
+injected.js:37 2026-01-24T21:01:40.594Z 🔗 [Layout.tsx] Render - window.location.pathname: "/app", location.pathname: "/app"
+injected.js:37 2026-01-24T21:01:40.595Z 📖 [Layout] Address Book filter: 1 contacts (1 threads + 0 GPT cards) Array(1)
+injected.js:37 2026-01-24T21:01:40.595Z 🖼️ [Layout] userGPTs avatars: Array(1)
+injected.js:37 2026-01-24T21:01:40.597Z 📚 [Layout.tsx] Threads updated (length): 5
+injected.js:37 2026-01-24T21:01:40.598Z ℹ️ Skipping bulk saveUserConversations in browser
+ 2026-01-24T21:02:38.607Z [Theme] Sunrise/Sunset detection: {now: '4:02:38 PM', sunrise: '7:55:30 AM', sunset: '5:36:56 PM', isDay: true, coords: {…}}
+ 2026-01-24T21:02:38.714Z [Theme] Sunrise/Sunset detection: {now: '4:02:38 PM', sunrise: '7:55:30 AM', sunset: '5:36:56 PM', isDay: true, coords: {…}}
