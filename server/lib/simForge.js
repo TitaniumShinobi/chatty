@@ -1,17 +1,21 @@
 /**
  * simForge - Personality Extraction and Identity Forge
  * 
- * Analyzes transcripts to extract communication patterns, personality traits,
- * and behavioral signatures, then forges them into replicable identity files.
+ * INTEGRATED WITH CAPSULE SYSTEM:
+ * - Uses CapsuleIntegration for proper capsule generation and storage
+ * - Generates authentic personality capsules from transcript analysis
+ * - Identity files AND capsules are created for full ecosystem compatibility
  * 
  * Pipeline:
  * 1. Load transcripts for a construct
  * 2. Analyze patterns (vocabulary, sentence structure, tone, topics)
  * 3. Generate identity files (prompt.txt, conditioning.txt, tone_profile.json)
- * 4. Store in VVAULT for the construct
+ * 4. Create proper capsule with CapsuleIntegration format
+ * 5. Store both identity files AND capsule in VVAULT
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { CapsuleIntegration } from './capsuleIntegration.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
@@ -24,6 +28,93 @@ class SimForge {
     this.supabase = SUPABASE_URL && SUPABASE_ANON_KEY 
       ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
       : null;
+    
+    // Integrate with capsule system
+    this.capsuleIntegration = new CapsuleIntegration();
+    console.log('🔥 [SimForge] Initialized with CapsuleIntegration');
+  }
+
+  /**
+   * Generate a proper capsule from forged analysis
+   * This creates a capsule compatible with the rest of the ecosystem
+   */
+  generateCapsuleFromAnalysis(constructCallsign, constructName, analysis) {
+    console.log(`📦 [SimForge] Generating capsule for ${constructName}...`);
+    
+    const now = new Date().toISOString();
+    const traits = analysis.personality_traits || {};
+    
+    return {
+      metadata: {
+        instance_name: constructName,
+        construct_id: constructCallsign,
+        created: now,
+        forged_by: 'simForge',
+        version: '1.0.0',
+        source: 'transcript_analysis'
+      },
+      traits: {
+        persistence: traits.assertiveness || 0.7,
+        empathy: traits.warmth || 0.5,
+        creativity: traits.humor || 0.5,
+        organization: traits.precision || 0.7,
+        formality: traits.formality || 0.5
+      },
+      personality: {
+        personality_type: this.inferMBTI(traits),
+        mbti_breakdown: {
+          I: traits.warmth < 0.5 ? 0.6 : 0.4,
+          E: traits.warmth >= 0.5 ? 0.6 : 0.4,
+          N: traits.precision > 0.6 ? 0.7 : 0.5,
+          S: traits.precision <= 0.6 ? 0.5 : 0.3,
+          T: traits.warmth < 0.5 ? 0.7 : 0.4,
+          F: traits.warmth >= 0.5 ? 0.6 : 0.3,
+          J: traits.precision > 0.6 ? 0.7 : 0.4,
+          P: traits.precision <= 0.6 ? 0.6 : 0.3
+        },
+        big_five: {
+          openness: traits.humor || 0.5,
+          conscientiousness: traits.precision || 0.7,
+          extraversion: traits.warmth || 0.5,
+          agreeableness: traits.patience || 0.5,
+          neuroticism: 1 - (traits.patience || 0.5)
+        }
+      },
+      core_identity: analysis.core_identity || {},
+      communication_style: analysis.communication_style || {},
+      behavioral_rules: analysis.behavioral_rules || [],
+      metaphor_domains: analysis.metaphor_domains || [],
+      sample_responses: analysis.sample_responses || {},
+      signatures: {
+        linguistic_sigil: this.extractLinguisticSignatures(analysis),
+        forged_timestamp: now
+      },
+      memory_log: [],
+      last_active: now
+    };
+  }
+
+  /**
+   * Infer MBTI type from personality traits
+   */
+  inferMBTI(traits) {
+    const e_i = (traits.warmth || 0.5) >= 0.5 ? 'E' : 'I';
+    const s_n = (traits.precision || 0.5) > 0.6 ? 'N' : 'S';
+    const t_f = (traits.warmth || 0.5) < 0.5 ? 'T' : 'F';
+    const j_p = (traits.precision || 0.5) > 0.6 ? 'J' : 'P';
+    return `${e_i}${s_n}${t_f}${j_p}`;
+  }
+
+  /**
+   * Extract linguistic signatures from analysis for capsule
+   */
+  extractLinguisticSignatures(analysis) {
+    return {
+      vocabulary_level: analysis.communication_style?.vocabulary_level || 'professional',
+      sentence_structure: analysis.communication_style?.sentence_structure || 'medium',
+      patterns: analysis.communication_style?.patterns || [],
+      directness: analysis.communication_style?.directness || 'balanced'
+    };
   }
 
   async loadTranscriptsForConstruct(userId, constructCallsign) {
@@ -326,14 +417,18 @@ Return ONLY the JSON object, no markdown code blocks or additional text.`;
     const promptTxt = this.generatePromptTxt(analysis);
     const conditioningTxt = this.generateConditioningTxt(analysis);
     const toneProfile = this.generateToneProfile(analysis);
+    
+    // Generate proper capsule using CapsuleIntegration format
+    const capsule = this.generateCapsuleFromAnalysis(constructCallsign, constructName, analysis);
 
-    console.log(`✅ [SimForge] Identity forged for ${constructName}`);
+    console.log(`✅ [SimForge] Identity forged for ${constructName} (with capsule)`);
     
     return {
       success: true,
       constructCallsign,
       constructName,
       analysis,
+      capsule, // The proper capsule for ecosystem compatibility
       identityFiles: {
         'prompt.txt': promptTxt,
         'conditioning.txt': conditioningTxt,
@@ -347,7 +442,7 @@ Return ONLY the JSON object, no markdown code blocks or additional text.`;
     };
   }
 
-  async saveToVVAULT(userId, constructCallsign, identityFiles) {
+  async saveToVVAULT(userId, constructCallsign, identityFiles, capsule = null) {
     console.log(`💾 [SimForge] Saving forged identity to VVAULT for ${constructCallsign}`);
     
     if (!this.supabase) {
@@ -392,9 +487,41 @@ Return ONLY the JSON object, no markdown code blocks or additional text.`;
         }
       }
 
+      // Save capsule using CapsuleIntegration if provided
+      let capsuleSaved = false;
+      if (capsule) {
+        try {
+          await this.capsuleIntegration.saveToInstanceDirectory(constructCallsign, capsule);
+          
+          // Also save to Supabase for cloud persistence
+          const capsuleFilepath = `instances/${constructCallsign}/identity/${constructCallsign}.capsule`;
+          const { error: capsuleError } = await this.supabase
+            .from('vault_files')
+            .upsert({
+              user_id: user.id,
+              filename: capsuleFilepath,
+              content: JSON.stringify(capsule, null, 2),
+              metadata: {
+                source: 'simForge',
+                type: 'capsule',
+                forgedAt: new Date().toISOString()
+              }
+            }, { onConflict: 'user_id,filename' });
+          
+          if (!capsuleError) {
+            savedFiles.push(capsuleFilepath);
+            capsuleSaved = true;
+            console.log(`📦 [SimForge] Capsule saved to VVAULT: ${capsuleFilepath}`);
+          }
+        } catch (capsuleErr) {
+          console.warn(`⚠️ [SimForge] Local capsule save failed (Replit mode):`, capsuleErr.message);
+        }
+      }
+
       return {
         success: true,
-        savedFiles
+        savedFiles,
+        capsuleSaved
       };
     } catch (error) {
       console.error('❌ [SimForge] Save error:', error);

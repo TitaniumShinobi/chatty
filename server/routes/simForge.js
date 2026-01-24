@@ -70,7 +70,8 @@ router.post('/forge-and-save', async (req, res) => {
     const saveResult = await simForge.saveToVVAULT(
       userId,
       constructCallsign,
-      forgeResult.identityFiles
+      forgeResult.identityFiles,
+      forgeResult.capsule  // Pass capsule to save with CapsuleIntegration
     );
 
     res.json({
