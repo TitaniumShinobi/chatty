@@ -493,7 +493,7 @@ app.get("/api/me", (req, res) => {
       email: 'dwoodson92@gmail.com',
       name: 'Devon Woodson',
       sub: 'hardcoded_dev_user',
-      picture: 'https://ui-avatars.com/api/?name=Devon+Woodson&background=5865F2&color=fff&size=128&bold=true',
+      picture: 'https://lh3.googleusercontent.com/a/ACg8ocJHDwdzQ_8VIvvqOTyLRV6y1YoJ22NPhehAfFU2g1BbopbHnkll=s288-c-no',
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours
     };
