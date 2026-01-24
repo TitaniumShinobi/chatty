@@ -487,13 +487,13 @@ app.get("/api/me", (req, res) => {
   const isHardcodedDev = process.env.NODE_ENV === 'development' && !req.cookies?.[COOKIE_NAME];
   
   if (isHardcodedDev) {
-    console.log('🔓 [Auth] Using hardcoded development user for /api/me (no OAuth session - use real login for profile picture)');
+    console.log('🔓 [Auth] Using hardcoded development user for /api/me');
     const hardcodedUser = {
       id: 'devon_woodson_1762969514958',
       email: 'dwoodson92@gmail.com',
       name: 'Devon Woodson',
       sub: 'hardcoded_dev_user',
-      // Note: No picture for hardcoded dev user - use real OAuth login to get profile picture
+      picture: 'https://ui-avatars.com/api/?name=Devon+Woodson&background=5865F2&color=fff&size=128&bold=true',
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours
     };
