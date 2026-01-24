@@ -324,11 +324,21 @@ export default function Layout() {
     
     const allContacts = [...conversationThreads, ...gptContactCards];
     
-    console.log(`📖 [Layout] Address Book filter: ${allContacts.length} contacts (${conversationThreads.length} threads + ${gptContactCards.length} GPT cards)`, 
-      allContacts.map(t => ({ id: t.id, title: t.title, constructId: t.constructId, avatar: (t as any).avatar?.substring?.(0, 50) || (t as any).avatar })));
+    // Deduplicate by constructId - keep only the most recent thread per construct
+    const seenConstructIds = new Set<string>();
+    const deduplicatedContacts = allContacts
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)) // Most recent first
+      .filter(t => {
+        if (!t.constructId || seenConstructIds.has(t.constructId)) return false;
+        seenConstructIds.add(t.constructId);
+        return true;
+      });
+    
+    console.log(`📖 [Layout] Address Book filter: ${deduplicatedContacts.length} contacts (${conversationThreads.length} threads + ${gptContactCards.length} GPT cards, deduplicated from ${allContacts.length})`, 
+      deduplicatedContacts.map(t => ({ id: t.id, title: t.title, constructId: t.constructId, avatar: (t as any).avatar?.substring?.(0, 50) || (t as any).avatar })));
     console.log(`🖼️ [Layout] userGPTs avatars:`, userGPTs.map(g => ({ name: g.name, constructCallsign: g.constructCallsign, avatar: g.avatar?.substring?.(0, 50) || g.avatar })));
     
-    return allContacts;
+    return deduplicatedContacts;
   }, [threads, userGPTs]);
 
   // Calculate hasBlockingOverlay early (before any early returns)
@@ -2795,11 +2805,12 @@ export default function Layout() {
         return null;
       }
 
-      // Create a new conversation with this specific construct
+      // Create a new conversation with canonical session ID format
+      const canonicalSessionId = `${constructId}_chat_with_${constructId}`;
       const newConversation = await conversationManager.createConversation(
         userId,
+        canonicalSessionId,
         constructName || constructId,
-        undefined,
         constructId,
       );
 
