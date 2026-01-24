@@ -25,6 +25,7 @@ Chatty is an AI-powered workspace application providing an interactive environme
 - **Canonical Zen Pattern:** "Zen" construct (zen-001) is a system-guaranteed entity, created on login, protected from deletion, and prioritized.
 - **Thin UI Layer:** Chatty is a thin client, with VVAULT handling primary AI inference, transcript management, and memory.
 - **Dual-Provider Model Architecture:** Supports both cloud (OpenRouter) and self-hosted (Ollama) AI models.
+- **AI Data Storage:** Custom GPTs/AIs are stored in the `ais` table (managed by AIService). The sidebar Address Book uses AIService to retrieve GPT data with correct avatars.
 
 **VVAULT Scripts Architecture (Autonomy Stack):**
 The `vvault_scripts/master/` directory contains scripts that enable constructs to function as independent agents:

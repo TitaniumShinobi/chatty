@@ -30,6 +30,7 @@ import { useZenGuidance } from "../hooks/useZenGuidance";
 import { AIService } from "../lib/aiService";
 import { bootstrapConstructs } from "../lib/masterScripts";
 import { GPTService, type GPTConfig } from "../lib/gptService";
+import type { AIConfig } from "../lib/aiService";
 import type { UIContextSnapshot, Message as ChatMessage } from "../types";
 import { WorkspaceContextBuilder } from "../engine/context/WorkspaceContextBuilder";
 import { safeMode, safeImport } from "../lib/safeMode";
@@ -220,7 +221,7 @@ export default function Layout() {
   console.log(`🔗 [Layout.tsx] Render - window.location.pathname: "${typeof window !== 'undefined' ? window.location.pathname : 'SSR'}", location.pathname: "${location.pathname}"`);
 
   const [threads, setThreads] = useState<Thread[]>([]);
-  const [userGPTs, setUserGPTs] = useState<GPTConfig[]>([]);
+  const [userGPTs, setUserGPTs] = useState<AIConfig[]>([]);
   const [storageFailureInfo, setStorageFailureInfo] = useState<{
     reason: string;
     key?: string;
@@ -700,12 +701,12 @@ export default function Layout() {
 
         setUser(me);
 
-        // Load user's custom GPTs for Address Book contact cards
+        // Load user's custom GPTs for Address Book contact cards (using AIService for correct avatars)
         console.log("🤖 [Layout.tsx] Loading user GPTs for Address Book...");
-        let gpts: GPTConfig[] = [];
+        let gpts: AIConfig[] = [];
         try {
-          const gptService = GPTService.getInstance();
-          gpts = await gptService.getAllGPTs();
+          const aiService = AIService.getInstance();
+          gpts = await aiService.getAllAIs();
           setUserGPTs(gpts);
           console.log(`✅ [Layout.tsx] Loaded ${gpts.length} custom GPTs:`, gpts.map(g => g.name));
         } catch (gptError) {
@@ -714,7 +715,7 @@ export default function Layout() {
 
         // Bootstrap constructs with master scripts (autonomy stack)
         try {
-          const constructIds = ["zen-001", "lin-001", ...gpts.map((g: GPTConfig) => g.callsign || `${g.name.toLowerCase()}-001`)];
+          const constructIds = ["zen-001", "lin-001", ...gpts.map((g: AIConfig) => g.constructCallsign || `${g.name.toLowerCase()}-001`)];
           console.log("🚀 [Layout.tsx] Bootstrapping constructs:", constructIds);
           const bootstrapResult = await bootstrapConstructs(constructIds);
           if (bootstrapResult.success) {
