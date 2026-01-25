@@ -394,6 +394,31 @@ export default function Chat() {
     return false;
   });
 
+  // Sanitize message text by removing VVAULT timestamp prefixes and other formatting artifacts
+  // Pattern: "HH:MM:SS AM/PM TIMEZONE - Speaker Name [ISO_TIMESTAMP]: content"
+  const sanitizeMessageText = (text: string | undefined): string => {
+    if (!text) return "";
+    
+    // Pattern to match VVAULT timestamp lines: "10:26:07 AM EST - Devon Woodson [2026-01-20T15:26:07.457Z]: content"
+    const vvaultTimestampPattern = /^\d{1,2}:\d{2}:\d{2}\s+(?:AM|PM)(?:\s+[A-Z]{2,5})?\s+-\s+.+?\s+\[\d{4}-\d{2}-\d{2}T[^\]]+\]:\s*/gm;
+    
+    // Pattern for date headers like "December 17, 2025" on their own line
+    const dateHeaderPattern = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}\s*$/gm;
+    
+    // Pattern for role labels like "Coding Expert:" "Creative Expert:" etc
+    const roleLabelPattern = /^(Coding Expert|Creative Expert|Conversational Expert):\s*$/gm;
+    
+    // Clean up the text
+    let cleaned = text
+      .replace(vvaultTimestampPattern, "") // Remove VVAULT timestamp prefixes
+      .replace(dateHeaderPattern, "")       // Remove date headers
+      .replace(roleLabelPattern, "")        // Remove role labels
+      .replace(/\n{3,}/g, "\n\n")          // Collapse multiple newlines
+      .trim();
+    
+    return cleaned;
+  };
+
   useEffect(() => {
     if (isDev) {
       localStorage.setItem("chatty-dev-toggle", showDevInfo.toString());
@@ -1251,7 +1276,9 @@ export default function Chat() {
   };
 
   const renderUserContent = (messageText?: string) => {
-    const trimmed = messageText?.trim();
+    // First sanitize the message text to remove VVAULT timestamp prefixes
+    const sanitized = sanitizeMessageText(messageText);
+    const trimmed = sanitized.trim();
     let isJson = false;
     let prettyJson = "";
 
@@ -1437,8 +1464,8 @@ export default function Chat() {
 
             // User messages: right-aligned with iMessage-style bubble
             if (user) {
-              // Calculate dynamic max-width based on content length
-              const content = m.text || "";
+              // Calculate dynamic max-width based on content length (use sanitized text)
+              const content = sanitizeMessageText(m.text);
               const contentLength = content.length;
               let maxWidth =
                 "max-w-[85%] sm:max-w-[80%] md:max-w-[75%] lg:max-w-[70%]";
@@ -1601,7 +1628,7 @@ export default function Chat() {
                                   op: "answer.v1",
                                   payload: {
                                     content:
-                                      (m as any).text ?? "Legacy message",
+                                      sanitizeMessageText((m as any).text) || "Legacy message",
                                   },
                                 },
                               ]
