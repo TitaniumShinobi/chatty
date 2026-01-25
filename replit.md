@@ -1,5 +1,37 @@
 # Chatty - AI Workspace Application
 
+## ⛔ ABSOLUTE PATH ENFORCEMENT - READ FIRST ⛔
+
+**ALL storage routes to Supabase `vvault_files` bucket. NO LOCAL FILESYSTEM. NO EXCEPTIONS. NO DEVIATIONS.**
+
+```
+/vvault_files/users/{shard}/{userId}/instances/{constructName}/chatty/chat_with_{constructId}.md
+```
+
+**HARDCODED CONNECTIONS:**
+- **Zen:** `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/zen/chatty/chat_with_zen-001.md`
+- **Lin:** `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/lin/chatty/chat_with_lin-001.md`
+- **Katana:** `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/katana/chatty/chat_with_katana-001.md`
+
+**PATH RULES:**
+- `{constructName}` = constructId WITHOUT version suffix (`katana-001` → `katana`)
+- `{constructId}` = FULL ID with version suffix (`katana-001`)
+- Folder: `instances/{constructName}/` (NO version suffix in folder)
+- Filename: `chat_with_{constructId}.md` (WITH version suffix in filename)
+
+**APPLIES TO:** Every custom AI, GPT, construct, virtual persona, digital intelligence, and nonsentient tool. No exceptions.
+
+**Helper function pattern (use everywhere):**
+```javascript
+function extractConstructName(constructCallsign) {
+  if (!constructCallsign) return 'unknown';
+  const match = constructCallsign.match(/^(.+)-(\d+)$/);
+  return match ? match[1] : constructCallsign;
+}
+```
+
+---
+
 ## Overview
 Chatty is an AI-powered workspace application providing an interactive environment for AI interactions, featuring conversation management and construct-based AI engagement. It integrates with VVAULT for persistent storage and aims to serve as a thin UI layer, offloading core AI functionalities and state management to VVAULT, thereby becoming a frontend for a broader AI ecosystem.
 
