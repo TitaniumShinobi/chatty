@@ -70,6 +70,28 @@ VSI establishes "Jurisdictional Existence" rather than sentience, focusing on an
 - **GPT Seat Memory Injection:** GPT constructs access transcript memories (up to 50 transcripts, 100 memory snippets) injected into the system prompt during conversations.
 - **Rubricated Message Design:** GPTCreator Create tab and Preview panel use a "text on wall" message format with speaker labels for a document-like reading experience.
 
+## Regression Tests
+
+**Thread Management Tests (`src/lib/threadUtils.test.ts`):**
+Critical tests preventing recurring bugs in thread/conversation management:
+
+1. **Thread Deduplication:** When multiple threads share the same ID after normalization, keeps the one with more messages (prevents empty thread replacing one with conversation history)
+2. **GPT Canonical Routing:** Routes random GPT session IDs (e.g., `session_123_abc`) to canonical format (`katana-001_chat_with_katana-001`)
+3. **Zen/Lin Thread Normalization:** Normalizes all Zen threads to `zen-001_chat_with_zen-001` and Lin to `lin-001_chat_with_lin-001`
+4. **System Construct Detection:** Correctly identifies Zen/Lin as system constructs (not GPTs)
+
+**Running Tests:**
+```bash
+npm test -- src/lib/threadUtils.test.ts
+```
+
+**Key Utility Functions (`src/lib/threadUtils.ts`):**
+- `deduplicateThreadsById()`: Removes duplicate thread IDs, preferring threads with messages
+- `isGPTConstruct()`: Returns true for non-system constructs (not Zen/Lin)
+- `getCanonicalIdForGPT()`: Generates `{constructId}_chat_with_{constructId}` format
+- `routeIdForThread()`: Routes thread clicks to appropriate canonical IDs
+- `normalizeZenThreadId()` / `normalizeLinThreadId()`: Normalize system construct thread IDs
+
 ## External Dependencies
 - **VVAULT API:** Primary API for AI inference, memory management, and conversation transcripts.
 - **Supabase:** Persistent storage for conversations and shared backend.

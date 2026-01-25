@@ -28,6 +28,11 @@ import ShareConversationModal from "./ShareConversationModal";
 import ZenGuidance from "./ZenGuidance";
 import { useZenGuidance } from "../hooks/useZenGuidance";
 import { AIService } from "../lib/aiService";
+import {
+  deduplicateThreadsById as deduplicateThreadsByIdUtil,
+  isGPTConstruct,
+  getCanonicalIdForGPT,
+} from "../lib/threadUtils";
 import { bootstrapConstructs } from "../lib/masterScripts";
 import { GPTService, type GPTConfig } from "../lib/gptService";
 import type { AIConfig } from "../lib/aiService";
