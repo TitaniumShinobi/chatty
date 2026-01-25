@@ -728,7 +728,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               className="text-xs font-medium uppercase tracking-wide"
               style={{ color: "var(--chatty-text)", opacity: 0.7 }}
             >
-              Address Book
+              Address Book ({conversations.length})
             </h3>
             {/* Address Book Search Toggle */}
             <button

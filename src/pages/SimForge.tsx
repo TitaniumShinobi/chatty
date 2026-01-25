@@ -494,28 +494,6 @@ export default function SimForge() {
           </div>
         </div>
 
-        {/* Your GPTs Section */}
-        {userGpts.length > 0 && (
-          <div className="flex items-center gap-2 mb-4">
-            <div
-              className="w-6 h-6 rounded-full flex items-center justify-center"
-              style={{ backgroundColor: "var(--chatty-text-inverse)" }}
-            >
-              <span
-                className="text-xs font-bold"
-                style={{ color: "var(--chatty-bg-main)" }}
-              >
-                Y
-              </span>
-            </div>
-            <span
-              className="text-sm font-medium"
-              style={{ color: "var(--chatty-text)" }}
-            >
-              Your AIs ({userGpts.length})
-            </span>
-          </div>
-        )}
       </div>
 
       {/* Content */}
