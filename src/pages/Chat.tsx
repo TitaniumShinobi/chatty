@@ -27,7 +27,12 @@ type Thread = {
   title: string;
   messages: Message[];
   constructId?: string;
-}; // Added constructId property
+  isPrimary?: boolean;
+  runtimeId?: string;
+  updatedAt?: number;
+  createdAt?: number;
+  archived?: boolean;
+};
 
 // Markdown components for user messages (styled for bubble with #ADA587 background and #ffffeb text)
 const userMessageMarkdownComponents: Components = {
@@ -710,7 +715,8 @@ export default function Chat() {
           
           for (const line of lines) {
             // Pattern 1: "10:26:07 AM EST - Devon Woodson [2026-01-20T15:26:07.457Z]: Message"
-            const timestampMatch = line.match(/^\d{1,2}:\d{2}:\d{2}\s*(?:AM|PM)?\s*\w*\s*-\s*(.+?)\s*\[([^\]]+)\]:\s*(.*)$/i);
+            // Captures: TIME AM/PM TIMEZONE - SPEAKER [ISO_TIMESTAMP]: CONTENT
+            const timestampMatch = line.match(/^\d{1,2}:\d{2}:\d{2}\s*(?:AM|PM)?\s*(?:[A-Z]{2,5})?\s*-\s*(.+?)\s*\[([^\]]+)\]:\s*(.*)$/i);
             // Pattern 2: "**Speaker:** Message"
             const boldMatch = line.match(/^\*\*(.+?):\*\*\s*(.*)$/);
             // Pattern 3: "Speaker: Message" (simple format)
@@ -1336,15 +1342,16 @@ export default function Chat() {
     }
 
     return (
-      <ReactMarkdown
-        components={userMessageMarkdownComponents}
-        remarkPlugins={[remarkBreaks]}
-        rehypePlugins={[rehypeRaw]}
-        className="prose"
-        style={{ width: "100%", minWidth: 0, maxWidth: "100%" }}
-      >
-        {messageText || ""}
-      </ReactMarkdown>
+      <div style={{ width: "100%", minWidth: 0, maxWidth: "100%" }}>
+        <ReactMarkdown
+          components={userMessageMarkdownComponents}
+          remarkPlugins={[remarkBreaks]}
+          rehypePlugins={[rehypeRaw]}
+          className="prose"
+        >
+          {messageText || ""}
+        </ReactMarkdown>
+      </div>
     );
   };
 
