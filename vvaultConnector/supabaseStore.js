@@ -127,7 +127,32 @@ function parseMarkdownTranscript(content) {
     messages.push(msg);
   }
 
-  return messages;
+  // Post-process: Filter out garbage "messages" that are really headers or system artifacts
+  // These patterns indicate file header content, not actual conversation messages
+  const GARBAGE_PATTERNS = [
+    /^(January|February|March|April|May|June|July|August|September|October|November|December)\s*\d{0,4}$/i, // Date headers like "November 2025" or "November 9, 2025"
+    /^[a-z]+-\d+_chat_with_[a-z]+-\d+$/i, // Session IDs like "zen-001_chat_with_zen-001"
+    /^[A-Za-z]+\n+-{2,}/,  // Name followed by dashes (section headers like "Katana\n---")
+    /Native Chatty messages will append here/i, // Template text
+    /^---+$/,  // Horizontal rules alone
+    /^#{1,6}\s/, // Markdown headers
+    /^CONVERSATION_CREATED:/i, // Internal markers
+    /^\(\*.*\*\)$/, // Template markers like (*Native Chatty...)
+    /^System\s*\([^)]+\):\s*Test message/i, // Test messages
+  ];
+  
+  const isGarbageMessage = (content) => {
+    if (!content) return true;
+    const trimmed = content.trim();
+    if (!trimmed) return true;
+    // Very short content that matches garbage patterns
+    if (trimmed.length <= 200) {
+      if (GARBAGE_PATTERNS.some(pattern => pattern.test(trimmed))) return true;
+    }
+    return false;
+  };
+  
+  return messages.filter(m => !isGarbageMessage(m.content));
 }
 
 async function resolveSupabaseUserId(emailOrId) {

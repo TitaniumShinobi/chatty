@@ -14,9 +14,41 @@ export const DEFAULT_LIN_CANONICAL_SESSION_ID = 'lin-001_chat_with_lin-001';
 
 export function deduplicateThreadsById(threads: Thread[]): Thread[] {
   const threadById = new Map<string, Thread>();
+  
+  // Helper to score thread quality - higher is better
+  const scoreThread = (thread: Thread): number => {
+    let score = 0;
+    
+    // Threads with messages are better
+    score += thread.messages.length * 10;
+    
+    // Threads with ORIGINAL timestamps (from VVAULT metadata) are MUCH better
+    // This flag is set during message mapping to differentiate proper metadata
+    // from generated timestamps
+    const hasOriginalTimestamps = thread.messages.some((m: any) => m.hasOriginalTimestamp === true);
+    if (hasOriginalTimestamps) score += 5000;
+    
+    // Threads with proper titles (not raw IDs) are slightly better
+    if (thread.title && !thread.title.includes('_chat_with_')) score += 50;
+    
+    return score;
+  };
+  
   threads.forEach((thread) => {
     const existing = threadById.get(thread.id);
-    if (!existing || thread.messages.length > existing.messages.length) {
+    const threadScore = scoreThread(thread);
+    const existingScore = existing ? scoreThread(existing) : 0;
+    
+    // Debug logging for Zen thread deduplication
+    if (thread.id.includes('zen')) {
+      console.log(`🔍 [Dedup] Thread "${thread.title}" (${thread.id}): score=${threadScore}, msgCount=${thread.messages.length}, hasOrigTs=${thread.messages.some((m: any) => m.hasOriginalTimestamp)}`);
+      if (existing) {
+        console.log(`🔍 [Dedup] Existing "${existing.title}": score=${existingScore}, msgCount=${existing.messages.length}`);
+        console.log(`🔍 [Dedup] Winner: ${threadScore > existingScore ? thread.title : existing.title}`);
+      }
+    }
+    
+    if (!existing || threadScore > existingScore) {
       threadById.set(thread.id, thread);
     }
   });

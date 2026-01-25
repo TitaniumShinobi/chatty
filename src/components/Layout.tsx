@@ -893,6 +893,8 @@ export default function Layout() {
               // Generate ID if not present (messages from Supabase may not have IDs)
               const messageId = msg.id || `${conv.sessionId}_msg_${idx}_${Date.now()}`;
               const messageContent = msg.content || msg.text || "";
+              // Track if message has an ORIGINAL timestamp from VVAULT metadata (not generated)
+              const hasOriginalTimestamp = !!(msg.timestamp && typeof msg.timestamp === 'string' && msg.timestamp.includes('T'));
               const messageTimestamp = msg.timestamp || msg.ts || new Date().toISOString();
               
               return {
@@ -904,6 +906,7 @@ export default function Layout() {
                     ? [{ op: "answer.v1", payload: { content: messageContent } }]
                     : undefined,
                 ts: typeof messageTimestamp === 'number' ? messageTimestamp : new Date(messageTimestamp).getTime(),
+                hasOriginalTimestamp, // Flag for deduplication scoring
                 metadata: msg.metadata || undefined,
                 responseTimeMs: msg.metadata?.responseTimeMs,
                 thinkingLog: msg.metadata?.thinkingLog,
@@ -1007,15 +1010,8 @@ export default function Layout() {
           }
         });
 
-        // Deduplicate threads by ID, preferring the one with the most messages
-        const threadById = new Map<string, Thread>();
-        loadedThreads.forEach((thread) => {
-          const existing = threadById.get(thread.id);
-          if (!existing || thread.messages.length > existing.messages.length) {
-            threadById.set(thread.id, thread);
-          }
-        });
-        const deduplicatedThreads = Array.from(threadById.values());
+        // Deduplicate threads by ID, using quality scoring (prefers original timestamps over message count)
+        const deduplicatedThreads = deduplicateThreadsByIdUtil(loadedThreads);
         console.log(`🔄 [Layout] Deduplicated threads: ${loadedThreads.length} → ${deduplicatedThreads.length}`);
 
         // Check if there's a thread ID in the URL that we should preserve
