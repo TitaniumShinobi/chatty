@@ -2895,6 +2895,18 @@ export default function Layout() {
 
     // Check if this is a GPT thread that should use canonical routing
     const clickedThread = threads.find((t: any) => t.id === threadId);
+    
+    // Always route Lin to canonical format
+    if (clickedThread?.constructId === 'lin-001' || clickedThread?.constructId === 'lin' ||
+        threadId.toLowerCase().includes('lin')) {
+      const canonicalId = 'lin-001_chat_with_lin-001';
+      if (threadId !== canonicalId) {
+        console.log(`🎯 [Layout] Redirecting Lin thread to canonical: ${threadId} → ${canonicalId}`);
+        navigate(`/app/chat/${canonicalId}`);
+        return;
+      }
+    }
+    
     if (clickedThread?.constructId && 
         clickedThread.constructId !== 'zen-001' && 
         clickedThread.constructId !== 'lin-001' &&
