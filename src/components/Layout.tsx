@@ -1002,18 +1002,30 @@ export default function Layout() {
           }
         });
 
+        // Deduplicate threads by ID, preferring the one with the most messages
+        const threadById = new Map<string, Thread>();
+        loadedThreads.forEach((thread) => {
+          const existing = threadById.get(thread.id);
+          if (!existing || thread.messages.length > existing.messages.length) {
+            threadById.set(thread.id, thread);
+          }
+        });
+        const deduplicatedThreads = Array.from(threadById.values());
+        console.log(`🔄 [Layout] Deduplicated threads: ${loadedThreads.length} → ${deduplicatedThreads.length}`);
+
         // Check if there's a thread ID in the URL that we should preserve
         const urlThreadId = activeId;
         const preferredUrlThreadId = preferCanonicalThreadId(
           urlThreadId,
-          loadedThreads,
+          deduplicatedThreads,
         );
         const hasUrlThread =
           preferredUrlThreadId &&
-          loadedThreads.some((t) => t.id === preferredUrlThreadId);
+          deduplicatedThreads.some((t) => t.id === preferredUrlThreadId);
 
         let filteredThreads =
-          filterThreadsWithCanonicalPreference(loadedThreads);const zenCanonicalThread = getCanonicalThreadForKeys(loadedThreads, [
+          filterThreadsWithCanonicalPreference(deduplicatedThreads);
+        const zenCanonicalThread = getCanonicalThreadForKeys(deduplicatedThreads, [
           "zen",
           "zen-001",
         ]);
@@ -1103,8 +1115,8 @@ export default function Layout() {
               );
               console.log("✅ [Layout.tsx] Zen conversation created in VVAULT");
               // Only add to local state after successful VVAULT creation
-              loadedThreads.push(defaultThread);
-              filteredThreads = filterThreadsWithCanonicalPreference(loadedThreads);
+              deduplicatedThreads.push(defaultThread);
+              filteredThreads = filterThreadsWithCanonicalPreference(deduplicatedThreads);
               runtimeScopedThreads = filterByActiveRuntime(
                 filteredThreads,
                 activeRuntimeId,
@@ -1124,9 +1136,9 @@ export default function Layout() {
           console.log(
             `✅ [Layout.tsx] Found existing thread in URL: ${urlThreadId} - continuing conversation`,
           );
-        } else if (loadedThreads.length > 0) {
+        } else if (deduplicatedThreads.length > 0) {
           console.log(
-            `✅ [Layout.tsx] Found ${loadedThreads.length} existing conversations - continuing`,
+            `✅ [Layout.tsx] Found ${deduplicatedThreads.length} existing conversations - continuing`,
           );
         }
 
