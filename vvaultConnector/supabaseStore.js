@@ -297,11 +297,20 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
         ? `${extractedConstructId}_chat_with_${extractedConstructId}`
         : (metadata.sessionId || file.filename.replace('chat/', '').replace('.md', ''));
 
+      // Generate clean title from constructId (e.g., "lin-001" → "Lin", "katana-001" → "Katana")
+      const generateCleanTitle = (constructId) => {
+        if (!constructId) return null;
+        const baseName = constructId.replace(/-\d+$/, ''); // Remove version suffix
+        return baseName.charAt(0).toUpperCase() + baseName.slice(1).toLowerCase();
+      };
+      
+      const cleanTitle = metadata.title || generateCleanTitle(extractedConstructId) || file.filename;
+
       return {
         sessionId: canonicalSessionId,
-        title: metadata.title || file.filename,
+        title: cleanTitle,
         constructId: extractedConstructId,
-        constructName: metadata.constructName,
+        constructName: metadata.constructName || generateCleanTitle(extractedConstructId),
         constructCallsign: metadata.constructCallsign || extractedConstructId,
         createdAt: file.created_at,
         updatedAt: file.created_at,

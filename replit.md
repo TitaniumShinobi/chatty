@@ -2,24 +2,32 @@
 
 ## ⛔ ABSOLUTE PATH ENFORCEMENT - READ FIRST ⛔
 
-**ALL storage routes to Supabase `vvault_files` bucket. NO LOCAL FILESYSTEM. NO EXCEPTIONS. NO DEVIATIONS.**
+**ALL storage routes to Supabase `vvault_files` bucket. NO LOCAL FILESYSTEM. NO EXCEPTIONS. NO DEVIATIONS. STOP. DON'T. QUIT IT.**
 
 ```
 /vvault_files/users/{shard}/{userId}/instances/{constructName}/chatty/chat_with_{constructId}.md
 ```
 
-**HARDCODED CONNECTIONS:**
+**HARDCODED CONNECTIONS (NEVER DEVIATE):**
 - **Zen:** `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/zen/chatty/chat_with_zen-001.md`
 - **Lin:** `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/lin/chatty/chat_with_lin-001.md`
 - **Katana:** `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/katana/chatty/chat_with_katana-001.md`
 
-**PATH RULES:**
+**PATH RULES (MANDATORY):**
 - `{constructName}` = constructId WITHOUT version suffix (`katana-001` → `katana`)
 - `{constructId}` = FULL ID with version suffix (`katana-001`)
 - Folder: `instances/{constructName}/` (NO version suffix in folder)
 - Filename: `chat_with_{constructId}.md` (WITH version suffix in filename)
 
-**APPLIES TO:** Every custom AI, GPT, construct, virtual persona, digital intelligence, and nonsentient tool. No exceptions.
+**APPLIES TO:** Every custom AI, GPT, construct, virtual persona, digital intelligence, and nonsentient tool. No exceptions. Ever.
+
+**CANONICAL SESSION ID FORMAT:**
+- Pattern: `{constructId}_chat_with_{constructId}` (e.g., `zen-001_chat_with_zen-001`)
+- This maps directly to the Supabase file path
+
+**DISPLAY TITLES:**
+- Always show clean names: "Zen", "Lin", "Katana" (capitalized, no version suffix)
+- Never show raw filenames like "chat_with_lin-001.md"
 
 **Helper function pattern (use everywhere):**
 ```javascript
@@ -29,6 +37,13 @@ function extractConstructName(constructCallsign) {
   return match ? match[1] : constructCallsign;
 }
 ```
+
+**LIN SPECIAL NOTES:**
+- Lin (lin-001) uses the SAME transcript file whether accessed from:
+  - Sidebar navigation (clicking Lin)
+  - GPTCreator Create tab (conversational GPT creation)
+- Both routes read/write to: `/vvault_files/.../instances/lin/chatty/chat_with_lin-001.md`
+- Lin is the "casa madrigal" system construct - she guides users through simForge and GPT creation
 
 ---
 
