@@ -499,8 +499,10 @@ export default function Chat() {
   }, [thread?.messages]);
 
   // Load transcript for canonical threads (Zen, Lin, or GPTs)
+  // Only attempt fallback transcript loading if threads have loaded (threads.length > 0)
+  // This prevents race condition where thread appears undefined during initial data fetch
   useEffect(() => {
-    if (thread || !threadId || !isCanonicalThread) return;
+    if (thread || !threadId || !isCanonicalThread || threads.length === 0) return;
 
     let cancelled = false;
     const constructName = isZenSessionThread ? "Zen" : isLinSessionThread ? "Lin" : gptConstructName || "GPT";
@@ -547,7 +549,7 @@ export default function Chat() {
     return () => {
       cancelled = true;
     };
-  }, [thread, threadId, isCanonicalThread, isZenSessionThread, isLinSessionThread, gptConstructName]);
+  }, [thread, threadId, isCanonicalThread, isZenSessionThread, isLinSessionThread, gptConstructName, threads.length]);
 
   // Hydration check: If thread has no messages, attempt to reload
   useEffect(() => {
@@ -611,6 +613,29 @@ export default function Chat() {
   const canonicalConstructName = isZenSessionThread ? "Zen" : isLinSessionThread ? "Lin" : gptConstructName;
 
   if (!thread) {
+    // If threads haven't loaded yet, show a loading state
+    // This prevents race condition where we try to show zenMarkdown before thread data arrives
+    if (threads.length === 0) {
+      return (
+        <div
+          className="flex flex-col h-full"
+          style={{ backgroundColor: "var(--chatty-bg-main)" }}
+        >
+          <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
+            <h2
+              className="text-xl font-semibold mb-2"
+              style={{ color: "var(--chatty-text)" }}
+            >
+              Loading conversation…
+            </h2>
+            <p style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
+              Please wait while we fetch your data.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     if (isCanonicalThread) {
       if (isZenMarkdownLoading) {
         return (
