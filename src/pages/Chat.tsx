@@ -10,6 +10,7 @@ import { R } from "../runtime/render";
 import { MessageOptionsMenu } from "../components/MessageOptionsMenu";
 import { VVAULTConversationManager } from "../lib/vvaultConversationManager";
 import { getUserId } from "../lib/auth";
+import MessageBar from "../components/MessageBar";
 
 type Message = {
   id: string;
@@ -367,16 +368,11 @@ export default function Chat() {
   } = useOutletContext<LayoutContext>();
   const { threadId } = useParams<{ threadId: string }>();
   const navigate = useNavigate();
-  const [text, setText] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
-  const [isFocused, setIsFocused] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
   const [reloadAttempted, setReloadAttempted] = useState(false);
   const [removedMessages, setRemovedMessages] = useState<Set<string>>(
     new Set(),
   );
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [zenMarkdown, setZenMarkdown] = useState<string | null>(null);
@@ -611,34 +607,6 @@ export default function Chat() {
     reloadAttempted,
   ]); // Watch threads.length to detect updates
 
-  // Auto-resize textarea
-  const adjustTextareaHeight = () => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      const scrollHeight = textareaRef.current.scrollHeight;
-      const maxHeight = 15 * 24; // 15 lines * 24px line height
-      textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
-    }
-  };
-
-  useEffect(() => {
-    adjustTextareaHeight();
-  }, [text]);
-
-  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setText(e.target.value);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
-  const handleFocus = () => setIsFocused(true);
-  const handleBlur = () => setIsFocused(false);
-
   // Get the construct name for display (system constructs or GPTs)
   const canonicalConstructName = isZenSessionThread ? "Zen" : isLinSessionThread ? "Lin" : gptConstructName;
 
@@ -810,54 +778,6 @@ export default function Chat() {
     );
   }
 
-  function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = Array.from(e.target.files ?? []);
-    setFiles((prev) => [...prev, ...f]);
-    e.currentTarget.value = "";
-  }
-
-  function handleSend() {
-    if (!text.trim() && files.length === 0) return;
-    if (!thread) return;
-
-    // If editing a message, we need to replace the last user message
-    if (editingMessageId) {
-      // Find the message being edited
-      const messageIndex = thread.messages.findIndex(
-        (m) => m.id === editingMessageId,
-      );
-      if (messageIndex !== -1) {
-        // Remove all messages after the edited message (including the assistant response)
-        // This will be handled by rewinding to before the assistant response
-        // For now, just send the new message which will append it
-        // The rewind should happen before sending
-        const assistantResponseIndex = messageIndex + 1;
-        if (assistantResponseIndex < thread.messages.length) {
-          // Rewind to before assistant response, then send new message
-          handleRewind(assistantResponseIndex).then(() => {
-            onSendMessage(thread.id, text.trim(), files);
-            setEditingMessageId(null);
-            setText("");
-            setFiles([]);
-            if (textareaRef.current) {
-              textareaRef.current.style.height = "auto";
-            }
-          });
-          return;
-        }
-      }
-      setEditingMessageId(null);
-    }
-
-    onSendMessage(thread.id, text.trim(), files);
-    setText("");
-    setFiles([]);
-    // Reset textarea height
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-    }
-  }
-
   const isUser = (role: string) => role === "user";
 
   const assistantCodeStyles = `
@@ -981,11 +901,7 @@ export default function Chat() {
 
   const handleEditMessage = (message: Message) => {
     if (!message.text) return;
-
-    setText(message.text);
-    setEditingMessageId(message.id);
-    textareaRef.current?.focus();
-    console.log(`✅ [Chat] Message ${message.id} loaded for editing`);
+    console.log(`✅ [Chat] Message ${message.id} editing not yet implemented with new MessageBar`);
   };
 
   const handleReportMessage = async (message: Message) => {
@@ -1257,20 +1173,7 @@ export default function Chat() {
         </div>
       )}
       <div ref={messagesContainerRef} className="flex-1 overflow-auto min-h-0">
-        <div className="mb-2 px-4 pt-4">
-          {files.length > 0 && (
-            <div
-              className="inline-block px-3 py-2 rounded-lg text-xs"
-              style={{
-                backgroundColor: "var(--chatty-button)",
-                border: "1px solid var(--chatty-line)",
-                color: "var(--chatty-text-inverse, #ffffeb)",
-              }}
-            >
-              Attached files ({files.length})
-            </div>
-          )}
-        </div>
+        <div className="mb-2 px-4 pt-4"></div>
 
         {/* Fallback UI for empty messages */}
         {thread.messages.length === 0 && !isReloading && (
@@ -1572,77 +1475,19 @@ export default function Chat() {
         <div ref={messagesEndRef} />
       </div>
 
-      <div
-        className="grid grid-cols-[32px_1fr_80px] gap-3 p-4 border-t flex-shrink-0"
-        style={{ borderColor: "var(--chatty-line)" }}
-      >
-        <input
-          type="file"
-          multiple
-          onChange={handleFiles}
-          className="hidden"
-          id="filepick"
-        />
-        <label
-          htmlFor="filepick"
-          className="w-8 h-10 rounded-lg flex items-center justify-center cursor-pointer transition-colors"
-          style={{
-            backgroundColor: "var(--chatty-button)",
-            border: "1px solid var(--chatty-line)",
-          }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.backgroundColor = "var(--chatty-hover)")
-          }
-          onMouseLeave={(e) =>
-            (e.currentTarget.style.backgroundColor = "var(--chatty-button)")
-          }
-          title="Attach files"
-        >
-          📎
-        </label>
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={handleTextChange}
-          onKeyDown={handleKeyDown}
-          onFocus={handleFocus}
-          onBlur={handleBlur}
-          placeholder="Message Chatty…"
-          className="w-full min-h-10 max-h-96 resize-none p-3 rounded-lg outline-none text-base leading-relaxed font-inherit transition-all"
-          style={{
-            backgroundColor: "var(--chatty-bg-main)",
-            border: isFocused
-              ? "1px solid var(--chatty-button)"
-              : "1px solid var(--chatty-line)",
-            color: "var(--chatty-text)",
-            boxShadow: isFocused
-              ? "0 0 0 2px rgba(173, 165, 135, 0.2)"
-              : "none",
-          }}
-          rows={1}
-        />
-        <button
-          className="rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{
-            backgroundColor: "var(--chatty-button)",
-            border: "1px solid var(--chatty-line)",
-            color: "var(--chatty-text-inverse, #ffffeb)",
-          }}
-          onMouseEnter={(e) => {
-            if (!e.currentTarget.disabled) {
-              e.currentTarget.style.backgroundColor = "var(--chatty-hover)";
+      <div className="p-4 border-t flex-shrink-0" style={{ borderColor: "var(--chatty-line)" }}>
+        <MessageBar
+          onSubmit={(messageText, messageFiles) => {
+            if (thread) {
+              onSendMessage(thread.id, messageText, messageFiles || []);
             }
           }}
-          onMouseLeave={(e) => {
-            if (!e.currentTarget.disabled) {
-              e.currentTarget.style.backgroundColor = "var(--chatty-button)";
-            }
-          }}
-          disabled={!text.trim() && files.length === 0}
-          onClick={handleSend}
-        >
-          ➤
-        </button>
+          placeholder={`Message ${canonicalConstructName || "Chatty"}…`}
+          showVoiceButton={true}
+          showFileAttachment={true}
+          autoFocus={true}
+          disabled={!thread}
+        />
       </div>
 
       <div
