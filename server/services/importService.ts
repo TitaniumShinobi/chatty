@@ -19,7 +19,9 @@ export type PrimaryConversationParams = {
 
 /**
  * Create the canonical conversation markdown file for a runtime construct.
- * The file is placed at: /users/{shard}/{userId}/instances/{constructId}/chatty/chat_with_{constructId}.md
+ * CRITICAL PATH PATTERN (NEVER DEVIATE):
+ * /vvault_files/users/{shard}/{userId}/instances/{constructName}/chatty/chat_with_{constructId}.md
+ * Where constructName = constructId WITHOUT version suffix (zen-001 -> zen)
  * A metadata block is written to align runtime pinning and canonical detection.
  */
 export async function createPrimaryConversationFile(params: PrimaryConversationParams): Promise<string> {
@@ -38,7 +40,9 @@ export async function createPrimaryConversationFile(params: PrimaryConversationP
   }
 
   const resolvedRuntimeId = runtimeId || constructId.replace(/-001$/, '') || constructId;
-  const canonicalDir = path.join(vvaultRoot, 'users', shardId, userId, 'instances', constructId, 'chatty');
+  // CRITICAL: Use constructName (without version suffix) for folder, constructId for filename
+  const constructName = constructId.replace(/-\d+$/, '');
+  const canonicalDir = path.join(vvaultRoot, 'users', shardId, userId, 'instances', constructName, 'chatty');
   const filePath = path.join(canonicalDir, `chat_with_${constructId}.md`);
   const sessionId = `${constructId}_chat_with_${constructId}`;
   const timestamp = new Date().toISOString();

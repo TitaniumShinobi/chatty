@@ -48,17 +48,17 @@ export class FileManagementAutomation {
       { path: 'archive/.gitkeep', create: () => '# Archive directory for this user' },
       { path: 'archive/archived_conversations/.gitkeep', create: () => '# Archived conversations' },
       
-      // Zen instance
-      { path: 'instances/zen-001/identity/prompt.txt', create: () => this.getZenPrompt() },
-      { path: 'instances/zen-001/identity/conditioning.txt', create: () => this.getZenConditioning() },
-      { path: 'instances/zen-001/identity/zen-001.capsule', create: () => this.createZenCapsule() },
-      { path: 'instances/zen-001/chatty/chat_with_zen-001.md', create: () => this.createZenConversation() },
+      // Zen instance (CRITICAL: folder is constructName without version suffix)
+      { path: 'instances/zen/identity/prompt.txt', create: () => this.getZenPrompt() },
+      { path: 'instances/zen/identity/conditioning.txt', create: () => this.getZenConditioning() },
+      { path: 'instances/zen/identity/zen-001.capsule', create: () => this.createZenCapsule() },
+      { path: 'instances/zen/chatty/chat_with_zen-001.md', create: () => this.createZenConversation() },
       
-      // Lin instance
-      { path: 'instances/lin-001/identity/prompt.txt', create: () => this.getLinPrompt() },
-      { path: 'instances/lin-001/identity/conditioning.txt', create: () => this.getLinConditioning() },
-      { path: 'instances/lin-001/identity/lin-001.capsule', create: () => this.createLinCapsule() },
-      { path: 'instances/lin-001/chatty/chat_with_lin-001.md', create: () => this.createLinConversation() },
+      // Lin instance (CRITICAL: folder is constructName without version suffix)
+      { path: 'instances/lin/identity/prompt.txt', create: () => this.getLinPrompt() },
+      { path: 'instances/lin/identity/conditioning.txt', create: () => this.getLinConditioning() },
+      { path: 'instances/lin/identity/lin-001.capsule', create: () => this.createLinCapsule() },
+      { path: 'instances/lin/chatty/chat_with_lin-001.md', create: () => this.createLinConversation() },
       
       // Library directory
       { path: 'library/documents/.gitkeep', create: () => '# User documents library' },

@@ -6,8 +6,10 @@
  * The VVAULT API is the canonical source for conversation transcripts.
  * Supabase is used as a fallback when the API is unavailable.
  * 
- * Convention:
- * - filename: "instances/{constructId}/chatty/chat_with_{constructId}.md"
+ * Convention (CRITICAL - NEVER DEVIATE):
+ * - Supabase path: "/vvault_files/users/{shard}/{userId}/instances/{constructName}/chatty/chat_with_{constructId}.md"
+ * - filename in table: "instances/{constructName}/chatty/chat_with_{constructId}.md"
+ * - constructName = constructId WITHOUT version suffix (zen-001 -> zen, katana-001 -> katana)
  * - file_type: "conversation"
  * - metadata: { sessionId, title, constructId, constructName, constructCallsign, messages: [...] }
  */
@@ -329,8 +331,10 @@ async function writeConversationToSupabase(params) {
       return null;
     }
 
-    // Match VVAULT filesystem path: instances/{constructId}/chatty/chat_with_{constructId}.md
-    const filename = `instances/${constructId || 'unknown'}/chatty/chat_with_${constructId || 'unknown'}.md`;
+    // CRITICAL: Match VVAULT Supabase path pattern - instances/{constructName}/chatty/chat_with_{constructId}.md
+    // constructName = constructId WITHOUT version suffix (zen-001 -> zen, katana-001 -> katana)
+    const constructName = (constructId || 'unknown').replace(/-\d+$/, '');
+    const filename = `instances/${constructName}/chatty/chat_with_${constructId || 'unknown'}.md`;
 
     const { data: existing } = await supabase
       .from('vault_files')

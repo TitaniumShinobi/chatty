@@ -51,9 +51,9 @@ export class CapsuleMaintenanceService {
                 for (const constructId of constructs) {
                     if (constructId.startsWith('.')) continue;
 
-                    // Path to capsule: instances/{constructId}/identity/{constructId}.capsule
-                    // ALSO support current path: instances/{constructId}/identity/lin-001.capsule (constructId might be lin-001)
-                    // or instances/lin-001/identity/capsule.json (legacy/alias cases)
+                    // Path to capsule: instances/{constructName}/identity/{constructId}.capsule
+                    // Where constructName = constructId without version suffix (zen-001 -> zen)
+                    // ALSO support legacy paths: instances/{constructName}/identity/capsule.json
 
                     const identityDir = path.join(instancesDir, constructId, 'identity');
 

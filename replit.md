@@ -85,12 +85,25 @@ Critical tests preventing recurring bugs in thread/conversation management:
 **Canonical Session ID Pattern (CRITICAL):**
 All system constructs and GPTs use the same URL-to-file mapping:
 - URL: `/app/chat/{constructId}_chat_with_{constructId}`
-- VVAULT File: `instances/{constructId}/chatty/chat_with_{constructId}.md`
+- VVAULT Supabase Path: `/vvault_files/users/{shard}/{userId}/instances/{constructName}/chatty/chat_with_{constructId}.md`
+
+**CRITICAL - VVAULT Supabase File Path Pattern (NEVER DEVIATE):**
+```
+/vvault_files/users/{shard}/{userId}/instances/{constructName}/chatty/chat_with_{constructId}.md
+```
+
+Where:
+- `{shard}`: User shard (e.g., `shard_0000`)
+- `{userId}`: User identifier (e.g., `devon_woodson_1762969514958`)
+- `{constructName}`: Construct name WITHOUT version suffix (e.g., `zen`, `lin`, `katana`)
+- `{constructId}`: Full construct ID WITH version suffix (e.g., `zen-001`, `lin-001`, `katana-001`)
 
 Examples:
-- Zen: `/app/chat/zen-001_chat_with_zen-001` → `chat_with_zen-001.md`
-- Lin: `/app/chat/lin-001_chat_with_lin-001` → `chat_with_lin-001.md`
-- Katana: `/app/chat/katana-001_chat_with_katana-001` → `chat_with_katana-001.md`
+- Zen: `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/zen/chatty/chat_with_zen-001.md`
+- Lin: `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/lin/chatty/chat_with_lin-001.md`
+- Katana: `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/katana/chatty/chat_with_katana-001.md`
+
+**ALL transcript storage MUST route to Supabase `vvault_files` bucket. No local filesystem storage. No exceptions.**
 
 **Running Tests:**
 ```bash

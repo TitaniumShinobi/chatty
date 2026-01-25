@@ -872,7 +872,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
           setCreateMessages(loadedMessages);
         } else {
           console.log("📚 [Lin] No existing conversation found in vault_files, starting fresh");
-          console.log("💡 [Lin] New messages will be saved to instances/lin-001/chatty/chat_with_lin-001.md");
+          console.log("💡 [Lin] New messages will be saved to instances/lin/chatty/chat_with_lin-001.md");
         }
       } catch (error) {
         console.error("❌ [Lin] Error loading conversation:", error);
