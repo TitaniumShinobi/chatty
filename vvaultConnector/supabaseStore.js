@@ -282,12 +282,27 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
       const parsedMessages = parseMarkdownTranscript(file.content);
       const messages = metadata.messages?.length > 0 ? metadata.messages : parsedMessages;
 
+      // Extract constructId from filename patterns:
+      // - "instances/{name}/chatty/chat_with_{constructId}.md"
+      // - "instances/{constructId}/chatty/chat_with_{constructId}.md" (legacy wrong path)
+      // - "chat_with_{constructId}.md"
+      let extractedConstructId = metadata.constructId || file.construct_id;
+      const chatWithMatch = file.filename.match(/chat_with_([^/.]+)\.md$/);
+      if (chatWithMatch) {
+        extractedConstructId = chatWithMatch[1];
+      }
+      
+      // Generate canonical sessionId: {constructId}_chat_with_{constructId}
+      const canonicalSessionId = extractedConstructId 
+        ? `${extractedConstructId}_chat_with_${extractedConstructId}`
+        : (metadata.sessionId || file.filename.replace('chat/', '').replace('.md', ''));
+
       return {
-        sessionId: metadata.sessionId || file.filename.replace('chat/', '').replace('.md', ''),
+        sessionId: canonicalSessionId,
         title: metadata.title || file.filename,
-        constructId: metadata.constructId || file.construct_id,
+        constructId: extractedConstructId,
         constructName: metadata.constructName,
-        constructCallsign: metadata.constructCallsign,
+        constructCallsign: metadata.constructCallsign || extractedConstructId,
         createdAt: file.created_at,
         updatedAt: file.created_at,
         messages

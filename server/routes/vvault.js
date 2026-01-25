@@ -3285,6 +3285,8 @@ router.get("/chat/:sessionId", requireAuth, async (req, res) => {
     const sanitizedSessionId = sessionId.replace(/[^a-zA-Z0-9_-]/g, "");
     const [constructIdCandidate] = sanitizedSessionId.split("_chat_with_");
     const constructId = constructIdCandidate || sanitizedSessionId;
+    // CRITICAL: Extract constructName (without version suffix) for folder path
+    const constructName = constructId.replace(/-\d+$/, '');
     const fileName = `chat_with_${constructId}.md`;
     const fs = require("fs").promises;
     const transcriptPath = path.join(
@@ -3293,7 +3295,7 @@ router.get("/chat/:sessionId", requireAuth, async (req, res) => {
       "shard_0000",
       vvaultUserId,
       "instances",
-      constructId,
+      constructName,  // Use name without version suffix for folder
       "chatty",
       fileName
     );
