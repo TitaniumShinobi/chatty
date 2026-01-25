@@ -9,6 +9,17 @@ import { ServerFileParser } from './serverFileParser.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+/**
+ * CRITICAL PATH HELPER: Extract constructName from constructCallsign
+ * constructCallsign: "katana-001" -> constructName: "katana"
+ * VVAULT path pattern: instances/{constructName}/identity/...
+ */
+function extractConstructName(constructCallsign) {
+  if (!constructCallsign) return 'unknown';
+  const match = constructCallsign.match(/^(.+)-(\d+)$/);
+  return match ? match[1] : constructCallsign;
+}
+
 // Strip legacy legal framework block from instructions
 const stripLegalFrameworks = (text = '') => {
   if (!text) return '';
@@ -329,7 +340,9 @@ export class AIManager {
       await fs.writeFile(filePath, buffer);
 
       // Return VVAULT-relative path
-      const relativePath = `instances/${constructCallsign}/identity/${filename}`;
+      // CRITICAL: Use constructName (without version suffix) for folder path
+      const constructName = extractConstructName(constructCallsign);
+      const relativePath = `instances/${constructName}/identity/${filename}`;
       
       console.log(`✅ [AIManager] Saved avatar to filesystem: ${filePath} (relative: ${relativePath})`);
       

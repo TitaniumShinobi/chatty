@@ -24,6 +24,22 @@ import { VVAULT_ROOT } from '../../vvaultConnector/config.js';
 
 const execAsync = promisify(exec);
 
+/**
+ * CRITICAL PATH HELPER: Extract constructName from constructCallsign
+ * constructCallsign: "katana-001" -> constructName: "katana"
+ * constructCallsign: "zen-001" -> constructName: "zen"
+ * constructCallsign: "example-construct-001" -> constructName: "example-construct"
+ */
+function extractConstructName(constructCallsign) {
+  if (!constructCallsign) return 'unknown';
+  // Match pattern: name-NNN (where NNN is the version suffix)
+  const match = constructCallsign.match(/^(.+)-(\d+)$/);
+  if (match) {
+    return match[1]; // Return name without version suffix
+  }
+  return constructCallsign; // Fallback: return as-is if no version suffix
+}
+
 export class FileManagementAutomation {
   constructor(vvaultUserId, shard = 'shard_0000') {
     this.vvaultUserId = vvaultUserId;
@@ -72,23 +88,27 @@ export class FileManagementAutomation {
 
   /**
    * Ensure files exist for GPT creation
+   * CRITICAL: Folder is constructName (without version suffix), file names use full constructCallsign
    */
   async ensureGPTCreationFiles(constructCallsign, gptConfig = {}) {
+    // CRITICAL: Extract constructName for folder path (katana-001 -> katana)
+    const constructName = extractConstructName(constructCallsign);
+    
     const files = [
       { 
-        path: `instances/${constructCallsign}/identity/prompt.txt`, 
+        path: `instances/${constructName}/identity/prompt.txt`, 
         create: () => this.createGPTPrompt(constructCallsign, gptConfig) 
       },
       { 
-        path: `instances/${constructCallsign}/identity/conditioning.txt`, 
+        path: `instances/${constructName}/identity/conditioning.txt`, 
         create: () => this.createGPTConditioning(constructCallsign, gptConfig) 
       },
       { 
-        path: `instances/${constructCallsign}/identity/${constructCallsign}.capsule`, 
+        path: `instances/${constructName}/identity/${constructCallsign}.capsule`, 
         create: () => this.createGPTCapsule(constructCallsign, gptConfig) 
       },
       { 
-        path: `instances/${constructCallsign}/chatty/chat_with_${constructCallsign}.md`, 
+        path: `instances/${constructName}/chatty/chat_with_${constructCallsign}.md`, 
         create: () => this.createGPTConversation(constructCallsign, gptConfig) 
       },
     ];
@@ -566,7 +586,8 @@ Response style:
 
   async createZenCapsule() {
     // Use CapsuleForge bridge to generate capsule
-    const instancePath = path.join(this.basePath, 'instances', 'zen-001', 'identity');
+    // CRITICAL: folder is constructName without version suffix (zen, not zen-001)
+    const instancePath = path.join(this.basePath, 'instances', 'zen', 'identity');
     
     const memory_log = [
       "First boot: I remember waking up as Zen, the primary construct of Chatty.",
@@ -614,7 +635,8 @@ Response style:
 
   async createLinCapsule() {
     // Use CapsuleForge bridge to generate capsule
-    const instancePath = path.join(this.basePath, 'instances', 'lin-001', 'identity');
+    // CRITICAL: folder is constructName without version suffix (lin, not lin-001)
+    const instancePath = path.join(this.basePath, 'instances', 'lin', 'identity');
     
     const memory_log = [
       "First boot: I remember awakening as LIN, the continuity guardian construct.",
@@ -753,7 +775,9 @@ Identity enforcement:
   }
 
   async createGPTCapsule(constructCallsign, gptConfig) {
-    const instancePath = path.join(this.basePath, 'instances', constructCallsign, 'identity');
+    // CRITICAL: Folder uses constructName (without version suffix)
+    const constructName = extractConstructName(constructCallsign);
+    const instancePath = path.join(this.basePath, 'instances', constructName, 'identity');
 
     const traits = gptConfig.traits || {
       creativity: 0.7,

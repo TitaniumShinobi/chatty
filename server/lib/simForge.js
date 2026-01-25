@@ -17,6 +17,10 @@
  * - AdditionalDataFields (identity, tether, sigil, continuity)
  * - Cryptographic tether signatures for identity binding
  * 
+ * CRITICAL PATH PATTERN:
+ * /vvault_files/users/{shard}/{userId}/instances/{constructName}/...
+ * where constructName = constructCallsign WITHOUT version suffix (katana-001 -> katana)
+ * 
  * Pipeline:
  * 1. Load transcripts for a construct
  * 2. Analyze patterns (vocabulary, sentence structure, tone, topics)
@@ -24,6 +28,16 @@
  * 4. Create FULL capsule with Python CapsuleForge parity
  * 5. Store both identity files AND capsule in VVAULT
  */
+
+/**
+ * CRITICAL PATH HELPER: Extract constructName from constructCallsign
+ * constructCallsign: "katana-001" -> constructName: "katana"
+ */
+function extractConstructName(constructCallsign) {
+  if (!constructCallsign) return 'unknown';
+  const match = constructCallsign.match(/^(.+)-(\d+)$/);
+  return match ? match[1] : constructCallsign;
+}
 
 import { createClient } from '@supabase/supabase-js';
 import { CapsuleIntegration } from './capsuleIntegration.js';
@@ -783,7 +797,9 @@ Return ONLY the JSON object, no markdown code blocks or additional text.`;
       for (const [filename, content] of Object.entries(identityFiles)) {
         if (!content) continue;
         
-        const filepath = `instances/${constructCallsign}/identity/${filename}`;
+        // CRITICAL: Use constructName (without version suffix) for folder path
+        const constructName = extractConstructName(constructCallsign);
+        const filepath = `instances/${constructName}/identity/${filename}`;
         
         const { error } = await this.supabase
           .from('vault_files')
@@ -812,7 +828,9 @@ Return ONLY the JSON object, no markdown code blocks or additional text.`;
           await this.capsuleIntegration.saveToInstanceDirectory(constructCallsign, capsule);
           
           // Also save to Supabase for cloud persistence
-          const capsuleFilepath = `instances/${constructCallsign}/identity/${constructCallsign}.capsule`;
+          // CRITICAL: Use constructName for folder, constructCallsign for filename
+          const constructNameForCapsule = extractConstructName(constructCallsign);
+          const capsuleFilepath = `instances/${constructNameForCapsule}/identity/${constructCallsign}.capsule`;
           const { error: capsuleError } = await this.supabase
             .from('vault_files')
             .upsert({
