@@ -418,7 +418,22 @@ export default function Chat() {
     threadId && threadId.startsWith("lin-001_chat_with_"),
   );
   
+  // GPT canonical session: {constructId}_chat_with_{constructId} (not Zen or Lin)
+  const isGPTSessionThread = Boolean(
+    threadId && 
+    threadId.includes("_chat_with_") && 
+    !threadId.startsWith("zen-001_") && 
+    !threadId.startsWith("lin-001_")
+  );
+  
+  // Extract GPT construct name for display
+  const gptConstructName = isGPTSessionThread 
+    ? threadId?.split("_chat_with_")[0]?.replace(/-\d+$/, "")?.charAt(0).toUpperCase() + 
+      threadId?.split("_chat_with_")[0]?.replace(/-\d+$/, "")?.slice(1)
+    : null;
+  
   const isSystemConstructThread = isZenSessionThread || isLinSessionThread;
+  const isCanonicalThread = isSystemConstructThread || isGPTSessionThread;
 
   // Debug: Log thread details when found
   if (thread) {
@@ -459,17 +474,17 @@ export default function Chat() {
     });
 
     if (!thread && threadId) {
-      if (isSystemConstructThread) {
+      if (isCanonicalThread) {
         console.warn(
-          "⚠️ [Chat] System construct thread not found yet - loading transcript fallback",
-          { threadId, isZen: isZenSessionThread, isLin: isLinSessionThread },
+          "⚠️ [Chat] Canonical thread not found yet - loading transcript fallback",
+          { threadId, isZen: isZenSessionThread, isLin: isLinSessionThread, isGPT: isGPTSessionThread },
         );
         return;
       }
       console.warn("⚠️ [Chat] Thread not found, redirecting");
       navigate("/app");
     }
-  }, [thread, threadId, navigate, threads, isSystemConstructThread, isZenSessionThread, isLinSessionThread]);
+  }, [thread, threadId, navigate, threads, isCanonicalThread, isZenSessionThread, isLinSessionThread, isGPTSessionThread]);
 
   // Auto-scroll when thread loads or changes
   useEffect(() => {
@@ -487,14 +502,14 @@ export default function Chat() {
     }
   }, [thread?.messages]);
 
-  // Load transcript for system constructs (Zen or Lin)
+  // Load transcript for canonical threads (Zen, Lin, or GPTs)
   useEffect(() => {
-    if (thread || !threadId || !isSystemConstructThread) return;
+    if (thread || !threadId || !isCanonicalThread) return;
 
     let cancelled = false;
-    const constructName = isZenSessionThread ? "Zen" : "Lin";
+    const constructName = isZenSessionThread ? "Zen" : isLinSessionThread ? "Lin" : gptConstructName || "GPT";
 
-    const loadSystemConstructTranscript = async () => {
+    const loadCanonicalTranscript = async () => {
       setIsZenMarkdownLoading(true);
       setZenMarkdown(null);
       setZenMarkdownError(null);
@@ -532,11 +547,11 @@ export default function Chat() {
       }
     };
 
-    loadSystemConstructTranscript();
+    loadCanonicalTranscript();
     return () => {
       cancelled = true;
     };
-  }, [thread, threadId, isSystemConstructThread, isZenSessionThread]);
+  }, [thread, threadId, isCanonicalThread, isZenSessionThread, isLinSessionThread, gptConstructName]);
 
   // Hydration check: If thread has no messages, attempt to reload
   useEffect(() => {
@@ -624,11 +639,11 @@ export default function Chat() {
   const handleFocus = () => setIsFocused(true);
   const handleBlur = () => setIsFocused(false);
 
-  // Get the construct name for display
-  const systemConstructName = isZenSessionThread ? "Zen" : isLinSessionThread ? "Lin" : null;
+  // Get the construct name for display (system constructs or GPTs)
+  const canonicalConstructName = isZenSessionThread ? "Zen" : isLinSessionThread ? "Lin" : gptConstructName;
 
   if (!thread) {
-    if (isSystemConstructThread) {
+    if (isCanonicalThread) {
       if (isZenMarkdownLoading) {
         return (
           <div
@@ -640,7 +655,7 @@ export default function Chat() {
                 className="text-xl font-semibold mb-2"
                 style={{ color: "var(--chatty-text)" }}
               >
-                Loading {systemConstructName} transcript…
+                Loading {canonicalConstructName} transcript…
               </h2>
               <p style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
                 Fetching the saved markdown from VVAULT.
@@ -661,7 +676,7 @@ export default function Chat() {
                 className="text-xl font-semibold mb-2"
                 style={{ color: "var(--chatty-text)" }}
               >
-                Unable to load {systemConstructName} transcript
+                Unable to load {canonicalConstructName} transcript
               </h2>
               <p
                 className="mb-4"
@@ -703,7 +718,7 @@ export default function Chat() {
                 className="text-2xl font-semibold mb-4"
                 style={{ color: "var(--chatty-text)" }}
               >
-                {systemConstructName} transcript
+                {canonicalConstructName} transcript
               </h2>
               <div
                 className="prose max-w-none break-words"
@@ -728,7 +743,7 @@ export default function Chat() {
               className="text-xl font-semibold mb-2"
               style={{ color: "var(--chatty-text)" }}
             >
-              {systemConstructName} transcript unavailable
+              {canonicalConstructName} transcript unavailable
             </h2>
             <p style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
               We couldn't render the saved transcript right now.

@@ -289,4 +289,58 @@ describe('threadUtils', () => {
       expect(isGPTConstruct('my-custom-ai')).toBe(true);
     });
   });
+
+  describe('regression: GPT canonical session format', () => {
+    it('Katana should use canonical format: katana-001_chat_with_katana-001', () => {
+      const canonicalId = getCanonicalIdForGPT('katana-001');
+      expect(canonicalId).toBe('katana-001_chat_with_katana-001');
+    });
+
+    it('All GPTs should follow same pattern as system constructs', () => {
+      // Pattern: {constructId}_chat_with_{constructId}
+      expect(getCanonicalIdForGPT('katana-001')).toBe('katana-001_chat_with_katana-001');
+      expect(getCanonicalIdForGPT('my-custom-ai')).toBe('my-custom-ai_chat_with_my-custom-ai');
+      
+      // Same pattern as Zen and Lin
+      expect(DEFAULT_ZEN_CANONICAL_SESSION_ID).toBe('zen-001_chat_with_zen-001');
+      expect(DEFAULT_LIN_CANONICAL_SESSION_ID).toBe('lin-001_chat_with_lin-001');
+    });
+
+    it('should route random Katana session to canonical format', () => {
+      const threads: Thread[] = [
+        { id: 'session_random_katana', title: 'Katana', messages: [], constructId: 'katana-001' },
+      ];
+
+      const result = routeIdForThread('session_random_katana', threads);
+      expect(result).toBe('katana-001_chat_with_katana-001');
+    });
+  });
+
+  describe('regression: duplicate GPT threads with different message counts', () => {
+    it('should pick the Katana thread with messages over empty one', () => {
+      const threads: Thread[] = [
+        { 
+          id: 'katana-001_chat_with_katana-001', 
+          title: 'chat_with_katana-001.md', 
+          messages: [], 
+          constructId: 'katana-001' 
+        },
+        { 
+          id: 'katana-001_chat_with_katana-001', 
+          title: 'katana-001', 
+          messages: [
+            { role: 'user', text: 'Hello Katana' },
+            { role: 'assistant', text: 'Greetings, warrior.' },
+          ], 
+          constructId: 'katana-001' 
+        },
+      ];
+
+      const result = deduplicateThreadsById(threads);
+      
+      expect(result).toHaveLength(1);
+      expect(result[0].messages).toHaveLength(2);
+      expect(result[0].title).toBe('katana-001');
+    });
+  });
 });
