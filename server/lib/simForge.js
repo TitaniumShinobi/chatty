@@ -797,9 +797,8 @@ Return ONLY the JSON object, no markdown code blocks or additional text.`;
       for (const [filename, content] of Object.entries(identityFiles)) {
         if (!content) continue;
         
-        // CRITICAL: Use constructName (without version suffix) for folder path
-        const constructName = extractConstructName(constructCallsign);
-        const filepath = `instances/${constructName}/identity/${filename}`;
+        // CRITICAL: Use full constructCallsign with version suffix for folder path
+        const filepath = `instances/${constructCallsign}/identity/${filename}`;
         
         const { error } = await this.supabase
           .from('vault_files')

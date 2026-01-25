@@ -340,9 +340,8 @@ export class AIManager {
       await fs.writeFile(filePath, buffer);
 
       // Return VVAULT-relative path
-      // CRITICAL: Use constructName (without version suffix) for folder path
-      const constructName = extractConstructName(constructCallsign);
-      const relativePath = `instances/${constructName}/identity/${filename}`;
+      // CRITICAL: Use full constructCallsign with version suffix for folder path
+      const relativePath = `instances/${constructCallsign}/identity/${filename}`;
       
       console.log(`✅ [AIManager] Saved avatar to filesystem: ${filePath} (relative: ${relativePath})`);
       

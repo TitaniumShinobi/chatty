@@ -7,9 +7,9 @@
  * Supabase is used as a fallback when the API is unavailable.
  * 
  * Convention (CRITICAL - NEVER DEVIATE):
- * - Supabase path: "/vvault_files/users/{shard}/{userId}/instances/{constructName}/chatty/chat_with_{constructId}.md"
- * - filename in table: "instances/{constructName}/chatty/chat_with_{constructId}.md"
- * - constructName = constructId WITHOUT version suffix (zen-001 -> zen, katana-001 -> katana)
+ * - Supabase path: "/vvault_files/users/{shard}/{userId}/instances/{constructId}/chatty/chat_with_{constructId}.md"
+ * - filename in table: "instances/{constructId}/chatty/chat_with_{constructId}.md"
+ * - constructId = FULL ID with version suffix (zen-001, lin-001, katana-001)
  * - file_type: "conversation"
  * - metadata: { sessionId, title, constructId, constructName, constructCallsign, messages: [...] }
  */
@@ -457,10 +457,9 @@ async function writeConversationToSupabase(params) {
       return null;
     }
 
-    // CRITICAL: Match VVAULT Supabase path pattern - instances/{constructName}/chatty/chat_with_{constructId}.md
-    // constructName = constructId WITHOUT version suffix (zen-001 -> zen, katana-001 -> katana)
-    const constructName = (constructId || 'unknown').replace(/-\d+$/, '');
-    const filename = `instances/${constructName}/chatty/chat_with_${constructId || 'unknown'}.md`;
+    // CRITICAL: Match VVAULT Supabase path pattern - instances/{constructId}/chatty/chat_with_{constructId}.md
+    // Use FULL constructId with version suffix in folder path (zen-001, lin-001, katana-001)
+    const filename = `instances/${constructId || 'unknown'}/chatty/chat_with_${constructId || 'unknown'}.md`;
 
     const { data: existing } = await supabase
       .from('vault_files')

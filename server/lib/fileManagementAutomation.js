@@ -88,27 +88,25 @@ export class FileManagementAutomation {
 
   /**
    * Ensure files exist for GPT creation
-   * CRITICAL: Folder is constructName (without version suffix), file names use full constructCallsign
+   * CRITICAL: Folder uses full constructCallsign with version suffix (zen-001, katana-001)
    */
   async ensureGPTCreationFiles(constructCallsign, gptConfig = {}) {
-    // CRITICAL: Extract constructName for folder path (katana-001 -> katana)
-    const constructName = extractConstructName(constructCallsign);
-    
+    // CRITICAL: Use full constructCallsign for folder path (e.g., katana-001, not katana)
     const files = [
       { 
-        path: `instances/${constructName}/identity/prompt.txt`, 
+        path: `instances/${constructCallsign}/identity/prompt.txt`, 
         create: () => this.createGPTPrompt(constructCallsign, gptConfig) 
       },
       { 
-        path: `instances/${constructName}/identity/conditioning.txt`, 
+        path: `instances/${constructCallsign}/identity/conditioning.txt`, 
         create: () => this.createGPTConditioning(constructCallsign, gptConfig) 
       },
       { 
-        path: `instances/${constructName}/identity/${constructCallsign}.capsule`, 
+        path: `instances/${constructCallsign}/identity/${constructCallsign}.capsule`, 
         create: () => this.createGPTCapsule(constructCallsign, gptConfig) 
       },
       { 
-        path: `instances/${constructName}/chatty/chat_with_${constructCallsign}.md`, 
+        path: `instances/${constructCallsign}/chatty/chat_with_${constructCallsign}.md`, 
         create: () => this.createGPTConversation(constructCallsign, gptConfig) 
       },
     ];

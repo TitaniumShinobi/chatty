@@ -5,18 +5,17 @@
 **ALL storage routes to Supabase `vvault_files` bucket. NO LOCAL FILESYSTEM. NO EXCEPTIONS. NO DEVIATIONS. STOP. DON'T. QUIT IT.**
 
 ```
-/vvault_files/users/{shard}/{userId}/instances/{constructName}/chatty/chat_with_{constructId}.md
+/vvault_files/users/{shard}/{userId}/instances/{constructId}/chatty/chat_with_{constructId}.md
 ```
 
 **HARDCODED CONNECTIONS (NEVER DEVIATE):**
-- **Zen:** `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/zen/chatty/chat_with_zen-001.md`
-- **Lin:** `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/lin/chatty/chat_with_lin-001.md`
-- **Katana:** `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/katana/chatty/chat_with_katana-001.md`
+- **Zen:** `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/zen-001/chatty/chat_with_zen-001.md`
+- **Lin:** `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/lin-001/chatty/chat_with_lin-001.md`
+- **Katana:** `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/katana-001/chatty/chat_with_katana-001.md`
 
 **PATH RULES (MANDATORY):**
-- `{constructName}` = constructId WITHOUT version suffix (`katana-001` → `katana`)
-- `{constructId}` = FULL ID with version suffix (`katana-001`)
-- Folder: `instances/{constructName}/` (NO version suffix in folder)
+- `{constructId}` = FULL ID with version suffix (`zen-001`, `lin-001`, `katana-001`)
+- Folder: `instances/{constructId}/` (WITH version suffix in folder)
 - Filename: `chat_with_{constructId}.md` (WITH version suffix in filename)
 
 **APPLIES TO:** Every custom AI, GPT, construct, virtual persona, digital intelligence, and nonsentient tool. No exceptions. Ever.
@@ -42,7 +41,7 @@ function extractConstructName(constructCallsign) {
 - Lin (lin-001) uses the SAME transcript file whether accessed from:
   - Sidebar navigation (clicking Lin)
   - GPTCreator Create tab (conversational GPT creation)
-- Both routes read/write to: `/vvault_files/.../instances/lin/chatty/chat_with_lin-001.md`
+- Both routes read/write to: `/vvault_files/.../instances/lin-001/chatty/chat_with_lin-001.md`
 - Lin is the "casa madrigal" system construct - she guides users through simForge and GPT creation
 
 ---
@@ -132,23 +131,22 @@ Critical tests preventing recurring bugs in thread/conversation management:
 **Canonical Session ID Pattern (CRITICAL):**
 All system constructs and GPTs use the same URL-to-file mapping:
 - URL: `/app/chat/{constructId}_chat_with_{constructId}`
-- VVAULT Supabase Path: `/vvault_files/users/{shard}/{userId}/instances/{constructName}/chatty/chat_with_{constructId}.md`
+- VVAULT Supabase Path: `/vvault_files/users/{shard}/{userId}/instances/{constructId}/chatty/chat_with_{constructId}.md`
 
 **CRITICAL - VVAULT Supabase File Path Pattern (NEVER DEVIATE):**
 ```
-/vvault_files/users/{shard}/{userId}/instances/{constructName}/chatty/chat_with_{constructId}.md
+/vvault_files/users/{shard}/{userId}/instances/{constructId}/chatty/chat_with_{constructId}.md
 ```
 
 Where:
 - `{shard}`: User shard (e.g., `shard_0000`)
 - `{userId}`: User identifier (e.g., `devon_woodson_1762969514958`)
-- `{constructName}`: Construct name WITHOUT version suffix (e.g., `zen`, `lin`, `katana`)
 - `{constructId}`: Full construct ID WITH version suffix (e.g., `zen-001`, `lin-001`, `katana-001`)
 
 Examples:
-- Zen: `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/zen/chatty/chat_with_zen-001.md`
-- Lin: `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/lin/chatty/chat_with_lin-001.md`
-- Katana: `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/katana/chatty/chat_with_katana-001.md`
+- Zen: `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/zen-001/chatty/chat_with_zen-001.md`
+- Lin: `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/lin-001/chatty/chat_with_lin-001.md`
+- Katana: `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/katana-001/chatty/chat_with_katana-001.md`
 
 **ALL transcript storage MUST route to Supabase `vvault_files` bucket. No local filesystem storage. No exceptions.**
 
