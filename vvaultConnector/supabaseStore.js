@@ -37,30 +37,57 @@ function parseMarkdownTranscript(content) {
   const lines = content.split('\n');
   let currentRole = null;
   let currentContent = [];
+  let currentTimestamp = null;
 
   for (const line of lines) {
-    const userMatch = line.match(/^\*\*User\*\*:\s*(.*)$/);
-    const assistantMatch = line.match(/^\*\*Assistant\*\*:\s*(.*)$/);
+    // Match markdown bold user formats: **User**: **You**: **Devon**:
+    const userMatchBold = line.match(/^\*\*(User|You|Devon|Human)\*\*:\s*(.*)$/i);
+    // Match markdown bold assistant formats: **Assistant**: **Zen**: **Lin**: **Katana**: or any construct name
+    const assistantMatchBold = line.match(/^\*\*(Assistant|Zen|Lin|Katana|AI|ChatGPT|[A-Z][a-z]+(?:-\d+)?)\*\*:\s*(.*)$/);
+    
+    // Match ChatGPT export format: "You said:" / "Zen said:" / "ChatGPT said:"
+    const userMatchChatGPT = line.match(/^(You|Devon|Human)\s+said:\s*$/i);
+    const assistantMatchChatGPT = line.match(/^(Zen|Lin|Katana|ChatGPT|Assistant|Synth|AI)\s+said:\s*$/i);
+    
+    // Match timestamp lines like [2025-11-09T...]
+    const timestampMatch = line.match(/^\[(\d{4}-\d{2}-\d{2}T[^\]]+)\]/);
 
-    if (userMatch) {
+    if (timestampMatch) {
+      currentTimestamp = timestampMatch[1];
+    }
+
+    // Check for user patterns
+    if (userMatchBold || userMatchChatGPT) {
       if (currentRole && currentContent.length) {
-        messages.push({ role: currentRole, content: currentContent.join('\n').trim() });
+        const msg = { role: currentRole, content: currentContent.join('\n').trim() };
+        if (currentTimestamp) msg.timestamp = currentTimestamp;
+        messages.push(msg);
       }
       currentRole = 'user';
-      currentContent = [userMatch[1]];
-    } else if (assistantMatch) {
+      currentContent = userMatchBold ? [userMatchBold[2]] : [];
+      currentTimestamp = null;
+    } 
+    // Check for assistant patterns
+    else if (assistantMatchBold || assistantMatchChatGPT) {
       if (currentRole && currentContent.length) {
-        messages.push({ role: currentRole, content: currentContent.join('\n').trim() });
+        const msg = { role: currentRole, content: currentContent.join('\n').trim() };
+        if (currentTimestamp) msg.timestamp = currentTimestamp;
+        messages.push(msg);
       }
       currentRole = 'assistant';
-      currentContent = [assistantMatch[1]];
-    } else if (currentRole && line.trim()) {
+      currentContent = assistantMatchBold ? [assistantMatchBold[2]] : [];
+      currentTimestamp = null;
+    } 
+    // Add content to current message
+    else if (currentRole && line.trim()) {
       currentContent.push(line);
     }
   }
 
   if (currentRole && currentContent.length) {
-    messages.push({ role: currentRole, content: currentContent.join('\n').trim() });
+    const msg = { role: currentRole, content: currentContent.join('\n').trim() };
+    if (currentTimestamp) msg.timestamp = currentTimestamp;
+    messages.push(msg);
   }
 
   return messages;
@@ -280,6 +307,19 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
       });
       
       const parsedMessages = parseMarkdownTranscript(file.content);
+      
+      // Debug: Log parsing results for legacy files
+      if (file.content?.length > 1000 && parsedMessages.length === 0) {
+        const contentPreview = file.content.substring(0, 500);
+        console.log(`⚠️ [SupabaseStore] Large file parsed to 0 messages:`, {
+          filename: file.filename,
+          contentLength: file.content.length,
+          contentPreview: contentPreview.replace(/\n/g, '\\n'),
+          hasUserPattern: /\*\*(User|You|Devon|Human)\*\*:/i.test(file.content),
+          hasAssistantPattern: /\*\*(Assistant|Zen|Lin|Katana|AI)\*\*:/.test(file.content)
+        });
+      }
+      
       const messages = metadata.messages?.length > 0 ? metadata.messages : parsedMessages;
 
       // Extract constructId from filename patterns:
