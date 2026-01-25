@@ -39,51 +39,88 @@ function parseMarkdownTranscript(content) {
   let currentContent = [];
   let currentTimestamp = null;
 
-  for (const line of lines) {
-    // Match markdown bold user formats: **User**: **You**: **Devon**:
-    const userMatchBold = line.match(/^\*\*(User|You|Devon|Human)\*\*:\s*(.*)$/i);
-    // Match markdown bold assistant formats: **Assistant**: **Zen**: **Lin**: **Katana**: or any construct name
-    const assistantMatchBold = line.match(/^\*\*(Assistant|Zen|Lin|Katana|AI|ChatGPT|[A-Z][a-z]+(?:-\d+)?)\*\*:\s*(.*)$/);
-    
-    // Match ChatGPT export format: "You said:" / "Zen said:" / "ChatGPT said:"
-    const userMatchChatGPT = line.match(/^(You|Devon|Human)\s+said:\s*$/i);
-    const assistantMatchChatGPT = line.match(/^(Zen|Lin|Katana|ChatGPT|Assistant|Synth|AI)\s+said:\s*$/i);
-    
-    // Match timestamp lines like [2025-11-09T...]
-    const timestampMatch = line.match(/^\[(\d{4}-\d{2}-\d{2}T[^\]]+)\]/);
+  // User identifiers - these are ALWAYS user messages (case insensitive)
+  const USER_PATTERNS = /^(you|user|human|devon|me|i)$/i;
+  
+  // Detect if speaker is user (returns true) or assistant (returns false)
+  function isUserSpeaker(name) {
+    return USER_PATTERNS.test(name);
+  }
 
+  for (const line of lines) {
+    // Match timestamp lines like [2025-11-09T...] or (2026-01-20T12:33:50.563179)
+    const timestampMatch = line.match(/^\[(\d{4}-\d{2}-\d{2}T[^\]]+)\]/) || 
+                           line.match(/\((\d{4}-\d{2}-\d{2}T[\d:.]+)\)/);
     if (timestampMatch) {
       currentTimestamp = timestampMatch[1];
     }
 
-    // Check for user patterns
-    if (userMatchBold || userMatchChatGPT) {
+    // FORMAT 1: Markdown bold - **Name**: content OR **Name**:
+    const boldMatch = line.match(/^\*\*([^*]+)\*\*:\s*(.*)$/);
+    if (boldMatch) {
+      const speaker = boldMatch[1].trim();
+      const inlineContent = boldMatch[2];
+      
+      // Save previous message
       if (currentRole && currentContent.length) {
         const msg = { role: currentRole, content: currentContent.join('\n').trim() };
         if (currentTimestamp) msg.timestamp = currentTimestamp;
         messages.push(msg);
       }
-      currentRole = 'user';
-      currentContent = userMatchBold ? [userMatchBold[2]] : [];
+      
+      currentRole = isUserSpeaker(speaker) ? 'user' : 'assistant';
+      currentContent = inlineContent ? [inlineContent] : [];
       currentTimestamp = null;
-    } 
-    // Check for assistant patterns
-    else if (assistantMatchBold || assistantMatchChatGPT) {
+      continue;
+    }
+    
+    // FORMAT 2: ChatGPT export - "Name said:" on its own line
+    const saidMatch = line.match(/^([A-Za-z][A-Za-z0-9_-]*)\s+said:\s*$/i);
+    if (saidMatch) {
+      const speaker = saidMatch[1].trim();
+      
+      // Save previous message
       if (currentRole && currentContent.length) {
         const msg = { role: currentRole, content: currentContent.join('\n').trim() };
         if (currentTimestamp) msg.timestamp = currentTimestamp;
         messages.push(msg);
       }
-      currentRole = 'assistant';
-      currentContent = assistantMatchBold ? [assistantMatchBold[2]] : [];
+      
+      currentRole = isUserSpeaker(speaker) ? 'user' : 'assistant';
+      currentContent = [];
       currentTimestamp = null;
-    } 
-    // Add content to current message
-    else if (currentRole && line.trim()) {
+      continue;
+    }
+    
+    // FORMAT 3: Simple "Name:" at start of line (common in transcripts)
+    const simpleMatch = line.match(/^([A-Za-z][A-Za-z0-9_-]*):\s+(.+)$/);
+    if (simpleMatch && simpleMatch[1].length < 20) { // Name shouldn't be too long
+      const speaker = simpleMatch[1].trim();
+      const inlineContent = simpleMatch[2];
+      
+      // Only treat as speaker label if it looks like a name (not a URL or timestamp)
+      if (!speaker.includes('http') && !speaker.match(/^\d/)) {
+        // Save previous message
+        if (currentRole && currentContent.length) {
+          const msg = { role: currentRole, content: currentContent.join('\n').trim() };
+          if (currentTimestamp) msg.timestamp = currentTimestamp;
+          messages.push(msg);
+        }
+        
+        currentRole = isUserSpeaker(speaker) ? 'user' : 'assistant';
+        currentContent = [inlineContent];
+        currentTimestamp = null;
+        continue;
+      }
+    }
+    
+    // Add content to current message (skip empty lines at start)
+    if (currentRole && line.trim()) {
       currentContent.push(line);
     }
   }
 
+  // Don't forget the last message
   if (currentRole && currentContent.length) {
     const msg = { role: currentRole, content: currentContent.join('\n').trim() };
     if (currentTimestamp) msg.timestamp = currentTimestamp;
