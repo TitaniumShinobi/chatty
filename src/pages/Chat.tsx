@@ -701,6 +701,193 @@ export default function Chat() {
       }
 
       if (zenMarkdown) {
+        // Parse zenMarkdown transcript into styled messages
+        const parseTranscriptToMessages = (markdown: string): Message[] => {
+          const messages: Message[] = [];
+          // Match patterns like: "TIME - SPEAKER [ISO_TIMESTAMP]: MESSAGE" or "**SPEAKER:** MESSAGE"
+          const lines = markdown.split('\n');
+          let currentMessage: { role: 'user' | 'assistant'; text: string; ts: number } | null = null;
+          
+          for (const line of lines) {
+            // Pattern 1: "10:26:07 AM EST - Devon Woodson [2026-01-20T15:26:07.457Z]: Message"
+            const timestampMatch = line.match(/^\d{1,2}:\d{2}:\d{2}\s*(?:AM|PM)?\s*\w*\s*-\s*(.+?)\s*\[([^\]]+)\]:\s*(.*)$/i);
+            // Pattern 2: "**Speaker:** Message"
+            const boldMatch = line.match(/^\*\*(.+?):\*\*\s*(.*)$/);
+            // Pattern 3: "Speaker: Message" (simple format)
+            const simpleMatch = line.match(/^(Devon|Zen|Lin|Katana|User|Assistant|You):\s*(.*)$/i);
+            
+            if (timestampMatch) {
+              // Save previous message
+              if (currentMessage) {
+                messages.push({
+                  id: `fallback_${messages.length}_${Date.now()}`,
+                  role: currentMessage.role,
+                  text: currentMessage.text.trim(),
+                  ts: currentMessage.ts,
+                });
+              }
+              
+              const speaker = timestampMatch[1].trim();
+              const timestamp = timestampMatch[2];
+              const content = timestampMatch[3];
+              const isUser = speaker.toLowerCase().includes('devon') || 
+                             speaker.toLowerCase().includes('user') ||
+                             speaker.toLowerCase().includes('you');
+              
+              currentMessage = {
+                role: isUser ? 'user' : 'assistant',
+                text: content,
+                ts: new Date(timestamp).getTime() || Date.now(),
+              };
+            } else if (boldMatch) {
+              if (currentMessage) {
+                messages.push({
+                  id: `fallback_${messages.length}_${Date.now()}`,
+                  role: currentMessage.role,
+                  text: currentMessage.text.trim(),
+                  ts: currentMessage.ts,
+                });
+              }
+              
+              const speaker = boldMatch[1].trim();
+              const content = boldMatch[2];
+              const isUser = speaker.toLowerCase().includes('devon') || 
+                             speaker.toLowerCase().includes('user') ||
+                             speaker.toLowerCase().includes('you');
+              
+              currentMessage = {
+                role: isUser ? 'user' : 'assistant',
+                text: content,
+                ts: Date.now() - (messages.length * 1000),
+              };
+            } else if (simpleMatch) {
+              if (currentMessage) {
+                messages.push({
+                  id: `fallback_${messages.length}_${Date.now()}`,
+                  role: currentMessage.role,
+                  text: currentMessage.text.trim(),
+                  ts: currentMessage.ts,
+                });
+              }
+              
+              const speaker = simpleMatch[1].trim();
+              const content = simpleMatch[2];
+              const isUser = speaker.toLowerCase().includes('devon') || 
+                             speaker.toLowerCase().includes('user') ||
+                             speaker.toLowerCase().includes('you');
+              
+              currentMessage = {
+                role: isUser ? 'user' : 'assistant',
+                text: content,
+                ts: Date.now() - (messages.length * 1000),
+              };
+            } else if (currentMessage && line.trim()) {
+              // Continuation of previous message
+              currentMessage.text += '\n' + line;
+            }
+          }
+          
+          // Don't forget last message
+          if (currentMessage) {
+            messages.push({
+              id: `fallback_${messages.length}_${Date.now()}`,
+              role: currentMessage.role,
+              text: currentMessage.text.trim(),
+              ts: currentMessage.ts,
+            });
+          }
+          
+          return messages;
+        };
+        
+        const parsedMessages = parseTranscriptToMessages(zenMarkdown);
+        
+        // If parsing yielded messages, render them styled; otherwise fallback to prose
+        if (parsedMessages.length > 0) {
+          return (
+            <div
+              className="flex flex-col h-full"
+              style={{ backgroundColor: "var(--chatty-bg-main)" }}
+            >
+              <div ref={messagesContainerRef} className="flex-1 overflow-auto min-h-0">
+                <div className="mb-2 px-4 pt-4"></div>
+                {parsedMessages.map((m, index) => {
+                  const isUserMsg = m.role === 'user';
+                  const content = m.text || "";
+                  const contentLength = content.length;
+                  let maxWidth = "max-w-[85%] sm:max-w-[80%] md:max-w-[75%] lg:max-w-[70%]";
+                  if (contentLength <= 20) maxWidth = "max-w-[200px]";
+                  else if (contentLength <= 100) maxWidth = "max-w-[300px] sm:max-w-[400px]";
+                  
+                  if (isUserMsg) {
+                    return (
+                      <div key={m.id} className="group relative flex items-end gap-3 py-3 px-4 flex-row-reverse">
+                        <div className="flex flex-col items-end">
+                          <div
+                            className={`px-4 py-3 shadow-sm transition-colors inline-block ${maxWidth} ml-auto text-left relative`}
+                            style={{
+                              backgroundColor: "#ADA587",
+                              borderRadius: "22px 22px 6px 22px",
+                              border: "1px solid rgba(76, 61, 30, 0.18)",
+                              boxShadow: "0 1px 0 rgba(58, 46, 20, 0.12)",
+                              color: "var(--chatty-text-inverse, #ffffeb)",
+                              overflow: "hidden",
+                              minWidth: 0,
+                              boxSizing: "border-box",
+                            }}
+                          >
+                            <div className="break-words" style={{ maxWidth: "100%", minWidth: 0, width: "100%" }}>
+                              <ReactMarkdown components={userMessageMarkdownComponents} remarkPlugins={[remarkBreaks]} rehypePlugins={[rehypeRaw]}>
+                                {m.text || ""}
+                              </ReactMarkdown>
+                            </div>
+                          </div>
+                          <div className="mt-1 flex items-center gap-2">
+                            <span className="opacity-0 group-hover:opacity-100 transition-opacity text-xs" style={{ color: "#ADA587" }}>
+                              {formatMessageTimestamp(m.ts)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  
+                  // AI/Construct messages: left-aligned, no bubble
+                  return (
+                    <div key={m.id} className="group relative flex items-start gap-3 py-3 px-4">
+                      <div className="flex flex-col items-start text-left w-full">
+                        <div
+                          className="whitespace-normal w-full assistant-code-scope"
+                          style={{ color: "var(--chatty-text)", overflow: "hidden", maxWidth: "100%" }}
+                        >
+                          <style dangerouslySetInnerHTML={{ __html: assistantCodeStyles }} />
+                          <R
+                            packets={[{ op: "answer.v1", payload: { content: m.text || "" } }]}
+                          />
+                        </div>
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="opacity-0 group-hover:opacity-100 transition-opacity text-xs" style={{ color: "var(--chatty-text)", opacity: 0.5 }}>
+                            {formatMessageTimestamp(m.ts)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="h-4" />
+              </div>
+              <MessageBar
+                placeholder={`Message ${canonicalConstructName || "AI"}...`}
+                onSubmit={(text: string) => {
+                  // For fallback mode, just log - full send requires thread context
+                  console.log("[FallbackChat] Message send attempted:", text);
+                }}
+              />
+            </div>
+          );
+        }
+        
+        // Fallback to prose if parsing failed
         return (
           <div
             className="flex flex-col h-full"
