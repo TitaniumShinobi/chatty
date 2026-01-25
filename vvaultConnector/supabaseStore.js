@@ -417,7 +417,53 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
         });
       }
       
-      const messages = metadata.messages?.length > 0 ? metadata.messages : parsedMessages;
+      // Validate parsed messages - skip garbage from legacy files
+      // Garbage detection: all messages have same role AND file has no proper chatty path
+      // Legacy = BOTH 'instances/' AND '/chatty/' missing (uses &&, not ||)
+      const isLegacyFile = !file.filename.includes('instances/') && !file.filename.includes('/chatty/');
+      const hasGarbageParsedMessages = parsedMessages.length > 0 && (() => {
+        // Check if all messages have the same role (should be alternating user/assistant)
+        const roles = parsedMessages.map(m => m.role);
+        const allSameRole = roles.every(r => r === roles[0]);
+        
+        // Check for garbage content patterns (date headers, single words, etc.)
+        const garbagePatterns = [
+          /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d+,?\s*\d*/i,
+          /^[A-Za-z]+!?$/, // Single words like "Synth!"
+          /^\d{4}[-/]\d{2}[-/]\d{2}$/, // Date strings
+        ];
+        const hasGarbageContent = parsedMessages.some(m => {
+          const content = m.content?.trim() || '';
+          if (content.length < 20) {
+            return garbagePatterns.some(pattern => pattern.test(content));
+          }
+          return false;
+        });
+        
+        // Large file with all same role and garbage content = garbage
+        if (allSameRole && hasGarbageContent && file.content?.length > 5000) {
+          console.log(`⚠️ [SupabaseStore] Detected garbage parsed messages:`, {
+            filename: file.filename,
+            messageCount: parsedMessages.length,
+            allSameRole,
+            hasGarbageContent,
+            firstContentPreview: parsedMessages[0]?.content?.substring(0, 50)
+          });
+          return true;
+        }
+        return false;
+      })();
+      
+      // Use metadata messages first, then parsed (skip garbage parsed)
+      let messages;
+      if (metadata.messages?.length > 0) {
+        messages = metadata.messages;
+      } else if (isLegacyFile && hasGarbageParsedMessages) {
+        console.log(`⏭️ [SupabaseStore] Skipping garbage legacy file: ${file.filename}`);
+        messages = []; // Skip garbage messages from legacy files
+      } else {
+        messages = parsedMessages;
+      }
 
       // Extract constructId from filename patterns:
       // - "instances/{name}/chatty/chat_with_{constructId}.md"
