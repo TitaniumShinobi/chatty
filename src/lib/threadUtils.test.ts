@@ -222,4 +222,71 @@ describe('threadUtils', () => {
       expect(result).toBe('katana-001_chat_with_katana-001');
     });
   });
+
+  describe('regression: duplicate Lin threads with different message counts', () => {
+    it('should pick the Lin thread with messages over empty one after normalization', () => {
+      const threads: Thread[] = [
+        { 
+          id: 'lin-001_chat_with_lin-001', 
+          title: 'chat_with_lin-001.md', 
+          messages: [], 
+          constructId: 'lin-001' 
+        },
+        { 
+          id: 'lin-001_chat_with_lin-001', 
+          title: 'lin-001', 
+          messages: [
+            { role: 'user', text: 'Help me create a character' },
+            { role: 'assistant', text: 'I would be happy to help you create a character!' },
+            { role: 'user', text: 'Make them mysterious' },
+          ], 
+          constructId: 'lin-001' 
+        },
+      ];
+
+      const result = deduplicateThreadsById(threads);
+      
+      expect(result).toHaveLength(1);
+      expect(result[0].messages).toHaveLength(3);
+      expect(result[0].title).toBe('lin-001');
+    });
+  });
+
+  describe('regression: Lin canonical session ID format', () => {
+    it('should have Lin canonical ID following same pattern as Zen', () => {
+      expect(DEFAULT_LIN_CANONICAL_SESSION_ID).toBe('lin-001_chat_with_lin-001');
+      expect(DEFAULT_ZEN_CANONICAL_SESSION_ID).toBe('zen-001_chat_with_zen-001');
+      
+      // Verify congruent pattern: {constructId}_chat_with_{constructId}
+      expect(DEFAULT_LIN_CANONICAL_SESSION_ID).toMatch(/^lin-001_chat_with_lin-001$/);
+      expect(DEFAULT_ZEN_CANONICAL_SESSION_ID).toMatch(/^zen-001_chat_with_zen-001$/);
+    });
+
+    it('should normalize random Lin session to canonical format', () => {
+      const result = normalizeLinThreadId('session_random_123', 'lin-001', 'Lin Chat');
+      expect(result).toBe('lin-001_chat_with_lin-001');
+    });
+
+    it('should normalize random Zen session to canonical format', () => {
+      const result = normalizeZenThreadId('session_random_456', 'zen-001', 'Zen Chat');
+      expect(result).toBe('zen-001_chat_with_zen-001');
+    });
+  });
+
+  describe('regression: system constructs must NOT use GPT routing', () => {
+    it('Zen should not be treated as GPT', () => {
+      expect(isGPTConstruct('zen-001')).toBe(false);
+      expect(isGPTConstruct('zen')).toBe(false);
+    });
+
+    it('Lin should not be treated as GPT', () => {
+      expect(isGPTConstruct('lin-001')).toBe(false);
+      expect(isGPTConstruct('lin')).toBe(false);
+    });
+
+    it('Custom GPTs should be treated as GPT', () => {
+      expect(isGPTConstruct('katana-001')).toBe(true);
+      expect(isGPTConstruct('my-custom-ai')).toBe(true);
+    });
+  });
 });

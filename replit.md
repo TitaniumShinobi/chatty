@@ -79,6 +79,18 @@ Critical tests preventing recurring bugs in thread/conversation management:
 2. **GPT Canonical Routing:** Routes random GPT session IDs (e.g., `session_123_abc`) to canonical format (`katana-001_chat_with_katana-001`)
 3. **Zen/Lin Thread Normalization:** Normalizes all Zen threads to `zen-001_chat_with_zen-001` and Lin to `lin-001_chat_with_lin-001`
 4. **System Construct Detection:** Correctly identifies Zen/Lin as system constructs (not GPTs)
+5. **Lin Canonical Format Congruence:** Ensures Lin follows the same `{constructId}_chat_with_{constructId}` pattern as Zen
+6. **Lin Thread Deduplication:** Picks Lin thread with messages over empty duplicates (mirrors Zen behavior)
+
+**Canonical Session ID Pattern (CRITICAL):**
+All system constructs and GPTs use the same URL-to-file mapping:
+- URL: `/app/chat/{constructId}_chat_with_{constructId}`
+- VVAULT File: `instances/{constructId}/chatty/chat_with_{constructId}.md`
+
+Examples:
+- Zen: `/app/chat/zen-001_chat_with_zen-001` → `chat_with_zen-001.md`
+- Lin: `/app/chat/lin-001_chat_with_lin-001` → `chat_with_lin-001.md`
+- Katana: `/app/chat/katana-001_chat_with_katana-001` → `chat_with_katana-001.md`
 
 **Running Tests:**
 ```bash
@@ -91,6 +103,8 @@ npm test -- src/lib/threadUtils.test.ts
 - `getCanonicalIdForGPT()`: Generates `{constructId}_chat_with_{constructId}` format
 - `routeIdForThread()`: Routes thread clicks to appropriate canonical IDs
 - `normalizeZenThreadId()` / `normalizeLinThreadId()`: Normalize system construct thread IDs
+- `DEFAULT_ZEN_CANONICAL_SESSION_ID`: Constant `zen-001_chat_with_zen-001`
+- `DEFAULT_LIN_CANONICAL_SESSION_ID`: Constant `lin-001_chat_with_lin-001`
 
 ## External Dependencies
 - **VVAULT API:** Primary API for AI inference, memory management, and conversation transcripts.
