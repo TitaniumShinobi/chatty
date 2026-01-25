@@ -413,6 +413,12 @@ export default function Chat() {
   const isZenSessionThread = Boolean(
     threadId && threadId.startsWith("zen-001_chat_with_"),
   );
+  
+  const isLinSessionThread = Boolean(
+    threadId && threadId.startsWith("lin-001_chat_with_"),
+  );
+  
+  const isSystemConstructThread = isZenSessionThread || isLinSessionThread;
 
   // Debug: Log thread details when found
   if (thread) {
@@ -453,17 +459,17 @@ export default function Chat() {
     });
 
     if (!thread && threadId) {
-      if (isZenSessionThread) {
+      if (isSystemConstructThread) {
         console.warn(
-          "⚠️ [Chat] Zen thread not found yet - loading transcript fallback",
-          { threadId },
+          "⚠️ [Chat] System construct thread not found yet - loading transcript fallback",
+          { threadId, isZen: isZenSessionThread, isLin: isLinSessionThread },
         );
         return;
       }
       console.warn("⚠️ [Chat] Thread not found, redirecting");
       navigate("/app");
     }
-  }, [thread, threadId, navigate, threads, isZenSessionThread]);
+  }, [thread, threadId, navigate, threads, isSystemConstructThread, isZenSessionThread, isLinSessionThread]);
 
   // Auto-scroll when thread loads or changes
   useEffect(() => {
@@ -481,12 +487,14 @@ export default function Chat() {
     }
   }, [thread?.messages]);
 
+  // Load transcript for system constructs (Zen or Lin)
   useEffect(() => {
-    if (thread || !threadId || !isZenSessionThread) return;
+    if (thread || !threadId || !isSystemConstructThread) return;
 
     let cancelled = false;
+    const constructName = isZenSessionThread ? "Zen" : "Lin";
 
-    const loadZenTranscript = async () => {
+    const loadSystemConstructTranscript = async () => {
       setIsZenMarkdownLoading(true);
       setZenMarkdown(null);
       setZenMarkdownError(null);
@@ -504,7 +512,7 @@ export default function Chat() {
           throw new Error(
             data?.error ||
               response.statusText ||
-              "Failed to load Zen transcript",
+              `Failed to load ${constructName} transcript`,
           );
         }
 
@@ -524,11 +532,11 @@ export default function Chat() {
       }
     };
 
-    loadZenTranscript();
+    loadSystemConstructTranscript();
     return () => {
       cancelled = true;
     };
-  }, [thread, threadId, isZenSessionThread]);
+  }, [thread, threadId, isSystemConstructThread, isZenSessionThread]);
 
   // Hydration check: If thread has no messages, attempt to reload
   useEffect(() => {
@@ -616,8 +624,11 @@ export default function Chat() {
   const handleFocus = () => setIsFocused(true);
   const handleBlur = () => setIsFocused(false);
 
+  // Get the construct name for display
+  const systemConstructName = isZenSessionThread ? "Zen" : isLinSessionThread ? "Lin" : null;
+
   if (!thread) {
-    if (isZenSessionThread) {
+    if (isSystemConstructThread) {
       if (isZenMarkdownLoading) {
         return (
           <div
@@ -629,7 +640,7 @@ export default function Chat() {
                 className="text-xl font-semibold mb-2"
                 style={{ color: "var(--chatty-text)" }}
               >
-                Loading Zen transcript…
+                Loading {systemConstructName} transcript…
               </h2>
               <p style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
                 Fetching the saved markdown from VVAULT.
@@ -650,7 +661,7 @@ export default function Chat() {
                 className="text-xl font-semibold mb-2"
                 style={{ color: "var(--chatty-text)" }}
               >
-                Unable to load Zen transcript
+                Unable to load {systemConstructName} transcript
               </h2>
               <p
                 className="mb-4"
@@ -692,7 +703,7 @@ export default function Chat() {
                 className="text-2xl font-semibold mb-4"
                 style={{ color: "var(--chatty-text)" }}
               >
-                Zen transcript
+                {systemConstructName} transcript
               </h2>
               <div
                 className="prose max-w-none break-words"
@@ -717,7 +728,7 @@ export default function Chat() {
               className="text-xl font-semibold mb-2"
               style={{ color: "var(--chatty-text)" }}
             >
-              Zen transcript unavailable
+              {systemConstructName} transcript unavailable
             </h2>
             <p style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
               We couldn't render the saved transcript right now.
