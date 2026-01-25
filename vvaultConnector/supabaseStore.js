@@ -45,7 +45,7 @@ function parseMarkdownTranscript(content) {
   const USER_PREFIX_PATTERNS = /^(devon|user)\b/i; // Names that start with these are users
   
   // AI/Construct identifiers - these are ALWAYS assistant messages
-  const AI_PATTERNS = /^(zen|lin|katana|assistant|ai|bot|gpt|chatgpt|claude|gemini)/i;
+  const AI_PATTERNS = /^(zen|lin|katana|synth|assistant|ai|bot|gpt|chatgpt|claude|gemini)/i;
   
   // Detect if speaker is user (returns true) or assistant (returns false)
   function isUserSpeaker(name) {
@@ -69,6 +69,47 @@ function parseMarkdownTranscript(content) {
       currentTimestamp = timestampMatch[1];
     }
 
+    // FORMAT 5: Bold timestamp with ISO in brackets - "**HH:MM:SS AM/PM TZ - Speaker** [ISO_TIMESTAMP]: content"
+    // Example: "**06:48:09 AM EST - Zen** [2025-12-13T11:48:09.644Z]: Continue."
+    const boldTimestampIsoMatch = line.match(/^\*\*(\d{1,2}:\d{2}:\d{2}\s+(?:AM|PM)(?:\s+[A-Z]{2,5})?)\s+-\s+(.+?)\*\*\s*\[(\d{4}-\d{2}-\d{2}T[^\]]+)\]:\s*(.*)$/i);
+    if (boldTimestampIsoMatch) {
+      const speaker = boldTimestampIsoMatch[2].trim();
+      const isoTimestamp = boldTimestampIsoMatch[3];
+      const inlineContent = boldTimestampIsoMatch[4];
+      
+      // Save previous message
+      if (currentRole && currentContent.length) {
+        const msg = { role: currentRole, content: currentContent.join('\n').trim() };
+        if (currentTimestamp) msg.timestamp = currentTimestamp;
+        messages.push(msg);
+      }
+      
+      currentRole = isUserSpeaker(speaker) ? 'user' : 'assistant';
+      currentContent = inlineContent ? [inlineContent] : [];
+      currentTimestamp = isoTimestamp;
+      continue;
+    }
+    
+    // FORMAT 6: Bold timestamp without ISO - "**HH:MM:SS AM/PM TZ - Speaker**: content"
+    // Example: "**01:07:38 PM EST - Synth**: CONVERSATION_CREATED:Synth"
+    const boldTimestampMatch = line.match(/^\*\*(\d{1,2}:\d{2}:\d{2}\s+(?:AM|PM)(?:\s+[A-Z]{2,5})?)\s+-\s+(.+?)\*\*:\s*(.*)$/i);
+    if (boldTimestampMatch) {
+      const speaker = boldTimestampMatch[2].trim();
+      const inlineContent = boldTimestampMatch[3];
+      
+      // Save previous message
+      if (currentRole && currentContent.length) {
+        const msg = { role: currentRole, content: currentContent.join('\n').trim() };
+        if (currentTimestamp) msg.timestamp = currentTimestamp;
+        messages.push(msg);
+      }
+      
+      currentRole = isUserSpeaker(speaker) ? 'user' : 'assistant';
+      currentContent = inlineContent ? [inlineContent] : [];
+      currentTimestamp = null;
+      continue;
+    }
+
     // FORMAT 1: Markdown bold - **Name**: content OR **Name**:
     const boldMatch = line.match(/^\*\*([^*]+)\*\*:\s*(.*)$/);
     if (boldMatch) {
@@ -88,8 +129,9 @@ function parseMarkdownTranscript(content) {
       continue;
     }
     
-    // FORMAT 2: ChatGPT export - "Name said:" on its own line
-    const saidMatch = line.match(/^([A-Za-z][A-Za-z0-9_-]*)\s+said:\s*$/i);
+    // FORMAT 2: ChatGPT export - "You said:" / "Name said:" patterns
+    // Handle both "You said:" (user) and "Name said:" (assistant) on their own line
+    const saidMatch = line.match(/^([A-Za-z][A-Za-z0-9_\s-]*)\s+said:\s*$/i);
     if (saidMatch) {
       const speaker = saidMatch[1].trim();
       
@@ -418,10 +460,19 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
       }
       
       // Validate parsed messages - skip garbage from legacy files
-      // Garbage detection: all messages have same role AND file has no proper chatty path
+      // But NEVER skip files that have clear transcript markers (IMPORT_METADATA, # Chat with, etc.)
+      const hasTranscriptMarkers = file.content && (
+        file.content.includes('IMPORT_METADATA') ||
+        file.content.includes('# Chat with') ||
+        file.content.includes('chat_with_') ||
+        /\*\*\d{1,2}:\d{2}:\d{2}\s+(?:AM|PM)/i.test(file.content) // Bold timestamp format
+      );
+      
       // Legacy = BOTH 'instances/' AND '/chatty/' missing (uses &&, not ||)
       const isLegacyFile = !file.filename.includes('instances/') && !file.filename.includes('/chatty/');
-      const hasGarbageParsedMessages = parsedMessages.length > 0 && (() => {
+      
+      // Only consider garbage detection for files WITHOUT transcript markers
+      const hasGarbageParsedMessages = !hasTranscriptMarkers && parsedMessages.length > 0 && (() => {
         // Check if all messages have the same role (should be alternating user/assistant)
         const roles = parsedMessages.map(m => m.role);
         const allSameRole = roles.every(r => r === roles[0]);
