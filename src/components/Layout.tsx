@@ -2818,6 +2818,39 @@ export default function Layout() {
       return null;
     }
 
+    // CRITICAL: Wait for threads to load before creating to prevent race condition duplicates
+    if (isLoading) {
+      console.log(`⏳ [Layout] Threads still loading, deferring creation for ${constructId}`);
+      // Navigate to canonical path - once threads load, Chat.tsx will find the right one
+      const canonicalSessionId = `${constructId}_chat_with_${constructId}`;
+      navigate(`/app/chat/${canonicalSessionId}`);
+      return canonicalSessionId;
+    }
+
+    // CRITICAL: Check if a thread for this construct already exists
+    // This prevents creating duplicate empty threads that hide existing conversations with messages
+    const canonicalSessionId = `${constructId}_chat_with_${constructId}`;
+    
+    // Find all threads for this construct, then pick the best one (prefer threads with messages)
+    const matchingThreads = threads.filter(
+      (t) => t.id === canonicalSessionId || t.constructId === constructId
+    );
+    
+    if (matchingThreads.length > 0) {
+      // Sort: threads with messages first, then by most recent
+      const sortedThreads = [...matchingThreads].sort((a, b) => {
+        const aMessages = a.messages?.length || 0;
+        const bMessages = b.messages?.length || 0;
+        if (aMessages !== bMessages) return bMessages - aMessages; // More messages first
+        return (b.updatedAt || 0) - (a.updatedAt || 0); // More recent first
+      });
+      
+      const bestThread = sortedThreads[0];
+      console.log(`✅ [Layout] Found ${matchingThreads.length} existing conversation(s) for ${constructId}, using best: ${bestThread.id} with ${bestThread.messages?.length || 0} messages`);
+      navigate(`/app/chat/${bestThread.id}`);
+      return bestThread.id;
+    }
+
     try {
       const conversationManager = VVAULTConversationManager.getInstance();
       const userId = getUserId(user);
@@ -2828,7 +2861,7 @@ export default function Layout() {
       }
 
       // Create a new conversation with canonical session ID format
-      const canonicalSessionId = `${constructId}_chat_with_${constructId}`;
+      console.log(`🆕 [Layout] No existing conversation for ${constructId}, creating new one`);
       const newConversation = await conversationManager.createConversation(
         userId,
         canonicalSessionId,

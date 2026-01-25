@@ -400,16 +400,24 @@ export default function Chat() {
     }
   }, [showDevInfo, isDev]);
 
-  const thread =
-    threads.find((t) => t.id === threadId) ||
-    threads.find((t) => {
-      // Handle transformed IDs from routeIdForThread
-      if (t.isPrimary && t.constructId) {
-        const transformedId = `${t.constructId}_chat_with_${t.constructId}`;
-        return transformedId === threadId;
-      }
-      return false;
-    });
+  // Find thread with preference for threads that have messages (to handle duplicate ID cases)
+  const matchingThreads = threads.filter((t) => t.id === threadId);
+  let thread = matchingThreads.length > 0
+    ? matchingThreads.reduce((best, current) => {
+        const bestMsgs = best.messages?.length || 0;
+        const currentMsgs = current.messages?.length || 0;
+        // Prefer thread with more messages, then more recent
+        if (currentMsgs !== bestMsgs) return currentMsgs > bestMsgs ? current : best;
+        return (current.updatedAt || 0) > (best.updatedAt || 0) ? current : best;
+      })
+    : threads.find((t) => {
+        // Handle transformed IDs from routeIdForThread
+        if (t.isPrimary && t.constructId) {
+          const transformedId = `${t.constructId}_chat_with_${t.constructId}`;
+          return transformedId === threadId;
+        }
+        return false;
+      });
 
   const isZenSessionThread = Boolean(
     threadId && threadId.startsWith("zen-001_chat_with_"),
