@@ -53,7 +53,12 @@ export function deduplicateThreadsById(threads: Thread[]): Thread[] {
       return tsA - tsB;
     });
     
-    return merged;
+    // Regenerate unique IDs for merged messages to avoid React key collisions
+    const now = Date.now();
+    return merged.map((msg, idx) => ({
+      ...msg,
+      id: `${existing.id}_merged_msg_${idx}_${now}`
+    }));
   };
   
   // Helper to pick better title
