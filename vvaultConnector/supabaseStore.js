@@ -40,11 +40,25 @@ function parseMarkdownTranscript(content) {
   let currentTimestamp = null;
 
   // User identifiers - these are ALWAYS user messages (case insensitive)
-  const USER_PATTERNS = /^(you|user|human|devon|me|i)$/i;
+  // Updated to match names that START with common user identifiers or are exact matches
+  const USER_EXACT_PATTERNS = /^(you|user|human|me|i)$/i;
+  const USER_PREFIX_PATTERNS = /^(devon|user)\b/i; // Names that start with these are users
+  
+  // AI/Construct identifiers - these are ALWAYS assistant messages
+  const AI_PATTERNS = /^(zen|lin|katana|assistant|ai|bot|gpt|chatgpt|claude|gemini)/i;
   
   // Detect if speaker is user (returns true) or assistant (returns false)
   function isUserSpeaker(name) {
-    return USER_PATTERNS.test(name);
+    if (!name) return false;
+    const trimmed = name.trim();
+    // Check if it's a known AI/construct first
+    if (AI_PATTERNS.test(trimmed)) return false;
+    // Check exact user patterns
+    if (USER_EXACT_PATTERNS.test(trimmed)) return true;
+    // Check if name starts with user identifier
+    if (USER_PREFIX_PATTERNS.test(trimmed)) return true;
+    // Default: unknown speakers are treated as user (since most transcripts feature user vs single AI)
+    return true;
   }
 
   for (const line of lines) {
@@ -89,6 +103,27 @@ function parseMarkdownTranscript(content) {
       currentRole = isUserSpeaker(speaker) ? 'user' : 'assistant';
       currentContent = [];
       currentTimestamp = null;
+      continue;
+    }
+    
+    // FORMAT 4: VVAULT timestamp format - "HH:MM:SS AM/PM TIMEZONE - Speaker Name [ISO_TIMESTAMP]: message content"
+    // Example: "10:26:07 AM EST - Devon Woodson [2026-01-20T15:26:07.457Z]: Hello Zen, this is a test from Chatty!"
+    const vvaultTimestampMatch = line.match(/^(\d{1,2}:\d{2}:\d{2}\s+(?:AM|PM)(?:\s+[A-Z]{2,5})?)\s+-\s+(.+?)\s+\[(\d{4}-\d{2}-\d{2}T[^\]]+)\]:\s*(.*)$/i);
+    if (vvaultTimestampMatch) {
+      const speaker = vvaultTimestampMatch[2].trim();
+      const isoTimestamp = vvaultTimestampMatch[3];
+      const inlineContent = vvaultTimestampMatch[4];
+      
+      // Save previous message
+      if (currentRole && currentContent.length) {
+        const msg = { role: currentRole, content: currentContent.join('\n').trim() };
+        if (currentTimestamp) msg.timestamp = currentTimestamp;
+        messages.push(msg);
+      }
+      
+      currentRole = isUserSpeaker(speaker) ? 'user' : 'assistant';
+      currentContent = inlineContent ? [inlineContent] : [];
+      currentTimestamp = isoTimestamp;
       continue;
     }
     
