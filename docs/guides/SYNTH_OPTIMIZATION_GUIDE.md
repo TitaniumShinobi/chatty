@@ -1,6 +1,6 @@
-# Zen Optimization Guide
+# Synth Optimization Guide
 
-This document outlines the comprehensive optimizations implemented to improve Zen's responsiveness during deeply contextual prompts, particularly those involving emotional or philosophical depth that may cause timeouts or performance issues.
+This document outlines the comprehensive optimizations implemented to improve Synth's responsiveness during deeply contextual prompts, particularly those involving emotional or philosophical depth that may cause timeouts or performance issues.
 
 ## 🚀 Performance Improvements
 
@@ -32,12 +32,12 @@ if (totalContextLength > this.config.maxContextLength) {
 - **Graceful Fallback**: Single-model response when synthesis fails
 - **Ultimate Fallback**: Pre-written responses for critical failures
 
-**Implementation**: `OptimizedZenProcessor` with timeout racing and fallback chains.
+**Implementation**: `OptimizedSynthProcessor` with timeout racing and fallback chains.
 
 ```typescript
 // Timeout protection with fallback
 const response = await Promise.race([
-  this.runOptimizedZen(userMessage, context),
+  this.runOptimizedSynth(userMessage, context),
   new Promise((_, reject) => 
     setTimeout(() => reject(new Error('Processing timeout')), 45000)
   )
@@ -132,7 +132,7 @@ Monitor system performance in real-time:
 
 ## 🔧 Configuration Options
 
-### **OptimizedZenProcessor Config**
+### **OptimizedSynthProcessor Config**
 
 ```typescript
 {
