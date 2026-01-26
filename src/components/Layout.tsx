@@ -883,19 +883,26 @@ export default function Layout() {
                   ? conv.importMetadata.isPrimary.toLowerCase() === "true"
                   : false;
 
-          // Map messages with validation
+          // Map messages with validation - preserve original order from parsed transcript
+          // Use a stable session-level timestamp to avoid React key duplicates across re-renders
+          const sessionStableTs = conv.createdAt ? new Date(conv.createdAt).getTime() : 0;
           const mappedMessages = (conv.messages || [])
             .map((msg: any, idx: number) => {
               if (!msg || (!msg.content && !msg.text)) {
                 console.warn("⚠️ [Layout] Invalid message found (no content):", msg);
                 return null;
               }
-              // Generate ID if not present (messages from Supabase may not have IDs)
-              const messageId = msg.id || `${conv.sessionId}_msg_${idx}_${Date.now()}`;
+              // Generate STABLE ID - use session ID + index only (no Date.now() to avoid key collisions)
+              const messageId = msg.id || `${conv.sessionId}_msg_${idx}`;
               const messageContent = msg.content || msg.text || "";
               // Track if message has an ORIGINAL timestamp from VVAULT metadata (not generated)
               const hasOriginalTimestamp = !!(msg.timestamp && typeof msg.timestamp === 'string' && msg.timestamp.includes('T'));
-              const messageTimestamp = msg.timestamp || msg.ts || new Date().toISOString();
+              // Use original timestamp if available, otherwise use index-based ordering to preserve parse order
+              const messageTimestamp = msg.timestamp || msg.ts || null;
+              // Calculate stable ts: use parsed timestamp or index-based offset to maintain order
+              const ts = messageTimestamp 
+                ? (typeof messageTimestamp === 'number' ? messageTimestamp : new Date(messageTimestamp).getTime())
+                : sessionStableTs + idx; // Index-based fallback preserves parse order
               
               return {
                 id: messageId,
@@ -905,7 +912,8 @@ export default function Layout() {
                   msg.role === "assistant"
                     ? [{ op: "answer.v1", payload: { content: messageContent } }]
                     : undefined,
-                ts: typeof messageTimestamp === 'number' ? messageTimestamp : new Date(messageTimestamp).getTime(),
+                ts,
+                parseIndex: idx, // Preserve original parse order for display
                 hasOriginalTimestamp, // Flag for deduplication scoring
                 metadata: msg.metadata || undefined,
                 responseTimeMs: msg.metadata?.responseTimeMs,

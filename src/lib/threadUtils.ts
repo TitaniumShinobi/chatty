@@ -16,48 +16,67 @@ export function deduplicateThreadsById(threads: Thread[]): Thread[] {
   const threadById = new Map<string, Thread>();
   
   // Helper to merge messages from two threads, deduplicating by content
+  // STRATEGY: Pick the thread with the MOST messages and use it as the canonical source
+  // This preserves the original parse order from the largest/most complete transcript
   const mergeMessages = (existing: Thread, incoming: Thread): any[] => {
-    const allMessages: any[] = [...existing.messages, ...incoming.messages];
-    const seen = new Map<string, any>();
+    // Pick the larger thread as the canonical source - its parse order should be preserved
+    const existingCount = existing.messages?.length || 0;
+    const incomingCount = incoming.messages?.length || 0;
     
-    // Create a content fingerprint for deduplication
+    // Also prefer threads where messages have original timestamps (from metadata)
+    const existingHasTimestamps = existing.messages?.some((m: any) => m.hasOriginalTimestamp) || false;
+    const incomingHasTimestamps = incoming.messages?.some((m: any) => m.hasOriginalTimestamp) || false;
+    
+    // Priority: hasOriginalTimestamp > message count
+    let canonicalMessages: any[];
+    let supplementaryMessages: any[];
+    
+    if (existingHasTimestamps && !incomingHasTimestamps) {
+      canonicalMessages = existing.messages || [];
+      supplementaryMessages = incoming.messages || [];
+    } else if (incomingHasTimestamps && !existingHasTimestamps) {
+      canonicalMessages = incoming.messages || [];
+      supplementaryMessages = existing.messages || [];
+    } else {
+      // Both have or don't have timestamps - prefer larger
+      if (incomingCount > existingCount) {
+        canonicalMessages = incoming.messages || [];
+        supplementaryMessages = existing.messages || [];
+      } else {
+        canonicalMessages = existing.messages || [];
+        supplementaryMessages = incoming.messages || [];
+      }
+    }
+    
+    // Create content fingerprints from canonical messages
+    const seen = new Set<string>();
     const getFingerprint = (msg: any): string => {
       const content = (msg.text || msg.content || '').trim().substring(0, 100);
       return `${msg.role}:${content}`;
     };
     
-    // Process all messages, preferring ones with original timestamps
-    for (const msg of allMessages) {
-      const fp = getFingerprint(msg);
-      const existingMsg = seen.get(fp);
-      
-      if (!existingMsg) {
-        seen.set(fp, msg);
-      } else {
-        // Prefer message with original timestamp
-        if (msg.hasOriginalTimestamp && !existingMsg.hasOriginalTimestamp) {
-          seen.set(fp, msg);
-        }
-        // If both have same timestamp status, prefer one with actual timestamp value
-        else if (msg.ts && !existingMsg.ts) {
-          seen.set(fp, msg);
-        }
+    // Add all canonical messages - these define the order
+    for (const msg of canonicalMessages) {
+      seen.add(getFingerprint(msg));
+    }
+    
+    // Add supplementary messages that aren't duplicates (at the end)
+    const additionalMessages: any[] = [];
+    for (const msg of supplementaryMessages) {
+      if (!seen.has(getFingerprint(msg))) {
+        seen.add(getFingerprint(msg));
+        additionalMessages.push(msg);
       }
     }
     
-    // Sort by timestamp if available
-    const merged = Array.from(seen.values());
-    merged.sort((a, b) => {
-      const tsA = a.ts || 0;
-      const tsB = b.ts || 0;
-      return tsA - tsB;
-    });
+    // Canonical messages stay in their original order, new ones added at end
+    const merged = [...canonicalMessages, ...additionalMessages];
     
-    // Regenerate unique IDs for merged messages to avoid React key collisions
-    const now = Date.now();
+    // Regenerate unique IDs for merged messages - use stable index, not Date.now()
     return merged.map((msg, idx) => ({
       ...msg,
-      id: `${existing.id}_merged_msg_${idx}_${now}`
+      id: `${existing.id}_merged_msg_${idx}`,
+      parseIndex: idx // Update parseIndex to reflect final order
     }));
   };
   
