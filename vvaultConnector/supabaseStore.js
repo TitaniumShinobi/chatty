@@ -255,12 +255,16 @@ function parseMarkdownTranscript(content) {
           messages.push(msg);
           currentContent = [];
         }
-        // Add date header as its own message
-        messages.push({ 
-          role: 'user', 
-          content: line.trim(), 
-          isDateHeader: true 
-        });
+        // Add date header as its own message (avoid duplicates)
+        const lastMsg = messages[messages.length - 1];
+        const isDuplicate = lastMsg && lastMsg.isDateHeader && lastMsg.content === line.trim();
+        if (!isDuplicate) {
+          messages.push({ 
+            role: 'user', 
+            content: line.trim(), 
+            isDateHeader: true 
+          });
+        }
         continue;
       }
       currentContent.push(line);
