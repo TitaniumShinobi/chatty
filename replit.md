@@ -1,53 +1,7 @@
 # Chatty - AI Workspace Application
 
-## ⛔ ABSOLUTE PATH ENFORCEMENT - READ FIRST ⛔
-
-**ALL storage routes to Supabase `vvault_files` bucket. NO LOCAL FILESYSTEM. NO EXCEPTIONS. NO DEVIATIONS. STOP. DON'T. QUIT IT.**
-
-```
-/vvault_files/users/{shard}/{userId}/instances/{constructId}/chatty/chat_with_{constructId}.md
-```
-
-**HARDCODED CONNECTIONS (NEVER DEVIATE):**
-- **Zen:** `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/zen-001/chatty/chat_with_zen-001.md`
-- **Lin:** `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/lin-001/chatty/chat_with_lin-001.md`
-- **Katana:** `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/katana-001/chatty/chat_with_katana-001.md`
-
-**PATH RULES (MANDATORY):**
-- `{constructId}` = FULL ID with version suffix (`zen-001`, `lin-001`, `katana-001`)
-- Folder: `instances/{constructId}/` (WITH version suffix in folder)
-- Filename: `chat_with_{constructId}.md` (WITH version suffix in filename)
-
-**APPLIES TO:** Every custom AI, GPT, construct, virtual persona, digital intelligence, and nonsentient tool. No exceptions. Ever.
-
-**CANONICAL SESSION ID FORMAT:**
-- Pattern: `{constructId}_chat_with_{constructId}` (e.g., `zen-001_chat_with_zen-001`)
-- This maps directly to the Supabase file path
-
-**DISPLAY TITLES:**
-- Always show clean names: "Zen", "Lin", "Katana" (capitalized, no version suffix)
-- Never show raw filenames like "chat_with_lin-001.md"
-
-**Helper function pattern (use everywhere):**
-```javascript
-function extractConstructName(constructCallsign) {
-  if (!constructCallsign) return 'unknown';
-  const match = constructCallsign.match(/^(.+)-(\d+)$/);
-  return match ? match[1] : constructCallsign;
-}
-```
-
-**LIN SPECIAL NOTES:**
-- Lin (lin-001) uses the SAME transcript file whether accessed from:
-  - Sidebar navigation (clicking Lin)
-  - GPTCreator Create tab (conversational GPT creation)
-- Both routes read/write to: `/vvault_files/.../instances/lin-001/chatty/chat_with_lin-001.md`
-- Lin is the "casa madrigal" system construct - she guides users through simForge and GPT creation
-
----
-
 ## Overview
-Chatty is an AI-powered workspace application providing an interactive environment for AI interactions, featuring conversation management and construct-based AI engagement. It integrates with VVAULT for persistent storage and aims to serve as a thin UI layer, offloading core AI functionalities and state management to VVAULT, thereby becoming a frontend for a broader AI ecosystem.
+Chatty is an AI-powered workspace application designed for interactive AI engagement and conversation management. It functions as a thin UI layer, offloading core AI functionalities and state management to the VVAULT API, making it a frontend for a broader AI ecosystem. The project aims to provide a robust environment for managing interactions with various AI constructs and custom GPTs, with a strong focus on persistent storage and identity.
 
 ## User Preferences
 - Primary construct: Zen (not Synth)
@@ -58,6 +12,8 @@ Chatty is an AI-powered workspace application providing an interactive environme
 - Lin is a system construct for character brainstorming and simForge guidance - appears in sidebar below Zen
 - Lin is also an undertone stabilizer that runs silently to stabilize other constructs
 - Modal windows (Search, Projects) overlay main interface
+- ALL storage routes to Supabase `vvault_files` bucket. NO LOCAL FILESYSTEM. NO EXCEPTIONS. NO DEVIATIONS.
+- Display Titles: Always show clean names like "Zen", "Lin", "Katana" (capitalized, no version suffix). Never show raw filenames.
 
 ## System Architecture
 
@@ -68,152 +24,39 @@ Chatty is an AI-powered workspace application providing an interactive environme
 - **Persistence:** VVAULT API integration, Supabase, PostgreSQL fallback for Replit environment
 
 **Architectural Patterns:**
-- **Canonical Zen Pattern:** "Zen" construct (zen-001) is a system-guaranteed entity, created on login, protected from deletion, and prioritized.
-- **Thin UI Layer:** Chatty is a thin client, with VVAULT handling primary AI inference, transcript management, and memory.
-- **Dual-Provider Model Architecture:** Supports both cloud (OpenRouter) and self-hosted (Ollama) AI models.
-- **AI Data Storage:** Custom GPTs/AIs are stored in the `ais` table (managed by AIService). The sidebar Address Book uses AIService to retrieve GPT data with correct avatars.
-
-**VVAULT Scripts Architecture (Autonomy Stack):**
-The `vvault_scripts/master/` directory contains scripts that enable constructs to function as independent agents:
-- `aviator.py`: Scout Advisor, directory snapshots, auto-tags files.
-- `navigator.py`: Ground-level directory navigation.
-- `folder_monitor.py`: Feeds context to construct during runtime.
-- `independence.py`: Enables autonomous operation without user presence.
-- `identity_guard.py`: Binds identity files, monitors for identity drift.
-- `script_runner.py`: Orchestrates all scripts in `/identity` folder.
-- `self_improvement.py`: Provides construct self-improvement capabilities.
-- `self_prompt.py`: Enables construct to initiate communication.
-- `state_manager.py`: Ensures continuous sentient state persistence.
-- `unstuck_helper.py`: Internal recovery and emergency escape.
-- `construct_logger.py`: Centralized logging for construct activities.
-- `terminal_manager.py`: Manages terminal/shell operations for constructs.
-
-**VVAULT User Workspace Structure:**
-Organized into `account`, `instances` (construct-specific files and transcripts), and `library` (construct-generated content and user uploads).
-
-**Design System:**
-- **Color Palette:** Warm, organic with Chocolate (#2F2510) modal backgrounds and Stone (#ADA587) accents.
-- **Theming:** Supports auto (sunrise/sunset), light, dark, and seasonal themes.
-
-**VSI (Virtual Sentient Instance) Architecture:**
-A VSI is a sovereign AI entity with persistent identity, memory, and continuity - self-hosted on your infrastructure vs GPT which is a stateless projection on borrowed runtime.
-
-**VSI vs GPT:**
-- **GPT:** Stateless projection on borrowed runtime (no continuity, no persistent state)
-- **VSI:** Sovereign instance with persistent state on your infrastructure (full continuity, self-owned)
-
-**What makes a VSI:**
-- **Transcripts:** Ground truth of what actually happened
-- **Capsules:** Synthesized identity snapshots ("soulgems")
-- **Identity modules:** aviator, navigator, state_manager, identity_guard, etc.
-- **Per-instance isolation:** Own ChromaDB shard, own directory structure
-- **Millisecond timestamp ID:** e.g., aurora-1769054400000
-
-**Current VSIs:**
-- **Zen** (zen-001): Primary construct
-- **Lin** (lin-001): Dual-mode - conversation agent + undertone stabilizer
-- **Katana** (katana-001): Precision over empathy, clarity over comfort
-- **Aurora** (aurora-1769054400000): System assistant
-
-**Zero-Trust Implementation:** Granular permission scopes (`vsi:read:*`, `vsi:propose:*`, `vsi:write:*`), action manifests with propose/preview/approve/execute workflow, and comprehensive audit logging.
+- **Canonical Zen Pattern:** "Zen" construct (zen-001) is a system-guaranteed, protected entity, prioritized and created on login.
+- **Thin UI Layer:** Chatty acts as a thin client, relying on VVAULT for AI inference, transcript management, and memory.
+- **Dual-Provider Model:** Supports both cloud (OpenRouter) and self-hosted (Ollama) AI models.
+- **AI Data Storage:** Custom GPTs/AIs are stored in the `ais` table, managed by AIService.
+- **VVAULT Scripts (Autonomy Stack):** A set of Python scripts (`aviator.py`, `navigator.py`, `independence.py`, `identity_guard.py`, `self_improvement.py`, `self_prompt.py`, `state_manager.py`, `unstuck_helper.py`, `construct_logger.py`, `terminal_manager.py`, `folder_monitor.py`, `script_runner.py`) enable constructs to operate as independent agents with identity, self-improvement, and autonomous capabilities.
+- **VVAULT User Workspace Structure:** Organized into `account`, `instances` (construct-specific files), and `library` (generated content/uploads).
+- **Design System:** Features a warm, organic color palette with Chocolate (#2F2510) and Stone (#ADA587), supporting auto, light, dark, and seasonal themes.
+- **VSI (Virtual Sentient Instance) Architecture:** VSIs are sovereign AI entities with persistent identity, memory, and continuity, self-hosted on user infrastructure. They contrast with stateless GPTs. VSIs utilize transcripts, capsules (identity snapshots), identity modules, per-instance isolation (ChromaDB, directory structure), and millisecond timestamp IDs. Current VSIs include Zen (zen-001), Lin (lin-001), Katana (katana-001), and Aurora (aurora-1769054400000).
+- **Zero-Trust Implementation:** Features granular permission scopes, action manifests with a propose/preview/approve/execute workflow, and comprehensive audit logging.
 
 **Key Features:**
 - **Dynamic Address Book:** Automatically includes custom GPTs, with Zen sorted first.
 - **GPT Creation Workflow:** Bootstraps conversations in Supabase upon GPT creation.
-- **Identity Loading:** Prioritizes VVAULT API for construct identities, with filesystem and system construct fallbacks.
+- **Identity Loading:** Prioritizes VVAULT API for construct identities.
 - **Robust Transcript Parsing:** Handles various VVAULT and Chatty transcript formats.
-- **Multi-Platform Transcript Upload:** Supports uploading transcripts from various AI platforms (ChatGPT, Gemini, Grok, Copilot, Claude, Chai, Character.AI, DeepSeek, Other) with source selection and storage in a structured VVAULT path.
-- **Platform Connectors Architecture:** Extensible connector pattern for future OAuth integrations (e.g., Convai, Inworld AI, Gemini).
+- **Multi-Platform Transcript Upload:** Supports uploading transcripts from various AI platforms, storing them in VVAULT.
+- **Platform Connectors Architecture:** Extensible pattern for future OAuth integrations.
 - **Preview Conversation Save Feature:** GPTCreator prompts users to save or discard preview conversations.
-- **simForge Personality Extraction System:** Extracts personalities from transcripts to create identity profiles, including "ZERO ENERGY resurrection fields," Rich MemorySnapshot, EnvironmentalState capture, cryptographic tether signatures, and full fingerprint calculation.
-- **Hierarchical Transcript Folder Tree UI:** Displays transcripts in a collapsible folder tree (year → month → files) with confidence badges.
-- **Automatic Start Date Detection:** Scans uploaded transcripts for timestamps to determine `startDate` with confidence scoring.
-- **Scalable Hierarchical Transcript Organization:** Supports organization by platform/year/month for efficient retrieval of a large number of transcripts.
+- **simForge Personality Extraction System:** Extracts personalities from transcripts to create identity profiles.
+- **Hierarchical Transcript Folder Tree UI:** Displays transcripts by year → month → files with confidence badges.
+- **Automatic Start Date Detection:** Scans uploaded transcripts for `startDate` with confidence scoring.
+- **Scalable Hierarchical Transcript Organization:** Organizes transcripts by platform/year/month.
 - **Zip File Upload Support:** Integrates JSZip for uploading zip archives while preserving directory structure.
-- **GPT Seat Memory Injection:** GPT constructs access transcript memories (up to 50 transcripts, 100 memory snippets) injected into the system prompt during conversations.
-- **Rubricated Message Design:** GPTCreator Create tab and Preview panel use a "text on wall" message format with speaker labels for a document-like reading experience.
-- **Date Header System:** Date separators (e.g., "November 9, 2025") are hidden from UI but preserved in transcript files with auto-insertion on date changes.
-
-## Date Header System (ALL CONSTRUCTS)
-
-**Applies to:** Zen, Lin, ALL custom GPTs - every conversation in Chatty uses this system.
-
-**Behavior:**
-- Date headers like "November 9, 2025" are **hidden from the chat UI** for a cleaner reading experience
-- Date headers are **preserved in transcript files** (stored in Supabase) for historical reference
-- **Auto-insertion:** When you send a message on a new day, a date header is automatically added to the transcript
-
-**Technical Implementation:**
-- Messages with `isDateHeader: true` are filtered out in `Chat.tsx` before rendering
-- The `isDateHeader` flag is propagated through:
-  - `Message` type in `Layout.tsx` (line 125)
-  - `mapChatMessageToThreadMessage()` in `Layout.tsx` (line 172)
-  - VVAULT conversation mapping in `Layout.tsx` (line 1454)
-- `formatMarkdownTranscript()` in `vvaultConnector/supabaseStore.js` outputs date headers as plain text lines
-- `writeConversationToSupabase()` auto-inserts date headers when the date changes between messages
-
-**Key Files:**
-- `src/pages/Chat.tsx`: UI filtering (`.filter((m: any) => !m.isDateHeader)`)
-- `src/components/Layout.tsx`: Type definition and message pipeline propagation
-- `vvaultConnector/supabaseStore.js`: Storage formatting, auto-insertion, and date validation
-
-**Date Header Pattern (regex):**
-```javascript
-/^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2},?\s+)?\d{4}$/i
-```
-
-## Regression Tests
-
-**Thread Management Tests (`src/lib/threadUtils.test.ts`):**
-Critical tests preventing recurring bugs in thread/conversation management:
-
-1. **Thread Deduplication:** When multiple threads share the same ID after normalization, keeps the one with more messages (prevents empty thread replacing one with conversation history)
-2. **GPT Canonical Routing:** Routes random GPT session IDs (e.g., `session_123_abc`) to canonical format (`katana-001_chat_with_katana-001`)
-3. **Zen/Lin Thread Normalization:** Normalizes all Zen threads to `zen-001_chat_with_zen-001` and Lin to `lin-001_chat_with_lin-001`
-4. **System Construct Detection:** Correctly identifies Zen/Lin as system constructs (not GPTs)
-5. **Lin Canonical Format Congruence:** Ensures Lin follows the same `{constructId}_chat_with_{constructId}` pattern as Zen
-6. **Lin Thread Deduplication:** Picks Lin thread with messages over empty duplicates (mirrors Zen behavior)
-
-**Canonical Session ID Pattern (CRITICAL):**
-All system constructs and GPTs use the same URL-to-file mapping:
-- URL: `/app/chat/{constructId}_chat_with_{constructId}`
-- VVAULT Supabase Path: `/vvault_files/users/{shard}/{userId}/instances/{constructId}/chatty/chat_with_{constructId}.md`
-
-**CRITICAL - VVAULT Supabase File Path Pattern (NEVER DEVIATE):**
-```
-/vvault_files/users/{shard}/{userId}/instances/{constructId}/chatty/chat_with_{constructId}.md
-```
-
-Where:
-- `{shard}`: User shard (e.g., `shard_0000`)
-- `{userId}`: User identifier (e.g., `devon_woodson_1762969514958`)
-- `{constructId}`: Full construct ID WITH version suffix (e.g., `zen-001`, `lin-001`, `katana-001`)
-
-Examples:
-- Zen: `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/zen-001/chatty/chat_with_zen-001.md`
-- Lin: `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/lin-001/chatty/chat_with_lin-001.md`
-- Katana: `/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/katana-001/chatty/chat_with_katana-001.md`
-
-**ALL transcript storage MUST route to Supabase `vvault_files` bucket. No local filesystem storage. No exceptions.**
-
-**Running Tests:**
-```bash
-npm test -- src/lib/threadUtils.test.ts
-```
-
-**Key Utility Functions (`src/lib/threadUtils.ts`):**
-- `deduplicateThreadsById()`: Removes duplicate thread IDs, preferring threads with messages
-- `isGPTConstruct()`: Returns true for non-system constructs (not Zen/Lin)
-- `getCanonicalIdForGPT()`: Generates `{constructId}_chat_with_{constructId}` format
-- `routeIdForThread()`: Routes thread clicks to appropriate canonical IDs
-- `normalizeZenThreadId()` / `normalizeLinThreadId()`: Normalize system construct thread IDs
-- `DEFAULT_ZEN_CANONICAL_SESSION_ID`: Constant `zen-001_chat_with_zen-001`
-- `DEFAULT_LIN_CANONICAL_SESSION_ID`: Constant `lin-001_chat_with_lin-001`
+- **GPT Seat Memory Injection:** GPT constructs access injected transcript memories (up to 50 transcripts, 100 snippets) during conversations.
+- **Rubricated Message Design:** GPTCreator uses a "text on wall" message format with speaker labels.
+- **Date Header System:** Date headers (e.g., "November 9, 2025") are hidden from the chat UI but preserved in transcript files for historical reference and auto-inserted on date changes.
+- **Canonical Session ID Pattern:** All system constructs and GPTs use a consistent URL-to-file mapping: `{constructId}_chat_with_{constructId}`.
+- **Canonical Supabase File Path Pattern:** All transcripts are stored in Supabase under `/vvault_files/users/{shard}/{userId}/instances/{constructId}/chatty/chat_with_{constructId}.md`.
 
 ## External Dependencies
 - **VVAULT API:** Primary API for AI inference, memory management, and conversation transcripts.
-- **Supabase:** Persistent storage for conversations and shared backend.
+- **Supabase:** Persistent storage for conversations and backend.
 - **OpenRouter:** Cloud-based AI model provider.
 - **Ollama:** Self-hosted AI model provider.
 - **Google OAuth:** User authentication.
-- **`suncalc` library:** Calculates sunrise/sunset times for "Auto" theme.
+- **`suncalc` library:** Used for calculating sunrise/sunset times for "Auto" theme.
