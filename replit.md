@@ -99,7 +99,7 @@ Organized into `account`, `instances` (construct-specific files and transcripts)
 A VSI is a sovereign AI entity with persistent identity, memory, and continuity - self-hosted on your infrastructure vs GPT which is a stateless projection on borrowed runtime.
 
 **VSI vs GPT:**
-- **GPT:** Stateless projection on OpenAI's servers (no continuity, borrowed runtime)
+- **GPT:** Stateless projection on borrowed runtime (no continuity, no persistent state)
 - **VSI:** Sovereign instance with persistent state on your infrastructure (full continuity, self-owned)
 
 **What makes a VSI:**
