@@ -6,16 +6,30 @@ import remarkBreaks from "remark-breaks";
 
 type Packet = { op: string; payload?: any };
 
+const DATE_HEADER_PATTERN = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2},?\s+)?\d{4}\s*$/gm;
+
+function sanitizeContent(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(DATE_HEADER_PATTERN, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function renderAnswer(pl: any): string {
-  if (typeof pl === "string") return pl;
-  if (typeof pl?.content === "string") return pl.content;
-  if (Array.isArray(pl)) return pl.join("\n");
-  if (Array.isArray(pl?.content)) return pl.content.join("\n");
-  try {
-    return JSON.stringify(pl ?? "", null, 2);
-  } catch {
-    return String(pl ?? "");
+  let content = "";
+  if (typeof pl === "string") content = pl;
+  else if (typeof pl?.content === "string") content = pl.content;
+  else if (Array.isArray(pl)) content = pl.join("\n");
+  else if (Array.isArray(pl?.content)) content = pl.content.join("\n");
+  else {
+    try {
+      content = JSON.stringify(pl ?? "", null, 2);
+    } catch {
+      content = String(pl ?? "");
+    }
   }
+  return sanitizeContent(content);
 }
 
 const markdownComponents: Components = {

@@ -34,9 +34,10 @@ type Thread = {
   archived?: boolean;
 };
 
-// Date header pattern - matches "Month Day, Year" or "Month Year"
-// e.g., "November 9, 2025", "December 19, 2025", "January 20, 2026"
-const DATE_HEADER_PATTERN = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2},?\s+)?\d{4}$/i;
+// Date header pattern - matches multiple formats:
+// "Month Day, Year" (with comma), "Month Day Year" (without comma), "Month Year" (month-year only)
+// e.g., "November 9, 2025", "December 19, 2025", "January 20, 2026", "November 2025"
+const DATE_HEADER_PATTERN = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2},?\s+)?\d{4}$/i;
 
 // Check if a message is a date header (by flag OR by content pattern)
 function isDateHeaderMessage(msg: any): boolean {
@@ -413,8 +414,9 @@ export default function Chat() {
     // Pattern to match VVAULT timestamp lines: "10:26:07 AM EST - Devon Woodson [2026-01-20T15:26:07.457Z]: content"
     const vvaultTimestampPattern = /^\d{1,2}:\d{2}:\d{2}\s+(?:AM|PM)(?:\s+[A-Z]{2,5})?\s+-\s+.+?\s+\[\d{4}-\d{2}-\d{2}T[^\]]+\]:\s*/gm;
     
-    // Pattern for date headers like "December 17, 2025" on their own line
-    const dateHeaderPattern = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}\s*$/gm;
+    // Pattern for date headers - matches multiple formats on their own line:
+    // "December 17, 2025" (with comma), "December 17 2025" (without comma), "November 2025" (month-year only)
+    const dateHeaderPattern = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2},?\s+)?\d{4}\s*$/gm;
     
     // Pattern for role labels like "Coding Expert:" "Creative Expert:" etc
     const roleLabelPattern = /^(Coding Expert|Creative Expert|Conversational Expert):\s*$/gm;
