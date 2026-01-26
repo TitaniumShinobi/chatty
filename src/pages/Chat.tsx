@@ -1457,9 +1457,11 @@ export default function Chat() {
         )}
 
         {thread.messages.length > 0 &&
-          thread.messages.map((m, index) => {
+          thread.messages
+            .filter((m: any) => !m.isDateHeader) // Hide date headers from UI (they're preserved in transcript)
+            .map((m, index, filteredMessages) => {
             const user = isUser(m.role);
-            const isLatest = index === thread.messages.length - 1;
+            const isLatest = index === filteredMessages.length - 1;
             const isRemoved = isMessageRemoved(m.id);
 
             // User messages: right-aligned with iMessage-style bubble

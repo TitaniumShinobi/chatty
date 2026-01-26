@@ -119,6 +119,7 @@ type Message = {
   typing?: boolean; // For typing indicators
   responseTimeMs?: number;
   thinkingLog?: string[];
+  isDateHeader?: boolean; // True for date separator messages (hidden from UI, preserved in transcript)
   metadata?: {
     responseTimeMs?: number;
     thinkingLog?: string[];
@@ -165,6 +166,7 @@ function mapChatMessageToThreadMessage(message: ChatMessage): Message | null {
         ts,
         timestamp: timestampIso,
         files: mapFiles(message.files),
+        isDateHeader: (message as any).isDateHeader || false,
       };
     case "assistant": {
       // Handle both string content (from VVAULT) and packet arrays (from live chat)
@@ -1447,6 +1449,7 @@ export default function Layout() {
             metadata: msg.metadata || undefined,
             responseTimeMs: msg.metadata?.responseTimeMs,
             thinkingLog: msg.metadata?.thinkingLog,
+            isDateHeader: msg.isDateHeader || false,
           })),
           createdAt:
             conv.messages.length > 0

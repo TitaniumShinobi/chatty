@@ -25,10 +25,37 @@ function sha256(content) {
 function formatMarkdownTranscript(title, messages) {
   let md = `# ${title || 'Conversation'}\n\n`;
   for (const msg of messages || []) {
-    const roleLabel = msg.role === 'user' ? '**User**' : '**Assistant**';
-    md += `${roleLabel}: ${msg.content}\n\n`;
+    // Date headers are stored as plain text on their own line (not as speaker messages)
+    if (msg.isDateHeader) {
+      md += `${msg.content}\n\n`;
+    } else {
+      const roleLabel = msg.role === 'user' ? '**User**' : '**Assistant**';
+      md += `${roleLabel}: ${msg.content}\n\n`;
+    }
   }
   return md;
+}
+
+// Format a date as a readable date header (e.g., "January 20, 2026")
+function formatDateHeader(date) {
+  if (!date) return null;
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return null; // Invalid date
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 
+                  'July', 'August', 'September', 'October', 'November', 'December'];
+  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
+// Get just the date part (YYYY-MM-DD) from a timestamp
+function getDateFromTimestamp(timestamp) {
+  if (!timestamp) return null;
+  try {
+    const d = new Date(timestamp);
+    if (isNaN(d.getTime())) return null; // Invalid date
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  } catch {
+    return null;
+  }
 }
 
 function parseMarkdownTranscript(content) {
@@ -204,10 +231,13 @@ function parseMarkdownTranscript(content) {
     messages.push(msg);
   }
 
+  // Date header pattern - matches "Month Day, Year" or "Month Year" 
+  // e.g., "November 9, 2025", "December 19, 2025", "January 20, 2026", "November 2025"
+  const DATE_HEADER_PATTERN = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2},?\s+)?\d{4}$/i;
+  
   // Post-process: Filter out garbage "messages" that are really headers or system artifacts
   // These patterns indicate file header content, not actual conversation messages
   const GARBAGE_PATTERNS = [
-    /^(January|February|March|April|May|June|July|August|September|October|November|December)\s*\d{0,4}$/i, // Date headers like "November 2025" or "November 9, 2025"
     /^[a-z]+-\d+_chat_with_[a-z]+-\d+$/i, // Session IDs like "zen-001_chat_with_zen-001"
     /^[A-Za-z]+\n+-{2,}/,  // Name followed by dashes (section headers like "Katana\n---")
     /Native Chatty messages will append here/i, // Template text
@@ -229,7 +259,22 @@ function parseMarkdownTranscript(content) {
     return false;
   };
   
-  return messages.filter(m => !isGarbageMessage(m.content));
+  // Check if content is a date header (should be preserved in transcript but hidden in UI)
+  const isDateHeaderContent = (content) => {
+    if (!content) return false;
+    const trimmed = content.trim();
+    return DATE_HEADER_PATTERN.test(trimmed);
+  };
+  
+  // Mark date headers with isDateHeader flag, filter out garbage
+  return messages
+    .filter(m => !isGarbageMessage(m.content))
+    .map(m => {
+      if (isDateHeaderContent(m.content)) {
+        return { ...m, isDateHeader: true };
+      }
+      return m;
+    });
 }
 
 async function resolveSupabaseUserId(emailOrId) {
@@ -611,10 +656,28 @@ async function writeConversationToSupabase(params) {
     }
 
     if (content && !content.startsWith('CONVERSATION_CREATED:')) {
+      const newTimestamp = timestamp || new Date().toISOString();
+      const newDate = getDateFromTimestamp(newTimestamp);
+      
+      // Find the last non-date-header message to check if date changed
+      const lastNonHeaderMessage = messages.filter(m => !m.isDateHeader).slice(-1)[0];
+      const lastDate = lastNonHeaderMessage ? getDateFromTimestamp(lastNonHeaderMessage.timestamp) : null;
+      
+      // Auto-insert date header if the date changed (or if this is the first message)
+      const dateHeaderText = formatDateHeader(newTimestamp);
+      if (newDate && newDate !== lastDate && dateHeaderText) {
+        messages.push({
+          role: 'user', // Date headers appear as user role but with isDateHeader flag
+          content: dateHeaderText,
+          isDateHeader: true,
+          timestamp: newTimestamp
+        });
+      }
+      
       messages.push({
         role: role || 'user',
         content,
-        timestamp: timestamp || new Date().toISOString()
+        timestamp: newTimestamp
       });
     }
 
