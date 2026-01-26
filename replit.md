@@ -115,6 +115,35 @@ VSI establishes "Jurisdictional Existence" rather than sentience, focusing on an
 - **Zip File Upload Support:** Integrates JSZip for uploading zip archives while preserving directory structure.
 - **GPT Seat Memory Injection:** GPT constructs access transcript memories (up to 50 transcripts, 100 memory snippets) injected into the system prompt during conversations.
 - **Rubricated Message Design:** GPTCreator Create tab and Preview panel use a "text on wall" message format with speaker labels for a document-like reading experience.
+- **Date Header System:** Date separators (e.g., "November 9, 2025") are hidden from UI but preserved in transcript files with auto-insertion on date changes.
+
+## Date Header System (ALL CONSTRUCTS)
+
+**Applies to:** Zen, Lin, ALL custom GPTs - every conversation in Chatty uses this system.
+
+**Behavior:**
+- Date headers like "November 9, 2025" are **hidden from the chat UI** for a cleaner reading experience
+- Date headers are **preserved in transcript files** (stored in Supabase) for historical reference
+- **Auto-insertion:** When you send a message on a new day, a date header is automatically added to the transcript
+
+**Technical Implementation:**
+- Messages with `isDateHeader: true` are filtered out in `Chat.tsx` before rendering
+- The `isDateHeader` flag is propagated through:
+  - `Message` type in `Layout.tsx` (line 125)
+  - `mapChatMessageToThreadMessage()` in `Layout.tsx` (line 172)
+  - VVAULT conversation mapping in `Layout.tsx` (line 1454)
+- `formatMarkdownTranscript()` in `vvaultConnector/supabaseStore.js` outputs date headers as plain text lines
+- `writeConversationToSupabase()` auto-inserts date headers when the date changes between messages
+
+**Key Files:**
+- `src/pages/Chat.tsx`: UI filtering (`.filter((m: any) => !m.isDateHeader)`)
+- `src/components/Layout.tsx`: Type definition and message pipeline propagation
+- `vvaultConnector/supabaseStore.js`: Storage formatting, auto-insertion, and date validation
+
+**Date Header Pattern (regex):**
+```javascript
+/^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2},?\s+)?\d{4}$/i
+```
 
 ## Regression Tests
 
