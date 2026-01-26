@@ -5,6 +5,8 @@ import { requireAuth } from "../middleware/auth.js";
 import User from "../models/User.js";
 import { createPrimaryConversationFile } from "../services/importService.js";
 import multer from "multer";
+import OpenAI from "openai";
+import { loadIdentityFiles } from "../lib/identityLoader.js";
 
 // Timestamp all console output from this module
 const patchConsoleWithTimestamp = () => {
@@ -19,6 +21,13 @@ patchConsoleWithTimestamp();
 
 const require = createRequire(import.meta.url);
 const router = express.Router();
+
+// OpenRouter client for fallback when VVAULT API is unavailable
+// Uses Replit's AI Integrations service (no API key needed)
+const openrouter = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY ? new OpenAI({
+  baseURL: process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL,
+  apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY,
+}) : null;
 
 // Configure multer for identity file uploads
 const identityUpload = multer({
@@ -3344,10 +3353,49 @@ router.post("/message", async (req, res) => {
   const VVAULT_API_BASE_URL = process.env.VVAULT_API_BASE_URL;
   
   if (!VVAULT_API_BASE_URL) {
-    console.error('❌ [VVAULT Proxy] VVAULT_API_BASE_URL not configured');
+    console.warn('⚠️ [VVAULT Proxy] VVAULT_API_BASE_URL not configured, using OpenRouter directly');
+    
+    // Use OpenRouter directly when VVAULT is not configured
+    if (openrouter) {
+      try {
+        const identity = await loadIdentityFiles(userId, constructId);
+        const systemPrompt = identity?.prompt || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
+        
+        console.log(`🧠 [VVAULT Proxy] Direct OpenRouter mode for ${constructId}, prompt length: ${systemPrompt.length}`);
+        
+        const completion = await openrouter.chat.completions.create({
+          model: "meta-llama/llama-3.3-70b-instruct",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: message }
+          ],
+          max_tokens: 2048,
+        });
+        
+        const aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+        
+        console.log(`✅ [VVAULT Proxy] Direct OpenRouter successful for ${constructId}, response length: ${aiResponse.length}`);
+        
+        return res.json({
+          success: true,
+          response: aiResponse,
+          construct_id: constructId,
+          fallback: true,
+          source: 'openrouter-direct'
+        });
+      } catch (openrouterError) {
+        console.error(`❌ [VVAULT Proxy] Direct OpenRouter failed:`, openrouterError);
+        return res.status(503).json({
+          success: false,
+          error: "OpenRouter failed",
+          details: openrouterError.message
+        });
+      }
+    }
+    
     return res.status(503).json({ 
       success: false, 
-      error: "VVAULT API not configured. Cannot process message." 
+      error: "VVAULT API not configured and OpenRouter not available." 
     });
   }
 
@@ -3382,6 +3430,49 @@ router.post("/message", async (req, res) => {
       if (!vvaultResponse.ok) {
         const errorText = await vvaultResponse.text();
         console.error(`❌ [VVAULT Proxy] VVAULT API returned ${vvaultResponse.status}: ${errorText}`);
+        
+        // FALLBACK: Use OpenRouter when VVAULT is unavailable (401, 503, etc.)
+        if (openrouter && (vvaultResponse.status === 401 || vvaultResponse.status === 503)) {
+          console.log(`🔄 [VVAULT Proxy] VVAULT unavailable, falling back to OpenRouter for ${constructId}`);
+          
+          try {
+            // Load construct identity for personalized responses
+            const identity = await loadIdentityFiles(userId, constructId);
+            const systemPrompt = identity?.prompt || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
+            
+            console.log(`🧠 [VVAULT Proxy] Loaded identity for ${constructId}, prompt length: ${systemPrompt.length}`);
+            
+            // Call OpenRouter with construct identity
+            const completion = await openrouter.chat.completions.create({
+              model: "meta-llama/llama-3.3-70b-instruct",
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: message }
+              ],
+              max_tokens: 2048,
+            });
+            
+            const aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+            
+            console.log(`✅ [VVAULT Proxy] OpenRouter fallback successful for ${constructId}, response length: ${aiResponse.length}`);
+            
+            return res.json({
+              success: true,
+              response: aiResponse,
+              construct_id: constructId,
+              fallback: true,
+              source: 'openrouter'
+            });
+          } catch (openrouterError) {
+            console.error(`❌ [VVAULT Proxy] OpenRouter fallback failed:`, openrouterError);
+            return res.status(503).json({
+              success: false,
+              error: "Both VVAULT and OpenRouter fallback failed",
+              details: openrouterError.message
+            });
+          }
+        }
+        
         return res.status(vvaultResponse.status).json({
           success: false,
           error: `VVAULT API error: ${vvaultResponse.status}`,
@@ -3406,6 +3497,39 @@ router.post("/message", async (req, res) => {
           success: false,
           error: "VVAULT API request timed out"
         });
+      }
+      
+      // FALLBACK: Use OpenRouter when VVAULT is unreachable
+      if (openrouter) {
+        console.log(`🔄 [VVAULT Proxy] VVAULT unreachable, falling back to OpenRouter for ${constructId}`);
+        
+        try {
+          const identity = await loadIdentityFiles(userId, constructId);
+          const systemPrompt = identity?.prompt || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
+          
+          const completion = await openrouter.chat.completions.create({
+            model: "meta-llama/llama-3.3-70b-instruct",
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: message }
+            ],
+            max_tokens: 2048,
+          });
+          
+          const aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+          
+          console.log(`✅ [VVAULT Proxy] OpenRouter fallback successful for ${constructId}`);
+          
+          return res.json({
+            success: true,
+            response: aiResponse,
+            construct_id: constructId,
+            fallback: true,
+            source: 'openrouter'
+          });
+        } catch (openrouterError) {
+          console.error(`❌ [VVAULT Proxy] OpenRouter fallback failed:`, openrouterError);
+        }
       }
       
       throw fetchError;
