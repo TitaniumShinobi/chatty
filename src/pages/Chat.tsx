@@ -34,6 +34,17 @@ type Thread = {
   archived?: boolean;
 };
 
+// Date header pattern - matches "Month Day, Year" or "Month Year"
+// e.g., "November 9, 2025", "December 19, 2025", "January 20, 2026"
+const DATE_HEADER_PATTERN = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2},?\s+)?\d{4}$/i;
+
+// Check if a message is a date header (by flag OR by content pattern)
+function isDateHeaderMessage(msg: any): boolean {
+  if (msg.isDateHeader) return true;
+  const text = (msg.text || msg.content || '').trim();
+  return DATE_HEADER_PATTERN.test(text);
+}
+
 // Markdown components for user messages (styled for bubble with #ADA587 background and #ffffeb text)
 const userMessageMarkdownComponents: Components = {
   // Code blocks with syntax highlighting (styled for user bubble)
@@ -1458,24 +1469,16 @@ export default function Chat() {
 
         {thread.messages.length > 0 &&
           (() => {
-            // Debug: Check if isDateHeader is present
-            const dateHeaderMessages = thread.messages.filter((m: any) => m.isDateHeader);
-            if (thread.messages.length > 0 && dateHeaderMessages.length === 0) {
-              const firstFew = thread.messages.slice(0, 3).map((m: any) => ({
-                role: m.role,
-                textPreview: (m.text || '').substring(0, 30),
-                isDateHeader: m.isDateHeader,
-                hasIsDateHeader: 'isDateHeader' in m
-              }));
-              console.log('🔍 [Chat] No date headers found in messages:', { count: thread.messages.length, firstFew });
-            } else if (dateHeaderMessages.length > 0) {
+            // Debug: Check for date headers (by flag OR content pattern)
+            const dateHeaderMessages = thread.messages.filter((m: any) => isDateHeaderMessage(m));
+            if (dateHeaderMessages.length > 0) {
               console.log(`✅ [Chat] Filtering ${dateHeaderMessages.length} date headers from ${thread.messages.length} messages`);
             }
             return null;
           })()}
         {thread.messages.length > 0 &&
           thread.messages
-            .filter((m: any) => !m.isDateHeader) // Hide date headers from UI (they're preserved in transcript)
+            .filter((m: any) => !isDateHeaderMessage(m)) // Hide date headers from UI (by flag OR content pattern)
             .map((m, index, filteredMessages) => {
             const user = isUser(m.role);
             const isLatest = index === filteredMessages.length - 1;
