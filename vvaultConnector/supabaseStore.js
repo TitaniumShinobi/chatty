@@ -243,7 +243,26 @@ function parseMarkdownTranscript(content) {
     }
     
     // Add content to current message (skip empty lines at start)
+    // CRITICAL: Do NOT absorb date headers into message content
     if (currentRole && line.trim()) {
+      // Double-check: if this line is a date header, don't add it to content
+      // This catches date lines that might have slipped through the early check
+      if (DATE_HEADER_PATTERN.test(line.trim())) {
+        // Save any pending message first
+        if (currentContent.length) {
+          const msg = { role: currentRole, content: currentContent.join('\n').trim() };
+          if (currentTimestamp) msg.timestamp = currentTimestamp;
+          messages.push(msg);
+          currentContent = [];
+        }
+        // Add date header as its own message
+        messages.push({ 
+          role: 'user', 
+          content: line.trim(), 
+          isDateHeader: true 
+        });
+        continue;
+      }
       currentContent.push(line);
     }
   }
