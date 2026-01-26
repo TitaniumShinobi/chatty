@@ -1,4 +1,4 @@
-import React, { useRef, useLayoutEffect, useState, useMemo } from 'react'
+import React, { useRef, useMemo } from 'react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 
@@ -11,38 +11,9 @@ interface CompressedCodeBlockProps {
 export const CompressedCodeBlock: React.FC<CompressedCodeBlockProps> = ({ code, language, className }) => {
     const containerRef = useRef<HTMLDivElement>(null)
     const contentRef = useRef<HTMLDivElement>(null)
-    const [scale, setScale] = useState(1)
 
     // Memoize the code string to avoid unnecessary re-renders
     const cleanCode = useMemo(() => code.replace(/\n$/, ''), [code])
-
-    useLayoutEffect(() => {
-        const checkSize = () => {
-            if (!containerRef.current || !contentRef.current) return
-
-            const containerWidth = containerRef.current.offsetWidth
-            const contentWidth = contentRef.current.scrollWidth
-
-            // Calculate scale to fit content within container
-            // Use 0.99 to provide a tiny buffer and prevent any rounding edge cases
-            const newScale = contentWidth > containerWidth
-                ? (containerWidth / contentWidth) * 0.99
-                : 1
-
-            setScale(newScale)
-        }
-
-        // Initial check
-        checkSize()
-
-        // Add resize listener
-        const resizeObserver = new ResizeObserver(checkSize)
-        if (containerRef.current) {
-            resizeObserver.observe(containerRef.current)
-        }
-
-        return () => resizeObserver.disconnect()
-    }, [cleanCode])
 
     const copyToClipboard = () => {
         navigator.clipboard?.writeText(cleanCode).catch(() => {
@@ -57,16 +28,17 @@ export const CompressedCodeBlock: React.FC<CompressedCodeBlockProps> = ({ code, 
         })
     }
 
-    // Base style object to shared between syntax highlighter and pre
+    // Base style object shared between syntax highlighter and pre
+    // Changed from scaling to horizontal scroll for better readability
     const baseStyle: React.CSSProperties = {
         margin: 0,
         fontSize: '0.85rem',
         lineHeight: '1.4',
         padding: '0.75rem 1rem',
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
+        whiteSpace: 'pre',
+        overflowX: 'auto',
+        overflowY: 'hidden',
         display: 'block',
-        // We remove the default background from SyntaxHighlighter styling to control it on the container
         background: 'none',
     }
 
@@ -77,7 +49,7 @@ export const CompressedCodeBlock: React.FC<CompressedCodeBlockProps> = ({ code, 
                 width: '100%',
                 maxWidth: '100%',
                 overflow: 'hidden',
-                isolation: 'isolate' // Create new stacking context
+                isolation: 'isolate'
             }}
             ref={containerRef}
         >
@@ -98,28 +70,19 @@ export const CompressedCodeBlock: React.FC<CompressedCodeBlockProps> = ({ code, 
                 </button>
             </div>
 
-            {/* Code Container */}
+            {/* Code Container - now with horizontal scroll instead of scaling */}
             <div
                 className="rounded-lg border border-opacity-10"
                 style={{
                     width: '100%',
-                    backgroundColor: '#2d2d2d', // Always dark for code blocks
+                    backgroundColor: '#2d2d2d',
                     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
                     borderColor: 'var(--chatty-line)',
-                    overflow: 'hidden',
+                    overflowX: 'auto',
+                    overflowY: 'hidden',
                 }}
             >
-                <div
-                    ref={contentRef}
-                    style={{
-                        transform: `scaleX(${scale})`,
-                        transformOrigin: 'left center',
-                        width: 'fit-content',
-                        minWidth: '100%',
-                        // Important: this ensures the transform doesn't cause layout shift
-                        willChange: 'transform',
-                    }}
-                >
+                <div ref={contentRef}>
                     {language ? (
                         <SyntaxHighlighter
                             style={oneDark as any}
@@ -127,9 +90,8 @@ export const CompressedCodeBlock: React.FC<CompressedCodeBlockProps> = ({ code, 
                             PreTag="div"
                             customStyle={{
                                 ...baseStyle,
-                                // Force overrides for library defaults that might conflict
-                                width: 'auto',
-                                maxWidth: 'none',
+                                width: 'max-content',
+                                minWidth: '100%',
                             }}
                             codeTagProps={{
                                 style: {
@@ -144,8 +106,8 @@ export const CompressedCodeBlock: React.FC<CompressedCodeBlockProps> = ({ code, 
                             className="font-mono text-gray-200"
                             style={{
                                 ...baseStyle,
-                                width: 'auto',
-                                maxWidth: 'none',
+                                width: 'max-content',
+                                minWidth: '100%',
                                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
                             }}
                         >

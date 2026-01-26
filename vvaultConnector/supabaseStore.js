@@ -88,7 +88,31 @@ function parseMarkdownTranscript(content) {
     return true;
   }
 
+  // Date header pattern - matches "Month Day, Year" or "Month Year" 
+  // e.g., "November 9, 2025", "December 19, 2025", "January 20, 2026", "November 2025"
+  const DATE_HEADER_PATTERN = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2},?\s+)?\d{4}$/i;
+
   for (const line of lines) {
+    const trimmedLine = line.trim();
+    
+    // Early detection: If line is a date header on its own, save as a separate message
+    if (DATE_HEADER_PATTERN.test(trimmedLine)) {
+      // Save any pending message first
+      if (currentRole && currentContent.length) {
+        const msg = { role: currentRole, content: currentContent.join('\n').trim() };
+        if (currentTimestamp) msg.timestamp = currentTimestamp;
+        messages.push(msg);
+        currentContent = [];
+      }
+      // Add date header as its own message
+      messages.push({ 
+        role: 'user', 
+        content: trimmedLine, 
+        isDateHeader: true 
+      });
+      continue;
+    }
+    
     // Match timestamp lines like [2025-11-09T...] or (2026-01-20T12:33:50.563179)
     const timestampMatch = line.match(/^\[(\d{4}-\d{2}-\d{2}T[^\]]+)\]/) || 
                            line.match(/\((\d{4}-\d{2}-\d{2}T[\d:.]+)\)/);
@@ -231,10 +255,6 @@ function parseMarkdownTranscript(content) {
     messages.push(msg);
   }
 
-  // Date header pattern - matches "Month Day, Year" or "Month Year" 
-  // e.g., "November 9, 2025", "December 19, 2025", "January 20, 2026", "November 2025"
-  const DATE_HEADER_PATTERN = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2},?\s+)?\d{4}$/i;
-  
   // Post-process: Filter out garbage "messages" that are really headers or system artifacts
   // These patterns indicate file header content, not actual conversation messages
   const GARBAGE_PATTERNS = [
@@ -259,18 +279,14 @@ function parseMarkdownTranscript(content) {
     return false;
   };
   
-  // Check if content is a date header (should be preserved in transcript but hidden in UI)
-  const isDateHeaderContent = (content) => {
-    if (!content) return false;
-    const trimmed = content.trim();
-    return DATE_HEADER_PATTERN.test(trimmed);
-  };
-  
-  // Mark date headers with isDateHeader flag, filter out garbage
+  // Filter out garbage, preserve isDateHeader flag that was already set during parsing
   return messages
     .filter(m => !isGarbageMessage(m.content))
     .map(m => {
-      if (isDateHeaderContent(m.content)) {
+      // Keep existing isDateHeader flag (already set during parse loop for standalone date lines)
+      if (m.isDateHeader) return m;
+      // Also check content in case it was missed (fallback)
+      if (DATE_HEADER_PATTERN.test((m.content || '').trim())) {
         return { ...m, isDateHeader: true };
       }
       return m;
@@ -559,6 +575,12 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
         messages = []; // Skip garbage messages from legacy files
       } else {
         messages = parsedMessages;
+      }
+      
+      // Debug: Log date headers detected
+      const dateHeaders = messages.filter(m => m.isDateHeader);
+      if (dateHeaders.length > 0) {
+        console.log(`📅 [SupabaseStore] Found ${dateHeaders.length} date headers in ${file.filename}:`, dateHeaders.slice(0, 3).map(m => m.content));
       }
 
       // Extract constructId from filename patterns:

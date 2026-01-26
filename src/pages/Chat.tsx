@@ -1457,6 +1457,23 @@ export default function Chat() {
         )}
 
         {thread.messages.length > 0 &&
+          (() => {
+            // Debug: Check if isDateHeader is present
+            const dateHeaderMessages = thread.messages.filter((m: any) => m.isDateHeader);
+            if (thread.messages.length > 0 && dateHeaderMessages.length === 0) {
+              const firstFew = thread.messages.slice(0, 3).map((m: any) => ({
+                role: m.role,
+                textPreview: (m.text || '').substring(0, 30),
+                isDateHeader: m.isDateHeader,
+                hasIsDateHeader: 'isDateHeader' in m
+              }));
+              console.log('🔍 [Chat] No date headers found in messages:', { count: thread.messages.length, firstFew });
+            } else if (dateHeaderMessages.length > 0) {
+              console.log(`✅ [Chat] Filtering ${dateHeaderMessages.length} date headers from ${thread.messages.length} messages`);
+            }
+            return null;
+          })()}
+        {thread.messages.length > 0 &&
           thread.messages
             .filter((m: any) => !m.isDateHeader) // Hide date headers from UI (they're preserved in transcript)
             .map((m, index, filteredMessages) => {

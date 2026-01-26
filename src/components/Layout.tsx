@@ -920,6 +920,7 @@ export default function Layout() {
                 metadata: msg.metadata || undefined,
                 responseTimeMs: msg.metadata?.responseTimeMs,
                 thinkingLog: msg.metadata?.thinkingLog,
+                isDateHeader: msg.isDateHeader || false, // Preserve date header flag from parser
               };
             })
             .filter((msg): msg is NonNullable<typeof msg> => msg !== null);
