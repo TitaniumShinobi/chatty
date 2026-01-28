@@ -33,7 +33,7 @@ import {
   getUserFriendlyErrorMessage,
   isOrchestrationError,
 } from "../engine/orchestration/OrchestrationErrors";
-import { OPENROUTER_MODELS, OLLAMA_MODELS } from "../lib/modelProviders";
+import { OPENAI_MODELS, OPENROUTER_MODELS, OLLAMA_MODELS } from "../lib/modelProviders";
 
 interface GPTCreatorProps {
   isVisible: boolean;
@@ -3546,6 +3546,13 @@ ALWAYS:
                               width: "250px",
                             }}
                           >
+                            <optgroup label="🔷 OpenAI (Managed)">
+                              {OPENAI_MODELS.map((m) => (
+                                <option key={m.value} value={m.value}>
+                                  {m.label}
+                                </option>
+                              ))}
+                            </optgroup>
                             <optgroup label="☁️ OpenRouter (Cloud)">
                               {OPENROUTER_MODELS.map((m) => (
                                 <option key={m.value} value={m.value}>
@@ -3568,8 +3575,8 @@ ALWAYS:
                               opacity: 0.6,
                             }}
                           >
-                            OpenRouter = cloud API (works now) | Ollama =
-                            self-hosted (requires VM setup)
+                            OpenAI = managed (billed to credits) | OpenRouter =
+                            cloud API | Ollama = self-hosted
                           </p>
                         </div>
 
@@ -3600,6 +3607,17 @@ ALWAYS:
                               width: "250px",
                             }}
                           >
+                            <optgroup label="🔷 OpenAI (Managed)">
+                              {OPENAI_MODELS.filter(
+                                (m) =>
+                                  m.category === "creative" ||
+                                  m.category === "general",
+                              ).map((m) => (
+                                <option key={m.value} value={m.value}>
+                                  {m.label}
+                                </option>
+                              ))}
+                            </optgroup>
                             <optgroup label="☁️ OpenRouter (Cloud)">
                               {OPENROUTER_MODELS.filter(
                                 (m) =>
@@ -3652,6 +3670,15 @@ ALWAYS:
                               width: "250px",
                             }}
                           >
+                            <optgroup label="🔷 OpenAI (Managed)">
+                              {OPENAI_MODELS.filter(
+                                (m) => m.category === "coding" || m.category === "general",
+                              ).map((m) => (
+                                <option key={m.value} value={m.value}>
+                                  {m.label}
+                                </option>
+                              ))}
+                            </optgroup>
                             <optgroup label="☁️ OpenRouter (Cloud)">
                               {OPENROUTER_MODELS.filter(
                                 (m) => m.category === "coding",
