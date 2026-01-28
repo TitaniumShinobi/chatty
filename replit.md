@@ -26,7 +26,7 @@ Chatty is an AI-powered workspace application designed for interactive AI engage
 **Architectural Patterns:**
 - **Canonical Zen Pattern:** "Zen" construct (zen-001) is a system-guaranteed, protected entity, prioritized and created on login.
 - **Thin UI Layer:** Chatty acts as a thin client, relying on VVAULT for AI inference, transcript management, and memory.
-- **Dual-Provider Model:** Supports both cloud (OpenRouter) and self-hosted (Ollama) AI models.
+- **Tri-Provider Model:** Supports three AI providers - OpenAI (via Replit AI Integrations, managed, billed to credits), OpenRouter (cloud), and Ollama (self-hosted). Model strings use prefixes: `openai:gpt-4o`, `openrouter:meta-llama/llama-3.3-70b`, `ollama:phi3:latest`.
 - **AI Data Storage:** Custom GPTs/AIs are stored in the `ais` table, managed by AIService.
 - **VVAULT Scripts (Autonomy Stack):** A set of Python scripts (`aviator.py`, `navigator.py`, `independence.py`, `identity_guard.py`, `self_improvement.py`, `self_prompt.py`, `state_manager.py`, `unstuck_helper.py`, `construct_logger.py`, `terminal_manager.py`, `folder_monitor.py`, `script_runner.py`) enable constructs to operate as independent agents with identity, self-improvement, and autonomous capabilities.
 - **VVAULT User Workspace Structure:** Organized into `account`, `instances` (construct-specific files), and `library` (generated content/uploads).
@@ -56,7 +56,11 @@ Chatty is an AI-powered workspace application designed for interactive AI engage
 ## External Dependencies
 - **VVAULT API:** Primary API for AI inference, memory management, and conversation transcripts.
 - **Supabase:** Persistent storage for conversations and backend.
-- **OpenRouter:** Cloud-based AI model provider.
-- **Ollama:** Self-hosted AI model provider.
+- **OpenAI (via Replit AI Integrations):** Managed OpenAI access with GPT-4o, GPT-5 series, and O3/O4 reasoning models. Uses `AI_INTEGRATIONS_OPENAI_BASE_URL` and `AI_INTEGRATIONS_OPENAI_API_KEY`. Billed to Replit credits, no user API key needed.
+- **OpenRouter:** Cloud-based AI model provider for a wide variety of models (Llama, Mistral, DeepSeek, etc.).
+- **Ollama:** Self-hosted AI model provider for local inference.
 - **Google OAuth:** User authentication.
 - **`suncalc` library:** Used for calculating sunrise/sunset times for "Auto" theme.
+
+## Recent Changes
+- **January 28, 2026:** Added OpenAI integration via Replit AI Integrations. Updated model routing in `vvaultConnector`, `unifiedIntelligenceOrchestrator.js`, and `vvault.js` to support three providers. Both GPTCreator preview and main Chat now use the GPT's configured model consistently.

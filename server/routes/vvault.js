@@ -7,6 +7,7 @@ import { createPrimaryConversationFile } from "../services/importService.js";
 import multer from "multer";
 import OpenAI from "openai";
 import { loadIdentityFiles } from "../lib/identityLoader.js";
+import { GPTManager } from "../lib/gptManager.js";
 
 // Timestamp all console output from this module
 const patchConsoleWithTimestamp = () => {
@@ -28,6 +29,15 @@ const openrouter = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY ? new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL,
   apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY,
 }) : null;
+
+// OpenAI client via Replit AI Integrations (managed, billed to credits)
+const openaiClient = process.env.AI_INTEGRATIONS_OPENAI_API_KEY ? new OpenAI({
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || 'https://api.openai.com/v1',
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+}) : null;
+
+// GPT Manager singleton for fetching GPT configurations
+const gptManager = GPTManager.getInstance();
 
 // Configure multer for identity file uploads
 const identityUpload = multer({
@@ -3353,55 +3363,163 @@ router.post("/message", async (req, res) => {
   const VVAULT_API_BASE_URL = process.env.VVAULT_API_BASE_URL;
   
   if (!VVAULT_API_BASE_URL) {
-    console.warn('⚠️ [VVAULT Proxy] VVAULT_API_BASE_URL not configured, using OpenRouter directly');
+    console.warn('⚠️ [VVAULT Proxy] VVAULT_API_BASE_URL not configured, using local LLM providers');
     
-    // Use OpenRouter directly when VVAULT is not configured
-    if (openrouter) {
-      try {
-        const identity = await loadIdentityFiles(userId, constructId);
-        const systemPrompt = identity?.prompt || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
-        
-        console.log(`🧠 [VVAULT Proxy] Direct OpenRouter mode for ${constructId}, prompt length: ${systemPrompt.length}`);
-        
-        const completion = await openrouter.chat.completions.create({
-          model: "meta-llama/llama-3.3-70b-instruct",
+    // Fetch the GPT's configured model from database
+    let gptConfig = null;
+    let configuredModel = null;
+    try {
+      gptConfig = await gptManager.getGPTByCallsign(constructId);
+      if (gptConfig) {
+        configuredModel = gptConfig.conversationModel || gptConfig.modelId;
+        console.log(`📋 [VVAULT Proxy] Found GPT config for ${constructId}, model: ${configuredModel}`);
+      }
+    } catch (gptError) {
+      console.warn(`⚠️ [VVAULT Proxy] Could not fetch GPT config for ${constructId}:`, gptError.message);
+    }
+    
+    // Parse model string to determine provider and model name
+    // Format: "openai:gpt-4o", "openrouter:meta-llama/llama-3.3-70b", "ollama:phi3:latest"
+    let provider = 'openrouter';
+    let modelName = 'meta-llama/llama-3.3-70b-instruct'; // Default fallback
+    
+    if (configuredModel) {
+      if (configuredModel.startsWith('openai:')) {
+        provider = 'openai';
+        modelName = configuredModel.substring(7);
+      } else if (configuredModel.startsWith('openrouter:')) {
+        provider = 'openrouter';
+        modelName = configuredModel.substring(11);
+      } else if (configuredModel.startsWith('ollama:')) {
+        provider = 'ollama';
+        modelName = configuredModel.substring(7);
+      } else {
+        // Legacy format - assume OpenRouter
+        modelName = configuredModel;
+      }
+    }
+    
+    // Guard: Check if requested provider is available, fall back to next available
+    let effectiveProvider = provider;
+    let effectiveModel = modelName;
+    if (provider === 'openai' && !openaiClient) {
+      console.warn(`⚠️ [VVAULT Proxy] OpenAI not configured, falling back to OpenRouter`);
+      effectiveProvider = 'openrouter';
+      effectiveModel = 'meta-llama/llama-3.3-70b-instruct';
+    }
+    if (provider === 'ollama' && !process.env.OLLAMA_HOST) {
+      console.warn(`⚠️ [VVAULT Proxy] Ollama not configured, falling back to OpenRouter`);
+      effectiveProvider = 'openrouter';
+      effectiveModel = 'meta-llama/llama-3.3-70b-instruct';
+    }
+    if (effectiveProvider === 'openrouter' && !openrouter) {
+      console.warn(`⚠️ [VVAULT Proxy] OpenRouter not configured, trying OpenAI`);
+      if (openaiClient) {
+        effectiveProvider = 'openai';
+        effectiveModel = 'gpt-4o';
+      } else {
+        return res.status(503).json({ 
+          success: false, 
+          error: `No LLM provider available. Configure OpenAI, OpenRouter, or Ollama.` 
+        });
+      }
+    }
+    
+    console.log(`🤖 [VVAULT Proxy] Using provider: ${effectiveProvider}, model: ${effectiveModel}`);
+    
+    // Load identity/system prompt
+    const identity = await loadIdentityFiles(userId, constructId);
+    const systemPrompt = identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
+    
+    console.log(`🧠 [VVAULT Proxy] System prompt length: ${systemPrompt.length}`);
+    
+    // Route to appropriate provider
+    try {
+      let completion;
+      let aiResponse;
+      
+      if (effectiveProvider === 'openai') {
+        console.log(`🔷 [VVAULT Proxy] Calling OpenAI (${effectiveModel}) for ${constructId}`);
+        completion = await openaiClient.chat.completions.create({
+          model: effectiveModel,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: message }
           ],
           max_tokens: 2048,
         });
-        
-        const aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
-        
-        console.log(`✅ [VVAULT Proxy] Direct OpenRouter successful for ${constructId}, response length: ${aiResponse.length}`);
-        
-        return res.json({
-          success: true,
-          response: aiResponse,
-          construct_id: constructId,
-          fallback: true,
-          source: 'openrouter-direct'
+        aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+      } else if (effectiveProvider === 'ollama') {
+        // Ollama requires different handling - use fetch directly
+        const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+        console.log(`🟢 [VVAULT Proxy] Calling Ollama (${effectiveModel}) for ${constructId}`);
+        const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: effectiveModel,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: message }
+            ],
+            stream: false
+          })
         });
-      } catch (openrouterError) {
-        console.error(`❌ [VVAULT Proxy] Direct OpenRouter failed:`, openrouterError);
-        return res.status(503).json({
-          success: false,
-          error: "OpenRouter failed",
-          details: openrouterError.message
+        
+        if (!ollamaResponse.ok) {
+          throw new Error(`Ollama error: ${ollamaResponse.status}`);
+        }
+        
+        const ollamaData = await ollamaResponse.json();
+        aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
+      } else {
+        // OpenRouter
+        console.log(`🟠 [VVAULT Proxy] Calling OpenRouter (${effectiveModel}) for ${constructId}`);
+        completion = await openrouter.chat.completions.create({
+          model: effectiveModel,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: message }
+          ],
+          max_tokens: 2048,
         });
+        aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
       }
+      
+      console.log(`✅ [VVAULT Proxy] ${effectiveProvider} successful for ${constructId}, response length: ${aiResponse.length}`);
+      
+      return res.json({
+        success: true,
+        response: aiResponse,
+        construct_id: constructId,
+        fallback: true,
+        source: `${effectiveProvider}-direct`,
+        model: effectiveModel
+      });
+    } catch (llmError) {
+      console.error(`❌ [VVAULT Proxy] ${provider} call failed:`, llmError);
+      return res.status(503).json({
+        success: false,
+        error: `${provider} failed`,
+        details: llmError.message
+      });
     }
-    
-    return res.status(503).json({ 
-      success: false, 
-      error: "VVAULT API not configured and OpenRouter not available." 
-    });
   }
 
   try {
     // Derive session ID if not provided (format: {constructId}_chat_with_{constructId})
     const effectiveSessionId = sessionId || threadId || `${constructId}_chat_with_${constructId}`;
+    
+    // Fetch GPT config to include model info in VVAULT request
+    let gptConfigForVVAULT = null;
+    let configuredModelForVVAULT = null;
+    try {
+      gptConfigForVVAULT = await gptManager.getGPTByCallsign(constructId);
+      if (gptConfigForVVAULT) {
+        configuredModelForVVAULT = gptConfigForVVAULT.conversationModel || gptConfigForVVAULT.modelId;
+        console.log(`📋 [VVAULT Proxy] GPT config for ${constructId}, model: ${configuredModelForVVAULT}`);
+      }
+    } catch (e) { /* ignore */ }
     
     console.log(`📤 [VVAULT Proxy] Forwarding message to VVAULT for construct: ${constructId}, session: ${effectiveSessionId}`);
     
@@ -3412,6 +3530,7 @@ router.post("/message", async (req, res) => {
     
     try {
       // VVAULT handles: LLM inference, transcript saving, memory management
+      // Include model info so VVAULT can use the GPT's configured model
       const vvaultResponse = await fetch(`${baseUrl}/api/chatty/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3420,7 +3539,8 @@ router.post("/message", async (req, res) => {
           message,
           userId: req.user?.email || userId,
           sessionId: effectiveSessionId,
-          userName: req.user?.name || 'Devon'
+          userName: req.user?.name || 'Devon',
+          model: configuredModelForVVAULT // Pass configured model to VVAULT
         }),
         signal: controller.signal
       });
@@ -3431,44 +3551,108 @@ router.post("/message", async (req, res) => {
         const errorText = await vvaultResponse.text();
         console.error(`❌ [VVAULT Proxy] VVAULT API returned ${vvaultResponse.status}: ${errorText}`);
         
-        // FALLBACK: Use OpenRouter when VVAULT is unavailable (401, 503, etc.)
-        if (openrouter && (vvaultResponse.status === 401 || vvaultResponse.status === 503)) {
-          console.log(`🔄 [VVAULT Proxy] VVAULT unavailable, falling back to OpenRouter for ${constructId}`);
+        // FALLBACK: Use configured LLM provider when VVAULT is unavailable (401, 503, etc.)
+        if (vvaultResponse.status === 401 || vvaultResponse.status === 503) {
+          console.log(`🔄 [VVAULT Proxy] VVAULT unavailable, falling back to local LLM for ${constructId}`);
           
           try {
-            // Load construct identity for personalized responses
+            // Fetch GPT config for model selection
+            let gptConfig = null;
+            let configuredModel = null;
+            try {
+              gptConfig = await gptManager.getGPTByCallsign(constructId);
+              if (gptConfig) {
+                configuredModel = gptConfig.conversationModel || gptConfig.modelId;
+              }
+            } catch (e) { /* ignore */ }
+            
+            // Parse model string
+            let provider = 'openrouter';
+            let modelName = 'meta-llama/llama-3.3-70b-instruct';
+            if (configuredModel) {
+              if (configuredModel.startsWith('openai:')) { provider = 'openai'; modelName = configuredModel.substring(7); }
+              else if (configuredModel.startsWith('openrouter:')) { provider = 'openrouter'; modelName = configuredModel.substring(11); }
+              else if (configuredModel.startsWith('ollama:')) { provider = 'ollama'; modelName = configuredModel.substring(7); }
+              else { modelName = configuredModel; }
+            }
+            
+            // Guard: Check if requested provider is available, fall back to next available
+            let effectiveProvider = provider;
+            let effectiveModel = modelName;
+            if (provider === 'openai' && !openaiClient) {
+              console.warn(`⚠️ [VVAULT Proxy] OpenAI not configured, falling back to OpenRouter`);
+              effectiveProvider = 'openrouter';
+              effectiveModel = 'meta-llama/llama-3.3-70b-instruct';
+            }
+            if (provider === 'ollama' && !process.env.OLLAMA_HOST) {
+              console.warn(`⚠️ [VVAULT Proxy] Ollama not configured, falling back to OpenRouter`);
+              effectiveProvider = 'openrouter';
+              effectiveModel = 'meta-llama/llama-3.3-70b-instruct';
+            }
+            if (effectiveProvider === 'openrouter' && !openrouter) {
+              console.warn(`⚠️ [VVAULT Proxy] OpenRouter not configured, trying OpenAI`);
+              if (openaiClient) {
+                effectiveProvider = 'openai';
+                effectiveModel = 'gpt-4o';
+              } else {
+                throw new Error('No LLM provider available');
+              }
+            }
+            
+            // Load construct identity
             const identity = await loadIdentityFiles(userId, constructId);
-            const systemPrompt = identity?.prompt || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
+            const systemPrompt = identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
             
-            console.log(`🧠 [VVAULT Proxy] Loaded identity for ${constructId}, prompt length: ${systemPrompt.length}`);
+            console.log(`🧠 [VVAULT Proxy] Fallback using ${effectiveProvider}:${effectiveModel} for ${constructId}`);
             
-            // Call OpenRouter with construct identity
-            const completion = await openrouter.chat.completions.create({
-              model: "meta-llama/llama-3.3-70b-instruct",
-              messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: message }
-              ],
-              max_tokens: 2048,
-            });
+            let completion;
+            let aiResponse;
+            if (effectiveProvider === 'openai') {
+              completion = await openaiClient.chat.completions.create({
+                model: effectiveModel,
+                messages: [{ role: "system", content: systemPrompt }, { role: "user", content: message }],
+                max_tokens: 2048,
+              });
+              aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+            } else if (effectiveProvider === 'ollama') {
+              const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+              const ollamaResp = await fetch(`${ollamaHost}/api/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  model: effectiveModel,
+                  messages: [{ role: "system", content: systemPrompt }, { role: "user", content: message }],
+                  stream: false
+                })
+              });
+              if (!ollamaResp.ok) throw new Error(`Ollama error: ${ollamaResp.status}`);
+              const ollamaData = await ollamaResp.json();
+              aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
+            } else {
+              completion = await openrouter.chat.completions.create({
+                model: effectiveModel,
+                messages: [{ role: "system", content: systemPrompt }, { role: "user", content: message }],
+                max_tokens: 2048,
+              });
+              aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+            }
             
-            const aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
-            
-            console.log(`✅ [VVAULT Proxy] OpenRouter fallback successful for ${constructId}, response length: ${aiResponse.length}`);
+            console.log(`✅ [VVAULT Proxy] ${effectiveProvider} fallback successful for ${constructId}`);
             
             return res.json({
               success: true,
               response: aiResponse,
               construct_id: constructId,
               fallback: true,
-              source: 'openrouter'
+              source: effectiveProvider,
+              model: effectiveModel
             });
-          } catch (openrouterError) {
-            console.error(`❌ [VVAULT Proxy] OpenRouter fallback failed:`, openrouterError);
+          } catch (fallbackError) {
+            console.error(`❌ [VVAULT Proxy] LLM fallback failed:`, fallbackError);
             return res.status(503).json({
               success: false,
-              error: "Both VVAULT and OpenRouter fallback failed",
-              details: openrouterError.message
+              error: "Both VVAULT and LLM fallback failed",
+              details: fallbackError.message
             });
           }
         }
@@ -3499,37 +3683,102 @@ router.post("/message", async (req, res) => {
         });
       }
       
-      // FALLBACK: Use OpenRouter when VVAULT is unreachable
-      if (openrouter) {
-        console.log(`🔄 [VVAULT Proxy] VVAULT unreachable, falling back to OpenRouter for ${constructId}`);
-        
+      // FALLBACK: Use configured LLM provider when VVAULT is unreachable
+      console.log(`🔄 [VVAULT Proxy] VVAULT unreachable, falling back to local LLM for ${constructId}`);
+      
+      try {
+        // Fetch GPT config for model selection
+        let gptConfig = null;
+        let configuredModel = null;
         try {
-          const identity = await loadIdentityFiles(userId, constructId);
-          const systemPrompt = identity?.prompt || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
-          
-          const completion = await openrouter.chat.completions.create({
-            model: "meta-llama/llama-3.3-70b-instruct",
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: message }
-            ],
+          gptConfig = await gptManager.getGPTByCallsign(constructId);
+          if (gptConfig) {
+            configuredModel = gptConfig.conversationModel || gptConfig.modelId;
+          }
+        } catch (e) { /* ignore */ }
+        
+        // Parse model string
+        let provider = 'openrouter';
+        let modelName = 'meta-llama/llama-3.3-70b-instruct';
+        if (configuredModel) {
+          if (configuredModel.startsWith('openai:')) { provider = 'openai'; modelName = configuredModel.substring(7); }
+          else if (configuredModel.startsWith('openrouter:')) { provider = 'openrouter'; modelName = configuredModel.substring(11); }
+          else if (configuredModel.startsWith('ollama:')) { provider = 'ollama'; modelName = configuredModel.substring(7); }
+          else { modelName = configuredModel; }
+        }
+        
+        // Guard: Check if requested provider is available, fall back to next available
+        let effectiveProvider = provider;
+        let effectiveModel = modelName;
+        if (provider === 'openai' && !openaiClient) {
+          console.warn(`⚠️ [VVAULT Proxy] OpenAI not configured, falling back to OpenRouter`);
+          effectiveProvider = 'openrouter';
+          effectiveModel = 'meta-llama/llama-3.3-70b-instruct';
+        }
+        if (provider === 'ollama' && !process.env.OLLAMA_HOST) {
+          console.warn(`⚠️ [VVAULT Proxy] Ollama not configured, falling back to OpenRouter`);
+          effectiveProvider = 'openrouter';
+          effectiveModel = 'meta-llama/llama-3.3-70b-instruct';
+        }
+        if (effectiveProvider === 'openrouter' && !openrouter) {
+          console.warn(`⚠️ [VVAULT Proxy] OpenRouter not configured, trying OpenAI`);
+          if (openaiClient) {
+            effectiveProvider = 'openai';
+            effectiveModel = 'gpt-4o';
+          } else {
+            throw new Error('No LLM provider available');
+          }
+        }
+        
+        const identity = await loadIdentityFiles(userId, constructId);
+        const systemPrompt = identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
+        
+        console.log(`🧠 [VVAULT Proxy] Fallback using ${effectiveProvider}:${effectiveModel} for ${constructId}`);
+        
+        let completion;
+        let aiResponse;
+        if (effectiveProvider === 'openai') {
+          completion = await openaiClient.chat.completions.create({
+            model: effectiveModel,
+            messages: [{ role: "system", content: systemPrompt }, { role: "user", content: message }],
             max_tokens: 2048,
           });
-          
-          const aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
-          
-          console.log(`✅ [VVAULT Proxy] OpenRouter fallback successful for ${constructId}`);
-          
-          return res.json({
-            success: true,
-            response: aiResponse,
-            construct_id: constructId,
-            fallback: true,
-            source: 'openrouter'
+          aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+        } else if (effectiveProvider === 'ollama') {
+          const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+          const ollamaResp = await fetch(`${ollamaHost}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: effectiveModel,
+              messages: [{ role: "system", content: systemPrompt }, { role: "user", content: message }],
+              stream: false
+            })
           });
-        } catch (openrouterError) {
-          console.error(`❌ [VVAULT Proxy] OpenRouter fallback failed:`, openrouterError);
+          if (!ollamaResp.ok) throw new Error(`Ollama error: ${ollamaResp.status}`);
+          const ollamaData = await ollamaResp.json();
+          aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
+        } else {
+          completion = await openrouter.chat.completions.create({
+            model: effectiveModel,
+            messages: [{ role: "system", content: systemPrompt }, { role: "user", content: message }],
+            max_tokens: 2048,
+          });
+          aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
         }
+        
+        console.log(`✅ [VVAULT Proxy] ${effectiveProvider} fallback successful for ${constructId}`);
+        
+        return res.json({
+          success: true,
+          response: aiResponse,
+          construct_id: constructId,
+          fallback: true,
+          source: effectiveProvider,
+          model: effectiveModel
+        });
+      } catch (fallbackError) {
+        console.error(`❌ [VVAULT Proxy] LLM fallback failed:`, fallbackError);
       }
       
       throw fetchError;
