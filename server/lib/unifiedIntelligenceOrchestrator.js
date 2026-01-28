@@ -23,6 +23,17 @@ const openrouter = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY,
 });
 
+// OpenAI client (via Replit AI Integrations - managed, no API key needed)
+const openaiClient = new OpenAI({
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || 'https://api.openai.com/v1',
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY || 'dummy',
+});
+
+// Check if OpenAI is configured
+function isOpenAIAvailable() {
+  return !!(process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY);
+}
+
 // GPT Seat model configuration (free-tier models)
 const GPT_SEAT_MODELS = {
   default: 'meta-llama/llama-3.3-70b-instruct:free',
@@ -300,11 +311,36 @@ export class UnifiedIntelligenceOrchestrator {
   }
 
   /**
-   * Call OpenRouter LLM with memory-enhanced context
-   * This replaces template-based responses with actual LLM inference
+   * Call LLM with memory-enhanced context
+   * Supports OpenAI, OpenRouter, and Ollama providers
+   * @param {string} constructId - The construct ID
+   * @param {string} message - User message
+   * @param {object} personality - Construct personality
+   * @param {array} memories - Memory fragments
+   * @param {object} userProfile - User profile data
+   * @param {object} capsuleData - Capsule data
+   * @param {string} modelOverride - Optional model override (e.g., 'openai:gpt-4o')
    */
-  async callLLMWithContext(constructId, message, personality, memories, userProfile, capsuleData) {
-    const model = GPT_SEAT_MODELS.default;
+  async callLLMWithContext(constructId, message, personality, memories, userProfile, capsuleData, modelOverride = null) {
+    // Parse model string to determine provider
+    let provider = 'openrouter';
+    let model = GPT_SEAT_MODELS.default;
+    
+    if (modelOverride) {
+      if (modelOverride.startsWith('openai:')) {
+        provider = 'openai';
+        model = modelOverride.substring(7);
+      } else if (modelOverride.startsWith('openrouter:')) {
+        provider = 'openrouter';
+        model = modelOverride.substring(11);
+      } else if (modelOverride.startsWith('ollama:')) {
+        provider = 'ollama';
+        model = modelOverride.substring(7);
+      } else {
+        // Legacy format - use as-is with OpenRouter
+        model = modelOverride;
+      }
+    }
     
     // Build system prompt with construct identity + user identity + memories
     const systemPrompt = this.buildMemoryEnhancedSystemPrompt(
@@ -315,26 +351,55 @@ export class UnifiedIntelligenceOrchestrator {
       capsuleData
     );
     
-    console.log(`🤖 [LLM] Calling OpenRouter (${model}) for ${constructId}`);
+    console.log(`🤖 [LLM] Calling ${provider} (${model}) for ${constructId}`);
     console.log(`🤖 [LLM] System prompt length: ${systemPrompt.length} chars`);
     console.log(`🤖 [LLM] Memories injected: ${memories.length}`);
     
     try {
-      const completion = await openrouter.chat.completions.create({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: message }
-        ],
-        max_tokens: 1024,
-        temperature: 0.7,
-      });
+      let completion;
+      
+      if (provider === 'openai') {
+        // Use OpenAI client (via Replit AI Integrations)
+        if (!isOpenAIAvailable()) {
+          console.warn('⚠️ [LLM] OpenAI not configured, falling back to OpenRouter');
+          provider = 'openrouter';
+          model = GPT_SEAT_MODELS.default;
+        } else {
+          // GPT-5 and newer don't support temperature parameter
+          const isGpt5Plus = model.startsWith('gpt-5') || model.startsWith('o3') || model.startsWith('o4');
+          const completionParams = {
+            model,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: message }
+            ],
+            max_completion_tokens: 1024,
+          };
+          if (!isGpt5Plus) {
+            completionParams.temperature = 0.7;
+          }
+          completion = await openaiClient.chat.completions.create(completionParams);
+        }
+      }
+      
+      if (provider === 'openrouter' || !completion) {
+        // Use OpenRouter client
+        completion = await openrouter.chat.completions.create({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: message }
+          ],
+          max_tokens: 1024,
+          temperature: 0.7,
+        });
+      }
       
       const response = completion.choices[0]?.message?.content || '';
-      console.log(`✅ [LLM] Response received (${response.length} chars)`);
+      console.log(`✅ [LLM] Response received from ${provider} (${response.length} chars)`);
       return response;
     } catch (error) {
-      console.error('❌ [LLM] OpenRouter call failed:', error.message);
+      console.error(`❌ [LLM] ${provider} call failed:`, error.message);
       throw error;
     }
   }

@@ -289,6 +289,8 @@ function parseMarkdownTranscript(content) {
     /^CONVERSATION_CREATED:/i, // Internal markers
     /^\(\*.*\*\)$/, // Template markers like (*Native Chatty...)
     /^System\s*\([^)]+\):\s*Test message/i, // Test messages
+    /^-{2,}.*response.*-{2,}$/i, // Separator lines like "--- Providing an appropriate and consistent response ----"
+    /^-{2,}\s+\w+.*-{2,}$/i, // Generic separator with text between dashes
   ];
   
   const isGarbageMessage = (content) => {
@@ -302,6 +304,48 @@ function parseMarkdownTranscript(content) {
     return false;
   };
   
+  // Patterns to strip from the END of message content (trailing garbage)
+  const TRAILING_GARBAGE_PATTERNS = [
+    DATE_HEADER_PATTERN, // Date headers like "December 17, 2025"
+    /^-{2,}.*-{2,}$/im, // Separator lines like "--- text ----"
+  ];
+  
+  // Strip trailing garbage from message content (date headers, separators that got absorbed)
+  function sanitizeMessageContent(content) {
+    if (!content) return content;
+    let sanitized = content.trim();
+    let changed = true;
+    
+    // Keep stripping until no more changes (handles multiple trailing garbage lines)
+    while (changed) {
+      changed = false;
+      const lines = sanitized.split('\n');
+      
+      // Check last few lines for garbage
+      while (lines.length > 0) {
+        const lastLine = lines[lines.length - 1].trim();
+        if (!lastLine) {
+          lines.pop(); // Remove empty trailing lines
+          changed = true;
+          continue;
+        }
+        
+        // Check if last line is garbage
+        const isTrailingGarbage = TRAILING_GARBAGE_PATTERNS.some(p => p.test(lastLine));
+        if (isTrailingGarbage) {
+          lines.pop();
+          changed = true;
+        } else {
+          break;
+        }
+      }
+      
+      sanitized = lines.join('\n').trim();
+    }
+    
+    return sanitized;
+  }
+  
   // Filter out garbage, preserve isDateHeader flag that was already set during parsing
   return messages
     .filter(m => !isGarbageMessage(m.content))
@@ -312,8 +356,10 @@ function parseMarkdownTranscript(content) {
       if (DATE_HEADER_PATTERN.test((m.content || '').trim())) {
         return { ...m, isDateHeader: true };
       }
-      return m;
-    });
+      // Sanitize content to remove trailing date headers/separators
+      return { ...m, content: sanitizeMessageContent(m.content) };
+    })
+    .filter(m => m.content && m.content.trim()); // Remove any messages that became empty after sanitization
 }
 
 async function resolveSupabaseUserId(emailOrId) {

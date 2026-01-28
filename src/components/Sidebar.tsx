@@ -1060,7 +1060,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               <img
                 src={currentUser.picture}
                 alt={currentUser.name}
-                className="w-8 h-8 rounded-full flex-shrink-0 object-cover"
+                className="w-8 h-8 min-w-[32px] rounded-full flex-shrink-0 object-cover"
                 referrerPolicy="no-referrer"
                 onError={(e) => {
                   e.currentTarget.style.display = "none";
@@ -1071,7 +1071,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               />
             ) : null}
             <div
-              className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0"
+              className="w-8 h-8 min-w-[32px] bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0"
               style={{
                 display: currentUser.picture ? "none" : "flex",
               }}

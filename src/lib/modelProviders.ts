@@ -15,7 +15,7 @@
  * @see docs/MODEL_PROVIDERS.md for developer setup guide
  */
 
-export type ModelProvider = 'openrouter' | 'ollama';
+export type ModelProvider = 'openrouter' | 'ollama' | 'openai';
 
 export interface ModelOption {
   value: string;
@@ -135,9 +135,35 @@ export const OLLAMA_MODELS: ModelOption[] = [
 ];
 
 /**
- * Combined models list with OpenRouter first (cloud-ready)
+ * OpenAI Models - Via Replit AI Integrations (managed, no API key needed)
+ * Uses AI_INTEGRATIONS_OPENAI_BASE_URL and AI_INTEGRATIONS_OPENAI_API_KEY
+ * Charges are billed to Replit credits
  */
-export const ALL_MODELS: ModelOption[] = [...OPENROUTER_MODELS, ...OLLAMA_MODELS];
+export const OPENAI_MODELS: ModelOption[] = [
+  // General Purpose - Flagship
+  { value: 'openai:gpt-4o', label: 'GPT-4o (Recommended)', provider: 'openai', category: 'general' },
+  { value: 'openai:gpt-4o-mini', label: 'GPT-4o Mini (Fast)', provider: 'openai', category: 'general' },
+  { value: 'openai:gpt-4.1', label: 'GPT-4.1', provider: 'openai', category: 'general' },
+  { value: 'openai:gpt-4.1-mini', label: 'GPT-4.1 Mini', provider: 'openai', category: 'general' },
+  { value: 'openai:gpt-4.1-nano', label: 'GPT-4.1 Nano (Fastest)', provider: 'openai', category: 'general' },
+  
+  // GPT-5 Series (Latest)
+  { value: 'openai:gpt-5', label: 'GPT-5 (Latest)', provider: 'openai', category: 'general' },
+  { value: 'openai:gpt-5.1', label: 'GPT-5.1', provider: 'openai', category: 'general' },
+  { value: 'openai:gpt-5.2', label: 'GPT-5.2', provider: 'openai', category: 'general' },
+  { value: 'openai:gpt-5-mini', label: 'GPT-5 Mini', provider: 'openai', category: 'general' },
+  { value: 'openai:gpt-5-nano', label: 'GPT-5 Nano', provider: 'openai', category: 'general' },
+  
+  // Reasoning Models
+  { value: 'openai:o3', label: 'O3 (Advanced Reasoning)', provider: 'openai', category: 'reasoning' },
+  { value: 'openai:o3-mini', label: 'O3 Mini', provider: 'openai', category: 'reasoning' },
+  { value: 'openai:o4-mini', label: 'O4 Mini', provider: 'openai', category: 'reasoning' },
+];
+
+/**
+ * Combined models list with OpenAI first (managed), then OpenRouter (cloud), then Ollama (self-hosted)
+ */
+export const ALL_MODELS: ModelOption[] = [...OPENAI_MODELS, ...OPENROUTER_MODELS, ...OLLAMA_MODELS];
 
 /**
  * Get models by category
@@ -159,8 +185,13 @@ export function getModelsByProvider(provider: ModelProvider): ModelOption[] {
  *          => { provider: 'openrouter', model: 'mistralai/mistral-7b-instruct' }
  * @example parseModelString('ollama:phi3:latest') 
  *          => { provider: 'ollama', model: 'phi3:latest' }
+ * @example parseModelString('openai:gpt-4o') 
+ *          => { provider: 'openai', model: 'gpt-4o' }
  */
 export function parseModelString(modelString: string): { provider: ModelProvider; model: string } {
+  if (modelString.startsWith('openai:')) {
+    return { provider: 'openai', model: modelString.substring(7) };
+  }
   if (modelString.startsWith('openrouter:')) {
     return { provider: 'openrouter', model: modelString.substring(11) };
   }
@@ -195,4 +226,14 @@ export function isOpenRouterConfigured(): boolean {
  */
 export function isOllamaConfigured(): boolean {
   return !!(typeof process !== 'undefined' && process.env?.OLLAMA_HOST);
+}
+
+/**
+ * Check if OpenAI (via Replit AI Integrations) is configured
+ */
+export function isOpenAIConfigured(): boolean {
+  return !!(
+    (typeof process !== 'undefined' && process.env?.AI_INTEGRATIONS_OPENAI_API_KEY) ||
+    (typeof process !== 'undefined' && process.env?.OPENAI_API_KEY)
+  );
 }
