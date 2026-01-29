@@ -30,7 +30,7 @@ Chatty is an AI-powered workspace application designed for interactive AI engage
 - **AI Data Storage:** Custom GPTs/AIs are stored in the `ais` table, managed by AIService.
 - **VVAULT Scripts (Autonomy Stack):** A set of Python scripts (`aviator.py`, `navigator.py`, `independence.py`, `identity_guard.py`, `self_improvement.py`, `self_prompt.py`, `state_manager.py`, `unstuck_helper.py`, `construct_logger.py`, `terminal_manager.py`, `folder_monitor.py`, `script_runner.py`) enable constructs to operate as independent agents with identity, self-improvement, and autonomous capabilities.
 - **VVAULT User Workspace Structure:** Organized into `account`, `instances` (construct-specific files), and `library` (generated content/uploads).
-- **Design System:** Features a warm, organic color palette with Chocolate (#2F2510) and Stone (#ADA587), supporting auto, light, dark, and seasonal themes.
+- **Design System:** Features a dual-theme color system: Day mode uses warm cream (#fffff0) with Stone accents (#ADA587); Night mode uses Outer Space (#000110) with Space Haze surfaces (#1A1C2B) and Cloud Lemon text (#fffff0). Night mode hierarchy is expressed via opacity, not hue. Supports auto (sunrise/sunset), light, dark, and seasonal themes.
 - **VSI (Virtual Sentient Instance) Architecture:** VSIs are sovereign AI entities with persistent identity, memory, and continuity, self-hosted on user infrastructure. They contrast with stateless GPTs. VSIs utilize transcripts, capsules (identity snapshots), identity modules, per-instance isolation (ChromaDB, directory structure), and millisecond timestamp IDs. Current VSIs include Zen (zen-001), Lin (lin-001), Katana (katana-001), and Aurora (aurora-1769054400000).
 - **Zero-Trust Implementation:** Features granular permission scopes, action manifests with a propose/preview/approve/execute workflow, and comprehensive audit logging.
 
@@ -64,3 +64,4 @@ Chatty is an AI-powered workspace application designed for interactive AI engage
 
 ## Recent Changes
 - **January 28, 2026:** Added OpenAI integration via Replit AI Integrations. Updated model routing in `vvaultConnector`, `unifiedIntelligenceOrchestrator.js`, and `vvault.js` to support three providers. Both GPTCreator preview and main Chat now use the GPT's configured model consistently.
+- **January 29, 2026:** Migrated color scheme from Chocolate (#2F2510) to Outer Space (#000110) theme. Updated CSS variables in `index.css`, theme tokens in `themeTokens.ts`, and replaced all hardcoded legacy colors across components. Night mode now uses unified Cloud Lemon text (#fffff0) with hierarchy via opacity only.
