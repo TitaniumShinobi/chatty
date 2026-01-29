@@ -330,7 +330,7 @@ const AccountTab: React.FC<AccountTabProps> = ({ user, onLogout }) => {
             className="px-4 py-2 text-sm rounded-lg font-medium transition-colors"
             style={{ 
               backgroundColor: 'transparent', 
-              color: '#ffffeb',
+              color: '#fffff0',
               border: 'none',
               opacity: isDeleting ? 0.6 : 1
             }}

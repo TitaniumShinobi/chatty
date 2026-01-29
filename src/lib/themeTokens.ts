@@ -31,20 +31,20 @@ export interface ThemeTokens {
 }
 
 export const lightTheme: ThemeTokens = {
-  // Backgrounds
-  bgPrimary: '#ffffeb',
+  // Backgrounds - Light cream palette
+  bgPrimary: '#fffff0',
   bgSecondary: '#ffffd7', 
-  bgTertiary: '#feffaf',
+  bgTertiary: '#ffffd7',
   
   // Interactive
   interactivePrimary: '#ADA587',
-  interactiveSecondary: '#feffaf',
+  interactiveSecondary: '#ffffd7',
   interactiveAccent: '#3A2E14',
   
   // Text
   textPrimary: '#3A2E14',
   textSecondary: '#3A2E14',
-  textInverse: '#ffffeb',
+  textInverse: '#fffff0',
   
   // Status
   statusSuccess: '#22c55e',
@@ -55,25 +55,25 @@ export const lightTheme: ThemeTokens = {
   // Components
   messageUser: '#ADA587',
   messageAI: '#ffffd7',
-  messageSystem: '#fef2f2',
+  messageSystem: '#fffff0',
   borderSubtle: 'rgba(76, 61, 30, 0.18)',
 };
 
 export const nightTheme: ThemeTokens = {
-  // Backgrounds
-  bgPrimary: '#2F2510',
-  bgSecondary: '#ADA587',
-  bgTertiary: '#3A2E14',
+  // Backgrounds - Outer Space palette
+  bgPrimary: '#000110',
+  bgSecondary: '#1A1C2B',
+  bgTertiary: '#1A1C2B',
   
   // Interactive
-  interactivePrimary: '#ffffd7',
-  interactiveSecondary: '#3A2E14',
-  interactiveAccent: '#3A2E14',
+  interactivePrimary: '#ADA587',
+  interactiveSecondary: '#1A1C2B',
+  interactiveAccent: '#ADA587',
   
-  // Text
-  textPrimary: '#ffffeb',
-  textSecondary: '#ffffeb',
-  textInverse: '#3A2E14',
+  // Text - Cloud lemon only, hierarchy via opacity
+  textPrimary: '#fffff0',
+  textSecondary: '#fffff0',
+  textInverse: '#000110',
   
   // Status
   statusSuccess: '#22c55e',
@@ -83,9 +83,9 @@ export const nightTheme: ThemeTokens = {
   
   // Components
   messageUser: '#ADA587',
-  messageAI: '#3A2E14',
-  messageSystem: '#fef2f2',
-  borderSubtle: 'rgba(255, 255, 255, 0.18)',
+  messageAI: '#1A1C2B',
+  messageSystem: '#1A1C2B',
+  borderSubtle: 'rgba(255, 255, 240, 0.18)',
 };
 
 // User-defined theme support

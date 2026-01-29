@@ -27,7 +27,7 @@ export const TestRenderHarness: React.FC = () => {
     ]
 
     return (
-        <div className="max-w-2xl mx-auto p-8 space-y-12 bg-[#ffffeb] min-h-screen">
+        <div className="max-w-2xl mx-auto p-8 space-y-12 bg-[#fffff0] min-h-screen">
             <h1 className="text-2xl font-bold mb-8 text-[#3A2E14]">Compressed Code Block Harness</h1>
 
             {cases.map((c, i) => (

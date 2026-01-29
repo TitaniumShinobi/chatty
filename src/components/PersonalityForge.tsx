@@ -144,7 +144,7 @@ export default function PersonalityForge({ constructCallsign, constructName, onI
                 <button
                   onClick={() => handleForge(true)}
                   disabled={isForging}
-                  className="flex-1 py-3 rounded-lg bg-[#ADA587] text-[#2F2510] font-medium hover:bg-[#c4bc9e] disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="flex-1 py-3 rounded-lg bg-[#ADA587] text-[#000110] font-medium hover:bg-[#c4bc9e] disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {isForging ? (
                     <><Loader2 className="w-4 h-4 animate-spin" /> Forging...</>
@@ -264,7 +264,7 @@ function AnalysisView({ analysis }: { analysis: PersonalityAnalysis }) {
                 <span className="capitalize text-[#8a8478]">{trait}</span>
                 <span className="text-[#ADA587]">{Math.round(value * 100)}%</span>
               </div>
-              <div className="h-1.5 bg-[#2F2510] rounded overflow-hidden">
+              <div className="h-1.5 bg-[#000110] rounded overflow-hidden">
                 <div className="h-full bg-[#ADA587]" style={{ width: `${value * 100}%` }} />
               </div>
             </div>

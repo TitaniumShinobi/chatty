@@ -2,36 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Chatty Lemon/Chocolate Theme CSS Variables */
-/* Based on CHATTY_COLOR_SCHEME 2.md */
+/* Chatty Color Scheme CSS Variables */
+/* Based on docs/styling/CHATTY_COLOR_SCHEME.md (Authoritative) */
 
 :root {
-  /* Day Mode - Light cream background, Dark chocolate text */
-  --chatty-bg-main: #ffffeb; /* Light cream - Main Area */
-  --chatty-bg-sidebar: #ffffeb; /* Sidebar matches main cream in day mode */
+  /* Day Mode - Light cream background, Dark text */
+  --chatty-bg-main: #fffff0; /* Light cream - Main Area */
+  --chatty-bg-sidebar: #ffffd7; /* Slightly darker cream for sidebar */
   --chatty-bg-message: #ffffd7; /* Message Box */
-  --chatty-highlight: #ffffd7; /* Highlight for hover states */
+  --chatty-hover: #ffffd7; /* Hover states */
+  --chatty-highlight: #ffffd7; /* Highlight for hover states (legacy alias) */
+  --chatty-selected: #ADA587; /* Active/selected items */
   --chatty-button: #ADA587; /* Primary button color */
   --chatty-line: #ADA587; /* Borders, dividers, structural elements */
-  --chatty-text: #3A2E14; /* Primary text color (dark for light background) */
-  --chatty-text-inverse: #ffffeb; /* Inverse text (for buttons) */
+  --chatty-text: #3A2E14; /* Primary text color */
+  --chatty-text-inverse: #fffff0; /* Inverse text (for buttons) */
   --chatty-placeholder: #ADA587; /* Placeholder text color */
+  --chatty-timestamp: #ADA587; /* Timestamp text color */
   --chatty-status-success: #22c55e; /* Green for success */
   --chatty-status-error: #dc2626; /* Red for errors */
 }
 
 [data-theme="night"],
 :root.night-mode {
-  /* Night Mode - Dark cocoa background, Lemon text */
-  --chatty-bg-main: #2F2510; /* Dark cocoa - Main Area */
-  --chatty-bg-sidebar: #2F2510; /* Match main for sidebar in night mode */
-  --chatty-bg-message: #3A2E14; /* Slightly lighter tone - Message Box */
-  --chatty-highlight: #3A2E14; /* Dark cocoa for hover states */
-  --chatty-button: #ffffd7; /* Lemon yellow for interactive elements */
-  --chatty-line: #ffffd7; /* Matching button tone for dividers and borders */
-  --chatty-text: #ffffeb; /* Lemon cloud for readability */
-  --chatty-text-inverse: #3A2E14; /* Dark cocoa for text on light buttons */
-  --chatty-placeholder: #ADA587; /* Placeholder text color (with reduced opacity 0.7) */
+  /* Night Mode - Outer Space Theme */
+  --chatty-bg-main: #000110; /* Deep space - Main Area */
+  --chatty-bg-sidebar: #000110; /* Unified cosmic surface */
+  --chatty-bg-message: #1A1C2B; /* Space haze - Message surfaces */
+  --chatty-hover: #1A1C2B; /* Atmospheric hover highlight */
+  --chatty-highlight: #1A1C2B; /* Highlight (legacy alias) */
+  --chatty-selected: #ADA587; /* Authority / active state */
+  --chatty-button: #ADA587; /* Primary actions */
+  --chatty-line: #ADA587; /* Dividers and borders */
+  --chatty-text: #fffff0; /* Cloud lemon - ALL text */
+  --chatty-text-inverse: #000110; /* Deep space for text on light buttons */
+  --chatty-placeholder: rgba(255, 255, 240, 0.6); /* Cloud lemon at 60% */
+  --chatty-timestamp: rgba(255, 255, 240, 0.6); /* Cloud lemon at 60% */
   --chatty-status-success: #22c55e; /* Green for success */
   --chatty-status-error: #dc2626; /* Red for errors */
 }
@@ -45,7 +51,7 @@
   --chatty-bg-sidebar: #0f1f0f;
   --chatty-bg-message: #152515; /* Slightly lighter forest */
   --chatty-highlight: #1a2d1a; /* Forest highlight */
-  --chatty-star-starburst-color: #ffffeb; /* Cloud lemon starbursts */
+  --chatty-star-starburst-color: #fffff0; /* Cloud lemon starbursts */
   --chatty-star-nova-color: #ffffff; /* White nova */
   --chatty-star-ray-color: #ffd700; /* Gold rays */
 }

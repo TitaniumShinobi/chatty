@@ -60,7 +60,7 @@ export const CompressedCodeBlock: React.FC<CompressedCodeBlockProps> = ({ code, 
                     className="px-2 py-1 rounded text-xs transition-colors shadow-sm"
                     style={{
                         backgroundColor: 'var(--chatty-button)',
-                        color: 'var(--chatty-text-inverse, #ffffeb)'
+                        color: 'var(--chatty-text-inverse, #fffff0)'
                     }}
                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--chatty-hover)'}
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--chatty-button)'}

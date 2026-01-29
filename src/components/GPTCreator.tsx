@@ -5370,7 +5370,7 @@ ALWAYS:
                 className="px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
                 style={{
                   backgroundColor: "#ADA587",
-                  color: "#2F2510",
+                  color: "#000110",
                   opacity: isSavingPreview ? 0.7 : 1,
                 }}
               >

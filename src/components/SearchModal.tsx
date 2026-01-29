@@ -22,7 +22,7 @@ export default function SearchModal({ isOpen, onClose, onSelectConversation }: S
     >
       <div 
         className="w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden"
-        style={{ backgroundColor: '#2F2510' }}
+        style={{ backgroundColor: '#000110' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 px-4 py-3 border-b" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>

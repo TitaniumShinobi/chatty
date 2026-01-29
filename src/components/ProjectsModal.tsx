@@ -27,7 +27,7 @@ const ProjectsModal: React.FC<ProjectsModalProps> = ({ isOpen, onClose }) => {
           <div className="flex items-center gap-3">
             <div
               className="w-10 h-10 rounded-full flex items-center justify-center"
-              style={{ backgroundColor: '#2F2510', color: 'var(--chatty-text)' }}
+              style={{ backgroundColor: '#000110', color: 'var(--chatty-text)' }}
             >
               <FolderPlus size={18} />
             </div>
@@ -53,7 +53,7 @@ const ProjectsModal: React.FC<ProjectsModalProps> = ({ isOpen, onClose }) => {
         </div>
 
         <div className="px-6 py-5 space-y-4" style={{ color: 'var(--chatty-text)' }}>
-          <div className="rounded-xl px-4 py-4" style={{ backgroundColor: '#2F2510' }}>
+          <div className="rounded-xl px-4 py-4" style={{ backgroundColor: '#000110' }}>
             <h3 className="text-sm font-semibold mb-2">Coming soon</h3>
             <p className="text-sm" style={{ opacity: 0.8 }}>
               Projects will let you collect conversations, upload briefs, and track action items together.
@@ -70,7 +70,7 @@ const ProjectsModal: React.FC<ProjectsModalProps> = ({ isOpen, onClose }) => {
                 <span
                   key={label}
                   className="inline-flex items-center px-3 py-1 text-xs rounded-full"
-                  style={{ backgroundColor: '#ADA587', color: '#2F2510' }}
+                  style={{ backgroundColor: '#ADA587', color: '#000110' }}
                 >
                   {label}
                 </span>
@@ -95,9 +95,9 @@ const ProjectsModal: React.FC<ProjectsModalProps> = ({ isOpen, onClose }) => {
           <button
             onClick={onClose}
             className="px-4 py-2 text-sm rounded-md transition-colors"
-            style={{ backgroundColor: '#2F2510', color: 'var(--chatty-text)' }}
+            style={{ backgroundColor: '#000110', color: 'var(--chatty-text)' }}
             onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#3D3015')}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#2F2510')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#000110')}
           >
             Close
           </button>

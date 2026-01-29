@@ -49,7 +49,7 @@ export function getChristmasThemeScript(): ThemeScript {
       }
     },
     starColors: {
-      starburst: '#ffffeb',
+      starburst: '#fffff0',
       nova: '#ffffff',
       ray: '#ffd700'
     }

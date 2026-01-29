@@ -252,7 +252,7 @@ export default function SearchPopup({ isOpen, onClose, threads, onResultClick }:
                           U
                         </div>
                       ) : (
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium" style={{ backgroundColor: '#3A2E14', color: '#ffffeb' }}>
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium" style={{ backgroundColor: '#3A2E14', color: '#fffff0' }}>
                           AI
                         </div>
                       )}

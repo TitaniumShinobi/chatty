@@ -207,7 +207,7 @@ export default function MessageBar({
           className="p-2 rounded-lg transition-all flex-shrink-0 self-end mb-0.5"
           style={{
             backgroundColor: hasContent ? "var(--chatty-button)" : "transparent",
-            color: hasContent ? "var(--chatty-text-inverse, #ffffeb)" : "var(--chatty-text)",
+            color: hasContent ? "var(--chatty-text-inverse, #fffff0)" : "var(--chatty-text)",
             opacity: hasContent ? 1 : 0.5,
           }}
           onMouseEnter={(e) => {

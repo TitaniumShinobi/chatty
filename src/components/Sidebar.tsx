@@ -218,7 +218,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const navButtonStyle = (path: string) => ({
     backgroundColor: isActiveRoute(path) ? activeNavColor : "transparent",
     color: isActiveRoute(path)
-      ? "var(--chatty-text-inverse, #ffffeb)"
+      ? "var(--chatty-text-inverse, #fffff0)"
       : "var(--chatty-text)",
   });
 
@@ -556,7 +556,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 (t: any) =>
                   t.constructId === "zen-001" && t.id === currentConversationId,
               )
-                ? "var(--chatty-text-inverse, #ffffeb)"
+                ? "var(--chatty-text-inverse, #fffff0)"
                 : "var(--chatty-text)",
             }}
             onMouseEnter={(e) => {
@@ -611,7 +611,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 (t: any) =>
                   (t.constructId === "lin-001" || t.constructId === "lin") && t.id === currentConversationId,
               )
-                ? "var(--chatty-text-inverse, #ffffeb)"
+                ? "var(--chatty-text-inverse, #fffff0)"
                 : "var(--chatty-text)",
             }}
             onMouseEnter={(e) => {
@@ -908,7 +908,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 navButtonBase,
                 "group",
                 conversation.id === currentConversationId &&
-                  "text-[var(--chatty-text-inverse, #ffffeb)]",
+                  "text-[var(--chatty-text-inverse, #fffff0)]",
               )}
               style={{
                 backgroundColor:
@@ -917,7 +917,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     : "transparent",
                 color:
                   conversation.id === currentConversationId
-                    ? "var(--chatty-text-inverse, #ffffeb)"
+                    ? "var(--chatty-text-inverse, #fffff0)"
                     : "var(--chatty-text)",
                 pointerEvents: "auto",
                 cursor: "pointer",

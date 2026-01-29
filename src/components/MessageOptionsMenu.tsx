@@ -239,7 +239,7 @@ export function MessageOptionsMenu({
                   className="flex-1 px-3 py-1.5 rounded text-sm transition-colors"
                   style={{
                     backgroundColor: 'var(--chatty-button)',
-                    color: 'var(--chatty-text-inverse, #ffffeb)'
+                    color: 'var(--chatty-text-inverse, #fffff0)'
                   }}
                 >
                   Pin

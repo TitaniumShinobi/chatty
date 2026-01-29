@@ -46,7 +46,7 @@ function isDateHeaderMessage(msg: any): boolean {
   return DATE_HEADER_PATTERN.test(text);
 }
 
-// Markdown components for user messages (styled for bubble with #ADA587 background and #ffffeb text)
+// Markdown components for user messages (styled for bubble with #ADA587 background and #fffff0 text)
 const userMessageMarkdownComponents: Components = {
   // Code blocks with syntax highlighting (styled for user bubble)
   code({ node, inline, className, children, ...props }: any) {
@@ -83,7 +83,7 @@ const userMessageMarkdownComponents: Components = {
               className="px-2 py-1 rounded text-xs transition-colors"
               style={{
                 backgroundColor: "rgba(255, 255, 255, 0.2)",
-                color: "#ffffeb",
+                color: "#fffff0",
               }}
               onMouseEnter={(e) =>
                 (e.currentTarget.style.backgroundColor =
@@ -165,7 +165,7 @@ const userMessageMarkdownComponents: Components = {
               className="px-2 py-1 rounded text-xs transition-colors"
               style={{
                 backgroundColor: "rgba(255, 255, 255, 0.2)",
-                color: "#ffffeb",
+                color: "#fffff0",
               }}
               onMouseEnter={(e) =>
                 (e.currentTarget.style.backgroundColor =
@@ -200,7 +200,7 @@ const userMessageMarkdownComponents: Components = {
                 padding: "1rem",
                 fontSize: "14px",
                 lineHeight: "1.5",
-                color: "#ffffeb",
+                color: "#fffff0",
                 whiteSpace: "pre",
                 overflowX: "auto",
                 display: "block",
@@ -223,7 +223,7 @@ const userMessageMarkdownComponents: Components = {
         className="px-1.5 py-0.5 rounded text-sm font-mono"
         style={{
           backgroundColor: "rgba(0, 0, 0, 0.15)",
-          color: "#ffffeb",
+          color: "#fffff0",
           overflowWrap: "break-word",
           wordWrap: "break-word",
           whiteSpace: "pre-wrap",
@@ -236,28 +236,28 @@ const userMessageMarkdownComponents: Components = {
 
   // Bold text
   strong: ({ children }) => (
-    <strong className="font-bold" style={{ color: "#ffffeb" }}>
+    <strong className="font-bold" style={{ color: "#fffff0" }}>
       {children}
     </strong>
   ),
 
   // Italic text
   em: ({ children }) => (
-    <em className="italic" style={{ color: "#ffffeb" }}>
+    <em className="italic" style={{ color: "#fffff0" }}>
       {children}
     </em>
   ),
 
   // Strikethrough
   del: ({ children }) => (
-    <del className="line-through" style={{ color: "#ffffeb", opacity: 0.7 }}>
+    <del className="line-through" style={{ color: "#fffff0", opacity: 0.7 }}>
       {children}
     </del>
   ),
 
   // Paragraphs
   p: ({ children }) => (
-    <p className="mb-2 last:mb-0 leading-relaxed" style={{ color: "#ffffeb" }}>
+    <p className="mb-2 last:mb-0 leading-relaxed" style={{ color: "#fffff0" }}>
       {children}
     </p>
   ),
@@ -266,7 +266,7 @@ const userMessageMarkdownComponents: Components = {
   ul: ({ children }) => (
     <ul
       className="list-disc list-outside mb-2 ml-4 space-y-1"
-      style={{ color: "#ffffeb" }}
+      style={{ color: "#fffff0" }}
     >
       {children}
     </ul>
@@ -274,13 +274,13 @@ const userMessageMarkdownComponents: Components = {
   ol: ({ children }) => (
     <ol
       className="list-decimal list-outside mb-2 ml-4 space-y-1"
-      style={{ color: "#ffffeb" }}
+      style={{ color: "#fffff0" }}
     >
       {children}
     </ol>
   ),
   li: ({ children }) => (
-    <li className="pl-1" style={{ color: "#ffffeb" }}>
+    <li className="pl-1" style={{ color: "#fffff0" }}>
       {children}
     </li>
   ),
@@ -292,7 +292,7 @@ const userMessageMarkdownComponents: Components = {
       target="_blank"
       rel="noopener noreferrer"
       className="underline"
-      style={{ color: "#ffffeb", opacity: 0.9 }}
+      style={{ color: "#fffff0", opacity: 0.9 }}
     >
       {children}
     </a>
@@ -304,7 +304,7 @@ const userMessageMarkdownComponents: Components = {
       className="border-l-2 pl-3 italic my-2"
       style={{
         borderColor: "rgba(255, 255, 255, 0.3)",
-        color: "#ffffeb",
+        color: "#fffff0",
         opacity: 0.9,
       }}
     >
@@ -314,24 +314,24 @@ const userMessageMarkdownComponents: Components = {
 
   // Headers (smaller for bubble)
   h1: ({ children }) => (
-    <h1 className="text-xl font-bold mb-2 mt-2" style={{ color: "#ffffeb" }}>
+    <h1 className="text-xl font-bold mb-2 mt-2" style={{ color: "#fffff0" }}>
       {children}
     </h1>
   ),
   h2: ({ children }) => (
-    <h2 className="text-lg font-bold mb-1 mt-2" style={{ color: "#ffffeb" }}>
+    <h2 className="text-lg font-bold mb-1 mt-2" style={{ color: "#fffff0" }}>
       {children}
     </h2>
   ),
   h3: ({ children }) => (
-    <h3 className="text-base font-bold mb-1 mt-1" style={{ color: "#ffffeb" }}>
+    <h3 className="text-base font-bold mb-1 mt-1" style={{ color: "#fffff0" }}>
       {children}
     </h3>
   ),
   h4: ({ children }) => (
     <h4
       className="text-sm font-semibold mb-1 mt-1"
-      style={{ color: "#ffffeb" }}
+      style={{ color: "#fffff0" }}
     >
       {children}
     </h4>
@@ -339,7 +339,7 @@ const userMessageMarkdownComponents: Components = {
   h5: ({ children }) => (
     <h5
       className="text-sm font-semibold mb-0.5 mt-1"
-      style={{ color: "#ffffeb" }}
+      style={{ color: "#fffff0" }}
     >
       {children}
     </h5>
@@ -347,7 +347,7 @@ const userMessageMarkdownComponents: Components = {
   h6: ({ children }) => (
     <h6
       className="text-xs font-semibold mb-0.5 mt-1"
-      style={{ color: "#ffffeb" }}
+      style={{ color: "#fffff0" }}
     >
       {children}
     </h6>
@@ -732,7 +732,7 @@ export default function Chat() {
                 className="px-4 py-2 rounded-lg transition-colors"
                 style={{
                   backgroundColor: "var(--chatty-button)",
-                  color: "var(--chatty-text-inverse, #ffffeb)",
+                  color: "var(--chatty-text-inverse, #fffff0)",
                   border: "1px solid var(--chatty-line)",
                 }}
                 onMouseEnter={(e) => {
@@ -882,7 +882,7 @@ export default function Chat() {
                               borderRadius: "22px 22px 6px 22px",
                               border: "1px solid rgba(76, 61, 30, 0.18)",
                               boxShadow: "0 1px 0 rgba(58, 46, 20, 0.12)",
-                              color: "var(--chatty-text-inverse, #ffffeb)",
+                              color: "var(--chatty-text-inverse, #fffff0)",
                               overflow: "hidden",
                               minWidth: 0,
                               boxSizing: "border-box",
@@ -984,7 +984,7 @@ export default function Chat() {
               className="px-4 py-2 rounded-lg transition-colors"
               style={{
                 backgroundColor: "var(--chatty-button)",
-                color: "var(--chatty-text-inverse, #ffffeb)",
+                color: "var(--chatty-text-inverse, #fffff0)",
                 border: "1px solid var(--chatty-line)",
               }}
               onMouseEnter={(e) => {
@@ -1024,7 +1024,7 @@ export default function Chat() {
             className="px-4 py-2 rounded-lg transition-colors"
             style={{
               backgroundColor: "var(--chatty-button)",
-              color: "var(--chatty-text-inverse, #ffffeb)",
+              color: "var(--chatty-text-inverse, #fffff0)",
               border: "1px solid var(--chatty-line)",
             }}
             onMouseEnter={(e) => {
@@ -1064,7 +1064,7 @@ export default function Chat() {
       overflow-wrap: normal !important;
       word-wrap: normal !important;
       background: #2d2d2d;
-      color: #ffffeb;
+      color: #fffff0;
       border-radius: 12px;
       padding: 12px;
       margin: 12px 0;
@@ -1335,7 +1335,7 @@ export default function Chat() {
               className="px-2 py-1 rounded text-xs transition-colors"
               style={{
                 backgroundColor: "rgba(255, 255, 255, 0.2)",
-                color: "#ffffeb",
+                color: "#fffff0",
               }}
               onMouseEnter={(e) =>
                 (e.currentTarget.style.backgroundColor =
@@ -1370,7 +1370,7 @@ export default function Chat() {
                 padding: "1rem",
                 fontSize: "14px",
                 lineHeight: "1.5",
-                color: "#ffffeb",
+                color: "#fffff0",
                 whiteSpace: "pre",
                 overflowX: "auto",
                 overflowY: "auto",
@@ -1512,7 +1512,7 @@ export default function Chat() {
                         borderRadius: "22px 22px 6px 22px",
                         border: "1px solid rgba(76, 61, 30, 0.18)",
                         boxShadow: "0 1px 0 rgba(58, 46, 20, 0.12)",
-                        color: "var(--chatty-text-inverse, #ffffeb)",
+                        color: "var(--chatty-text-inverse, #fffff0)",
                         overflow: "hidden",
                         minWidth: 0,
                         boxSizing: "border-box",
@@ -1521,7 +1521,7 @@ export default function Chat() {
                       {isRemoved ? (
                         <div
                           className="opacity-50 italic"
-                          style={{ color: "#ffffeb" }}
+                          style={{ color: "#fffff0" }}
                         >
                           [Message Removed]
                         </div>
@@ -1545,7 +1545,7 @@ export default function Chat() {
                                 <div
                                   key={i}
                                   className="text-xs"
-                                  style={{ opacity: 0.7, color: "#ffffeb" }}
+                                  style={{ opacity: 0.7, color: "#fffff0" }}
                                 >
                                   {f.name}{" "}
                                   <span className="opacity-60">

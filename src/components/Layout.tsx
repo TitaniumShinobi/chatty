@@ -3058,7 +3058,7 @@ export default function Layout() {
           width: '100vw',
           alignItems: 'center', 
           justifyContent: 'center',
-          backgroundColor: 'var(--chatty-bg-main, #2F2510)',
+          backgroundColor: 'var(--chatty-bg-main, #000110)',
           color: 'var(--chatty-text, #ADA587)'
         }}>
           <div style={{ textAlign: 'center' }}>
