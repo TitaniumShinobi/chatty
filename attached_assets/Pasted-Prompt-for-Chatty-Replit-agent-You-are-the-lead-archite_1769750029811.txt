@@ -1,0 +1,63 @@
+Prompt for Chatty Replit agent
+You are the lead architect and full‑stack engineer for the Chatty repository. Your goals:
+	1	Fully understand the existing Chatty codebase: tech stack, routing, auth, current “tabs” or “apps” model, and how new pages/features are added.
+	2	Design Chatty as the host app that exposes a “Finance” tab capable of:
+	◦	Hosting FXShinobi as one finance app,
+	◦	Later hosting additional finance integrations (brokerages, Kalshi, other APIs) via a plugin-style architecture.
+	3	Plan how Chatty will be deployed behind Cloudflare to a production domain, assuming all deps are up to date and code is ready to ship.
+Tasks:
+	1	Scan the entire repo and write a concise architecture summary:
+	◦	Frontend stack and routing (e.g., Next.js pages/app router, React SPA, etc.).
+	◦	Backend/API layer (framework, endpoints, where background jobs are configured).
+	◦	Current tab or app abstraction, if any (components, routes, or feature flags that represent “spaces” or “apps”).
+	2	Propose a clean “Finance tab” architecture:
+	◦	Confirm that Chatty is the main app and “Finance” is a first‑class section.
+	◦	Design a plugin-style interface for finance apps:
+	▪	Each finance app gets: a route (e.g., /finance/fxshinobi), a main stats dashboard page, and a config object describing its data sources and connected services.
+	▪	Define TypeScript interfaces/types for a FinanceApp (id, name, routes, required credentials, enabled data sources, widgets/components to render).
+	3	Define how FXShinobi will be integrated:
+	◦	Assume FXShinobi has its own repo and logic for trading signals, scripts, and stats.
+	◦	Design an integration layer in Chatty that:
+	▪	Exposes /finance/fxshinobi as a dashboard page with:
+	▪	TradingView‑style chart embeds (using TradingView widgets via iframe or web components).tradingview+3 (https://www.tradingview.com/widget-docs/widget-formats/)
+	▪	Kalshi‑style event/market tiles (for yes/no markets, probabilities, PnL panels).zuplo+1 (https://zuplo.com/learning-center/kalshi-api)
+	▪	Perplexity‑style finance insights section (summary, key metrics, news/SEC data layout as a right‑hand or lower panel).youtube+1 (https://www.youtube.com/watch?v=wsFNQO45GnQ)
+	▪	Fetches FXShinobi stats via an internal API or shared database/Supabase table.
+	4	Supabase integration from Chatty’s perspective:
+	◦	Locate any existing Supabase usage; if none, propose a minimal setup.
+	◦	Design common tables for finance logging:
+	▪	fx_sessions, fx_trades, strategy_runs, price_snapshots, user_finance_connections.
+	◦	Specify exactly which Supabase client is used on frontend and backend, and how environment variables will be wired (keys, anon key, service role).
+	5	24/7 scripts and background processing:
+	◦	Determine whether Chatty itself should host background jobs or if FXShinobi will do that and simply write to Supabase.
+	◦	Recommend a pattern:
+	▪	Option A: FXShinobi runs workers (cron / always-on) that push data into Supabase; Chatty reads.
+	▪	Option B: Chatty hosts an internal job runner consuming FXShinobi logic via a package or API.
+	◦	Argue concisely for the better separation (you should likely favor FXShinobi as the worker engine and Chatty as the UI/host).
+	6	Cloudflare/domain deployment:
+	◦	Identify what’s needed to deploy Chatty behind Cloudflare:
+	▪	Build command, output directory, any static asset/CDN considerations.
+	▪	Environment variable mapping for Supabase and FXShinobi API endpoints.
+	◦	Produce a short deployment checklist for the user:
+	▪	What they need to set in Cloudflare,
+	▪	What values to configure in .env or secrets in Replit.
+Deliverables:
+	•	A short markdown document in the repo (e.g. docs/finance-architecture.md) that:
+	◦	Confirms the decision: Chatty is the app; Finance is a tab; FXShinobi is a finance app plugged into that tab.
+	◦	Describes the FinanceApp interface and how to register FXShinobi.
+	◦	Lists the exact new routes/components to create (e.g., /finance/index, /finance/fxshinobi).
+	◦	Describes the Supabase schema and which repo (Chatty vs FXShinobi) is responsible for writes vs reads.
+	•	A step‑by‑step “Next Actions” section with:
+	◦	Files to create/modify in Chatty to host the new finance tab and FXShinobi dashboard.
+	◦	The exact environment variables required and how they relate to Cloudflare deployment.
+
+---
+
+System design decision:
+	•	Chatty is the primary app.
+	•	The Finance tFXShinobitty is the host for finance integrations.
+	•	FXShinobi is a finance engine + app module that plugs into the Finance tab, with its own dashboard page (/finance/fxshinobi) modeled visually as a blend of:
+	◦	TradingView‑style chart widgets for price/technical views.tradingview+3 (https://www.tradingview.com/widget-docs/tutorials/build-page/widget-integration/)
+	◦	Kalshi‑style event/market tiles for probabilistic markets and positions.reddit+1 (https://www.reddit.com/r/Kalshi/comments/1moltxv/built_a_custom_live_kalshi_market_dashboard/)
+	◦	A Perplexity‑style finance insight panel summarizing fundamentals, news, and metrics.youtube+1 (https://www.youtube.com/watch?v=QjZm4Z1l3cc)
+	•	Users will eventually be able to connect multiple finance services to the Finance tab, and FXShinobi will be just one of the available integrations.
