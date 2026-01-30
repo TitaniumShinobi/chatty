@@ -1413,7 +1413,7 @@ export default function Chat() {
         <div
           className="px-4 py-2 border-b flex items-center gap-2"
           style={{
-            borderColor: "var(--chatty-line)",
+            borderColor: "var(--chatty-bg-main)",
             backgroundColor: "var(--chatty-bg-secondary)",
           }}
         >
@@ -1753,7 +1753,7 @@ export default function Chat() {
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="p-4 border-t flex-shrink-0" style={{ borderColor: "var(--chatty-line)" }}>
+      <div className="p-4 border-t flex-shrink-0" style={{ borderColor: "var(--chatty-bg-main)" }}>
         <MessageBar
           onSubmit={(messageText, messageFiles) => {
             if (thread) {
