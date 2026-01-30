@@ -94,8 +94,9 @@ export default function MessageBar({
   return (
     <form onSubmit={handleSubmit} className="w-full">
       <div
-        className="flex items-center gap-2 px-4 py-2 rounded-full transition-all"
+        className="flex items-center gap-2 px-4 py-2 transition-all"
         style={{
+          borderRadius: "24px",
           backgroundColor: "var(--chatty-bg-message)",
           boxShadow: isFocused
             ? "0 4px 16px rgba(0, 0, 0, 0.15)"

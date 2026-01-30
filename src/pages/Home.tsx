@@ -579,8 +579,9 @@ export default function Home() {
       {/* Ask Chatty Input Field */}
       <form onSubmit={handleSubmit} className="w-full max-w-2xl mb-6">
         <div
-          className="flex items-center gap-2 px-4 py-2 rounded-full transition-all"
+          className="flex items-center gap-2 px-4 py-2 transition-all"
           style={{
+            borderRadius: "24px",
             backgroundColor: "var(--chatty-bg-message)",
             boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
           }}
