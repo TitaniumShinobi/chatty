@@ -98,7 +98,7 @@ export default function MessageBar({
         style={{
           backgroundColor: "var(--chatty-bg-message)",
           boxShadow: isFocused
-            ? "0 4px 16px rgba(0, 0, 0, 0.15), 0 0 0 2px rgba(173, 165, 135, 0.2)"
+            ? "0 4px 16px rgba(0, 0, 0, 0.15)"
             : "0 4px 12px rgba(0, 0, 0, 0.1)",
         }}
       >
