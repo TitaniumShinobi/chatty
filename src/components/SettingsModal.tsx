@@ -53,7 +53,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           onClick={(e) => e.stopPropagation()}
         >
           {/* Sidebar */}
-          <div className="w-64 flex flex-col" style={{ backgroundColor: 'var(--chatty-bg-sidebar)' }}>
+          <div className="w-64 flex flex-col rounded-l-lg" style={{ backgroundColor: 'var(--chatty-bg-sidebar)' }}>
             <div className="flex-1 overflow-y-auto">
               {/* Close Button */}
               <div className="flex justify-start p-4">
@@ -136,7 +136,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
 
           {/* Content Area */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto rounded-r-lg">
             <div className="p-6">
               {activeTab === 'general' && <GeneralTab />}
               {activeTab === 'notifications' && <NotificationsTab />}
