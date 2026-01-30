@@ -902,7 +902,7 @@ export default function Chat() {
                     <div key={m.id} className="group relative flex items-start gap-3 py-3 px-4">
                       <div className="flex flex-col items-start text-left w-full">
                         <div
-                          className="whitespace-normal w-full assistant-code-scope"
+                          className="whitespace-normal w-full assistant-code-scope chat-markdown"
                           style={{ color: "var(--chatty-text)", overflow: "hidden", maxWidth: "100%" }}
                         >
                           <style dangerouslySetInnerHTML={{ __html: assistantCodeStyles }} />
@@ -946,7 +946,7 @@ export default function Chat() {
                 {canonicalConstructName} transcript
               </h2>
               <div
-                className="prose max-w-none break-words"
+                className="prose max-w-none break-words chat-markdown"
                 style={{ color: "var(--chatty-text)", lineHeight: 1.7 }}
               >
                 <ReactMarkdown remarkPlugins={[remarkBreaks]}>
@@ -1388,7 +1388,7 @@ export default function Chat() {
           components={userMessageMarkdownComponents}
           remarkPlugins={[remarkBreaks]}
           rehypePlugins={[rehypeRaw]}
-          className="prose"
+          className="prose chat-markdown"
         >
           {messageText || ""}
         </ReactMarkdown>
@@ -1614,7 +1614,7 @@ export default function Chat() {
                     </div>
                   ) : (
                     <div
-                      className="whitespace-normal w-full assistant-code-scope"
+                      className="whitespace-normal w-full assistant-code-scope chat-markdown"
                       style={{
                         color: "var(--chatty-text)",
                         overflow: "hidden",

@@ -6,6 +6,38 @@ const VVAULT_TIMESTAMP_PATTERN =
 
 const ROLE_LABEL_PATTERN = /^(Coding Expert|Creative Expert|Conversational Expert):\s*$/;
 
+const PSEUDO_HEADING_PATTERN = /^={3,}\s*([A-Z][A-Z0-9 _#:-]+?)\s*={3,}\s*:?$/;
+
+const HASH_HEADING_PATTERN = /^([A-Z][A-Z0-9 _-]+)\s*#{3,}\s*:?$/;
+
+function normalizePseudoHeadings(line: string): string {
+  const trimmed = line.trim();
+  
+  let match = trimmed.match(PSEUDO_HEADING_PATTERN);
+  if (match) {
+    const title = match[1]
+      .replace(/[#:_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase()
+      .replace(/^\w/, (c) => c.toUpperCase());
+    return `## ${title}`;
+  }
+  
+  match = trimmed.match(HASH_HEADING_PATTERN);
+  if (match) {
+    const title = match[1]
+      .replace(/[#:_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase()
+      .replace(/^\w/, (c) => c.toUpperCase());
+    return `## ${title}`;
+  }
+  
+  return line;
+}
+
 export function sanitizeMessageText(text: string | undefined): string {
   if (!text) return "";
 
@@ -18,6 +50,7 @@ export function sanitizeMessageText(text: string | undefined): string {
       if (ROLE_LABEL_PATTERN.test(trimmed)) return false;
       return true;
     })
+    .map((line) => normalizePseudoHeadings(line))
     .join("\n");
 
   return cleanedLines.trim();

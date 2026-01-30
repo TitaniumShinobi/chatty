@@ -424,13 +424,26 @@
 }
 
 /* Chat markdown paragraph spacing */
-.chat-markdown p {
+.chat-markdown p,
+.chat-markdown div {
   margin: 0 0 0.75rem;
   line-height: 1.5;
 }
 
-.chat-markdown p:last-child {
+.chat-markdown p:last-child,
+.chat-markdown div:last-child {
   margin-bottom: 0;
+}
+
+.chat-markdown h2,
+.chat-markdown h3 {
+  margin: 1rem 0 0.5rem;
+  font-weight: 600;
+}
+
+.chat-markdown h2:first-child,
+.chat-markdown h3:first-child {
+  margin-top: 0;
 }
 
 .chat-markdown ul,
