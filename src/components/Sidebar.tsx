@@ -200,7 +200,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     "flex items-center w-full py-2 text-left text-sm rounded-full transition-colors",
     collapsed ? "justify-center px-0 gap-0" : "gap-3 px-3",
   );
-  const activeNavColor = "#ADA587";
+  const activeNavColor = "rgba(173, 165, 135, 0.25)";
   const hoverColor = "var(--chatty-highlight)";
   const simforgeIcon = (() => {
     const active = isActiveRoute("/app/explore");
@@ -217,9 +217,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const navButtonStyle = (path: string) => ({
     backgroundColor: isActiveRoute(path) ? activeNavColor : "transparent",
-    color: isActiveRoute(path)
-      ? "var(--chatty-text-inverse, #fffff0)"
-      : "var(--chatty-text)",
+    color: "var(--chatty-text)",
   });
 
   const handleNavHover = (
@@ -552,12 +550,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               )
                 ? activeNavColor
                 : "transparent",
-              color: threads.some(
-                (t: any) =>
-                  t.constructId === "zen-001" && t.id === currentConversationId,
-              )
-                ? "var(--chatty-text-inverse, #fffff0)"
-                : "var(--chatty-text)",
+              color: "var(--chatty-text)",
             }}
             onMouseEnter={(e) => {
               const isZenActive = threads.some(
@@ -607,12 +600,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               )
                 ? activeNavColor
                 : "transparent",
-              color: threads.some(
-                (t: any) =>
-                  (t.constructId === "lin-001" || t.constructId === "lin") && t.id === currentConversationId,
-              )
-                ? "var(--chatty-text-inverse, #fffff0)"
-                : "var(--chatty-text)",
+              color: "var(--chatty-text)",
             }}
             onMouseEnter={(e) => {
               const isLinActive = threads.some(
@@ -907,18 +895,13 @@ const Sidebar: React.FC<SidebarProps> = ({
               className={cn(
                 navButtonBase,
                 "group",
-                conversation.id === currentConversationId &&
-                  "text-[var(--chatty-text-inverse, #fffff0)]",
               )}
               style={{
                 backgroundColor:
                   conversation.id === currentConversationId
                     ? activeNavColor
                     : "transparent",
-                color:
-                  conversation.id === currentConversationId
-                    ? "var(--chatty-text-inverse, #fffff0)"
-                    : "var(--chatty-text)",
+                color: "var(--chatty-text)",
                 pointerEvents: "auto",
                 cursor: "pointer",
                 position: "relative",
