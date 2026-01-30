@@ -197,7 +197,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   );
 
   const navButtonBase = cn(
-    "flex items-center w-full py-2 text-left text-sm rounded-xl transition-colors",
+    "flex items-center w-full py-2 text-left text-sm rounded-full transition-colors",
     collapsed ? "justify-center px-0 gap-0" : "gap-3 px-3",
   );
   const activeNavColor = "#ADA587";
@@ -410,7 +410,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 {/* Auto-suggestions dropdown */}
                 {globalSearchSuggestions.length > 0 && (
                   <div
-                    className="absolute top-full left-12 right-4 mt-1 rounded-xl shadow-lg overflow-hidden"
+                    className="absolute top-full left-12 right-4 mt-1 rounded-2xl shadow-lg overflow-hidden"
                     style={{
                       backgroundColor:
                         "var(--chatty-bg-modal, var(--chatty-bg))",
@@ -818,7 +818,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                       setIsAddressBookSearchActive(false);
                       setAddressBookSearchQuery("");
                     }}
-                    className="w-full text-left p-2 rounded-xl hover:bg-[var(--chatty-highlight)] transition-colors"
+                    className="w-full text-left p-2 rounded-full hover:bg-[var(--chatty-highlight)] transition-colors"
                     style={{ color: "var(--chatty-text)" }}
                   >
                     <div className="flex items-center gap-2 mb-1">
@@ -852,7 +852,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   onClick={() =>
                     setAddressBookResultsLimit((prev) => prev + 10)
                   }
-                  className="w-full text-center py-2 text-sm hover:bg-[var(--chatty-highlight)] rounded-xl transition-colors"
+                  className="w-full text-center py-2 text-sm hover:bg-[var(--chatty-highlight)] rounded-full transition-colors"
                   style={{ color: "var(--chatty-text)", opacity: 0.7 }}
                 >
                   Show more (
@@ -1032,7 +1032,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             {/* Runtime dashboard button removed - using automatic orchestration */}
             <button
               onClick={() => {}} // Placeholder - runtime dashboard removed
-              className="w-full rounded-xl transition-colors flex items-center gap-2 p-2 justify-center opacity-50 cursor-not-allowed"
+              className="w-full rounded-full transition-colors flex items-center gap-2 p-2 justify-center opacity-50 cursor-not-allowed"
               style={{ color: "var(--chatty-text)" }}
               aria-label="Runtime auto-managed"
             >
@@ -1052,7 +1052,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           <button
             onClick={onShowSettings}
             className={cn(
-              "w-full rounded-2xl transition-colors flex items-center gap-3 p-2",
+              "w-full rounded-full transition-colors flex items-center gap-3 p-2",
               collapsed ? "justify-center" : "hover:bg-[var(--chatty-highlight)]",
             )}
           >
@@ -1102,7 +1102,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         ) : (
           <button
             onClick={() => (window.location.href = "/api/auth/google")}
-            className="w-full rounded-2xl p-2 bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+            className="w-full rounded-full p-2 bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
           >
             Continue with Google
           </button>
