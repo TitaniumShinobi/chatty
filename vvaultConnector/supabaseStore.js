@@ -58,7 +58,7 @@ function getDateFromTimestamp(timestamp) {
   }
 }
 
-function parseMarkdownTranscript(content) {
+function parseMarkdownTranscript(content, debugPath = null) {
   if (!content) return [];
   const messages = [];
   const lines = content.split('\n');
@@ -66,6 +66,21 @@ function parseMarkdownTranscript(content) {
   let currentContent = [];
   let currentTimestamp = null;
   let currentDateForDay = null; // Track current date from day headers like "## November 14, 2025"
+  const DEBUG = debugPath && debugPath.includes('chat_with_zen-001.md') && !debugPath.includes('instances');
+  if (DEBUG) console.log(`🔍 [Parser-Legacy] Parsing ${lines.length} lines from ${debugPath}, first 3 lines:`, lines.slice(0, 10).map((l, i) => `[${i}] ${l.substring(0, 80)}`));
+  
+  // PRE-SCAN: Find the first date header in the file to use as fallback for legacy files
+  // This handles files where the date header appears before we start matching messages
+  const PRE_DATE_PATTERN = /^(?:#{1,3}\s+)?((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4})/i;
+  for (let i = 0; i < Math.min(lines.length, 100); i++) { // Only check first 100 lines
+    const match = lines[i].trim().match(PRE_DATE_PATTERN);
+    if (match) {
+      currentDateForDay = match[1];
+      if (DEBUG) console.log(`📅 [Parser-Legacy] PRE-SCAN found date header at line ${i}: "${currentDateForDay}"`);
+      break;
+    }
+  }
+  if (DEBUG && !currentDateForDay) console.log(`⚠️ [Parser-Legacy] PRE-SCAN found no date header in first 100 lines`);
 
   // User identifiers - these are ALWAYS user messages (case insensitive)
   // Updated to match names that START with common user identifiers or are exact matches
@@ -143,6 +158,14 @@ function parseMarkdownTranscript(content) {
     if (DATE_HEADER_PATTERN.test(trimmedLine)) {
       // Also capture this as current date for timestamp derivation
       currentDateForDay = trimmedLine;
+      if (DEBUG) console.log(`📅 [Parser-Legacy] Set currentDateForDay from bare header: "${currentDateForDay}"`);
+    }
+    
+    // Also check for markdown header date formats like "## November 9, 2025" or "# November 9, 2025"
+    const mdDateHeaderMatch = trimmedLine.match(/^#{1,3}\s+((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4})/i);
+    if (mdDateHeaderMatch) {
+      currentDateForDay = mdDateHeaderMatch[1];
+      if (DEBUG) console.log(`📅 [Parser-Legacy] Set currentDateForDay from MD header: "${currentDateForDay}"`);
       // Save any pending message first
       if (currentRole && currentContent.length) {
         const msg = { role: currentRole, content: currentContent.join('\n').trim() };
@@ -224,7 +247,24 @@ function parseMarkdownTranscript(content) {
       
       currentRole = isUserSpeaker(speaker) ? 'user' : 'assistant';
       currentContent = inlineContent ? [inlineContent] : [];
-      currentTimestamp = null;
+      // Use day header date as fallback (timestamp at midnight for that day)
+      if (currentDateForDay) {
+        try {
+          const base = new Date(currentDateForDay);
+          if (!isNaN(base.getTime())) {
+            // Offset each message slightly to preserve order
+            base.setSeconds(base.getSeconds() + messages.length);
+            currentTimestamp = base.toISOString();
+            if (DEBUG) console.log(`⏰ [Parser] FORMAT 1 derived timestamp: ${currentTimestamp} for speaker "${speaker}"`);
+          } else {
+            currentTimestamp = null;
+          }
+        } catch {
+          currentTimestamp = null;
+        }
+      } else {
+        currentTimestamp = null;
+      }
       continue;
     }
     
@@ -243,7 +283,23 @@ function parseMarkdownTranscript(content) {
       
       currentRole = isUserSpeaker(speaker) ? 'user' : 'assistant';
       currentContent = [];
-      currentTimestamp = null;
+      // Use day header date as fallback (timestamp at midnight for that day)
+      if (currentDateForDay) {
+        try {
+          const base = new Date(currentDateForDay);
+          if (!isNaN(base.getTime())) {
+            // Offset each message slightly to preserve order
+            base.setSeconds(base.getSeconds() + messages.length);
+            currentTimestamp = base.toISOString();
+          } else {
+            currentTimestamp = null;
+          }
+        } catch {
+          currentTimestamp = null;
+        }
+      } else {
+        currentTimestamp = null;
+      }
       continue;
     }
     
@@ -285,7 +341,23 @@ function parseMarkdownTranscript(content) {
         
         currentRole = isUserSpeaker(speaker) ? 'user' : 'assistant';
         currentContent = [inlineContent];
-        currentTimestamp = null;
+        // Use day header date as fallback (timestamp at midnight for that day)
+        if (currentDateForDay) {
+          try {
+            const base = new Date(currentDateForDay);
+            if (!isNaN(base.getTime())) {
+              // Offset each message slightly to preserve order
+              base.setSeconds(base.getSeconds() + messages.length);
+              currentTimestamp = base.toISOString();
+            } else {
+              currentTimestamp = null;
+            }
+          } catch {
+            currentTimestamp = null;
+          }
+        } else {
+          currentTimestamp = null;
+        }
         continue;
       }
     }
@@ -623,7 +695,7 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
         metadataMessages: metadata.messages?.length || 0
       });
       
-      const parsedMessages = parseMarkdownTranscript(file.content);
+      const parsedMessages = parseMarkdownTranscript(file.content, file.filename);
       
       // Debug: Log parsing results for legacy files
       if (file.content?.length > 1000 && parsedMessages.length === 0) {
