@@ -875,7 +875,14 @@ export default function Chat() {
           return messages;
         };
         
-        const parsedMessages = parseTranscriptToMessages(zenMarkdown);
+        // Filter out date header messages and sanitize content
+        const parsedMessages = parseTranscriptToMessages(zenMarkdown)
+          .filter(m => {
+            // Filter out standalone date header messages
+            const text = (m.text || "").trim();
+            const dateLinePattern = /^(?:#{1,6}\s*)?(January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2},?\s+)?\d{4}\s*$/;
+            return !dateLinePattern.test(text);
+          });
         
         // If parsing yielded messages, render them styled; otherwise fallback to prose
         if (parsedMessages.length > 0) {
@@ -888,7 +895,8 @@ export default function Chat() {
                 <div className="mb-2 px-4 pt-4"></div>
                 {parsedMessages.map((m, index) => {
                   const isUserMsg = m.role === 'user';
-                  const content = m.text || "";
+                  // Apply sanitization to remove embedded date headers
+                  const content = sanitizeMessageText(m.text);
                   const contentLength = content.length;
                   let maxWidth = "max-w-[85%] sm:max-w-[80%] md:max-w-[75%] lg:max-w-[70%]";
                   if (contentLength <= 20) maxWidth = "max-w-[200px]";
@@ -913,7 +921,7 @@ export default function Chat() {
                           >
                             <div className="break-words" style={{ maxWidth: "100%", minWidth: 0, width: "100%" }}>
                               <ReactMarkdown components={userMessageMarkdownComponents} remarkPlugins={[remarkBreaks]} rehypePlugins={[rehypeRaw]}>
-                                {m.text || ""}
+                                {content}
                               </ReactMarkdown>
                             </div>
                           </div>
@@ -937,7 +945,7 @@ export default function Chat() {
                         >
                           <style dangerouslySetInnerHTML={{ __html: assistantCodeStyles }} />
                           <R
-                            packets={[{ op: "answer.v1", payload: { content: m.text || "" } }]}
+                            packets={[{ op: "answer.v1", payload: { content: content } }]}
                           />
                         </div>
                         <div className="mt-1 flex items-center gap-2">
