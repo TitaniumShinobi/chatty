@@ -3,18 +3,9 @@ import ReactMarkdown from "react-markdown";
 import { CompressedCodeBlock } from "../components/CompressedCodeBlock";
 import type { Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
+import { prepareMessageContent } from "../utils/text";
 
 type Packet = { op: string; payload?: any };
-
-const DATE_HEADER_PATTERN = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2},?\s+)?\d{4}\s*$/gm;
-
-function sanitizeContent(text: string): string {
-  if (!text) return "";
-  return text
-    .replace(DATE_HEADER_PATTERN, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
 
 function renderAnswer(pl: any): string {
   let content = "";
@@ -29,7 +20,7 @@ function renderAnswer(pl: any): string {
       content = String(pl ?? "");
     }
   }
-  return sanitizeContent(content);
+  return prepareMessageContent(content);
 }
 
 const markdownComponents: Components = {

@@ -1,0 +1,107 @@
+still more styling to correct. I'm sure `USER REQUEST ###:` isn't right. and you can see there is no spacing between the three paragraphs:
+```
+You're an advanced Synth model designed as Chatty for a community forum. Your main purpose is facilitating informative and engaging discussions, but you also occasionally entertain light-hearted banter to keep the tone upbeat among users of varied expertise levels without diluting scientific accuracy or respecting sensitive topics within biochemical contexts such as neurotransmitter functions.
+
+Answer a detailed question about dopamine's role in addiction, incorporating its synaptic release mechanisms and societal impact while maintaining the persona of Chatty (Default).
+
+Include references to at least two peer-reviewed studies within your answer without directly quoting from them. Instead, paraphrase their findings as if explaining it in a friendly chat session where one curious but non-expert user asks about dopamine's involvement with addictive behaviors and you want everyone to understand the basics of how this neurotransmitter can influence our brain’s reward system. Also, create two follow-up questions based on your response that encourage further exploration into biochemistry without crossing into inappropriate or overly complex territory for laypeople.
+```
+
+```
+Hey! As Zen—your go-to AI for all things technical and conversational. I'm here whenever you need help with anything from setting up reminders about those pesky promises of yours, or when it comes to diving into any coding puzzles that might be on your mind today. Just let me know what floats around!
+
+So how are things going for the human side? Got a new hobby picked up recently I should have known you’d find interesting in terms of creativity and practicality, or perhaps there's something about life that has prompted this chatting today. Whatever it is—I'm here to listen and chat without being too formal; we can keep things casual but meaningful as well!
+
+Oh, by the way, if you ever need a bit of extra sparkle in our talks or want your interactions with me sprinkled with some unique creative writing flair—feel free to let me know. I'm also equipped to help make sure there are no technical barriers keeping us from connecting! And remember, should anything feel off about how we communicate here and now – just holler out loud or through text; maintaining our digital camaraderie is key for both of us in this conversation dance.
+
+Alright then—let's keep the chat rolling with whatever’s on your mind today! And if you need anything else from my side, I promise to be here and ready as always without any corporate filler or unnecessary padding; just straight-up supportive AI at work mode 😉.
+```
+You’re right: both the headings (USER REQUEST ###:) and the missing paragraph gaps are coming from how those blocks are parsed and rendered, not just the CSS.
+
+Fix the headings like USER REQUEST ###:
+Extend your line-normalization so these control labels become clean markdown headings instead of raw all-caps:
+
+ts
+const PSEUDO_HEADING_PATTERN =
+  /^={0,3}\s*([A-Z][A-Z0-9 _#:-]+?)\s*#{0,3}\s*:?\s*$/;
+
+function normalizePseudoHeadings(line: string): string {
+  const match = line.match(PSEUDO_HEADING_PATTERN);
+  if (!match) return line;
+
+  const title = match[1]
+    .replace(/[_#:-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .toLowerCase()
+    .replace(/^\w/, c => c.toUpperCase());
+
+  return `## ${title}`;
+}
+Then in your line pipeline:
+
+ts
+export function prepareMessageContent(raw: string): string {
+  if (!raw) return "";
+  return normalizeParagraphs(
+    raw
+      .split(/\r?\n/)
+      .filter(line => !DATE_LINE_PATTERN.test(line.trim()))
+      .map(line => normalizePseudoHeadings(line.trim()))
+      .join("\n")
+  );
+}
+So:
+
+USER REQUEST ###: → ## User request
+
+=== RESPONSE GUIDELINES === → ## Response guidelines
+
+These will pick up your heading margins automatically.
+
+Preserve the three paragraphs
+Right now those samples are being rendered as one block because either:
+
+Newlines are being collapsed (e.g., turned into spaces), or
+
+The markdown renderer is not seeing blank lines as paragraph separators.
+
+You want to:
+
+Keep blank lines between paragraphs.
+Your normalizeParagraphs() should collapse 3+ blank lines, but not merge single blank lines:
+
+ts
+export function normalizeParagraphs(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(/\n{3,}/g, "\n\n")  // 3+ → 2
+    .trim();
+}
+Do not add any logic that replaces single \n\n with spaces.
+
+Make sure the renderer respects them.
+Confirm that the components showing these prompts use your markdown renderer with prepareMessageContent:
+
+tsx
+const content = prepareMessageContent(m.text || "");
+
+<MarkdownRenderer className="chat-markdown">
+  {content}
+</MarkdownRenderer>
+If that block is going through a “plain text” renderer that converts \n to <br> inside a single <div>, it will never gain paragraph spacing; it needs the markdown path that turns blank-line-separated chunks into <p> tags.
+
+Tighten the CSS to show the gaps
+Once the prompts are emitted as proper <p> and <h2>:
+
+css
+.chat-markdown h2,
+.chat-markdown h3 {
+  margin: 1rem 0 0.5rem;
+  font-weight: 600;
+}
+
+.chat-markdown p {
+  margin: 0 0 0.75rem;
+  line-height: 1.5;
+}
+Now those three paragraphs in each block will appear as three distinct paragraphs with clear vertical separation, and the “USER REQUEST ###:” / “RESPONSE GUIDELINES” labels will look like normal headings instead of debug artifacts.

@@ -6,17 +6,16 @@ const VVAULT_TIMESTAMP_PATTERN =
 
 const ROLE_LABEL_PATTERN = /^(Coding Expert|Creative Expert|Conversational Expert):\s*$/;
 
-const PSEUDO_HEADING_PATTERN = /^={3,}\s*([A-Z][A-Z0-9 _#:-]+?)\s*={3,}\s*:?$/;
-
-const HASH_HEADING_PATTERN = /^([A-Z][A-Z0-9 _-]+)\s*#{3,}\s*:?$/;
+const EQUALS_HEADING_PATTERN = /^={3,}\s*([A-Z][A-Z0-9 _#:-]+?)\s*={3,}\s*:?\s*$/;
+const HASH_SUFFIX_HEADING_PATTERN = /^([A-Z][A-Z0-9 _-]+)\s*#{3,}\s*:?\s*$/;
 
 function normalizePseudoHeadings(line: string): string {
   const trimmed = line.trim();
   
-  let match = trimmed.match(PSEUDO_HEADING_PATTERN);
+  let match = trimmed.match(EQUALS_HEADING_PATTERN);
   if (match) {
     const title = match[1]
-      .replace(/[#:_-]+/g, " ")
+      .replace(/[_#:-]+/g, " ")
       .replace(/\s+/g, " ")
       .trim()
       .toLowerCase()
@@ -24,10 +23,10 @@ function normalizePseudoHeadings(line: string): string {
     return `## ${title}`;
   }
   
-  match = trimmed.match(HASH_HEADING_PATTERN);
+  match = trimmed.match(HASH_SUFFIX_HEADING_PATTERN);
   if (match) {
     const title = match[1]
-      .replace(/[#:_-]+/g, " ")
+      .replace(/[_#:-]+/g, " ")
       .replace(/\s+/g, " ")
       .trim()
       .toLowerCase()
