@@ -11,6 +11,7 @@ import { MessageOptionsMenu } from "../components/MessageOptionsMenu";
 import { VVAULTConversationManager } from "../lib/vvaultConversationManager";
 import { getUserId } from "../lib/auth";
 import MessageBar from "../components/MessageBar";
+import { prepareMessageContent } from "../utils/text";
 
 type Message = {
   id: string;
@@ -415,45 +416,6 @@ export default function Chat() {
     }
     return false;
   });
-
-  // Sanitize message text by removing VVAULT timestamp prefixes, date headers, and other formatting artifacts
-  // Uses LINE-BASED filtering for reliable date header removal
-  const sanitizeMessageText = (text: string | undefined): string => {
-    if (!text) return "";
-    
-    // Pattern to match VVAULT timestamp prefix on a line: "10:26:07 AM EST - Devon Woodson [2026-01-20T15:26:07.457Z]: content"
-    const vvaultTimestampPattern = /^\d{1,2}:\d{2}:\d{2}\s+(?:AM|PM)(?:\s+[A-Z]{2,5})?\s+-\s+.+?\s+\[\d{4}-\d{2}-\d{2}T[^\]]+\]:\s*/;
-    
-    // Pattern for date header lines - matches multiple formats:
-    // "December 17, 2025" (with comma), "December 17 2025" (without comma), "November 2025" (month-year only)
-    // Also matches with optional markdown heading prefix (# December 17, 2025, ## December 17, 2025, etc.)
-    const dateLinePattern = /^(?:#{1,6}\s*)?(January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2},?\s+)?\d{4}\s*$/;
-    
-    // Pattern for role labels like "Coding Expert:" "Creative Expert:" etc
-    const roleLabelPattern = /^(Coding Expert|Creative Expert|Conversational Expert):\s*$/;
-    
-    // LINE-BASED FILTERING: Split into lines, filter out date headers, rejoin
-    const cleanedLines = text
-      .split(/\r?\n/)
-      .map(line => {
-        // Remove VVAULT timestamp prefix from line (but keep the rest of the line)
-        return line.replace(vvaultTimestampPattern, "");
-      })
-      .filter(line => {
-        const trimmed = line.trim();
-        // Filter out lines that are ONLY date headers
-        if (dateLinePattern.test(trimmed)) return false;
-        // Filter out lines that are ONLY role labels
-        if (roleLabelPattern.test(trimmed)) return false;
-        return true;
-      })
-      .join("\n");
-    
-    // Collapse multiple newlines and trim
-    return cleanedLines
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
-  };
 
   useEffect(() => {
     if (isDev) {
@@ -896,7 +858,7 @@ export default function Chat() {
                 {parsedMessages.map((m, index) => {
                   const isUserMsg = m.role === 'user';
                   // Apply sanitization to remove embedded date headers
-                  const content = sanitizeMessageText(m.text);
+                  const content = prepareMessageContent(m.text);
                   const contentLength = content.length;
                   let maxWidth = "max-w-[85%] sm:max-w-[80%] md:max-w-[75%] lg:max-w-[70%]";
                   if (contentLength <= 20) maxWidth = "max-w-[200px]";
@@ -1321,7 +1283,7 @@ export default function Chat() {
 
   const renderUserContent = (messageText?: string) => {
     // First sanitize the message text to remove VVAULT timestamp prefixes
-    const sanitized = sanitizeMessageText(messageText);
+    const sanitized = prepareMessageContent(messageText);
     const trimmed = sanitized.trim();
     let isJson = false;
     let prettyJson = "";
@@ -1511,7 +1473,7 @@ export default function Chat() {
             // User messages: right-aligned with iMessage-style bubble
             if (user) {
               // Calculate dynamic max-width based on content length (use sanitized text)
-              const content = sanitizeMessageText(m.text);
+              const content = prepareMessageContent(m.text);
               const contentLength = content.length;
               let maxWidth =
                 "max-w-[85%] sm:max-w-[80%] md:max-w-[75%] lg:max-w-[70%]";
@@ -1671,7 +1633,7 @@ export default function Chat() {
                                 ...p,
                                 payload: p.payload ? {
                                   ...p.payload,
-                                  content: sanitizeMessageText(p.payload.content),
+                                  content: prepareMessageContent(p.payload.content),
                                 } : p.payload
                               }))
                             : [
@@ -1680,7 +1642,7 @@ export default function Chat() {
                                   op: "answer.v1",
                                   payload: {
                                     content:
-                                      sanitizeMessageText((m as any).text) || "Legacy message",
+                                      prepareMessageContent((m as any).text) || "Legacy message",
                                   },
                                 },
                               ]
