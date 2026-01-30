@@ -739,18 +739,60 @@ export default function Chat() {
         // Parse zenMarkdown transcript into styled messages
         const parseTranscriptToMessages = (markdown: string): Message[] => {
           const messages: Message[] = [];
-          // Match patterns like: "TIME - SPEAKER [ISO_TIMESTAMP]: MESSAGE" or "**SPEAKER:** MESSAGE"
           const lines = markdown.split('\n');
           let currentMessage: { role: 'user' | 'assistant'; text: string; ts: number } | null = null;
           
+          // Track current date from day headers like "## November 14, 2025"
+          let currentDateForDay: string | null = null;
+          const DAY_HEADER_PATTERN = /^##\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})\s*$/i;
+          // Pattern for VVAULT time format: "**01:07:38 PM EST - Synth**:" or "**01:07:38 PM EST - Devon**:"
+          const VVAULT_TIME_PATTERN = /^\*\*(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)\s*([A-Z]{2,5})?\s*-\s*([^*]+)\*\*:?\s*(.*)$/i;
+          // ISO bracket pattern for inline timestamps
+          const ISO_BRACKET_PATTERN = /\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\]/;
+          
+          // Helper to derive timestamp from VVAULT time format + current day
+          const deriveTimestampFromVVAULT = (hh: string, mm: string, ss: string, ampm: string): number => {
+            if (!currentDateForDay) {
+              return Date.now() - (messages.length * 1000); // fallback
+            }
+            try {
+              const base = new Date(currentDateForDay);
+              if (isNaN(base.getTime())) {
+                return Date.now() - (messages.length * 1000);
+              }
+              let hour = parseInt(hh, 10) % 12;
+              if (ampm.toUpperCase() === 'PM') hour += 12;
+              base.setHours(hour, parseInt(mm, 10), parseInt(ss, 10), 0);
+              return base.getTime();
+            } catch {
+              return Date.now() - (messages.length * 1000);
+            }
+          };
+          
           for (const line of lines) {
+            const trimmedLine = line.trim();
+            
+            // Check for day header: "## November 14, 2025"
+            const dayHeaderMatch = trimmedLine.match(DAY_HEADER_PATTERN);
+            if (dayHeaderMatch) {
+              currentDateForDay = `${dayHeaderMatch[1]} ${dayHeaderMatch[2]}, ${dayHeaderMatch[3]}`;
+              continue; // Skip this line, it's just a date marker
+            }
+            
             // Pattern 1: "10:26:07 AM EST - Devon Woodson [2026-01-20T15:26:07.457Z]: Message"
-            // Captures: TIME AM/PM TIMEZONE - SPEAKER [ISO_TIMESTAMP]: CONTENT
             const timestampMatch = line.match(/^\d{1,2}:\d{2}:\d{2}\s*(?:AM|PM)?\s*(?:[A-Z]{2,5})?\s*-\s*(.+?)\s*\[([^\]]+)\]:\s*(.*)$/i);
-            // Pattern 2: "**Speaker:** Message"
+            // Pattern 2: VVAULT format "**01:07:38 PM EST - Synth**:" with time but no ISO bracket
+            const vvaultTimeMatch = trimmedLine.match(VVAULT_TIME_PATTERN);
+            // Pattern 3: "**Speaker:** Message" (bold speaker without time)
             const boldMatch = line.match(/^\*\*(.+?):\*\*\s*(.*)$/);
-            // Pattern 3: "Speaker: Message" (simple format)
+            // Pattern 4: "Speaker: Message" (simple format)
             const simpleMatch = line.match(/^(Devon|Zen|Lin|Katana|User|Assistant|You):\s*(.*)$/i);
+            // Pattern 5: "You said:" / "Construct said:" format
+            const youSaidMatch = trimmedLine.match(/^You said:\s*(.*)$/i);
+            const constructSaidMatch = trimmedLine.match(/^(Synth|Zen|Lin|Katana|Nova) said:\s*(.*)$/i);
+            
+            // Check for ISO bracket anywhere in the line as a fallback timestamp source
+            const isoBracketMatch = line.match(ISO_BRACKET_PATTERN);
             
             if (timestampMatch) {
               // Save previous message
@@ -775,7 +817,79 @@ export default function Chat() {
                 text: content,
                 ts: new Date(timestamp).getTime() || Date.now(),
               };
-            } else if (boldMatch) {
+            } else if (vvaultTimeMatch) {
+              // VVAULT time format: **HH:MM:SS AM/PM TZ - Speaker**:
+              if (currentMessage) {
+                messages.push({
+                  id: `fallback_${messages.length}_${Date.now()}`,
+                  role: currentMessage.role,
+                  text: currentMessage.text.trim(),
+                  ts: currentMessage.ts,
+                });
+              }
+              
+              const [, hh, mm, ss, ampm, , speaker, content] = vvaultTimeMatch;
+              const isUser = speaker.toLowerCase().includes('devon') || 
+                             speaker.toLowerCase().includes('user') ||
+                             speaker.toLowerCase().includes('you');
+              
+              // Use ISO bracket if present, otherwise derive from current day + time
+              let ts: number;
+              if (isoBracketMatch) {
+                ts = new Date(isoBracketMatch[1]).getTime() || deriveTimestampFromVVAULT(hh, mm, ss, ampm);
+              } else {
+                ts = deriveTimestampFromVVAULT(hh, mm, ss, ampm);
+              }
+              
+              currentMessage = {
+                role: isUser ? 'user' : 'assistant',
+                text: content || '',
+                ts,
+              };
+            } else if (youSaidMatch) {
+              if (currentMessage) {
+                messages.push({
+                  id: `fallback_${messages.length}_${Date.now()}`,
+                  role: currentMessage.role,
+                  text: currentMessage.text.trim(),
+                  ts: currentMessage.ts,
+                });
+              }
+              
+              // Use ISO bracket if present
+              let ts = Date.now() - (messages.length * 1000);
+              if (isoBracketMatch) {
+                ts = new Date(isoBracketMatch[1]).getTime() || ts;
+              }
+              
+              currentMessage = {
+                role: 'user',
+                text: youSaidMatch[1] || '',
+                ts,
+              };
+            } else if (constructSaidMatch) {
+              if (currentMessage) {
+                messages.push({
+                  id: `fallback_${messages.length}_${Date.now()}`,
+                  role: currentMessage.role,
+                  text: currentMessage.text.trim(),
+                  ts: currentMessage.ts,
+                });
+              }
+              
+              // Use ISO bracket if present
+              let ts = Date.now() - (messages.length * 1000);
+              if (isoBracketMatch) {
+                ts = new Date(isoBracketMatch[1]).getTime() || ts;
+              }
+              
+              currentMessage = {
+                role: 'assistant',
+                text: constructSaidMatch[2] || '',
+                ts,
+              };
+            } else if (boldMatch && !vvaultTimeMatch) {
+              // Only match bold if it's not already caught by VVAULT time pattern
               if (currentMessage) {
                 messages.push({
                   id: `fallback_${messages.length}_${Date.now()}`,
@@ -791,10 +905,16 @@ export default function Chat() {
                              speaker.toLowerCase().includes('user') ||
                              speaker.toLowerCase().includes('you');
               
+              // Use ISO bracket if present
+              let ts = Date.now() - (messages.length * 1000);
+              if (isoBracketMatch) {
+                ts = new Date(isoBracketMatch[1]).getTime() || ts;
+              }
+              
               currentMessage = {
                 role: isUser ? 'user' : 'assistant',
                 text: content,
-                ts: Date.now() - (messages.length * 1000),
+                ts,
               };
             } else if (simpleMatch) {
               if (currentMessage) {
@@ -812,10 +932,16 @@ export default function Chat() {
                              speaker.toLowerCase().includes('user') ||
                              speaker.toLowerCase().includes('you');
               
+              // Use ISO bracket if present
+              let ts = Date.now() - (messages.length * 1000);
+              if (isoBracketMatch) {
+                ts = new Date(isoBracketMatch[1]).getTime() || ts;
+              }
+              
               currentMessage = {
                 role: isUser ? 'user' : 'assistant',
                 text: content,
-                ts: Date.now() - (messages.length * 1000),
+                ts,
               };
             } else if (currentMessage && line.trim()) {
               // Continuation of previous message
