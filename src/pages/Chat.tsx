@@ -1667,7 +1667,13 @@ export default function Chat() {
                       <R
                         packets={
                           Array.isArray((m as any).packets)
-                            ? (m as any).packets
+                            ? (m as any).packets.map((p: any) => ({
+                                ...p,
+                                payload: p.payload ? {
+                                  ...p.payload,
+                                  content: sanitizeMessageText(p.payload.content),
+                                } : p.payload
+                              }))
                             : [
                                 // fallback for legacy/invalid assistant messages
                                 {

@@ -1,0 +1,149 @@
+Those remaining “December 19, 2025” / “January 20, 2026” headers almost certainly come from one more unsanitized zenMarkdown path (or a prop it passes through) that still uses `m.text` instead of the sanitized `content`. [hackerone](https://www.hackerone.com/blog/secure-markdown-rendering-react-balancing-flexibility-and-safety)
+
+## What your latest fix already covered
+
+- You correctly switched the **main Chat.tsx path** to a line-based `sanitizeMessageText()` and confirmed `.textPreview` with dates is only in raw data, not what must render. [discuss.streamlit](https://discuss.streamlit.io/t/how-to-sanitize-user-input-for-markdown/828)
+- You found and patched the **first zenMarkdown block** (lines ~889–949) so it now:  
+  - Filters out date-header messages.  
+  - Computes `const content = sanitizeMessageText(m.text || "")`.  
+  - Uses `content` instead of `m.text` in its JSX. [hackerone](https://www.hackerone.com/blog/secure-markdown-rendering-react-balancing-flexibility-and-safety)
+
+That explains why most dates disappeared but the two headers you mentioned still show in assistant bubbles.
+
+## Likely remaining leak points
+
+Here are the places to check next:
+
+1. **Other zenMarkdown variants**  
+   - Search for all zenMarkdown-related renderers, not just the one you fixed:  
+     - `zenMarkdown`  
+     - `renderZenMarkdown`  
+     - `zenMessages` or similar.  
+   - It’s common to have a separate path for:  
+     - Streaming chunks vs. final messages.  
+     - “Transcript view” vs. live chat.  
+   - Any of those that still do `m.text` or `m.raw` directly into JSX or into the markdown renderer will leak date lines. [contentful](https://www.contentful.com/blog/react-markdown/)
+
+2. **Props bypassing sanitization**
+
+   - Even if you changed:
+
+     ```tsx
+     const content = sanitizeMessageText(m.text || "");
+     ```
+
+     you must ensure you **never** pass `m.text` anywhere else in that subtree:
+
+     ```tsx
+     <ZenMessage
+       content={content}           // good
+       text={m.text}               // bad – child might render raw text
+       raw={m.text}                // bad
+       ...
+     />
+     ```
+
+   - Search in Chat.tsx for `text=` and `raw=` props on components inside the zenMarkdown block, and confirm they use `content` or a similarly sanitized value.
+
+3. **dangerouslySetInnerHTML or markdown renderer input**
+
+   - If zenMarkdown uses something like:
+
+     ```tsx
+     <MarkdownRenderer>{m.text}</MarkdownRenderer>
+     // or
+     <div dangerouslySetInnerHTML={{ __html: m.text }} />
+     ```
+
+     those must become:
+
+     ```tsx
+     const content = sanitizeMessageText(m.text || "");
+     <MarkdownRenderer>{content}</MarkdownRenderer>
+     // or
+     <div dangerouslySetInnerHTML={{ __html: sanitizeMessageText(m.text || "") }} />
+     ```
+
+   - Any markdown/HTML rendering library should only ever receive sanitized content. [github](https://github.com/rexxars/react-markdown/issues/373)
+
+4. **Assistant-only branch**
+
+   - From your description, the visible headers are on the **assistant side**. Check for a conditional like:
+
+     ```tsx
+     if (m.role === "assistant") {
+       // one render path
+     } else {
+       // another
+     }
+     ```
+
+   - Verify the assistant branch also uses `content` and not `m.text`. A very common bug is: user path refactored, assistant path left behind.
+
+## Concrete code changes to apply
+
+In every zenMarkdown render block:
+
+1. **Compute once and reuse**
+
+   ```tsx
+   const rawText = m.text || "";
+   const content = sanitizeMessageText(rawText);
+   ```
+
+2. **Use only `content` in JSX**
+
+   Replace all of:
+
+   - `{m.text || ""}`  
+   - `children={m.text}`  
+   - `content: m.text || ""`  
+   - `dangerouslySetInnerHTML={{ __html: m.text }}`  
+
+   with the `content` variable.
+
+3. **Disallow raw text in props**
+
+   If components below accept both `text` and `content`, either:
+
+   - Rename prop to make it obvious:
+
+     ```tsx
+     <ZenMessage safeContent={content} ... />
+     ```
+
+   - Or enforce via TS types that `text` is already sanitized.
+
+4. **Add a guard log in the zenMarkdown path**
+
+   Right before you hand text to the renderer:
+
+   ```tsx
+   if (/December\s+19,\s*2025|January\s+20,\s*2026/.test(content)) {
+     console.error("Date header still present in zenMarkdown content", {
+       id: m.id,
+       role: m.role,
+       content,
+     });
+   }
+   ```
+
+   If you still see the UI headers but no console errors, they must be coming from a *different* block entirely.
+
+## Quick checklist to fully close it
+
+Run this search across the repo:
+
+- In `Chat.tsx` and any zen-related components:
+
+  - `m.text`  
+  - `dangerouslySetInnerHTML`  
+  - `zenMarkdown` / `renderZen`  
+
+For each hit:
+
+- Confirm there is a local `const content = sanitizeMessageText(m.text || "")`.  
+- Confirm **only** `content` reaches JSX/markdown/HTML.  
+- Confirm `isDateHeaderMessage(m)` (or equivalent) is used to drop standalone date messages for zenMarkdown messages as well.
+
+Once those are all aligned, the headers can still exist in raw data (`textPreview`, logs, Supabase uploads), but there will be no remaining render path that can show them in the Zen chat UI, for either user or assistant messages. [thomasnguyen.hashnode](https://thomasnguyen.hashnode.dev/preventing-xss-in-react-applications)
