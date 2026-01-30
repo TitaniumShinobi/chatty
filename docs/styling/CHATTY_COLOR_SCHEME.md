@@ -9,7 +9,7 @@ This document defines the official color scheme for Chatty's user interface.
 ### Background Colors
 
 * **Main Area**: `#fffff0` — Light cream background for all main content areas
-* **Sidebar**: `#ffffd7` — Slightly darker cream for sidebar and navigation
+* **Sidebar**: `#ffffd0` — Slightly darker cream for sidebar and navigation
 * **Message Box**: `#ffffd7` — Input areas and message containers
 
 ### Accent Colors
@@ -56,7 +56,7 @@ This document defines the official color scheme for Chatty's user interface.
 ```css
 :root {
   --chatty-bg-main: #fffff0;
-  --chatty-bg-sidebar: #ffffd7;
+  --chatty-bg-sidebar: #ffffd0;
   --chatty-bg-message: #ffffd7;
 
   --chatty-hover: #ffffd7;
