@@ -349,7 +349,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   return (
     <div className="flex flex-col h-full bg-app-butter-50">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-app-butter-300 bg-app-butter-50">
+      <div className="flex items-center justify-between p-4 bg-app-butter-50">
         <div className="flex items-center gap-3">
           <button
             onClick={onToggleSidebar}
@@ -451,7 +451,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       </div>
 
       {/* Input Area */}
-      <div className="border-t border-app-butter-300 p-4">
+      <div className="p-4">
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
 
 
