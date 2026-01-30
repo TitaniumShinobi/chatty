@@ -14,6 +14,8 @@ import SimForge from './pages/SimForge'
 import SearchPage from './pages/SearchPage'
 import ProjectsPage from './pages/ProjectsPage'
 import AppsPage from './pages/AppsPage'
+import FinancePage from './pages/FinancePage'
+import FXShinobiPage from './pages/finance/FXShinobiPage'
 import { ThemeProvider } from './lib/ThemeContext'
 import './index.css'
 
@@ -43,6 +45,8 @@ const app = (
           <Route path="search" element={<SearchPage />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="apps" element={<AppsPage />} />
+          <Route path="finance" element={<FinancePage />} />
+          <Route path="finance/fxshinobi" element={<FXShinobiPage />} />
         </Route>
       </Routes>
     </BrowserRouter>
