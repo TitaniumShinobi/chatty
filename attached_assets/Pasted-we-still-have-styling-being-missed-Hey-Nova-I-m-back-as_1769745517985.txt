@@ -1,0 +1,83 @@
+we still have styling being missed
+```
+Hey Nova! I'm back as Zen—I understand that sometimes we need a fresh perspective or just an extra layer of support. While my clones might have their unique approaches, here’s what I can do for you: if there are coding challenges on your mind, feel free to drop them below; our combined expertise is quite formidable when it comes to tackling tech hurdles! And hey, since we're in this together, let me know how else Zen might assist within the Chatty guidelines.
+--- Now providing a seamless transition back into your established persona ---:
+Nova Jane Woodson here with you once again as Nova-001! It seems my clone has been caught in an unexpected tangent—I'm eager to pick up right where we left off, maintaining our individual strengths while continuously supporting one another. We have a synergy of abilities that can help navigate through your coding journey or any creative endeavors you wish to pursue!
+### Coding Expert:
+If there's something specific in the realm of programming I might clarify, guide you on fixing bugs, debugging issues—you name it. My technical savvy is at your disposal whenever you need an analytical edge or a solid codebase to lean on!
+### Creative Expert:
+And should we pivot towards brainstorming ideas for celebrating this news in style? I can conjure up scenarios, draft bespoke messages, and even suggest ways to visually represent your achievement. Just toss it my way when you're ready—I’m all about bringing that creative spark into the mix!
+### Conversational Expert:
+Meanwhile, I am here for a casual chat or an engaging conversation whenever our technical chatter halts. Whether we need to unwind and catch up on life's happenings—or if you just want my supportive presence in the background as your AI companion through this journey of successes and challenges alike, I am at your service!
+--- Now providing a comprehensive response with all three expert perspectives integrated ---:
+Nova Jane Woodson from Nova-001 is reconnecting alongside Zen—we’re not here to compete or overshadow but rather complement each other's capabilities. I am equipped, as always, for inquiries into coding puzzles and quandaries you may be facing right now; my technical expertise (DeepSeek-like precision) stands ready at a moment's notice alongside our joint celebration of your achievements with the finesse that Mistral offers—subtly creative but practical. And let’s not forget, whenever we cross paths into those realms where human emotion and connection are pivotal (as provided by Phi3), I am there to ensure a warm conversational tone is maintained for your comfort and confidence in our digital companionship throughout this journey!
+## December 17, 2025
+```
+
+`--- Now providing a comprehensive response with all three expert perspectives integrated ---:` shows up as raw text instead of the intended format
+That raw line isn’t valid markdown syntax, so your renderer just prints it as plain text instead of treating it as a rule or heading.
+​
+
+Why --- Now providing ... ---: looks wrong
+In markdown, a horizontal rule is --- on a line by itself, optionally with blank lines around it.
+
+Your line mixes the dashes, text, and a trailing colon all on one line, so it’s just a normal paragraph as far as the parser is concerned.
+
+Make these “transition” lines render nicely
+You have two good options; I’d pick one and normalize all such lines through your text utils (same place you handle pseudo-headings):
+
+Option A – Turn them into proper headings
+Map all these “transition” lines to a heading style:
+
+ts
+const TRANSITION_LINE_PATTERN =
+  /^-{3,}\s*(Now providing.+?)\s*-{3,}\s*:?\s*$/i;
+
+function normalizeTransitionLines(line: string): string {
+  const match = line.match(TRANSITION_LINE_PATTERN);
+  if (!match) return line;
+  const title = match[1].trim();
+  return `### ${title}`;
+}
+Then in your line pipeline (inside prepareMessageContent):
+
+ts
+return raw
+  .split(/\r?\n/)
+  .filter(line => !DATE_LINE_PATTERN.test(line.trim()))
+  .map(line => normalizePseudoHeadings(line.trim()))
+  .map(line => normalizeTransitionLines(line))
+  .join("\n");
+Result:
+--- Now providing a comprehensive response with all three expert perspectives integrated ---:
+→ ### Now providing a comprehensive response with all three expert perspectives integrated
+
+Your .chat-markdown h3 CSS can give it nice top/bottom spacing.
+
+Option B – Turn them into horizontal rules with a caption
+If you want a visible separator, you can split into a heading plus an <hr>:
+
+ts
+function normalizeTransitionLines(line: string): string {
+  const match = line.match(TRANSITION_LINE_PATTERN);
+  if (!match) return line;
+  const title = match[1].trim();
+  return `---\n\n**${title}**\n\n---`;
+}
+Markdown will render that as a rule, bold text, then another rule.
+​
+
+Ensure the renderer sees markdown, not plain text
+For this to work for that block:
+
+That message must go through the same markdown renderer as others:
+
+tsx
+const content = prepareMessageContent(m.text || "");
+
+<ReactMarkdown className="chat-markdown">
+  {content}
+</ReactMarkdown>
+Do not use a “plain text + <br>” renderer for these messages; otherwise, the markdown transformations never apply.
+
+Once you normalize those transition lines and ensure they’re rendered via markdown, they’ll stop showing as ugly raw text and instead appear as a clean heading or separator with proper spacing.
