@@ -8,6 +8,16 @@ const ROLE_LABEL_PATTERN = /^(Coding Expert|Creative Expert|Conversational Exper
 
 const EQUALS_HEADING_PATTERN = /^={3,}\s*([A-Z][A-Z0-9 _#:-]+?)\s*={3,}\s*:?\s*$/;
 const HASH_SUFFIX_HEADING_PATTERN = /^([A-Z][A-Z0-9 _-]+)\s*#{3,}\s*:?\s*$/;
+const TRANSITION_LINE_PATTERN = /^-{3,}\s*(.+?)\s*-{3,}\s*:?\s*$/;
+
+function normalizeTransitionLines(line: string): string {
+  const trimmed = line.trim();
+  const match = trimmed.match(TRANSITION_LINE_PATTERN);
+  if (!match) return line;
+  
+  const title = match[1].trim();
+  return `### ${title}`;
+}
 
 function normalizePseudoHeadings(line: string): string {
   const trimmed = line.trim();
@@ -50,6 +60,7 @@ export function sanitizeMessageText(text: string | undefined): string {
       return true;
     })
     .map((line) => normalizePseudoHeadings(line))
+    .map((line) => normalizeTransitionLines(line))
     .join("\n");
 
   return cleanedLines.trim();
