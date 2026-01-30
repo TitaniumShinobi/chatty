@@ -416,31 +416,43 @@ export default function Chat() {
     return false;
   });
 
-  // Sanitize message text by removing VVAULT timestamp prefixes and other formatting artifacts
-  // Pattern: "HH:MM:SS AM/PM TIMEZONE - Speaker Name [ISO_TIMESTAMP]: content"
+  // Sanitize message text by removing VVAULT timestamp prefixes, date headers, and other formatting artifacts
+  // Uses LINE-BASED filtering for reliable date header removal
   const sanitizeMessageText = (text: string | undefined): string => {
     if (!text) return "";
     
-    // Pattern to match VVAULT timestamp lines: "10:26:07 AM EST - Devon Woodson [2026-01-20T15:26:07.457Z]: content"
-    const vvaultTimestampPattern = /^\d{1,2}:\d{2}:\d{2}\s+(?:AM|PM)(?:\s+[A-Z]{2,5})?\s+-\s+.+?\s+\[\d{4}-\d{2}-\d{2}T[^\]]+\]:\s*/gm;
+    // Pattern to match VVAULT timestamp prefix on a line: "10:26:07 AM EST - Devon Woodson [2026-01-20T15:26:07.457Z]: content"
+    const vvaultTimestampPattern = /^\d{1,2}:\d{2}:\d{2}\s+(?:AM|PM)(?:\s+[A-Z]{2,5})?\s+-\s+.+?\s+\[\d{4}-\d{2}-\d{2}T[^\]]+\]:\s*/;
     
-    // Pattern for date headers - matches multiple formats on their own line:
+    // Pattern for date header lines - matches multiple formats:
     // "December 17, 2025" (with comma), "December 17 2025" (without comma), "November 2025" (month-year only)
-    // Also matches with optional markdown heading prefix (## December 17, 2025)
-    const dateHeaderPattern = /^(?:#{1,6}\s*)?(January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2},?\s+)?\d{4}\s*$/gm;
+    // Also matches with optional markdown heading prefix (# December 17, 2025, ## December 17, 2025, etc.)
+    const dateLinePattern = /^(?:#{1,6}\s*)?(January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2},?\s+)?\d{4}\s*$/;
     
     // Pattern for role labels like "Coding Expert:" "Creative Expert:" etc
-    const roleLabelPattern = /^(Coding Expert|Creative Expert|Conversational Expert):\s*$/gm;
+    const roleLabelPattern = /^(Coding Expert|Creative Expert|Conversational Expert):\s*$/;
     
-    // Clean up the text
-    let cleaned = text
-      .replace(vvaultTimestampPattern, "") // Remove VVAULT timestamp prefixes
-      .replace(dateHeaderPattern, "")       // Remove date headers (with or without markdown ##)
-      .replace(roleLabelPattern, "")        // Remove role labels
-      .replace(/\n{3,}/g, "\n\n")          // Collapse multiple newlines
+    // LINE-BASED FILTERING: Split into lines, filter out date headers, rejoin
+    const cleanedLines = text
+      .split(/\r?\n/)
+      .map(line => {
+        // Remove VVAULT timestamp prefix from line (but keep the rest of the line)
+        return line.replace(vvaultTimestampPattern, "");
+      })
+      .filter(line => {
+        const trimmed = line.trim();
+        // Filter out lines that are ONLY date headers
+        if (dateLinePattern.test(trimmed)) return false;
+        // Filter out lines that are ONLY role labels
+        if (roleLabelPattern.test(trimmed)) return false;
+        return true;
+      })
+      .join("\n");
+    
+    // Collapse multiple newlines and trim
+    return cleanedLines
+      .replace(/\n{3,}/g, "\n\n")
       .trim();
-    
-    return cleaned;
   };
 
   useEffect(() => {

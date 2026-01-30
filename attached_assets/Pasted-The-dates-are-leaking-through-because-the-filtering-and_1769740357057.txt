@@ -1,0 +1,167 @@
+The dates are leaking through because the filtering and sanitization are not applied to all render paths, and your regex only matches pure date lines, not dates embedded after other text. [library.bsafes](https://library.bsafes.com/docs/issues/vulnerabilities/vulnerabilities/)
+
+## Root causes
+
+1. **Regex too strict for mixed-content messages**  
+   - `sanitizeMessageText()` uses a pattern that matches a line that is *only* a date (optionally with markdown `#` prefixes):  
+     - `^(?:#{1,6}\s*)?(Month)\s+(?:\d{1,2},?\s+)?\d{4}\s*$` with `gm`.  
+   - `"hello\n## December 12, 2025"` contains a non-date first line, so the date line is its own line and should match, but since the regex is designed to remove the entire line, if your implementation only replaces the whole string, the date line may remain as part of the text if not replaced per-line. [library.bsafes](https://library.bsafes.com/docs/issues/vulnerabilities/vulnerabilities/)
+
+2. **Filter only blocks standalone date messages**  
+   - `isDateHeaderMessage()` checks `message.isDateHeader === true` and then falls back to a pattern that matches only when the entire message text looks like a header.  
+   - Messages like `"hello\n## December 12, 2025"` are not flagged as date-only, so `.filter((m) => !isDateHeaderMessage(m))` happily lets them through. [library.bsafes](https://library.bsafes.com/docs/issues/vulnerabilities/vulnerabilities/)
+
+3. **Sanitization likely not applied at every render site**  
+   - Layout.tsx merges threads and maps messages into a shape used in Chat.tsx. If any code path in Chat.tsx renders `message.text` or `message.raw` directly (e.g., system messages, debug panels, “original transcript” views, or alternate components for grouped messages), those paths can bypass `sanitizeMessageText()`. [library.bsafes](https://library.bsafes.com/docs/issues/vulnerabilities/vulnerabilities/)
+   - The debug log you showed (`{"text":"hello\n## December 12, 2025","isDateHeader":false,"matchesPattern":false}`) strongly suggests the sanitization was *not* run on that value before logging/rendering.
+
+4. **Multiple sources / inconsistent flags**  
+   - You have `server/lib/supabaseStore.js` and `vvaultConnector/supabaseStore.js`. If one sets `isDateHeader` and the other doesn’t, or if one parses headers differently, some date-only messages will arrive without `isDateHeader: true`, meaning the client’s filter must be robust enough to catch them. [library.bsafes](https://library.bsafes.com/docs/issues/vulnerabilities/vulnerabilities/)
+
+5. **No evidence of React race, just stale unsanitized data**  
+   - React “race condition” is less likely here: once you sanitize the string and store it in state/props before render, React will just render that value. The persistent presence of dates points more to logic gaps than render-order issues. [marmelab](https://marmelab.com/react-admin/FilteringTutorial.html)
+
+## Concrete investigation steps
+
+Follow this sequence to pin down the exact leak points:
+
+1. **Force sanitization in a single place in Chat.tsx**  
+   - In the message render loop, ensure all displayed text goes through `sanitizeMessageText()`:
+
+   ```tsx
+   thread.messages
+     .filter((m) => !isDateHeaderMessage(m))
+     .map((m) => {
+       const safeText = sanitizeMessageText(m.text ?? '');
+       return (
+         <MessageBubble
+           key={m.id}
+           // never pass raw text
+           text={safeText}
+           message={m}
+         />
+       );
+     });
+   ```
+
+   - Inside `MessageBubble`, avoid using `message.text` directly; only use the `text` prop that is already sanitized.
+
+2. **Add a hard assertion to confirm sanitizer runs**  
+   - Temporarily:
+
+   ```tsx
+   const safeText = sanitizeMessageText(m.text ?? '');
+   if (/December\s+12,\s*2025/.test(safeText)) {
+     console.error('Sanitizer failed to strip date header', { original: m.text, safeText });
+   }
+   ```
+
+   - If you still see dates, you know it’s either a regex miss or an alternate render path.
+
+3. **Search for all render paths using message text**  
+   - In `src/pages/Chat.tsx` and `src/components/Layout.tsx`, grep for:
+     - `message.text`
+     - `m.text`
+     - `dangerouslySetInnerHTML`
+     - `markdown` / `md` rendering components
+   - Ensure every location that ultimately appears in UI uses sanitized content (e.g., `renderMarkdown(safeText)`, not raw `text`). [mischavandenburg](https://mischavandenburg.com/zet/generate-markdown-headings-date/)
+
+4. **Verify Layout.tsx mapping & dedup**  
+   - Confirm `Layout.tsx` is not creating secondary fields like `displayText`, `rawText`, or `original` that bypass sanitization:
+
+   ```tsx
+   // good mapping
+   const threadMessages = transcript.messages.map(msg => ({
+     id: msg.id,
+     text: msg.text,           // raw here is fine
+     isDateHeader: msg.isDateHeader ?? false,
+     createdAt: msg.createdAt,
+   }));
+   ```
+
+   - Make sure any legacy/secondary thread list (e.g., `legacyThreads`, `vvaultThreads`) is ultimately funneled through the **same** message rendering component in Chat.tsx, instead of having its own custom renderer.
+
+5. **Test the regex against the exact example**
+
+   In your test suite or a quick REPL, verify both patterns:
+
+   ```ts
+   const DATE_HEADER_PATTERN =
+     /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2},?\s+)?\d{4}$/;
+
+   const SANITIZE_PATTERN =
+     /^(?:#{1,6}\s*)?(January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2},?\s+)?\d{4}\s*$/gm;
+
+   const text = "hello\n## December 12, 2025";
+
+   console.log('isDateHeaderMessage:', DATE_HEADER_PATTERN.test(text)); // expected false
+   console.log('sanitize result:', text.replace(SANITIZE_PATTERN, '').trim());
+   ```
+
+   - You want the sanitize result to be `"hello"` (no trailing blank lines). If it still contains the `## December 12, 2025` line, your implementation needs to operate on lines instead of the whole string. [mischavandenburg](https://mischavandenburg.com/zet/generate-markdown-headings-date/)
+
+## Definitive solution (covers all entry points)
+
+Implement a unified, line-based sanitizer and enforce it at the boundary between data and UI:
+
+1. **Make sanitization robust and line-based**
+
+   ```ts
+   const DATE_LINE_PATTERN =
+     /^(?:#{1,6}\s*)?(January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2},?\s+)?\d{4}\s*$/;
+
+   export function sanitizeMessageText(raw: string): string {
+     if (!raw) return '';
+     return raw
+       .split(/\r?\n/)
+       .filter(line => !DATE_LINE_PATTERN.test(line.trim()))
+       .join('\n')
+       .trim();
+   }
+   ```
+
+   - This drops any line that is a header-like date, including `## December 19, 2025` and `December 19, 2025`. [library.bsafes](https://library.bsafes.com/docs/issues/vulnerabilities/vulnerabilities/)
+
+2. **Strictly centralize rendering in Chat.tsx**
+
+   - Ensure that:
+     - Every thread, regardless of source (Supabase, vvault, legacy), is normalized into the same `Thread` shape with `messages: Message[]`.
+     - There is exactly one render path for messages in Chat.tsx that:
+       1. Filters out standalone date messages: `!isDateHeaderMessage(m)`.
+       2. Applies `sanitizeMessageText()` to all displayed text.
+
+3. **Harden server-side flags to reduce client burden**
+
+   - In `server/lib/supabaseStore.js` and `vvaultConnector/supabaseStore.js`:
+     - Treat any message that is a pure date line (with or without markdown `#`) as `isDateHeader = true`. Reuse the same `DATE_LINE_PATTERN` server-side to keep logic consistent.
+     - Optionally, strip those messages entirely at ingestion so they never enter the conversation payload.
+
+4. **Add a safety net at the component boundary**
+
+   - In `MessageBubble` or whatever final component displays text:
+
+   ```tsx
+   function MessageBubble(props: { text: string; ... }) {
+     const safe = sanitizeMessageText(props.text ?? '');
+     return <MarkdownRenderer source={safe} />;
+   }
+   ```
+
+   - This ensures even if a future refactor forgets to sanitize upstream, the bubble itself still enforces the rule that date headers never render.
+
+5. **Regression tests**
+
+   Add tests for these cases:
+
+   - Standalone header:
+     - `"December 19, 2025"` → message dropped entirely by `isDateHeaderMessage`.
+   - Markdown header:
+     - `"## December 19, 2025"` → dropped.
+   - Mixed content:
+     - `"hello\n## December 19, 2025"` → rendered as `"hello"`.
+   - Multiple dates:
+     - `"## December 19, 2025\nhello\n### January 20, 2026"` → rendered as `"hello"`.
+   - Legacy markdown:
+     - `"# December 19, 2025"` and `"#### December 19, 2025"` → excluded. [library.bsafes](https://library.bsafes.com/docs/issues/vulnerabilities/vulnerabilities/)
+
+With these changes, date headers are removed either at ingestion (server) or at the last possible step before rendering (sanitizer), and no message path can bypass the filter, so dates will no longer appear in the chat UI regardless of origin or formatting. [marmelab](https://marmelab.com/react-admin/FilteringTutorial.html)
