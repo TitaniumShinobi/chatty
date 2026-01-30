@@ -1,0 +1,96 @@
+The regex is finally correct; the only way those `## November 20, 2025` headers are still visible is that **some render path is not using the sanitized text or the date-header filter at all**.
+
+Here’s how to actually force them out.
+
+***
+
+### 1. Add a brutal safety net: strip dates right before render
+
+In your message renderer (the deepest component that actually shows text), do this no matter what the parent passed:
+
+```ts
+const DATE_LINE_PATTERN =
+  /^#{0,6}\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\s*$/i;
+
+function stripDateLines(raw: string): string {
+  if (!raw) return "";
+  return raw
+    .split(/\r?\n/)
+    .filter(line => !DATE_LINE_PATTERN.test(line.trim()))
+    .join("\n")
+    .trim();
+}
+```
+
+Then, in the final markdown/text component for **every** message:
+
+```tsx
+function MessageMarkdown({ text }: { text: string }) {
+  const content = stripDateLines(text);  // last line of defense
+
+  return (
+    <ReactMarkdown className="chat-markdown">
+      {content}
+    </ReactMarkdown>
+  );
+}
+```
+
+Even if a parent forgets `prepareMessageContent`, this will nuke any standalone date-line (with or without `##`) at the last step.
+
+***
+
+### 2. Confirm the canonical spec message goes through this component
+
+Take that “Runtime-Specific Canonical Pinning” message and verify it uses the same renderer:
+
+- In DevTools, check which React component owns the DOM that contains `Project: Runtime-Specific Canonical Pinning`.  
+- Make sure that component renders `<MessageMarkdown text={...} />` (or whatever you name it), not raw `ReactMarkdown` on `m.text`.
+
+If the project spec uses a different renderer (e.g., `SystemMessage`, `PromptPreview`, or `TranscriptPanel`), wire **that** to `stripDateLines` too.
+
+***
+
+### 3. Ensure the server parser never glues the date into body text
+
+Right now, it looks like the parser is appending the date header as another line of the same message (e.g., the project spec), instead of treating it as a separate, droppable message.
+
+In `parseTranscriptToMessages` (or equivalent):
+
+```ts
+for (const line of lines) {
+  const trimmed = line.trim();
+
+  // Hard skip date headers so they never enter any message
+  if (DATE_LINE_PATTERN.test(trimmed)) {
+    continue;
+  }
+
+  // existing logic that appends to current message
+}
+```
+
+This guarantees `## November 20, 2025` is **never** inside any `text` field, so even if the client safety net wasn’t there you’d still be clean.
+
+***
+
+### 4. One quick test to prove it’s fixed
+
+Create a synthetic message whose text is exactly:
+
+```md
+foo
+## November 20, 2025
+bar
+```
+
+Render it through the same component used for that project spec.
+
+With `stripDateLines` in place, you should see only:
+
+```md
+foo
+bar
+```
+
+If you still see the date line, that means that specific component isn’t calling the safety net; hook it up there and the remaining headers will disappear.
