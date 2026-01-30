@@ -6,7 +6,7 @@ import { useTheme } from "../lib/ThemeContext";
 
 // Logo assets
 import chattyChristmas from "@assets/logo/christmas/Chatty_Christmas.svg";
-import chattyLogo from "@assets/logo/Chatty.png";
+import chattyLogo from "@assets/logo/Chatty.svg";
 
 // Collapse animation frames (default theme)
 import collapseFrame0 from "@assets/logo/collapseToggle/chatty_collapsed.png";
