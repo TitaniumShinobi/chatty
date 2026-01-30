@@ -1,0 +1,98 @@
+Paragraph spacing is now purely a rendering concern, so you can fix it cleanly at the markdown/HTML level without touching the date logic. [github](https://github.com/rexxars/react-markdown/issues/373)
+
+## Decide what “correct spacing” means
+
+Most chat UIs want:
+
+- A small gap between lines of the same paragraph.  
+- A larger vertical gap between separate paragraphs.  
+- Optional tighter spacing within list items. [contentful](https://www.contentful.com/blog/react-markdown/)
+
+Pick one of these strategies (or combine them):
+
+## Strategy 1: Normalize newlines before rendering
+
+Ensure your sanitizer also normalizes line breaks so markdown/renderer sees “true paragraphs”:
+
+```ts
+export function normalizeParagraphs(text: string): string {
+  if (!text) return "";
+  // already line-based date removal happens first
+  const sanitized = sanitizeMessageText(text);
+
+  // collapse 3+ blank lines to 2
+  return sanitized
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+```
+
+Then in Chat.tsx and zen paths, use:
+
+```tsx
+const content = normalizeParagraphs(m.text || "");
+```
+
+before handing to markdown/HTML. [discuss.streamlit](https://discuss.streamlit.io/t/how-to-sanitize-user-input-for-markdown/828)
+
+## Strategy 2: Use CSS to control paragraph gaps
+
+If you render markdown as `<p>`, `<ul>`, etc., adjust spacing via CSS instead of manipulating text:
+
+```css
+.chat-markdown p {
+  margin: 0 0 0.75rem;  /* space between paragraphs */
+  line-height: 1.5;
+}
+
+.chat-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.chat-markdown ul,
+.chat-markdown ol {
+  margin: 0 0 0.75rem;
+  padding-left: 1.25rem;
+}
+```
+
+And wrap rendered content:
+
+```tsx
+<MarkdownRenderer className="chat-markdown">
+  {content}
+</MarkdownRenderer>
+``` 
+
+This gives consistent paragraph spacing regardless of how many `\n` are in the source. [hackerone](https://www.hackerone.com/blog/secure-markdown-rendering-react-balancing-flexibility-and-safety)
+
+## Strategy 3: Flatten “fake paragraph breaks” inside messages
+
+If your transcripts use single newlines as hard breaks but you want them to appear as one paragraph, you can post-process lines:
+
+```ts
+export function flattenSingleNewlines(text: string): string {
+  return text
+    .split(/\n{2,}/)            // split on blank-line paragraph boundaries
+    .map(block => block.replace(/\n/g, ' ')) // turn single newlines into spaces
+    .join('\n\n');              // preserve real paragraphs
+}
+```
+
+Then chain:
+
+```ts
+const content = flattenSingleNewlines(normalizeParagraphs(m.text || ""));
+```
+
+before rendering. [discuss.streamlit](https://discuss.streamlit.io/t/how-to-sanitize-user-input-for-markdown/828)
+
+## Recommended minimal change for your setup
+
+Given the current pipeline:
+
+1. Keep the **line-based date sanitizer** as-is.  
+2. Add `normalizeParagraphs()` (Strategy 1) right after sanitization in all paths (main and zen/packets).  
+3. Add a small CSS rule set (Strategy 2) on the markdown container to control actual visual spacing.
+
+This keeps your packet and zenMarkdown logic intact, ensures dates stay gone, and gives you precise, global control over paragraph spacing without further special cases in the render paths. [github](https://github.com/rexxars/react-markdown/issues/373)
