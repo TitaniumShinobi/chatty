@@ -1053,7 +1053,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             onClick={onShowSettings}
             className={cn(
               "w-full rounded-md transition-colors flex items-center gap-3 p-2",
-              collapsed ? "justify-center" : "hover:bg-gray-100",
+              collapsed ? "justify-center" : "hover:bg-[var(--chatty-highlight)]",
             )}
           >
             {currentUser.picture ? (
