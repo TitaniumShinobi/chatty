@@ -16,7 +16,7 @@ export interface FinanceConfig {
 
 export function getFinanceConfig(): FinanceConfig {
   const fxshinobiUrl = import.meta.env.VITE_FXSHINOBI_API_URL || '/api/fxshinobi';
-  const vvaultUrl = import.meta.env.VITE_VVAULT_API_URL || '/api/vvault';
+  const vvaultUrl = import.meta.env.VITE_VVAULT_API_URL || '/api/vault';
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
@@ -37,11 +37,33 @@ export function getFinanceConfig(): FinanceConfig {
   };
 }
 
+export type ServiceStatusLevel = 'live' | 'connected' | 'degraded' | 'offline' | 'not_configured' | 'checking';
+
 export interface ServiceStatus {
   name: string;
-  status: 'connected' | 'disconnected' | 'error' | 'checking';
+  status: ServiceStatusLevel;
+  liveMode?: boolean;
   message?: string;
   lastChecked?: string;
+  version?: string;
+  details?: {
+    vvaultStatus?: string;
+    supabaseStatus?: string;
+    activeStrategies?: number;
+    openPositions?: number;
+  };
+}
+
+export interface FXShinobiStatusResponse {
+  status: string;
+  live_mode?: boolean;
+  vvault_status?: string;
+  supabase_status?: string;
+  version?: string;
+  uptime?: number;
+  active_strategies?: number;
+  open_positions?: number;
+  message?: string;
 }
 
 export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
@@ -53,17 +75,44 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
     });
     
     if (res.ok) {
-      const data = await res.json();
+      const data: FXShinobiStatusResponse = await res.json();
+      
+      if (data.status === 'not_configured') {
+        return {
+          name: 'FXShinobi',
+          status: 'not_configured',
+          liveMode: false,
+          message: 'Not configured',
+          lastChecked: new Date().toISOString(),
+        };
+      }
+      
+      const isDegraded = data.vvault_status === 'offline' || data.supabase_status === 'offline';
+      const statusLevel: ServiceStatusLevel = data.live_mode
+        ? (isDegraded ? 'degraded' : 'live')
+        : 'connected';
+      
       return {
         name: 'FXShinobi',
-        status: 'connected',
-        message: data.version ? `v${data.version}` : 'Engine running',
+        status: statusLevel,
+        liveMode: data.live_mode ?? false,
+        message: data.live_mode
+          ? (isDegraded ? 'Live (Degraded)' : `Live v${data.version || '1.0'}`)
+          : 'Simulation mode',
+        version: data.version,
         lastChecked: new Date().toISOString(),
+        details: {
+          vvaultStatus: data.vvault_status,
+          supabaseStatus: data.supabase_status,
+          activeStrategies: data.active_strategies,
+          openPositions: data.open_positions,
+        },
       };
     } else {
       return {
         name: 'FXShinobi',
-        status: 'error',
+        status: 'offline',
+        liveMode: false,
         message: `HTTP ${res.status}`,
         lastChecked: new Date().toISOString(),
       };
@@ -71,7 +120,8 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
   } catch (err) {
     return {
       name: 'FXShinobi',
-      status: 'disconnected',
+      status: 'offline',
+      liveMode: false,
       message: 'API unreachable',
       lastChecked: new Date().toISOString(),
     };
@@ -88,10 +138,22 @@ export async function checkVVAULTStatus(): Promise<ServiceStatus> {
     });
     
     if (res.ok) {
+      const data = await res.json();
+      
+      if (data.status === 'not_configured') {
+        return {
+          name: 'VVAULT',
+          status: 'not_configured',
+          message: 'Not configured',
+          lastChecked: new Date().toISOString(),
+        };
+      }
+      
       return {
         name: 'VVAULT',
-        status: 'connected',
+        status: 'live',
         message: 'Vault accessible',
+        version: data.version,
         lastChecked: new Date().toISOString(),
       };
     } else if (res.status === 401) {
@@ -104,7 +166,7 @@ export async function checkVVAULTStatus(): Promise<ServiceStatus> {
     } else {
       return {
         name: 'VVAULT',
-        status: 'error',
+        status: 'offline',
         message: `HTTP ${res.status}`,
         lastChecked: new Date().toISOString(),
       };
@@ -112,7 +174,7 @@ export async function checkVVAULTStatus(): Promise<ServiceStatus> {
   } catch (err) {
     return {
       name: 'VVAULT',
-      status: 'disconnected',
+      status: 'offline',
       message: 'Vault unreachable',
       lastChecked: new Date().toISOString(),
     };
@@ -125,7 +187,7 @@ export async function checkSupabaseStatus(): Promise<ServiceStatus> {
   if (!config.supabase.enabled) {
     return {
       name: 'Supabase',
-      status: 'disconnected',
+      status: 'not_configured',
       message: 'Not configured',
       lastChecked: new Date().toISOString(),
     };
@@ -143,14 +205,14 @@ export async function checkSupabaseStatus(): Promise<ServiceStatus> {
     if (res.ok || res.status === 400) {
       return {
         name: 'Supabase',
-        status: 'connected',
+        status: 'live',
         message: 'Database accessible',
         lastChecked: new Date().toISOString(),
       };
     } else {
       return {
         name: 'Supabase',
-        status: 'error',
+        status: 'offline',
         message: `HTTP ${res.status}`,
         lastChecked: new Date().toISOString(),
       };
@@ -158,7 +220,7 @@ export async function checkSupabaseStatus(): Promise<ServiceStatus> {
   } catch (err) {
     return {
       name: 'Supabase',
-      status: 'disconnected',
+      status: 'offline',
       message: 'Database unreachable',
       lastChecked: new Date().toISOString(),
     };
@@ -173,4 +235,40 @@ export async function checkAllServices(): Promise<ServiceStatus[]> {
   ]);
   
   return [fxshinobi, vvault, supabase];
+}
+
+export function getStatusColor(status: ServiceStatusLevel): string {
+  switch (status) {
+    case 'live':
+      return 'text-green-500';
+    case 'connected':
+      return 'text-blue-500';
+    case 'degraded':
+      return 'text-amber-500';
+    case 'offline':
+      return 'text-red-500';
+    case 'not_configured':
+      return 'text-gray-400';
+    case 'checking':
+    default:
+      return 'text-gray-400';
+  }
+}
+
+export function getStatusLabel(status: ServiceStatusLevel, liveMode?: boolean): string {
+  switch (status) {
+    case 'live':
+      return 'Live';
+    case 'connected':
+      return liveMode === false ? 'Simulation' : 'Connected';
+    case 'degraded':
+      return 'Degraded';
+    case 'offline':
+      return 'Offline';
+    case 'not_configured':
+      return 'Not Configured';
+    case 'checking':
+    default:
+      return 'Checking...';
+  }
 }

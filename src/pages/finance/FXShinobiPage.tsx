@@ -14,6 +14,7 @@ import {
   CheckCircle,
   XCircle,
   Loader2,
+  Radio,
 } from 'lucide-react';
 import {
   useMarketSnapshot,
@@ -23,6 +24,7 @@ import {
   useFinanceInsights,
 } from '../../hooks/useFinanceData';
 import { useFXShinobiStatus } from '../../hooks/useServiceStatus';
+import { getStatusColor, getStatusLabel } from '../../lib/financeConfig';
 import type { InsightItem, KalshiMarket, TradeRecord } from '../../types/finance';
 
 const FXShinobiPage: React.FC = () => {
@@ -37,20 +39,28 @@ const FXShinobiPage: React.FC = () => {
   const { data: performance, loading: perfLoading } = usePerformanceMetrics();
   const { data: markets, loading: marketsLoading } = useKalshiMarkets({ autoRefresh: true });
   const { data: insights, loading: insightsLoading } = useFinanceInsights({ autoRefresh: true });
-  const { status: fxshinobiStatus, refresh: refreshStatus } = useFXShinobiStatus(true, 60000);
+  const { status: fxshinobiStatus, refresh: refreshStatus } = useFXShinobiStatus(true, 30000);
 
   const getStatusIcon = () => {
     switch (fxshinobiStatus.status) {
+      case 'live':
+        return <Radio size={14} className="text-green-500 animate-pulse" />;
       case 'connected':
-        return <CheckCircle size={14} className="text-green-500" />;
-      case 'error':
+        return <CheckCircle size={14} className="text-blue-500" />;
+      case 'degraded':
         return <AlertCircle size={14} className="text-amber-500" />;
-      case 'disconnected':
+      case 'offline':
         return <XCircle size={14} className="text-red-500" />;
+      case 'not_configured':
+        return <Settings size={14} className="text-gray-400" />;
+      case 'checking':
       default:
         return <Loader2 size={14} className="animate-spin text-gray-400" />;
     }
   };
+
+  const statusColorClass = getStatusColor(fxshinobiStatus.status);
+  const statusLabel = getStatusLabel(fxshinobiStatus.status, fxshinobiStatus.liveMode);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -104,9 +114,14 @@ const FXShinobiPage: React.FC = () => {
               Trading Dashboard
               <span className="flex items-center gap-1 text-xs" title={fxshinobiStatus.message}>
                 {getStatusIcon()}
-                <span className={fxshinobiStatus.status === 'connected' ? 'text-green-500' : fxshinobiStatus.status === 'error' ? 'text-amber-500' : fxshinobiStatus.status === 'disconnected' ? 'text-red-500' : 'opacity-50'}>
-                  {fxshinobiStatus.status === 'connected' ? 'Live' : fxshinobiStatus.status === 'checking' ? 'Checking...' : 'Offline'}
+                <span className={statusColorClass}>
+                  {statusLabel}
                 </span>
+                {fxshinobiStatus.liveMode && fxshinobiStatus.status === 'live' && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-green-500/20 text-green-400 font-medium">
+                    LIVE
+                  </span>
+                )}
               </span>
             </p>
           </div>

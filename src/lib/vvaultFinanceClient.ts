@@ -1,25 +1,28 @@
 import type { FinanceConnection } from '../types/finance';
-
-const VVAULT_API_BASE = import.meta.env.VITE_VVAULT_API_URL || '/api/vvault';
+import { getFinanceConfig } from './financeConfig';
 
 /**
  * VVAULT Finance Client
  * 
- * This client provides functions for storing and retrieving finance-related
- * credentials and connections through VVAULT API. These endpoints are planned
- * for VVAULT implementation:
- * 
- * - POST /finance/credentials - Store encrypted credentials
- * - GET /finance/credentials/:serviceId - Retrieve credentials
- * - GET /finance/connections - List all connections
- * - DELETE /finance/connections/:connectionId - Remove a connection
- * - POST /finance/connections/:connectionId/test - Test connection
- * - POST /finance/construct-state - Save construct-specific state
- * - GET /finance/construct-state/:constructId/:appId - Get construct state
- * 
- * Until these endpoints are implemented in VVAULT, the client will return
- * graceful fallbacks (empty arrays, null values) on 404 responses.
+ * Uses the VVAULT proxy routes at /api/vault which forward to the real VVAULT service:
+ * - POST /api/vault/credentials - Store encrypted credentials
+ * - GET /api/vault/credentials/:key - Retrieve credentials
+ * - DELETE /api/vault/credentials/:key - Delete credentials
+ * - GET /api/vault/connections - List all connections
+ * - GET /api/vault/health - Check vault health
  */
+
+function getApiBaseUrl(): string {
+  return getFinanceConfig().vvault.apiBaseUrl;
+}
+
+export interface VVAULTCredentialPayload {
+  key: string;
+  service_id: string;
+  service_name: string;
+  credentials: Record<string, string>;
+  metadata?: Record<string, any>;
+}
 
 export interface VVAULTFinanceCredentials {
   serviceId: string;
@@ -30,28 +33,39 @@ export interface VVAULTFinanceCredentials {
 
 export async function storeFinanceCredentials(
   userId: string,
-  credentials: VVAULTFinanceCredentials
+  data: VVAULTFinanceCredentials
 ): Promise<{ success: boolean; connectionId?: string; error?: string }> {
+  const apiBase = getApiBaseUrl();
+  
   try {
-    const response = await fetch(`${VVAULT_API_BASE}/finance/credentials`, {
+    const payload: VVAULTCredentialPayload = {
+      key: `${data.serviceId}_${userId}`,
+      service_id: data.serviceId,
+      service_name: data.serviceName,
+      credentials: data.credentials,
+      metadata: {
+        ...data.metadata,
+        user_id: userId,
+        created_at: new Date().toISOString(),
+      },
+    };
+
+    const response = await fetch(`${apiBase}/credentials`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       credentials: 'include',
-      body: JSON.stringify({
-        userId,
-        ...credentials,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      return { success: false, error: error.message || 'Failed to store credentials' };
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      return { success: false, error: error.error || error.message || 'Failed to store credentials' };
     }
 
     const result = await response.json();
-    return { success: true, connectionId: result.connectionId };
+    return { success: true, connectionId: result.key || payload.key };
   } catch (error) {
     console.error('[VVAULT] Failed to store finance credentials:', error);
     return {
@@ -65,20 +79,26 @@ export async function getFinanceCredentials(
   userId: string,
   serviceId: string
 ): Promise<VVAULTFinanceCredentials | null> {
+  const apiBase = getApiBaseUrl();
+  const key = `${serviceId}_${userId}`;
+  
   try {
-    const response = await fetch(
-      `${VVAULT_API_BASE}/finance/credentials/${serviceId}?userId=${userId}`,
-      {
-        credentials: 'include',
-      }
-    );
+    const response = await fetch(`${apiBase}/credentials/${encodeURIComponent(key)}`, {
+      credentials: 'include',
+    });
 
     if (!response.ok) {
       if (response.status === 404) return null;
       throw new Error('Failed to fetch credentials');
     }
 
-    return await response.json();
+    const data = await response.json();
+    return {
+      serviceId: data.service_id || serviceId,
+      serviceName: data.service_name || serviceId,
+      credentials: data.credentials || {},
+      metadata: data.metadata,
+    };
   } catch (error) {
     console.error('[VVAULT] Failed to get finance credentials:', error);
     return null;
@@ -88,20 +108,26 @@ export async function getFinanceCredentials(
 export async function listFinanceConnections(
   userId: string
 ): Promise<FinanceConnection[]> {
+  const apiBase = getApiBaseUrl();
+  
   try {
-    const response = await fetch(
-      `${VVAULT_API_BASE}/finance/connections?userId=${userId}`,
-      {
-        credentials: 'include',
-      }
-    );
+    const response = await fetch(`${apiBase}/connections?userId=${encodeURIComponent(userId)}`, {
+      credentials: 'include',
+    });
 
     if (!response.ok) {
       throw new Error('Failed to fetch connections');
     }
 
     const result = await response.json();
-    return result.connections || [];
+    return (result.connections || []).map((conn: any) => ({
+      id: conn.id,
+      serviceId: conn.serviceId,
+      serviceName: conn.serviceName,
+      status: conn.status || 'active',
+      connectedAt: conn.connectedAt,
+      lastUsed: conn.lastUsed,
+    }));
   } catch (error) {
     console.error('[VVAULT] Failed to list finance connections:', error);
     return [];
@@ -110,24 +136,20 @@ export async function listFinanceConnections(
 
 export async function disconnectFinanceService(
   userId: string,
-  connectionId: string
+  serviceId: string
 ): Promise<{ success: boolean; error?: string }> {
+  const apiBase = getApiBaseUrl();
+  const key = `${serviceId}_${userId}`;
+  
   try {
-    const response = await fetch(
-      `${VVAULT_API_BASE}/finance/connections/${connectionId}`,
-      {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ userId }),
-      }
-    );
+    const response = await fetch(`${apiBase}/credentials/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
 
-    if (!response.ok) {
-      const error = await response.json();
-      return { success: false, error: error.message || 'Failed to disconnect' };
+    if (!response.ok && response.status !== 404) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      return { success: false, error: error.error || 'Failed to disconnect' };
     }
 
     return { success: true };
@@ -141,32 +163,16 @@ export async function disconnectFinanceService(
 }
 
 export async function testFinanceConnection(
-  connectionId: string
+  userId: string,
+  serviceId: string
 ): Promise<{ success: boolean; status: string; error?: string }> {
-  try {
-    const response = await fetch(
-      `${VVAULT_API_BASE}/finance/connections/${connectionId}/test`,
-      {
-        method: 'POST',
-        credentials: 'include',
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      return { success: false, status: 'error', error: error.message };
-    }
-
-    const result = await response.json();
-    return { success: true, status: result.status };
-  } catch (error) {
-    console.error('[VVAULT] Failed to test finance connection:', error);
-    return {
-      success: false,
-      status: 'error',
-      error: error instanceof Error ? error.message : 'Network error',
-    };
+  const creds = await getFinanceCredentials(userId, serviceId);
+  
+  if (!creds) {
+    return { success: false, status: 'not_found', error: 'Connection not found' };
   }
+  
+  return { success: true, status: 'active' };
 }
 
 export interface ConstructFinanceState {
@@ -182,24 +188,34 @@ export async function saveConstructFinanceState(
   financeAppId: string,
   state: Record<string, any>
 ): Promise<{ success: boolean; error?: string }> {
+  const apiBase = getApiBaseUrl();
+  const key = `state_${financeAppId}_${constructId}_${userId}`;
+  
   try {
-    const response = await fetch(`${VVAULT_API_BASE}/finance/construct-state`, {
+    const response = await fetch(`${apiBase}/credentials`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       credentials: 'include',
       body: JSON.stringify({
-        userId,
-        constructId,
-        financeAppId,
-        state,
+        key,
+        service_id: 'construct_state',
+        service_name: 'Construct Finance State',
+        credentials: {},
+        metadata: {
+          user_id: userId,
+          construct_id: constructId,
+          finance_app_id: financeAppId,
+          state,
+          updated_at: new Date().toISOString(),
+        },
       }),
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      return { success: false, error: error.message };
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      return { success: false, error: error.error || error.message };
     }
 
     return { success: true };
@@ -217,20 +233,26 @@ export async function getConstructFinanceState(
   constructId: string,
   financeAppId: string
 ): Promise<ConstructFinanceState | null> {
+  const apiBase = getApiBaseUrl();
+  const key = `state_${financeAppId}_${constructId}_${userId}`;
+  
   try {
-    const response = await fetch(
-      `${VVAULT_API_BASE}/finance/construct-state/${constructId}/${financeAppId}?userId=${userId}`,
-      {
-        credentials: 'include',
-      }
-    );
+    const response = await fetch(`${apiBase}/credentials/${encodeURIComponent(key)}`, {
+      credentials: 'include',
+    });
 
     if (!response.ok) {
       if (response.status === 404) return null;
       throw new Error('Failed to fetch construct state');
     }
 
-    return await response.json();
+    const data = await response.json();
+    return {
+      constructId: data.metadata?.construct_id || constructId,
+      financeAppId: data.metadata?.finance_app_id || financeAppId,
+      state: data.metadata?.state || {},
+      updatedAt: data.metadata?.updated_at || new Date().toISOString(),
+    };
   } catch (error) {
     console.error('[VVAULT] Failed to get construct finance state:', error);
     return null;

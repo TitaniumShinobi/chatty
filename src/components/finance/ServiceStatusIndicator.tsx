@@ -1,6 +1,7 @@
 import React from 'react';
-import { CheckCircle, XCircle, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
-import type { ServiceStatus } from '../../lib/financeConfig';
+import { CheckCircle, XCircle, AlertCircle, Loader2, RefreshCw, Radio, Settings } from 'lucide-react';
+import type { ServiceStatus, ServiceStatusLevel } from '../../lib/financeConfig';
+import { getStatusColor, getStatusLabel } from '../../lib/financeConfig';
 
 interface ServiceStatusIndicatorProps {
   status: ServiceStatus;
@@ -8,34 +9,36 @@ interface ServiceStatusIndicatorProps {
   compact?: boolean;
 }
 
-const statusColors = {
-  connected: 'text-green-500',
-  disconnected: 'text-red-500',
-  error: 'text-amber-500',
-  checking: 'text-gray-400',
-};
-
-const statusBgColors = {
-  connected: 'bg-green-500/10',
-  disconnected: 'bg-red-500/10',
-  error: 'bg-amber-500/10',
-  checking: 'bg-gray-500/10',
-};
-
-const StatusIcon: React.FC<{ status: ServiceStatus['status']; size?: number }> = ({
+const StatusIcon: React.FC<{ status: ServiceStatusLevel; size?: number }> = ({
   status,
   size = 16,
 }) => {
+  const colorClass = getStatusColor(status);
+  
   switch (status) {
+    case 'live':
+      return <Radio size={size} className={`${colorClass} animate-pulse`} />;
     case 'connected':
-      return <CheckCircle size={size} className={statusColors.connected} />;
-    case 'disconnected':
-      return <XCircle size={size} className={statusColors.disconnected} />;
-    case 'error':
-      return <AlertCircle size={size} className={statusColors.error} />;
+      return <CheckCircle size={size} className={colorClass} />;
+    case 'degraded':
+      return <AlertCircle size={size} className={colorClass} />;
+    case 'offline':
+      return <XCircle size={size} className={colorClass} />;
+    case 'not_configured':
+      return <Settings size={size} className={colorClass} />;
     case 'checking':
-      return <Loader2 size={size} className={`${statusColors.checking} animate-spin`} />;
+    default:
+      return <Loader2 size={size} className={`${colorClass} animate-spin`} />;
   }
+};
+
+const statusBgColors: Record<ServiceStatusLevel, string> = {
+  live: 'bg-green-500/10',
+  connected: 'bg-blue-500/10',
+  degraded: 'bg-amber-500/10',
+  offline: 'bg-red-500/10',
+  not_configured: 'bg-gray-500/10',
+  checking: 'bg-gray-500/10',
 };
 
 export const ServiceStatusIndicator: React.FC<ServiceStatusIndicatorProps> = ({
@@ -43,11 +46,13 @@ export const ServiceStatusIndicator: React.FC<ServiceStatusIndicatorProps> = ({
   onRefresh,
   compact = false,
 }) => {
+  const colorClass = getStatusColor(status.status);
+  
   if (compact) {
     return (
-      <div className="flex items-center gap-1.5" title={`${status.name}: ${status.message || status.status}`}>
+      <div className="flex items-center gap-1.5" title={`${status.name}: ${status.message || getStatusLabel(status.status, status.liveMode)}`}>
         <StatusIcon status={status.status} size={14} />
-        <span className={`text-xs ${statusColors[status.status]}`}>{status.name}</span>
+        <span className={`text-xs ${colorClass}`}>{status.name}</span>
       </div>
     );
   }
@@ -59,7 +64,14 @@ export const ServiceStatusIndicator: React.FC<ServiceStatusIndicatorProps> = ({
       <div className="flex items-center gap-3">
         <StatusIcon status={status.status} size={20} />
         <div>
-          <div className="font-medium text-sm">{status.name}</div>
+          <div className="font-medium text-sm flex items-center gap-2">
+            {status.name}
+            {status.liveMode && (
+              <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
+                LIVE
+              </span>
+            )}
+          </div>
           {status.message && (
             <div className="text-xs opacity-70">{status.message}</div>
           )}
@@ -91,8 +103,21 @@ export const ServiceStatusPanel: React.FC<ServiceStatusPanelProps> = ({
   onRefresh,
   title = 'Service Status',
 }) => {
-  const allConnected = statuses.every((s) => s.status === 'connected');
-  const anyError = statuses.some((s) => s.status === 'error' || s.status === 'disconnected');
+  const allLive = statuses.every((s) => s.status === 'live');
+  const allConnected = statuses.every((s) => s.status === 'live' || s.status === 'connected');
+  const anyDegraded = statuses.some((s) => s.status === 'degraded');
+  const anyOffline = statuses.some((s) => s.status === 'offline');
+  const anyNotConfigured = statuses.some((s) => s.status === 'not_configured');
+
+  const getHeaderIcon = () => {
+    if (loading) return <Loader2 size={16} className="animate-spin" />;
+    if (allLive) return <Radio size={16} className="text-green-500 animate-pulse" />;
+    if (allConnected) return <CheckCircle size={16} className="text-blue-500" />;
+    if (anyDegraded) return <AlertCircle size={16} className="text-amber-500" />;
+    if (anyOffline) return <XCircle size={16} className="text-red-500" />;
+    if (anyNotConfigured) return <Settings size={16} className="text-gray-400" />;
+    return <CheckCircle size={16} className="text-green-500" />;
+  };
 
   return (
     <div
@@ -104,15 +129,7 @@ export const ServiceStatusPanel: React.FC<ServiceStatusPanelProps> = ({
     >
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-semibold flex items-center gap-2">
-          {loading ? (
-            <Loader2 size={16} className="animate-spin" />
-          ) : allConnected ? (
-            <CheckCircle size={16} className="text-green-500" />
-          ) : anyError ? (
-            <AlertCircle size={16} className="text-amber-500" />
-          ) : (
-            <XCircle size={16} className="text-red-500" />
-          )}
+          {getHeaderIcon()}
           {title}
         </h3>
         {onRefresh && (
@@ -133,9 +150,21 @@ export const ServiceStatusPanel: React.FC<ServiceStatusPanelProps> = ({
         ))}
       </div>
 
-      {anyError && (
+      {anyOffline && (
+        <div className="mt-3 p-2 rounded-lg bg-red-500/10 text-xs text-red-400">
+          Some services are offline. Data may be limited or use fallbacks.
+        </div>
+      )}
+      
+      {anyDegraded && !anyOffline && (
         <div className="mt-3 p-2 rounded-lg bg-amber-500/10 text-xs text-amber-400">
-          Some services are unavailable. Data may be limited or use fallbacks.
+          Some services are degraded. Live trading may be affected.
+        </div>
+      )}
+      
+      {anyNotConfigured && !anyOffline && !anyDegraded && (
+        <div className="mt-3 p-2 rounded-lg bg-gray-500/10 text-xs text-gray-400">
+          Some services are not configured. Set environment variables to enable.
         </div>
       )}
     </div>

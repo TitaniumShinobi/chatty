@@ -31,6 +31,7 @@ import transcriptsRoutes from './routes/transcripts.js';
 import masterScriptsRoutes from './routes/masterScripts.js';
 import simForgeRoutes from './routes/simForge.js';
 import fxshinobiRoutes from './routes/fxshinobi.js';
+import vaultProxyRoutes from './routes/vault.js';
 import { initializeChromaDB, shutdownChromaDB, getChromaDBService } from "./services/chromadbService.js";
 import { getChatService } from "./services/chatService.js";
 
@@ -894,7 +895,10 @@ console.log('✅ [Server] Master Scripts routes mounted at /api/master');
 // simForge routes (personality extraction and identity forging)
 app.use("/api/simforge", requireAuth, simForgeRoutes);
 app.use("/api/fxshinobi", fxshinobiRoutes);
+app.use("/api/vault", vaultProxyRoutes);
 console.log('✅ [Server] simForge routes mounted at /api/simforge');
+console.log('✅ [Server] FXShinobi proxy routes mounted at /api/fxshinobi');
+console.log('✅ [Server] VVAULT proxy routes mounted at /api/vault');
 
 function cryptoRandom() {
   return randomBytes(16).toString("hex");

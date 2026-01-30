@@ -12,10 +12,13 @@ export function useFXShinobiStatus(autoRefresh = false, refreshInterval = 30000)
     name: 'FXShinobi',
     status: 'checking',
   });
+  const [loading, setLoading] = useState(true);
 
   const check = useCallback(async () => {
+    setLoading(true);
     const result = await checkFXShinobiStatus();
     setStatus(result);
+    setLoading(false);
     return result;
   }, []);
 
@@ -27,7 +30,7 @@ export function useFXShinobiStatus(autoRefresh = false, refreshInterval = 30000)
     }
   }, [check, autoRefresh, refreshInterval]);
 
-  return { status, refresh: check };
+  return { status, loading, refresh: check };
 }
 
 export function useVVAULTStatus(autoRefresh = false, refreshInterval = 30000) {
@@ -35,10 +38,13 @@ export function useVVAULTStatus(autoRefresh = false, refreshInterval = 30000) {
     name: 'VVAULT',
     status: 'checking',
   });
+  const [loading, setLoading] = useState(true);
 
   const check = useCallback(async () => {
+    setLoading(true);
     const result = await checkVVAULTStatus();
     setStatus(result);
+    setLoading(false);
     return result;
   }, []);
 
@@ -50,7 +56,7 @@ export function useVVAULTStatus(autoRefresh = false, refreshInterval = 30000) {
     }
   }, [check, autoRefresh, refreshInterval]);
 
-  return { status, refresh: check };
+  return { status, loading, refresh: check };
 }
 
 export function useSupabaseStatus(autoRefresh = false, refreshInterval = 30000) {
@@ -58,10 +64,13 @@ export function useSupabaseStatus(autoRefresh = false, refreshInterval = 30000) 
     name: 'Supabase',
     status: 'checking',
   });
+  const [loading, setLoading] = useState(true);
 
   const check = useCallback(async () => {
+    setLoading(true);
     const result = await checkSupabaseStatus();
     setStatus(result);
+    setLoading(false);
     return result;
   }, []);
 
@@ -73,7 +82,7 @@ export function useSupabaseStatus(autoRefresh = false, refreshInterval = 30000) 
     }
   }, [check, autoRefresh, refreshInterval]);
 
-  return { status, refresh: check };
+  return { status, loading, refresh: check };
 }
 
 export function useAllServicesStatus(autoRefresh = false, refreshInterval = 30000) {
@@ -84,7 +93,7 @@ export function useAllServicesStatus(autoRefresh = false, refreshInterval = 3000
   ]);
   const [loading, setLoading] = useState(true);
 
-  const checkAll = useCallback(async () => {
+  const check = useCallback(async () => {
     setLoading(true);
     const results = await checkAllServices();
     setStatuses(results);
@@ -93,12 +102,30 @@ export function useAllServicesStatus(autoRefresh = false, refreshInterval = 3000
   }, []);
 
   useEffect(() => {
-    checkAll();
+    check();
     if (autoRefresh) {
-      const interval = setInterval(checkAll, refreshInterval);
+      const interval = setInterval(check, refreshInterval);
       return () => clearInterval(interval);
     }
-  }, [checkAll, autoRefresh, refreshInterval]);
+  }, [check, autoRefresh, refreshInterval]);
 
-  return { statuses, loading, refresh: checkAll };
+  return { statuses, loading, refresh: check };
+}
+
+export function useLiveModeStatus() {
+  const { status: fxStatus, loading, refresh } = useFXShinobiStatus(true, 30000);
+  
+  const isLive = fxStatus.liveMode === true;
+  const isDegraded = fxStatus.status === 'degraded';
+  const isOffline = fxStatus.status === 'offline' || fxStatus.status === 'not_configured';
+  
+  return {
+    isLive,
+    isDegraded,
+    isOffline,
+    status: fxStatus,
+    loading,
+    refresh,
+    details: fxStatus.details,
+  };
 }
