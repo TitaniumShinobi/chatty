@@ -37,8 +37,8 @@ type Thread = {
 
 // Date header pattern - matches multiple formats:
 // "Month Day, Year" (with comma), "Month Day Year" (without comma), "Month Year" (month-year only)
-// e.g., "November 9, 2025", "December 19, 2025", "January 20, 2026", "November 2025"
-const DATE_HEADER_PATTERN = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2},?\s+)?\d{4}$/i;
+// e.g., "November 9, 2025", "December 19, 2025", "January 20, 2026", "November 2025", "## December 12, 2025"
+const DATE_HEADER_PATTERN = /^(?:#{1,6}\s*)?(January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2},?\s+)?\d{4}\s*$/i;
 
 // Check if a message is a date header (by flag OR by content pattern)
 function isDateHeaderMessage(msg: any): boolean {
@@ -51,8 +51,8 @@ function isDateHeaderMessage(msg: any): boolean {
   const text = (msg.text || '').trim();
   if (!text) return false;
   
-  // Only check short messages (date headers are typically < 30 chars)
-  if (text.length > 30) return false;
+  // Only check short messages (date headers with hashes are typically < 40 chars)
+  if (text.length > 40) return false;
   
   return DATE_HEADER_PATTERN.test(text);
 }
