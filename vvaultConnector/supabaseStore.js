@@ -65,6 +65,7 @@ function parseMarkdownTranscript(content) {
   let currentRole = null;
   let currentContent = [];
   let currentTimestamp = null;
+  let currentDateForDay = null; // Track current date from day headers like "## November 14, 2025"
 
   // User identifiers - these are ALWAYS user messages (case insensitive)
   // Updated to match names that START with common user identifiers or are exact matches
@@ -87,16 +88,61 @@ function parseMarkdownTranscript(content) {
     // Default: unknown speakers are treated as user (since most transcripts feature user vs single AI)
     return true;
   }
+  
+  // Helper: Derive ISO timestamp from day header + time string (e.g., "01:07:38 PM EST")
+  function deriveTimestampFromDayAndTime(timeStr) {
+    if (!currentDateForDay || !timeStr) return null;
+    try {
+      // Parse time: "01:07:38 PM" or "01:07:38 PM EST"
+      const timeMatch = timeStr.match(/^(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)/i);
+      if (!timeMatch) return null;
+      
+      let hour = parseInt(timeMatch[1], 10) % 12;
+      if (timeMatch[4].toUpperCase() === 'PM') hour += 12;
+      const minute = parseInt(timeMatch[2], 10);
+      const second = parseInt(timeMatch[3], 10);
+      
+      // Create date from currentDateForDay (e.g., "November 14, 2025")
+      const base = new Date(currentDateForDay);
+      if (isNaN(base.getTime())) return null;
+      
+      base.setHours(hour, minute, second, 0);
+      return base.toISOString();
+    } catch {
+      return null;
+    }
+  }
 
   // Date header pattern - matches "Month Day, Year" or "Month Year" 
   // e.g., "November 9, 2025", "December 19, 2025", "January 20, 2026", "November 2025"
   const DATE_HEADER_PATTERN = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2},?\s+)?\d{4}$/i;
+  // Day header with ## prefix pattern - captures the date for timestamp derivation
+  const DAY_HEADER_CAPTURE_PATTERN = /^##\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})\s*$/i;
 
   for (const line of lines) {
     const trimmedLine = line.trim();
     
-    // Early detection: If line is a date header on its own, save as a separate message
+    // Check for day header with ## prefix to capture date for timestamp derivation
+    // Pattern: "## November 14, 2025"
+    const dayHeaderCapture = trimmedLine.match(DAY_HEADER_CAPTURE_PATTERN);
+    if (dayHeaderCapture) {
+      // Capture the date for deriving timestamps on subsequent messages
+      currentDateForDay = `${dayHeaderCapture[1]} ${dayHeaderCapture[2]}, ${dayHeaderCapture[3]}`;
+      // Save any pending message first
+      if (currentRole && currentContent.length) {
+        const msg = { role: currentRole, content: currentContent.join('\n').trim() };
+        if (currentTimestamp) msg.timestamp = currentTimestamp;
+        messages.push(msg);
+        currentContent = [];
+      }
+      // Don't add day headers as messages - they're just date context markers
+      continue;
+    }
+    
+    // Early detection: If line is a date header on its own (without ##), save as a separate message
     if (DATE_HEADER_PATTERN.test(trimmedLine)) {
+      // Also capture this as current date for timestamp derivation
+      currentDateForDay = trimmedLine;
       // Save any pending message first
       if (currentRole && currentContent.length) {
         const msg = { role: currentRole, content: currentContent.join('\n').trim() };
@@ -145,6 +191,7 @@ function parseMarkdownTranscript(content) {
     // Example: "**01:07:38 PM EST - Synth**: CONVERSATION_CREATED:Synth"
     const boldTimestampMatch = line.match(/^\*\*(\d{1,2}:\d{2}:\d{2}\s+(?:AM|PM)(?:\s+[A-Z]{2,5})?)\s+-\s+(.+?)\*\*:\s*(.*)$/i);
     if (boldTimestampMatch) {
+      const timeStr = boldTimestampMatch[1].trim();
       const speaker = boldTimestampMatch[2].trim();
       const inlineContent = boldTimestampMatch[3];
       
@@ -157,7 +204,8 @@ function parseMarkdownTranscript(content) {
       
       currentRole = isUserSpeaker(speaker) ? 'user' : 'assistant';
       currentContent = inlineContent ? [inlineContent] : [];
-      currentTimestamp = null;
+      // Derive timestamp from current day header + time string
+      currentTimestamp = deriveTimestampFromDayAndTime(timeStr);
       continue;
     }
 
