@@ -56,7 +56,7 @@ function isDateHeaderMessage(msg: any): boolean {
   return DATE_HEADER_PATTERN.test(text);
 }
 
-// Markdown components for user messages (styled for bubble with #ADA587 background and #fffff0 text)
+// Markdown components for user messages (styled for bubble with #ADA587 background)
 const userMessageMarkdownComponents: Components = {
   // Code blocks with syntax highlighting (styled for user bubble)
   code({ node, inline, className, children, ...props }: any) {
@@ -210,7 +210,7 @@ const userMessageMarkdownComponents: Components = {
                 padding: "1rem",
                 fontSize: "14px",
                 lineHeight: "1.5",
-                color: "#fffff0",
+                color: "var(--chatty-text)",
                 whiteSpace: "pre",
                 overflowX: "auto",
                 display: "block",
@@ -233,7 +233,7 @@ const userMessageMarkdownComponents: Components = {
         className="px-1.5 py-0.5 rounded text-sm font-mono"
         style={{
           backgroundColor: "rgba(0, 0, 0, 0.15)",
-          color: "#fffff0",
+          color: "var(--chatty-text)",
           overflowWrap: "break-word",
           wordWrap: "break-word",
           whiteSpace: "pre-wrap",
@@ -246,28 +246,28 @@ const userMessageMarkdownComponents: Components = {
 
   // Bold text
   strong: ({ children }) => (
-    <strong className="font-bold" style={{ color: "#fffff0" }}>
+    <strong className="font-bold" style={{ color: "var(--chatty-text)" }}>
       {children}
     </strong>
   ),
 
   // Italic text
   em: ({ children }) => (
-    <em className="italic" style={{ color: "#fffff0" }}>
+    <em className="italic" style={{ color: "var(--chatty-text)" }}>
       {children}
     </em>
   ),
 
   // Strikethrough
   del: ({ children }) => (
-    <del className="line-through" style={{ color: "#fffff0", opacity: 0.7 }}>
+    <del className="line-through" style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
       {children}
     </del>
   ),
 
   // Paragraphs
   p: ({ children }) => (
-    <p className="mb-2 last:mb-0 leading-relaxed" style={{ color: "#fffff0" }}>
+    <p className="mb-2 last:mb-0 leading-relaxed" style={{ color: "var(--chatty-text)" }}>
       {children}
     </p>
   ),
@@ -276,7 +276,7 @@ const userMessageMarkdownComponents: Components = {
   ul: ({ children }) => (
     <ul
       className="list-disc list-outside mb-2 ml-4 space-y-1"
-      style={{ color: "#fffff0" }}
+      style={{ color: "var(--chatty-text)" }}
     >
       {children}
     </ul>
@@ -284,13 +284,13 @@ const userMessageMarkdownComponents: Components = {
   ol: ({ children }) => (
     <ol
       className="list-decimal list-outside mb-2 ml-4 space-y-1"
-      style={{ color: "#fffff0" }}
+      style={{ color: "var(--chatty-text)" }}
     >
       {children}
     </ol>
   ),
   li: ({ children }) => (
-    <li className="pl-1" style={{ color: "#fffff0" }}>
+    <li className="pl-1" style={{ color: "var(--chatty-text)" }}>
       {children}
     </li>
   ),
@@ -302,7 +302,7 @@ const userMessageMarkdownComponents: Components = {
       target="_blank"
       rel="noopener noreferrer"
       className="underline"
-      style={{ color: "#fffff0", opacity: 0.9 }}
+      style={{ color: "var(--chatty-text)", opacity: 0.9 }}
     >
       {children}
     </a>
@@ -314,7 +314,7 @@ const userMessageMarkdownComponents: Components = {
       className="border-l-2 pl-3 italic my-2"
       style={{
         borderColor: "rgba(255, 255, 255, 0.3)",
-        color: "#fffff0",
+        color: "var(--chatty-text)",
         opacity: 0.9,
       }}
     >
@@ -324,24 +324,24 @@ const userMessageMarkdownComponents: Components = {
 
   // Headers (smaller for bubble)
   h1: ({ children }) => (
-    <h1 className="text-xl font-bold mb-2 mt-2" style={{ color: "#fffff0" }}>
+    <h1 className="text-xl font-bold mb-2 mt-2" style={{ color: "var(--chatty-text)" }}>
       {children}
     </h1>
   ),
   h2: ({ children }) => (
-    <h2 className="text-lg font-bold mb-1 mt-2" style={{ color: "#fffff0" }}>
+    <h2 className="text-lg font-bold mb-1 mt-2" style={{ color: "var(--chatty-text)" }}>
       {children}
     </h2>
   ),
   h3: ({ children }) => (
-    <h3 className="text-base font-bold mb-1 mt-1" style={{ color: "#fffff0" }}>
+    <h3 className="text-base font-bold mb-1 mt-1" style={{ color: "var(--chatty-text)" }}>
       {children}
     </h3>
   ),
   h4: ({ children }) => (
     <h4
       className="text-sm font-semibold mb-1 mt-1"
-      style={{ color: "#fffff0" }}
+      style={{ color: "var(--chatty-text)" }}
     >
       {children}
     </h4>
@@ -349,7 +349,7 @@ const userMessageMarkdownComponents: Components = {
   h5: ({ children }) => (
     <h5
       className="text-sm font-semibold mb-0.5 mt-1"
-      style={{ color: "#fffff0" }}
+      style={{ color: "var(--chatty-text)" }}
     >
       {children}
     </h5>
@@ -357,7 +357,7 @@ const userMessageMarkdownComponents: Components = {
   h6: ({ children }) => (
     <h6
       className="text-xs font-semibold mb-0.5 mt-1"
-      style={{ color: "#fffff0" }}
+      style={{ color: "var(--chatty-text)" }}
     >
       {children}
     </h6>
@@ -1488,7 +1488,7 @@ export default function Chat() {
                 padding: "1rem",
                 fontSize: "14px",
                 lineHeight: "1.5",
-                color: "#fffff0",
+                color: "var(--chatty-text)",
                 whiteSpace: "pre",
                 overflowX: "auto",
                 overflowY: "auto",
@@ -1630,7 +1630,7 @@ export default function Chat() {
                       {isRemoved ? (
                         <div
                           className="opacity-50 italic"
-                          style={{ color: "#fffff0" }}
+                          style={{ color: "var(--chatty-text)" }}
                         >
                           [Message Removed]
                         </div>
@@ -1654,7 +1654,7 @@ export default function Chat() {
                                 <div
                                   key={i}
                                   className="text-xs"
-                                  style={{ opacity: 0.7, color: "#fffff0" }}
+                                  style={{ opacity: 0.7, color: "var(--chatty-text)" }}
                                 >
                                   {f.name}{" "}
                                   <span className="opacity-60">
