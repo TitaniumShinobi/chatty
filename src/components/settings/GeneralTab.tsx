@@ -34,6 +34,13 @@ const GeneralTab: React.FC = () => {
     { value: "Light", label: "Light", icon: Sun },
     { value: "Dark", label: "Dark", icon: Moon },
   ];
+  
+  const themeDisplayMap: Record<string, string> = {
+    auto: "Auto",
+    light: "Light", 
+    night: "Dark",
+  };
+  const currentThemeDisplay = themeDisplayMap[theme] || "Auto";
 
   const accentColorOptions = [
     { value: "Default", label: "Default", color: "#6B7280" },
@@ -147,7 +154,7 @@ const GeneralTab: React.FC = () => {
                 className="text-sm"
                 style={{ color: "var(--chatty-text)", opacity: 0.7 }}
               >
-                {settings.general.theme}
+                {currentThemeDisplay}
               </span>
               <span style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
                 ›
@@ -171,7 +178,7 @@ const GeneralTab: React.FC = () => {
                     className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-100 transition-colors"
                     style={{
                       backgroundColor:
-                        settings.general.theme === option.value
+                        currentThemeDisplay === option.value
                           ? "var(--chatty-highlight)"
                           : "transparent",
                     }}
@@ -189,7 +196,7 @@ const GeneralTab: React.FC = () => {
                         {option.label}
                       </span>
                     </div>
-                    {settings.general.theme === option.value && (
+                    {currentThemeDisplay === option.value && (
                       <Check
                         size={16}
                         style={{ color: "var(--chatty-text)" }}
