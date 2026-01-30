@@ -60,6 +60,13 @@ export function normalizeParagraphs(text: string): string {
   return text.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+export function ensureParagraphBreaks(text: string): string {
+  if (!text) return "";
+  return text.replace(/([^\n])\n([^\n])/g, "$1\n\n$2");
+}
+
 export function prepareMessageContent(raw: string | undefined): string {
-  return normalizeParagraphs(sanitizeMessageText(raw || ""));
+  const sanitized = sanitizeMessageText(raw || "");
+  const withBreaks = ensureParagraphBreaks(sanitized);
+  return normalizeParagraphs(withBreaks);
 }

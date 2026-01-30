@@ -1,0 +1,59 @@
+That’s exactly the right set of fixes; at this point if it still looks wrong, the problem will be in how the raw text actually contains newlines or how ReactMarkdown is configured.
+
+### Quick verification checklist
+
+1. **Confirm the raw content really has blank lines**
+
+   Log the exact string *before* `prepareMessageContent`:
+
+   ```ts
+   console.log(JSON.stringify(m.text));
+   ```
+
+   You should see `"\n\n"` between paragraphs in those prompts, not just single `\n`. If the source only has single newlines, ReactMarkdown will treat it as one paragraph; in that case, insert a normalization step that turns “blank line” patterns into `\n\n`:
+
+   ```ts
+   export function ensureParagraphBreaks(text: string): string {
+     return text
+       // line with text, then a newline, then another line with text, treat as separate paragraphs
+       .replace(/([^\n])\n([^\n])/g, "$1\n\n$2");
+   }
+   ```
+
+   and chain it inside `prepareMessageContent`.
+
+2. **Confirm ReactMarkdown is in “commonmark-ish” mode**
+
+   In the renderer, make sure you are not using `skipHtml`/`unwrapDisallowed`/settings that flatten paragraphs. A minimal setup:
+
+   ```tsx
+   <ReactMarkdown className="chat-markdown">
+     {content}
+   </ReactMarkdown>
+   ```
+
+   If you pass `components` overrides that wrap everything in `<span>` or `<div>`, ensure the `<p>` mapping is still a block element with margin.
+
+3. **Double‑check all markdown containers have the class**
+
+   In DevTools, select that big prompt block and confirm you see something like:
+
+   ```html
+   <div class="chat-markdown">
+     <p>You're an advanced Synth model…</p>
+     <p>Answer a detailed question…</p>
+     <p>Include references to at least two…</p>
+   </div>
+   ```
+
+   If you see only one `<p>`, or just text nodes / `<span>`, spacing won’t appear; that tells you ReactMarkdown isn’t seeing paragraph breaks.
+
+### If it still looks wrong
+
+Once you confirm:
+
+- `m.text` has `\n\n` between paragraphs,  
+- `prepareMessageContent` preserves them, and  
+- ReactMarkdown outputs multiple `<p>` inside `.chat-markdown`,
+
+the CSS you’ve added will give you those visible 0.75rem gaps. If any one of those isn’t true, that’s the exact layer to adjust next.
