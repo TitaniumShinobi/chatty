@@ -9,7 +9,7 @@
   /* Day Mode - Light cream background, Dark text */
   --chatty-bg-main: #fffff0; /* Light cream - Main Area */
   --chatty-bg-sidebar: #fffff0; /* Same cream as main background */
-  --chatty-bg-message: #ffffd7; /* Message Box */
+  --chatty-bg-message: rgba(173, 165, 135, 0.25); /* #ADA587 at 25% opacity - matches user bubbles & selected cards */
   --chatty-hover: #ffffd7; /* Hover states */
   --chatty-highlight: #ffffd7; /* Highlight for hover states (legacy alias) */
   --chatty-selected: #ADA587; /* Active/selected items */
@@ -28,7 +28,7 @@
   /* Night Mode - Outer Space Theme */
   --chatty-bg-main: #000110; /* Deep space - Main Area */
   --chatty-bg-sidebar: #000110; /* Unified cosmic surface */
-  --chatty-bg-message: #1A1C2B; /* Space haze - Message surfaces */
+  --chatty-bg-message: rgba(173, 165, 135, 0.25); /* #ADA587 at 25% opacity - matches user bubbles & selected cards */
   --chatty-hover: #1A1C2B; /* Atmospheric hover highlight */
   --chatty-highlight: #1A1C2B; /* Highlight (legacy alias) */
   --chatty-selected: #ADA587; /* Authority / active state */
@@ -49,7 +49,7 @@
 :root.night-mode.theme-script-christmas {
   --chatty-bg-main: #0f1f0f; /* Deep forest green */
   --chatty-bg-sidebar: #0f1f0f;
-  --chatty-bg-message: #152515; /* Slightly lighter forest */
+  --chatty-bg-message: rgba(173, 165, 135, 0.25); /* #ADA587 at 25% opacity - matches user bubbles & selected cards */
   --chatty-highlight: #1a2d1a; /* Forest highlight */
   --chatty-star-starburst-color: #fffff0; /* Cloud lemon starbursts */
   --chatty-star-nova-color: #ffffff; /* White nova */
