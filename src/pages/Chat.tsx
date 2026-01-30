@@ -873,7 +873,7 @@ export default function Chat() {
                             style={{
                               backgroundColor: "rgba(173, 165, 135, 0.25)",
                               borderRadius: "22px 22px 6px 22px",
-                              border: "1px solid rgba(173, 165, 135, 0.35)",
+                              border: "none",
                               boxShadow: "0 1px 0 rgba(58, 46, 20, 0.12)",
                               color: "var(--chatty-text)",
                               overflow: "hidden",
@@ -1494,7 +1494,7 @@ export default function Chat() {
                       style={{
                         backgroundColor: "rgba(173, 165, 135, 0.25)",
                         borderRadius: "22px 22px 6px 22px",
-                        border: "1px solid rgba(173, 165, 135, 0.35)",
+                        border: "none",
                         boxShadow: "0 1px 0 rgba(58, 46, 20, 0.12)",
                         color: "var(--chatty-text)",
                         overflow: "hidden",
