@@ -35,10 +35,9 @@ type Thread = {
   archived?: boolean;
 };
 
-// Date header pattern - matches multiple formats:
-// "Month Day, Year" (with comma), "Month Day Year" (without comma), "Month Year" (month-year only)
-// e.g., "November 9, 2025", "December 19, 2025", "January 20, 2026", "November 2025", "## December 12, 2025"
-const DATE_HEADER_PATTERN = /^(?:#{1,6}\s*)?(January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2},?\s+)?\d{4}\s*$/i;
+// Date header pattern - matches date-only lines with optional leading hashes
+// e.g., "November 20, 2025", "## December 12, 2025", "### december 13 2025"
+const DATE_HEADER_PATTERN = /^#{0,6}\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\s*$/i;
 
 // Check if a message is a date header (by flag OR by content pattern)
 function isDateHeaderMessage(msg: any): boolean {
@@ -842,7 +841,7 @@ export default function Chat() {
           .filter(m => {
             // Filter out standalone date header messages
             const text = (m.text || "").trim();
-            const dateLinePattern = /^(?:#{1,6}\s*)?(January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2},?\s+)?\d{4}\s*$/;
+            const dateLinePattern = /^#{0,6}\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\s*$/i;
             return !dateLinePattern.test(text);
           });
         
