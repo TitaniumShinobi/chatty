@@ -8,7 +8,7 @@
 :root {
   /* Day Mode - Light cream background, Dark text */
   --chatty-bg-main: #fffff0; /* Light cream - Main Area */
-  --chatty-bg-sidebar: #ffffd7; /* Slightly darker cream for sidebar */
+  --chatty-bg-sidebar: #fffff0; /* Same cream as main background */
   --chatty-bg-message: #ffffd7; /* Message Box */
   --chatty-hover: #ffffd7; /* Hover states */
   --chatty-highlight: #ffffd7; /* Highlight for hover states (legacy alias) */
