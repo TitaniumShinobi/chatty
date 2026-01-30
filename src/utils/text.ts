@@ -9,6 +9,22 @@ const ROLE_LABEL_PATTERN = /^(Coding Expert|Creative Expert|Conversational Exper
 const EQUALS_HEADING_PATTERN = /^={3,}\s*([A-Z][A-Z0-9 _#:-]+?)\s*={3,}\s*:?\s*$/;
 const HASH_SUFFIX_HEADING_PATTERN = /^([A-Za-z][A-Za-z0-9 _-]+)\s*#{3,}\s*:?\s*(\(continued\))?\s*[-–—]?\s*$/;
 const TRANSITION_LINE_PATTERN = /^-{3,}\s*(.+?)\s*-{3,}\s*:?\s*$/;
+const HASH_WRAPPED_HEADING_PATTERN = /^#{1,6}\s*([A-Za-z][A-Za-z0-9 _-]+)\s*#{1,6}\s*:?\s*(\(continued\))?.*$/;
+
+function normalizeHashWrappedHeadings(line: string): string {
+  const trimmed = line.trim();
+  const match = trimmed.match(HASH_WRAPPED_HEADING_PATTERN);
+  if (!match) return line;
+  
+  const base = match[1]
+    .replace(/[_#:-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .replace(/^\w/, (c) => c.toUpperCase());
+  const continued = match[2] ? " (continued)" : "";
+  return `## ${base}${continued}`;
+}
 
 function normalizeTransitionLines(line: string): string {
   const trimmed = line.trim();
@@ -61,6 +77,7 @@ export function sanitizeMessageText(text: string | undefined): string {
       return true;
     })
     .map((line) => normalizePseudoHeadings(line))
+    .map((line) => normalizeHashWrappedHeadings(line))
     .map((line) => normalizeTransitionLines(line))
     .join("\n");
 
