@@ -72,12 +72,11 @@ export const CompressedCodeBlock: React.FC<CompressedCodeBlockProps> = ({ code, 
 
             {/* Code Container - now with horizontal scroll instead of scaling */}
             <div
-                className="rounded-lg border border-opacity-10"
+                className="rounded-lg"
                 style={{
                     width: '100%',
                     backgroundColor: '#000000',
                     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
-                    borderColor: 'var(--chatty-line)',
                     overflowX: 'auto',
                     overflowY: 'hidden',
                 }}
