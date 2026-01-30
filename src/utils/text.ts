@@ -62,7 +62,18 @@ export function normalizeParagraphs(text: string): string {
 
 export function ensureParagraphBreaks(text: string): string {
   if (!text) return "";
-  return text.replace(/([^\n])\n([^\n])/g, "$1\n\n$2");
+  
+  const codeBlockPattern = /(```[\s\S]*?```|`[^`\n]+`)/g;
+  const parts = text.split(codeBlockPattern);
+  
+  return parts
+    .map((part, index) => {
+      if (index % 2 === 1) {
+        return part;
+      }
+      return part.replace(/([^\n])\n([^\n])/g, "$1\n\n$2");
+    })
+    .join("");
 }
 
 export function prepareMessageContent(raw: string | undefined): string {
