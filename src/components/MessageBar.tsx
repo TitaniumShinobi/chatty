@@ -96,7 +96,7 @@ export default function MessageBar({
   return (
     <form onSubmit={handleSubmit} className="w-full">
       <div
-        className="flex items-end gap-2 px-4 py-3 rounded-xl transition-all"
+        className="flex items-center gap-2 px-4 py-2 rounded-full transition-all"
         style={{
           backgroundColor: "var(--chatty-bg-message)",
           boxShadow: isFocused
@@ -116,7 +116,7 @@ export default function MessageBar({
             <button
               type="button"
               onClick={handleFileClick}
-              className="p-2 rounded-lg transition-colors flex-shrink-0 self-end mb-0.5"
+              className="p-2 rounded-lg transition-colors flex-shrink-0"
               style={{ color: "var(--chatty-text)", opacity: 0.6 }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
@@ -135,7 +135,7 @@ export default function MessageBar({
           <Plus
             size={20}
             style={{ color: "var(--chatty-text)", opacity: 0.6 }}
-            className="flex-shrink-0 self-end mb-3"
+            className="flex-shrink-0"
           />
         )}
 
@@ -174,10 +174,10 @@ export default function MessageBar({
             placeholder={placeholder}
             disabled={disabled}
             rows={1}
-            className="w-full bg-transparent outline-none text-lg resize-none chatty-placeholder leading-relaxed"
+            className="w-full bg-transparent outline-none text-base resize-none chatty-placeholder leading-normal"
             style={{
               color: "var(--chatty-text)",
-              minHeight: "28px",
+              minHeight: "24px",
             }}
           />
         </div>
@@ -185,7 +185,7 @@ export default function MessageBar({
         {showVoiceButton && (
           <button
             type="button"
-            className="p-2 rounded-lg transition-colors flex-shrink-0 self-end mb-0.5"
+            className="p-2 rounded-lg transition-colors flex-shrink-0"
             style={{ color: "var(--chatty-text)", opacity: 0.7 }}
             onMouseEnter={(e) => {
               e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
@@ -204,7 +204,7 @@ export default function MessageBar({
         <button
           type="submit"
           disabled={disabled || !hasContent}
-          className="p-2 rounded-lg transition-all flex-shrink-0 self-end mb-0.5"
+          className="p-2 rounded-full transition-all flex-shrink-0"
           style={{
             backgroundColor: hasContent ? "var(--chatty-button)" : "transparent",
             color: hasContent ? "var(--chatty-text-inverse, #fffff0)" : "var(--chatty-text)",
