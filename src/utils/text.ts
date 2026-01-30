@@ -7,7 +7,7 @@ const VVAULT_TIMESTAMP_PATTERN =
 const ROLE_LABEL_PATTERN = /^(Coding Expert|Creative Expert|Conversational Expert):\s*$/;
 
 const EQUALS_HEADING_PATTERN = /^={3,}\s*([A-Z][A-Z0-9 _#:-]+?)\s*={3,}\s*:?\s*$/;
-const HASH_SUFFIX_HEADING_PATTERN = /^([A-Z][A-Z0-9 _-]+)\s*#{3,}\s*:?\s*$/;
+const HASH_SUFFIX_HEADING_PATTERN = /^([A-Za-z][A-Za-z0-9 _-]+)\s*#{3,}\s*:?\s*(\(continued\))?\s*[-–—]?\s*$/;
 const TRANSITION_LINE_PATTERN = /^-{3,}\s*(.+?)\s*-{3,}\s*:?\s*$/;
 
 function normalizeTransitionLines(line: string): string {
@@ -35,13 +35,14 @@ function normalizePseudoHeadings(line: string): string {
   
   match = trimmed.match(HASH_SUFFIX_HEADING_PATTERN);
   if (match) {
-    const title = match[1]
+    const base = match[1]
       .replace(/[_#:-]+/g, " ")
       .replace(/\s+/g, " ")
       .trim()
       .toLowerCase()
       .replace(/^\w/, (c) => c.toUpperCase());
-    return `## ${title}`;
+    const continued = match[2] ? " (continued)" : "";
+    return `## ${base}${continued}`;
   }
   
   return line;
