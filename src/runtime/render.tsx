@@ -25,7 +25,7 @@ function renderAnswer(pl: any): string {
 
 const markdownComponents: Components = {
   // Code blocks with syntax highlighting
-  code({ node, inline, className, children }: any) {
+  code({ inline, className, children }: any) {
     const match = /language-(\w+)/.exec(className || "");
 
     // Code block with language or plain text block
@@ -220,12 +220,28 @@ const markdownComponents: Components = {
     </td>
   ),
 
-  // Paragraphs with proper spacing
-  p: ({ children }) => (
-    <p className="mb-4 leading-relaxed" style={{ color: "var(--chatty-text)" }}>
-      {children}
-    </p>
-  ),
+  // Paragraphs with proper spacing - use div if children contains block elements
+  p: ({ children }) => {
+    const hasBlockElement = React.Children.toArray(children).some(
+      (child) =>
+        React.isValidElement(child) &&
+        (child.type === CompressedCodeBlock ||
+          (typeof child.type === "string" &&
+            ["div", "pre", "table", "ul", "ol", "blockquote"].includes(child.type)))
+    );
+    if (hasBlockElement) {
+      return (
+        <div className="mb-4 leading-relaxed" style={{ color: "var(--chatty-text)" }}>
+          {children}
+        </div>
+      );
+    }
+    return (
+      <p className="mb-4 leading-relaxed" style={{ color: "var(--chatty-text)" }}>
+        {children}
+      </p>
+    );
+  },
 
   // Horizontal rule
   hr: () => (

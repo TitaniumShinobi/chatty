@@ -20,6 +20,11 @@ const USER_SHARD = 'shard_0000';
  */
 export async function checkVSIStatus(userId, constructCallsign) {
   try {
+    // Return early if VVAULT_ROOT is not configured (Replit environment)
+    if (!VVAULT_ROOT) {
+      return { isVSI: false, registry: null };
+    }
+    
     // First check intelligences directory (VSIs are independent entities)
     const vsiRegistryPath = path.join(
       VVAULT_ROOT,
