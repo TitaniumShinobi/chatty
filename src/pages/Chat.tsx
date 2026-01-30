@@ -871,9 +871,9 @@ export default function Chat() {
                           <div
                             className={`px-4 py-3 shadow-sm transition-colors inline-block ${maxWidth} ml-auto text-left relative`}
                             style={{
-                              backgroundColor: "rgba(173, 165, 135, 0.1)",
+                              backgroundColor: "rgba(173, 165, 135, 0.25)",
                               borderRadius: "22px 22px 6px 22px",
-                              border: "1px solid rgba(173, 165, 135, 0.2)",
+                              border: "1px solid rgba(173, 165, 135, 0.35)",
                               boxShadow: "0 1px 0 rgba(58, 46, 20, 0.12)",
                               color: "var(--chatty-text)",
                               overflow: "hidden",
@@ -1492,9 +1492,9 @@ export default function Chat() {
                     <div
                       className={`px-4 py-3 shadow-sm transition-colors inline-block ${maxWidth} ml-auto text-left relative`}
                       style={{
-                        backgroundColor: "rgba(173, 165, 135, 0.1)",
+                        backgroundColor: "rgba(173, 165, 135, 0.25)",
                         borderRadius: "22px 22px 6px 22px",
-                        border: "1px solid rgba(173, 165, 135, 0.2)",
+                        border: "1px solid rgba(173, 165, 135, 0.35)",
                         boxShadow: "0 1px 0 rgba(58, 46, 20, 0.12)",
                         color: "var(--chatty-text)",
                         overflow: "hidden",
