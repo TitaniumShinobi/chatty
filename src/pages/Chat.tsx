@@ -41,8 +41,16 @@ const DATE_HEADER_PATTERN = /^(January|February|March|April|May|June|July|August
 
 // Check if a message is a date header (by flag OR by content pattern)
 function isDateHeaderMessage(msg: any): boolean {
+  // Priority 1: Explicit flag from server/parser
   if (msg.isDateHeader) return true;
-  const text = (msg.text || msg.content || '').trim();
+  
+  // Priority 2: Pattern match on message text content (user messages have 'text', assistants have packets)
+  const text = (msg.text || '').trim();
+  if (!text) return false;
+  
+  // Only check short messages (date headers are typically < 30 chars)
+  if (text.length > 30) return false;
+  
   return DATE_HEADER_PATTERN.test(text);
 }
 
