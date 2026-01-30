@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react'
-import { Send, Menu, Plus, Paperclip, X } from 'lucide-react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
+import { Send, Menu, Plus, Paperclip, X, ChevronDown } from 'lucide-react'
 import { ChatAreaProps } from '../types'
 import MessageComponent from './Message.tsx'
 import { cn } from '../lib/utils'
@@ -24,16 +24,41 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   const [attachedFiles, setAttachedFiles] = useState<File[]>([])
   const [parsingProgress, setParsingProgress] = useState<{ [key: string]: number }>({})
   const [isParsing, setIsParsing] = useState(false)
+  const [showScrollButton, setShowScrollButton] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
 
+  // Check if scrolled to bottom
+  const checkScrollPosition = useCallback(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+    
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100
+    setShowScrollButton(!isNearBottom)
+  }, [])
+
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    setShowScrollButton(false)
   }, [conversation?.messages])
+
+  // Add scroll listener
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+    
+    container.addEventListener('scroll', checkScrollPosition)
+    return () => container.removeEventListener('scroll', checkScrollPosition)
+  }, [checkScrollPosition])
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
 
   // Stop typing indicator when new AI message arrives
   useEffect(() => {
@@ -379,7 +404,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto relative">
         {!conversation || conversation.messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
             <div className="max-w-md">
@@ -449,6 +474,23 @@ const ChatArea: React.FC<ChatAreaProps> = ({
           </div>
         )}
       </div>
+
+      {/* Scroll to Bottom Button */}
+      {showScrollButton && (
+        <div className="relative">
+          <button
+            onClick={scrollToBottom}
+            className="absolute left-1/2 -translate-x-1/2 -top-14 w-10 h-10 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110 z-10"
+            style={{
+              backgroundColor: 'var(--chatty-highlight)',
+              color: 'var(--chatty-text)',
+            }}
+            title="Scroll to bottom"
+          >
+            <ChevronDown size={20} />
+          </button>
+        </div>
+      )}
 
       {/* Input Area */}
       <div className="p-4">
