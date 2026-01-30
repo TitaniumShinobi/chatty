@@ -15,6 +15,9 @@ interface ThemeContextType {
   themeScriptSetting: ThemeScriptId
   setThemeScriptSetting: (setting: ThemeScriptId) => void
   availableThemeScripts: ThemeScript[]
+  sessionThemeOverride: 'light' | 'night' | null
+  setSessionThemeOverride: (override: 'light' | 'night' | null) => void
+  toggleQuickTheme: () => void
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
@@ -49,7 +52,8 @@ function getInitialSystemTheme(): 'light' | 'night' {
 }
 
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) => {
-  const [theme, setTheme] = useState<Theme>('auto')
+  const [theme, setThemeInternal] = useState<Theme>('auto')
+  const [sessionThemeOverride, setSessionThemeOverride] = useState<'light' | 'night' | null>(null)
   const [systemTheme, setSystemTheme] = useState<'light' | 'night'>(getInitialSystemTheme)
   const [coords, setCoords] = useState<{ lat: number; lng: number }>(DEFAULT_COORDS)
   const [sunTimes, setSunTimes] = useState<{ sunrise: Date; sunset: Date } | null>(null)
@@ -57,6 +61,20 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
   const [activeThemeScript, setActiveThemeScript] = useState<ThemeScript | null>(null)
   const [themeInitialized, setThemeInitialized] = useState(false)
   const availableThemeScripts = getAvailableThemeScripts()
+  
+  const setTheme = (newTheme: Theme) => {
+    setThemeInternal(newTheme)
+    setSessionThemeOverride(null)
+  }
+  
+  const toggleQuickTheme = () => {
+    if (theme === 'auto') {
+      const currentActual = sessionThemeOverride ?? systemTheme
+      setSessionThemeOverride(currentActual === 'light' ? 'night' : 'light')
+    } else {
+      setThemeInternal(theme === 'light' ? 'night' : 'light')
+    }
+  }
 
   // === GEOLOCATION - Get user's location for accurate sunrise/sunset ===
   useEffect(() => {
@@ -195,14 +213,18 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
     }
   }, [themeScriptSetting, user, themeInitialized])
 
-  // Calculate actual theme
-  const actualTheme = theme === 'auto' ? systemTheme : theme
+  // Calculate actual theme - respects session override when auto is set
+  const actualTheme: 'light' | 'night' = theme === 'auto' 
+    ? (sessionThemeOverride ?? systemTheme)
+    : theme
 
   // === THEME APPLICATION - START ===
   // Apply theme to document
   useEffect(() => {
     const root = document.documentElement
-    const resolved = theme === 'auto' ? systemTheme : theme
+    const resolved = theme === 'auto' 
+      ? (sessionThemeOverride ?? systemTheme) 
+      : theme
     
     console.log('[Theme] Applying theme:', { 
       setting: theme, 
@@ -221,7 +243,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
     if (resolved === 'night') {
       root.classList.add('night-mode')
     }
-  }, [theme, systemTheme])
+  }, [theme, systemTheme, sessionThemeOverride])
   // === THEME APPLICATION - END ===
 
   // Save theme to localStorage when it changes (only after initial load)
@@ -243,7 +265,10 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
       activeThemeScript,
       themeScriptSetting,
       setThemeScriptSetting,
-      availableThemeScripts
+      availableThemeScripts,
+      sessionThemeOverride,
+      setSessionThemeOverride,
+      toggleQuickTheme
     }}>
       {children}
     </ThemeContext.Provider>

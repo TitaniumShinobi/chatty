@@ -14,33 +14,19 @@ export const ThemeToggleButton: React.FC<ThemeToggleButtonProps> = ({
   className,
   style: customStyle
 }) => {
-  const { theme, setTheme, actualTheme } = useTheme()
-  
-  const toggleTheme = () => {
-    if (theme === 'system') {
-      setTheme(actualTheme === 'light' ? 'night' : 'light')
-      return
-    }
-    setTheme(theme === 'light' ? 'night' : 'light')
-  }
+  const { actualTheme, toggleQuickTheme } = useTheme()
 
   const getIcon = () => {
-    if (theme === 'system') {
-      return actualTheme === 'light' ? <Moon size={16} /> : <Sun size={16} />
-    }
-    return theme === 'light' ? <Moon size={16} /> : <Sun size={16} />
+    return actualTheme === 'light' ? <Moon size={16} /> : <Sun size={16} />
   }
 
   const getAriaLabel = () => {
-    if (theme === 'system') {
-      return `Currently using system theme (${actualTheme}), click to switch to light theme`
-    }
-    return `Currently using ${theme} theme, click to switch to ${theme === 'light' ? 'night' : theme === 'night' ? 'system' : 'light'} theme`
+    return `Currently ${actualTheme} mode, click to toggle`
   }
 
   return (
     <button
-      onClick={toggleTheme}
+      onClick={toggleQuickTheme}
       className={cn(
         'p-2 rounded transition-colors duration-150 flex items-center justify-center',
         className
