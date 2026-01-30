@@ -5,7 +5,7 @@ Chatty is an AI-powered workspace application designed for interactive AI engage
 
 ## User Preferences
 - Primary construct: Zen (not Synth)
-- Sidebar Navigation: Zen, Lin, VVAULT, simForge, Library (default items) + "Get More" linking to Apps page
+- Sidebar Navigation: Zen, Lin, VVAULT, simForge, Library, Finance (default items) + "Get More" linking to Apps page
 - Address Book: Shows custom GPTs only (e.g., Katana) - Zen and Lin are excluded as they're system nav items
 - GPTCreator: Tool for creating/editing GPTs
 - GPTCreator Create Tab: Lin (conversational agent users speak to when creating GPTs)
@@ -52,6 +52,7 @@ Chatty is an AI-powered workspace application designed for interactive AI engage
 - **Date Header System:** Date headers (e.g., "November 9, 2025") are hidden from the chat UI but preserved in transcript files for historical reference and auto-inserted on date changes.
 - **Canonical Session ID Pattern:** All system constructs and GPTs use a consistent URL-to-file mapping: `{constructId}_chat_with_{constructId}`.
 - **Canonical Supabase File Path Pattern:** All transcripts are stored in Supabase under `/vvault_files/users/{shard}/{userId}/instances/{constructId}/chatty/chat_with_{constructId}.md`.
+- **Finance Tab Architecture:** Finance is a first-class section with a plugin architecture for finance apps. FXShinobi is the first integration, featuring TradingView chart widgets, Kalshi-style prediction market tiles, and Perplexity-style AI insights panel. Finance apps register via `financeAppRegistry` in `src/types/finance.ts`.
 
 ## External Dependencies
 - **VVAULT API:** Primary API for AI inference, memory management, and conversation transcripts.
@@ -66,3 +67,4 @@ Chatty is an AI-powered workspace application designed for interactive AI engage
 - **January 28, 2026:** Added OpenAI integration via Replit AI Integrations. Updated model routing in `vvaultConnector`, `unifiedIntelligenceOrchestrator.js`, and `vvault.js` to support three providers. Both GPTCreator preview and main Chat now use the GPT's configured model consistently.
 - **January 29, 2026:** Migrated color scheme from Chocolate (#2F2510) to Outer Space (#000110) theme. Updated CSS variables in `index.css`, theme tokens in `themeTokens.ts`, and replaced all hardcoded legacy colors across components. Night mode now uses unified Cloud Lemon text (#fffff0) with hierarchy via opacity only.
 - **January 30, 2026:** Fixed legacy transcript timestamp parsing bug. Added pre-scan feature to `supabaseStore.js` that finds date headers before the main parsing loop, enabling historical timestamp derivation for all legacy messages. Messages from imported transcripts now correctly show November 2025 dates instead of current time.
+- **January 30, 2026:** Added Finance tab with FXShinobi trading dashboard. Created plugin architecture for finance apps (`src/types/finance.ts`), Finance overview page (`/app/finance`), and FXShinobi dashboard (`/app/finance/fxshinobi`) with TradingView widgets, prediction markets, performance metrics, and AI insights. Added data hooks (`useFinanceData.ts`), VVAULT finance client integration, and Connect Service modal for broker accounts. Created deployment docs (`docs/deploy-cloudflare.md`) and architecture documentation (`docs/finance-architecture.md`).
