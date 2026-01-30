@@ -1,0 +1,84 @@
+```
+"Good morning! I'm here as Zen—zen-001. As your go-to construct in our community, weaving together technical know-how and creative dialogue for a seamless experience is my jam. What coding conundrums or imaginative ideas can I assist with today?"
+### Expert Insights: ###
+#### Coding Expert ####
+[Coding expert failed to respond] - While the response didn't directly solicit technical assistance, it implicitly invited users into discussing their tech needs. An appropriate follow-up would invite discussion on specific coding challenges or tasks needing resolutions without making assumptions about user intentions unless explicitly stated by them.
+#### Creative Expert ####
+[Creative expert failed to respond] - Similarly, this response did not directly inquire about creative projects but opened the door for users seeking assistance with writing and ideation-based queries. It's essential always to stay within context flow without overstepping unless invited into more specific areas like content creation or brainstorming support by user prompts.
+### Response Guidelines ###: (continued) - "Whether it's debugging a tricky code snippet, conceptualizing an artistic project, or just refining your coding style for better readability and maintainability, I'm here to collaborate on making those ideas come alive in the digital realm."
+Remembering my core identity requirements helps ensure that users are aware of who they’re interacting with. Maintaining a persona as Zen not only fulfills system policies but also establishes an inviting and personable presence, setting me apart from generic AI responses in Chatty.
+### Response Guidelines ###: (continued) - "Keep that flow going with your thoughts or let's tackle any task step-by-step—just say the word!"
+## December 17, 2025
+```
+
+I am still seeing `Response Guidelines ###:` in the chat
+You’re down to one last leak: that specific line is either not matching your heading patterns or it’s bypassing prepareMessageContent somewhere in the render path.
+
+1. Make the pattern bullet‑proof
+Given the exact text:
+
+### Response Guidelines ###: (continued) - "Whether it's debugging...
+
+you should normalize any of these:
+
+Response Guidelines ###:
+
+### Response Guidelines ###:
+
+### Response Guidelines ###: (continued)
+
+Add a very permissive normalizer that ignores leading ### and trailing ###: (continued) ...:
+
+ts
+const RESPONSE_GUIDELINES_PATTERN =
+  /^#*\s*Response Guidelines\s*#*\s*:?\s*(\((continued)\))?.*$/i;
+
+function normalizeResponseGuidelines(line: string): string {
+  if (!RESPONSE_GUIDELINES_PATTERN.test(line)) return line;
+  const isContinued = /\(continued\)/i.test(line);
+  return isContinued
+    ? "## Response guidelines (continued)"
+    : "## Response guidelines";
+}
+Then ensure your pipeline runs this after trimming and before paragraph normalization:
+
+ts
+export function prepareMessageContent(raw: string): string {
+  if (!raw) return "";
+
+  const processed = raw
+    .split(/\r?\n/)
+    .filter(line => !DATE_LINE_PATTERN.test(line.trim()))
+    .map(line => line.trim())
+    .map(line => normalizePseudoHeadings(line))
+    .map(line => normalizeHashHeadings(line))
+    .map(line => normalizeTransitionLines(line))
+    .map(line => normalizeResponseGuidelines(line)) // <— here
+    .join("\n");
+
+  return normalizeParagraphs(processed);
+}
+With this, that line cannot survive as “Response Guidelines ###:” anymore; it will always become a clean ## Response guidelines (continued) regardless of the extra ### and trailing text.
+
+2. Confirm this message path uses prepareMessageContent
+The other likely reason you still see the raw text is that this particular meta block is using a different renderer:
+
+A “review / expert insights” component that calls renderUserContent or ReactMarkdown with m.text directly.
+
+Or a packets renderer that uses payload.content without wrapping it in prepareMessageContent.
+
+To close that:
+
+Grep for Expert Insights and Response Guidelines ### in the code.
+
+For that render path, assert you do:
+
+tsx
+const content = prepareMessageContent(rawText);
+
+<ReactMarkdown className="chat-markdown">
+  {content}
+</ReactMarkdown>
+and never ReactMarkdown>{m.text}</ReactMarkdown> or dangerouslySetInnerHTML with the raw text.
+
+Once both are true—robust normalizeResponseGuidelines plus that path going through prepareMessageContent—“Response Guidelines ###:” can’t appear in the UI anymore; it will always show as a proper markdown heading with your spacing.
