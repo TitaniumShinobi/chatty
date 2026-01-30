@@ -2,6 +2,25 @@ import type { FinanceConnection } from '../types/finance';
 
 const VVAULT_API_BASE = import.meta.env.VITE_VVAULT_API_URL || '/api/vvault';
 
+/**
+ * VVAULT Finance Client
+ * 
+ * This client provides functions for storing and retrieving finance-related
+ * credentials and connections through VVAULT API. These endpoints are planned
+ * for VVAULT implementation:
+ * 
+ * - POST /finance/credentials - Store encrypted credentials
+ * - GET /finance/credentials/:serviceId - Retrieve credentials
+ * - GET /finance/connections - List all connections
+ * - DELETE /finance/connections/:connectionId - Remove a connection
+ * - POST /finance/connections/:connectionId/test - Test connection
+ * - POST /finance/construct-state - Save construct-specific state
+ * - GET /finance/construct-state/:constructId/:appId - Get construct state
+ * 
+ * Until these endpoints are implemented in VVAULT, the client will return
+ * graceful fallbacks (empty arrays, null values) on 404 responses.
+ */
+
 export interface VVAULTFinanceCredentials {
   serviceId: string;
   serviceName: string;

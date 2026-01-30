@@ -11,6 +11,9 @@ import {
   Newspaper,
   BarChart3,
   Clock,
+  CheckCircle,
+  XCircle,
+  Loader2,
 } from 'lucide-react';
 import {
   useMarketSnapshot,
@@ -19,6 +22,7 @@ import {
   useKalshiMarkets,
   useFinanceInsights,
 } from '../../hooks/useFinanceData';
+import { useFXShinobiStatus } from '../../hooks/useServiceStatus';
 import type { InsightItem, KalshiMarket, TradeRecord } from '../../types/finance';
 
 const FXShinobiPage: React.FC = () => {
@@ -33,6 +37,20 @@ const FXShinobiPage: React.FC = () => {
   const { data: performance, loading: perfLoading } = usePerformanceMetrics();
   const { data: markets, loading: marketsLoading } = useKalshiMarkets({ autoRefresh: true });
   const { data: insights, loading: insightsLoading } = useFinanceInsights({ autoRefresh: true });
+  const { status: fxshinobiStatus, refresh: refreshStatus } = useFXShinobiStatus(true, 60000);
+
+  const getStatusIcon = () => {
+    switch (fxshinobiStatus.status) {
+      case 'connected':
+        return <CheckCircle size={14} className="text-green-500" />;
+      case 'error':
+        return <AlertCircle size={14} className="text-amber-500" />;
+      case 'disconnected':
+        return <XCircle size={14} className="text-red-500" />;
+      default:
+        return <Loader2 size={14} className="animate-spin text-gray-400" />;
+    }
+  };
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -82,11 +100,20 @@ const FXShinobiPage: React.FC = () => {
               <TrendingUp size={24} className="text-green-500" />
               FXShinobi
             </h1>
-            <p className="text-sm opacity-70">Trading Dashboard</p>
+            <p className="text-sm opacity-70 flex items-center gap-2">
+              Trading Dashboard
+              <span className="flex items-center gap-1 text-xs" title={fxshinobiStatus.message}>
+                {getStatusIcon()}
+                <span className={fxshinobiStatus.status === 'connected' ? 'text-green-500' : fxshinobiStatus.status === 'error' ? 'text-amber-500' : fxshinobiStatus.status === 'disconnected' ? 'text-red-500' : 'opacity-50'}>
+                  {fxshinobiStatus.status === 'connected' ? 'Live' : fxshinobiStatus.status === 'checking' ? 'Checking...' : 'Offline'}
+                </span>
+              </span>
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={() => refreshStatus()}
             className="p-2 rounded-lg transition-colors hover:bg-[var(--chatty-highlight)]"
             title="Refresh"
           >

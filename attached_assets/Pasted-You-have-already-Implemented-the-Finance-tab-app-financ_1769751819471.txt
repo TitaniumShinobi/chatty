@@ -1,0 +1,130 @@
+You have already:
+
+
+Implemented the Finance tab:
+
+
+/app/finance overview hub.
+
+
+/app/finance/fxshinobi full dashboard.
+
+
+
+
+Built a financeAppRegistry, FXShinobi dashboard UI, TradingView chart widget embed, Kalshi‑style tiles, AI insights panel, trade history table, and VVAULT client integration.
+
+
+Added Cloudflare deployment doc and a finance architecture doc; current frontend uses mock data fallbacks while backend/Supabase is wired.
+
+
+Your goal now is to switch the Finance tab from mock data to real FXShinobi + Supabase + VVAULT, and make Chatty ready to deploy behind Cloudflare.
+Tasks:
+
+
+Replace mock data with live data:
+
+
+Add configuration for:
+
+
+FXSHINOBI_API_BASE_URL
+
+
+SUPABASE_URL, SUPABASE_ANON_KEY
+
+
+VVAULT_URL, VVAULT_SERVICE_TOKEN
+
+
+
+
+In the FXShinobi dashboard hooks/components:
+
+
+Call real FXShinobi endpoints (/api/snapshot, /api/trades/history, /api/performance, /api/status) instead of mock services.
+
+
+Use Supabase client to pull any additional historical data you documented.
+
+
+
+
+Keep graceful fallbacks, but make the default path “live” when env vars are present.
+
+
+
+
+VVAULT integration for user connections:
+
+
+Wire the “Connect Service” / broker linking UX so that:
+
+
+On save, it calls VVAULT’s /api/vault/credentials to store user‑linked finance credentials.
+
+
+On load, it calls /api/vault/credentials/{key_name} to populate existing connections.
+
+
+
+
+Ensure key names and payloads match what VVAULT’s docs/role-in-ecosystem.md specifies.
+
+
+
+
+Verification UI:
+
+
+On /app/finance and /app/finance/fxshinobi, surface:
+
+
+FXShinobi engine status (from /api/status),
+
+
+VVAULT status (from your VVAULT health endpoint),
+
+
+Supabase connectivity (simple check or inferred from data loads).
+
+
+
+
+Provide clear “not configured” messages when any piece is missing, instead of silent failure.
+
+
+
+
+Cloudflare deployment readiness:
+
+
+Confirm build command and output folder for production (Vite).
+
+
+Make sure the app works as an SPA when served behind Cloudflare (history fallback / client‑side routing).
+
+
+Update docs/deploy-cloudflare.md with:
+
+
+Final list of required env vars (Chatty, FXShinobi, Supabase, VVAULT).
+
+
+Example Cloudflare config (or notes) for proxying API requests to FXShinobi and VVAULT.
+
+
+
+
+
+
+Deliverables:
+
+
+Finance tab and FXShinobi dashboard fully reading from live FXShinobi API + Supabase, using VVAULT for credentials.
+
+
+“Connection status” indicators visible in the Finance UI.
+
+
+Updated Cloudflare deploy doc that I can follow to point a domain at Chatty and have everything working end‑to‑end.

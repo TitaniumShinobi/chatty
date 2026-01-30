@@ -1,7 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, BarChart3, Wallet, Zap, ChevronRight, Plus } from 'lucide-react';
+import { TrendingUp, BarChart3, Wallet, Zap, ChevronRight, Plus, Link2 } from 'lucide-react';
 import { getEnabledFinanceApps, type FinanceApp } from '../types/finance';
+import { ServiceStatusPanel } from '../components/finance/ServiceStatusIndicator';
+import { useAllServicesStatus } from '../hooks/useServiceStatus';
+import { usePerformanceMetrics } from '../hooks/useFinanceData';
+import ConnectServiceModal from '../components/finance/ConnectServiceModal';
 
 const iconMap: Record<string, React.ReactNode> = {
   TrendingUp: <TrendingUp size={28} />,
@@ -13,6 +17,9 @@ const iconMap: Record<string, React.ReactNode> = {
 const FinancePage: React.FC = () => {
   const navigate = useNavigate();
   const apps = getEnabledFinanceApps();
+  const { statuses, loading: statusLoading, refresh: refreshStatus } = useAllServicesStatus(false);
+  const { data: performance } = usePerformanceMetrics();
+  const [showConnectModal, setShowConnectModal] = useState(false);
 
   const handleAppClick = (app: FinanceApp) => {
     navigate(app.route);
@@ -78,15 +85,17 @@ const FinancePage: React.FC = () => {
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <span className="opacity-70 text-sm">Today's P&L</span>
-                  <span className="text-green-500 font-medium">+$247.50</span>
+                  <span className={`font-medium ${performance && performance.totalPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    {performance ? `${performance.totalPnl >= 0 ? '+' : ''}$${Math.abs(performance.totalPnl).toFixed(2)}` : '--'}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="opacity-70 text-sm">Open Positions</span>
-                  <span className="font-medium">3</span>
+                  <span className="opacity-70 text-sm">Total Trades</span>
+                  <span className="font-medium">{performance?.totalTrades ?? '--'}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="opacity-70 text-sm">Win Rate (30d)</span>
-                  <span className="font-medium">68%</span>
+                  <span className="font-medium">{performance ? `${(performance.winRate * 100).toFixed(0)}%` : '--'}</span>
                 </div>
               </div>
             </div>
@@ -164,24 +173,49 @@ const FinancePage: React.FC = () => {
             </div>
           </div>
 
-          <div
-            className="rounded-xl p-6"
-            style={{
-              backgroundColor: 'var(--chatty-bg-modal, var(--chatty-highlight))',
-              border: '1px solid var(--chatty-border)',
-            }}
-          >
-            <h2 className="text-lg font-semibold mb-4">Connected Services</h2>
-            <div className="text-center py-8 opacity-50">
-              <Wallet size={32} className="mx-auto mb-2" />
-              <p className="text-sm">No services connected yet</p>
-              <p className="text-xs mt-1">
-                Connect your broker or trading platform to get started
-              </p>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div
+              className="rounded-xl p-6"
+              style={{
+                backgroundColor: 'var(--chatty-bg-modal, var(--chatty-highlight))',
+                border: '1px solid var(--chatty-border)',
+              }}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold">Connected Services</h2>
+                <button
+                  onClick={() => setShowConnectModal(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors hover:bg-[var(--chatty-highlight)]"
+                  style={{ border: '1px solid var(--chatty-border)' }}
+                >
+                  <Link2 size={14} />
+                  Connect
+                </button>
+              </div>
+              <div className="text-center py-8 opacity-50">
+                <Wallet size={32} className="mx-auto mb-2" />
+                <p className="text-sm">No services connected yet</p>
+                <p className="text-xs mt-1">
+                  Connect your broker or trading platform to get started
+                </p>
+              </div>
             </div>
+
+            <ServiceStatusPanel
+              statuses={statuses}
+              loading={statusLoading}
+              onRefresh={refreshStatus}
+            />
           </div>
         </div>
       </div>
+
+      <ConnectServiceModal
+        isOpen={showConnectModal}
+        onClose={() => setShowConnectModal(false)}
+        userId="current-user"
+        onSuccess={() => refreshStatus()}
+      />
     </div>
   );
 };

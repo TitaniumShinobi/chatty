@@ -56,11 +56,16 @@ This runs the Express server in production mode on port 5000.
 
 ### Finance Integration Variables
 
-| Variable | Description |
-|----------|-------------|
-| `VITE_FXSHINOBI_API_URL` | FXShinobi API base URL (defaults to `/api/fxshinobi`) |
-| `VITE_VVAULT_API_URL` | VVAULT API base URL (defaults to `/api/vvault`) |
-| `VVAULT_API_BASE_URL` | Server-side VVAULT API URL |
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `FXSHINOBI_API_BASE_URL` | FXShinobi engine API URL (server-side) | Yes (for live data) |
+| `VITE_FXSHINOBI_API_URL` | FXShinobi API base URL (frontend, defaults to `/api/fxshinobi`) | No |
+| `VITE_VVAULT_API_URL` | VVAULT API base URL (frontend, defaults to `/api/vvault`) | No |
+| `VVAULT_API_BASE_URL` | Server-side VVAULT API URL | Yes |
+| `VITE_SUPABASE_URL` | Supabase URL for frontend finance data | Optional |
+| `VITE_SUPABASE_ANON_KEY` | Supabase anon key for frontend | Optional |
+
+**Note:** The FXShinobi dashboard will show "Offline" status and use mock data fallbacks if `FXSHINOBI_API_BASE_URL` is not configured or unreachable. This is by design for graceful degradation.
 
 ### Cloudflare Turnstile (Bot Protection)
 
@@ -161,6 +166,43 @@ curl https://yourdomain.com/api/health
 - [ ] Test on mobile devices
 - [ ] Verify SSL certificate is valid
 - [ ] Check Cloudflare Analytics for errors
+
+## Finance Integration Verification
+
+1. **Check Service Status Panel** - Navigate to `/app/finance` and verify the Service Status panel shows:
+   - FXShinobi: "Connected" (green) or "Offline" (red) if engine not running
+   - VVAULT: "Connected" (green)
+   - Supabase: "Connected" (green)
+
+2. **FXShinobi Dashboard** - Navigate to `/app/finance/fxshinobi`:
+   - Header should show "Live" (green) or "Offline" (red) status
+   - TradingView chart should load (requires internet)
+   - Performance metrics, markets, and insights should display (live or mock data)
+
+3. **API Endpoints** - Test these endpoints:
+   ```bash
+   # FXShinobi status
+   curl https://yourdomain.com/api/fxshinobi/status
+   
+   # VVAULT health
+   curl https://yourdomain.com/api/vvault/health
+   
+   # Chatty health
+   curl https://yourdomain.com/api/health
+   ```
+
+## Proxy Configuration for FXShinobi
+
+If FXShinobi runs on a separate server, configure Cloudflare to proxy API requests:
+
+### Option A: Same Origin (Recommended)
+Deploy FXShinobi behind the same Cloudflare proxy. The Express server (`/api/fxshinobi/*`) will forward requests to `FXSHINOBI_API_BASE_URL`.
+
+### Option B: CORS-Enabled Separate Domain
+If FXShinobi runs on a different domain:
+1. Configure CORS on FXShinobi to allow your Chatty domain
+2. Set `FXSHINOBI_API_BASE_URL` to the FXShinobi server URL
+3. Ensure both domains have valid SSL certificates
 
 ## Troubleshooting
 
