@@ -579,7 +579,7 @@ export default function Home() {
       {/* Ask Chatty Input Field */}
       <form onSubmit={handleSubmit} className="w-full max-w-2xl mb-6">
         <div
-          className="flex items-center gap-2 px-4 py-3 rounded-xl transition-all"
+          className="flex items-center gap-2 px-4 py-2 rounded-full transition-all"
           style={{
             backgroundColor: "var(--chatty-bg-message)",
             boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
@@ -595,12 +595,12 @@ export default function Home() {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             placeholder="Ask Zen anything..."
-            className="flex-1 bg-transparent outline-none text-lg chatty-placeholder"
-            style={{ color: "var(--chatty-text)" }}
+            className="flex-1 bg-transparent outline-none text-base chatty-placeholder"
+            style={{ color: "var(--chatty-text)", minHeight: "24px" }}
           />
           <button
             type="button"
-            className="p-2 rounded-lg transition-colors flex-shrink-0"
+            className="p-2 rounded-full transition-colors flex-shrink-0"
             style={{ color: "var(--chatty-text)", opacity: 0.7 }}
             onMouseEnter={(e) => {
               e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";

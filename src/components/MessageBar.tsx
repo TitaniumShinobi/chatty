@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Plus, Mic, Send, Paperclip } from "lucide-react";
+import { Plus, Mic, Paperclip } from "lucide-react";
 
 interface MessageBarProps {
   onSubmit: (text: string, files?: File[]) => void;
@@ -90,8 +90,6 @@ export default function MessageBar({
   const handleFileClick = () => {
     fileInputRef.current?.click();
   };
-
-  const hasContent = inputValue.trim() || files.length > 0;
 
   return (
     <form onSubmit={handleSubmit} className="w-full">
@@ -201,28 +199,6 @@ export default function MessageBar({
           </button>
         )}
 
-        <button
-          type="submit"
-          disabled={disabled || !hasContent}
-          className="p-2 rounded-full transition-all flex-shrink-0"
-          style={{
-            backgroundColor: hasContent ? "var(--chatty-button)" : "transparent",
-            color: hasContent ? "var(--chatty-text-inverse, #fffff0)" : "var(--chatty-text)",
-            opacity: hasContent ? 1 : 0.5,
-          }}
-          onMouseEnter={(e) => {
-            if (hasContent) {
-              e.currentTarget.style.backgroundColor = "var(--chatty-hover)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (hasContent) {
-              e.currentTarget.style.backgroundColor = "var(--chatty-button)";
-            }
-          }}
-        >
-          <Send size={20} />
-        </button>
       </div>
     </form>
   );
