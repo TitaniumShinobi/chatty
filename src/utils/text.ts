@@ -105,8 +105,18 @@ export function ensureParagraphBreaks(text: string): string {
     .join("");
 }
 
+export function stripDateLines(raw: string): string {
+  if (!raw) return "";
+  return raw
+    .split(/\r?\n/)
+    .filter(line => !DATE_LINE_PATTERN.test(line.trim()))
+    .join("\n")
+    .trim();
+}
+
 export function prepareMessageContent(raw: string | undefined): string {
   const sanitized = sanitizeMessageText(raw || "");
   const withBreaks = ensureParagraphBreaks(sanitized);
-  return normalizeParagraphs(withBreaks);
+  const noDates = stripDateLines(withBreaks);
+  return normalizeParagraphs(noDates);
 }

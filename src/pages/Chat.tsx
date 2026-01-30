@@ -11,7 +11,7 @@ import { MessageOptionsMenu } from "../components/MessageOptionsMenu";
 import { VVAULTConversationManager } from "../lib/vvaultConversationManager";
 import { getUserId } from "../lib/auth";
 import MessageBar from "../components/MessageBar";
-import { prepareMessageContent } from "../utils/text";
+import { prepareMessageContent, stripDateLines } from "../utils/text";
 
 type Message = {
   id: string;
@@ -882,7 +882,7 @@ export default function Chat() {
                           >
                             <div className="break-words" style={{ maxWidth: "100%", minWidth: 0, width: "100%" }}>
                               <ReactMarkdown components={userMessageMarkdownComponents} remarkPlugins={[remarkBreaks]} rehypePlugins={[rehypeRaw]}>
-                                {content}
+                                {stripDateLines(content)}
                               </ReactMarkdown>
                             </div>
                           </div>
@@ -949,7 +949,7 @@ export default function Chat() {
                 style={{ color: "var(--chatty-text)", lineHeight: 1.7 }}
               >
                 <ReactMarkdown remarkPlugins={[remarkBreaks]}>
-                  {zenMarkdown}
+                  {stripDateLines(zenMarkdown)}
                 </ReactMarkdown>
               </div>
             </div>
@@ -1389,7 +1389,7 @@ export default function Chat() {
           rehypePlugins={[rehypeRaw]}
           className="prose chat-markdown"
         >
-          {messageText || ""}
+          {stripDateLines(messageText || "")}
         </ReactMarkdown>
       </div>
     );
