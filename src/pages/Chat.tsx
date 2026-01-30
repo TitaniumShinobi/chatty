@@ -426,7 +426,8 @@ export default function Chat() {
     
     // Pattern for date headers - matches multiple formats on their own line:
     // "December 17, 2025" (with comma), "December 17 2025" (without comma), "November 2025" (month-year only)
-    const dateHeaderPattern = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2},?\s+)?\d{4}\s*$/gm;
+    // Also matches with optional markdown heading prefix (## December 17, 2025)
+    const dateHeaderPattern = /^(?:#{1,6}\s*)?(January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2},?\s+)?\d{4}\s*$/gm;
     
     // Pattern for role labels like "Coding Expert:" "Creative Expert:" etc
     const roleLabelPattern = /^(Coding Expert|Creative Expert|Conversational Expert):\s*$/gm;
@@ -434,7 +435,7 @@ export default function Chat() {
     // Clean up the text
     let cleaned = text
       .replace(vvaultTimestampPattern, "") // Remove VVAULT timestamp prefixes
-      .replace(dateHeaderPattern, "")       // Remove date headers
+      .replace(dateHeaderPattern, "")       // Remove date headers (with or without markdown ##)
       .replace(roleLabelPattern, "")        // Remove role labels
       .replace(/\n{3,}/g, "\n\n")          // Collapse multiple newlines
       .trim();
@@ -1479,15 +1480,6 @@ export default function Chat() {
           </div>
         )}
 
-        {thread.messages.length > 0 &&
-          (() => {
-            // Debug: Check for date headers (by flag OR content pattern)
-            const dateHeaderMessages = thread.messages.filter((m: any) => isDateHeaderMessage(m));
-            if (dateHeaderMessages.length > 0) {
-              console.log(`✅ [Chat] Filtering ${dateHeaderMessages.length} date headers from ${thread.messages.length} messages`);
-            }
-            return null;
-          })()}
         {thread.messages.length > 0 &&
           thread.messages
             .filter((m: any) => !isDateHeaderMessage(m)) // Hide date headers from UI (by flag OR content pattern)
