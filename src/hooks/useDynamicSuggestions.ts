@@ -42,13 +42,10 @@ export function useDynamicSuggestions() {
       }
 
       const data: SuggestionsResponse = await response.json();
-      console.log("[useDynamicSuggestions] API response:", data);
 
       if (data.ok && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
-        console.log("[useDynamicSuggestions] Setting suggestions:", data.suggestions);
         setSuggestions(data.suggestions);
       } else {
-        console.log("[useDynamicSuggestions] Using defaults");
         setSuggestions(DEFAULT_SUGGESTIONS);
       }
     } catch (err) {
