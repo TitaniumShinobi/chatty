@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useOutletContext, useNavigate } from "react-router-dom";
 import { fetchMe, type User } from "../lib/auth";
-import { Layers, Mic, Plus } from "lucide-react";
+import { Layers, Mic, Plus, RefreshCw } from "lucide-react";
 import { useTheme } from "../lib/ThemeContext";
+import { useDynamicSuggestions } from "../hooks/useDynamicSuggestions";
 
 // Logo assets
 import chattyChristmas from "@assets/logo/christmas/Chatty_Christmas.svg";
@@ -39,6 +40,7 @@ export default function Home() {
   const [, setUser] = useState<User | null>(null);
   const [greeting, setGreeting] = useState("");
   const [inputValue, setInputValue] = useState("");
+  const { suggestions: suggestedPrompts, isLoading: suggestionsLoading, refresh: refreshSuggestions } = useDynamicSuggestions();
   const primaryHoverFrames = useMemo(
     () =>
       isChristmasTheme
@@ -440,89 +442,6 @@ export default function Home() {
     dispatchPrompt(inputValue);
   };
 
-  // Time-aware suggestions
-  const [suggestedPrompts, setSuggestedPrompts] = useState([
-    { emoji: "🧠", text: "Need a late-night brainstorm?" },
-    { emoji: "🌙", text: "Let's explore an idea together." },
-    { emoji: "🎨", text: "Compose a creative concept." },
-    { emoji: "🎧", text: "Compose a short synthwave track description." },
-  ]);
-
-  // Load time-aware suggestions
-  useEffect(() => {
-    const loadTimeAwareSuggestions = async () => {
-      try {
-        const { getTimeContext } = await import("../lib/timeAwareness");
-        const timeContext = await getTimeContext();
-
-        const hour = timeContext.hour;
-        const isWeekend = timeContext.isWeekend;
-
-        let prompts: Array<{ emoji: string; text: string }> = [];
-
-        // Morning suggestions (5 AM - 12 PM)
-        if (hour >= 5 && hour < 12) {
-          prompts = [
-            { emoji: "☀️", text: "Good morning! What should we build today?" },
-            { emoji: "🚀", text: "Start a new project idea." },
-            { emoji: "📝", text: "Plan your day with me." },
-            { emoji: "💡", text: "Brainstorm something creative." },
-          ];
-        }
-        // Afternoon suggestions (12 PM - 5 PM)
-        else if (hour >= 12 && hour < 17) {
-          prompts = [
-            {
-              emoji: "🌤️",
-              text: "Afternoon session - what are you working on?",
-            },
-            { emoji: "🔧", text: "Debug or optimize something." },
-            { emoji: "📚", text: "Learn something new together." },
-            { emoji: "🎯", text: "Focus on a specific goal." },
-          ];
-        }
-        // Evening suggestions (5 PM - 9 PM)
-        else if (hour >= 17 && hour < 21) {
-          prompts = [
-            { emoji: "🌆", text: "Evening wind-down - what's on your mind?" },
-            { emoji: "🎨", text: "Create something artistic." },
-            { emoji: "📖", text: "Explore a topic deeply." },
-            { emoji: "💭", text: "Reflect on the day." },
-          ];
-        }
-        // Night suggestions (9 PM - 5 AM)
-        else {
-          prompts = [
-            {
-              emoji: "🌙",
-              text: "Late night session - what are you thinking about?",
-            },
-            { emoji: "🧠", text: "Deep dive into an idea." },
-            {
-              emoji: "🎧",
-              text: "Compose a short synthwave track description.",
-            },
-            { emoji: "✨", text: "Explore something creative." },
-          ];
-        }
-
-        // Weekend adjustments
-        if (isWeekend) {
-          prompts = prompts.map((p) => ({
-            ...p,
-            text: p.text.replace(/today|day/, "this weekend"),
-          }));
-        }
-
-        setSuggestedPrompts(prompts);
-      } catch (error) {
-        console.warn("Failed to load time-aware suggestions:", error);
-        // Keep default suggestions on error
-      }
-    };
-
-    loadTimeAwareSuggestions();
-  }, []);
 
   const isCollapsedFrame = logoSrc.includes("chatty_collapsed");
   const isCycleFrame =
@@ -620,24 +539,53 @@ export default function Home() {
 
       {/* Suggested Prompts */}
       <div className="w-full max-w-2xl space-y-2">
-        {suggestedPrompts.map((prompt, index) => (
-          <button
-            key={index}
-            onClick={() => dispatchPrompt(prompt.text)}
-            className="flex items-center gap-3 w-full text-left px-1 py-2 rounded-md transition-colors"
-            style={{ color: "var(--chatty-text)" }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "transparent";
-            }}
-          >
-            <Layers size={18} />
-            <span className="text-lg">{prompt.emoji}</span>
-            <span className="text-sm md:text-base">{prompt.text}</span>
-          </button>
-        ))}
+        {suggestionsLoading ? (
+          <div className="flex items-center justify-center py-4">
+            <RefreshCw
+              size={20}
+              className="animate-spin"
+              style={{ color: "var(--chatty-text)", opacity: 0.5 }}
+            />
+          </div>
+        ) : (
+          <>
+            {suggestedPrompts.map((prompt, index) => (
+              <button
+                key={index}
+                onClick={() => dispatchPrompt(prompt.text)}
+                className="flex items-center gap-3 w-full text-left px-1 py-2 rounded-md transition-colors"
+                style={{ color: "var(--chatty-text)" }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "transparent";
+                }}
+              >
+                <Layers size={18} />
+                <span className="text-lg">{prompt.emoji}</span>
+                <span className="text-sm md:text-base">{prompt.text}</span>
+              </button>
+            ))}
+            <button
+              onClick={refreshSuggestions}
+              className="flex items-center gap-2 mx-auto mt-3 px-3 py-1.5 rounded-full transition-colors text-sm"
+              style={{ color: "var(--chatty-text)", opacity: 0.6 }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
+                e.currentTarget.style.opacity = "1";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "transparent";
+                e.currentTarget.style.opacity = "0.6";
+              }}
+              title="Get new suggestions"
+            >
+              <RefreshCw size={14} />
+              <span>New ideas</span>
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
