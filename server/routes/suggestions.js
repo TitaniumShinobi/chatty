@@ -111,8 +111,8 @@ Guidelines:
 - Make them actionable - things the user can actually discuss
 - Vary the types: mix practical, creative, reflective, and exploratory prompts
 
-Respond with a JSON array of exactly 4 objects, each with "emoji" and "text" fields. Example format:
-[{"emoji": "🌅", "text": "Plan your morning priorities"}, ...]`;
+Respond with a JSON array of exactly 4 objects, each with a "text" field only (no emojis). Example format:
+[{"text": "Plan your morning priorities"}, {"text": "Start a creative project"}, ...]`;
 
     const userPrompt = activity.hasHistory
       ? `Generate 4 personalized conversation starters for a returning user. Consider their recent activity and the current ${timeContext.period}.`
@@ -167,28 +167,28 @@ Respond with a JSON array of exactly 4 objects, each with "emoji" and "text" fie
 function getDefaultSuggestions(period) {
   const defaults = {
     morning: [
-      { emoji: "☀️", text: "What should we focus on today?" },
-      { emoji: "🚀", text: "Start a new project idea" },
-      { emoji: "📝", text: "Plan your day with me" },
-      { emoji: "💡", text: "Brainstorm something creative" },
+      { text: "What should we focus on today?" },
+      { text: "Start a new project idea" },
+      { text: "Plan your day with me" },
+      { text: "Brainstorm something creative" },
     ],
     afternoon: [
-      { emoji: "🌤️", text: "What are you working on?" },
-      { emoji: "🔧", text: "Debug or optimize something" },
-      { emoji: "📚", text: "Learn something new together" },
-      { emoji: "🎯", text: "Focus on a specific goal" },
+      { text: "What are you working on?" },
+      { text: "Debug or optimize something" },
+      { text: "Learn something new together" },
+      { text: "Focus on a specific goal" },
     ],
     evening: [
-      { emoji: "🌆", text: "What's on your mind?" },
-      { emoji: "🎨", text: "Create something artistic" },
-      { emoji: "📖", text: "Explore a topic deeply" },
-      { emoji: "💭", text: "Reflect on the day" },
+      { text: "What's on your mind?" },
+      { text: "Create something artistic" },
+      { text: "Explore a topic deeply" },
+      { text: "Reflect on the day" },
     ],
     night: [
-      { emoji: "🌙", text: "What are you thinking about?" },
-      { emoji: "🧠", text: "Deep dive into an idea" },
-      { emoji: "🎧", text: "Explore something creative" },
-      { emoji: "✨", text: "Let's brainstorm together" },
+      { text: "What are you thinking about?" },
+      { text: "Deep dive into an idea" },
+      { text: "Explore something creative" },
+      { text: "Let's brainstorm together" },
     ],
   };
   

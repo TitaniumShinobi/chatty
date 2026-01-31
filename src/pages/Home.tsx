@@ -563,7 +563,6 @@ export default function Home() {
                 }}
               >
                 <Layers size={18} />
-                <span className="text-lg">{prompt.emoji}</span>
                 <span className="text-sm md:text-base">{prompt.text}</span>
               </button>
             ))}

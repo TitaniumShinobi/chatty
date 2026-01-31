@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 
 interface Suggestion {
-  emoji: string;
   text: string;
 }
 
@@ -17,10 +16,10 @@ interface SuggestionsResponse {
 }
 
 const DEFAULT_SUGGESTIONS: Suggestion[] = [
-  { emoji: "🌤️", text: "What are you working on?" },
-  { emoji: "🔧", text: "Debug or optimize something" },
-  { emoji: "📚", text: "Learn something new together" },
-  { emoji: "🎯", text: "Focus on a specific goal" },
+  { text: "What are you working on?" },
+  { text: "Debug or optimize something" },
+  { text: "Learn something new together" },
+  { text: "Focus on a specific goal" },
 ];
 
 export function useDynamicSuggestions() {
