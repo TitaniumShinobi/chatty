@@ -151,7 +151,7 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
       const isOandaActive = data.active_broker_id === 'oanda' && oandaConfigured;
       
       const activeBrokerFromArray = data.brokers?.find(
-        (b: { id: string; configured?: boolean; connected?: boolean }) => b.id === data.active_broker_id
+        (b: { id: string; name?: string; configured?: boolean; connected?: boolean }) => b.id === data.active_broker_id
       );
       const brokerConfigured = activeBrokerFromArray?.configured ?? data.broker_configured ?? isOandaActive;
       
@@ -162,7 +162,7 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
         brokerConfigured,
         oandaConfigured,
         activeBrokerId: data.active_broker_id ?? null,
-        activeBrokerName: data.active_broker_name ?? (isOandaActive ? 'OANDA' : null),
+        activeBrokerName: activeBrokerFromArray?.name ?? data.active_broker_name ?? (isOandaActive ? 'OANDA' : null),
         accountType: data.account_type || (data.live_mode ? 'live' : 'demo'),
         environment: data.environment || (data.live_mode ? 'live' : 'demo'),
         accountBalance: data.account?.balance ?? data.account_balance ?? null,
