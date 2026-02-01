@@ -220,22 +220,32 @@ const FXShinobiPage: React.FC = () => {
                 {fxshinobiStatus.liveMode ? 'LIVE' : 'DEMO'}
               </span>
               {(() => {
-                const isOandaActive = fxshinobiStatus.activeBrokerId === 'oanda';
-                const oandaConnected = isOandaActive && fxshinobiStatus.oandaConfigured;
                 const activeBroker = fxshinobiStatus.brokers?.find(b => b.id === fxshinobiStatus.activeBrokerId);
-                const isConnected = oandaConnected || activeBroker?.status === 'connected' || fxshinobiStatus.brokerConfigured;
+                const isConfigured = activeBroker?.configured ?? false;
+                const isConnected = activeBroker?.configured && activeBroker?.connected;
                 
-                return isConnected ? (
-                  <span className="flex items-center gap-1 text-xs text-green-400">
-                    <CheckCircle size={12} />
-                    Connected
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1 text-xs text-red-400">
-                    <XCircle size={12} />
-                    Not Configured
-                  </span>
-                );
+                if (isConnected) {
+                  return (
+                    <span className="flex items-center gap-1 text-xs text-green-400">
+                      <CheckCircle size={12} />
+                      Connected
+                    </span>
+                  );
+                } else if (isConfigured) {
+                  return (
+                    <span className="flex items-center gap-1 text-xs text-amber-400">
+                      <AlertCircle size={12} />
+                      Configured (Error)
+                    </span>
+                  );
+                } else {
+                  return (
+                    <span className="flex items-center gap-1 text-xs text-red-400">
+                      <XCircle size={12} />
+                      Not Configured
+                    </span>
+                  );
+                }
               })()}
             </div>
             <button

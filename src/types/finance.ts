@@ -115,16 +115,16 @@ export interface InsightItem {
   priority?: 'high' | 'medium' | 'low';
 }
 
-export type BrokerStatus = 'connected' | 'not_configured' | 'error' | 'pending';
-
 export interface BrokerInfo {
   id: string;
   name: string;
-  status: BrokerStatus;
+  configured: boolean;
+  connected: boolean;
   auth_type: 'api_key' | 'oauth' | 'credentials';
   fields: string[];
   description?: string;
   logo_url?: string;
+  environment?: string;
 }
 
 export interface BrokerCredentials {

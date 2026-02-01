@@ -564,19 +564,34 @@ export function useBrokerRegistry(options: UseFinanceDataOptions = {}) {
       if (!brokersRes.ok) throw new Error('Failed to fetch brokers');
       const json: BrokerRegistryResponse = await brokersRes.json();
       
-      let brokers = json.brokers || [];
+      let brokers = (json.brokers || []).map(b => ({
+        ...b,
+        configured: b.configured ?? false,
+        connected: b.connected ?? false,
+      }));
       let activeBrokerId = json.active_broker_id;
       
       if (statusRes?.ok) {
         const statusJson = await statusRes.json();
-        const oandaConfigured = statusJson.oanda_configured === true;
-        const activeIsOanda = statusJson.active_broker_id === 'oanda';
+        const serverBrokers = statusJson.brokers as Array<{ id: string; name: string; configured: boolean; connected: boolean; environment?: string }> | undefined;
         
-        if (oandaConfigured && activeIsOanda) {
-          brokers = brokers.map(b => 
-            b.id === 'oanda' ? { ...b, status: 'connected' as const } : b
-          );
-          activeBrokerId = activeBrokerId || 'oanda';
+        if (serverBrokers && serverBrokers.length > 0) {
+          brokers = brokers.map(b => {
+            const serverBroker = serverBrokers.find(sb => sb.id === b.id);
+            if (serverBroker) {
+              return { 
+                ...b, 
+                configured: serverBroker.configured ?? false, 
+                connected: serverBroker.connected ?? false, 
+                environment: serverBroker.environment 
+              };
+            }
+            return b;
+          });
+        }
+        
+        if (statusJson.active_broker_id) {
+          activeBrokerId = statusJson.active_broker_id;
         }
       }
       
@@ -589,9 +604,9 @@ export function useBrokerRegistry(options: UseFinanceDataOptions = {}) {
     } catch (err) {
       setState({
         brokers: [
-          { id: 'oanda', name: 'OANDA', status: 'not_configured', auth_type: 'api_key', fields: ['api_key', 'account_id', 'environment'] },
-          { id: 'tastyfx', name: 'TastyFX', status: 'not_configured', auth_type: 'api_key', fields: ['api_key', 'account_id'] },
-          { id: 'ig', name: 'IG', status: 'not_configured', auth_type: 'api_key', fields: ['api_key', 'account_id', 'environment'] },
+          { id: 'oanda', name: 'OANDA', configured: false, connected: false, auth_type: 'api_key', fields: ['api_key', 'account_id', 'environment'] },
+          { id: 'tastyfx', name: 'TastyFX', configured: false, connected: false, auth_type: 'api_key', fields: ['api_key', 'account_id'] },
+          { id: 'ig', name: 'IG', configured: false, connected: false, auth_type: 'api_key', fields: ['api_key', 'account_id', 'environment'] },
         ],
         activeBrokerId: null,
         loading: false,

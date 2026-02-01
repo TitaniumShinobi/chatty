@@ -67,11 +67,14 @@ export interface ServiceStatus {
 }
 
 export interface FXShinobiAccountData {
+  broker_id?: string;
+  connected?: boolean;
   balance?: number | null;
   equity?: number | null;
   pnl_today?: number | null;
   open_pnl?: number | null;
   open_positions?: number;
+  open_trade_count?: number;
   margin_used?: number | null;
   margin_available?: number | null;
 }
@@ -79,7 +82,8 @@ export interface FXShinobiAccountData {
 export interface FXShinobiBrokerData {
   id: string;
   name: string;
-  status: 'connected' | 'not_configured' | 'error';
+  configured: boolean;
+  connected: boolean;
   environment?: string;
 }
 
@@ -145,7 +149,11 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
       
       const oandaConfigured = data.oanda_configured ?? false;
       const isOandaActive = data.active_broker_id === 'oanda' && oandaConfigured;
-      const brokerConfigured = data.broker_configured ?? isOandaActive;
+      
+      const activeBrokerFromArray = data.brokers?.find(
+        (b: { id: string; configured?: boolean; connected?: boolean }) => b.id === data.active_broker_id
+      );
+      const brokerConfigured = activeBrokerFromArray?.configured ?? data.broker_configured ?? isOandaActive;
       
       return {
         name: 'FXShinobi',

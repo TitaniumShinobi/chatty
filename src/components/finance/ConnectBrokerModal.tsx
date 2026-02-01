@@ -54,7 +54,7 @@ export const ConnectBrokerModal: React.FC<ConnectBrokerModalProps> = ({
   const [activeTab, setActiveTab] = useState<'connect' | 'select'>('connect');
 
   const selectedBroker = brokers.find(b => b.id === selectedBrokerId);
-  const configuredBrokers = brokers.filter(b => b.status === 'connected');
+  const configuredBrokers = brokers.filter(b => b.configured && b.connected);
 
   useEffect(() => {
     if (isOpen) {
@@ -143,30 +143,22 @@ export const ConnectBrokerModal: React.FC<ConnectBrokerModalProps> = ({
   };
 
   const getStatusBadge = (broker: BrokerInfo) => {
-    switch (broker.status) {
-      case 'connected':
-        return (
-          <span className="flex items-center gap-1 text-xs text-green-400">
-            <CheckCircle size={12} />
-            Connected
-          </span>
-        );
-      case 'error':
-        return (
-          <span className="flex items-center gap-1 text-xs text-red-400">
-            <XCircle size={12} />
-            Error
-          </span>
-        );
-      case 'pending':
-        return (
-          <span className="flex items-center gap-1 text-xs text-amber-400">
-            <AlertCircle size={12} />
-            Pending
-          </span>
-        );
-      default:
-        return (
+    if (broker.configured && broker.connected) {
+      return (
+        <span className="flex items-center gap-1 text-xs text-green-400">
+          <CheckCircle size={12} />
+          Connected
+        </span>
+      );
+    } else if (broker.configured && !broker.connected) {
+      return (
+        <span className="flex items-center gap-1 text-xs text-red-400">
+          <XCircle size={12} />
+          Error
+        </span>
+      );
+    } else {
+      return (
           <span className="flex items-center gap-1 text-xs text-gray-400">
             <XCircle size={12} />
             Not Configured
@@ -251,7 +243,7 @@ export const ConnectBrokerModal: React.FC<ConnectBrokerModalProps> = ({
                   >
                     {brokers.map((broker) => (
                       <option key={broker.id} value={broker.id}>
-                        {broker.name} {broker.status === 'connected' ? '✓' : ''}
+                        {broker.name} {broker.configured && broker.connected ? '✓' : ''}
                       </option>
                     ))}
                   </select>
