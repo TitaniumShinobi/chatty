@@ -1,0 +1,85 @@
+Chatty isn’t actually talking to your live FXShinobi; it’s talking to its own backend, which says “I don’t know where FXShinobi is.”
+
+That `curl` is hitting **Chatty’s** proxy:
+
+```bash
+curl http://localhost:5000/api/fxshinobi/status
+# Response:
+{
+  "status": "not_configured",
+  "live_mode": false,
+  "broker_configured": false,
+  "active_broker_id": null,
+  "active_broker_name": null,
+  "account_type": "unknown",
+  "message": "FXShinobi API not configured. Set FXSHINOBI_API_BASE_URL environment variable."
+}
+```
+
+So the bug is simply:
+
+- `FXSHINOBI_API_BASE_URL` is **missing or wrong** in Chatty.
+
+### Fix in 3 steps
+
+1. **Get the real FXShinobi URL**
+
+   In the FXShinobi repl (where `worker.py` is running), grab the URL shown in the web/preview tab, e.g.:
+
+   - `https://fxshinobi-<username>.replit.app`  
+   or similar.
+
+   Confirm it works:
+
+   ```bash
+   curl https://fxshinobi-<username>.replit.app/api/status
+   ```
+
+   You should see the good JSON with:
+
+   - `active_broker_id: "oanda"`
+   - `brokers: [ { id: "oanda", configured: true, connected: true, ... } ]`
+   - `account: { balance: ..., equity: ... }`
+
+2. **Set `FXSHINOBI_API_BASE_URL` in Chatty**
+
+   In the **Chatty** repl’s environment / secrets:
+
+   - Add (or update):
+
+     ```text
+     FXSHINOBI_API_BASE_URL = https://fxshinobi-<username>.replit.app
+     ```
+
+   - Save, then restart Chatty’s server/workflow.
+
+3. **Verify Chatty’s proxy now sees the live data**
+
+   Back in the Chatty repl shell:
+
+   ```bash
+   curl http://localhost:5000/api/fxshinobi/status
+   ```
+
+   Now you should see (proxied):
+
+   ```json
+   {
+     "active_broker_id": "oanda",
+     "brokers": [
+       { "id": "oanda", "name": "OANDA", "configured": true, "connected": true, "environment": "practice" }
+     ],
+     "account": {
+       "broker_id": "oanda",
+       "connected": true,
+       "balance": 90569.69,
+       "equity": 90569.69,
+       "open_pnl": 0,
+       "pnl_today": -9317.92,
+       ...
+     },
+     ...
+   }
+   ```
+
+Once that’s true, the FXShinobi page in Chatty will have everything it needs and should immediately flip from “Not configured” to showing OANDA as **Connected** with your real balance/PnL and positions.
