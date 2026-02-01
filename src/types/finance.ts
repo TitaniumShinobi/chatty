@@ -115,6 +115,44 @@ export interface InsightItem {
   priority?: 'high' | 'medium' | 'low';
 }
 
+export type BrokerStatus = 'connected' | 'not_configured' | 'error' | 'pending';
+
+export interface BrokerInfo {
+  id: string;
+  name: string;
+  status: BrokerStatus;
+  auth_type: 'api_key' | 'oauth' | 'credentials';
+  fields: string[];
+  description?: string;
+  logo_url?: string;
+}
+
+export interface BrokerCredentials {
+  broker_id: string;
+  api_key?: string;
+  account_id?: string;
+  environment?: 'demo' | 'live';
+  username?: string;
+  password?: string;
+  [key: string]: string | undefined;
+}
+
+export interface BrokerRegistryResponse {
+  brokers: BrokerInfo[];
+  active_broker_id: string | null;
+  fallback: boolean;
+  message?: string;
+}
+
+export interface BrokerAccountSummary {
+  balance: number | null;
+  equity: number | null;
+  open_pnl: number | null;
+  pnl_today: number | null;
+  open_positions: number;
+  currency: string;
+}
+
 const fxShinobiApp: FinanceApp = {
   id: 'fxshinobi',
   name: 'FXShinobi',

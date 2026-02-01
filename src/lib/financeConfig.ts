@@ -43,10 +43,13 @@ export interface ServiceStatus {
   name: string;
   status: ServiceStatusLevel;
   liveMode?: boolean;
-  oandaConfigured?: boolean;
+  brokerConfigured?: boolean;
+  activeBrokerId?: string | null;
+  activeBrokerName?: string | null;
   accountType?: string;
   environment?: string;
   accountBalance?: number | null;
+  equity?: number | null;
   pnlToday?: number | null;
   openPnl?: number | null;
   message?: string;
@@ -63,10 +66,13 @@ export interface ServiceStatus {
 export interface FXShinobiStatusResponse {
   status: string;
   live_mode?: boolean;
-  oanda_configured?: boolean;
+  broker_configured?: boolean;
+  active_broker_id?: string | null;
+  active_broker_name?: string | null;
   account_type?: string;
   environment?: string;
   account_balance?: number | null;
+  equity?: number | null;
   pnl_today?: number | null;
   open_pnl?: number | null;
   vvault_status?: string;
@@ -94,10 +100,13 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
           name: 'FXShinobi',
           status: 'not_configured',
           liveMode: false,
-          oandaConfigured: false,
+          brokerConfigured: false,
+          activeBrokerId: null,
+          activeBrokerName: null,
           accountType: 'unknown',
           environment: 'unknown',
           accountBalance: null,
+          equity: null,
           pnlToday: null,
           openPnl: null,
           message: 'Not configured',
@@ -114,10 +123,13 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
         name: 'FXShinobi',
         status: statusLevel,
         liveMode: data.live_mode ?? false,
-        oandaConfigured: data.oanda_configured ?? false,
+        brokerConfigured: data.broker_configured ?? false,
+        activeBrokerId: data.active_broker_id ?? null,
+        activeBrokerName: data.active_broker_name ?? null,
         accountType: data.account_type || (data.live_mode ? 'live' : 'demo'),
         environment: data.environment || (data.live_mode ? 'live' : 'demo'),
         accountBalance: data.account_balance ?? null,
+        equity: data.equity ?? null,
         pnlToday: data.pnl_today ?? null,
         openPnl: data.open_pnl ?? null,
         message: data.live_mode
@@ -137,7 +149,9 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
         name: 'FXShinobi',
         status: 'offline',
         liveMode: false,
-        oandaConfigured: false,
+        brokerConfigured: false,
+        activeBrokerId: null,
+        activeBrokerName: null,
         accountType: 'unknown',
         message: `HTTP ${res.status}`,
         lastChecked: new Date().toISOString(),
@@ -148,7 +162,9 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
       name: 'FXShinobi',
       status: 'offline',
       liveMode: false,
-      oandaConfigured: false,
+      brokerConfigured: false,
+      activeBrokerId: null,
+      activeBrokerName: null,
       accountType: 'unknown',
       message: 'API unreachable',
       lastChecked: new Date().toISOString(),

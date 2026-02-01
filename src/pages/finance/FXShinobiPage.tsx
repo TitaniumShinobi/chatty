@@ -35,6 +35,7 @@ import {
 import { useFXShinobiStatus } from '../../hooks/useServiceStatus';
 import { getStatusColor, getStatusLabel } from '../../lib/financeConfig';
 import { ChartProvider } from '../../components/finance/ChartProvider';
+import { ConnectBrokerModal } from '../../components/finance/ConnectBrokerModal';
 import {
   ForexFactoryCalendar,
   FinvizHeatmap,
@@ -53,6 +54,7 @@ const FXShinobiPage: React.FC = () => {
   const [tradeFilter, setTradeFilter] = useState<TradeFilter>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [showExternalIntel, setShowExternalIntel] = useState(true);
+  const [showBrokerModal, setShowBrokerModal] = useState(false);
 
   const { data: snapshot, loading: snapshotLoading } = useMarketSnapshot({
     autoRefresh: true,
@@ -182,8 +184,9 @@ const FXShinobiPage: React.FC = () => {
             <RefreshCw size={18} />
           </button>
           <button
+            onClick={() => setShowBrokerModal(true)}
             className="p-2 rounded-lg transition-colors hover:bg-[var(--chatty-highlight)]"
-            title="Settings"
+            title="Broker Settings"
           >
             <Settings size={18} />
           </button>
@@ -198,32 +201,44 @@ const FXShinobiPage: React.FC = () => {
             border: '1px solid var(--chatty-border)',
           }}
         >
-          <div className="flex items-center gap-3 mb-4">
-            <Building2 size={20} className="text-blue-500" />
-            <h2 className="font-semibold">Broker: OANDA</h2>
-            <span
-              className={`px-2 py-0.5 rounded text-xs font-medium ${
-                fxshinobiStatus.liveMode
-                  ? 'bg-green-500/20 text-green-400'
-                  : 'bg-amber-500/20 text-amber-400'
-              }`}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <Building2 size={20} className="text-blue-500" />
+              <h2 className="font-semibold">
+                Broker: {fxshinobiStatus.activeBrokerName || 'Not Selected'}
+              </h2>
+              <span
+                className={`px-2 py-0.5 rounded text-xs font-medium ${
+                  fxshinobiStatus.liveMode
+                    ? 'bg-green-500/20 text-green-400'
+                    : 'bg-amber-500/20 text-amber-400'
+                }`}
+              >
+                {fxshinobiStatus.liveMode ? 'LIVE' : 'DEMO'}
+              </span>
+              {fxshinobiStatus.brokerConfigured ? (
+                <span className="flex items-center gap-1 text-xs text-green-400">
+                  <CheckCircle size={12} />
+                  Connected
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-xs text-red-400">
+                  <XCircle size={12} />
+                  Not Configured
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => setShowBrokerModal(true)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors hover:bg-[var(--chatty-highlight)]"
+              style={{ border: '1px solid var(--chatty-border)' }}
             >
-              {fxshinobiStatus.liveMode ? 'LIVE' : 'DEMO'}
-            </span>
-            {fxshinobiStatus.oandaConfigured ? (
-              <span className="flex items-center gap-1 text-xs text-green-400">
-                <CheckCircle size={12} />
-                Credentials OK
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 text-xs text-red-400">
-                <XCircle size={12} />
-                Not Configured
-              </span>
-            )}
+              <Settings size={14} />
+              Configure
+            </button>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div
               className="p-3 rounded-lg text-center"
               style={{ backgroundColor: 'var(--chatty-bg)' }}
@@ -238,6 +253,23 @@ const FXShinobiPage: React.FC = () => {
                       : '--'}
                   </div>
                   <div className="text-xs opacity-60">Balance</div>
+                </>
+              )}
+            </div>
+            <div
+              className="p-3 rounded-lg text-center"
+              style={{ backgroundColor: 'var(--chatty-bg)' }}
+            >
+              {accountLoading ? (
+                <Loader2 size={20} className="animate-spin mx-auto" />
+              ) : (
+                <>
+                  <div className="text-xl font-bold">
+                    {fxshinobiStatus.equity !== null && fxshinobiStatus.equity !== undefined
+                      ? formatCurrency(fxshinobiStatus.equity)
+                      : '--'}
+                  </div>
+                  <div className="text-xs opacity-60">Equity</div>
                 </>
               )}
             </div>
@@ -780,6 +812,12 @@ const FXShinobiPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <ConnectBrokerModal
+        isOpen={showBrokerModal}
+        onClose={() => setShowBrokerModal(false)}
+        onSuccess={() => refreshStatus()}
+      />
     </div>
   );
 };

@@ -6,6 +6,8 @@ import type {
   PerformanceMetrics,
   KalshiMarket,
   InsightItem,
+  BrokerInfo,
+  BrokerRegistryResponse,
 } from '../types/finance';
 
 function getApiBaseUrl(): string {
@@ -534,4 +536,84 @@ export function useScriptLogs(options: UseFinanceDataOptions = {}) {
   }, [fetchData, options.autoRefresh, options.refreshInterval]);
 
   return { ...state, refetch: fetchData };
+}
+
+export interface BrokerRegistryState {
+  brokers: BrokerInfo[];
+  activeBrokerId: string | null;
+  loading: boolean;
+  error: string | null;
+}
+
+export function useBrokerRegistry(options: UseFinanceDataOptions = {}) {
+  const [state, setState] = useState<BrokerRegistryState>({
+    brokers: [],
+    activeBrokerId: null,
+    loading: true,
+    error: null,
+  });
+
+  const fetchData = useCallback(async () => {
+    const apiBase = getApiBaseUrl();
+    try {
+      const res = await fetch(`${apiBase}/brokers`, {
+        signal: AbortSignal.timeout(10000),
+      });
+      
+      if (!res.ok) throw new Error('Failed to fetch brokers');
+      const json: BrokerRegistryResponse = await res.json();
+      
+      setState({
+        brokers: json.brokers || [],
+        activeBrokerId: json.active_broker_id,
+        loading: false,
+        error: null,
+      });
+    } catch (err) {
+      setState({
+        brokers: [
+          { id: 'oanda', name: 'OANDA', status: 'not_configured', auth_type: 'api_key', fields: ['api_key', 'account_id', 'environment'] },
+          { id: 'tastyfx', name: 'TastyFX', status: 'not_configured', auth_type: 'api_key', fields: ['api_key', 'account_id'] },
+          { id: 'ig', name: 'IG', status: 'not_configured', auth_type: 'api_key', fields: ['api_key', 'account_id', 'environment'] },
+        ],
+        activeBrokerId: null,
+        loading: false,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      });
+    }
+  }, []);
+
+  const setActiveBroker = useCallback(async (brokerId: string) => {
+    const apiBase = getApiBaseUrl();
+    try {
+      const res = await fetch(`${apiBase}/set-active-broker`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ broker_id: brokerId }),
+        signal: AbortSignal.timeout(10000),
+      });
+      
+      if (!res.ok) throw new Error('Failed to set active broker');
+      const json = await res.json();
+      
+      if (json.success) {
+        setState(prev => ({ ...prev, activeBrokerId: json.active_broker_id || brokerId }));
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('Failed to set active broker:', err);
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+    if (options.autoRefresh) {
+      const interval = setInterval(fetchData, options.refreshInterval || 60000);
+      return () => clearInterval(interval);
+    }
+  }, [fetchData, options.autoRefresh, options.refreshInterval]);
+
+  return { ...state, refetch: fetchData, setActiveBroker };
 }
