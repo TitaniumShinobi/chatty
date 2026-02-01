@@ -91,6 +91,10 @@ router.get('/status', async (req, res) => {
         live_mode: data.live_mode ?? false,
         oanda_configured: data.oanda_configured ?? false,
         account_type: data.account_type || (data.live_mode ? 'live' : 'demo'),
+        environment: data.environment || (data.live_mode ? 'live' : 'demo'),
+        account_balance: data.account_balance ?? null,
+        pnl_today: data.pnl_today ?? null,
+        open_pnl: data.open_pnl ?? null,
         vvault_status: data.vvault_status || 'unknown',
         supabase_status: data.supabase_status || 'unknown',
         version: data.version || '1.0.0',
@@ -125,8 +129,6 @@ router.get('/status', async (req, res) => {
 });
 
 router.get('/snapshot', async (req, res) => {
-  const { symbol = 'EURUSD' } = req.query;
-  
   if (!isConfigured()) {
     return res.status(503).json({
       error: 'FXShinobi not configured',
@@ -137,7 +139,7 @@ router.get('/snapshot', async (req, res) => {
 
   try {
     const response = await fetchWithTimeout(
-      `${FXSHINOBI_API_BASE}/api/snapshot?symbol=${symbol}`,
+      `${FXSHINOBI_API_BASE}/api/snapshot`,
       { method: 'GET' },
       10000
     );
@@ -147,6 +149,8 @@ router.get('/snapshot', async (req, res) => {
       return res.json({
         ...data,
         live_mode: data.live_mode ?? false,
+        current_symbol: data.current_symbol || data.symbol || 'EURUSD',
+        current_timeframe: data.current_timeframe || data.timeframe || '15m',
       });
     } else {
       throw new Error(`API returned ${response.status}`);

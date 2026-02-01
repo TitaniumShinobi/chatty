@@ -50,15 +50,17 @@ const TRADES_PER_PAGE = 10;
 
 const FXShinobiPage: React.FC = () => {
   const navigate = useNavigate();
-  const [selectedSymbol] = useState('EURUSD');
   const [tradeFilter, setTradeFilter] = useState<TradeFilter>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [showExternalIntel, setShowExternalIntel] = useState(true);
 
-  const { data: snapshot, loading: snapshotLoading } = useMarketSnapshot(selectedSymbol, {
+  const { data: snapshot, loading: snapshotLoading } = useMarketSnapshot({
     autoRefresh: true,
     refreshInterval: 30000,
   });
+  
+  const chartSymbol = snapshot?.current_symbol || 'EURUSD';
+  const chartTimeframe = snapshot?.current_timeframe || '15m';
   const { data: trades, loading: tradesLoading } = useTradeHistory({ autoRefresh: true });
   const { data: performance, loading: perfLoading } = usePerformanceMetrics();
   const { data: markets, loading: marketsLoading } = useKalshiMarkets({ autoRefresh: true });
@@ -300,9 +302,9 @@ const FXShinobiPage: React.FC = () => {
             >
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold">Chart</h2>
-                <span className="text-xs opacity-50">{selectedSymbol}</span>
+                <span className="text-xs opacity-50">{chartSymbol} · {chartTimeframe}</span>
               </div>
-              <ChartProvider symbol={selectedSymbol} height={400} theme="dark" provider="tradingview" />
+              <ChartProvider symbol={chartSymbol} timeframe={chartTimeframe} height={400} theme="dark" provider="tradingview" />
             </div>
 
             <div

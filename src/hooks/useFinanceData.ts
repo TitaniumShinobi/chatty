@@ -25,10 +25,7 @@ interface FinanceDataState<T> {
   isFallback: boolean;
 }
 
-export function useMarketSnapshot(
-  symbol: string = 'EURUSD',
-  options: UseFinanceDataOptions = {}
-) {
+export function useMarketSnapshot(options: UseFinanceDataOptions = {}) {
   const [state, setState] = useState<FinanceDataState<MarketSnapshot | null>>({
     data: null,
     loading: true,
@@ -40,7 +37,7 @@ export function useMarketSnapshot(
   const fetchData = useCallback(async () => {
     const apiBase = getApiBaseUrl();
     try {
-      const res = await fetch(`${apiBase}/snapshot?symbol=${symbol}`, {
+      const res = await fetch(`${apiBase}/snapshot`, {
         signal: AbortSignal.timeout(10000),
       });
       
@@ -52,7 +49,11 @@ export function useMarketSnapshot(
       }
       
       setState({
-        data: json,
+        data: {
+          ...json,
+          current_symbol: json.current_symbol || json.symbol || 'EURUSD',
+          current_timeframe: json.current_timeframe || json.timeframe || '15m',
+        },
         loading: false,
         error: null,
         liveMode: json.live_mode ?? false,
@@ -61,7 +62,7 @@ export function useMarketSnapshot(
     } catch (err) {
       setState({
         data: {
-          symbol,
+          symbol: 'EURUSD',
           price: 1.0842,
           change: 0.0023,
           changePercent: 0.21,
@@ -70,6 +71,8 @@ export function useMarketSnapshot(
           low: 1.0801,
           open: 1.0819,
           timestamp: new Date().toISOString(),
+          current_symbol: 'EURUSD',
+          current_timeframe: '15m',
         },
         loading: false,
         error: err instanceof Error ? err.message : 'Unknown error',
@@ -77,7 +80,7 @@ export function useMarketSnapshot(
         isFallback: true,
       });
     }
-  }, [symbol]);
+  }, []);
 
   useEffect(() => {
     fetchData();

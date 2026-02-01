@@ -45,6 +45,10 @@ export interface ServiceStatus {
   liveMode?: boolean;
   oandaConfigured?: boolean;
   accountType?: string;
+  environment?: string;
+  accountBalance?: number | null;
+  pnlToday?: number | null;
+  openPnl?: number | null;
   message?: string;
   lastChecked?: string;
   version?: string;
@@ -61,6 +65,10 @@ export interface FXShinobiStatusResponse {
   live_mode?: boolean;
   oanda_configured?: boolean;
   account_type?: string;
+  environment?: string;
+  account_balance?: number | null;
+  pnl_today?: number | null;
+  open_pnl?: number | null;
   vvault_status?: string;
   supabase_status?: string;
   version?: string;
@@ -88,6 +96,10 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
           liveMode: false,
           oandaConfigured: false,
           accountType: 'unknown',
+          environment: 'unknown',
+          accountBalance: null,
+          pnlToday: null,
+          openPnl: null,
           message: 'Not configured',
           lastChecked: new Date().toISOString(),
         };
@@ -104,6 +116,10 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
         liveMode: data.live_mode ?? false,
         oandaConfigured: data.oanda_configured ?? false,
         accountType: data.account_type || (data.live_mode ? 'live' : 'demo'),
+        environment: data.environment || (data.live_mode ? 'live' : 'demo'),
+        accountBalance: data.account_balance ?? null,
+        pnlToday: data.pnl_today ?? null,
+        openPnl: data.open_pnl ?? null,
         message: data.live_mode
           ? (isDegraded ? 'Live (Degraded)' : `Live v${data.version || '1.0'}`)
           : 'Simulation mode',

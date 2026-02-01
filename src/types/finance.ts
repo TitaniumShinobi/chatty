@@ -69,6 +69,8 @@ export interface MarketSnapshot {
   low: number;
   open: number;
   timestamp: string;
+  current_symbol?: string;
+  current_timeframe?: string;
 }
 
 export interface PerformanceMetrics {
