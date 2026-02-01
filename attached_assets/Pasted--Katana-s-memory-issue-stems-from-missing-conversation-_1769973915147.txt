@@ -1,0 +1,39 @@
+**Katana's memory issue stems from missing conversation history in her processing path.** Your custom Chatty architecture separates Zen (which gets history) from GPT seats like Katana. [perplexity](https://www.perplexity.ai/search/e75bb89d-06d6-4d36-975c-0bfa9bb2b12d)
+
+## Intended GPT Memory Structure
+Custom GPTs and LLM agents like Katana typically use layered memory for continuity. [llmrefs](https://llmrefs.com/blog/reverse-engineering-chatgpt-memory)
+
+- **Current Session History**: Full transcript of messages in the active conversation (e.g., via threads in OpenAI Assistants API), passed with each prompt to maintain intra-session context. [stackoverflow](https://stackoverflow.com/questions/79264911/openai-assistants-api-is-the-whole-thread-with-all-the-past-messages-sent-to-th)
+- **Cross-Session Memories**: Retrieved snippets from databases (e.g., ChromaDB, vector stores) via semantic search or RAG, injected into prompts for personalization. [perplexity](https://www.perplexity.ai/search/64099ee8-45b7-4cdd-9bed-52f0488217f7)
+- **Persistent Facts/Summaries**: Explicitly saved items (e.g., user prefs, key events) or condensed chat summaries, prepended to system prompts. [help.openai](https://help.openai.com/en/articles/8590148-memory-faq)
+
+This matches your described `unifiedIntelligenceOrchestrator` flow: load transcripts/memories, inject alongside personality data. [perplexity](https://www.perplexity.ai/search/64099ee8-45b7-4cdd-9bed-52f0488217f7)
+
+## The Bug in Chatty
+Zen correctly filters and passes `conversationHistory` (lines 243-259). [query context]
+
+GPT path skips it (lines 407-412):
+```
+gptRuntime.processMessage(gptId, message, userId, conversationId, identityFiles);
+// Missing: conversationHistory
+```
+Katana gets only the latest message, causing "cold start" responses even mid-conversation. [query context] [perplexity](https://www.perplexity.ai/search/e75bb89d-06d6-4d36-975c-0bfa9bb2b12d)
+
+## Fix Without Tangling
+Update GPT path to mirror Zen:
+1. Load `allMessages` via `Store.listMessages(userId, conversationId)`.
+2. Format as `conversationHistory`.
+3. Pass to `gptRuntime.processMessage(..., conversationHistory)`.
+4. Ensure `unifiedIntelligenceOrchestrator` handles history injection.
+
+Conversations stay isolated by ID (e.g., `katana-001_chat_with_katana-001`), preventing cross-talk with Zen/Lin. [query context] [stackoverflow](https://stackoverflow.com/questions/79264911/openai-assistants-api-is-the-whole-thread-with-all-the-past-messages-sent-to-th)
+
+| Component | Isolation Key | History Scope |
+|-----------|---------------|---------------|
+| Katana   | `katana-001_chat_with_katana-001` | Only her messages [query context] |
+| Zen      | `zen-001_chat_with_zen-001` | Only Zen's [query context] |
+| Lin      | `lin-001_chat_with_lin-001` | Isolated per seat  [perplexity](https://www.perplexity.ai/search/64099ee8-45b7-4cdd-9bed-52f0488217f7) |
+
+This enables session continuity like OpenAI threads, where history accumulates per ID without overflow until truncated. [stackoverflow](https://stackoverflow.com/questions/79264911/openai-assistants-api-is-the-whole-thread-with-all-the-past-messages-sent-to-th)
+
+Ready to implement? Share code snippets for exact patch suggestions.
