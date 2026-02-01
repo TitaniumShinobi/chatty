@@ -51,3 +51,6 @@ Chatty is an AI-powered workspace application providing a thin UI layer for inte
 - **Ollama:** Self-hosted AI model provider.
 - **Google OAuth:** User authentication.
 - **`suncalc` library:** Used for calculating sunrise/sunset times for "Auto" theme.
+
+## Recent Changes
+- **February 1, 2026:** Fixed GPT seat memory/continuity issue where Katana and other custom GPTs had no intra-session context. Updated `conversations.js` to load and pass `conversationHistory` (last 50 messages) to `gptRuntime.processMessage()`. Updated `gptRuntimeBridge.js` to forward `conversationHistory` to `unifiedIntelligenceOrchestrator.processUnrestrictedMessage()`. Updated `unifiedIntelligenceOrchestrator.js` to accept `conversationHistory` parameter and format recent turns (last 20) into the LLM messages array. GPT seats now maintain conversation context within a session, matching Zen's behavior. Conversations remain isolated by `conversationId` (e.g., `katana-001_chat_with_katana-001`).
