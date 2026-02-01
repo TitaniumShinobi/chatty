@@ -771,7 +771,7 @@ const FXShinobiPage: React.FC = () => {
               )}
             </div>
 
-            {snapshotLoading ? null : snapshot ? (
+            {snapshotLoading ? null : snapshot && snapshot.price != null ? (
               <div
                 className="rounded-xl p-4"
                 style={{
@@ -779,34 +779,34 @@ const FXShinobiPage: React.FC = () => {
                   border: '1px solid var(--chatty-border)',
                 }}
               >
-                <h2 className="font-semibold mb-3">{snapshot.symbol}</h2>
+                <h2 className="font-semibold mb-3">{snapshot.symbol ?? 'EURUSD'}</h2>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-bold">{snapshot.price.toFixed(4)}</span>
+                  <span className="text-2xl font-bold">{(snapshot.price ?? 0).toFixed(4)}</span>
                   <span
                     className={`text-sm font-medium ${
-                      snapshot.change >= 0 ? 'text-green-500' : 'text-red-500'
+                      (snapshot.change ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'
                     }`}
                   >
-                    {snapshot.change >= 0 ? '+' : ''}
-                    {snapshot.change.toFixed(4)} ({formatPercent(snapshot.changePercent / 100)})
+                    {(snapshot.change ?? 0) >= 0 ? '+' : ''}
+                    {(snapshot.change ?? 0).toFixed(4)} ({formatPercent((snapshot.changePercent ?? 0) / 100)})
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
                   <div className="flex justify-between">
                     <span className="opacity-60">High</span>
-                    <span>{snapshot.high.toFixed(4)}</span>
+                    <span>{(snapshot.high ?? 0).toFixed(4)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="opacity-60">Low</span>
-                    <span>{snapshot.low.toFixed(4)}</span>
+                    <span>{(snapshot.low ?? 0).toFixed(4)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="opacity-60">Open</span>
-                    <span>{snapshot.open.toFixed(4)}</span>
+                    <span>{(snapshot.open ?? 0).toFixed(4)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="opacity-60">Volume</span>
-                    <span>{(snapshot.volume / 1000).toFixed(0)}K</span>
+                    <span>{((snapshot.volume ?? 0) / 1000).toFixed(0)}K</span>
                   </div>
                 </div>
               </div>
