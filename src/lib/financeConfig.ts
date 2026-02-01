@@ -44,6 +44,7 @@ export interface ServiceStatus {
   status: ServiceStatusLevel;
   liveMode?: boolean;
   brokerConfigured?: boolean;
+  oandaConfigured?: boolean;
   activeBrokerId?: string | null;
   activeBrokerName?: string | null;
   accountType?: string;
@@ -67,6 +68,7 @@ export interface FXShinobiStatusResponse {
   status: string;
   live_mode?: boolean;
   broker_configured?: boolean;
+  oanda_configured?: boolean;
   active_broker_id?: string | null;
   active_broker_name?: string | null;
   account_type?: string;
@@ -101,6 +103,7 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
           status: 'not_configured',
           liveMode: false,
           brokerConfigured: false,
+          oandaConfigured: false,
           activeBrokerId: null,
           activeBrokerName: null,
           accountType: 'unknown',
@@ -119,13 +122,18 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
         ? (isDegraded ? 'degraded' : 'live')
         : 'connected';
       
+      const oandaConfigured = data.oanda_configured ?? false;
+      const isOandaActive = data.active_broker_id === 'oanda' && oandaConfigured;
+      const brokerConfigured = data.broker_configured ?? isOandaActive;
+      
       return {
         name: 'FXShinobi',
         status: statusLevel,
         liveMode: data.live_mode ?? false,
-        brokerConfigured: data.broker_configured ?? false,
+        brokerConfigured,
+        oandaConfigured,
         activeBrokerId: data.active_broker_id ?? null,
-        activeBrokerName: data.active_broker_name ?? null,
+        activeBrokerName: data.active_broker_name ?? (isOandaActive ? 'OANDA' : null),
         accountType: data.account_type || (data.live_mode ? 'live' : 'demo'),
         environment: data.environment || (data.live_mode ? 'live' : 'demo'),
         accountBalance: data.account_balance ?? null,
@@ -150,6 +158,7 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
         status: 'offline',
         liveMode: false,
         brokerConfigured: false,
+        oandaConfigured: false,
         activeBrokerId: null,
         activeBrokerName: null,
         accountType: 'unknown',
@@ -163,6 +172,7 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
       status: 'offline',
       liveMode: false,
       brokerConfigured: false,
+      oandaConfigured: false,
       activeBrokerId: null,
       activeBrokerName: null,
       accountType: 'unknown',

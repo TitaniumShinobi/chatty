@@ -556,16 +556,33 @@ export function useBrokerRegistry(options: UseFinanceDataOptions = {}) {
   const fetchData = useCallback(async () => {
     const apiBase = getApiBaseUrl();
     try {
-      const res = await fetch(`${apiBase}/brokers`, {
-        signal: AbortSignal.timeout(10000),
-      });
+      const [brokersRes, statusRes] = await Promise.all([
+        fetch(`${apiBase}/brokers`, { signal: AbortSignal.timeout(10000) }),
+        fetch(`${apiBase}/status`, { signal: AbortSignal.timeout(5000) }).catch(() => null),
+      ]);
       
-      if (!res.ok) throw new Error('Failed to fetch brokers');
-      const json: BrokerRegistryResponse = await res.json();
+      if (!brokersRes.ok) throw new Error('Failed to fetch brokers');
+      const json: BrokerRegistryResponse = await brokersRes.json();
+      
+      let brokers = json.brokers || [];
+      let activeBrokerId = json.active_broker_id;
+      
+      if (statusRes?.ok) {
+        const statusJson = await statusRes.json();
+        const oandaConfigured = statusJson.oanda_configured === true;
+        const activeIsOanda = statusJson.active_broker_id === 'oanda';
+        
+        if (oandaConfigured && activeIsOanda) {
+          brokers = brokers.map(b => 
+            b.id === 'oanda' ? { ...b, status: 'connected' as const } : b
+          );
+          activeBrokerId = activeBrokerId || 'oanda';
+        }
+      }
       
       setState({
-        brokers: json.brokers || [],
-        activeBrokerId: json.active_broker_id,
+        brokers,
+        activeBrokerId,
         loading: false,
         error: null,
       });
