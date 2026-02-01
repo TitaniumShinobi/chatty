@@ -15,6 +15,10 @@ import {
   XCircle,
   Loader2,
   Radio,
+  Key,
+  ScrollText,
+  Wallet,
+  Shield,
 } from 'lucide-react';
 import {
   useMarketSnapshot,
@@ -22,6 +26,8 @@ import {
   usePerformanceMetrics,
   useKalshiMarkets,
   useFinanceInsights,
+  useAccountData,
+  useScriptLogs,
 } from '../../hooks/useFinanceData';
 import { useFXShinobiStatus } from '../../hooks/useServiceStatus';
 import { getStatusColor, getStatusLabel } from '../../lib/financeConfig';
@@ -39,6 +45,8 @@ const FXShinobiPage: React.FC = () => {
   const { data: performance, loading: perfLoading } = usePerformanceMetrics();
   const { data: markets, loading: marketsLoading } = useKalshiMarkets({ autoRefresh: true });
   const { data: insights, loading: insightsLoading } = useFinanceInsights({ autoRefresh: true });
+  const { data: accountData, loading: accountLoading } = useAccountData({ autoRefresh: true, refreshInterval: 30000 });
+  const { data: scriptLogs, loading: logsLoading } = useScriptLogs({ autoRefresh: true, refreshInterval: 15000 });
   const { status: fxshinobiStatus, refresh: refreshStatus } = useFXShinobiStatus(true, 30000);
 
   const getStatusIcon = () => {
@@ -328,6 +336,168 @@ const FXShinobiPage: React.FC = () => {
           </div>
 
           <div className="space-y-4">
+            {/* Account Type Badge */}
+            <div
+              className="rounded-xl p-4"
+              style={{
+                backgroundColor: 'var(--chatty-bg-modal, var(--chatty-highlight))',
+                border: '1px solid var(--chatty-border)',
+              }}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Shield size={18} className={fxshinobiStatus.liveMode ? 'text-green-500' : 'text-amber-500'} />
+                  <span className="font-semibold">Account Type</span>
+                </div>
+                <span
+                  className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    fxshinobiStatus.liveMode
+                      ? 'bg-green-500/20 text-green-400'
+                      : 'bg-amber-500/20 text-amber-400'
+                  }`}
+                >
+                  {fxshinobiStatus.liveMode ? 'LIVE' : 'DEMO'}
+                </span>
+              </div>
+            </div>
+
+            {/* OANDA Credentials Status */}
+            <div
+              className="rounded-xl p-4"
+              style={{
+                backgroundColor: 'var(--chatty-bg-modal, var(--chatty-highlight))',
+                border: '1px solid var(--chatty-border)',
+              }}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <Key size={18} className="text-blue-500" />
+                <span className="font-semibold">OANDA Credentials</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm opacity-70">Status</span>
+                <div className="flex items-center gap-2">
+                  {fxshinobiStatus.oandaConfigured ? (
+                    <>
+                      <CheckCircle size={14} className="text-green-500" />
+                      <span className="text-sm text-green-400">Configured</span>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle size={14} className="text-red-500" />
+                      <span className="text-sm text-red-400">Not Configured</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Balance & PnL Panel */}
+            <div
+              className="rounded-xl p-4"
+              style={{
+                backgroundColor: 'var(--chatty-bg-modal, var(--chatty-highlight))',
+                border: '1px solid var(--chatty-border)',
+              }}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <Wallet size={18} className="text-purple-500" />
+                <span className="font-semibold">Account Balance</span>
+              </div>
+              {accountLoading ? (
+                <div className="text-center py-4 opacity-50">
+                  <Loader2 size={20} className="animate-spin mx-auto" />
+                </div>
+              ) : accountData ? (
+                <div className="space-y-3">
+                  <div className="text-center py-2">
+                    <div className="text-2xl font-bold">
+                      {accountData.account_balance !== null
+                        ? formatCurrency(accountData.account_balance)
+                        : '--'}
+                    </div>
+                    <div className="text-xs opacity-60">Balance</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div
+                      className="p-2 rounded-lg text-center"
+                      style={{ backgroundColor: 'var(--chatty-bg)' }}
+                    >
+                      <div className={`text-sm font-semibold ${
+                        (accountData.open_pnl ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'
+                      }`}>
+                        {accountData.open_pnl !== null
+                          ? formatCurrency(accountData.open_pnl)
+                          : '--'}
+                      </div>
+                      <div className="text-xs opacity-60">Open P&L</div>
+                    </div>
+                    <div
+                      className="p-2 rounded-lg text-center"
+                      style={{ backgroundColor: 'var(--chatty-bg)' }}
+                    >
+                      <div className={`text-sm font-semibold ${
+                        (accountData.pnl_today ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'
+                      }`}>
+                        {accountData.pnl_today !== null
+                          ? formatCurrency(accountData.pnl_today)
+                          : '--'}
+                      </div>
+                      <div className="text-xs opacity-60">P&L Today</div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-4 text-sm opacity-50">
+                  No account data available
+                </div>
+              )}
+            </div>
+
+            {/* Script Log Panel */}
+            <div
+              className="rounded-xl p-4"
+              style={{
+                backgroundColor: 'var(--chatty-bg-modal, var(--chatty-highlight))',
+                border: '1px solid var(--chatty-border)',
+              }}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <ScrollText size={18} className="text-cyan-500" />
+                <span className="font-semibold">Script Log</span>
+              </div>
+              {logsLoading ? (
+                <div className="text-center py-4 opacity-50">
+                  <Loader2 size={20} className="animate-spin mx-auto" />
+                </div>
+              ) : scriptLogs.length === 0 ? (
+                <div className="text-center py-4 text-sm opacity-50">
+                  No recent logs
+                </div>
+              ) : (
+                <div
+                  className="space-y-1 max-h-40 overflow-y-auto text-xs font-mono"
+                  style={{ backgroundColor: 'var(--chatty-bg)', borderRadius: '8px', padding: '8px' }}
+                >
+                  {scriptLogs.slice(0, 10).map((log, idx) => (
+                    <div
+                      key={log.id || idx}
+                      className={`flex items-start gap-2 ${
+                        log.level === 'error' ? 'text-red-400' :
+                        log.level === 'warn' ? 'text-amber-400' :
+                        log.level === 'debug' ? 'text-gray-500' :
+                        'opacity-80'
+                      }`}
+                    >
+                      <span className="opacity-50 shrink-0">
+                        {new Date(log.timestamp).toLocaleTimeString('en-US', { hour12: false })}
+                      </span>
+                      <span className="break-all">{log.message}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div
               className="rounded-xl p-4"
               style={{

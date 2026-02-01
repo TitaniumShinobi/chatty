@@ -43,6 +43,8 @@ export interface ServiceStatus {
   name: string;
   status: ServiceStatusLevel;
   liveMode?: boolean;
+  oandaConfigured?: boolean;
+  accountType?: string;
   message?: string;
   lastChecked?: string;
   version?: string;
@@ -57,6 +59,8 @@ export interface ServiceStatus {
 export interface FXShinobiStatusResponse {
   status: string;
   live_mode?: boolean;
+  oanda_configured?: boolean;
+  account_type?: string;
   vvault_status?: string;
   supabase_status?: string;
   version?: string;
@@ -82,6 +86,8 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
           name: 'FXShinobi',
           status: 'not_configured',
           liveMode: false,
+          oandaConfigured: false,
+          accountType: 'unknown',
           message: 'Not configured',
           lastChecked: new Date().toISOString(),
         };
@@ -96,6 +102,8 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
         name: 'FXShinobi',
         status: statusLevel,
         liveMode: data.live_mode ?? false,
+        oandaConfigured: data.oanda_configured ?? false,
+        accountType: data.account_type || (data.live_mode ? 'live' : 'demo'),
         message: data.live_mode
           ? (isDegraded ? 'Live (Degraded)' : `Live v${data.version || '1.0'}`)
           : 'Simulation mode',
@@ -113,6 +121,8 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
         name: 'FXShinobi',
         status: 'offline',
         liveMode: false,
+        oandaConfigured: false,
+        accountType: 'unknown',
         message: `HTTP ${res.status}`,
         lastChecked: new Date().toISOString(),
       };
@@ -122,6 +132,8 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
       name: 'FXShinobi',
       status: 'offline',
       liveMode: false,
+      oandaConfigured: false,
+      accountType: 'unknown',
       message: 'API unreachable',
       lastChecked: new Date().toISOString(),
     };

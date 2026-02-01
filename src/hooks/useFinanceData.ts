@@ -411,3 +411,124 @@ export function useFinanceInsights(options: UseFinanceDataOptions = {}) {
 
   return { ...state, refetch: fetchData };
 }
+
+export interface AccountData {
+  account_balance: number | null;
+  open_pnl: number | null;
+  pnl_today: number | null;
+  currency: string;
+  margin_used?: number | null;
+  margin_available?: number | null;
+}
+
+export function useAccountData(options: UseFinanceDataOptions = {}) {
+  const [state, setState] = useState<FinanceDataState<AccountData | null>>({
+    data: null,
+    loading: true,
+    error: null,
+    liveMode: false,
+    isFallback: false,
+  });
+
+  const fetchData = useCallback(async () => {
+    const apiBase = getApiBaseUrl();
+    try {
+      const res = await fetch(`${apiBase}/account`, {
+        signal: AbortSignal.timeout(10000),
+      });
+      
+      if (!res.ok) throw new Error('Failed to fetch account data');
+      const json = await res.json();
+      
+      if (json.fallback) {
+        throw new Error(json.message || 'Using fallback data');
+      }
+      
+      setState({
+        data: json,
+        loading: false,
+        error: null,
+        liveMode: false,
+        isFallback: false,
+      });
+    } catch (err) {
+      setState({
+        data: null,
+        loading: false,
+        error: err instanceof Error ? err.message : 'Unknown error',
+        liveMode: false,
+        isFallback: true,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+    if (options.autoRefresh) {
+      const interval = setInterval(fetchData, options.refreshInterval || 30000);
+      return () => clearInterval(interval);
+    }
+  }, [fetchData, options.autoRefresh, options.refreshInterval]);
+
+  return { ...state, refetch: fetchData };
+}
+
+export interface ScriptLogEntry {
+  id: string;
+  timestamp: string;
+  level: 'info' | 'warn' | 'error' | 'debug';
+  message: string;
+  source?: string;
+}
+
+export function useScriptLogs(options: UseFinanceDataOptions = {}) {
+  const [state, setState] = useState<FinanceDataState<ScriptLogEntry[]>>({
+    data: [],
+    loading: true,
+    error: null,
+    liveMode: false,
+    isFallback: false,
+  });
+
+  const fetchData = useCallback(async () => {
+    const apiBase = getApiBaseUrl();
+    try {
+      const res = await fetch(`${apiBase}/logs/recent?limit=20`, {
+        signal: AbortSignal.timeout(10000),
+      });
+      
+      if (!res.ok) throw new Error('Failed to fetch logs');
+      const json = await res.json();
+      
+      if (json.fallback) {
+        throw new Error(json.message || 'Using fallback data');
+      }
+      
+      setState({
+        data: json.logs || [],
+        loading: false,
+        error: null,
+        liveMode: false,
+        isFallback: false,
+      });
+    } catch (err) {
+      setState({
+        data: [],
+        loading: false,
+        error: err instanceof Error ? err.message : 'Unknown error',
+        liveMode: false,
+        isFallback: true,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+    if (options.autoRefresh) {
+      const interval = setInterval(fetchData, options.refreshInterval || 15000);
+      return () => clearInterval(interval);
+    }
+  }, [fetchData, options.autoRefresh, options.refreshInterval]);
+
+  return { ...state, refetch: fetchData };
+}
