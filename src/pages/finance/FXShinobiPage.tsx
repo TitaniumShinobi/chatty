@@ -15,10 +15,13 @@ import {
   XCircle,
   Loader2,
   Radio,
-  Key,
   ScrollText,
-  Wallet,
-  Shield,
+  Building2,
+  Filter,
+  ChevronDown,
+  ChevronUp,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import {
   useMarketSnapshot,
@@ -31,11 +34,26 @@ import {
 } from '../../hooks/useFinanceData';
 import { useFXShinobiStatus } from '../../hooks/useServiceStatus';
 import { getStatusColor, getStatusLabel } from '../../lib/financeConfig';
+import { ChartProvider } from '../../components/finance/ChartProvider';
+import {
+  ForexFactoryCalendar,
+  FinvizHeatmap,
+  CurrencyStrength,
+  CompoundCalculator,
+  WeekendTraining,
+} from '../../components/finance/ExternalIntel';
 import type { InsightItem, KalshiMarket, TradeRecord } from '../../types/finance';
+
+type TradeFilter = 'all' | 'fxshinobi' | 'manual';
+
+const TRADES_PER_PAGE = 10;
 
 const FXShinobiPage: React.FC = () => {
   const navigate = useNavigate();
   const [selectedSymbol] = useState('EURUSD');
+  const [tradeFilter, setTradeFilter] = useState<TradeFilter>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [showExternalIntel, setShowExternalIntel] = useState(true);
 
   const { data: snapshot, loading: snapshotLoading } = useMarketSnapshot(selectedSymbol, {
     autoRefresh: true,
@@ -48,6 +66,25 @@ const FXShinobiPage: React.FC = () => {
   const { data: accountData, loading: accountLoading } = useAccountData({ autoRefresh: true, refreshInterval: 30000 });
   const { data: scriptLogs, loading: logsLoading } = useScriptLogs({ autoRefresh: true, refreshInterval: 15000 });
   const { status: fxshinobiStatus, refresh: refreshStatus } = useFXShinobiStatus(true, 30000);
+
+  const filteredTrades = trades.filter((trade: TradeRecord) => {
+    if (tradeFilter === 'all') return true;
+    const source = (trade as TradeRecord & { source?: string }).source || 'fxshinobi';
+    if (tradeFilter === 'fxshinobi') return source === 'fxshinobi' || (trade as TradeRecord & { is_fxshinobi?: boolean }).is_fxshinobi;
+    if (tradeFilter === 'manual') return source === 'manual' || source === 'other';
+    return true;
+  });
+
+  const totalPages = Math.ceil(filteredTrades.length / TRADES_PER_PAGE);
+  const paginatedTrades = filteredTrades.slice(
+    (currentPage - 1) * TRADES_PER_PAGE,
+    currentPage * TRADES_PER_PAGE
+  );
+
+  const handleFilterChange = (newFilter: TradeFilter) => {
+    setTradeFilter(newFilter);
+    setCurrentPage(1);
+  };
 
   const getStatusIcon = () => {
     switch (fxshinobiStatus.status) {
@@ -152,6 +189,106 @@ const FXShinobiPage: React.FC = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
+        <div
+          className="rounded-xl p-4 mb-4"
+          style={{
+            backgroundColor: 'var(--chatty-bg-modal, var(--chatty-highlight))',
+            border: '1px solid var(--chatty-border)',
+          }}
+        >
+          <div className="flex items-center gap-3 mb-4">
+            <Building2 size={20} className="text-blue-500" />
+            <h2 className="font-semibold">Broker: OANDA</h2>
+            <span
+              className={`px-2 py-0.5 rounded text-xs font-medium ${
+                fxshinobiStatus.liveMode
+                  ? 'bg-green-500/20 text-green-400'
+                  : 'bg-amber-500/20 text-amber-400'
+              }`}
+            >
+              {fxshinobiStatus.liveMode ? 'LIVE' : 'DEMO'}
+            </span>
+            {fxshinobiStatus.oandaConfigured ? (
+              <span className="flex items-center gap-1 text-xs text-green-400">
+                <CheckCircle size={12} />
+                Credentials OK
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-xs text-red-400">
+                <XCircle size={12} />
+                Not Configured
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div
+              className="p-3 rounded-lg text-center"
+              style={{ backgroundColor: 'var(--chatty-bg)' }}
+            >
+              {accountLoading ? (
+                <Loader2 size={20} className="animate-spin mx-auto" />
+              ) : (
+                <>
+                  <div className="text-xl font-bold">
+                    {accountData?.account_balance !== null && accountData?.account_balance !== undefined
+                      ? formatCurrency(accountData.account_balance)
+                      : '--'}
+                  </div>
+                  <div className="text-xs opacity-60">Balance</div>
+                </>
+              )}
+            </div>
+            <div
+              className="p-3 rounded-lg text-center"
+              style={{ backgroundColor: 'var(--chatty-bg)' }}
+            >
+              {accountLoading ? (
+                <Loader2 size={20} className="animate-spin mx-auto" />
+              ) : (
+                <>
+                  <div className={`text-xl font-bold ${
+                    (accountData?.open_pnl ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'
+                  }`}>
+                    {accountData?.open_pnl !== null && accountData?.open_pnl !== undefined
+                      ? formatCurrency(accountData.open_pnl)
+                      : '--'}
+                  </div>
+                  <div className="text-xs opacity-60">Open P&L</div>
+                </>
+              )}
+            </div>
+            <div
+              className="p-3 rounded-lg text-center"
+              style={{ backgroundColor: 'var(--chatty-bg)' }}
+            >
+              {accountLoading ? (
+                <Loader2 size={20} className="animate-spin mx-auto" />
+              ) : (
+                <>
+                  <div className={`text-xl font-bold ${
+                    (accountData?.pnl_today ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'
+                  }`}>
+                    {accountData?.pnl_today !== null && accountData?.pnl_today !== undefined
+                      ? formatCurrency(accountData.pnl_today)
+                      : '--'}
+                  </div>
+                  <div className="text-xs opacity-60">P&L Today</div>
+                </>
+              )}
+            </div>
+            <div
+              className="p-3 rounded-lg text-center"
+              style={{ backgroundColor: 'var(--chatty-bg)' }}
+            >
+              <div className="text-xl font-bold">
+                {fxshinobiStatus.details?.openPositions ?? 0}
+              </div>
+              <div className="text-xs opacity-60">Open Positions</div>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 space-y-4">
             <div
@@ -162,24 +299,160 @@ const FXShinobiPage: React.FC = () => {
               }}
             >
               <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold">TradingView Chart</h2>
+                <h2 className="font-semibold">Chart</h2>
                 <span className="text-xs opacity-50">{selectedSymbol}</span>
               </div>
-              <div
-                className="rounded-lg overflow-hidden"
-                style={{ height: '400px' }}
-              >
-                <iframe
-                  src={`https://s.tradingview.com/widgetembed/?frameElementId=tradingview_widget&symbol=${selectedSymbol}&interval=15&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=f1f3f6&studies=[]&theme=dark&style=1&timezone=exchange&withdateranges=1&showpopupbutton=1&studies_overrides={}&overrides={}&enabled_features=[]&disabled_features=[]&showpopupbutton=1&locale=en&utm_source=chatty`}
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    border: 'none',
-                  }}
-                  title="TradingView Chart"
-                  allow="clipboard-write"
-                />
+              <ChartProvider symbol={selectedSymbol} height={400} theme="dark" provider="tradingview" />
+            </div>
+
+            <div
+              className="rounded-xl p-4"
+              style={{
+                backgroundColor: 'var(--chatty-bg-modal, var(--chatty-highlight))',
+                border: '1px solid var(--chatty-border)',
+              }}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-semibold">Orders / Activity</h2>
+                <div className="flex items-center gap-2">
+                  <Filter size={14} className="opacity-50" />
+                  <select
+                    value={tradeFilter}
+                    onChange={(e) => handleFilterChange(e.target.value as TradeFilter)}
+                    className="text-xs px-2 py-1 rounded-lg outline-none cursor-pointer"
+                    style={{
+                      backgroundColor: 'var(--chatty-bg)',
+                      border: '1px solid var(--chatty-border)',
+                      color: 'var(--chatty-text)',
+                    }}
+                  >
+                    <option value="all">All</option>
+                    <option value="fxshinobi">FXShinobi</option>
+                    <option value="manual">Manual</option>
+                  </select>
+                </div>
               </div>
+              {tradesLoading ? (
+                <div className="text-center py-8 opacity-50">Loading trades...</div>
+              ) : filteredTrades.length === 0 ? (
+                <div className="text-center py-8 opacity-50">No trades yet</div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0" style={{ backgroundColor: 'var(--chatty-bg-modal, var(--chatty-highlight))' }}>
+                        <tr className="border-b" style={{ borderColor: 'var(--chatty-border)' }}>
+                          <th className="text-left py-2 opacity-70 font-medium">Time</th>
+                          <th className="text-left py-2 opacity-70 font-medium">Symbol</th>
+                          <th className="text-left py-2 opacity-70 font-medium">Side</th>
+                          <th className="text-right py-2 opacity-70 font-medium">Size</th>
+                          <th className="text-right py-2 opacity-70 font-medium">Entry</th>
+                          <th className="text-right py-2 opacity-70 font-medium">P&L</th>
+                          <th className="text-left py-2 opacity-70 font-medium">Status</th>
+                          <th className="text-left py-2 opacity-70 font-medium">Source</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paginatedTrades.map((trade: TradeRecord) => {
+                          const source = (trade as TradeRecord & { source?: string }).source || 'fxshinobi';
+                          return (
+                            <tr
+                              key={trade.id}
+                              className="border-b hover:bg-[var(--chatty-highlight)] transition-colors"
+                              style={{ borderColor: 'var(--chatty-border)' }}
+                            >
+                              <td className="py-2 text-xs opacity-60">
+                                {new Date(trade.timestamp).toLocaleString(undefined, {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </td>
+                              <td className="py-2 font-medium">{trade.symbol}</td>
+                              <td className="py-2">
+                                <span
+                                  className={
+                                    trade.side === 'buy' ? 'text-green-500' : 'text-red-500'
+                                  }
+                                >
+                                  {trade.side.toUpperCase()}
+                                </span>
+                              </td>
+                              <td className="py-2 text-right">
+                                {trade.quantity.toLocaleString()}
+                              </td>
+                              <td className="py-2 text-right">{trade.price.toFixed(4)}</td>
+                              <td className="py-2 text-right">
+                                {trade.pnl !== undefined ? (
+                                  <span
+                                    className={trade.pnl >= 0 ? 'text-green-500' : 'text-red-500'}
+                                  >
+                                    {trade.pnl >= 0 ? '+' : ''}
+                                    {formatCurrency(trade.pnl)}
+                                  </span>
+                                ) : (
+                                  '-'
+                                )}
+                              </td>
+                              <td className="py-2">
+                                <span
+                                  className={`text-xs px-2 py-0.5 rounded ${
+                                    trade.status === 'open'
+                                      ? 'bg-blue-500/20 text-blue-400'
+                                      : trade.status === 'closed'
+                                      ? 'bg-gray-500/20 text-gray-400'
+                                      : 'bg-amber-500/20 text-amber-400'
+                                  }`}
+                                >
+                                  {trade.status}
+                                </span>
+                              </td>
+                              <td className="py-2">
+                                <span
+                                  className={`text-xs px-2 py-0.5 rounded ${
+                                    source === 'fxshinobi'
+                                      ? 'bg-purple-500/20 text-purple-400'
+                                      : 'bg-gray-500/20 text-gray-400'
+                                  }`}
+                                >
+                                  {source === 'fxshinobi' ? 'FXShinobi' : 'Manual'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between mt-3 pt-3 border-t" style={{ borderColor: 'var(--chatty-border)' }}>
+                      <span className="text-xs opacity-60">
+                        Showing {(currentPage - 1) * TRADES_PER_PAGE + 1}-{Math.min(currentPage * TRADES_PER_PAGE, filteredTrades.length)} of {filteredTrades.length}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                          className="p-1.5 rounded-lg transition-colors hover:bg-[var(--chatty-highlight)] disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
+                        <span className="text-xs px-2">
+                          {currentPage} / {totalPages}
+                        </span>
+                        <button
+                          onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                          disabled={currentPage === totalPages}
+                          className="p-1.5 rounded-lg transition-colors hover:bg-[var(--chatty-highlight)] disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
             <div
@@ -251,209 +524,9 @@ const FXShinobiPage: React.FC = () => {
               )}
             </div>
 
-            <div
-              className="rounded-xl p-4"
-              style={{
-                backgroundColor: 'var(--chatty-bg-modal, var(--chatty-highlight))',
-                border: '1px solid var(--chatty-border)',
-              }}
-            >
-              <h2 className="font-semibold mb-4">Recent Trades</h2>
-              {tradesLoading ? (
-                <div className="text-center py-8 opacity-50">Loading trades...</div>
-              ) : trades.length === 0 ? (
-                <div className="text-center py-8 opacity-50">No trades yet</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b" style={{ borderColor: 'var(--chatty-border)' }}>
-                        <th className="text-left py-2 opacity-70 font-medium">Symbol</th>
-                        <th className="text-left py-2 opacity-70 font-medium">Side</th>
-                        <th className="text-right py-2 opacity-70 font-medium">Qty</th>
-                        <th className="text-right py-2 opacity-70 font-medium">Price</th>
-                        <th className="text-right py-2 opacity-70 font-medium">P&L</th>
-                        <th className="text-left py-2 opacity-70 font-medium">Status</th>
-                        <th className="text-right py-2 opacity-70 font-medium">Time</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {trades.map((trade: TradeRecord) => (
-                        <tr
-                          key={trade.id}
-                          className="border-b"
-                          style={{ borderColor: 'var(--chatty-border)' }}
-                        >
-                          <td className="py-2 font-medium">{trade.symbol}</td>
-                          <td className="py-2">
-                            <span
-                              className={
-                                trade.side === 'buy' ? 'text-green-500' : 'text-red-500'
-                              }
-                            >
-                              {trade.side.toUpperCase()}
-                            </span>
-                          </td>
-                          <td className="py-2 text-right">
-                            {trade.quantity.toLocaleString()}
-                          </td>
-                          <td className="py-2 text-right">{trade.price.toFixed(4)}</td>
-                          <td className="py-2 text-right">
-                            {trade.pnl !== undefined ? (
-                              <span
-                                className={trade.pnl >= 0 ? 'text-green-500' : 'text-red-500'}
-                              >
-                                {trade.pnl >= 0 ? '+' : ''}
-                                {formatCurrency(trade.pnl)}
-                              </span>
-                            ) : (
-                              '-'
-                            )}
-                          </td>
-                          <td className="py-2">
-                            <span
-                              className={`text-xs px-2 py-0.5 rounded ${
-                                trade.status === 'open'
-                                  ? 'bg-blue-500/20 text-blue-400'
-                                  : trade.status === 'closed'
-                                  ? 'bg-gray-500/20 text-gray-400'
-                                  : 'bg-amber-500/20 text-amber-400'
-                              }`}
-                            >
-                              {trade.status}
-                            </span>
-                          </td>
-                          <td className="py-2 text-right text-xs opacity-60">
-                            {new Date(trade.timestamp).toLocaleTimeString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
           </div>
 
           <div className="space-y-4">
-            {/* Account Type Badge */}
-            <div
-              className="rounded-xl p-4"
-              style={{
-                backgroundColor: 'var(--chatty-bg-modal, var(--chatty-highlight))',
-                border: '1px solid var(--chatty-border)',
-              }}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Shield size={18} className={fxshinobiStatus.liveMode ? 'text-green-500' : 'text-amber-500'} />
-                  <span className="font-semibold">Account Type</span>
-                </div>
-                <span
-                  className={`px-3 py-1 rounded-full text-sm font-medium ${
-                    fxshinobiStatus.liveMode
-                      ? 'bg-green-500/20 text-green-400'
-                      : 'bg-amber-500/20 text-amber-400'
-                  }`}
-                >
-                  {fxshinobiStatus.liveMode ? 'LIVE' : 'DEMO'}
-                </span>
-              </div>
-            </div>
-
-            {/* OANDA Credentials Status */}
-            <div
-              className="rounded-xl p-4"
-              style={{
-                backgroundColor: 'var(--chatty-bg-modal, var(--chatty-highlight))',
-                border: '1px solid var(--chatty-border)',
-              }}
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <Key size={18} className="text-blue-500" />
-                <span className="font-semibold">OANDA Credentials</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm opacity-70">Status</span>
-                <div className="flex items-center gap-2">
-                  {fxshinobiStatus.oandaConfigured ? (
-                    <>
-                      <CheckCircle size={14} className="text-green-500" />
-                      <span className="text-sm text-green-400">Configured</span>
-                    </>
-                  ) : (
-                    <>
-                      <XCircle size={14} className="text-red-500" />
-                      <span className="text-sm text-red-400">Not Configured</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Balance & PnL Panel */}
-            <div
-              className="rounded-xl p-4"
-              style={{
-                backgroundColor: 'var(--chatty-bg-modal, var(--chatty-highlight))',
-                border: '1px solid var(--chatty-border)',
-              }}
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <Wallet size={18} className="text-purple-500" />
-                <span className="font-semibold">Account Balance</span>
-              </div>
-              {accountLoading ? (
-                <div className="text-center py-4 opacity-50">
-                  <Loader2 size={20} className="animate-spin mx-auto" />
-                </div>
-              ) : accountData ? (
-                <div className="space-y-3">
-                  <div className="text-center py-2">
-                    <div className="text-2xl font-bold">
-                      {accountData.account_balance !== null
-                        ? formatCurrency(accountData.account_balance)
-                        : '--'}
-                    </div>
-                    <div className="text-xs opacity-60">Balance</div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div
-                      className="p-2 rounded-lg text-center"
-                      style={{ backgroundColor: 'var(--chatty-bg)' }}
-                    >
-                      <div className={`text-sm font-semibold ${
-                        (accountData.open_pnl ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'
-                      }`}>
-                        {accountData.open_pnl !== null
-                          ? formatCurrency(accountData.open_pnl)
-                          : '--'}
-                      </div>
-                      <div className="text-xs opacity-60">Open P&L</div>
-                    </div>
-                    <div
-                      className="p-2 rounded-lg text-center"
-                      style={{ backgroundColor: 'var(--chatty-bg)' }}
-                    >
-                      <div className={`text-sm font-semibold ${
-                        (accountData.pnl_today ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'
-                      }`}>
-                        {accountData.pnl_today !== null
-                          ? formatCurrency(accountData.pnl_today)
-                          : '--'}
-                      </div>
-                      <div className="text-xs opacity-60">P&L Today</div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-4 text-sm opacity-50">
-                  No account data available
-                </div>
-              )}
-            </div>
-
-            {/* Script Log Panel */}
             <div
               className="rounded-xl p-4"
               style={{
@@ -674,6 +747,34 @@ const FXShinobiPage: React.FC = () => {
                 </div>
               </div>
             ) : null}
+
+            <div
+              className="rounded-xl p-4"
+              style={{
+                backgroundColor: 'var(--chatty-bg-modal, var(--chatty-highlight))',
+                border: '1px solid var(--chatty-border)',
+              }}
+            >
+              <button
+                onClick={() => setShowExternalIntel(!showExternalIntel)}
+                className="w-full flex items-center justify-between"
+              >
+                <h2 className="font-semibold flex items-center gap-2">
+                  <Newspaper size={18} className="text-cyan-500" />
+                  External Intel
+                </h2>
+                {showExternalIntel ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </button>
+              {showExternalIntel && (
+                <div className="mt-4 space-y-4">
+                  <ForexFactoryCalendar />
+                  <CurrencyStrength />
+                  <FinvizHeatmap />
+                  <CompoundCalculator />
+                  <WeekendTraining />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
