@@ -36,8 +36,9 @@ export class GPTRuntimeBridge {
     }
   }
 
-  async processMessage(gptId, message, userId, conversationId = null, identityContext = null) {
+  async processMessage(gptId, message, userId, conversationId = null, identityContext = null, conversationHistory = []) {
     console.time(`🕐 [BRIDGE-TOTAL] Bridge processMessage for ${gptId}`);
+    console.log(`📚 [BRIDGE] Received ${conversationHistory.length} messages in conversation history`);
     
     try {
       // Use unified intelligence orchestrator for unrestricted processing
@@ -47,7 +48,8 @@ export class GPTRuntimeBridge {
         message, 
         userId, 
         conversationId || `${gptId}_${Date.now()}`,
-        identityContext
+        identityContext,
+        conversationHistory
       );
       console.timeEnd(`🕐 [BRIDGE-UNIFIED] Unified orchestration for ${gptId}`);
       

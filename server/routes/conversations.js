@@ -403,13 +403,27 @@ r.post("/:id/messages", async (req, res) => {
 
       const gptRuntime = getGPTRuntimeBridge();
 
-      // Process message with unlimited conversational scope
+      // 🚀 LOAD CONVERSATION HISTORY for GPT seats (mirrors Zen's flow)
+      const allMessages = await Store.listMessages(req.user.id, conversationId);
+      const conversationHistory = allMessages
+        .filter(msg => msg.role === 'user' || msg.role === 'assistant')
+        .map(msg => ({
+          text: msg.content || msg.message || '',
+          role: msg.role,
+          timestamp: msg.createdAt ? new Date(msg.createdAt).toISOString() : new Date().toISOString(),
+        }))
+        .slice(-50); // Cap to keep context manageable
+      
+      console.log(`📚 [Conversations API] Loaded ${conversationHistory.length} messages for GPT seat context`);
+
+      // Process message with unlimited conversational scope + conversation history
       const aiResponse = await gptRuntime.processMessage(
         gptId,
         req.body.message || req.body.content,
         req.user.id,
         conversationId,
-        identityFiles
+        identityFiles,
+        conversationHistory
       );
 
       console.log(`✅ [Conversations API] Generated response: "${aiResponse.content}"`);

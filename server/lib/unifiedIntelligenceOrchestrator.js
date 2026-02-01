@@ -321,7 +321,7 @@ export class UnifiedIntelligenceOrchestrator {
    * @param {object} capsuleData - Capsule data
    * @param {string} modelOverride - Optional model override (e.g., 'openai:gpt-4o')
    */
-  async callLLMWithContext(constructId, message, personality, memories, userProfile, capsuleData, modelOverride = null) {
+  async callLLMWithContext(constructId, message, personality, memories, userProfile, capsuleData, conversationHistory = [], modelOverride = null) {
     // Parse model string to determine provider
     let provider = 'openrouter';
     let model = GPT_SEAT_MODELS.default;
@@ -351,12 +351,26 @@ export class UnifiedIntelligenceOrchestrator {
       capsuleData
     );
     
+    // 🚀 FORMAT CONVERSATION HISTORY as recent turns for context
+    const recentTurns = (conversationHistory || []).slice(-20).map(turn => ({
+      role: turn.role === 'assistant' ? 'assistant' : 'user',
+      content: turn.text || turn.content || ''
+    }));
+    
     console.log(`🤖 [LLM] Calling ${provider} (${model}) for ${constructId}`);
     console.log(`🤖 [LLM] System prompt length: ${systemPrompt.length} chars`);
     console.log(`🤖 [LLM] Memories injected: ${memories.length}`);
+    console.log(`📚 [LLM] Conversation history: ${recentTurns.length} recent turns included`);
     
     try {
       let completion;
+      
+      // Build messages array with system prompt, conversation history, and current message
+      const messages = [
+        { role: 'system', content: systemPrompt },
+        ...recentTurns,
+        { role: 'user', content: message }
+      ];
       
       if (provider === 'openai') {
         // Use OpenAI client (via Replit AI Integrations)
@@ -369,10 +383,7 @@ export class UnifiedIntelligenceOrchestrator {
           const isGpt5Plus = model.startsWith('gpt-5') || model.startsWith('o3') || model.startsWith('o4');
           const completionParams = {
             model,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: message }
-            ],
+            messages,
             max_completion_tokens: 1024,
           };
           if (!isGpt5Plus) {
@@ -386,10 +397,7 @@ export class UnifiedIntelligenceOrchestrator {
         // Use OpenRouter client
         completion = await openrouter.chat.completions.create({
           model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: message }
-          ],
+          messages,
           max_tokens: 1024,
           temperature: 0.7,
         });
@@ -466,7 +474,7 @@ Use these memories to inform your response. Reference past conversations natural
    * Process any message on any topic without restrictions
    * Maintains personality while providing complete conversational freedom
    */
-  async processUnrestrictedMessage(constructId, message, userId, conversationId, identityContext = null) {
+  async processUnrestrictedMessage(constructId, message, userId, conversationId, identityContext = null, conversationHistory = []) {
     console.time(`🧠 [UnifiedIntelligence] Processing message for ${constructId}`);
     
     // 🔒 ZEN HARD-DELEGATION - Never use templates for Zen
@@ -479,6 +487,7 @@ Use these memories to inform your response. Reference past conversations natural
     console.log(`🔍 [CONTEXT-PIPELINE] Starting processing for ${constructId}`);
     console.log(`🔍 [CONTEXT-PIPELINE] Message: "${message}"`);
     console.log(`🔍 [CONTEXT-PIPELINE] User: ${userId}, Conversation: ${conversationId}`);
+    console.log(`📚 [CONTEXT-PIPELINE] Conversation history: ${conversationHistory.length} messages`);
     
     // 🚀 MEMORY-ENHANCED LLM PROCESSING for GPT seats (Katana, etc.)
     // Replace hardcoded responses with actual LLM calls using memory context
@@ -508,15 +517,16 @@ Use these memories to inform your response. Reference past conversations natural
         console.log(`⚠️ [CONTEXT-PIPELINE] No capsule data for ${constructId}`);
       }
       
-      // 🚀 USE REAL LLM with memory-enhanced context
-      console.log(`🚀 [CONTEXT-PIPELINE] Calling LLM with memory-enhanced context...`);
+      // 🚀 USE REAL LLM with memory-enhanced context + conversation history
+      console.log(`🚀 [CONTEXT-PIPELINE] Calling LLM with memory-enhanced context + ${conversationHistory.length} history messages...`);
       const response = await this.callLLMWithContext(
         constructId,
         message,
         personality,
         memories,
         userProfile,
-        capsuleData
+        capsuleData,
+        conversationHistory
       );
       console.log(`🔍 [CONTEXT-PIPELINE] LLM response generated: "${response.substring(0, 100)}${response.length > 100 ? '...' : ''}"`);
 
