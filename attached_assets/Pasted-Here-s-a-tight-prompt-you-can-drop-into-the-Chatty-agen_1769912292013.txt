@@ -1,0 +1,69 @@
+Here’s a tight prompt you can drop into the **Chatty** agent so it updates the FXShinobi UI and de‑hardcodes the pipeline.
+
+***
+
+### Prompt for Chatty agent (FXShinobi subpage upgrade)
+
+> FXShinobi is now LIVE (worker running, OANDA configured, VVAULT + Supabase all OK).  
+> The FXShinobi dashboard lives under `/app/finance/fxshinobi` and currently focuses on TradingView + basic stats.
+> 
+> I want this page treated as a **broker‑agnostic FX cockpit**, not just an OANDA+TradingView demo. Update it as follows:
+> 
+> #### 1. Broker‑agnostic layout
+> - Refactor the FXShinobi page so broker‑specific details (OANDA) are **just one panel**, and the rest of the layout is generic.
+> - Add a top “Broker” section that can eventually handle multiple brokers:
+>   - Show current broker: OANDA (for now).
+>   - Fields:
+>     - Account type: Demo vs Live (from `OANDA_ENVIRONMENT` via VVAULT / FXShinobi status). [wikifx](https://www.wikifx.com/en/newsdetail/202509156824602468.html)
+>     - Balance + equity + open PnL (from FXShinobi `/api/snapshot` → `account_balance`, `open_pnl`, `pnl_today`).[file:code_file]
+>     - Simple badge: “Broker: OANDA – Demo/Live”.
+> - Keep this wired through the existing `/api/fxshinobi/*` proxy so we can swap brokers later without touching the UI.
+> 
+> #### 2. Full order list (like the OANDA app)
+> - Add an “Orders / Activity” panel similar to the OANDA iPad UI screenshot:
+>   - Source: use FXShinobi’s `/api/trades/history` (or `/api/trades/all` if available) which now surfaces **every trade** from the Supabase `fxshinobi_trades` table.
+>   - Columns:
+>     - Time, Symbol, Side, Size, Entry, Exit, Realized PnL, Status, Ticket/Order ID.
+>     - `Source` badge: “FXShinobi” vs “Manual/Other” using the `is_fxshinobi` / `source` fields we’re adding server‑side. [developer.oanda](https://developer.oanda.com/rest-live-v20/account-ep/)
+>   - Make it scrollable with pagination or “Load more”.
+>   - Add filters: “All / FXShinobi / Manual”.
+> 
+> #### 3. OANDA credentials + script log panels
+> - Add a small **OANDA Credentials Status** widget:
+>   - Uses FXShinobi `/api/health` / `/api/status`:
+>     - Shows: Configured / Not configured (no secrets).
+>     - Displays environment (practice vs live) as a label. [developer.oanda](https://developer.oanda.com/rest-live-v20/introduction/)
+> - Add a **Script Log** panel:
+>   - Source: FXShinobi `/api/logs/recent` (or equivalent) or a Supabase `fxshinobi_health`/events table.
+>   - Show last N events: `[timestamp] [level] message` in a console‑style view. [nadcab](https://www.nadcab.com/blog/python-crypto-trading-bot-development-guide)
+> 
+> #### 4. Multiple data sources (beyond TradingView)
+> - Keep TradingView, but don’t make it the only chart provider:
+>   - Encapsulate it behind a `ChartProvider` abstraction so we can add others later (e.g., broker charts, custom views). [tradingview](https://www.tradingview.com/widget-docs/tutorials/build-page/widget-integration/)
+> - Add tiles/links/panels for these **external intel sources** (open in new tab or show a summarized view):
+>   1. **ForexFactory calendar**  
+>      - Small “Today’s key events” list with:
+>        - Time, Currency, Impact, Event name, from ForexFactory’s economic calendar (even if initially via a light scraped/iframe view). [dailypriceaction](https://dailypriceaction.com/forex-beginners/how-to-use-the-forex-factory-calendar/)
+>      - Also include a “Open full calendar” button linking to ForexFactory.
+>   2. **Finviz FX heatmap** (`https://finviz.com/forex.ashx`)  
+>      - Add a “FX Heatmap” card with:
+>        - Screenshot/thumbnail + link, or an embedded view if feasible.
+>        - Short caption: “Relative currency performance (Finviz FX).” [youtube](https://www.youtube.com/watch?v=m2x1IrNwhBw)
+>   3. **Currency strength meter** (`https://www.livecharts.co.uk/currency-strength.php`)  
+>      - Add a “Currency Strength” panel:
+>        - Show a simple list or mini‑heatmap of current strengths for major currencies (e.g., top 3 strongest/weakest) if we can parse the values; otherwise link with description. [livecharts.co](https://www.livecharts.co.uk/currency-strength.php)
+>   4. **CompoundDaily calculator** (`https://compounddaily.org/calculator/`)  
+>      - Add a “Compounding Planner” card:
+>        - Takes current balance and a target daily percent (e.g., 1–4%) and shows projected equity curve; this can be a simple local calculator using the same math as the external site. [failory](https://www.failory.com/blog/how-to-pre-sell-your-saas)
+>   5. **Babypips training (weekend mode)**  
+>      - Add a “Weekend Training” section that appears when markets are closed:
+>        - List 3–5 curated Babypips school links (beginner, intermediate, psychology). [youtube](https://www.youtube.com/watch?v=X2HLes0pST0)
+>        - Add a description: “FXShinobi’s weekend dojo – study mode from close to open.”
+> 
+> #### 5. UX notes
+> - Keep everything behind the existing `/app/finance/fxshinobi` route and `/api/fxshinobi/*` proxies.
+> - Make broker‑specific pieces (OANDA) clearly marked so we can plug in other brokers later.
+> - Ensure all panels degrade gracefully:
+>   - If FXShinobi or VVAULT is down, show friendly “Not configured / Offline” states, falling back to static links for external intel sources.
+> 
+> Don’t change any of the live‑mode or status detection behavior; just extend the UI and data hooks so the FXShinobi subpage feels like a full trading cockpit (orders list, account status, logs, and external intel), not just a single chart.
