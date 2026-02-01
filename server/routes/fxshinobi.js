@@ -88,24 +88,32 @@ router.get('/status', async (req, res) => {
     
     if (response.ok) {
       const data = await response.json();
+      
+      const oandaConfigured = data.oanda_configured ?? false;
+      const activeBrokerId = data.active_broker_id || (oandaConfigured ? 'oanda' : null);
+      const isOandaActive = activeBrokerId === 'oanda' && oandaConfigured;
+      
       return res.json({
         status: data.status || 'online',
         live_mode: data.live_mode ?? false,
-        broker_configured: data.broker_configured ?? data.oanda_configured ?? false,
-        active_broker_id: data.active_broker_id || (data.oanda_configured ? 'oanda' : null),
-        active_broker_name: data.active_broker_name || (data.oanda_configured ? 'OANDA' : null),
+        oanda_configured: oandaConfigured,
+        broker_configured: data.broker_configured ?? isOandaActive,
+        active_broker_id: activeBrokerId,
+        active_broker_name: data.active_broker_name || (isOandaActive ? 'OANDA' : null),
         account_type: data.account_type || (data.live_mode ? 'live' : 'demo'),
         environment: data.environment || (data.live_mode ? 'live' : 'demo'),
-        account_balance: data.account_balance ?? null,
-        equity: data.equity ?? null,
-        pnl_today: data.pnl_today ?? null,
-        open_pnl: data.open_pnl ?? null,
+        account_balance: data.account?.balance ?? data.account_balance ?? null,
+        equity: data.account?.equity ?? data.equity ?? null,
+        pnl_today: data.account?.pnl_today ?? data.pnl_today ?? null,
+        open_pnl: data.account?.open_pnl ?? data.open_pnl ?? null,
+        account: data.account || null,
+        brokers: data.brokers || null,
         vvault_status: data.vvault_status || 'unknown',
         supabase_status: data.supabase_status || 'unknown',
         version: data.version || '1.0.0',
         uptime: data.uptime,
         active_strategies: data.active_strategies || 0,
-        open_positions: data.open_positions || 0,
+        open_positions: data.open_positions || data.account?.open_positions || 0,
         timestamp: new Date().toISOString(),
       });
     } else {

@@ -53,6 +53,8 @@ export interface ServiceStatus {
   equity?: number | null;
   pnlToday?: number | null;
   openPnl?: number | null;
+  account?: FXShinobiAccountData | null;
+  brokers?: FXShinobiBrokerData[] | null;
   message?: string;
   lastChecked?: string;
   version?: string;
@@ -62,6 +64,23 @@ export interface ServiceStatus {
     activeStrategies?: number;
     openPositions?: number;
   };
+}
+
+export interface FXShinobiAccountData {
+  balance?: number | null;
+  equity?: number | null;
+  pnl_today?: number | null;
+  open_pnl?: number | null;
+  open_positions?: number;
+  margin_used?: number | null;
+  margin_available?: number | null;
+}
+
+export interface FXShinobiBrokerData {
+  id: string;
+  name: string;
+  status: 'connected' | 'not_configured' | 'error';
+  environment?: string;
 }
 
 export interface FXShinobiStatusResponse {
@@ -77,6 +96,8 @@ export interface FXShinobiStatusResponse {
   equity?: number | null;
   pnl_today?: number | null;
   open_pnl?: number | null;
+  account?: FXShinobiAccountData | null;
+  brokers?: FXShinobiBrokerData[] | null;
   vvault_status?: string;
   supabase_status?: string;
   version?: string;
@@ -136,10 +157,12 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
         activeBrokerName: data.active_broker_name ?? (isOandaActive ? 'OANDA' : null),
         accountType: data.account_type || (data.live_mode ? 'live' : 'demo'),
         environment: data.environment || (data.live_mode ? 'live' : 'demo'),
-        accountBalance: data.account_balance ?? null,
-        equity: data.equity ?? null,
-        pnlToday: data.pnl_today ?? null,
-        openPnl: data.open_pnl ?? null,
+        accountBalance: data.account?.balance ?? data.account_balance ?? null,
+        equity: data.account?.equity ?? data.equity ?? null,
+        pnlToday: data.account?.pnl_today ?? data.pnl_today ?? null,
+        openPnl: data.account?.open_pnl ?? data.open_pnl ?? null,
+        account: data.account ?? null,
+        brokers: data.brokers ?? null,
         message: data.live_mode
           ? (isDegraded ? 'Live (Degraded)' : `Live v${data.version || '1.0'}`)
           : 'Simulation mode',
@@ -149,7 +172,7 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
           vvaultStatus: data.vvault_status,
           supabaseStatus: data.supabase_status,
           activeStrategies: data.active_strategies,
-          openPositions: data.open_positions,
+          openPositions: data.account?.open_positions ?? data.open_positions,
         },
       };
     } else {

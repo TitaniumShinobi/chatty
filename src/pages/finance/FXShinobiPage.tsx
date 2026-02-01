@@ -67,7 +67,7 @@ const FXShinobiPage: React.FC = () => {
   const { data: performance, loading: perfLoading } = usePerformanceMetrics();
   const { data: markets, loading: marketsLoading } = useKalshiMarkets({ autoRefresh: true });
   const { data: insights, loading: insightsLoading } = useFinanceInsights({ autoRefresh: true });
-  const { data: accountData, loading: accountLoading } = useAccountData({ autoRefresh: true, refreshInterval: 30000 });
+  const { data: accountData } = useAccountData({ autoRefresh: true, refreshInterval: 30000 });
   const { data: scriptLogs, loading: logsLoading } = useScriptLogs({ autoRefresh: true, refreshInterval: 15000 });
   const { status: fxshinobiStatus, refresh: refreshStatus } = useFXShinobiStatus(true, 30000);
 
@@ -205,7 +205,10 @@ const FXShinobiPage: React.FC = () => {
             <div className="flex items-center gap-3">
               <Building2 size={20} className="text-blue-500" />
               <h2 className="font-semibold">
-                Broker: {fxshinobiStatus.activeBrokerName || 'Not Selected'}
+                Broker: {(() => {
+                  const activeBroker = fxshinobiStatus.brokers?.find(b => b.id === fxshinobiStatus.activeBrokerId);
+                  return activeBroker?.name || fxshinobiStatus.activeBrokerName || 'Not Selected';
+                })()}
               </h2>
               <span
                 className={`px-2 py-0.5 rounded text-xs font-medium ${
@@ -216,17 +219,24 @@ const FXShinobiPage: React.FC = () => {
               >
                 {fxshinobiStatus.liveMode ? 'LIVE' : 'DEMO'}
               </span>
-              {fxshinobiStatus.brokerConfigured ? (
-                <span className="flex items-center gap-1 text-xs text-green-400">
-                  <CheckCircle size={12} />
-                  Connected
-                </span>
-              ) : (
-                <span className="flex items-center gap-1 text-xs text-red-400">
-                  <XCircle size={12} />
-                  Not Configured
-                </span>
-              )}
+              {(() => {
+                const isOandaActive = fxshinobiStatus.activeBrokerId === 'oanda';
+                const oandaConnected = isOandaActive && fxshinobiStatus.oandaConfigured;
+                const activeBroker = fxshinobiStatus.brokers?.find(b => b.id === fxshinobiStatus.activeBrokerId);
+                const isConnected = oandaConnected || activeBroker?.status === 'connected' || fxshinobiStatus.brokerConfigured;
+                
+                return isConnected ? (
+                  <span className="flex items-center gap-1 text-xs text-green-400">
+                    <CheckCircle size={12} />
+                    Connected
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-xs text-red-400">
+                    <XCircle size={12} />
+                    Not Configured
+                  </span>
+                );
+              })()}
             </div>
             <button
               onClick={() => setShowBrokerModal(true)}
@@ -243,14 +253,15 @@ const FXShinobiPage: React.FC = () => {
               className="p-3 rounded-lg text-center"
               style={{ backgroundColor: 'var(--chatty-bg)' }}
             >
-              {accountLoading ? (
+              {fxshinobiStatus.status === 'checking' ? (
                 <Loader2 size={20} className="animate-spin mx-auto" />
               ) : (
                 <>
                   <div className="text-xl font-bold">
-                    {accountData?.account_balance !== null && accountData?.account_balance !== undefined
-                      ? formatCurrency(accountData.account_balance)
-                      : '--'}
+                    {(() => {
+                      const balance = fxshinobiStatus.account?.balance ?? fxshinobiStatus.accountBalance ?? accountData?.account_balance;
+                      return balance !== null && balance !== undefined ? formatCurrency(balance) : '--';
+                    })()}
                   </div>
                   <div className="text-xs opacity-60">Balance</div>
                 </>
@@ -260,14 +271,15 @@ const FXShinobiPage: React.FC = () => {
               className="p-3 rounded-lg text-center"
               style={{ backgroundColor: 'var(--chatty-bg)' }}
             >
-              {accountLoading ? (
+              {fxshinobiStatus.status === 'checking' ? (
                 <Loader2 size={20} className="animate-spin mx-auto" />
               ) : (
                 <>
                   <div className="text-xl font-bold">
-                    {fxshinobiStatus.equity !== null && fxshinobiStatus.equity !== undefined
-                      ? formatCurrency(fxshinobiStatus.equity)
-                      : '--'}
+                    {(() => {
+                      const equity = fxshinobiStatus.account?.equity ?? fxshinobiStatus.equity;
+                      return equity !== null && equity !== undefined ? formatCurrency(equity) : '--';
+                    })()}
                   </div>
                   <div className="text-xs opacity-60">Equity</div>
                 </>
@@ -277,16 +289,20 @@ const FXShinobiPage: React.FC = () => {
               className="p-3 rounded-lg text-center"
               style={{ backgroundColor: 'var(--chatty-bg)' }}
             >
-              {accountLoading ? (
+              {fxshinobiStatus.status === 'checking' ? (
                 <Loader2 size={20} className="animate-spin mx-auto" />
               ) : (
                 <>
                   <div className={`text-xl font-bold ${
-                    (accountData?.open_pnl ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'
+                    (() => {
+                      const openPnl = fxshinobiStatus.account?.open_pnl ?? fxshinobiStatus.openPnl ?? accountData?.open_pnl ?? 0;
+                      return (openPnl ?? 0) >= 0 ? 'text-green-500' : 'text-red-500';
+                    })()
                   }`}>
-                    {accountData?.open_pnl !== null && accountData?.open_pnl !== undefined
-                      ? formatCurrency(accountData.open_pnl)
-                      : '--'}
+                    {(() => {
+                      const openPnl = fxshinobiStatus.account?.open_pnl ?? fxshinobiStatus.openPnl ?? accountData?.open_pnl;
+                      return openPnl !== null && openPnl !== undefined ? formatCurrency(openPnl) : '--';
+                    })()}
                   </div>
                   <div className="text-xs opacity-60">Open P&L</div>
                 </>
@@ -296,16 +312,20 @@ const FXShinobiPage: React.FC = () => {
               className="p-3 rounded-lg text-center"
               style={{ backgroundColor: 'var(--chatty-bg)' }}
             >
-              {accountLoading ? (
+              {fxshinobiStatus.status === 'checking' ? (
                 <Loader2 size={20} className="animate-spin mx-auto" />
               ) : (
                 <>
                   <div className={`text-xl font-bold ${
-                    (accountData?.pnl_today ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'
+                    (() => {
+                      const pnlToday = fxshinobiStatus.account?.pnl_today ?? fxshinobiStatus.pnlToday ?? accountData?.pnl_today ?? 0;
+                      return (pnlToday ?? 0) >= 0 ? 'text-green-500' : 'text-red-500';
+                    })()
                   }`}>
-                    {accountData?.pnl_today !== null && accountData?.pnl_today !== undefined
-                      ? formatCurrency(accountData.pnl_today)
-                      : '--'}
+                    {(() => {
+                      const pnlToday = fxshinobiStatus.account?.pnl_today ?? fxshinobiStatus.pnlToday ?? accountData?.pnl_today;
+                      return pnlToday !== null && pnlToday !== undefined ? formatCurrency(pnlToday) : '--';
+                    })()}
                   </div>
                   <div className="text-xs opacity-60">P&L Today</div>
                 </>
@@ -316,7 +336,7 @@ const FXShinobiPage: React.FC = () => {
               style={{ backgroundColor: 'var(--chatty-bg)' }}
             >
               <div className="text-xl font-bold">
-                {fxshinobiStatus.details?.openPositions ?? 0}
+                {fxshinobiStatus.account?.open_positions ?? fxshinobiStatus.details?.openPositions ?? 0}
               </div>
               <div className="text-xs opacity-60">Open Positions</div>
             </div>
