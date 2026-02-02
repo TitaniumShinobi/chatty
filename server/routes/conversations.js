@@ -6,6 +6,61 @@ import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Helper to sync GPT conversations to Supabase
+async function syncGPTConversationToSupabase(userId, userEmail, conversationId, gptId, gptName, userMessage, aiMessage) {
+  try {
+    const { writeConversationToSupabase } = await import('../../vvaultConnector/supabaseStore.js');
+    
+    // Extract construct callsign from gptId (e.g., 'katana' -> 'katana-001')
+    let constructId = gptId;
+    if (!constructId.match(/-\d+$/)) {
+      constructId += '-001';
+    }
+    
+    const sessionId = `${constructId}_chat_with_${constructId}`;
+    const timestamp = new Date().toISOString();
+    
+    // Save user message
+    if (userMessage) {
+      await writeConversationToSupabase({
+        userId,
+        userEmail,
+        sessionId,
+        title: gptName || constructId,
+        constructId,
+        constructName: gptName,
+        constructCallsign: constructId,
+        role: 'user',
+        content: typeof userMessage === 'string' ? userMessage : userMessage.content || userMessage.message,
+        timestamp,
+        metadata: { source: 'chatty' }
+      });
+    }
+    
+    // Save AI response
+    if (aiMessage) {
+      await writeConversationToSupabase({
+        userId,
+        userEmail,
+        sessionId,
+        title: gptName || constructId,
+        constructId,
+        constructName: gptName,
+        constructCallsign: constructId,
+        role: 'assistant',
+        content: typeof aiMessage === 'string' ? aiMessage : aiMessage.content || aiMessage.message,
+        timestamp: new Date().toISOString(),
+        metadata: { source: 'chatty' }
+      });
+    }
+    
+    console.log(`✅ [Conversations API] Synced GPT conversation to Supabase: ${constructId}`);
+  } catch (error) {
+    console.warn(`⚠️ [Conversations API] Supabase sync failed:`, error.message);
+    // Don't fail the request if sync fails
+  }
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -459,6 +514,17 @@ r.post("/:id/messages", async (req, res) => {
         console.warn(`⚠️ [Conversations API] Capsule update failed:`, hookError.message);
         // Don't fail the request if capsule update fails
       }
+
+      // Sync GPT conversation to Supabase for persistence
+      await syncGPTConversationToSupabase(
+        req.user.id,
+        req.user.email,
+        conversationId,
+        gptId,
+        gptId, // Use gptId as name (will be formatted properly)
+        req.body.message || req.body.content,
+        aiResponse.content
+      );
 
       // Return both the user message and AI response with unrestricted metadata
       res.status(201).json({
