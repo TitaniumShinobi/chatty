@@ -130,6 +130,54 @@ This document defines the official color scheme for Chatty's user interface.
 
 ---
 
+## Christmas Theme (Seasonal: December 15 – January 6)
+
+The Christmas theme is a seasonal overlay that activates automatically during the holiday period. It applies a deep forest green palette while inheriting the Night theme's text colors.
+
+### Background Colors
+
+* **Main Area**: `#0f1f0f` — Deep forest green
+* **Sidebar**: `#0f1f0f` — Deep forest green (unified with main)
+* **Message Box**: `rgba(173, 165, 135, 0.25)` — #ADA587 at 25% opacity (matches user bubbles)
+
+### Accent & Highlight Colors
+
+* **Hover / Highlight**: `#1a2d1a` — Forest highlight
+* **Selected**: `#ADA587` — Authority / active state (inherited from Night)
+* **Buttons**: `#ADA587` — Primary actions (inherited from Night)
+
+### Star Animation Colors (Christmas-specific)
+
+* **Starburst**: `#fffff0` — Cloud lemon starbursts
+* **Nova**: `#ffffff` — Pure white nova effect
+* **Rays**: `#ffd700` — Gold rays emanating from star
+
+### Text Colors (Inherited from Night Theme)
+
+* **ALL TEXT**: `#fffff0` (Cloud Lemon)
+* Opacity rules follow Night theme conventions
+
+---
+
+## CSS Variables — Christmas Theme
+
+```css
+.theme-script-christmas[data-theme="night"],
+.theme-script-christmas:root.night-mode,
+[data-theme="night"].theme-script-christmas,
+:root.night-mode.theme-script-christmas {
+  --chatty-bg-main: #0f1f0f;
+  --chatty-bg-sidebar: #0f1f0f;
+  --chatty-bg-message: rgba(173, 165, 135, 0.25);
+  --chatty-highlight: #1a2d1a;
+  --chatty-star-starburst-color: #fffff0;
+  --chatty-star-nova-color: #ffffff;
+  --chatty-star-ray-color: #ffd700;
+}
+```
+
+---
+
 ## Design Contract (Non-Negotiables)
 
 1. Hierarchy is expressed via **opacity, not hue**
