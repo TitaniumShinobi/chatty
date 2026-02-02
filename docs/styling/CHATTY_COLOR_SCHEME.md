@@ -130,7 +130,7 @@ This document defines the official color scheme for Chatty's user interface.
 
 ---
 
-## Christmas Theme (Seasonal: December 15 – January 6)
+## Christmas Theme (Seasonal: December 1 – January 1 at 12:00am)
 
 The Christmas theme is a seasonal overlay that activates automatically during the holiday period. It applies a deep forest green palette while inheriting the Night theme's text colors.
 
