@@ -189,7 +189,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   }, [globalSearchQuery]);
 
   const isChristmasTheme = activeThemeScript?.id === "christmas";
-  const starImage = isChristmasTheme ? litchattyStar : chattyStar;
+  const isValentinesTheme = activeThemeScript?.id === "valentines";
+  const starImage = (isChristmasTheme || isValentinesTheme) ? litchattyStar : chattyStar;
 
   const isActiveRoute = useMemo(
     () => (path: string) => location.pathname === path,
@@ -272,7 +273,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   alt="Chatty"
                   className="chatty-star w-full h-full object-contain"
                 />
-                {!isChristmasTheme && (
+                {!isChristmasTheme && !isValentinesTheme && (
                   <>
                     <img
                       src="/assets/stars/fourpointray.svg"
@@ -306,6 +307,34 @@ const Sidebar: React.FC<SidebarProps> = ({
                     />
                     <img
                       src="/assets/stars/fourpointnova.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-nova-right"
+                    />
+                  </>
+                )}
+                {isValentinesTheme && (
+                  <>
+                    <img
+                      src="/assets/stars/lemonfourpointstarburst.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-left"
+                    />
+                    <img
+                      src="/assets/stars/lemonfourpointstarburst.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-right"
+                    />
+                    <img
+                      src="/assets/stars/passionfourpointnova.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-nova-left"
+                    />
+                    <img
+                      src="/assets/stars/passionfourpointnova.svg"
                       alt=""
                       aria-hidden="true"
                       className="chatty-starburst chatty-starburst-nova-right"
@@ -454,7 +483,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   alt="Chatty"
                   className="chatty-star w-full h-full object-contain"
                 />
-                {!isChristmasTheme && (
+                {!isChristmasTheme && !isValentinesTheme && (
                   <>
                     <img
                       src="/assets/stars/fourpointray.svg"
@@ -488,6 +517,34 @@ const Sidebar: React.FC<SidebarProps> = ({
                     />
                     <img
                       src="/assets/stars/fourpointnova.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-nova-right"
+                    />
+                  </>
+                )}
+                {isValentinesTheme && (
+                  <>
+                    <img
+                      src="/assets/stars/lemonfourpointstarburst.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-left"
+                    />
+                    <img
+                      src="/assets/stars/lemonfourpointstarburst.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-right"
+                    />
+                    <img
+                      src="/assets/stars/passionfourpointnova.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-nova-left"
+                    />
+                    <img
+                      src="/assets/stars/passionfourpointnova.svg"
                       alt=""
                       aria-hidden="true"
                       className="chatty-starburst chatty-starburst-nova-right"
