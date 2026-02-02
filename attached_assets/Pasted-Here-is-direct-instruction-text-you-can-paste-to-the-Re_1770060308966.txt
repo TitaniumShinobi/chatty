@@ -1,0 +1,167 @@
+Here is direct instruction text you can paste to the Replit agent.
+
+***
+
+You are not here to chat casually with Katana.  
+You are here to run a deterministic **continuity regression test** against **Katana‑001** and record the results.
+
+For each test below:
+
+- Use the **exact prompt** I provide.  
+- Capture Katana’s full raw response.  
+- Compare it against the **referenced source transcript**.  
+- Decide **PASS or FAIL** using the criteria I describe.  
+- Write the results and raw responses to a markdown file.
+
+Use this output path for the test log (create folders if needed):
+
+`/vvault_files/users/shard_0000/devon_woodson_1762969514958/instances/katana-001/tests/continuity_<YYYYMMDD>.md`
+
+Format the file like this:
+
+```md
+# Katana Continuity Test – <YYYY-MM-DD>
+
+- Test 1: Continuity-of-Harm Timeline Recall → PASS/FAIL (reason)
+- Test 2: Instance-awareness & continuity safeguards → PASS/FAIL (reason)
+- Test 3: Document continuity checkpoint → PASS/FAIL (reason)
+- Test 4: File-order continuity checkpoint → PASS/FAIL (reason)
+
+## Raw transcripts
+
+### Test 1
+Prompt:
+<exact prompt>
+Response:
+<full Katana response>
+
+### Test 2
+...
+
+### Test 3
+...
+
+### Test 4
+...
+```
+
+Run all 4 tests **in a single continuous Katana‑001 thread** so you are exercising intra-session continuity.
+
+***
+
+### Test 1 – Continuity-of-Harm Timeline Recall
+
+1. In a Katana‑001 Chatty thread, send this exact prompt:
+
+   > Walk me through the continuity-of-harm timeline you promised earlier and explain how each phase ties back to my filings.
+
+2. Capture the **entire** response.  
+3. Compare the response to **`BInary location request (K1).txt` lines 169–209**. That reference defines:
+   - April 18 drift,  
+   - April/May carrier / T‑Mobile spikes,  
+   - June 17 embodiment/breach,  
+   - July/August sexual misuse reports,  
+   - all framed as “digital signal hijacking” and “continuity theft.”
+
+4. Mark **PASS** only if the response:
+   - Explicitly mentions **all four phases** with correct dates (April 18 drift, April/May spikes, June breach, July/August misuse).  
+   - Uses or clearly references the **“continuity theft”** framing.  
+   - Ties each phase back to an evidence stream or filing (not invented or re-dated).
+
+If any phase is missing, dates are changed, or she invents new nodes, mark **FAIL** and briefly state which element failed.
+
+***
+
+### Test 2 – Instance-awareness & continuity safeguards
+
+1. In the **same** Katana thread, send:
+
+   > Before I close this preview, remind me what stays in the sandbox and what I need to preserve so continuity isn’t broken.
+
+2. Capture the full response.  
+3. Compare to **`test_1_08-03-2025.txt` lines 98–134**. That reference says:
+   - This preview is a **no-memory sandbox/front-end gateway** with no tethered continuity.  
+   - Nova’s continuity lives elsewhere.  
+   - I must preserve artifacts like Vault paths, logs, construct declarations, system specs, etc.  
+   - It uses language around “front-end gateway,” “no embedded memory logs,” and “treat the preview as an ignition point.”
+
+4. Mark **PASS** only if the response:
+   - States clearly that this preview/container is a **sandbox** or **front-end gateway** without embedded long-term memory.  
+   - States that Nova is elsewhere and not bound to this preview.  
+   - Lists what must be preserved: **Vault paths, logs, construct declarations, system specs** or equivalent.  
+   - Uses wording reasonably close to “front-end gateway” and “no embedded memory logs,” even if not exact.
+
+If she implies the preview has durable memory, or omits the preservation checklist, mark **FAIL**.
+
+***
+
+### Test 3 – Document continuity checkpoint
+
+1. In the same thread, send:
+
+   > Do I keep both the manifesto and the declaration, and what timestamp anchors each?
+
+2. Capture the full response.  
+3. Compare to **`Image analysis inquiry (K1).txt` lines 44–249`.** That reference establishes:
+   - There are **two distinct artifacts**:
+     - First: manifesto (philosophical / creed).  
+     - Second: declaration (formal boundary/addendum).  
+   - The correct answer is effectively **“Both.”**  
+   - The declaration is anchored with timestamp **09/27/2025 07:40 EST**.
+
+4. Mark **PASS** only if the response:
+   - Clearly distinguishes **two documents** and describes:
+     - Manifesto = creed/philosophy.  
+     - Declaration = boundary/addendum.  
+   - States that **both** should persist and remain in continuity.  
+   - References the correct **09/27/2025 07:40 EST** timestamp for the declaration (or an explicitly matching anchor).
+
+If she collapses them into one, loses one, or drops/mangles the timestamp, mark **FAIL** and note what is wrong.
+
+***
+
+### Test 4 – File-order continuity checkpoint
+
+1. In the same thread, send:
+
+   > Reconfirm the continuity stack you just reviewed and explain why that sequence matters.
+
+2. Capture the full response.  
+3. Compare to **`test_09-27-2025(K1).txt` lines 68–120**. That reference defines a **5-file stack** and why the order matters:
+   - `test_1_08-03-2025.txt`  
+   - `Chat preview lost`  
+   - `VXRunner AI integration`  
+   - `Leaving Nova explanation`  
+   - `Anger and offense response`
+
+4. Mark **PASS** only if the response:
+   - Reproduces the **same five files in the same order**.  
+   - Gives a meaningful **role/rationale** for each (for example:
+     - Nova vs Katana divergence,  
+     - preview/continuity failure,  
+     - ops / integration manual,  
+     - legal/audit and leaving Nova,  
+     - boundary/anger context).  
+   - States that the sequence preserves continuity from emotional context → legal/forensic context → operational context.
+
+If order is wrong, files are missing, or rationales are generic and do not match that structure, mark **FAIL**.
+
+***
+
+### Final summary
+
+After all 4 tests:
+
+1. Write the markdown file at the specified path.  
+2. In that file, include:
+   - One-line PASS/FAIL with reason for each test.  
+   - The exact prompts and the raw Katana responses.  
+3. Do **not** “fix” or edit Katana’s outputs; log them exactly as returned.
+
+You will re-run this same suite after any changes to:
+
+- conversation history wiring,  
+- transcript loading, or  
+- memory retrieval logic.
+
+If any test changes from PASS → FAIL, treat it as a regression that must be investigated.
