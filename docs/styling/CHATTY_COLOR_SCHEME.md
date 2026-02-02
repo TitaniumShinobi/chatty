@@ -178,6 +178,85 @@ The Christmas theme is a seasonal overlay that activates automatically during th
 
 ---
 
+## Valentine's Day Theme (Seasonal: February 1 – February 15)
+
+The Valentine's Day theme is a romantic seasonal overlay with passion rose and golden ray accents. Unlike Christmas, it features both **dark and light mode** variants.
+
+### Dark Mode Background Colors
+
+* **Main Area**: `#2e0f22` — Deep passion rose
+* **Sidebar**: `#2e0f22` — Unified with main
+* **Message Box**: `rgba(212, 0, 95, 0.15)` — Passion rose at 15% opacity
+* **Hover / Highlight**: `#4a1f36` — Rose highlight
+
+### Dark Mode Text Colors
+
+* **ALL TEXT**: `#f1dff2` (Gelato pink)
+* **Placeholder / Timestamp**: `rgba(241, 223, 242, 0.6)` — Gelato pink at 60%
+
+### Light Mode Background Colors
+
+* **Main Area**: `#f1dff2` — Gelato pink
+* **Sidebar**: `#f1dff2` — Unified with main
+* **Message Box**: `rgba(212, 0, 95, 0.1)` — Passion rose at 10% opacity
+* **Hover / Highlight**: `#d9c9d6` — Slightly darker pink
+
+### Light Mode Text Colors
+
+* **ALL TEXT**: `#2e0f22` (Deep passion rose)
+* **Placeholder / Timestamp**: `rgba(46, 15, 34, 0.6)` — Deep rose at 60%
+
+### Star Animation Colors (Valentine's-specific)
+
+* **Starburst**: `#ffffeb` — Cloud-lemon outer
+* **Nova (on hover)**: `#d4005f` — Passion rose nova
+* **Rays**: `#ffef42` — Golden glow
+* **Chatty logo inner fill**: `#d4005f` — Passion rose
+
+### Animation Timing
+
+* **Nova (rear)**: 28s loop (slow spin)
+* **Rays (middle)**: 14s loop
+* **Starburst (top)**: 7s loop
+
+---
+
+## CSS Variables — Valentine's Day Theme
+
+```css
+/* Dark Mode */
+.theme-script-valentines[data-theme="night"],
+:root.night-mode.theme-script-valentines {
+  --chatty-bg-main: #2e0f22;
+  --chatty-bg-sidebar: #2e0f22;
+  --chatty-bg-message: rgba(212, 0, 95, 0.15);
+  --chatty-highlight: #4a1f36;
+  --chatty-text: #f1dff2;
+  --chatty-placeholder: rgba(241, 223, 242, 0.6);
+  --chatty-timestamp: rgba(241, 223, 242, 0.6);
+  --chatty-star-starburst-color: #ffffeb;
+  --chatty-star-nova-color: #d4005f;
+  --chatty-star-ray-color: #ffef42;
+}
+
+/* Light Mode */
+.theme-script-valentines,
+.theme-script-valentines:root {
+  --chatty-bg-main: #f1dff2;
+  --chatty-bg-sidebar: #f1dff2;
+  --chatty-bg-message: rgba(212, 0, 95, 0.1);
+  --chatty-highlight: #d9c9d6;
+  --chatty-text: #2e0f22;
+  --chatty-placeholder: rgba(46, 15, 34, 0.6);
+  --chatty-timestamp: rgba(46, 15, 34, 0.6);
+  --chatty-star-starburst-color: #ffffeb;
+  --chatty-star-nova-color: #d4005f;
+  --chatty-star-ray-color: #ffef42;
+}
+```
+
+---
+
 ## Design Contract (Non-Negotiables)
 
 1. Hierarchy is expressed via **opacity, not hue**

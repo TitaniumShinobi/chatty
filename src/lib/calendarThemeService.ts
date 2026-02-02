@@ -56,6 +56,39 @@ export function getChristmasThemeScript(): ThemeScript {
   }
 }
 
+export function getValentinesThemeScript(): ThemeScript {
+  return {
+    id: 'valentines',
+    name: "Valentine's Day",
+    description: 'Romantic theme with passion rose and golden rays',
+    activePeriod: {
+      startMonth: 2,
+      startDay: 1,
+      endMonth: 2,
+      endDay: 15
+    },
+    colors: {
+      night: {
+        bgMain: '#2e0f22',
+        bgSidebar: '#2e0f22',
+        bgMessage: 'rgba(212, 0, 95, 0.15)',
+        highlight: '#4a1f36'
+      },
+      light: {
+        bgMain: '#f1dff2',
+        bgSidebar: '#f1dff2',
+        bgMessage: 'rgba(212, 0, 95, 0.1)',
+        highlight: '#d9c9d6'
+      }
+    },
+    starColors: {
+      starburst: '#ffffeb',
+      nova: '#d4005f',
+      ray: '#ffef42'
+    }
+  }
+}
+
 export function isDateInPeriod(
   date: Date,
   startMonth: number,
@@ -90,6 +123,10 @@ export function isThemeScriptActive(script: ThemeScript, date: Date = new Date()
 }
 
 export function getActiveThemeScript(date: Date = new Date()): ThemeScript | null {
+  const valentines = getValentinesThemeScript()
+  if (isThemeScriptActive(valentines, date)) {
+    return valentines
+  }
   const christmas = getChristmasThemeScript()
   if (isThemeScriptActive(christmas, date)) {
     return christmas
@@ -99,6 +136,7 @@ export function getActiveThemeScript(date: Date = new Date()): ThemeScript | nul
 
 export function getAvailableThemeScripts(): ThemeScript[] {
   return [
-    getChristmasThemeScript()
+    getChristmasThemeScript(),
+    getValentinesThemeScript()
   ]
 }

@@ -7,6 +7,7 @@ import { useDynamicSuggestions } from "../hooks/useDynamicSuggestions";
 
 // Logo assets
 import chattyChristmas from "@assets/logo/christmas/Chatty_Christmas.svg";
+import chattyValentines from "@assets/logo/valentines/Chatty_Valentines.svg";
 import chattyLogo from "@assets/logo/Chatty.svg";
 
 // Collapse animation frames (default theme)
@@ -23,6 +24,13 @@ import collapseChristmas2 from "@assets/logo/christmas/collapseToggle_Christmas/
 import collapseChristmas3 from "@assets/logo/christmas/collapseToggle_Christmas/chatty_collapsed_3_Christmas.svg";
 import collapseChristmas4 from "@assets/logo/christmas/collapseToggle_Christmas/chatty_collapsed_4_Christmas.svg";
 
+// Collapse animation frames (Valentine's theme)
+import collapseValentines0 from "@assets/logo/valentines/collapseToggle_Valentines/chatty_collapsed_Valentines.svg";
+import collapseValentines1 from "@assets/logo/valentines/collapseToggle_Valentines/chatty_collapsed_Valentines_1.svg";
+import collapseValentines2 from "@assets/logo/valentines/collapseToggle_Valentines/chatty_collapsed_Valentines_2.svg";
+import collapseValentines3 from "@assets/logo/valentines/collapseToggle_Valentines/chatty_collapsed_Valentines_3.svg";
+import collapseValentines4 from "@assets/logo/valentines/collapseToggle_Valentines/chatty_collapsed_Valentines_4.svg";
+
 interface LayoutContext {
   threads: any[];
   sendMessage: (threadId: string, text: string, files: File[]) => void;
@@ -37,6 +45,7 @@ export default function Home() {
   const navigate = useNavigate();
   const { activeThemeScript } = useTheme();
   const isChristmasTheme = activeThemeScript?.id === "christmas";
+  const isValentinesTheme = activeThemeScript?.id === "valentines";
   const [, setUser] = useState<User | null>(null);
   const [greeting, setGreeting] = useState("");
   const [inputValue, setInputValue] = useState("");
@@ -53,6 +62,16 @@ export default function Home() {
             collapseChristmas4,
             chattyChristmas,
           ]
+        : isValentinesTheme
+        ? [
+            chattyValentines,
+            collapseValentines0,
+            collapseValentines1,
+            collapseValentines2,
+            collapseValentines3,
+            collapseValentines4,
+            chattyValentines,
+          ]
         : [
             chattyLogo,
             collapseFrame0,
@@ -62,13 +81,15 @@ export default function Home() {
             collapseFrame4,
             chattyLogo,
           ],
-    [isChristmasTheme],
+    [isChristmasTheme, isValentinesTheme],
   );
-  const baseLogo = isChristmasTheme ? chattyChristmas : chattyLogo;
+  const baseLogo = isChristmasTheme ? chattyChristmas : isValentinesTheme ? chattyValentines : chattyLogo;
   const inactivityBase = isChristmasTheme
     ? "/assets/logo/christmas/inactivityAnimations_Christmas"
+    : isValentinesTheme
+    ? "/assets/logo/valentines/inactivityAnimations_Valentines"
     : "/assets/logo";
-  const ext = isChristmasTheme ? "_Christmas.svg" : ".png";
+  const ext = isChristmasTheme ? "_Christmas.svg" : isValentinesTheme ? "_Valentines.svg" : ".png";
   const letterConfigs = useMemo(
     () => [
       {
@@ -150,37 +171,37 @@ export default function Home() {
       {
         frames: [
           baseLogo,
-          isChristmasTheme
+          (isChristmasTheme || isValentinesTheme)
             ? `${inactivityBase}/Chat'T'y${ext}`
             : `${inactivityBase}/Chat'T'y.png`,
-          isChristmasTheme
+          (isChristmasTheme || isValentinesTheme)
             ? `${inactivityBase}/Chat'T'y_1${ext}`
             : `${inactivityBase}/chat'T'y_1.png`,
-          isChristmasTheme
+          (isChristmasTheme || isValentinesTheme)
             ? `${inactivityBase}/Chat'T'y${ext}`
             : `${inactivityBase}/Chat'T'y.png`,
-          isChristmasTheme
+          (isChristmasTheme || isValentinesTheme)
             ? `${inactivityBase}/Chat'T'y_2${ext}`
             : `${inactivityBase}/chat'T'y_2.png`,
-          isChristmasTheme
+          (isChristmasTheme || isValentinesTheme)
             ? `${inactivityBase}/Chat'T'y_1${ext}`
             : `${inactivityBase}/chat'T'y_1.png`,
-          isChristmasTheme
+          (isChristmasTheme || isValentinesTheme)
             ? `${inactivityBase}/Chat'T'y${ext}`
             : `${inactivityBase}/Chat'T'y.png`,
-          isChristmasTheme
+          (isChristmasTheme || isValentinesTheme)
             ? `${inactivityBase}/Chat'T'y_2${ext}`
             : `${inactivityBase}/chat'T'y_2.png`,
-          isChristmasTheme
+          (isChristmasTheme || isValentinesTheme)
             ? `${inactivityBase}/Chat'T'y_1${ext}`
             : `${inactivityBase}/chat'T'y_1.png`,
-          isChristmasTheme
+          (isChristmasTheme || isValentinesTheme)
             ? `${inactivityBase}/Chat'T'y${ext}`
             : `${inactivityBase}/Chat'T'y.png`,
-          isChristmasTheme
+          (isChristmasTheme || isValentinesTheme)
             ? `${inactivityBase}/Chat'T'y_2${ext}`
             : `${inactivityBase}/chat'T'y_2.png`,
-          isChristmasTheme
+          (isChristmasTheme || isValentinesTheme)
             ? `${inactivityBase}/Chat'T'y${ext}`
             : `${inactivityBase}/Chat'T'y.png`,
           baseLogo,
@@ -208,7 +229,7 @@ export default function Home() {
         stepMs: 80,
       },
     ],
-    [isChristmasTheme, baseLogo, inactivityBase, ext],
+    [isChristmasTheme, isValentinesTheme, baseLogo, inactivityBase, ext],
   );
   const letterScheduleMs = useMemo(
     () => [60000, 120000, 180000, 240000, 300000, 360000],
@@ -216,10 +237,10 @@ export default function Home() {
   );
   const [logoSrc, setLogoSrc] = useState(primaryHoverFrames[0]);
 
-  // Update logo when Christmas theme changes
+  // Update logo when seasonal theme changes
   useEffect(() => {
     setLogoSrc(primaryHoverFrames[0]);
-  }, [isChristmasTheme, primaryHoverFrames]);
+  }, [isChristmasTheme, isValentinesTheme, primaryHoverFrames]);
 
   const logoTimerRef = useRef<number | null>(null);
   const inactivityTimerRef = useRef<number | null>(null);

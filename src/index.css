@@ -56,6 +56,38 @@
   --chatty-star-ray-color: #ffd700; /* Gold rays */
 }
 
+/* Valentine's Day Theme - Dark Mode */
+.theme-script-valentines[data-theme="night"],
+.theme-script-valentines:root.night-mode,
+[data-theme="night"].theme-script-valentines,
+:root.night-mode.theme-script-valentines {
+  --chatty-bg-main: #2e0f22; /* Deep passion rose */
+  --chatty-bg-sidebar: #2e0f22;
+  --chatty-bg-message: rgba(212, 0, 95, 0.15); /* Passion rose at 15% opacity */
+  --chatty-highlight: #4a1f36; /* Rose highlight */
+  --chatty-text: #f1dff2; /* Gelato pink text */
+  --chatty-placeholder: rgba(241, 223, 242, 0.6);
+  --chatty-timestamp: rgba(241, 223, 242, 0.6);
+  --chatty-star-starburst-color: #ffffeb; /* Cloud-lemon outer */
+  --chatty-star-nova-color: #d4005f; /* Passion rose nova */
+  --chatty-star-ray-color: #ffef42; /* Golden glow */
+}
+
+/* Valentine's Day Theme - Light Mode */
+.theme-script-valentines,
+.theme-script-valentines:root {
+  --chatty-bg-main: #f1dff2; /* Gelato pink */
+  --chatty-bg-sidebar: #f1dff2;
+  --chatty-bg-message: rgba(212, 0, 95, 0.1); /* Passion rose at 10% opacity */
+  --chatty-highlight: #d9c9d6; /* Slightly darker pink */
+  --chatty-text: #2e0f22; /* Deep passion rose text */
+  --chatty-placeholder: rgba(46, 15, 34, 0.6);
+  --chatty-timestamp: rgba(46, 15, 34, 0.6);
+  --chatty-star-starburst-color: #ffffeb;
+  --chatty-star-nova-color: #d4005f;
+  --chatty-star-ray-color: #ffef42;
+}
+
 @layer base {
   * {
     @apply border-app-yellow-800;
