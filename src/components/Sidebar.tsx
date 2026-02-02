@@ -316,6 +316,18 @@ const Sidebar: React.FC<SidebarProps> = ({
                 {isValentinesTheme && (
                   <>
                     <img
+                      src="/assets/stars/fourpointray.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-ray-left"
+                    />
+                    <img
+                      src="/assets/stars/fourpointray.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-ray-right"
+                    />
+                    <img
                       src="/assets/stars/lemonfourpointstarburst.svg"
                       alt=""
                       aria-hidden="true"
@@ -525,6 +537,18 @@ const Sidebar: React.FC<SidebarProps> = ({
                 )}
                 {isValentinesTheme && (
                   <>
+                    <img
+                      src="/assets/stars/fourpointray.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-ray-left"
+                    />
+                    <img
+                      src="/assets/stars/fourpointray.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-ray-right"
+                    />
                     <img
                       src="/assets/stars/lemonfourpointstarburst.svg"
                       alt=""
