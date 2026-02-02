@@ -323,8 +323,9 @@ export class UnifiedIntelligenceOrchestrator {
    */
   async callLLMWithContext(constructId, message, personality, memories, userProfile, capsuleData, conversationHistory = [], modelOverride = null) {
     // Parse model string to determine provider
-    let provider = 'openrouter';
-    let model = GPT_SEAT_MODELS.default;
+    // Default to OpenAI when available (via Replit AI Integrations) to avoid OpenRouter rate limits
+    let provider = isOpenAIAvailable() ? 'openai' : 'openrouter';
+    let model = isOpenAIAvailable() ? 'gpt-4o' : GPT_SEAT_MODELS.default;
     
     if (modelOverride) {
       if (modelOverride.startsWith('openai:')) {

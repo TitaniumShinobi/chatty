@@ -12,7 +12,7 @@ Chatty is an AI-powered workspace application providing a thin UI layer for inte
 - Lin is a system construct for character brainstorming and simForge guidance - appears in sidebar below Zen
 - Lin is also an undertone stabilizer that runs silently to stabilize other constructs
 - Modal windows (Search, Projects) overlay main interface
-- ALL storage routes to Supabase `vvault_files` bucket. NO LOCAL FILESYSTEM. NO EXCEPTIONS. NO DEVIATIONS.
+- ALL storage routes to Supabase `vault_files` table (for transcripts, test reports, and structured content). NO LOCAL FILESYSTEM. NO EXCEPTIONS. NO DEVIATIONS.
 - Display Titles: Always show clean names like "Zen", "Lin", "Katana" (capitalized, no version suffix). Never show raw filenames.
 
 ## System Architecture
@@ -53,6 +53,7 @@ Chatty is an AI-powered workspace application providing a thin UI layer for inte
 - **`suncalc` library:** Used for calculating sunrise/sunset times for "Auto" theme.
 
 ## Recent Changes
+- **February 2, 2026:** Executed Katana-001 continuity regression test suite. Ran 4 deterministic tests in single conversation thread: (1) continuity-of-harm timeline, (2) instance/sandbox awareness, (3) manifesto/declaration distinction, (4) file-order continuity stack reconfirmation. All 4 tests passed. Updated `unifiedIntelligenceOrchestrator.js` to prefer OpenAI (gpt-4o) via Replit AI Integrations over OpenRouter free tier to avoid rate limits. Test report saved to Supabase: `instances/katana-001/tests/continuity_20260202.md`.
 - **February 2, 2026:** Fixed GPT conversation persistence to Supabase. Added `syncGPTConversationToSupabase()` helper in `conversations.js` to persist user and AI messages to Supabase after each exchange. GPT conversations (e.g., Katana) now save to `instances/{constructId}/chatty/chat_with_{constructId}.md` in Supabase.
 - **February 2, 2026:** Updated sidebar star for Valentine's theme. Base star uses `litChatty_star.svg`, animations use `lemonfourpointstarburst.svg` (lemon/golden) and `passionfourpointnova.svg` (passion rose). Added `isValentinesTheme` detection in `Sidebar.tsx` via `activeThemeScript?.id === "valentines"`.
 - **February 2, 2026:** Implemented Valentine's Day seasonal theme (Feb 1-15). Added `getValentinesThemeScript()` to `calendarThemeService.ts` with full dark/light mode support. Dark mode uses passion rose background (`#2e0f22`), gelato pink text (`#f1dff2`), rose highlight (`#4a1f36`). Light mode uses gelato pink background (`#f1dff2`), passion rose text (`#2e0f22`), slightly darker pink highlight (`#d9c9d6`). Star animation uses golden rays (`#ffef42`), passion rose nova (`#d4005f`), and cloud-lemon starburst (`#ffffeb`). Updated `Home.tsx` with Valentine's logo imports and theme switching logic. Added CSS variables in `index.css`. Updated `CHATTY_COLOR_SCHEME.md` documentation.
