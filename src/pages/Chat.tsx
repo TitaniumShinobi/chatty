@@ -10,7 +10,7 @@ import { R } from "../runtime/render";
 import { MessageOptionsMenu } from "../components/MessageOptionsMenu";
 import { VVAULTConversationManager } from "../lib/vvaultConversationManager";
 import { getUserId } from "../lib/auth";
-import MessageBar from "../components/MessageBar";
+import MessageBar, { ImageAttachment } from "../components/MessageBar";
 import { prepareMessageContent, stripDateLines } from "../utils/text";
 
 type Message = {
@@ -374,7 +374,7 @@ const userMessageMarkdownComponents: Components = {
 
 interface LayoutContext {
   threads: Thread[];
-  sendMessage: (threadId: string, text: string, files: File[]) => void;
+  sendMessage: (threadId: string, text: string, files: File[], imageAttachments?: ImageAttachment[]) => void;
   renameThread: (threadId: string, title: string) => void;
   newThread: (options?: {
     title?: string;
@@ -1870,9 +1870,10 @@ export default function Chat() {
 
       <div className="p-4 border-t flex-shrink-0" style={{ borderColor: "var(--chatty-bg-main)" }}>
         <MessageBar
-          onSubmit={(messageText, messageFiles) => {
+          onSubmit={(messageText, messageFiles, imageAttachments) => {
             if (thread) {
-              onSendMessage(thread.id, messageText, messageFiles || []);
+              console.log(`📸 [Chat.tsx] Sending message with ${imageAttachments?.length || 0} images`);
+              onSendMessage(thread.id, messageText, messageFiles || [], imageAttachments);
             }
           }}
           placeholder={`Message ${canonicalConstructName || "Chatty"}…`}

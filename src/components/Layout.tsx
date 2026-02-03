@@ -1828,27 +1828,41 @@ export default function Layout() {
     threadId: string,
     input: string,
     files?: File[],
+    passedImageAttachments?: Array<{ name: string; type: string; data: string }>,
     uiOverrides?: UIContextSnapshot,
   ) {
     console.log("📤 [Layout.tsx] sendMessage called:", {
       threadId,
       inputLength: input.length,
       filesCount: files?.length || 0,
+      passedImageAttachments: passedImageAttachments?.length || 0,
     });
 
-    const imageFiles = (files || []).filter(f => isImageFile(f));
-    const docFiles = (files || []).filter(f => !isImageFile(f));
+    // Use passed imageAttachments if provided, otherwise convert from files
+    let imageAttachments: Array<{ name: string; type: string; data: string }>;
+    let docFiles: File[];
     
-    const imageAttachments = await Promise.all(
-      imageFiles.map(async (file) => ({
-        name: file.name,
-        type: file.type,
-        data: await fileToBase64(file)
-      }))
-    );
-    
-    if (imageAttachments.length > 0) {
-      console.log(`📎 [Layout.tsx] Converted ${imageAttachments.length} images to base64`);
+    if (passedImageAttachments && passedImageAttachments.length > 0) {
+      // Images already converted by MessageBar
+      imageAttachments = passedImageAttachments;
+      docFiles = files || [];
+      console.log(`📎 [Layout.tsx] Using ${imageAttachments.length} pre-converted image attachments`);
+    } else {
+      // Legacy path: convert files to imageAttachments
+      const imageFiles = (files || []).filter(f => isImageFile(f));
+      docFiles = (files || []).filter(f => !isImageFile(f));
+      
+      imageAttachments = await Promise.all(
+        imageFiles.map(async (file) => ({
+          name: file.name,
+          type: file.type,
+          data: await fileToBase64(file)
+        }))
+      );
+      
+      if (imageAttachments.length > 0) {
+        console.log(`📎 [Layout.tsx] Converted ${imageAttachments.length} images to base64`);
+      }
     }
 
     if (!user) {
@@ -2014,8 +2028,8 @@ export default function Layout() {
       text: input,
       ts: userTimestamp,
       timestamp: userTimestampIso,
-      files: files
-        ? files.map((f) => ({ name: f.name, size: f.size }))
+      files: docFiles && docFiles.length > 0
+        ? docFiles.map((f) => ({ name: f.name, size: f.size }))
         : undefined,
     };
 
@@ -2052,8 +2066,8 @@ export default function Layout() {
         packets: [{ content: input }],
         timestamp: userTimestampIso,
         metadata: {
-          files: files
-            ? files.map((f) => ({ name: f.name, size: f.size, type: f.type }))
+          files: docFiles && docFiles.length > 0
+            ? docFiles.map((f) => ({ name: f.name, size: f.size, type: f.type }))
             : undefined,
         },
       });
@@ -2159,7 +2173,7 @@ export default function Layout() {
         settingsOpen: isSettingsOpen,
         shareOpen: Boolean(shareConversationId),
       },
-      composer: { attachments: files ? files.length : 0 },
+      composer: { attachments: (docFiles?.length || 0) + (imageAttachments?.length || 0) },
       zenMode: "zen",
     };
     if (!baseUiContext.activePanel) {
