@@ -1,3 +1,17 @@
+<div align="center">
+  <img src="assets/chattynova.png" alt="Chatty Nova Star" width="200">
+</div>
+
+<div align="left">
+  <img src="assets/chatty_collapsed.png" alt="Collapsed Chatty Logo" width="200">
+</div><div align="center">
+  <img src="assets/chattynova.png" alt="Chatty Nova Star" width="200">
+</div>
+
+<div align="left">
+  <img src="assets/chatty_collapsed.png" alt="Collapsed Chatty Logo" width="200">
+</div>
+
 # Chatty Documentation Index
 
 **Last Updated**: January 16, 2026
