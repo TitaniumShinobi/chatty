@@ -3410,10 +3410,18 @@ router.post("/message", async (req, res) => {
     let effectiveModel = modelName;
     
     // Force OpenAI gpt-4o for vision if images are attached
-    if (hasImages && openaiClient) {
-      effectiveProvider = 'openai';
-      effectiveModel = 'gpt-4o'; // Vision-capable model
-      console.log(`📎 [VVAULT Proxy] Images attached, forcing vision model: ${effectiveModel}`);
+    if (hasImages) {
+      if (openaiClient) {
+        effectiveProvider = 'openai';
+        effectiveModel = 'gpt-4o'; // Vision-capable model
+        console.log(`📎 [VVAULT Proxy] Images attached, forcing vision model: ${effectiveModel}`);
+      } else {
+        console.error('❌ [VVAULT Proxy] Images attached but OpenAI not configured - cannot process vision request');
+        return res.status(503).json({ 
+          success: false, 
+          error: 'Image processing requires OpenAI, which is not currently configured. Please configure OpenAI or try without images.' 
+        });
+      }
     }
     
     if (provider === 'openai' && !openaiClient) {
