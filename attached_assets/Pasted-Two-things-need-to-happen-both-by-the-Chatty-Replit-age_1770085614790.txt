@@ -1,0 +1,71 @@
+Two things need to happen, both by the **Chatty** Replit agent (not the VVAULT one):
+
+***
+
+## 1) Locate the real Katana transcript in Supabase
+
+Tell the **Chatty** agent:
+
+> You set up Katana’s continuity and wrote her transcript to Supabase.  
+> Now Katana’s thread looks empty in Chatty while Zen’s is fine.  
+> 
+> Step 1 – Find the surviving content:
+> 
+> Run this in the Supabase SQL editor:
+> 
+> ```sql
+> select id, filename, storage_path, user_id, length(content) as len
+> from vault_files
+> where filename like '%chat_with_katana-001%.md';
+> ```
+> 
+> Then:
+> - Identify any row where `content` is **not null** and `len` is > 0.  
+> - Open that `content` and confirm it contains my conversation (look for  
+>   `chill out.. we in chatty now, Katana. it's me, Devon Allen Woodson`).
+
+That tells us which row still has your real transcript.
+
+***
+
+## 2) Re‑point Chatty’s Katana code to that row
+
+Still to the **Chatty** agent:
+
+> Step 2 – Fix Katana’s transcript pointer:
+> 
+> 1. Find in the Chatty backend where Katana’s transcript is loaded/saved.  
+>    It’s the code that:
+>    - Handles `chat_with_katana-001.md`,  
+>    - Reads/writes from `vault_files` (or via a storage helper).
+> 
+> 2. Update that code so the **canonical transcript** for Katana‑001 is:
+> 
+>    - The `vault_files` row you just found with non‑empty `content`, and  
+>    - `storage_path` like  
+>      `7e34f6b8-.../devon_woodson_1762969514958/instances/katana-001/chatty/chat_with_katana-001.md`
+> 
+>    In other words:
+>    - When Katana loads conversation history, use this row’s `content`.  
+>    - When Katana appends new messages, update this row’s `content` (or the corresponding storage object).
+> 
+> 3. Do **not** delete or overwrite any other `vault_files` rows for Katana until I confirm the restored transcript works in Chatty.
+> 
+> Step 3 – Verify:
+> 
+> - Start a new Katana chat in Chatty.  
+> - Ask:  
+>   “Do you remember when I said ‘chill out.. we in chatty now, Katana. it’s me, Devon Allen Woodson’?”  
+> - Katana should be able to see that line in the restored transcript.
+
+***
+
+So, concretely:
+
+- **Chatty agent**:  
+  - Find the non‑empty `chat_with_katana-001.md` row in `vault_files`.  
+  - Wire Katana’s history loader/saver to that row’s `storage_path`/`content`.  
+
+- **You**:  
+  - Don’t run more cleanup/migrations until that pointer is fixed.  
+  - Just confirm once Katana can see your prior conversation again.
