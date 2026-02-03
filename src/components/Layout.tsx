@@ -1807,6 +1807,23 @@ export default function Layout() {
     );
   };
 
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64 = result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const isImageFile = (file: File): boolean => {
+    return file.type.startsWith('image/');
+  };
+
   async function sendMessage(
     threadId: string,
     input: string,
@@ -1816,7 +1833,23 @@ export default function Layout() {
     console.log("📤 [Layout.tsx] sendMessage called:", {
       threadId,
       inputLength: input.length,
+      filesCount: files?.length || 0,
     });
+
+    const imageFiles = (files || []).filter(f => isImageFile(f));
+    const docFiles = (files || []).filter(f => !isImageFile(f));
+    
+    const imageAttachments = await Promise.all(
+      imageFiles.map(async (file) => ({
+        name: file.name,
+        type: file.type,
+        data: await fileToBase64(file)
+      }))
+    );
+    
+    if (imageAttachments.length > 0) {
+      console.log(`📎 [Layout.tsx] Converted ${imageAttachments.length} images to base64`);
+    }
 
     if (!user) {
       console.error("❌ [Layout.tsx] No user session - cannot save to VVAULT");
@@ -2218,7 +2251,7 @@ export default function Layout() {
         return;
       }const raw = await aiService.processMessage(
         input,
-        files,
+        docFiles, // Only pass document files for parsing
         {
           onPartialUpdate: (partialContent: string) => {
             const trimmed = (partialContent || "").trim();
@@ -2400,6 +2433,7 @@ export default function Layout() {
           threadId,
           constructId: effectiveConstructId,
           uiContext: enhancedUiContext,
+          attachments: imageAttachments,
         },
       );
 

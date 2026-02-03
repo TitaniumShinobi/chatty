@@ -472,13 +472,20 @@ r.post("/:id/messages", async (req, res) => {
       console.log(`📚 [Conversations API] Loaded ${conversationHistory.length} messages for GPT seat context`);
 
       // Process message with unlimited conversational scope + conversation history
+      // Extract image attachments if provided (base64 format from frontend)
+      const attachments = req.body.attachments || [];
+      if (attachments.length > 0) {
+        console.log(`📎 [Conversations API] Processing ${attachments.length} image attachments`);
+      }
+      
       const aiResponse = await gptRuntime.processMessage(
         gptId,
         req.body.message || req.body.content,
         req.user.id,
         conversationId,
         identityFiles,
-        conversationHistory
+        conversationHistory,
+        attachments
       );
 
       console.log(`✅ [Conversations API] Generated response: "${aiResponse.content}"`);

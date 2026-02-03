@@ -450,6 +450,7 @@ export class AIService {
       threadId?: string;
       constructId?: string;
       uiContext?: any;
+      attachments?: Array<{ name: string; type: string; data: string }>;
     }
   ): Promise<any> {
     // Use the conversations API endpoint which handles message processing
@@ -522,6 +523,7 @@ export class AIService {
                   message: input,
                   threadId: threadId,
                   sessionId: threadId,
+                  attachments: options?.attachments || [],
                 }),
               });
               
@@ -568,6 +570,7 @@ export class AIService {
           message: input,
           threadId: threadId,
           sessionId: threadId,
+          attachments: options?.attachments || [],
         }),
       });
 

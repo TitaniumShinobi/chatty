@@ -3350,7 +3350,7 @@ router.post("/message", async (req, res) => {
   const userId = validateUser(res, req.user);
   if (!userId) return;
 
-  const { constructId, message, threadId, sessionId } = req.body || {};
+  const { constructId, message, threadId, sessionId, attachments } = req.body || {};
 
   if (!constructId) {
     return res.status(400).json({ success: false, error: "Missing constructId" });
@@ -3358,6 +3358,12 @@ router.post("/message", async (req, res) => {
 
   if (!message || message.trim() === '') {
     return res.status(400).json({ success: false, error: "Missing message content" });
+  }
+  
+  // Handle image attachments for vision
+  const hasImages = attachments && Array.isArray(attachments) && attachments.length > 0;
+  if (hasImages) {
+    console.log(`📎 [VVAULT Proxy] Processing ${attachments.length} image attachments`);
   }
 
   const VVAULT_API_BASE_URL = process.env.VVAULT_API_BASE_URL;
@@ -3402,6 +3408,14 @@ router.post("/message", async (req, res) => {
     // Guard: Check if requested provider is available, fall back to next available
     let effectiveProvider = provider;
     let effectiveModel = modelName;
+    
+    // Force OpenAI gpt-4o for vision if images are attached
+    if (hasImages && openaiClient) {
+      effectiveProvider = 'openai';
+      effectiveModel = 'gpt-4o'; // Vision-capable model
+      console.log(`📎 [VVAULT Proxy] Images attached, forcing vision model: ${effectiveModel}`);
+    }
+    
     if (provider === 'openai' && !openaiClient) {
       console.warn(`⚠️ [VVAULT Proxy] OpenAI not configured, falling back to OpenRouter`);
       effectiveProvider = 'openrouter';
@@ -3440,11 +3454,30 @@ router.post("/message", async (req, res) => {
       
       if (effectiveProvider === 'openai') {
         console.log(`🔷 [VVAULT Proxy] Calling OpenAI (${effectiveModel}) for ${constructId}`);
+        
+        // Format user message as multimodal content if images are attached
+        let userMessageContent;
+        if (hasImages) {
+          userMessageContent = [
+            { type: 'text', text: message },
+            ...attachments.map(att => ({
+              type: 'image_url',
+              image_url: {
+                url: `data:${att.type};base64,${att.data}`,
+                detail: 'auto'
+              }
+            }))
+          ];
+          console.log(`📎 [VVAULT Proxy] Formatted ${attachments.length} images for OpenAI vision API`);
+        } else {
+          userMessageContent = message;
+        }
+        
         completion = await openaiClient.chat.completions.create({
           model: effectiveModel,
           messages: [
             { role: "system", content: systemPrompt },
-            { role: "user", content: message }
+            { role: "user", content: userMessageContent }
           ],
           max_tokens: 2048,
         });

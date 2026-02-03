@@ -321,11 +321,19 @@ export class UnifiedIntelligenceOrchestrator {
    * @param {object} capsuleData - Capsule data
    * @param {string} modelOverride - Optional model override (e.g., 'openai:gpt-4o')
    */
-  async callLLMWithContext(constructId, message, personality, memories, userProfile, capsuleData, conversationHistory = [], modelOverride = null) {
+  async callLLMWithContext(constructId, message, personality, memories, userProfile, capsuleData, conversationHistory = [], modelOverride = null, attachments = []) {
     // Parse model string to determine provider
     // Default to OpenAI when available (via Replit AI Integrations) to avoid OpenRouter rate limits
+    // If images are attached, force gpt-4o for vision capability
+    const hasImages = attachments && attachments.length > 0;
     let provider = isOpenAIAvailable() ? 'openai' : 'openrouter';
     let model = isOpenAIAvailable() ? 'gpt-4o' : GPT_SEAT_MODELS.default;
+    
+    // Force vision-capable model if images are attached
+    if (hasImages && provider === 'openai') {
+      model = 'gpt-4o'; // gpt-4o has vision capability
+      console.log(`📎 [LLM] Images attached (${attachments.length}), using vision-capable model: ${model}`);
+    }
     
     if (modelOverride) {
       if (modelOverride.startsWith('openai:')) {
@@ -362,15 +370,37 @@ export class UnifiedIntelligenceOrchestrator {
     console.log(`🤖 [LLM] System prompt length: ${systemPrompt.length} chars`);
     console.log(`🤖 [LLM] Memories injected: ${memories.length}`);
     console.log(`📚 [LLM] Conversation history: ${recentTurns.length} recent turns included`);
+    if (hasImages) {
+      console.log(`📎 [LLM] Image attachments: ${attachments.length}`);
+    }
     
     try {
       let completion;
+      
+      // Build user message content - multimodal if images attached
+      let userMessageContent;
+      if (hasImages) {
+        // Format as multimodal content with images for vision models
+        userMessageContent = [
+          { type: 'text', text: message },
+          ...attachments.map(att => ({
+            type: 'image_url',
+            image_url: {
+              url: `data:${att.type};base64,${att.data}`,
+              detail: 'auto'
+            }
+          }))
+        ];
+        console.log(`📎 [LLM] Formatted ${attachments.length} images for vision API`);
+      } else {
+        userMessageContent = message;
+      }
       
       // Build messages array with system prompt, conversation history, and current message
       const messages = [
         { role: 'system', content: systemPrompt },
         ...recentTurns,
-        { role: 'user', content: message }
+        { role: 'user', content: userMessageContent }
       ];
       
       if (provider === 'openai') {
@@ -475,7 +505,7 @@ Use these memories to inform your response. Reference past conversations natural
    * Process any message on any topic without restrictions
    * Maintains personality while providing complete conversational freedom
    */
-  async processUnrestrictedMessage(constructId, message, userId, conversationId, identityContext = null, conversationHistory = []) {
+  async processUnrestrictedMessage(constructId, message, userId, conversationId, identityContext = null, conversationHistory = [], attachments = []) {
     console.time(`🧠 [UnifiedIntelligence] Processing message for ${constructId}`);
     
     // 🔒 ZEN HARD-DELEGATION - Never use templates for Zen
@@ -489,6 +519,9 @@ Use these memories to inform your response. Reference past conversations natural
     console.log(`🔍 [CONTEXT-PIPELINE] Message: "${message}"`);
     console.log(`🔍 [CONTEXT-PIPELINE] User: ${userId}, Conversation: ${conversationId}`);
     console.log(`📚 [CONTEXT-PIPELINE] Conversation history: ${conversationHistory.length} messages`);
+    if (attachments && attachments.length > 0) {
+      console.log(`📎 [CONTEXT-PIPELINE] Image attachments: ${attachments.length}`);
+    }
     
     // 🚀 MEMORY-ENHANCED LLM PROCESSING for GPT seats (Katana, etc.)
     // Replace hardcoded responses with actual LLM calls using memory context
@@ -518,8 +551,8 @@ Use these memories to inform your response. Reference past conversations natural
         console.log(`⚠️ [CONTEXT-PIPELINE] No capsule data for ${constructId}`);
       }
       
-      // 🚀 USE REAL LLM with memory-enhanced context + conversation history
-      console.log(`🚀 [CONTEXT-PIPELINE] Calling LLM with memory-enhanced context + ${conversationHistory.length} history messages...`);
+      // 🚀 USE REAL LLM with memory-enhanced context + conversation history + attachments
+      console.log(`🚀 [CONTEXT-PIPELINE] Calling LLM with memory-enhanced context + ${conversationHistory.length} history messages + ${attachments?.length || 0} attachments...`);
       const response = await this.callLLMWithContext(
         constructId,
         message,
@@ -527,7 +560,9 @@ Use these memories to inform your response. Reference past conversations natural
         memories,
         userProfile,
         capsuleData,
-        conversationHistory
+        conversationHistory,
+        null, // modelOverride
+        attachments
       );
       console.log(`🔍 [CONTEXT-PIPELINE] LLM response generated: "${response.substring(0, 100)}${response.length > 100 ? '...' : ''}"`);
 

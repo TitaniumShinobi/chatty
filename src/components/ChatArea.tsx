@@ -86,17 +86,42 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     }
   }, [inputValue])
 
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64 = result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     if (!inputValue.trim() || !conversation) return
+
+    const imageFiles = attachedFiles.filter(f => isImageFile(f));
+    const docFiles = attachedFiles.filter(f => !isImageFile(f));
+    
+    const imageAttachments = await Promise.all(
+      imageFiles.map(async (file) => ({
+        name: file.name,
+        type: file.type,
+        data: await fileToBase64(file)
+      }))
+    );
 
     const userMessage = {
       id: Date.now().toString(),
       role: 'user' as const,
       content: inputValue.trim(),
       timestamp: new Date().toISOString(),
-      files: attachedFiles
+      files: docFiles,
+      attachments: imageAttachments
     }
 
     setInputValue('')

@@ -36,9 +36,12 @@ export class GPTRuntimeBridge {
     }
   }
 
-  async processMessage(gptId, message, userId, conversationId = null, identityContext = null, conversationHistory = []) {
+  async processMessage(gptId, message, userId, conversationId = null, identityContext = null, conversationHistory = [], attachments = []) {
     console.time(`🕐 [BRIDGE-TOTAL] Bridge processMessage for ${gptId}`);
     console.log(`📚 [BRIDGE] Received ${conversationHistory.length} messages in conversation history`);
+    if (attachments.length > 0) {
+      console.log(`📎 [BRIDGE] Received ${attachments.length} image attachments`);
+    }
     
     try {
       // Use unified intelligence orchestrator for unrestricted processing
@@ -49,7 +52,8 @@ export class GPTRuntimeBridge {
         userId, 
         conversationId || `${gptId}_${Date.now()}`,
         identityContext,
-        conversationHistory
+        conversationHistory,
+        attachments
       );
       console.timeEnd(`🕐 [BRIDGE-UNIFIED] Unified orchestration for ${gptId}`);
       
