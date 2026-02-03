@@ -12,10 +12,11 @@ import {
   FileImage,
   FileCode,
 } from "lucide-react";
-import { MessageProps } from "../types";
+import { MessageProps, Attachment } from "../types";
 import { formatDate } from "../lib/utils";
 import { cn } from "../lib/utils";
 import { R } from "../runtime/render";
+import AttachmentDisplay from "./AttachmentDisplay";
 
 const MessageComponent: React.FC<MessageProps> = ({ message }) => {
   const [copiedCode, setCopiedCode] = React.useState<string | null>(null);
@@ -93,25 +94,35 @@ const MessageComponent: React.FC<MessageProps> = ({ message }) => {
 
       {/* Message Content */}
       <div className="flex-1 min-w-0">
-        {/* File Attachments */}
-        {message.files && message.files.length > 0 && (
+        {/* Image/Document Attachments (new format with URLs) */}
+        {(message as any).attachments && (message as any).attachments.length > 0 && (
+          <AttachmentDisplay 
+            attachments={(message as any).attachments} 
+            readOnly={true}
+            showFilenames={true}
+          />
+        )}
+
+        {/* Legacy File Attachments (fallback for old messages without attachments array) */}
+        {message.files && message.files.length > 0 && !(message as any).attachments?.length && (
           <div className="mb-3 p-3 bg-app-orange-600 rounded-lg border border-app-orange-500">
             <div className="flex items-center gap-2 mb-2">
               <Paperclip size={16} className="text-app-text-800" />
               <span className="text-sm text-app-text-900 font-medium">
-                Attached files ({message.files.length})
+                Uploaded: {message.files.map((f: any) => f.name).slice(0, 3).join(', ')}
+                {message.files.length > 3 && ` (+${message.files.length - 3} more)`}
               </span>
             </div>
             <div className="space-y-2">
-              {message.files.map((file, index) => (
+              {message.files.map((file: any, index: number) => (
                 <div
                   key={index}
                   className="flex items-center gap-2 p-2 bg-app-chat-50 rounded"
                 >
-                  {getFileIcon(file.type)}
+                  {getFileIcon(file.type || '')}
                   <span className="text-sm text-app-text-900">{file.name}</span>
                   <span className="text-xs text-app-text-800">
-                    ({(file.size / 1024).toFixed(1)} KB)
+                    ({((file.size || 0) / 1024).toFixed(1)} KB)
                   </span>
                 </div>
               ))}

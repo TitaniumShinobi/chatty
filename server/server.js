@@ -33,6 +33,7 @@ import simForgeRoutes from './routes/simForge.js';
 import fxshinobiRoutes from './routes/fxshinobi.js';
 import vaultProxyRoutes from './routes/vault.js';
 import suggestionsRoutes from './routes/suggestions.js';
+import attachmentsRoutes from './routes/attachments.js';
 import { initializeChromaDB, shutdownChromaDB, getChromaDBService } from "./services/chromadbService.js";
 import { getChatService } from "./services/chatService.js";
 
@@ -898,10 +899,12 @@ app.use("/api/simforge", requireAuth, simForgeRoutes);
 app.use("/api/fxshinobi", fxshinobiRoutes);
 app.use("/api/vault", vaultProxyRoutes);
 app.use("/api/suggestions", requireAuth, suggestionsRoutes);
+app.use("/api/attachments", requireAuth, attachmentsRoutes);
 console.log('✅ [Server] simForge routes mounted at /api/simforge');
 console.log('✅ [Server] FXShinobi proxy routes mounted at /api/fxshinobi');
 console.log('✅ [Server] VVAULT proxy routes mounted at /api/vault');
 console.log('✅ [Server] Suggestions routes mounted at /api/suggestions');
+console.log('✅ [Server] Attachments routes mounted at /api/attachments');
 
 function cryptoRandom() {
   return randomBytes(16).toString("hex");

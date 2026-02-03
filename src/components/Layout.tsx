@@ -36,9 +36,10 @@ import {
 import { bootstrapConstructs } from "../lib/masterScripts";
 import { GPTService, type GPTConfig } from "../lib/gptService";
 import type { AIConfig } from "../lib/aiService";
-import type { UIContextSnapshot, Message as ChatMessage } from "../types";
+import type { UIContextSnapshot, Message as ChatMessage, Attachment } from "../types";
 import { WorkspaceContextBuilder } from "../engine/context/WorkspaceContextBuilder";
 import { safeMode, safeImport } from "../lib/safeMode";
+import { uploadAttachments, imageAttachmentsToAttachments } from "../lib/attachmentService";
 import {
   BrowserRuntimeOrchestrator,
   BrowserRuntimeContextManager,
@@ -2021,6 +2022,25 @@ export default function Layout() {
     const userTimestamp = Date.now();
     const userTimestampIso = new Date(userTimestamp).toISOString();
 
+    // Upload attachments to storage and get permanent URLs
+    let persistedAttachments: Attachment[] = [];
+    if (imageAttachments.length > 0) {
+      console.log(`📤 [Layout.tsx] Uploading ${imageAttachments.length} attachments to storage...`);
+      const uploadResult = await uploadAttachments({
+        userId: user.email || getUserId(user) || user.id || user.sub,
+        constructId: thread.constructId || 'unknown',
+        conversationId: threadId,
+        attachments: imageAttachments
+      });
+      if (uploadResult.success && uploadResult.attachments.length > 0) {
+        persistedAttachments = uploadResult.attachments;
+        console.log(`✅ [Layout.tsx] Uploaded ${persistedAttachments.length} attachments with permanent URLs`);
+      } else {
+        console.warn('⚠️ [Layout.tsx] Attachment upload failed, using base64 fallback');
+        persistedAttachments = imageAttachmentsToAttachments(imageAttachments);
+      }
+    }
+
     // 1. Show user message immediately
     const userMsg: Message = {
       id: crypto.randomUUID(),
@@ -2031,6 +2051,7 @@ export default function Layout() {
       files: docFiles && docFiles.length > 0
         ? docFiles.map((f) => ({ name: f.name, size: f.size }))
         : undefined,
+      attachments: persistedAttachments.length > 0 ? persistedAttachments : undefined,
     };
 
     // 2. Add typing indicator message
@@ -2068,6 +2089,16 @@ export default function Layout() {
         metadata: {
           files: docFiles && docFiles.length > 0
             ? docFiles.map((f) => ({ name: f.name, size: f.size, type: f.type }))
+            : undefined,
+          attachments: persistedAttachments.length > 0 
+            ? persistedAttachments.map(a => ({
+                id: a.id,
+                name: a.name,
+                mimeType: a.mimeType,
+                size: a.size,
+                url: a.url,
+                role: a.role
+              }))
             : undefined,
         },
       });

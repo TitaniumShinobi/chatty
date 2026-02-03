@@ -885,11 +885,19 @@ async function writeConversationToSupabase(params) {
         });
       }
       
-      messages.push({
+      const newMessage = {
         role: role || 'user',
         content,
         timestamp: newTimestamp
-      });
+      };
+      
+      // Include attachments if provided in metadata
+      if (metadata?.attachments && Array.isArray(metadata.attachments) && metadata.attachments.length > 0) {
+        newMessage.attachments = metadata.attachments;
+        console.log(`📎 [SupabaseStore] Storing ${metadata.attachments.length} attachments with message`);
+      }
+      
+      messages.push(newMessage);
     }
 
     const mdContent = formatMarkdownTranscript(title || existingMetadata.title || 'Conversation', messages);

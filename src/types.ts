@@ -1,3 +1,17 @@
+// Attachment type for persisted file metadata
+export interface Attachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  url?: string;
+  thumbnailUrl?: string;
+  role: 'image' | 'document' | 'other';
+  // For in-flight attachments (not yet uploaded)
+  data?: string; // base64 data
+  file?: File; // original file object
+}
+
 // Enforce packet-only for assistant messages
 export type Op =
   | "answer.v1"
@@ -32,6 +46,7 @@ export type UserMsg = {
   content: string;
   timestamp: string;
   files?: File[];
+  attachments?: Attachment[];
 };
 
 export type AssistantMsg = { 
@@ -40,6 +55,7 @@ export type AssistantMsg = {
   content: AssistantPacket[]; // Strictly packets only, no union with string
   timestamp: string;
   files?: File[];
+  attachments?: Attachment[];
 };
 
 export type SystemMsg = { 
@@ -48,6 +64,7 @@ export type SystemMsg = {
   content: string;
   timestamp: string;
   files?: File[];
+  attachments?: Attachment[];
 };
 
 export type Message = UserMsg | AssistantMsg | SystemMsg;
