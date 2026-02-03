@@ -1,0 +1,74 @@
+Here’s a compact prompt you can paste straight into the **Chatty** Replit agent.
+
+***
+
+### Prompt for Chatty agent – file/image upload + previews
+
+> I want Chatty’s GPT seats (Katana, Insight, etc.) to support **file/image uploads with previews**, similar to ChatGPT:
+> 
+> #### 1. Define upload limits in config
+> - Add a central config (e.g., `chatConfig.ts`) with:
+>   - `MAX_IMAGE_ATTACHMENTS = 5`
+>   - `MAX_DOC_ATTACHMENTS = 3`
+>   - `MAX_TOTAL_ATTACHMENTS = 5` (images + docs combined)
+>   - `MAX_IMAGE_SIZE_MB = 10`
+>   - `MAX_DOC_SIZE_MB = 20`
+>   - `MAX_TOTAL_PAYLOAD_MB = 50`
+> - Expose these limits to the frontend via an existing config loader or a small `/api/config/chat` endpoint.
+> 
+> #### 2. Frontend – upload & preview UI
+> - In the main chat input component used by GPT seats:
+>   - Add a **file picker** (e.g., “+” icon) next to the message box and support drag‑and‑drop.
+>   - Accept file types:
+>     - `image/*`
+>     - `application/pdf`
+>     - `text/*`
+>     - `application/json`
+>     - `.csv`, `.md`
+> - Preview behavior above the input:
+>   - If exactly **1 image**: show a large inline preview.
+>   - If **2–3 images**: show a **carousel** (thumbnails with left/right arrows or dots).
+>   - If **4+ images**: show the first 3 in the carousel with a “+N more” overlay; clicking opens a lightbox or full gallery.
+>   - Non‑image files: render as small chips with icon + filename + size, and a remove (✕) button.
+> - Enforce limits client‑side:
+>   - If adding a file would exceed max counts or per‑file size, show a non‑blocking error toast and don’t add that file.
+>   - Allow users to remove attachments before sending.
+> 
+> #### 3. Backend message payload / API
+> - Extend the conversation send API so each message can include attachments:
+>   ```json
+>   {
+>     "message": "Analyze these screenshots.",
+>     "attachments": [
+>       {
+>         "name": "screen-1.png",
+>         "type": "image/png",
+>         "data": "BASE64_OR_STORAGE_URL"
+>       }
+>     ]
+>   }
+>   ```
+> - Implementation detail:
+>   - If we already have Supabase Storage or similar, prefer:
+>     - Frontend uploads file → get URL → send `data` as URL.
+>   - Otherwise, accept base64 and keep size under the limits above.
+> - Persist attachments in the conversation history so they can be reused on later turns (at least store name, type, and URL).
+> 
+> #### 4. LLM orchestration (Katana / Insight)
+> - In the unified orchestrator / router for GPT seats:
+>   - Detect when `attachments.length > 0`.
+>   - Route those turns to a **vision‑capable model** configured for that seat (e.g., GPT‑4‑class with image support).
+>   - Encode images using the provider’s multimodal format (image URLs or base64 as required).
+>   - For non‑vision models:
+>     - Either ignore image content and say so explicitly, or ask user to switch to a vision‑enabled seat.
+> - Do **not** change any FXShinobi or broker integration logic here; attachments are purely for analysis (screenshots, PDFs, logs).
+> 
+> #### 5. UX polish
+> - Show upload progress or a simple “Uploading…” state if we use remote storage.
+> - When a message with attachments is sent, display the same previews in the chat transcript (single large image or mini carousel) so the conversation history mirrors what was sent.
+> 
+> Deliverables:
+> - Frontend file upload + preview UI (single image, carousel, chips for docs).
+> - Updated send‑message API to accept `attachments[]`.
+> - Orchestrator changes so vision‑capable models see the attachments.
+> - Configured upload limits in a single shared config used by both frontend and backend.
