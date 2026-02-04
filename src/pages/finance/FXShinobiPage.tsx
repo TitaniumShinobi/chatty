@@ -22,6 +22,7 @@ import {
   ChevronUp,
   ChevronLeft,
   ChevronRight,
+  Brain,
 } from 'lucide-react';
 import {
   useMarketSnapshot,
@@ -143,218 +144,240 @@ const FXShinobiPage: React.FC = () => {
         color: 'var(--chatty-text)',
       }}
     >
+      {/* Header: Back | Refresh/Settings stack | Title+Subtitle | Status | Insight AI */}
       <div
-        className="flex items-center justify-between p-4 border-b"
+        className="flex items-center justify-between p-4 border-b gap-4"
         style={{ borderColor: 'var(--chatty-border)' }}
       >
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => navigate('/app/finance')}
-            className="p-2 rounded-lg transition-colors hover:bg-[var(--chatty-highlight)]"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <div>
-            <h1 className="text-xl font-semibold flex items-center gap-2">
-              <TrendingUp size={24} className="text-green-500" />
-              FXShinobi
-            </h1>
-            <p className="text-sm opacity-70 flex items-center gap-2">
-              Trading Dashboard
-              <span className="flex items-center gap-1 text-xs" title={fxshinobiStatus.message}>
-                {getStatusIcon()}
-                <span className={statusColorClass}>
-                  {statusLabel}
-                </span>
-                {fxshinobiStatus.liveMode && fxshinobiStatus.status === 'live' && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-green-500/20 text-green-400 font-medium">
-                    LIVE
-                  </span>
-                )}
-              </span>
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+        {/* Left: Back button */}
+        <button
+          onClick={() => navigate('/app/finance')}
+          className="p-2 rounded-lg transition-colors hover:bg-[var(--chatty-highlight)] shrink-0"
+          title="Back to Finance"
+        >
+          <ArrowLeft size={20} />
+        </button>
+
+        {/* Refresh/Settings stacked vertically */}
+        <div className="flex flex-col gap-1 shrink-0">
           <button
             onClick={() => refreshStatus()}
-            className="p-2 rounded-lg transition-colors hover:bg-[var(--chatty-highlight)]"
+            className="p-1.5 rounded-lg transition-colors hover:bg-[var(--chatty-highlight)]"
             title="Refresh"
           >
-            <RefreshCw size={18} />
+            <RefreshCw size={16} />
           </button>
           <button
             onClick={() => setShowBrokerModal(true)}
-            className="p-2 rounded-lg transition-colors hover:bg-[var(--chatty-highlight)]"
-            title="Broker Settings"
+            className="p-1.5 rounded-lg transition-colors hover:bg-[var(--chatty-highlight)]"
+            title="Settings"
           >
-            <Settings size={18} />
+            <Settings size={16} />
           </button>
+        </div>
+
+        {/* Title + Subtitle (center, flex-grow) */}
+        <div className="flex-1 min-w-0">
+          <h1 className="text-xl font-semibold flex items-center gap-2">
+            <TrendingUp size={24} className="text-green-500 shrink-0" />
+            <span className="truncate">FXShinobi</span>
+          </h1>
+          <p className="text-sm opacity-70 truncate">Trading Dashboard</p>
+        </div>
+
+        {/* Status badge */}
+        <div
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg shrink-0"
+          style={{ backgroundColor: 'var(--chatty-highlight)' }}
+          title={fxshinobiStatus.message}
+        >
+          {getStatusIcon()}
+          <span className={`text-sm font-medium ${statusColorClass}`}>
+            {statusLabel}
+          </span>
+          {fxshinobiStatus.liveMode && fxshinobiStatus.status === 'live' && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] bg-green-500/20 text-green-400 font-medium">
+              LIVE
+            </span>
+          )}
+        </div>
+
+        {/* Insight AI seat label (far right) */}
+        <div
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg shrink-0"
+          style={{ backgroundColor: 'var(--chatty-highlight)' }}
+        >
+          <Brain size={16} className="text-purple-500" />
+          <span className="text-sm font-medium">Insight</span>
         </div>
       </div>
 
+      {/* Main content: Two-column layout */}
       <div className="flex-1 overflow-y-auto p-4">
-        <div
-          className="rounded-xl p-4 mb-4"
-          style={{
-            backgroundColor: 'var(--chatty-bg-modal, var(--chatty-highlight))',
-            border: '1px solid var(--chatty-border)',
-          }}
-        >
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <Building2 size={20} className="text-blue-500" />
-              <h2 className="font-semibold">
-                Broker: {(() => {
-                  const activeBroker = fxshinobiStatus.brokers?.find(b => b.id === fxshinobiStatus.activeBrokerId);
-                  return activeBroker?.name || fxshinobiStatus.activeBrokerName || 'Not Selected';
-                })()}
-              </h2>
-              <span
-                className={`px-2 py-0.5 rounded text-xs font-medium ${
-                  fxshinobiStatus.liveMode
-                    ? 'bg-green-500/20 text-green-400'
-                    : 'bg-amber-500/20 text-amber-400'
-                }`}
-              >
-                {fxshinobiStatus.liveMode ? 'LIVE' : 'DEMO'}
-              </span>
-              {(() => {
-                const activeBroker = fxshinobiStatus.brokers?.find(b => b.id === fxshinobiStatus.activeBrokerId);
-                const isConfigured = activeBroker?.configured ?? false;
-                const isConnected = activeBroker?.configured && activeBroker?.connected;
-                
-                if (isConnected) {
-                  return (
-                    <span className="flex items-center gap-1 text-xs text-green-400">
-                      <CheckCircle size={12} />
-                      Connected
-                    </span>
-                  );
-                } else if (isConfigured) {
-                  return (
-                    <span className="flex items-center gap-1 text-xs text-amber-400">
-                      <AlertCircle size={12} />
-                      Configured (Error)
-                    </span>
-                  );
-                } else {
-                  return (
-                    <span className="flex items-center gap-1 text-xs text-red-400">
-                      <XCircle size={12} />
-                      Not Configured
-                    </span>
-                  );
-                }
-              })()}
-            </div>
-            <button
-              onClick={() => setShowBrokerModal(true)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors hover:bg-[var(--chatty-highlight)]"
-              style={{ border: '1px solid var(--chatty-border)' }}
-            >
-              <Settings size={14} />
-              Configure
-            </button>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          {/* Main column (left, 2/3 width on xl) */}
+          <div className="xl:col-span-2 space-y-4">
+            {/* Broker Panel */}
             <div
-              className="p-3 rounded-lg text-center"
-              style={{ backgroundColor: 'var(--chatty-bg)' }}
+              className="rounded-xl p-4"
+              style={{
+                backgroundColor: 'var(--chatty-bg-modal, var(--chatty-highlight))',
+                border: '1px solid var(--chatty-border)',
+              }}
             >
-              {fxshinobiStatus.status === 'checking' ? (
-                <Loader2 size={20} className="animate-spin mx-auto" />
-              ) : (
-                <>
-                  <div className="text-xl font-bold">
-                    {(() => {
-                      const balance = fxshinobiStatus.account?.balance ?? fxshinobiStatus.accountBalance ?? accountData?.account_balance;
-                      return balance !== null && balance !== undefined ? formatCurrency(balance) : '--';
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Building2 size={20} className="text-blue-500" />
+                  <h2 className="font-semibold">
+                    Broker: {(() => {
+                      const activeBroker = fxshinobiStatus.brokers?.find(b => b.id === fxshinobiStatus.activeBrokerId);
+                      return activeBroker?.name || fxshinobiStatus.activeBrokerName || 'Not Selected';
                     })()}
-                  </div>
-                  <div className="text-xs opacity-60">Balance</div>
-                </>
-              )}
-            </div>
-            <div
-              className="p-3 rounded-lg text-center"
-              style={{ backgroundColor: 'var(--chatty-bg)' }}
-            >
-              {fxshinobiStatus.status === 'checking' ? (
-                <Loader2 size={20} className="animate-spin mx-auto" />
-              ) : (
-                <>
-                  <div className="text-xl font-bold">
-                    {(() => {
-                      const equity = fxshinobiStatus.account?.equity ?? fxshinobiStatus.equity;
-                      return equity !== null && equity !== undefined ? formatCurrency(equity) : '--';
-                    })()}
-                  </div>
-                  <div className="text-xs opacity-60">Equity</div>
-                </>
-              )}
-            </div>
-            <div
-              className="p-3 rounded-lg text-center"
-              style={{ backgroundColor: 'var(--chatty-bg)' }}
-            >
-              {fxshinobiStatus.status === 'checking' ? (
-                <Loader2 size={20} className="animate-spin mx-auto" />
-              ) : (
-                <>
-                  <div className={`text-xl font-bold ${
-                    (() => {
-                      const openPnl = fxshinobiStatus.account?.open_pnl ?? fxshinobiStatus.openPnl ?? accountData?.open_pnl ?? 0;
-                      return (openPnl ?? 0) >= 0 ? 'text-green-500' : 'text-red-500';
-                    })()
-                  }`}>
-                    {(() => {
-                      const openPnl = fxshinobiStatus.account?.open_pnl ?? fxshinobiStatus.openPnl ?? accountData?.open_pnl;
-                      return openPnl !== null && openPnl !== undefined ? formatCurrency(openPnl) : '--';
-                    })()}
-                  </div>
-                  <div className="text-xs opacity-60">Open P&L</div>
-                </>
-              )}
-            </div>
-            <div
-              className="p-3 rounded-lg text-center"
-              style={{ backgroundColor: 'var(--chatty-bg)' }}
-            >
-              {fxshinobiStatus.status === 'checking' ? (
-                <Loader2 size={20} className="animate-spin mx-auto" />
-              ) : (
-                <>
-                  <div className={`text-xl font-bold ${
-                    (() => {
-                      const pnlToday = fxshinobiStatus.account?.pnl_today ?? fxshinobiStatus.pnlToday ?? accountData?.pnl_today ?? 0;
-                      return (pnlToday ?? 0) >= 0 ? 'text-green-500' : 'text-red-500';
-                    })()
-                  }`}>
-                    {(() => {
-                      const pnlToday = fxshinobiStatus.account?.pnl_today ?? fxshinobiStatus.pnlToday ?? accountData?.pnl_today;
-                      return pnlToday !== null && pnlToday !== undefined ? formatCurrency(pnlToday) : '--';
-                    })()}
-                  </div>
-                  <div className="text-xs opacity-60">P&L Today</div>
-                </>
-              )}
-            </div>
-            <div
-              className="p-3 rounded-lg text-center"
-              style={{ backgroundColor: 'var(--chatty-bg)' }}
-            >
-              <div className="text-xl font-bold">
-                {fxshinobiStatus.account?.open_positions ?? fxshinobiStatus.details?.openPositions ?? 0}
+                  </h2>
+                  <span
+                    className={`px-2 py-0.5 rounded text-xs font-medium ${
+                      fxshinobiStatus.liveMode
+                        ? 'bg-green-500/20 text-green-400'
+                        : 'bg-amber-500/20 text-amber-400'
+                    }`}
+                  >
+                    {fxshinobiStatus.liveMode ? 'LIVE' : 'DEMO'}
+                  </span>
+                  {(() => {
+                    const activeBroker = fxshinobiStatus.brokers?.find(b => b.id === fxshinobiStatus.activeBrokerId);
+                    const isConfigured = activeBroker?.configured ?? false;
+                    const isConnected = activeBroker?.configured && activeBroker?.connected;
+                    
+                    if (isConnected) {
+                      return (
+                        <span className="flex items-center gap-1 text-xs text-green-400">
+                          <CheckCircle size={12} />
+                          Connected
+                        </span>
+                      );
+                    } else if (isConfigured) {
+                      return (
+                        <span className="flex items-center gap-1 text-xs text-amber-400">
+                          <AlertCircle size={12} />
+                          Configured (Error)
+                        </span>
+                      );
+                    } else {
+                      return (
+                        <span className="flex items-center gap-1 text-xs text-red-400">
+                          <XCircle size={12} />
+                          Not Configured
+                        </span>
+                      );
+                    }
+                  })()}
+                </div>
+                <button
+                  onClick={() => setShowBrokerModal(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors hover:bg-[var(--chatty-highlight)]"
+                  style={{ border: '1px solid var(--chatty-border)' }}
+                >
+                  <Settings size={14} />
+                  Configure
+                </button>
               </div>
-              <div className="text-xs opacity-60">Open Positions</div>
-            </div>
-          </div>
-        </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div
+                  className="p-3 rounded-lg text-center"
+                  style={{ backgroundColor: 'var(--chatty-bg)' }}
+                >
+                  {fxshinobiStatus.status === 'checking' ? (
+                    <Loader2 size={20} className="animate-spin mx-auto" />
+                  ) : (
+                    <>
+                      <div className="text-xl font-bold">
+                        {(() => {
+                          const balance = fxshinobiStatus.account?.balance ?? fxshinobiStatus.accountBalance ?? accountData?.account_balance;
+                          return balance !== null && balance !== undefined ? formatCurrency(balance) : '--';
+                        })()}
+                      </div>
+                      <div className="text-xs opacity-60">Balance</div>
+                    </>
+                  )}
+                </div>
+                <div
+                  className="p-3 rounded-lg text-center"
+                  style={{ backgroundColor: 'var(--chatty-bg)' }}
+                >
+                  {fxshinobiStatus.status === 'checking' ? (
+                    <Loader2 size={20} className="animate-spin mx-auto" />
+                  ) : (
+                    <>
+                      <div className="text-xl font-bold">
+                        {(() => {
+                          const equity = fxshinobiStatus.account?.equity ?? fxshinobiStatus.equity;
+                          return equity !== null && equity !== undefined ? formatCurrency(equity) : '--';
+                        })()}
+                      </div>
+                      <div className="text-xs opacity-60">Equity</div>
+                    </>
+                  )}
+                </div>
+                <div
+                  className="p-3 rounded-lg text-center"
+                  style={{ backgroundColor: 'var(--chatty-bg)' }}
+                >
+                  {fxshinobiStatus.status === 'checking' ? (
+                    <Loader2 size={20} className="animate-spin mx-auto" />
+                  ) : (
+                    <>
+                      <div className={`text-xl font-bold ${
+                        (() => {
+                          const openPnl = fxshinobiStatus.account?.open_pnl ?? fxshinobiStatus.openPnl ?? accountData?.open_pnl ?? 0;
+                          return (openPnl ?? 0) >= 0 ? 'text-green-500' : 'text-red-500';
+                        })()
+                      }`}>
+                        {(() => {
+                          const openPnl = fxshinobiStatus.account?.open_pnl ?? fxshinobiStatus.openPnl ?? accountData?.open_pnl;
+                          return openPnl !== null && openPnl !== undefined ? formatCurrency(openPnl) : '--';
+                        })()}
+                      </div>
+                      <div className="text-xs opacity-60">Open P&L</div>
+                    </>
+                  )}
+                </div>
+                <div
+                  className="p-3 rounded-lg text-center"
+                  style={{ backgroundColor: 'var(--chatty-bg)' }}
+                >
+                  {fxshinobiStatus.status === 'checking' ? (
+                    <Loader2 size={20} className="animate-spin mx-auto" />
+                  ) : (
+                    <>
+                      <div className={`text-xl font-bold ${
+                        (() => {
+                          const pnlToday = fxshinobiStatus.account?.pnl_today ?? fxshinobiStatus.pnlToday ?? accountData?.pnl_today ?? 0;
+                          return (pnlToday ?? 0) >= 0 ? 'text-green-500' : 'text-red-500';
+                        })()
+                      }`}>
+                        {(() => {
+                          const pnlToday = fxshinobiStatus.account?.pnl_today ?? fxshinobiStatus.pnlToday ?? accountData?.pnl_today;
+                          return pnlToday !== null && pnlToday !== undefined ? formatCurrency(pnlToday) : '--';
+                        })()}
+                      </div>
+                      <div className="text-xs opacity-60">P&L Today</div>
+                    </>
+                  )}
+                </div>
+                <div
+                  className="p-3 rounded-lg text-center"
+                  style={{ backgroundColor: 'var(--chatty-bg)' }}
+                >
+                  <div className="text-xl font-bold">
+                    {fxshinobiStatus.account?.open_positions ?? fxshinobiStatus.details?.openPositions ?? 0}
+                  </div>
+                  <div className="text-xs opacity-60">Open Positions</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Chart */}
             <div
               className="rounded-xl p-4"
               style={{
@@ -369,6 +392,87 @@ const FXShinobiPage: React.FC = () => {
               <ChartProvider symbol={chartSymbol} timeframe={chartTimeframe} height={400} theme="dark" provider="tradingview" />
             </div>
 
+            {/* Performance */}
+            <div
+              className="rounded-xl p-4"
+              style={{
+                backgroundColor: 'var(--chatty-bg-modal, var(--chatty-highlight))',
+                border: '1px solid var(--chatty-border)',
+              }}
+            >
+              <h2 className="font-semibold mb-4">Performance</h2>
+              {perfLoading ? (
+                <div className="text-center py-4 opacity-50">Loading...</div>
+              ) : performance ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    <div
+                      className="p-3 rounded-lg text-center"
+                      style={{ backgroundColor: 'var(--chatty-bg)' }}
+                    >
+                      <div className={`text-xl font-bold ${performance.totalPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        {formatCurrency(performance.totalPnl)}
+                      </div>
+                      <div className="text-xs opacity-60">Total P&L (30d)</div>
+                    </div>
+                    <div
+                      className="p-3 rounded-lg text-center"
+                      style={{ backgroundColor: 'var(--chatty-bg)' }}
+                    >
+                      <div className="text-xl font-bold">
+                        {formatPercent(performance.winRate)}
+                      </div>
+                      <div className="text-xs opacity-60">Win Rate</div>
+                    </div>
+                    <div
+                      className="p-3 rounded-lg text-center"
+                      style={{ backgroundColor: 'var(--chatty-bg)' }}
+                    >
+                      <div className="text-xl font-bold">{performance.totalTrades}</div>
+                      <div className="text-xs opacity-60">Total Trades</div>
+                    </div>
+                    <div
+                      className="p-3 rounded-lg text-center"
+                      style={{ backgroundColor: 'var(--chatty-bg)' }}
+                    >
+                      <div className="text-xl font-bold text-green-500">
+                        {formatCurrency(performance.avgWin)}
+                      </div>
+                      <div className="text-xs opacity-60">Avg Win</div>
+                    </div>
+                    <div
+                      className="p-3 rounded-lg text-center"
+                      style={{ backgroundColor: 'var(--chatty-bg)' }}
+                    >
+                      <div className="text-xl font-bold text-red-500">
+                        {formatCurrency(performance.avgLoss)}
+                      </div>
+                      <div className="text-xs opacity-60">Avg Loss</div>
+                    </div>
+                  </div>
+                  {(performance.sharpeRatio || performance.maxDrawdown) && (
+                    <div className="flex flex-wrap gap-4 pt-2 border-t text-sm" style={{ borderColor: 'var(--chatty-border)' }}>
+                      {performance.sharpeRatio && (
+                        <div className="flex items-center gap-2">
+                          <span className="opacity-70">Sharpe Ratio:</span>
+                          <span className="font-medium">{performance.sharpeRatio.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {performance.maxDrawdown && (
+                        <div className="flex items-center gap-2">
+                          <span className="opacity-70">Max Drawdown:</span>
+                          <span className="font-medium text-red-500">{formatPercent(performance.maxDrawdown)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-4 opacity-50">No performance data</div>
+              )}
+            </div>
+
+            {/* Orders / Activity */}
             <div
               className="rounded-xl p-4"
               style={{
@@ -519,6 +623,7 @@ const FXShinobiPage: React.FC = () => {
               )}
             </div>
 
+            {/* Prediction Markets */}
             <div
               className="rounded-xl p-4"
               style={{
@@ -588,9 +693,7 @@ const FXShinobiPage: React.FC = () => {
               )}
             </div>
 
-          </div>
-
-          <div className="space-y-4">
+            {/* Script Logs */}
             <div
               className="rounded-xl p-4"
               style={{
@@ -600,22 +703,23 @@ const FXShinobiPage: React.FC = () => {
             >
               <div className="flex items-center gap-2 mb-3">
                 <ScrollText size={18} className="text-cyan-500" />
-                <span className="font-semibold">Script Log</span>
+                <span className="font-semibold">Script Logs</span>
+                <span className="text-xs opacity-50">(Trading output)</span>
               </div>
               {logsLoading ? (
                 <div className="text-center py-4 opacity-50">
                   <Loader2 size={20} className="animate-spin mx-auto" />
                 </div>
               ) : scriptLogs.length === 0 ? (
-                <div className="text-center py-4 text-sm opacity-50">
-                  No recent logs
+                <div className="text-center py-8 text-sm opacity-50">
+                  No script logs yet. Trading script output will appear here.
                 </div>
               ) : (
                 <div
-                  className="space-y-1 max-h-40 overflow-y-auto text-xs font-mono"
-                  style={{ backgroundColor: 'var(--chatty-bg)', borderRadius: '8px', padding: '8px' }}
+                  className="space-y-1 max-h-60 overflow-y-auto text-xs font-mono"
+                  style={{ backgroundColor: 'var(--chatty-bg)', borderRadius: '8px', padding: '12px' }}
                 >
-                  {scriptLogs.slice(0, 10).map((log, idx) => (
+                  {scriptLogs.slice(0, 20).map((log, idx) => (
                     <div
                       key={log.id || idx}
                       className={`flex items-start gap-2 ${
@@ -634,79 +738,11 @@ const FXShinobiPage: React.FC = () => {
                 </div>
               )}
             </div>
+          </div>
 
-            <div
-              className="rounded-xl p-4"
-              style={{
-                backgroundColor: 'var(--chatty-bg-modal, var(--chatty-highlight))',
-                border: '1px solid var(--chatty-border)',
-              }}
-            >
-              <h2 className="font-semibold mb-4">Performance</h2>
-              {perfLoading ? (
-                <div className="text-center py-4 opacity-50">Loading...</div>
-              ) : performance ? (
-                <div className="space-y-4">
-                  <div className="text-center py-4">
-                    <div className="text-3xl font-bold text-green-500">
-                      {formatCurrency(performance.totalPnl)}
-                    </div>
-                    <div className="text-sm opacity-70">Total P&L (30 days)</div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div
-                      className="p-3 rounded-lg text-center"
-                      style={{ backgroundColor: 'var(--chatty-bg)' }}
-                    >
-                      <div className="text-lg font-semibold">
-                        {formatPercent(performance.winRate)}
-                      </div>
-                      <div className="text-xs opacity-60">Win Rate</div>
-                    </div>
-                    <div
-                      className="p-3 rounded-lg text-center"
-                      style={{ backgroundColor: 'var(--chatty-bg)' }}
-                    >
-                      <div className="text-lg font-semibold">{performance.totalTrades}</div>
-                      <div className="text-xs opacity-60">Total Trades</div>
-                    </div>
-                    <div
-                      className="p-3 rounded-lg text-center"
-                      style={{ backgroundColor: 'var(--chatty-bg)' }}
-                    >
-                      <div className="text-lg font-semibold text-green-500">
-                        {formatCurrency(performance.avgWin)}
-                      </div>
-                      <div className="text-xs opacity-60">Avg Win</div>
-                    </div>
-                    <div
-                      className="p-3 rounded-lg text-center"
-                      style={{ backgroundColor: 'var(--chatty-bg)' }}
-                    >
-                      <div className="text-lg font-semibold text-red-500">
-                        {formatCurrency(performance.avgLoss)}
-                      </div>
-                      <div className="text-xs opacity-60">Avg Loss</div>
-                    </div>
-                  </div>
-                  {performance.sharpeRatio && (
-                    <div className="flex justify-between items-center pt-2 border-t" style={{ borderColor: 'var(--chatty-border)' }}>
-                      <span className="text-sm opacity-70">Sharpe Ratio</span>
-                      <span className="font-medium">{performance.sharpeRatio.toFixed(2)}</span>
-                    </div>
-                  )}
-                  {performance.maxDrawdown && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm opacity-70">Max Drawdown</span>
-                      <span className="font-medium text-red-500">
-                        {formatPercent(performance.maxDrawdown)}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              ) : null}
-            </div>
-
+          {/* Right sidebar (1/3 width on xl) */}
+          <div className="space-y-4">
+            {/* AI Insights */}
             <div
               className="rounded-xl p-4"
               style={{
@@ -771,7 +807,8 @@ const FXShinobiPage: React.FC = () => {
               )}
             </div>
 
-            {snapshotLoading ? null : snapshot && snapshot.price != null ? (
+            {/* Market Snapshot (if available) */}
+            {!snapshotLoading && snapshot && snapshot.price != null && (
               <div
                 className="rounded-xl p-4"
                 style={{
@@ -810,8 +847,9 @@ const FXShinobiPage: React.FC = () => {
                   </div>
                 </div>
               </div>
-            ) : null}
+            )}
 
+            {/* Intelligence Widgets */}
             <div
               className="rounded-xl p-4"
               style={{
@@ -825,7 +863,7 @@ const FXShinobiPage: React.FC = () => {
               >
                 <h2 className="font-semibold flex items-center gap-2">
                   <Newspaper size={18} className="text-cyan-500" />
-                  External Intel
+                  Intelligence
                 </h2>
                 {showExternalIntel ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
               </button>
