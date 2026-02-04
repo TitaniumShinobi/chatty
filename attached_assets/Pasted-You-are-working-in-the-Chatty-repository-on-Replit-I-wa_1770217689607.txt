@@ -1,0 +1,196 @@
+You are working in the Chatty repository on Replit.
+I want you to reorganize the FXShinobi trading dashboard UI to match this layout, using the existing components already in the Chatty codebase.
+Target Layout
+Header (left → right)
+
+
+Back button (far left of the page)
+
+
+A vertical stack of:
+
+
+Refresh (top)
+
+
+Settings (bottom)
+
+
+
+
+Title + subtitle for FXShinobi
+
+
+Status badge (live / loading / error)
+
+
+Insight / AI seat label on the far right (this was “financeLLM”; treat it as the Insight AI seat)
+
+
+Main content (center/left column, top → bottom)
+
+
+Broker connection / broker status panel
+
+
+Chart showing what FXShinobi is actively trading
+
+
+Performance metrics (P&L, win rate, total trades, etc.)
+
+
+Orders / Activity (trade history with filters and pagination)
+
+
+Prediction Markets (Kalshi integration)
+
+
+Script logs section (15s refresh; it’s okay if data is not wired yet, but the UI block must live here and clearly indicate it shows trading script output)
+
+
+Right side column
+
+
+AI Insights panel (FXShinobi‑specific AI analysis)
+
+
+Intelligence widgets:
+
+
+ForexFactory calendar
+
+
+Finviz heatmap
+
+
+Currency Strength
+
+
+Compound Calculator
+
+
+Weekend Training (or similar external intel widgets already present)
+
+
+
+
+Requirements
+
+
+Identify the main FXShinobi screen component in this repo (for example FXShinobiPage.tsx or similar) and:
+
+
+Implement a header + 2‑column layout (main + right sidebar) using the existing layout system and styling conventions in Chatty (no new CSS framework).
+
+
+Reuse existing FXShinobi components for:
+
+
+broker,
+
+
+chart,
+
+
+performance,
+
+
+orders/activity,
+
+
+prediction markets,
+
+
+script logs,
+
+
+AI insights,
+
+
+external intelligence widgets.
+Do not change their internal logic; just reorganize how they are placed and grouped.
+
+
+
+
+
+
+Keep all current behavior intact:
+
+
+30s market snapshot auto‑refresh,
+
+
+15s script logs refresh,
+
+
+existing filters and pagination for trade history,
+
+
+Kalshi integration as-is.
+This is a layout refactor only.
+
+
+
+
+Make the layout responsive:
+
+
+On wide screens: header on top; main content in a left column; right‑side AI/Intelligence column on the right.
+
+
+On narrow screens: follow the existing responsive patterns in Chatty. It’s fine if the right column stacks below main content or becomes a collapsible section—reuse any existing responsive utilities / layout wrappers.
+
+
+
+
+Update any header labels so the AI seat on the right is branded as “Insight” rather than “FinanceLLM”, matching the current direction of the product.
+
+
+Deliverables
+
+
+Update the main FXShinobi page component with the new layout.
+
+
+If you create or touch any shared layout wrappers (e.g., a TwoColumnLayout, PageHeader, or similar), keep them generic and consistent with Chatty’s existing style.
+
+
+Briefly explain in comments or a short summary:
+
+
+Which file is the main FXShinobi page.
+
+
+Which components you used for each of:
+
+
+Broker
+
+
+Chart
+
+
+Performance
+
+
+Orders/Activity
+
+
+Prediction Markets
+
+
+Script logs
+
+
+AI Insights
+
+
+Intelligence widgets.
+
+
+
+
+
+
+Do not change any backend or trading logic; only reorganize the UI structure to match this spec.
