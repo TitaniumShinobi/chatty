@@ -51,7 +51,7 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Construct canonical redirect URI with normalization
 const REPLIT_DOMAIN = process.env.REPLIT_DEV_DOMAIN || process.env.REPLIT_DOMAINS;
-const PUBLIC_CALLBACK_BASE = REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : (process.env.PUBLIC_CALLBACK_BASE || 'http://localhost:5000');
+const PUBLIC_CALLBACK_BASE = REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : (process.env.PUBLIC_CALLBACK_BASE || 'http://localhost:5050');
 const CALLBACK_PATH = '/api/auth/google/callback';
 const REDIRECT_URI = `${PUBLIC_CALLBACK_BASE.replace(/\/$/, '')}${CALLBACK_PATH}`;
 
@@ -923,7 +923,7 @@ if (isProduction) {
   });
 }
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5050;
 app.listen(PORT, '0.0.0.0', () => console.log(`API on :${PORT}`));
 
 // Initialize Supabase Realtime subscription for cross-app sync
