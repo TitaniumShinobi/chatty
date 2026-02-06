@@ -169,8 +169,11 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cookieParser());
 app.set("trust proxy", 1);
 
-// Allow all origins in development for Replit proxy support
-app.use(cors({ origin: true, credentials: true }));
+// CORS configuration
+const corsOrigin = process.env.NODE_ENV === 'production'
+  ? (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || 'https://chatty.thewreck.org')
+  : true;
+app.use(cors({ origin: corsOrigin, credentials: true }));
 
 // Serve static files in production (built frontend)
 const isProduction = process.env.NODE_ENV === 'production';

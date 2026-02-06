@@ -1,0 +1,153 @@
+Great. I’ll start with the core configs; you can drop these onto `vvault-server` and then we’ll do the deploy/rsync step.
+
+***
+
+## 1) Environment file: `/etc/thewreck/chatty.env`
+
+Create this file (as root) and fill in the real secrets where noted:
+
+```ini
+# Core runtime
+NODE_ENV=production
+PORT=5000
+
+# Domain config
+PUBLIC_CALLBACK_BASE=https://chatty.thewreck.org
+FRONTEND_URL=https://chatty.thewreck.org
+
+# Supabase
+SUPABASE_URL=YOUR_SUPABASE_URL_HERE
+SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY_HERE
+
+# Google OAuth
+GOOGLE_CLIENT_ID=YOUR_GOOGLE_CLIENT_ID_HERE
+GOOGLE_CLIENT_SECRET=YOUR_GOOGLE_CLIENT_SECRET_HERE
+
+# OpenRouter / LLM
+OPENROUTER_API_KEY=YOUR_OPENROUTER_KEY_HERE
+
+# Any VVault-related tokens / endpoints
+VVAULT_BASE_URL=https://vvault.thewreck.org
+VVAULT_SERVICE_TOKEN=YOUR_VVAULT_SERVICE_TOKEN_HERE
+
+# Any other env Chatty uses in production...
+```
+
+Then:
+
+```bash
+sudo chown vvault:vvault /etc/thewreck/chatty.env
+sudo chmod 600 /etc/thewreck/chatty.env
+```
+
+***
+
+## 2) systemd unit: `/etc/systemd/system/chatty.service`
+
+Create this file:
+
+```ini
+[Unit]
+Description=Chatty (Vite+React + Express) service
+After=network.target
+
+[Service]
+Type=simple
+User=vvault
+Group=vvault
+WorkingDirectory=/opt/chatty
+
+# Load environment variables
+EnvironmentFile=/etc/thewreck/chatty.env
+
+# Start the production server
+ExecStart=/usr/bin/npm run start:prod
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then reload and enable:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable chatty
+# We will start it after code + build are in place
+```
+
+***
+
+## 3) nginx vhost: `/etc/nginx/sites-available/chatty`
+
+Create:
+
+```nginx
+server {
+    listen 80;
+    server_name chatty.thewreck.org;
+
+    # HSTS (Cloudflare will be terminating TLS; this is still good for origin)
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+
+    location / {
+        proxy_pass         http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket / keep-alive
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        "upgrade";
+    }
+}
+```
+
+Enable it and reload nginx:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/chatty /etc/nginx/sites-enabled/chatty
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+(Leave your existing `vvault` and `fxshinobi` site configs as‑is.)
+
+***
+
+## 4) Cloudflare DNS for `chatty.thewreck.org`
+
+In Cloudflare DNS for `thewreck.org`:
+
+- Type: `A`  
+- Name: `chatty`  
+- IPv4: `165.245.136.194`  
+- Proxy status: **Proxied** (orange cloud)  
+
+Once saved, DNS propagation is usually under a few minutes.
+
+***
+
+## 5) Next step: deploy + start
+
+When you’re ready, tell me:
+
+- Whether your local Chatty folder is something like `~/Documents/GitHub/Chatty`, and  
+- Whether the Express server really uses `PORT` (5000) from env in production,
+
+and I’ll give you the exact `rsync` and on‑server commands:
+
+1. Copy code to `/opt/chatty` (without `.git` / `node_modules`).  
+2. Install Node deps and `npm run build`.  
+3. Start Chatty via `sudo systemctl start chatty`.  
+4. Test `https://chatty.thewreck.org` end‑to‑end.

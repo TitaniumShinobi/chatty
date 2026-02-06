@@ -1,0 +1,44 @@
+# =============================================================================
+# Chatty systemd service
+# Location: /etc/systemd/system/chatty.service
+#
+# Setup:
+#   sudo cp deploy/chatty.service /etc/systemd/system/chatty.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable chatty
+#   sudo systemctl start chatty
+#
+# Logs:
+#   sudo journalctl -u chatty -f
+# =============================================================================
+
+[Unit]
+Description=Chatty AI Workspace (Vite+React + Express)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vvault
+Group=vvault
+WorkingDirectory=/opt/chatty
+
+EnvironmentFile=/etc/thewreck/chatty.env
+
+ExecStart=/usr/bin/npm run start:prod
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=chatty
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
