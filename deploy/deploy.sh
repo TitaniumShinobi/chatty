@@ -42,6 +42,7 @@ Flags:
   --allow-dirty     allow deploying with uncommitted local changes (not recommended)
   --allow-unpushed  allow deploying with commits not pushed to upstream (not recommended)
   --allow-non-main  allow deploying from a branch other than 'main' (not recommended)
+  --sync-env-production  overwrite /opt/chatty/.env.production from local deploy/env.production (dangerous)
   -h, --help        show this help
 USAGE
 }
@@ -50,6 +51,7 @@ MODE="full"
 ALLOW_DIRTY=0
 ALLOW_UNPUSHED=0
 ALLOW_NON_MAIN=0
+SYNC_ENV_PRODUCTION=0
 
 while [ "${1:-}" != "" ]; do
     case "$1" in
@@ -64,6 +66,9 @@ while [ "${1:-}" != "" ]; do
             ;;
         --allow-non-main)
             ALLOW_NON_MAIN=1
+            ;;
+        --sync-env-production)
+            SYNC_ENV_PRODUCTION=1
             ;;
         -h|--help)
             usage
@@ -179,10 +184,26 @@ remote_build() {
     log "Installing dependencies and building on droplet..."
 
     log "Ensuring .env.production exists on droplet..."
-    if [ -f "deploy/env.production" ]; then
-        scp deploy/env.production "${SSH_TARGET}:${REMOTE_PATH}/.env.production"
+    # Safety: deploy/env.production in this repo is a template (placeholders).
+    # Do not overwrite the droplet's real /opt/chatty/.env.production unless explicitly requested.
+    if ssh "${SSH_TARGET}" "test -f \"${REMOTE_PATH}/.env.production\""; then
+        if [ "$SYNC_ENV_PRODUCTION" -eq 1 ]; then
+            if [ -f "deploy/env.production" ]; then
+                warn "Overwriting ${REMOTE_PATH}/.env.production from local deploy/env.production (--sync-env-production)."
+                scp deploy/env.production "${SSH_TARGET}:${REMOTE_PATH}/.env.production"
+            else
+                warn "deploy/env.production not found locally; leaving ${REMOTE_PATH}/.env.production unchanged."
+            fi
+        else
+            log "${REMOTE_PATH}/.env.production already exists; leaving it unchanged (use --sync-env-production to overwrite)."
+        fi
     else
-        warn "deploy/env.production not found locally - make sure it exists on the droplet"
+        if [ -f "deploy/env.production" ]; then
+            warn "${REMOTE_PATH}/.env.production missing; copying local deploy/env.production template."
+            scp deploy/env.production "${SSH_TARGET}:${REMOTE_PATH}/.env.production"
+        else
+            warn "deploy/env.production not found locally and ${REMOTE_PATH}/.env.production is missing on the droplet."
+        fi
     fi
 
     ssh "${SSH_TARGET}" << 'REMOTE_CMDS'
