@@ -1,0 +1,96 @@
+You’re right about the diagnosis, and you’ve basically already described the fix you need. Here’s how to implement it cleanly so that “Applied theme script: valentines” only logs when the script actually changes.
+
+### 1. Track the previous script with a ref
+
+In `ThemeContext.tsx`, inside `ThemeProvider`, add a ref to remember the last applied script ID:
+
+```ts
+const lastAppliedScriptIdRef = useRef<string | null>(null);
+```
+
+### 2. Wrap DOM + logging in a change guard
+
+In the “THEME SCRIPT DETECTION” `useEffect` (the one doing `console.log("[Theme] Applied theme script:", ...)` and classList work), change it along these lines:
+
+```ts
+useEffect(() => {
+  const script = activeThemeScript; // however you get the current script
+
+  const nextId = script?.id ?? null;
+  const prevId = lastAppliedScriptIdRef.current;
+
+  // If nothing actually changed, bail out early.
+  if (nextId === prevId) {
+    return;
+  }
+
+  // Record the new script id so we can compare next time.
+  lastAppliedScriptIdRef.current = nextId;
+
+  // From here down is your existing DOM + logging work, unchanged:
+  if (!script) {
+    // clear old theme classes, etc.
+    document.body.classList.remove("theme-valentines", "theme-halloween");
+    // ...
+    return;
+  }
+
+  console.log("[Theme] Applied theme script:", script.id);
+  // apply classes based on script.id
+  // document.body.classList.add(`theme-${script.id}`);
+  // run any other side effects you already have
+}, [activeThemeScript]);
+```
+
+This ensures:
+
+- The `console.log` and `classList` operations only run when `activeThemeScript.id` actually changes.[1][2]
+- Even if React re-renders the provider or reruns the effect due to unrelated state changes, you won’t spam logs or re-apply the same theme over and over.
+
+### 3. Remove/merge duplicate ThemeProviders
+
+Since you’ve already found that `main.tsx` and `Layout.tsx` both wrap children in `ThemeProvider`, pick **one** place to own the provider (usually the top-level app shell, e.g. `main.tsx`) and remove the nested one.[3][4]
+
+For example:
+
+- In `main.tsx` keep:
+
+```tsx
+<ThemeProvider user={userFromAuthOrNull}>
+  <App />
+</ThemeProvider>
+```
+
+- In `Layout.tsx` change:
+
+```tsx
+// Before
+<ThemeProvider user={user}>{children}</ThemeProvider>
+
+// After
+{children} // just consume ThemeContext inside instead of wrapping
+```
+
+With:
+
+1) a single `ThemeProvider`, and  
+2) the ref-based change guard in the theme script effect,
+
+the “Applied theme script: valentines” spam will stop while still correctly applying the valentines theme when it actually changes.
+
+Sources
+[1] How to Prevent Infinite Loops When Using useEffect() in ReactJS https://www.freecodecamp.org/news/prevent-infinite-loops-when-using-useeffect-in-reactjs/
+[2] How to access previous props or state with React Hooks https://blog.logrocket.com/accessing-previous-props-state-react-hooks/
+[3] Why react context provider component renders twice - Stack Overflow https://stackoverflow.com/questions/61532814/why-react-context-provider-component-renders-twice
+[4] React Router / useContext causing two components to render - Reddit https://www.reddit.com/r/react/comments/182emim/react_router_usecontext_causing_two_components_to/
+[5] How to prevent a React useEffect from running twice in StrictMode ... https://www.reddit.com/r/reactjs/comments/1ewprza/how_to_prevent_a_react_useeffect_from_running/
+[6] Prevent re-rendering when state is changed multiple times during ... https://stackoverflow.com/questions/61225409/prevent-re-rendering-when-state-is-changed-multiple-times-during-useeffect
+[7] A Complete Guide to useEffect - Overreacted https://overreacted.io/a-complete-guide-to-useeffect/
+[8] React's `useEffect`: Best Practices, Pitfalls, and Modern JavaScript ... https://dev.to/hkp22/reacts-useeffect-best-practices-pitfalls-and-modern-javascript-insights-g2f
+[9] usePrevious + useEffect? - DEV Community https://dev.to/receter/useprevious-useeffect--33p0
+[10] How to stop useEffect from running twice on mount or first render in ... https://www.youtube.com/watch?v=81faZzp18NM
+[11] useRef to store previous state value - Stack Overflow https://stackoverflow.com/questions/65785606/useref-to-store-previous-state-value
+[12] A Guide with test-doubles for Testing ReactJS Context https://marabesi.com/2024/12/01/testing-reactjs-context.html
+[13] How to avoid endless re-renders in React with useEffect - LinkedIn https://www.linkedin.com/posts/gurusewak122_reactjs-mern-webdevelopment-activity-7355886990057226240-BBYJ
+[14] Removing Effect Dependencies - React https://react.dev/learn/removing-effect-dependencies
+[15] Understanding useEffect, useRef and Custom Hooks - Persson Dennis https://www.perssondennis.com/articles/react-useEffect-render-flow
