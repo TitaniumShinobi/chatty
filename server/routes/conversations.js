@@ -5,6 +5,7 @@ import { getGPTSaveHook } from "../lib/gptSaveHook.js";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readConversationsFromSupabase } from '../../vvaultConnector/supabaseStore.js';
 
 // Helper to sync GPT conversations to Supabase
 async function syncGPTConversationToSupabase(userId, userEmail, conversationId, gptId, gptName, userMessage, aiMessage) {
@@ -69,7 +70,45 @@ const r = express.Router();
 r.get("/", async (req, res) => {
   try {
     const rows = await Store.listConversations(req.user.id);
-    res.json({ ok: true, conversations: rows });
+    
+    let supabaseConversations = [];
+    try {
+      const userEmail = req.user.email;
+      if (userEmail) {
+        const sbConvos = await readConversationsFromSupabase(userEmail);
+        if (sbConvos && sbConvos.length > 0) {
+          console.log(`📥 [Conversations API] Found ${sbConvos.length} conversations from Supabase for ${userEmail}`);
+          supabaseConversations = sbConvos.map(c => ({
+            _id: c.sessionId,
+            owner: req.user.id,
+            title: c.title || 'Untitled',
+            constructId: c.constructId,
+            constructName: c.constructName,
+            constructCallsign: c.constructCallsign,
+            model: 'gpt-4o',
+            createdAt: c.createdAt || new Date().toISOString(),
+            updatedAt: c.updatedAt || new Date().toISOString(),
+            messageCount: c.messages?.length || 0,
+            source: 'supabase'
+          }));
+        }
+      }
+    } catch (sbError) {
+      console.warn('⚠️ [Conversations API] Supabase hydration failed:', sbError.message);
+    }
+    
+    const existingIds = new Set(rows.map(r => r._id));
+    const merged = [...rows];
+    for (const sc of supabaseConversations) {
+      if (!existingIds.has(sc._id)) {
+        merged.push(sc);
+        existingIds.add(sc._id);
+      }
+    }
+    
+    merged.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    
+    res.json({ ok: true, conversations: merged });
   } catch (error) {
     console.error("List conversations error:", error);
     res.status(500).json({ ok: false, error: "Failed to load conversations" });
@@ -89,6 +128,39 @@ r.post("/", async (req, res) => {
 r.get("/:id/messages", async (req, res) => {
   try {
     const rows = await Store.listMessages(req.user.id, req.params.id);
+    
+    if (rows && rows.length > 0) {
+      return res.json({ ok: true, messages: rows });
+    }
+    
+    try {
+      const userEmail = req.user.email;
+      const conversationId = req.params.id;
+      if (userEmail) {
+        const sbConvos = await readConversationsFromSupabase(userEmail);
+        if (sbConvos && sbConvos.length > 0) {
+          const match = sbConvos.find(c => c.sessionId === conversationId);
+          if (match && match.messages && match.messages.length > 0) {
+            console.log(`📥 [Conversations API] Hydrating ${match.messages.length} messages from Supabase for ${conversationId}`);
+            const hydratedMessages = match.messages
+              .filter(m => !m.isDateHeader)
+              .map((m, idx) => ({
+                _id: `sb_${conversationId}_${idx}`,
+                conversation: conversationId,
+                owner: req.user.id,
+                role: m.role || 'user',
+                content: m.content || '',
+                createdAt: m.timestamp || match.createdAt || new Date().toISOString(),
+                source: 'supabase'
+              }));
+            return res.json({ ok: true, messages: hydratedMessages });
+          }
+        }
+      }
+    } catch (sbError) {
+      console.warn('⚠️ [Conversations API] Supabase message hydration failed:', sbError.message);
+    }
+    
     res.json({ ok: true, messages: rows });
   } catch (error) {
     console.error("List messages error:", error);
