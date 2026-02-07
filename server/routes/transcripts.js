@@ -1,5 +1,7 @@
 import express from 'express';
 import multer from 'multer';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { getSupabaseClient } from '../lib/supabaseClient.js';
 import { extractStartDate, extractFromPath } from '../lib/transcriptDateExtractor.js';
 
@@ -43,6 +45,55 @@ async function resolveSupabaseUserId(supabase, userEmail) {
     return null;
   }
   return data.id;
+}
+
+function getVvaultRoot() {
+  // Server-side filesystem VVAULT root. Must be configured in production.
+  return process.env.VVAULT_PATH || process.env.VVAULT_ROOT || '';
+}
+
+async function listTranscriptsFromFilesystem({ vvaultRoot, userId, constructCallsign }) {
+  const baseDir = path.join(
+    vvaultRoot,
+    'users',
+    'shard_0000',
+    String(userId),
+    'instances',
+    String(constructCallsign),
+  );
+
+  const candidates = [
+    path.join(baseDir, 'transcripts'),
+    // Some installs may store at the instance root
+    baseDir,
+  ];
+
+  const results = [];
+  for (const dir of candidates) {
+    try {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      for (const ent of entries) {
+        if (!ent.isFile()) continue;
+        const name = ent.name;
+        if (!/\.(md|txt|rtf|pdf|json)$/i.test(name)) continue;
+        results.push({
+          name,
+          type: name.split('.').pop() || 'unknown',
+          source: 'transcripts',
+          year: null,
+          month: null,
+          startDate: null,
+          dateConfidence: 0,
+          uploadedAt: null,
+          filename: path.join(dir, name),
+        });
+      }
+    } catch {
+      // ignore missing dirs
+    }
+  }
+
+  return results;
 }
 
 router.post('/save', async (req, res) => {
@@ -338,68 +389,84 @@ router.get('/list/:constructCallsign', async (req, res) => {
     const { constructCallsign } = req.params;
     
     const supabase = getSupabaseClient();
-    if (!supabase) {
-      return res.status(500).json({ success: false, error: 'Supabase not configured' });
-    }
-    
     const userEmail = req.user?.email || 'anonymous';
-    const userId = await resolveSupabaseUserId(supabase, userEmail);
-    
-    if (!userId) {
-      return res.json({ success: true, transcripts: [] });
-    }
-    
-    const { data: files, error: filesError } = await supabase
-      .from('vault_files')
-      .select('filename, metadata, created_at')
-      .eq('user_id', userId)
-      .eq('file_type', 'transcript')
-      .eq('construct_id', constructCallsign);
-    
-    if (filesError) {
-      console.error('❌ [Transcripts] List error:', filesError);
-      return res.status(500).json({ success: false, error: filesError.message });
-    }
-    
-    const transcripts = (files || []).map(f => {
-      // Prefer metadata for source/year/month (reliable), fall back to path parsing
-      let source = f.metadata?.source;
-      let year = f.metadata?.year;
-      let month = f.metadata?.month;
-      
-      // If metadata missing, parse from path
-      if (!source || source === 'transcripts') {
-        // Path format: vvault/users/shard_0000/{userId}/instances/{constructId}/{source}/{year?}/{month?}/{filename}
-        const pathParts = f.filename.split('/');
-        const constructIdx = pathParts.indexOf('instances');
-        if (constructIdx >= 0 && pathParts.length > constructIdx + 2) {
-          source = pathParts[constructIdx + 2];
-          // Check for year/month in subsequent parts
-          const months = ['january', 'february', 'march', 'april', 'may', 'june',
-                          'july', 'august', 'september', 'october', 'november', 'december'];
-          for (let i = constructIdx + 3; i < pathParts.length - 1; i++) {
-            const part = pathParts[i];
-            if (/^\d{4}$/.test(part) && !year) {
-              year = part;
-            } else if (months.includes(part.toLowerCase()) && !month) {
-              month = part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+
+    // Prefer Supabase when configured; otherwise fall back to filesystem VVAULT.
+    let transcripts = [];
+    if (supabase) {
+      const userId = await resolveSupabaseUserId(supabase, userEmail);
+      if (!userId) {
+        return res.json({ success: true, transcripts: [] });
+      }
+
+      const { data: files, error: filesError } = await supabase
+        .from('vault_files')
+        .select('filename, metadata, created_at')
+        .eq('user_id', userId)
+        .eq('file_type', 'transcript')
+        .eq('construct_id', constructCallsign);
+
+      if (filesError) {
+        console.error('❌ [Transcripts] List error:', filesError);
+        return res.status(500).json({ success: false, error: filesError.message });
+      }
+
+      transcripts = (files || []).map(f => {
+        // Prefer metadata for source/year/month (reliable), fall back to path parsing
+        let source = f.metadata?.source;
+        let year = f.metadata?.year;
+        let month = f.metadata?.month;
+
+        // If metadata missing, parse from path
+        if (!source || source === 'transcripts') {
+          // Path format: vvault/users/shard_0000/{userId}/instances/{constructId}/{source}/{year?}/{month?}/{filename}
+          const pathParts = f.filename.split('/');
+          const constructIdx = pathParts.indexOf('instances');
+          if (constructIdx >= 0 && pathParts.length > constructIdx + 2) {
+            source = pathParts[constructIdx + 2];
+            // Check for year/month in subsequent parts
+            const months = ['january', 'february', 'march', 'april', 'may', 'june',
+                            'july', 'august', 'september', 'october', 'november', 'december'];
+            for (let i = constructIdx + 3; i < pathParts.length - 1; i++) {
+              const part = pathParts[i];
+              if (/^\d{4}$/.test(part) && !year) {
+                year = part;
+              } else if (months.includes(part.toLowerCase()) && !month) {
+                month = part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+              }
             }
           }
         }
+
+        return {
+          name: f.metadata?.originalName || f.filename.split('/').pop(),
+          type: f.metadata?.type || 'unknown',
+          source: source || 'unknown',
+          year: year || null,
+          month: month || null,
+          startDate: f.metadata?.startDate || null,
+          dateConfidence: f.metadata?.dateConfidence || 0,
+          uploadedAt: f.metadata?.uploadedAt || f.created_at,
+          filename: f.filename,
+        };
+      });
+    } else {
+      const vvaultRoot = getVvaultRoot();
+      if (!vvaultRoot) {
+        return res.status(500).json({
+          success: false,
+          error: 'Transcripts unavailable: set SUPABASE_* or VVAULT_PATH on the server',
+        });
       }
-      
-      return {
-        name: f.metadata?.originalName || f.filename.split('/').pop(),
-        type: f.metadata?.type || 'unknown',
-        source: source || 'unknown',
-        year: year || null,
-        month: month || null,
-        startDate: f.metadata?.startDate || null,
-        dateConfidence: f.metadata?.dateConfidence || 0,
-        uploadedAt: f.metadata?.uploadedAt || f.created_at,
-        filename: f.filename,
-      };
-    });
+
+      // In the VVAULT filesystem, the userId is Chatty's resolved ID (req.user.id).
+      const fsUserId = req.user?.id;
+      transcripts = await listTranscriptsFromFilesystem({
+        vvaultRoot,
+        userId: fsUserId,
+        constructCallsign,
+      });
+    }
     
     // Group by source for frontend convenience
     const bySource = transcripts.reduce((acc, t) => {

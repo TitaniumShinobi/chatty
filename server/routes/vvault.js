@@ -2310,10 +2310,12 @@ router.get("/account/status", async (req, res) => {
 
     // Try multiple query strategies since userId could be sub, id, uid, or _id
     let user = null;
+    let hadDbError = false;
     try {
       user = await User.findOne({ id: userId }).select('vvaultPath vvaultUserId vvaultLinkedAt email');
       if (user) console.log(`✅ [VVAULT API] Found user by id field`);
     } catch (err) {
+      hadDbError = true;
       console.log(`⚠️ [VVAULT API] Query by id failed:`, err.message);
     }
 
@@ -2323,6 +2325,7 @@ router.get("/account/status", async (req, res) => {
         user = await User.findOne({ email: req.user.email }).select('vvaultPath vvaultUserId vvaultLinkedAt email');
         if (user) console.log(`✅ [VVAULT API] Found user by email`);
       } catch (err) {
+        hadDbError = true;
         console.log(`⚠️ [VVAULT API] Query by email failed:`, err.message);
       }
     }
@@ -2333,13 +2336,36 @@ router.get("/account/status", async (req, res) => {
         user = await User.findById(userId).select('vvaultPath vvaultUserId vvaultLinkedAt email');
         if (user) console.log(`✅ [VVAULT API] Found user by _id`);
       } catch (err) {
+        hadDbError = true;
         console.log(`⚠️ [VVAULT API] Query by _id failed:`, err.message);
       }
     }
 
     if (!user) {
+      // Production hardening: if the user registry DB is unavailable/misconfigured,
+      // don't 404 the UI. Treat as "not linked" and allow the app to continue.
+      if (hadDbError) {
+        console.warn(`⚠️ [VVAULT API] User registry unavailable; returning linked=false for ${userId}`);
+        return res.json({
+          ok: true,
+          linked: false,
+          vvaultUserId: null,
+          vvaultPath: null,
+          linkedAt: null,
+          chattyEmail: req.user?.email || null,
+          warning: 'user_registry_unavailable',
+        });
+      }
+
       console.error(`❌ [VVAULT API] User not found for userId: ${userId}, email: ${req.user?.email}`);
-      return res.status(404).json({ ok: false, error: "User not found" });
+      return res.json({
+        ok: true,
+        linked: false,
+        vvaultUserId: null,
+        vvaultPath: null,
+        linkedAt: null,
+        chattyEmail: req.user?.email || null,
+      });
     }
 
     const isLinked = !!(user.vvaultPath && user.vvaultUserId);
