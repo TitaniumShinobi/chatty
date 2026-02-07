@@ -45,7 +45,8 @@ console.log('[ENV CHECK]', {
   NODE_ENV: process.env.NODE_ENV
 });
 console.log('[OPENROUTER]', {
-  API_KEY_SET: !!process.env.OPENROUTER_API_KEY,
+  API_KEY_SET: !!(process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY),
+  SOURCE: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY ? 'replit_integration' : (process.env.OPENROUTER_API_KEY ? 'env_var' : 'none'),
   MODEL: process.env.OPENROUTER_MODEL || 'default'
 });
 

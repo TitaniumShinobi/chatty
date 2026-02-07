@@ -24,10 +24,12 @@ const require = createRequire(import.meta.url);
 const router = express.Router();
 
 // OpenRouter client for fallback when VVAULT API is unavailable
-// Uses Replit's AI Integrations service (no API key needed)
-const openrouter = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY ? new OpenAI({
-  baseURL: process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL,
-  apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY,
+// Supports both Replit AI Integrations (AI_INTEGRATIONS_*) and standard env vars (OPENROUTER_*)
+const OPENROUTER_API_KEY = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY;
+const OPENROUTER_BASE_URL = process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL || process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+const openrouter = OPENROUTER_API_KEY ? new OpenAI({
+  baseURL: OPENROUTER_BASE_URL,
+  apiKey: OPENROUTER_API_KEY,
 }) : null;
 
 // OpenAI client via Replit AI Integrations (managed, billed to credits)
@@ -3557,7 +3559,7 @@ router.post("/message", async (req, res) => {
             status: err?.status,
             message: err?.message,
             model: effectiveModel,
-            apiKeySet: !!process.env.OPENROUTER_API_KEY
+            apiKeySet: !!OPENROUTER_API_KEY
           });
           throw err;
         }
@@ -3720,7 +3722,7 @@ router.post("/message", async (req, res) => {
                   status: err?.status,
                   message: err?.message,
                   model: effectiveModel,
-                  apiKeySet: !!process.env.OPENROUTER_API_KEY
+                  apiKeySet: !!OPENROUTER_API_KEY
                 });
                 throw err;
               }
@@ -3862,7 +3864,7 @@ router.post("/message", async (req, res) => {
               status: err?.status,
               message: err?.message,
               model: effectiveModel,
-              apiKeySet: !!process.env.OPENROUTER_API_KEY
+              apiKeySet: !!OPENROUTER_API_KEY
             });
             throw err;
           }
