@@ -22,7 +22,11 @@
     "test": "jest",
     "ledger": "python3 scripts/append_ledger_entry.py",
     "project-map": "python3 scripts/project_map.py",
-    "capsuleforge": "node scripts/capsuleforge-cli.js"
+    "capsuleforge": "node scripts/capsuleforge-cli.js",
+    "deploy": "./deploy/deploy.sh",
+    "deploy:sync": "./deploy/deploy.sh --sync-only",
+    "deploy:restart": "./deploy/deploy.sh --restart",
+    "deploy:build": "./deploy/deploy.sh --build"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.90.1",
