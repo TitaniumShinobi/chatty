@@ -1,0 +1,19 @@
+**Current situation**  
+I can’t inject a real OpenRouter API key from this side, so the server still boots with `[OPENROUTER] { API_KEY_SET: false … }` and the `/api/vvault/message` fallback hit keeps logging `Connection error.` before the 503. The code now logs all three OpenRouter invocations plus the startup env check, so once the key exists you’ll immediately see whether the call succeeds (`[OPENROUTER] Success`) or still fails with a concrete HTTP status/message.
+
+**What you need to do**  
+- On the droplet, edit `/opt/chatty/.env.production` and add the real credentials, for example:
+  ```
+  OPENROUTER_API_KEY=sk-...
+  OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
+  ```
+- Restart the service: `sudo systemctl restart chatty`.
+- Verify with `sudo journalctl -u chatty -n 30 | grep OPENROUTER` to confirm `API_KEY_SET: true`.
+- Trigger a Katana message while tailing `sudo journalctl -u chatty -f --since "5 minutes ago" | grep -i "openrouter\\|503\\|FAIL"`; successful calls now print `[OPENROUTER] Success`, and any remaining failures include the actual status/message so we know if it’s a credits/model issue or a pure network timeout.
+- If you want to double-check connectivity, run the curl probe shown in the plan with the same key.
+
+Once that key is in place and the service is restarted, `/api/vvault/message` should stop returning 503 and give an LLM reply. If it still fails, paste the new `[OPENROUTER FAIL]` log entry so we can decide whether the next step is handling rate limits / models / credits.
+
+- Added OpenRouter env logging in `server/server.js` and wrapped every OpenRouter chat call in `server/routes/vvault.js` with `[OPENROUTER] Calling/Success/FAIL` diagnostics (including finish_reason, error status/message, and API-key presence). Built and deployed the updated bundle plus logged diagnostics are active on the droplet.
+- Server logs still show `[OPENROUTER] { API_KEY_SET: false, … }` and each `/api/vvault/message` attempt hits `[OPENROUTER FAIL] { status: undefined, message: "Connection error." }`, so the runtime currently lacks a usable API key or outbound connectivity.
+- Next: add a real `OPENROUTER_API_KEY` (and optional `OPENROUTER_MODEL`) to `/opt/chatty/.env.production`, restart `chatty.service`, then re-trigger a Katana message while tailing `journalctl -u chatty` to confirm `[OPENROUTER]` shows `API_KEY_SET: true` and the 503 disappears (or yields a concrete status/message for further troubleshooting).
