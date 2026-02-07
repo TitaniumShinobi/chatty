@@ -2573,7 +2573,7 @@ export default function Layout() {
       }
     } catch (error) {
       console.error("❌ [Layout.tsx] Error in sendMessage:", error);
-      // Handle error by replacing typing message with error
+      const errorDetail = error instanceof Error ? error.message : "Unknown error";
       const errorMsg: Message = {
         id: typingMsg.id,
         role: "assistant",
@@ -2581,7 +2581,7 @@ export default function Layout() {
           {
             op: "error.v1",
             payload: {
-              message: "Sorry, I encountered an error. Please try again.",
+              message: `Model error: ${errorDetail}`,
             },
           },
         ],

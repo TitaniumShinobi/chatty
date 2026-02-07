@@ -119,7 +119,7 @@ Respond with a JSON array of exactly 4 objects, each with a "text" field only (n
       : `Generate 4 welcoming conversation starters for someone new. Make them feel invited to explore and chat.`;
 
     const completion = await openrouter.chat.completions.create({
-      model: "meta-llama/llama-3.3-70b-instruct",
+      model: process.env.OPENROUTER_MODEL || "meta-llama/llama-3.3-70b-instruct",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },

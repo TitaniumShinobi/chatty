@@ -48,7 +48,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY;
 
-const ANALYSIS_MODEL = 'google/gemini-2.0-flash-exp:free';
+const ANALYSIS_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
 const CAPSULE_VERSION = '2.0.0'; // Python parity version
 const TETHER_SIGNATURE_PREFIX = 'SIMFORGE-VVAULT-TETHER';
 

@@ -261,6 +261,58 @@ if (!oauthValid) {
 app.get("/health", (_req, res) => res.json({ ok: true }));
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
+app.get("/api/health/openrouter", async (_req, res) => {
+  const apiKey = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY;
+  const baseURL = process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL || process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+  const model = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
+  const source = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY ? 'replit_integration' : (process.env.OPENROUTER_API_KEY ? 'env_var' : 'none');
+
+  if (!apiKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'No OpenRouter API key configured',
+      source,
+      model,
+      baseURL
+    });
+  }
+
+  const start = Date.now();
+  try {
+    const { default: OpenAI } = await import('openai');
+    const client = new OpenAI({ baseURL, apiKey });
+    const completion = await client.chat.completions.create({
+      model,
+      messages: [{ role: 'user', content: 'ping' }],
+      max_tokens: 5,
+    });
+    const elapsed = Date.now() - start;
+    const reply = completion.choices?.[0]?.message?.content || '';
+    res.json({
+      ok: true,
+      source,
+      model,
+      baseURL,
+      responseTimeMs: elapsed,
+      finishReason: completion.choices?.[0]?.finish_reason,
+      replyPreview: reply.substring(0, 50),
+      usage: completion.usage || null
+    });
+  } catch (err) {
+    const elapsed = Date.now() - start;
+    res.status(503).json({
+      ok: false,
+      source,
+      model,
+      baseURL,
+      responseTimeMs: elapsed,
+      error: err.message,
+      status: err.status || null,
+      code: err.code || null
+    });
+  }
+});
+
 // Build artifacts health check endpoint
 app.get("/api/health/build", (req, res) => {
   const { existsSync } = require('node:fs');

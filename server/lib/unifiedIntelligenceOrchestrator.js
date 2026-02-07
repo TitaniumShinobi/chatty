@@ -34,9 +34,10 @@ function isOpenAIAvailable() {
   return !!(process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY);
 }
 
-// GPT Seat model configuration (free-tier models)
+const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
+
 const GPT_SEAT_MODELS = {
-  default: 'meta-llama/llama-3.3-70b-instruct:free',
+  default: DEFAULT_OPENROUTER_MODEL,
   creative: 'google/gemini-2.0-flash-exp:free',
   analytical: 'deepseek/deepseek-chat',
 };

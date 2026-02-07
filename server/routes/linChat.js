@@ -28,11 +28,12 @@ const openrouter = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY,
 });
 
-// Default models for Lin's seats (OpenRouter versions)
+const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
+
 const DEFAULT_SEAT_MODELS = {
-  creative: 'openrouter:google/gemini-2.0-flash-exp:free',
-  coding: 'openrouter:deepseek/deepseek-chat', 
-  smalltalk: 'openrouter:meta-llama/llama-3.3-70b-instruct:free'
+  creative: `openrouter:google/gemini-2.0-flash-exp:free`,
+  coding: `openrouter:deepseek/deepseek-chat`, 
+  smalltalk: `openrouter:${DEFAULT_OPENROUTER_MODEL}`
 };
 
 /**

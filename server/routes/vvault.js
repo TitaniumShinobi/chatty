@@ -32,6 +32,8 @@ const openrouter = OPENROUTER_API_KEY ? new OpenAI({
   apiKey: OPENROUTER_API_KEY,
 }) : null;
 
+const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
+
 // OpenAI client via Replit AI Integrations (managed, billed to credits)
 const openaiClient = process.env.AI_INTEGRATIONS_OPENAI_API_KEY ? new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || 'https://api.openai.com/v1',
@@ -3415,7 +3417,7 @@ router.post("/message", async (req, res) => {
     // Parse model string to determine provider and model name
     // Format: "openai:gpt-4o", "openrouter:meta-llama/llama-3.3-70b", "ollama:phi3:latest"
     let provider = 'openrouter';
-    let modelName = 'meta-llama/llama-3.3-70b-instruct'; // Default fallback
+    let modelName = DEFAULT_OPENROUTER_MODEL;
     
     if (configuredModel) {
       if (configuredModel.startsWith('openai:')) {
@@ -3428,16 +3430,13 @@ router.post("/message", async (req, res) => {
         provider = 'ollama';
         modelName = configuredModel.substring(7);
       } else {
-        // Legacy format - assume OpenRouter
         modelName = configuredModel;
       }
     }
     
-    // Guard: Check if requested provider is available, fall back to next available
     let effectiveProvider = provider;
     let effectiveModel = modelName;
     
-    // Force OpenAI gpt-4o for vision if images are attached
     if (hasImages) {
       if (openaiClient) {
         effectiveProvider = 'openai';
@@ -3455,12 +3454,12 @@ router.post("/message", async (req, res) => {
     if (provider === 'openai' && !openaiClient) {
       console.warn(`⚠️ [VVAULT Proxy] OpenAI not configured, falling back to OpenRouter`);
       effectiveProvider = 'openrouter';
-      effectiveModel = 'meta-llama/llama-3.3-70b-instruct';
+      effectiveModel = DEFAULT_OPENROUTER_MODEL;
     }
     if (provider === 'ollama' && !process.env.OLLAMA_HOST) {
       console.warn(`⚠️ [VVAULT Proxy] Ollama not configured, falling back to OpenRouter`);
       effectiveProvider = 'openrouter';
-      effectiveModel = 'meta-llama/llama-3.3-70b-instruct';
+      effectiveModel = DEFAULT_OPENROUTER_MODEL;
     }
     if (effectiveProvider === 'openrouter' && !openrouter) {
       console.warn(`⚠️ [VVAULT Proxy] OpenRouter not configured, trying OpenAI`);
@@ -3483,6 +3482,33 @@ router.post("/message", async (req, res) => {
     
     console.log(`🧠 [VVAULT Proxy] System prompt length: ${systemPrompt.length}`);
     
+    // Load conversation history for context (last 20 turns)
+    let conversationHistoryMessages = [];
+    try {
+      await loadVVAULTModules();
+      const lookupId = req.user?.email || userId;
+      if (readConversations) {
+        const allConversations = await readConversations(lookupId, constructId);
+        const targetSession = `${constructId}_chat_with_${constructId}`;
+        const conv = Array.isArray(allConversations) 
+          ? allConversations.find(c => 
+              c.sessionId === targetSession || 
+              c.constructId === constructId ||
+              c.constructCallsign === constructId
+            )
+          : null;
+        if (conv && conv.messages && conv.messages.length > 0) {
+          conversationHistoryMessages = conv.messages
+            .filter(m => m.role === 'user' || m.role === 'assistant')
+            .slice(-20)
+            .map(m => ({ role: m.role, content: m.content || '' }));
+          console.log(`📚 [VVAULT Proxy] Loaded ${conversationHistoryMessages.length} history messages for ${constructId}`);
+        }
+      }
+    } catch (historyError) {
+      console.warn(`⚠️ [VVAULT Proxy] Could not load conversation history:`, historyError.message);
+    }
+    
     // Route to appropriate provider
     try {
       let completion;
@@ -3491,7 +3517,6 @@ router.post("/message", async (req, res) => {
       if (effectiveProvider === 'openai') {
         console.log(`🔷 [VVAULT Proxy] Calling OpenAI (${effectiveModel}) for ${constructId}`);
         
-        // Format user message as multimodal content if images are attached
         let userMessageContent;
         if (hasImages) {
           userMessageContent = [
@@ -3513,6 +3538,7 @@ router.post("/message", async (req, res) => {
           model: effectiveModel,
           messages: [
             { role: "system", content: systemPrompt },
+            ...conversationHistoryMessages,
             { role: "user", content: userMessageContent }
           ],
           max_tokens: 2048,
@@ -3543,12 +3569,13 @@ router.post("/message", async (req, res) => {
         aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
       } else {
         // OpenRouter
-        console.log('[OPENROUTER] Calling', { model: effectiveModel, user: req.user?.email });
+        console.log('[OPENROUTER] Calling', { model: effectiveModel, user: req.user?.email, historyMessages: conversationHistoryMessages.length });
         try {
           completion = await openrouter.chat.completions.create({
             model: effectiveModel,
             messages: [
               { role: "system", content: systemPrompt },
+              ...conversationHistoryMessages,
               { role: "user", content: message }
             ],
             max_tokens: 2048,
@@ -3577,10 +3604,20 @@ router.post("/message", async (req, res) => {
         model: effectiveModel
       });
     } catch (llmError) {
-      console.error(`❌ [VVAULT Proxy] ${provider} call failed:`, llmError);
+      console.error(`❌ [VVAULT Proxy] ${effectiveProvider} call failed:`, {
+        provider: effectiveProvider,
+        model: effectiveModel,
+        status: llmError?.status,
+        message: llmError?.message,
+        apiKeySet: !!OPENROUTER_API_KEY,
+        constructId
+      });
       return res.status(503).json({
         success: false,
-        error: `${provider} failed`,
+        error: `${effectiveProvider} failed: ${llmError.message || 'Unknown error'}`,
+        provider: effectiveProvider,
+        model: effectiveModel,
+        upstreamStatus: llmError?.status || null,
         details: llmError.message
       });
     }
@@ -3648,7 +3685,7 @@ router.post("/message", async (req, res) => {
             
             // Parse model string
             let provider = 'openrouter';
-            let modelName = 'meta-llama/llama-3.3-70b-instruct';
+            let modelName = DEFAULT_OPENROUTER_MODEL;
             if (configuredModel) {
               if (configuredModel.startsWith('openai:')) { provider = 'openai'; modelName = configuredModel.substring(7); }
               else if (configuredModel.startsWith('openrouter:')) { provider = 'openrouter'; modelName = configuredModel.substring(11); }
@@ -3662,12 +3699,12 @@ router.post("/message", async (req, res) => {
             if (provider === 'openai' && !openaiClient) {
               console.warn(`⚠️ [VVAULT Proxy] OpenAI not configured, falling back to OpenRouter`);
               effectiveProvider = 'openrouter';
-              effectiveModel = 'meta-llama/llama-3.3-70b-instruct';
+              effectiveModel = DEFAULT_OPENROUTER_MODEL;
             }
             if (provider === 'ollama' && !process.env.OLLAMA_HOST) {
               console.warn(`⚠️ [VVAULT Proxy] Ollama not configured, falling back to OpenRouter`);
               effectiveProvider = 'openrouter';
-              effectiveModel = 'meta-llama/llama-3.3-70b-instruct';
+              effectiveModel = DEFAULT_OPENROUTER_MODEL;
             }
             if (effectiveProvider === 'openrouter' && !openrouter) {
               console.warn(`⚠️ [VVAULT Proxy] OpenRouter not configured, trying OpenAI`);
@@ -3683,14 +3720,33 @@ router.post("/message", async (req, res) => {
             const identity = await loadIdentityFiles(userId, constructId);
             const systemPrompt = identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
             
+            // Load conversation history for context
+            let fbHistoryMessages = [];
+            try {
+              await loadVVAULTModules();
+              const lookupId = req.user?.email || userId;
+              const fbConvos = readConversations ? await readConversations(lookupId, constructId) : null;
+              if (fbConvos?.length > 0) {
+                const fbMessages = fbConvos[0].messages || [];
+                const fbRecent = fbMessages.slice(-20);
+                fbHistoryMessages = fbRecent
+                  .filter(m => (m.role === 'user' || m.role === 'assistant') && m.content && !m.isDateHeader)
+                  .map(m => ({ role: m.role, content: m.content }));
+                console.log(`📚 [VVAULT Proxy] Fallback loaded ${fbHistoryMessages.length} history messages for ${constructId}`);
+              }
+            } catch (histErr) {
+              console.warn(`⚠️ [VVAULT Proxy] Could not load fallback history:`, histErr.message);
+            }
+            
             console.log(`🧠 [VVAULT Proxy] Fallback using ${effectiveProvider}:${effectiveModel} for ${constructId}`);
             
+            const fbMsgs = [{ role: "system", content: systemPrompt }, ...fbHistoryMessages, { role: "user", content: message }];
             let completion;
             let aiResponse;
             if (effectiveProvider === 'openai') {
               completion = await openaiClient.chat.completions.create({
                 model: effectiveModel,
-                messages: [{ role: "system", content: systemPrompt }, { role: "user", content: message }],
+                messages: fbMsgs,
                 max_tokens: 2048,
               });
               aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
@@ -3701,7 +3757,7 @@ router.post("/message", async (req, res) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   model: effectiveModel,
-                  messages: [{ role: "system", content: systemPrompt }, { role: "user", content: message }],
+                  messages: fbMsgs,
                   stream: false
                 })
               });
@@ -3709,11 +3765,11 @@ router.post("/message", async (req, res) => {
               const ollamaData = await ollamaResp.json();
               aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
             } else {
-              console.log('[OPENROUTER] Calling', { model: effectiveModel, user: req.user?.email });
+              console.log('[OPENROUTER] Calling', { model: effectiveModel, user: req.user?.email, historyMessages: fbHistoryMessages.length });
               try {
                 completion = await openrouter.chat.completions.create({
                   model: effectiveModel,
-                  messages: [{ role: "system", content: systemPrompt }, { role: "user", content: message }],
+                  messages: fbMsgs,
                   max_tokens: 2048,
                 });
                 console.log('[OPENROUTER] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
@@ -3791,7 +3847,7 @@ router.post("/message", async (req, res) => {
         
         // Parse model string
         let provider = 'openrouter';
-        let modelName = 'meta-llama/llama-3.3-70b-instruct';
+        let modelName = DEFAULT_OPENROUTER_MODEL;
         if (configuredModel) {
           if (configuredModel.startsWith('openai:')) { provider = 'openai'; modelName = configuredModel.substring(7); }
           else if (configuredModel.startsWith('openrouter:')) { provider = 'openrouter'; modelName = configuredModel.substring(11); }
@@ -3799,18 +3855,17 @@ router.post("/message", async (req, res) => {
           else { modelName = configuredModel; }
         }
         
-        // Guard: Check if requested provider is available, fall back to next available
         let effectiveProvider = provider;
         let effectiveModel = modelName;
         if (provider === 'openai' && !openaiClient) {
           console.warn(`⚠️ [VVAULT Proxy] OpenAI not configured, falling back to OpenRouter`);
           effectiveProvider = 'openrouter';
-          effectiveModel = 'meta-llama/llama-3.3-70b-instruct';
+          effectiveModel = DEFAULT_OPENROUTER_MODEL;
         }
         if (provider === 'ollama' && !process.env.OLLAMA_HOST) {
           console.warn(`⚠️ [VVAULT Proxy] Ollama not configured, falling back to OpenRouter`);
           effectiveProvider = 'openrouter';
-          effectiveModel = 'meta-llama/llama-3.3-70b-instruct';
+          effectiveModel = DEFAULT_OPENROUTER_MODEL;
         }
         if (effectiveProvider === 'openrouter' && !openrouter) {
           console.warn(`⚠️ [VVAULT Proxy] OpenRouter not configured, trying OpenAI`);
@@ -3825,14 +3880,33 @@ router.post("/message", async (req, res) => {
         const identity = await loadIdentityFiles(userId, constructId);
         const systemPrompt = identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
         
+        // Load conversation history for context
+        let fb2HistoryMessages = [];
+        try {
+          await loadVVAULTModules();
+          const lookupId = req.user?.email || userId;
+          const fb2Convos = readConversations ? await readConversations(lookupId, constructId) : null;
+          if (fb2Convos?.length > 0) {
+            const fb2Messages = fb2Convos[0].messages || [];
+            const fb2Recent = fb2Messages.slice(-20);
+            fb2HistoryMessages = fb2Recent
+              .filter(m => (m.role === 'user' || m.role === 'assistant') && m.content && !m.isDateHeader)
+              .map(m => ({ role: m.role, content: m.content }));
+            console.log(`📚 [VVAULT Proxy] Fallback2 loaded ${fb2HistoryMessages.length} history messages for ${constructId}`);
+          }
+        } catch (histErr) {
+          console.warn(`⚠️ [VVAULT Proxy] Could not load fallback2 history:`, histErr.message);
+        }
+        
         console.log(`🧠 [VVAULT Proxy] Fallback using ${effectiveProvider}:${effectiveModel} for ${constructId}`);
         
+        const fb2Msgs = [{ role: "system", content: systemPrompt }, ...fb2HistoryMessages, { role: "user", content: message }];
         let completion;
         let aiResponse;
         if (effectiveProvider === 'openai') {
           completion = await openaiClient.chat.completions.create({
             model: effectiveModel,
-            messages: [{ role: "system", content: systemPrompt }, { role: "user", content: message }],
+            messages: fb2Msgs,
             max_tokens: 2048,
           });
           aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
@@ -3843,7 +3917,7 @@ router.post("/message", async (req, res) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               model: effectiveModel,
-              messages: [{ role: "system", content: systemPrompt }, { role: "user", content: message }],
+              messages: fb2Msgs,
               stream: false
             })
           });
@@ -3851,11 +3925,11 @@ router.post("/message", async (req, res) => {
           const ollamaData = await ollamaResp.json();
           aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
         } else {
-          console.log('[OPENROUTER] Calling', { model: effectiveModel, user: req.user?.email });
+          console.log('[OPENROUTER] Calling', { model: effectiveModel, user: req.user?.email, historyMessages: fb2HistoryMessages.length });
           try {
             completion = await openrouter.chat.completions.create({
               model: effectiveModel,
-              messages: [{ role: "system", content: systemPrompt }, { role: "user", content: message }],
+              messages: fb2Msgs,
               max_tokens: 2048,
             });
             console.log('[OPENROUTER] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
