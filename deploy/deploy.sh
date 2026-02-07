@@ -149,6 +149,14 @@ sync_code() {
 
     log "Syncing code to ${SSH_TARGET}:${REMOTE_PATH}..."
     rsync -avz --delete \
+        # Protect droplet runtime state (never delete/overwrite from your Mac worktree)
+        --exclude='users/' \
+        --exclude='ai-uploads/' \
+        --exclude='gpt-uploads/' \
+        --exclude='*.db*' \
+        --exclude='*.sqlite*' \
+        --exclude='.env.production*' \
+        --exclude='DEPLOYED_SHA' \
         --exclude='node_modules' \
         --exclude='.git' \
         --exclude='.pythonlibs' \
@@ -158,8 +166,6 @@ sync_code() {
         --exclude='.config' \
         --exclude='.upm' \
         --exclude='attached_assets' \
-        --exclude='*.db' \
-        --exclude='*.sqlite' \
         --exclude='.env' \
         --exclude='.env.local' \
         --exclude='deploy/' \
