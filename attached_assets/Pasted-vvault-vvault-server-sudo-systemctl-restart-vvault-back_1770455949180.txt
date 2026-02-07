@@ -1,0 +1,41 @@
+vvault@vvault-server:~$ sudo systemctl restart vvault-backend
+sudo systemctl status vvault-backend --no-pager
+● vvault-backend.service - VVAULT Backend (Gunicorn)
+     Loaded: loaded (/etc/systemd/system/vvault-backend.service; enabled; preset: enabled)
+    Drop-In: /etc/systemd/system/vvault-backend.service.d
+             └─env.conf
+     Active: active (running) since Sat 2026-02-07 09:18:48 UTC; 23ms ago
+   Main PID: 40513 (gunicorn)
+      Tasks: 1 (limit: 1107)
+     Memory: 2.6M (peak: 2.7M)
+        CPU: 6ms
+     CGroup: /system.slice/vvault-backend.service
+             └─40513 /opt/vvault/venv/bin/python3 /opt/vvault/venv/bin/gunicorn --bind 127.0.0.1:8000 --workers 2 --timeout 60 …
+
+Feb 07 09:18:48 vvault-server systemd[1]: Started vvault-backend.service - VVAULT Backend (Gunicorn).
+vvault@vvault-server:~$ sudo systemctl status chatty --no-pager
+● chatty.service - Chatty Web App
+     Loaded: loaded (/etc/systemd/system/chatty.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-02-07 09:13:00 UTC; 5min ago
+   Main PID: 40285 (npm exec tsx se)
+      Tasks: 35 (limit: 1107)
+     Memory: 150.5M (peak: 191.7M)
+        CPU: 2.152s
+     CGroup: /system.slice/chatty.service
+             ├─40285 "npm exec tsx server/server.js"
+             ├─40297 sh -c "tsx server/server.js"
+             ├─40298 node /opt/chatty/node_modules/.bin/tsx server/server.js
+             └─40309 /usr/bin/node --require /opt/chatty/node_modules/tsx/dist/preflight.cjs --import file:///opt/chatty/node_m…
+
+Feb 07 09:13:02 vvault-server npx[40309]: 2026-02-07T09:13:02.866Z 🤖 [CapsuleRuntime] Loading GPT: katana-001
+Feb 07 09:13:02 vvault-server npx[40309]: 2026-02-07T09:13:02.866Z %s: %s 🕐 [MEMORY-CACHE] Memory cache check for kat…1 0.002ms
+Feb 07 09:13:02 vvault-server npx[40309]: 2026-02-07T09:13:02.866Z 💾 [CapsuleIntegration] CACHE MISS for katana-001 -…m disk...
+Feb 07 09:13:02 vvault-server npx[40309]: 2026-02-07T09:13:02.866Z %s: %s 🕐 [FIND] Finding capsule file for katana-001 0.388ms
+Feb 07 09:13:02 vvault-server npx[40309]: 2026-02-07T09:13:02.866Z ⚠️ [CapsuleIntegration] No capsule found for katana-001
+Feb 07 09:13:02 vvault-server npx[40309]: 2026-02-07T09:13:02.866Z %s: %s 🕐 [LOAD] Total capsule load for katana-001 0.625ms
+Feb 07 09:13:02 vvault-server npx[40309]: 2026-02-07T09:13:02.866Z %s: %s 🕐 [LOAD-CAPSULE] Loading capsule for katana…1 0.649ms
+Feb 07 09:13:02 vvault-server npx[40309]: 2026-02-07T09:13:02.866Z ⚠️ [CapsuleRuntime] No capsule found for katana-001…rsonality
+Feb 07 09:13:02 vvault-server npx[40309]: 2026-02-07T09:13:02.866Z %s: %s 🕐 [LOAD-GPT-TOTAL] Loading GPT katana-001 0.696ms
+Feb 07 09:13:02 vvault-server npx[40309]: 2026-02-07T09:13:02.866Z ✅ [Server] GPTRuntime preloaded for katana-001
+Hint: Some lines were ellipsized, use -l to show in full.
+vvault@vvault-server:~$ 

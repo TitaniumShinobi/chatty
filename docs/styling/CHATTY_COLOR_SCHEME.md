@@ -269,3 +269,29 @@ The Valentine's Day theme is a romantic seasonal overlay with passion rose and g
 ---
 
 This document is the authoritative reference for Chatty UI styling.
+
+---
+
+## Black History Month Theme (Seasonal: February 1 – February 28)
+
+The Black History Month theme is planned to celebrate Black history and culture. Assets and specific color schemes are pending.
+
+### Planned Features
+
+* **Background Colors**: To be determined
+* **Accent Colors**: To be determined
+* **Text Colors**: To be determined
+* **Star Animation Colors**: To be determined
+
+---
+
+## Winter Olympics Theme (Seasonal: February 4 – February 20, every 4 years)
+
+The Winter Olympics theme is planned to celebrate the Winter Olympics with icy blues and snowy whites. Assets and specific color schemes are pending.
+
+### Planned Features
+
+* **Background Colors**: To be determined
+* **Accent Colors**: To be determined
+* **Text Colors**: To be determined
+* **Star Animation Colors**: To be determined
