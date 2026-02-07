@@ -28,7 +28,7 @@ export interface ApiResponse<T> {
 }
 
 class ApiService {
-  private baseUrl = 'http://localhost:5000/api';
+  private baseUrl = '/api';
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;

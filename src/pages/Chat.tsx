@@ -213,6 +213,8 @@ const userMessageMarkdownComponents: Components = {
                 color: "var(--chatty-text)",
                 whiteSpace: "pre",
                 overflowX: "auto",
+                overflowY: "auto",
+                maxHeight: "360px",
                 display: "block",
                 width: "100%",
                 maxWidth: "100%",
@@ -549,7 +551,7 @@ export default function Chat() {
 
       try {
         const response = await fetch(
-          `http://localhost:5000/api/vvault/chat/${encodeURIComponent(threadId)}`,
+          `/api/vvault/chat/${encodeURIComponent(threadId)}`,
           {
             credentials: "include",
           },
