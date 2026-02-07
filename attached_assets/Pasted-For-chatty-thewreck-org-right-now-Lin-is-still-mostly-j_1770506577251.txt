@@ -1,0 +1,24 @@
+For chatty.thewreck.org right now, Lin is still mostly “just” a visible construct, not the live orchestration backbone you specced.  
+
+## What’s active on chatty.thewreck.org  
+- Lin has her **own sidebar seat** and shares the same canonical VVAULT thread `lin-001_chat_with_lin-001` that GPTCreator uses, so you do have the “one construct, one thread, two surfaces” behavior in production.
+- That thread is stored in your per‑user VVAULT instance as `chat_with_lin-001.md` under the `lin-001` instance tree, same pattern as Zen/Katana, and chatty.thewreck.org correctly reads/writes it through the VVAULT API you just fixed.
+
+## What’s *not* active in prod  
+- The orchestration flag (`ENABLE_ORCHESTRATION` / equivalent) is not enabled in the droplet env, so the Unified Lin Orchestrator path never runs in the message pipeline for Zen/Katana.
+- The triad + undertone logic that depends on OpenRouter/Ollama seats (DeepSeek, Mistral, Phi‑3) is still failing at the provider level (your recent 503 “openrouter failed”), so even if the gate were wired, the seats aren’t healthy enough to enforce “NO TRIAD → NO RESPONSE” yet. [openrouter](https://openrouter.ai/docs/errors)
+- As a result, Zen/Katana on chatty.thewreck.org are effectively talking **directly** to the current LLM provider; Lin is not sitting underneath them doing drift detection, triad validation, or continuity RAG in the live flow.  
+
+## Point of Lin *today* on chatty.thewreck.org  
+- She gives you:  
+  - A dedicated conversational agent with her own long‑lived transcript and identity,  
+  - The canonical “place” where you interact about orchestration, continuity, and system design, tied to real storage in VVAULT.
+- She does **not yet**:  
+  - Gate or stabilize other constructs’ responses,  
+  - Enforce triad health,  
+  - Orchestrate multi‑seat outputs in production.  
+
+If you want Lin’s full purpose to come back on chatty.thewreck.org, the order of operations is:  
+1) Finish stabilizing the OpenRouter/Ollama seats so triad calls are reliable. [docs.ollama](https://docs.ollama.com/faq)
+2) Turn on the orchestration env flag in the chatty droplet and route Zen/Katana through the Unified Lin Orchestrator.  
+3) Make the “NO TRIAD → NO RESPONSE” + drift‑prevention rules hard gates in that pipeline instead of just design docs.

@@ -1,0 +1,70 @@
+Here’s the minimal, production-focused OpenRouter setup you want for `chatty.thewreck.org` right now.  
+
+## 1. Env on the chatty droplet  
+In `chatty.env` (or whatever you source for `chatty.service`), you need at least:  
+
+```env
+OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_MODEL=deepseek/deepseek-chat-v3-0324   # or your chosen triad default
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1/chat/completions
+OPENROUTER_SITE_URL=https://chatty.thewreck.org
+OPENROUTER_SITE_TITLE=Chatty
+NODE_ENV=production
+```
+
+Make sure the service actually sees these (you already added `[OPENROUTER] { API_KEY_SET, MODEL }` to startup logs). [openrouter](https://openrouter.ai/docs/quickstart)
+
+## 2. Server-side client wiring  
+Your `/api/vvault/message` handler should initialize an OpenAI-compatible client pointed at OpenRouter, for example:  
+
+```ts
+import OpenAI from 'openai';
+
+const openrouter = new OpenAI({
+  baseURL: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+  apiKey: process.env.OPENROUTER_API_KEY!,
+  defaultHeaders: {
+    'HTTP-Referer': process.env.OPENROUTER_SITE_URL || 'https://chatty.thewreck.org',
+    'X-Title': process.env.OPENROUTER_SITE_TITLE || 'Chatty',
+  },
+});
+```
+
+And when Chatty processes a message:  
+
+```ts
+const model = process.env.OPENROUTER_MODEL || 'deepseek/deepseek-chat-v3-0324';
+
+const completion = await openrouter.chat.completions.create({
+  model,
+  messages,
+  stream: false,
+});
+```
+
+This matches OpenRouter’s OpenAI-compatible chat completions API. [openrouter](https://openrouter.ai/docs/api/reference/overview)
+
+## 3. Sanity checks for `chatty.thewreck.org`  
+On the droplet, after restarting `chatty.service` with updated env:  
+
+```bash
+# Confirm env
+sudo journalctl -u chatty -n 20 | grep OPENROUTER
+
+# Direct probe using the same env the service uses
+curl -sS -X POST https://openrouter.ai/api/v1/chat/completions \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "'"$OPENROUTER_MODEL"'",
+    "messages": [{"role":"user","content":"ping from chatty.thewreck.org"}]
+  }'
+```
+
+You should see a normal `choices[0].message` response; if you get 4xx/5xx, the body will tell you whether it’s key, credits, or model. [datacamp](https://www.datacamp.com/tutorial/openrouter)
+
+## 4. What this gives you in practice  
+- Zen/Lin/Katana on `chatty.thewreck.org` can call any OpenRouter model via the unified API.  
+- Your existing triad logic (DeepSeek + Mistral + Phi‑3) can be backed by corresponding OpenRouter model IDs, once that layer is re‑enabled. [openrouter](https://openrouter.ai/deepseek)
+
+If you paste your current `[OPENROUTER]` startup log line and one `[OPENROUTER FAIL]` entry from `journalctl`, I can tell you exactly what to tweak next (model name vs. credits vs. base URL).
