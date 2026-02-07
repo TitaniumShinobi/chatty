@@ -23,9 +23,9 @@ export interface ThemeScript {
     };
   };
   starColors: {
-    starburst: string;
-    nova: string;
-    ray: string;
+    starburst?: string;
+    nova?: string;
+    ray?: string;
   };
 }
 
@@ -110,7 +110,7 @@ export function getBlackHistoryMonthThemeScript(): ThemeScript {
   };
 }
 
-export function getWinterOlympicsThemeScript(year: number): ThemeScript {
+export function getWinterOlympicsThemeScript(year: number): ThemeScript | null {
   const isOlympicYear = year % 4 === 2; // Winter Olympics occur every 4 years, next in 2026
   if (!isOlympicYear) return null;
 
@@ -189,8 +189,8 @@ export function getAvailableThemeScripts(): ThemeScript[] {
     getChristmasThemeScript(),
     getValentinesThemeScript(),
     getBlackHistoryMonthThemeScript(),
-    getWinterOlympicsThemeScript(year), // Add Winter Olympics theme if applicable
-  ].filter(Boolean); // Filter out null values
+    getWinterOlympicsThemeScript(year),
+  ].filter((s): s is ThemeScript => s !== null);
 }
 
 /*
