@@ -61,4 +61,4 @@ VVAULT_API_BASE_URL = "https://599a5072-8b82-4727-ae1e-43e2217bd5de-00-slt5qjtbw
 AI_INTEGRATIONS_OPENAI_BASE_URL = "http://localhost:1106/modelfarm/openai"
 AI_INTEGRATIONS_OPENAI_API_KEY = "_DUMMY_API_KEY_"
 FXSHINOBI_API_BASE_URL = "https://e0a21a10-a007-4328-8b26-4be3a2eb056b-00-1u4qswx5jl1f0.janeway.replit.dev"
-OPENROUTER_MODEL = "anthropic/claude-3.5-sonnet"
+OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct"
