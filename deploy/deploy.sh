@@ -102,7 +102,8 @@ preflight_git() {
     # This keeps GitHub 'main' as the source of truth for prod.
     if git rev-parse --abbrev-ref @{u} >/dev/null 2>&1; then
         # Best-effort fetch so ahead/behind counts are meaningful.
-        git fetch -q || true
+        # In some environments (restricted DNS/offline), this may fail; that's OK.
+        git fetch -q 2>/dev/null || true
 
         local behind ahead
         behind="$(git rev-list --left-right --count @{u}...HEAD 2>/dev/null | awk '{print $1}')"
@@ -149,7 +150,6 @@ sync_code() {
 
     log "Syncing code to ${SSH_TARGET}:${REMOTE_PATH}..."
     rsync -avz --delete \
-        # Protect droplet runtime state (never delete/overwrite from your Mac worktree)
         --exclude='users/' \
         --exclude='ai-uploads/' \
         --exclude='gpt-uploads/' \
