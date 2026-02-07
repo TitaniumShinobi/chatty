@@ -108,16 +108,20 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
       const now = new Date()
       const times = SunCalc.getTimes(now, coords.lat, coords.lng)
       
-      setSunTimes({ sunrise: times.sunrise, sunset: times.sunset })
-      
       const isDay = now >= times.sunrise && now < times.sunset
       
-      console.log('[Theme] Sunrise/Sunset detection:', { 
-        now: now.toLocaleTimeString(),
-        sunrise: times.sunrise.toLocaleTimeString(),
-        sunset: times.sunset.toLocaleTimeString(),
-        isDay,
-        coords
+      setSunTimes(prev => {
+        const newRise = times.sunrise.getTime()
+        const newSet = times.sunset.getTime()
+        if (prev && prev.sunrise.getTime() === newRise && prev.sunset.getTime() === newSet) return prev
+        console.log('[Theme] Sunrise/Sunset detection:', { 
+          now: now.toLocaleTimeString(),
+          sunrise: times.sunrise.toLocaleTimeString(),
+          sunset: times.sunset.toLocaleTimeString(),
+          isDay,
+          coords
+        })
+        return { sunrise: times.sunrise, sunset: times.sunset }
       })
       
       return isDay ? 'light' : 'night'
@@ -126,7 +130,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
     const detectedTheme = calculateSunTheme()
     setSystemTheme(detectedTheme)
 
-    // Check every minute for sunrise/sunset transitions
     const intervalId = setInterval(() => {
       const newTheme = calculateSunTheme()
       setSystemTheme(prev => {
@@ -135,7 +138,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
         }
         return newTheme
       })
-    }, 60000) // Check every minute
+    }, 60000)
 
     return () => clearInterval(intervalId)
   }, [coords])
@@ -190,7 +193,10 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
       }
     }
     
-    setActiveThemeScript(script)
+    setActiveThemeScript(prev => {
+      if (prev?.id === script?.id) return prev
+      return script
+    })
     
     const root = document.documentElement
     availableThemeScripts.forEach(s => {
