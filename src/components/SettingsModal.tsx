@@ -3,6 +3,7 @@ import {
   X, Settings, Bell, User, Plus, Clock, ShoppingCart, Database, Lock, ShieldCheck
 } from 'lucide-react'
 import { User as UserType } from '../lib/auth'
+import wreckSymbolInvertedUrl from '../../WRECK/assets/WRECKSymbolInverted.png?url'
 import AccountTab from './settings/AccountTab'
 import GeneralTab from './settings/GeneralTab'
 import NotificationsTab from './settings/NotificationsTab'
@@ -120,9 +121,29 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
               {/* Help button at bottom of sidebar */}
-              <div className="p-4 border-t" style={{ borderColor: 'var(--chatty-line)' }}>
+              <div
+                className="p-4 border-t flex items-center gap-4"
+                style={{ borderColor: 'var(--chatty-line)' }}
+              >
+                <a
+                  className="inline-flex items-center justify-center rounded transition-colors"
+                  style={{ color: 'var(--chatty-text)' }}
+                  href="https://thewreck.org"
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="thewreck.org"
+                  title="thewreck.org"
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  <img
+                    src={wreckSymbolInvertedUrl}
+                    alt=""
+                    className="block h-5 w-5 opacity-80 hover:opacity-100 transition-opacity"
+                  />
+                </a>
                 <button 
-                  className="text-sm underline hover:no-underline transition-all" 
+                  className="text-sm underline hover:no-underline transition-all ml-auto"
                   style={{ color: 'var(--chatty-text)' }}
                   onClick={() => {
                     // TODO: Implement help functionality

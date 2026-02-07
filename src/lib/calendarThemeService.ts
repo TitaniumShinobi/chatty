@@ -38,7 +38,7 @@ export function getChristmasThemeScript(): ThemeScript {
     activePeriod: {
       startMonth: 12,
       startDay: 1,
-      endMonth: 1, // Updated to end on January 1
+      endMonth: 1,
       endDay: 1,
     },
     colors: {
@@ -100,18 +100,18 @@ export function getBlackHistoryMonthThemeScript(): ThemeScript {
       startMonth: 2,
       startDay: 1,
       endMonth: 2,
-      endDay: 28, // February 28 (or 29 in leap years)
+      endDay: 28,
     },
     colors: {
-      night: {}, // Assets pending
-      light: {}, // Assets pending
+      night: {},
+      light: {},
     },
-    starColors: {}, // Assets pending
+    starColors: {},
   };
 }
 
 export function getWinterOlympicsThemeScript(year: number): ThemeScript | null {
-  const isOlympicYear = year % 4 === 2; // Winter Olympics occur every 4 years, next in 2026
+  const isOlympicYear = year % 4 === 2;
   if (!isOlympicYear) return null;
 
   return {
@@ -121,15 +121,15 @@ export function getWinterOlympicsThemeScript(year: number): ThemeScript | null {
       "Planned theme for celebrating the Winter Olympics (assets pending)",
     activePeriod: {
       startMonth: 2,
-      startDay: 4, // Typical start date for Winter Olympics
+      startDay: 4,
       endMonth: 2,
-      endDay: 20, // Typical end date for Winter Olympics
+      endDay: 20,
     },
     colors: {
-      night: {}, // Assets pending
-      light: {}, // Assets pending
+      night: {},
+      light: {},
     },
-    starColors: {}, // Assets pending
+    starColors: {},
   };
 }
 
