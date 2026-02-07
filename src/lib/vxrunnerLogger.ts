@@ -14,14 +14,34 @@ export interface PersonaViolation {
   context?: string;
 }
 
+function getDevIngestUrl(port: number, ingestId: string): string {
+  // Avoid hardcoding loopback hosts in the production bundle.
+  const loc = (globalThis as any).location as Location | undefined
+  if (!loc?.origin) return ''
+  const u = new URL(loc.origin)
+  u.protocol = 'http:'
+  u.port = String(port)
+  u.pathname = `/ingest/${ingestId}`
+  u.search = ''
+  u.hash = ''
+  return u.toString()
+}
+
 /**
  * Log persona violation to VXRunner endpoint or JSON file
  * Non-blocking - failures won't break response flow
  */
 export function logPersonaViolation(violation: PersonaViolation): void {
   try {
-    // Try to log to VXRunner endpoint first
-    const vxrunnerEndpoint = 'http://127.0.0.1:7242/ingest/ec2d9602-9db8-40be-8c6f-4790712d2073';
+    // In production, only log remotely if explicitly configured.
+    // In dev, allow a localhost default for convenience.
+    const vxrunnerEndpoint =
+      import.meta.env.VITE_VXRUNNER_ENDPOINT ||
+      (import.meta.env.DEV
+        ? getDevIngestUrl(7242, 'ec2d9602-9db8-40be-8c6f-4790712d2073')
+        : '');
+
+    if (!vxrunnerEndpoint) return;
     
     const logEntry = {
       location: 'vxrunnerLogger.ts',
@@ -86,4 +106,3 @@ export function createViolation(
     context
   };
 }
-

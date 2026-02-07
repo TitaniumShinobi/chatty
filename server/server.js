@@ -52,12 +52,26 @@ process.on('unhandledRejection', (reason, promise) => {
 // Construct canonical redirect URI with normalization
 const REPLIT_DOMAIN = process.env.REPLIT_DEV_DOMAIN || process.env.REPLIT_DOMAINS;
 const PUBLIC_CALLBACK_BASE = REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : (process.env.PUBLIC_CALLBACK_BASE || 'http://localhost:5050');
-const CALLBACK_PATH = '/api/auth/google/callback';
+const CALLBACK_PATH = process.env.CALLBACK_PATH || '/api/auth/google/callback';
 const REDIRECT_URI = `${PUBLIC_CALLBACK_BASE.replace(/\/$/, '')}${CALLBACK_PATH}`;
 
 // IMPORTANT: Override for Google Callback
 const GOOGLE_CALLBACK = REDIRECT_URI;
-const POST_LOGIN_REDIRECT = REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : (process.env.FRONTEND_URL || "http://localhost:5000");
+const POST_LOGIN_REDIRECT = REPLIT_DOMAIN
+  ? `https://${REPLIT_DOMAIN}`
+  : (process.env.POST_LOGIN_REDIRECT || process.env.FRONTEND_URL || "http://localhost:5173");
+
+// In production, never fall back to localhost for redirect/callback config.
+if (process.env.NODE_ENV === 'production' && !REPLIT_DOMAIN) {
+  const missing = [];
+  if (!process.env.PUBLIC_CALLBACK_BASE) missing.push('PUBLIC_CALLBACK_BASE');
+  if (!process.env.FRONTEND_URL) missing.push('FRONTEND_URL');
+  if (missing.length) {
+    console.error('❌ [Config] Missing required environment variables for production:', missing);
+    console.error('❌ [Config] Refusing to start because OAuth/callback URLs must not fall back to localhost in production.');
+    process.exit(1);
+  }
+}
 
 console.log('--- OAUTH CONFIG DEBUG ---');
 console.log('REPLIT_DOMAIN:', REPLIT_DOMAIN);

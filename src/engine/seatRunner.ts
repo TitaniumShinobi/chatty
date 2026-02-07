@@ -293,6 +293,18 @@ interface GenerateOptions {
  */
 export async function runSeat(opts: GenerateOptions): Promise<string> {
   console.log(`🚀 [SeatRunner] runSeat called - seat: ${opts.seat}, modelOverride: ${opts.modelOverride || 'none'}, isBrowser: ${isBrowser}`);
+
+  // Browser builds should never try to hit a local Ollama host directly.
+  // Delegate to the browser seat runner which uses same-origin `/api/...`.
+  if (isBrowser) {
+    const mod = await import("../lib/browserSeatRunner");
+    return mod.runSeat({
+      seat: opts.seat,
+      prompt: opts.prompt,
+      modelOverride: opts.modelOverride,
+      timeout: opts.timeout,
+    });
+  }
   
   // Check if we should use OpenRouter directly (no Ollama configured)
   const ollamaHost = opts.host ?? envVars?.OLLAMA_HOST;
@@ -306,7 +318,13 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
     }
   }
   
-  const host = (ollamaHost ?? 'http://localhost').replace(/\/$/, '');
+  if (!ollamaHost) {
+    throw new Error(
+      "Ollama host not configured. Set OLLAMA_HOST (or pass opts.host), or configure OpenRouter for Node execution.",
+    );
+  }
+
+  const host = ollamaHost.replace(/\/$/, '');
   const port = (opts.port ?? Number(envVars?.OLLAMA_PORT)) || DEFAULT_OLLAMA_PORT;
   const model = await resolveModel(opts.seat, opts.modelOverride);
   const timeout = opts.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS;

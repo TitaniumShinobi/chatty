@@ -98,7 +98,8 @@ export async function runLinTestsInBrowser(): Promise<TestReport> {
     localStorage.setItem('lastLinTestReport', JSON.stringify(report));
     (window as any).linTestHistory = trimmedHistory;
     console.log(`\n💾 Saved test run to history (${trimmedHistory.length} total runs)`);
-    console.log(`📊 View dashboard: http://localhost:5173/lin-test-dashboard.html`);
+    const url = new URL('/lin-test-dashboard.html', window.location.origin).toString();
+    console.log(`📊 View dashboard: ${url}`);
   } catch (error) {
     console.warn('⚠️ Failed to save test history:', error);
   }
@@ -111,4 +112,3 @@ if (typeof window !== 'undefined') {
   (window as any).runLinTests = runLinTestsInBrowser;
   console.log('✅ Lin Test Runner loaded! Run: runLinTests()');
 }
-

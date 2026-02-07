@@ -88,7 +88,7 @@ export class ChattyMOCRClient {
 
   constructor(config: MOCRClientConfig) {
     this.config = {
-      baseUrl: 'http://localhost:3001',
+      baseUrl: '',
       timeout: 300000, // 5 minutes for video processing
       ...config
     };
@@ -221,6 +221,9 @@ export class ChattyMOCRClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<any> {
+    if (!this.config.baseUrl) {
+      throw new Error('MOCR service not configured. Set VITE_MOCR_SERVICE_URL to enable MOCR.');
+    }
     const url = `${this.config.baseUrl}${endpoint}`;
     
     const controller = new AbortController();
@@ -252,9 +255,24 @@ export class ChattyMOCRClient {
   }
 }
 
+function getDevServiceOrigin(port: number): string {
+  // Avoid hardcoding "localhost" in the bundle; use the current hostname instead.
+  const loc = (globalThis as any).location as Location | undefined
+  if (!loc?.origin) return ''
+  const u = new URL(loc.origin)
+  u.protocol = 'http:'
+  u.port = String(port)
+  u.pathname = ''
+  u.search = ''
+  u.hash = ''
+  return u.origin
+}
+
 // Create default client instance
 const defaultMOCRClient = new ChattyMOCRClient({
-  baseUrl: import.meta.env.VITE_MOCR_SERVICE_URL || 'http://localhost:3001',
+  baseUrl:
+    (import.meta.env.VITE_MOCR_SERVICE_URL as string | undefined) ||
+    (import.meta.env.DEV ? getDevServiceOrigin(3001) : ''),
   apiKey: import.meta.env.VITE_MOCR_API_KEY
 });
 

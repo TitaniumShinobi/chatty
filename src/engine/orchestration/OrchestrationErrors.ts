@@ -62,7 +62,7 @@ export class TriadFailureError extends OrchestrationError {
       userMessage: `Some AI models are currently unavailable (${failedSeats.join(", ")}). Please check that Ollama is running and all required models are installed.`,
       technicalDetails: `Triad validation failed. Unavailable models: ${failedSeats.join(", ")}`,
       recoverySuggestion:
-        "Ensure Ollama is running on localhost:11434 and the required models (deepseek-coder:6.7b, phi3:latest, mistral:latest) are installed.",
+        "Ensure Ollama is running and the required models (deepseek-coder:6.7b, phi3:latest, mistral:latest) are installed.",
       context: { failedSeats, ...context },
     });
   }
@@ -186,7 +186,7 @@ export function getUserFriendlyErrorMessage(error: unknown): string {
       error.message.includes("Failed to fetch") ||
       error.message.includes("NetworkError")
     ) {
-      return "Unable to connect to the AI service. Please check that Ollama is running on localhost:11434.";
+      return "Unable to connect to the AI service. Please check that Ollama is running and reachable (configure OLLAMA_HOST/OLLAMA_PORT if needed).";
     }
 
     if (error.message.includes("Ollama error")) {

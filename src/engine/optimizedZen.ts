@@ -281,19 +281,25 @@ export class OptimizedZenProcessor {
         console.warn('[OptimizedZenProcessor] Failed to load user personalization:', error);
       }
 
-      // Identity loadingif (identity) {
+      // Identity loading
+      if (identity) {
         console.log(`✅ [OptimizedZenProcessor] Using provided identity:`, {
           hasPrompt: !!identity.prompt,
           hasConditioning: !!identity.conditioning,
           promptLength: identity.prompt?.length || 0,
-          conditioningLength: identity.conditioning?.length || 0
-        });this.identity = identity;
+          conditioningLength: identity.conditioning?.length || 0,
+        });
+        this.identity = identity;
       } else {
-        console.log(`🔄 [OptimizedZenProcessor] No identity provided, attempting to load...`);await this.loadZenIdentity(userId);
+        console.log(
+          `🔄 [OptimizedZenProcessor] No identity provided, attempting to load...`,
+        );
+        await this.loadZenIdentity(userId);
         console.log(`✅ [OptimizedZenProcessor] Identity loaded:`, {
           hasPrompt: !!this.identity.prompt,
-          hasConditioning: !!this.identity.conditioning
-        });}
+          hasConditioning: !!this.identity.conditioning,
+        });
+      }
 
       // Check Ollama
       if (!this.config.skipOllamaCheck) {
@@ -331,8 +337,14 @@ export class OptimizedZenProcessor {
       });
 
       // Process
-      console.log(`🚀 [OptimizedZenProcessor] Calling processWithTimeout with timeout: ${this.config.timeoutMs}ms`);const response = await this.processWithTimeout(userMessage, context);
-      console.log(`✅ [OptimizedZenProcessor] processWithTimeout returned response (${response.length} chars)`);// Apply post-processing filters
+      console.log(
+        `🚀 [OptimizedZenProcessor] Calling processWithTimeout with timeout: ${this.config.timeoutMs}ms`,
+      );
+      const response = await this.processWithTimeout(userMessage, context);
+      console.log(
+        `✅ [OptimizedZenProcessor] processWithTimeout returned response (${response.length} chars)`,
+      );
+      // Apply post-processing filters
       let filteredResponse = response;
 
       // 1. Remove quotation marks and narrator leaks using OutputFilter

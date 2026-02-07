@@ -108,8 +108,26 @@ export class TriadGate {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), this.HEALTH_CHECK_TIMEOUT);
 
-            // Default Ollama host
-            const host = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
+            // Resolve Ollama host across environments (Node or Vite/browser).
+            // In production browser builds, we intentionally avoid a localhost default.
+            const anyGlobal = globalThis as any;
+            const devHost = (() => {
+                const loc = anyGlobal?.location as Location | undefined;
+                if (!loc?.origin) return undefined;
+                const u = new URL(loc.origin);
+                u.protocol = 'http:';
+                u.port = '11434';
+                u.pathname = '';
+                u.search = '';
+                u.hash = '';
+                return u.origin;
+            })();
+            const host =
+                anyGlobal?.process?.env?.OLLAMA_HOST ||
+                (import.meta as any)?.env?.VITE_OLLAMA_HOST ||
+                ((import.meta as any)?.env?.DEV ? devHost : undefined);
+
+            if (!host) return false;
 
             const response = await fetch(`${host}/api/generate`, {
                 method: 'POST',

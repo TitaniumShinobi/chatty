@@ -35,6 +35,18 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
   const [avatarBlobs, setAvatarBlobs] = useState<Record<string, string>>({});
   const [failedAvatars, setFailedAvatars] = useState<Set<string>>(new Set());
 
+  const getDevAgentLogEndpoint = () => {
+    const loc = (globalThis as any).location as Location | undefined;
+    if (!loc?.origin) return "";
+    const u = new URL(loc.origin);
+    u.protocol = "http:";
+    u.port = "7243";
+    u.pathname = "/ingest/9aa5e079-2a3d-44e1-a152-645d01668332";
+    u.search = "";
+    u.hash = "";
+    return u.toString();
+  };
+
   // Load avatars as blobs (fallback if proxy fails)
   useEffect(() => {
     const loadAvatars = async () => {
@@ -125,49 +137,61 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
     try {
       setIsLoading(true);
       // #region agent log
-      fetch(
-        "http://127.0.0.1:7243/ingest/9aa5e079-2a3d-44e1-a152-645d01668332",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: "GPTsPage.tsx:40",
-            message: "loadAIs entry",
-            data: { pathname: location.pathname },
-            timestamp: Date.now(),
-            sessionId: "debug-session",
-            runId: "run1",
-            hypothesisId: "D",
-          }),
-        },
-      ).catch(() => {});
+      {
+        const endpoint =
+          import.meta.env.VITE_AGENT_LOG_URL ||
+          (import.meta.env.DEV
+            ? getDevAgentLogEndpoint()
+            : "");
+        if (endpoint) {
+          fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              location: "GPTsPage.tsx:40",
+              message: "loadAIs entry",
+              data: { pathname: location.pathname },
+              timestamp: Date.now(),
+              sessionId: "debug-session",
+              runId: "run1",
+              hypothesisId: "D",
+            }),
+          }).catch(() => {});
+        }
+      }
       // #endregion
       const allAIs = await aiService.getAllAIs();
       // #region agent log
-      fetch(
-        "http://127.0.0.1:7243/ingest/9aa5e079-2a3d-44e1-a152-645d01668332",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: "GPTsPage.tsx:43",
-            message: "loadAIs result",
-            data: {
-              count: allAIs.length,
-              ais: allAIs.map((a) => ({
-                id: a.id,
-                name: a.name,
-                userId: a.userId,
-                constructCallsign: a.constructCallsign,
-              })),
-            },
-            timestamp: Date.now(),
-            sessionId: "debug-session",
-            runId: "run1",
-            hypothesisId: "A",
-          }),
-        },
-      ).catch(() => {});
+      {
+        const endpoint =
+          import.meta.env.VITE_AGENT_LOG_URL ||
+          (import.meta.env.DEV
+            ? getDevAgentLogEndpoint()
+            : "");
+        if (endpoint) {
+          fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              location: "GPTsPage.tsx:43",
+              message: "loadAIs result",
+              data: {
+                count: allAIs.length,
+                ais: allAIs.map((a) => ({
+                  id: a.id,
+                  name: a.name,
+                  userId: a.userId,
+                  constructCallsign: a.constructCallsign,
+                })),
+              },
+              timestamp: Date.now(),
+              sessionId: "debug-session",
+              runId: "run1",
+              hypothesisId: "A",
+            }),
+          }).catch(() => {});
+        }
+      }
       // #endregion
       console.log(`📊 [AIsPage] Loaded ${allAIs.length} AIs`);
       console.log(
@@ -181,26 +205,32 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
       setAIs(allAIs);
     } catch (error: any) {
       // #region agent log
-      fetch(
-        "http://127.0.0.1:7243/ingest/9aa5e079-2a3d-44e1-a152-645d01668332",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: "GPTsPage.tsx:48",
-            message: "loadAIs error",
-            data: {
-              error: error?.message,
-              stack: error?.stack,
-              name: error?.name,
-            },
-            timestamp: Date.now(),
-            sessionId: "debug-session",
-            runId: "run1",
-            hypothesisId: "B",
-          }),
-        },
-      ).catch(() => {});
+      {
+        const endpoint =
+          import.meta.env.VITE_AGENT_LOG_URL ||
+          (import.meta.env.DEV
+            ? getDevAgentLogEndpoint()
+            : "");
+        if (endpoint) {
+          fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              location: "GPTsPage.tsx:48",
+              message: "loadAIs error",
+              data: {
+                error: error?.message,
+                stack: error?.stack,
+                name: error?.name,
+              },
+              timestamp: Date.now(),
+              sessionId: "debug-session",
+              runId: "run1",
+              hypothesisId: "B",
+            }),
+          }).catch(() => {});
+        }
+      }
       // #endregion
       console.error("Failed to load AIs:", error);
     } finally {

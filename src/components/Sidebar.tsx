@@ -28,6 +28,10 @@ import litchattyStar from "@assets/stars/litChatty_star.svg";
 import chattyStar from "@assets/stars/chatty_star.png";
 import { Z_LAYERS } from "../lib/zLayers";
 
+// simForge icons (bundle-safe; do not rely on runtime /assets paths)
+import simforgeDayUrl from "../../assets/icons/simforge_day.svg?url";
+import simforgeNightUrl from "../../assets/icons/simforge_night.svg?url";
+
 const Sidebar: React.FC<SidebarProps> = ({
   conversations,
   threads = [],
@@ -207,13 +211,13 @@ const Sidebar: React.FC<SidebarProps> = ({
     const active = isActiveRoute("/app/explore");
     if (actualTheme === "night") {
       return active
-        ? "/assets/icons/simforge_day.svg"
-        : "/assets/icons/simforge_night.svg";
+        ? simforgeDayUrl
+        : simforgeNightUrl;
     }
     // day theme
     return active
-      ? "/assets/icons/simforge_night.svg"
-      : "/assets/icons/simforge_day.svg";
+      ? simforgeNightUrl
+      : simforgeDayUrl;
   })();
 
   const navButtonStyle = (path: string) => ({

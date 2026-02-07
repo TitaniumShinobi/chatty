@@ -34,6 +34,19 @@ export default function VVAULTPage() {
   const [accountStatus, setAccountStatus] = useState<VVAULTAccountStatus | null>(null)
   const [isLinking, setIsLinking] = useState(false)
 
+  const getDevVvaultOrigin = () => {
+    // Avoid hardcoding "localhost" so production bundles don't contain loopback URLs.
+    const loc = (globalThis as any).location as Location | undefined
+    if (!loc?.origin) return ''
+    const u = new URL(loc.origin)
+    u.protocol = 'http:'
+    u.port = '8000'
+    u.pathname = ''
+    u.search = ''
+    u.hash = ''
+    return u.origin
+  }
+
   // Fetch VVAULT account linking status
   useEffect(() => {
     const fetchAccountStatus = async () => {
@@ -117,7 +130,9 @@ export default function VVAULTPage() {
 
   const handleLinkAccount = () => {
     // Open VVAULT login in new tab
-    const vvaultUrl = process.env.VITE_VVAULT_URL || 'http://localhost:8000'
+    const vvaultUrl =
+      (import.meta.env.VITE_VVAULT_URL as string | undefined) ||
+      (import.meta.env.DEV ? getDevVvaultOrigin() : 'https://vvault.thewreck.org')
     window.open(`${vvaultUrl}/login`, '_blank')
     
     // Show instructions
@@ -436,4 +451,3 @@ export default function VVAULTPage() {
     </div>
   )
 }
-

@@ -7,6 +7,17 @@ const FXSHINOBI_API_BASE = process.env.FXSHINOBI_API_BASE_URL || '';
 const VVAULT_URL = process.env.VVAULT_URL || '';
 const VVAULT_SERVICE_TOKEN = process.env.VVAULT_SERVICE_TOKEN || '';
 
+function normalizeFxBase(base) {
+  // Allow either:
+  // - https://fxshinobi.thewreck.org
+  // - https://fxshinobi.thewreck.org/api
+  // Internally we want the origin (no trailing /api).
+  if (!base) return '';
+  let b = String(base).trim().replace(/\/+$/, '');
+  if (b.endsWith('/api')) b = b.slice(0, -4);
+  return b;
+}
+
 function isConfigured() {
   return Boolean(FXSHINOBI_API_BASE);
 }
@@ -36,7 +47,9 @@ router.get('/health', async (req, res) => {
   }
 
   try {
-    const response = await fetchWithTimeout(`${FXSHINOBI_API_BASE}/api/health`, { method: 'GET' }, 5000);
+    const base = normalizeFxBase(FXSHINOBI_API_BASE);
+    const url = `${base}/api/health`;
+    const response = await fetchWithTimeout(url, { method: 'GET' }, 5000);
     
     if (response.ok) {
       const data = await response.json();
@@ -53,19 +66,21 @@ router.get('/health', async (req, res) => {
       return res.status(response.status).json({
         status: 'error',
         live_mode: false,
+        upstream: { url, status: response.status },
         message: `FXShinobi returned ${response.status}`,
       });
     }
   } catch (err) {
-    if (err.name === 'AbortError') {
-      console.log('[FXShinobi] Health check timed out');
-    } else {
-      console.log('[FXShinobi] Health check failed:', err.message);
-    }
+    const base = normalizeFxBase(FXSHINOBI_API_BASE);
+    const url = `${base}/api/health`;
+    const kind = err?.name === 'AbortError' ? 'timeout' : 'unreachable';
+    console.log(`[FXShinobi] Health check failed (${kind}):`, err?.message || err);
     return res.status(503).json({
       status: 'offline',
       live_mode: false,
       message: 'FXShinobi engine is not reachable',
+      error_kind: kind,
+      upstream: { url },
     });
   }
 });
@@ -84,7 +99,9 @@ router.get('/status', async (req, res) => {
   }
 
   try {
-    const response = await fetchWithTimeout(`${FXSHINOBI_API_BASE}/api/status`, { method: 'GET' }, 5000);
+    const base = normalizeFxBase(FXSHINOBI_API_BASE);
+    const url = `${base}/api/status`;
+    const response = await fetchWithTimeout(url, { method: 'GET' }, 5000);
     
     if (response.ok) {
       const data = await response.json();
@@ -124,15 +141,15 @@ router.get('/status', async (req, res) => {
         active_broker_id: null,
         active_broker_name: null,
         account_type: 'unknown',
+        upstream: { url, status: response.status },
         message: `FXShinobi returned ${response.status}`,
       });
     }
   } catch (err) {
-    if (err.name === 'AbortError') {
-      console.log('[FXShinobi] Status check timed out');
-    } else {
-      console.log('[FXShinobi] Status check failed:', err.message);
-    }
+    const base = normalizeFxBase(FXSHINOBI_API_BASE);
+    const url = `${base}/api/status`;
+    const kind = err?.name === 'AbortError' ? 'timeout' : 'unreachable';
+    console.log(`[FXShinobi] Status check failed (${kind}):`, err?.message || err);
     return res.status(503).json({
       status: 'offline',
       live_mode: false,
@@ -141,6 +158,8 @@ router.get('/status', async (req, res) => {
       active_broker_name: null,
       account_type: 'unknown',
       message: 'FXShinobi engine is not reachable',
+      error_kind: kind,
+      upstream: { url },
     });
   }
 });
@@ -155,8 +174,10 @@ router.get('/snapshot', async (req, res) => {
   }
 
   try {
+    const base = normalizeFxBase(FXSHINOBI_API_BASE);
+    const url = `${base}/api/snapshot`;
     const response = await fetchWithTimeout(
-      `${FXSHINOBI_API_BASE}/api/snapshot`,
+      url,
       { method: 'GET' },
       10000
     );
@@ -178,6 +199,7 @@ router.get('/snapshot', async (req, res) => {
       error: 'Failed to fetch market snapshot',
       fallback: true,
       live_mode: false,
+      error_kind: err?.name === 'AbortError' ? 'timeout' : 'unreachable',
     });
   }
 });
@@ -195,8 +217,10 @@ router.get('/trades/history', async (req, res) => {
   }
 
   try {
+    const base = normalizeFxBase(FXSHINOBI_API_BASE);
+    const url = `${base}/api/trades/history?limit=${limit}&offset=${offset}`;
     const response = await fetchWithTimeout(
-      `${FXSHINOBI_API_BASE}/api/trades/history?limit=${limit}&offset=${offset}`,
+      url,
       { method: 'GET' },
       10000
     );
@@ -217,6 +241,7 @@ router.get('/trades/history', async (req, res) => {
       trades: [],
       fallback: true,
       live_mode: false,
+      error_kind: err?.name === 'AbortError' ? 'timeout' : 'unreachable',
     });
   }
 });
@@ -233,8 +258,10 @@ router.get('/performance', async (req, res) => {
   }
 
   try {
+    const base = normalizeFxBase(FXSHINOBI_API_BASE);
+    const url = `${base}/api/performance?period=${period}`;
     const response = await fetchWithTimeout(
-      `${FXSHINOBI_API_BASE}/api/performance?period=${period}`,
+      url,
       { method: 'GET' },
       10000
     );

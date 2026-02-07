@@ -363,7 +363,24 @@ export default function Layout() {
 
   // #region agent log
   useEffect(() => {
-    fetch("http://127.0.0.1:7243/ingest/9aa5e079-2a3d-44e1-a152-645d01668332", {
+    const devEndpoint = () => {
+      const loc = (globalThis as any).location as Location | undefined;
+      if (!loc?.origin) return "";
+      const u = new URL(loc.origin);
+      u.protocol = "http:";
+      u.port = "7243";
+      u.pathname = "/ingest/9aa5e079-2a3d-44e1-a152-645d01668332";
+      u.search = "";
+      u.hash = "";
+      return u.toString();
+    };
+    const endpoint =
+      import.meta.env.VITE_AGENT_LOG_URL ||
+      (import.meta.env.DEV ? devEndpoint() : "");
+
+    if (!endpoint) return;
+
+    fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

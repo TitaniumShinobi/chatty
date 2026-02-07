@@ -690,7 +690,7 @@ const SimForge: React.FC<SimForgeProps> = ({
           errorMessage = `The GPT creation assistant model is not available. Please check that Ollama is running and the model is installed.`;
         } else if (error.message.includes("Failed to fetch")) {
           errorMessage =
-            "Unable to connect to the AI service. Please check that Ollama is running on localhost:11434.";
+            "Unable to connect to the AI service. Please check that Ollama is running and reachable (configure OLLAMA_HOST/OLLAMA_PORT if needed).";
         } else if (error.message.includes("Ollama error")) {
           errorMessage = `Ollama service error: ${error.message}`;
         }
@@ -835,7 +835,7 @@ Assistant:`;
           errorMessage = `The selected model "${config.conversationModel || config.modelId || "phi3:latest"}" is not available. Please check that Ollama is running and the model is installed.`;
         } else if (error.message.includes("Failed to fetch")) {
           errorMessage =
-            "Unable to connect to the AI service. Please check that Ollama is running on localhost:11434.";
+            "Unable to connect to the AI service. Please check that Ollama is running and reachable (configure OLLAMA_HOST/OLLAMA_PORT if needed).";
         } else if (error.message.includes("Ollama error")) {
           errorMessage = `Ollama service error: ${error.message}`;
         }

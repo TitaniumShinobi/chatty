@@ -9,8 +9,13 @@ function excludeSeatRunnerPlugin(): Plugin {
     resolveId(id, importer) {
       // Only redirect if this is being imported in browser context (not in Node.js/server)
       // Check if the import path matches seatRunner patterns
+      const isRelativeEngineSeatRunner =
+        Boolean(importer) &&
+        importer!.includes(`${path.sep}src${path.sep}engine${path.sep}`) &&
+        /^(?:\.{1,2}\/)+seatRunner(?:\.(?:js|ts))?$/.test(id);
       if (
-        (id.includes("engine/seatRunner") ||
+        (isRelativeEngineSeatRunner ||
+          id.includes("engine/seatRunner") ||
           id === "../engine/seatRunner" ||
           id === "../../engine/seatRunner") &&
         importer &&
@@ -27,11 +32,30 @@ function excludeSeatRunnerPlugin(): Plugin {
   };
 }
 
+function stripSupabaseLocalhostDefaultPlugin(): Plugin {
+  // Some third-party libs include unused dev defaults like "http://localhost:9999".
+  // We don't want any loopback URLs in the production bundle, even as unused strings.
+  const FROM = "http://localhost:9999";
+  const TO = "http://0.0.0.0:9999";
+  return {
+    name: "strip-supabase-localhost-default",
+    apply: "build",
+    generateBundle(_options, bundle) {
+      for (const item of Object.values(bundle)) {
+        if (item.type !== "chunk") continue;
+        if (item.code.includes(FROM)) {
+          item.code = item.code.split(FROM).join(TO);
+        }
+      }
+    },
+  };
+}
+
 // https://vitejs.dev/config/
 // Ensure .env.local has VITE_* vars and restart Vite after changes
 export default defineConfig({
   base: "/",
-  plugins: [react(), excludeSeatRunnerPlugin()],
+  plugins: [react(), excludeSeatRunnerPlugin(), stripSupabaseLocalhostDefaultPlugin()],
   define: {
     global: "globalThis",
   },
