@@ -45,14 +45,14 @@ function isDateHeaderMessage(msg: any): boolean {
   if (msg.isDateHeader) {
     return true;
   }
-  
+
   // Priority 2: Pattern match on message text content (user messages have 'text', assistants have packets)
   const text = (msg.text || '').trim();
   if (!text) return false;
-  
+
   // Only check short messages (date headers with hashes are typically < 40 chars)
   if (text.length > 40) return false;
-  
+
   return DATE_HEADER_PATTERN.test(text);
 }
 
@@ -96,12 +96,12 @@ const userMessageMarkdownComponents: Components = {
                 color: "#fffff0",
               }}
               onMouseEnter={(e) =>
-                (e.currentTarget.style.backgroundColor =
-                  "rgba(255, 255, 255, 0.3)")
+              (e.currentTarget.style.backgroundColor =
+                "rgba(255, 255, 255, 0.3)")
               }
               onMouseLeave={(e) =>
-                (e.currentTarget.style.backgroundColor =
-                  "rgba(255, 255, 255, 0.2)")
+              (e.currentTarget.style.backgroundColor =
+                "rgba(255, 255, 255, 0.2)")
               }
               title="Copy code"
             >
@@ -178,12 +178,12 @@ const userMessageMarkdownComponents: Components = {
                 color: "#fffff0",
               }}
               onMouseEnter={(e) =>
-                (e.currentTarget.style.backgroundColor =
-                  "rgba(255, 255, 255, 0.3)")
+              (e.currentTarget.style.backgroundColor =
+                "rgba(255, 255, 255, 0.3)")
               }
               onMouseLeave={(e) =>
-                (e.currentTarget.style.backgroundColor =
-                  "rgba(255, 255, 255, 0.2)")
+              (e.currentTarget.style.backgroundColor =
+                "rgba(255, 255, 255, 0.2)")
               }
               title="Copy code"
             >
@@ -428,43 +428,43 @@ export default function Chat() {
   const matchingThreads = threads.filter((t) => t.id === threadId);
   let thread = matchingThreads.length > 0
     ? matchingThreads.reduce((best, current) => {
-        const bestMsgs = best.messages?.length || 0;
-        const currentMsgs = current.messages?.length || 0;
-        // Prefer thread with more messages, then more recent
-        if (currentMsgs !== bestMsgs) return currentMsgs > bestMsgs ? current : best;
-        return (current.updatedAt || 0) > (best.updatedAt || 0) ? current : best;
-      })
+      const bestMsgs = best.messages?.length || 0;
+      const currentMsgs = current.messages?.length || 0;
+      // Prefer thread with more messages, then more recent
+      if (currentMsgs !== bestMsgs) return currentMsgs > bestMsgs ? current : best;
+      return (current.updatedAt || 0) > (best.updatedAt || 0) ? current : best;
+    })
     : threads.find((t) => {
-        // Handle transformed IDs from routeIdForThread
-        if (t.isPrimary && t.constructId) {
-          const transformedId = `${t.constructId}_chat_with_${t.constructId}`;
-          return transformedId === threadId;
-        }
-        return false;
-      });
+      // Handle transformed IDs from routeIdForThread
+      if (t.isPrimary && t.constructId) {
+        const transformedId = `${t.constructId}_chat_with_${t.constructId}`;
+        return transformedId === threadId;
+      }
+      return false;
+    });
 
   const isZenSessionThread = Boolean(
     threadId && threadId.startsWith("zen-001_chat_with_"),
   );
-  
+
   const isLinSessionThread = Boolean(
     threadId && threadId.startsWith("lin-001_chat_with_"),
   );
-  
+
   // GPT canonical session: {constructId}_chat_with_{constructId} (not Zen or Lin)
   const isGPTSessionThread = Boolean(
-    threadId && 
-    threadId.includes("_chat_with_") && 
-    !threadId.startsWith("zen-001_") && 
+    threadId &&
+    threadId.includes("_chat_with_") &&
+    !threadId.startsWith("zen-001_") &&
     !threadId.startsWith("lin-001_")
   );
-  
+
   // Extract GPT construct name for display
-  const gptConstructName = isGPTSessionThread 
-    ? threadId?.split("_chat_with_")[0]?.replace(/-\d+$/, "")?.charAt(0).toUpperCase() + 
-      threadId?.split("_chat_with_")[0]?.replace(/-\d+$/, "")?.slice(1)
+  const gptConstructName = isGPTSessionThread
+    ? threadId?.split("_chat_with_")[0]?.replace(/-\d+$/, "")?.charAt(0).toUpperCase() +
+    threadId?.split("_chat_with_")[0]?.replace(/-\d+$/, "")?.slice(1)
     : null;
-  
+
   const isSystemConstructThread = isZenSessionThread || isLinSessionThread;
   const isCanonicalThread = isSystemConstructThread || isGPTSessionThread;
 
@@ -486,7 +486,7 @@ export default function Chat() {
           textPreview: m.text
             ? m.text.substring(0, 100)
             : m.packets?.[0]?.payload?.content?.substring(0, 100) ||
-              "no content",
+            "no content",
         })) || [],
     });
   }
@@ -561,8 +561,8 @@ export default function Chat() {
         if (!response.ok || !data.ok) {
           throw new Error(
             data?.error ||
-              response.statusText ||
-              `Failed to load ${constructName} transcript`,
+            response.statusText ||
+            `Failed to load ${constructName} transcript`,
           );
         }
 
@@ -593,9 +593,9 @@ export default function Chat() {
     if (!thread || !threadId || !reloadThreadMessages) return;
 
     // Check if this is a brand new singleton conversation (bootstrapped with no real messages)
-    const isNewSingletonConversation = thread.id.includes('_chat_with_') || 
+    const isNewSingletonConversation = thread.id.includes('_chat_with_') ||
       thread.id.startsWith('session_');
-    
+
     // If thread has no messages, attempt to reload (only once per threadId)
     // Skip reload for new singleton conversations - they're genuinely empty
     if (thread.messages.length === 0 && !isReloading && !reloadAttempted && !isNewSingletonConversation) {
@@ -743,7 +743,7 @@ export default function Chat() {
           const messages: Message[] = [];
           const lines = markdown.split('\n');
           let currentMessage: { role: 'user' | 'assistant'; text: string; ts: number } | null = null;
-          
+
           // Track current date from day headers like "## November 14, 2025"
           let currentDateForDay: string | null = null;
           const DAY_HEADER_PATTERN = /^##\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})\s*$/i;
@@ -751,7 +751,7 @@ export default function Chat() {
           const VVAULT_TIME_PATTERN = /^\*\*(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)\s*([A-Z]{2,5})?\s*-\s*([^*]+)\*\*:?\s*(.*)$/i;
           // ISO bracket pattern for inline timestamps
           const ISO_BRACKET_PATTERN = /\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\]/;
-          
+
           // Helper to derive timestamp from VVAULT time format + current day
           const deriveTimestampFromVVAULT = (hh: string, mm: string, ss: string, ampm: string): number => {
             if (!currentDateForDay) {
@@ -770,17 +770,17 @@ export default function Chat() {
               return Date.now() - (messages.length * 1000);
             }
           };
-          
+
           for (const line of lines) {
             const trimmedLine = line.trim();
-            
+
             // Check for day header: "## November 14, 2025"
             const dayHeaderMatch = trimmedLine.match(DAY_HEADER_PATTERN);
             if (dayHeaderMatch) {
               currentDateForDay = `${dayHeaderMatch[1]} ${dayHeaderMatch[2]}, ${dayHeaderMatch[3]}`;
               continue; // Skip this line, it's just a date marker
             }
-            
+
             // Pattern 1: "10:26:07 AM EST - Devon Woodson [2026-01-20T15:26:07.457Z]: Message"
             const timestampMatch = line.match(/^\d{1,2}:\d{2}:\d{2}\s*(?:AM|PM)?\s*(?:[A-Z]{2,5})?\s*-\s*(.+?)\s*\[([^\]]+)\]:\s*(.*)$/i);
             // Pattern 2: VVAULT format "**01:07:38 PM EST - Synth**:" with time but no ISO bracket
@@ -792,10 +792,10 @@ export default function Chat() {
             // Pattern 5: "You said:" / "Construct said:" format
             const youSaidMatch = trimmedLine.match(/^You said:\s*(.*)$/i);
             const constructSaidMatch = trimmedLine.match(/^(Synth|Zen|Lin|Katana|Nova) said:\s*(.*)$/i);
-            
+
             // Check for ISO bracket anywhere in the line as a fallback timestamp source
             const isoBracketMatch = line.match(ISO_BRACKET_PATTERN);
-            
+
             if (timestampMatch) {
               // Save previous message
               if (currentMessage) {
@@ -806,14 +806,14 @@ export default function Chat() {
                   ts: currentMessage.ts,
                 });
               }
-              
+
               const speaker = timestampMatch[1].trim();
               const timestamp = timestampMatch[2];
               const content = timestampMatch[3];
-              const isUser = speaker.toLowerCase().includes('devon') || 
-                             speaker.toLowerCase().includes('user') ||
-                             speaker.toLowerCase().includes('you');
-              
+              const isUser = speaker.toLowerCase().includes('devon') ||
+                speaker.toLowerCase().includes('user') ||
+                speaker.toLowerCase().includes('you');
+
               currentMessage = {
                 role: isUser ? 'user' : 'assistant',
                 text: content,
@@ -829,12 +829,12 @@ export default function Chat() {
                   ts: currentMessage.ts,
                 });
               }
-              
+
               const [, hh, mm, ss, ampm, , speaker, content] = vvaultTimeMatch;
-              const isUser = speaker.toLowerCase().includes('devon') || 
-                             speaker.toLowerCase().includes('user') ||
-                             speaker.toLowerCase().includes('you');
-              
+              const isUser = speaker.toLowerCase().includes('devon') ||
+                speaker.toLowerCase().includes('user') ||
+                speaker.toLowerCase().includes('you');
+
               // Use ISO bracket if present, otherwise derive from current day + time
               let ts: number;
               if (isoBracketMatch) {
@@ -842,7 +842,7 @@ export default function Chat() {
               } else {
                 ts = deriveTimestampFromVVAULT(hh, mm, ss, ampm);
               }
-              
+
               currentMessage = {
                 role: isUser ? 'user' : 'assistant',
                 text: content || '',
@@ -857,13 +857,13 @@ export default function Chat() {
                   ts: currentMessage.ts,
                 });
               }
-              
+
               // Use ISO bracket if present
               let ts = Date.now() - (messages.length * 1000);
               if (isoBracketMatch) {
                 ts = new Date(isoBracketMatch[1]).getTime() || ts;
               }
-              
+
               currentMessage = {
                 role: 'user',
                 text: youSaidMatch[1] || '',
@@ -878,13 +878,13 @@ export default function Chat() {
                   ts: currentMessage.ts,
                 });
               }
-              
+
               // Use ISO bracket if present
               let ts = Date.now() - (messages.length * 1000);
               if (isoBracketMatch) {
                 ts = new Date(isoBracketMatch[1]).getTime() || ts;
               }
-              
+
               currentMessage = {
                 role: 'assistant',
                 text: constructSaidMatch[2] || '',
@@ -900,19 +900,19 @@ export default function Chat() {
                   ts: currentMessage.ts,
                 });
               }
-              
+
               const speaker = boldMatch[1].trim();
               const content = boldMatch[2];
-              const isUser = speaker.toLowerCase().includes('devon') || 
-                             speaker.toLowerCase().includes('user') ||
-                             speaker.toLowerCase().includes('you');
-              
+              const isUser = speaker.toLowerCase().includes('devon') ||
+                speaker.toLowerCase().includes('user') ||
+                speaker.toLowerCase().includes('you');
+
               // Use ISO bracket if present
               let ts = Date.now() - (messages.length * 1000);
               if (isoBracketMatch) {
                 ts = new Date(isoBracketMatch[1]).getTime() || ts;
               }
-              
+
               currentMessage = {
                 role: isUser ? 'user' : 'assistant',
                 text: content,
@@ -927,19 +927,19 @@ export default function Chat() {
                   ts: currentMessage.ts,
                 });
               }
-              
+
               const speaker = simpleMatch[1].trim();
               const content = simpleMatch[2];
-              const isUser = speaker.toLowerCase().includes('devon') || 
-                             speaker.toLowerCase().includes('user') ||
-                             speaker.toLowerCase().includes('you');
-              
+              const isUser = speaker.toLowerCase().includes('devon') ||
+                speaker.toLowerCase().includes('user') ||
+                speaker.toLowerCase().includes('you');
+
               // Use ISO bracket if present
               let ts = Date.now() - (messages.length * 1000);
               if (isoBracketMatch) {
                 ts = new Date(isoBracketMatch[1]).getTime() || ts;
               }
-              
+
               currentMessage = {
                 role: isUser ? 'user' : 'assistant',
                 text: content,
@@ -950,7 +950,7 @@ export default function Chat() {
               currentMessage.text += '\n' + line;
             }
           }
-          
+
           // Don't forget last message
           if (currentMessage) {
             messages.push({
@@ -960,10 +960,10 @@ export default function Chat() {
               ts: currentMessage.ts,
             });
           }
-          
+
           return messages;
         };
-        
+
         // Filter out date header messages and sanitize content
         const parsedMessages = parseTranscriptToMessages(zenMarkdown)
           .filter(m => {
@@ -972,7 +972,7 @@ export default function Chat() {
             const dateLinePattern = /^#{0,6}\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\s*$/i;
             return !dateLinePattern.test(text);
           });
-        
+
         // If parsing yielded messages, render them styled; otherwise fallback to prose
         if (parsedMessages.length > 0) {
           return (
@@ -990,7 +990,7 @@ export default function Chat() {
                   let maxWidth = "max-w-[85%] sm:max-w-[80%] md:max-w-[75%] lg:max-w-[70%]";
                   if (contentLength <= 20) maxWidth = "max-w-[200px]";
                   else if (contentLength <= 100) maxWidth = "max-w-[300px] sm:max-w-[400px]";
-                  
+
                   if (isUserMsg) {
                     return (
                       <div key={m.id} className="group relative flex items-end gap-3 py-3 px-4 flex-row-reverse">
@@ -1023,7 +1023,7 @@ export default function Chat() {
                       </div>
                     );
                   }
-                  
+
                   // AI/Construct messages: left-aligned, no bubble
                   return (
                     <div key={m.id} className="group relative flex items-start gap-3 py-3 px-4">
@@ -1058,7 +1058,7 @@ export default function Chat() {
             </div>
           );
         }
-        
+
         // Fallback to prose if parsing failed
         return (
           <div
@@ -1458,12 +1458,12 @@ export default function Chat() {
                 color: "#fffff0",
               }}
               onMouseEnter={(e) =>
-                (e.currentTarget.style.backgroundColor =
-                  "rgba(255, 255, 255, 0.3)")
+              (e.currentTarget.style.backgroundColor =
+                "rgba(255, 255, 255, 0.3)")
               }
               onMouseLeave={(e) =>
-                (e.currentTarget.style.backgroundColor =
-                  "rgba(255, 255, 255, 0.2)")
+              (e.currentTarget.style.backgroundColor =
+                "rgba(255, 255, 255, 0.2)")
               }
               title="Copy JSON"
             >
@@ -1593,177 +1593,177 @@ export default function Chat() {
           thread.messages
             .filter((m: any) => !isDateHeaderMessage(m)) // Hide date headers from UI (by flag OR content pattern)
             .map((m, index, filteredMessages) => {
-            const user = isUser(m.role);
-            const isLatest = index === filteredMessages.length - 1;
-            const isRemoved = isMessageRemoved(m.id);
+              const user = isUser(m.role);
+              const isLatest = index === filteredMessages.length - 1;
+              const isRemoved = isMessageRemoved(m.id);
 
-            // User messages: right-aligned with iMessage-style bubble
-            if (user) {
-              // Calculate dynamic max-width based on content length (use sanitized text)
-              const content = prepareMessageContent(m.text);
-              const contentLength = content.length;
-              let maxWidth =
-                "max-w-[85%] sm:max-w-[80%] md:max-w-[75%] lg:max-w-[70%]";
-              if (contentLength <= 20) {
-                maxWidth = "max-w-[200px]";
-              } else if (contentLength <= 100) {
-                maxWidth = "max-w-[300px] sm:max-w-[400px]";
+              // User messages: right-aligned with iMessage-style bubble
+              if (user) {
+                // Calculate dynamic max-width based on content length (use sanitized text)
+                const content = prepareMessageContent(m.text);
+                const contentLength = content.length;
+                let maxWidth =
+                  "max-w-[85%] sm:max-w-[80%] md:max-w-[75%] lg:max-w-[70%]";
+                if (contentLength <= 20) {
+                  maxWidth = "max-w-[200px]";
+                } else if (contentLength <= 100) {
+                  maxWidth = "max-w-[300px] sm:max-w-[400px]";
+                }
+
+                return (
+                  <div
+                    key={m.id}
+                    className="group relative flex items-end gap-3 py-3 px-4 flex-row-reverse"
+                  >
+                    <div className="flex flex-col items-end">
+                      <div
+                        className={`px-4 py-3 shadow-sm transition-colors inline-block ${maxWidth} ml-auto text-left relative`}
+                        style={{
+                          backgroundColor: "rgba(173, 165, 135, 0.25)",
+                          borderRadius: "22px 22px 6px 22px",
+                          border: "none",
+                          boxShadow: "0 1px 0 rgba(58, 46, 20, 0.12)",
+                          color: "var(--chatty-text)",
+                          overflow: "hidden",
+                          minWidth: 0,
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        {isRemoved ? (
+                          <div
+                            className="opacity-50 italic"
+                            style={{ color: "var(--chatty-text)" }}
+                          >
+                            [Message Removed]
+                          </div>
+                        ) : (
+                          <>
+                            <div
+                              className="break-words"
+                              style={{
+                                maxWidth: "100%",
+                                minWidth: 0,
+                                overflowX: "auto",
+                                overflowY: "hidden",
+                                width: "100%",
+                              }}
+                            >
+                              {renderUserContent(m.text)}
+                            </div>
+                            {!!m.files?.length && (
+                              <div className="mt-2 space-y-1">
+                                {m.files.map((f, i) => (
+                                  <div
+                                    key={i}
+                                    className="text-xs"
+                                    style={{ opacity: 0.7, color: "var(--chatty-text)" }}
+                                  >
+                                    {f.name}{" "}
+                                    <span className="opacity-60">
+                                      ({Math.round(f.size / 1024)} KB)
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                      <div className="mt-1 flex items-center gap-2">
+                        <span
+                          className="opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+                          style={{ color: "#ADA587" }}
+                        >
+                          {formatMessageTimestamp(m.ts)}
+                        </span>
+                        <MessageOptionsMenu
+                          message={m}
+                          isUser={true}
+                          isLatest={isLatest}
+                          messageIndex={index}
+                          threadId={threadId || ""}
+                          onCopy={handleCopyMessage}
+                          onCarryPrompt={handleCarryPrompt}
+                          onPin={handlePinMessage}
+                          onRemove={handleRemoveMessage}
+                          onRewind={handleRewind}
+                          onEdit={isLatest ? handleEditMessage : undefined}
+                          alignRight={true}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
               }
+
+              // AI/Construct messages: left-aligned, full screen width, no bubble styling
+              const formatGenerationTime = (ms: number): string => {
+                const totalSeconds = ms / 1000;
+                if (totalSeconds < 60) {
+                  // Show seconds with 1 decimal for quick responses (e.g., "3.2s")
+                  return `${totalSeconds.toFixed(1)}s`;
+                } else {
+                  // Show mm:ss for longer generations (e.g., "01:23")
+                  const minutes = Math.floor(totalSeconds / 60);
+                  const seconds = Math.floor(totalSeconds % 60);
+                  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+                }
+              };
+
+              const responseTimeMs = (m as any).metadata?.responseTimeMs;
+              const formattedResponseTime = responseTimeMs
+                ? formatGenerationTime(responseTimeMs)
+                : null;
 
               return (
                 <div
                   key={m.id}
-                  className="group relative flex items-end gap-3 py-3 px-4 flex-row-reverse"
+                  className="group relative flex items-start gap-3 py-3 px-4"
                 >
-                  <div className="flex flex-col items-end">
-                    <div
-                      className={`px-4 py-3 shadow-sm transition-colors inline-block ${maxWidth} ml-auto text-left relative`}
-                      style={{
-                        backgroundColor: "rgba(173, 165, 135, 0.25)",
-                        borderRadius: "22px 22px 6px 22px",
-                        border: "none",
-                        boxShadow: "0 1px 0 rgba(58, 46, 20, 0.12)",
-                        color: "var(--chatty-text)",
-                        overflow: "hidden",
-                        minWidth: 0,
-                        boxSizing: "border-box",
-                      }}
-                    >
-                      {isRemoved ? (
-                        <div
-                          className="opacity-50 italic"
-                          style={{ color: "var(--chatty-text)" }}
-                        >
-                          [Message Removed]
-                        </div>
-                      ) : (
-                        <>
-                          <div
-                            className="break-words"
-                            style={{
-                              maxWidth: "100%",
-                              minWidth: 0,
-                              overflowX: "auto",
-                              overflowY: "hidden",
-                              width: "100%",
-                            }}
-                          >
-                            {renderUserContent(m.text)}
-                          </div>
-                          {!!m.files?.length && (
-                            <div className="mt-2 space-y-1">
-                              {m.files.map((f, i) => (
-                                <div
-                                  key={i}
-                                  className="text-xs"
-                                  style={{ opacity: 0.7, color: "var(--chatty-text)" }}
-                                >
-                                  {f.name}{" "}
-                                  <span className="opacity-60">
-                                    ({Math.round(f.size / 1024)} KB)
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                    <div className="mt-1 flex items-center gap-2">
-                      <span
-                        className="opacity-0 group-hover:opacity-100 transition-opacity text-xs"
-                        style={{ color: "#ADA587" }}
-                      >
-                        {formatMessageTimestamp(m.ts)}
-                      </span>
-                      <MessageOptionsMenu
-                        message={m}
-                        isUser={true}
-                        isLatest={isLatest}
-                        messageIndex={index}
-                        threadId={threadId || ""}
-                        onCopy={handleCopyMessage}
-                        onCarryPrompt={handleCarryPrompt}
-                        onPin={handlePinMessage}
-                        onRemove={handleRemoveMessage}
-                        onRewind={handleRewind}
-                        onEdit={isLatest ? handleEditMessage : undefined}
-                        alignRight={true}
-                      />
-                    </div>
-                  </div>
-                </div>
-              );
-            }
-
-            // AI/Construct messages: left-aligned, full screen width, no bubble styling
-            const formatGenerationTime = (ms: number): string => {
-              const totalSeconds = ms / 1000;
-              if (totalSeconds < 60) {
-                // Show seconds with 1 decimal for quick responses (e.g., "3.2s")
-                return `${totalSeconds.toFixed(1)}s`;
-              } else {
-                // Show mm:ss for longer generations (e.g., "01:23")
-                const minutes = Math.floor(totalSeconds / 60);
-                const seconds = Math.floor(totalSeconds % 60);
-                return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-              }
-            };
-
-            const responseTimeMs = (m as any).metadata?.responseTimeMs;
-            const formattedResponseTime = responseTimeMs
-              ? formatGenerationTime(responseTimeMs)
-              : null;
-
-            return (
-              <div
-                key={m.id}
-                className="group relative flex items-start gap-3 py-3 px-4"
-              >
-                <div className="flex flex-col items-start text-left w-full">
-                  {formattedResponseTime && (
-                    <div
-                      className="text-xs mb-1"
-                      style={{
-                        color: "var(--chatty-text)",
-                        opacity: 0.55,
-                      }}
-                    >
-                      Generated in {formattedResponseTime}
-                    </div>
-                  )}
-                  {isRemoved ? (
-                    <div
-                      className="whitespace-normal w-full opacity-50 italic"
-                      style={{ color: "var(--chatty-text)" }}
-                    >
-                      [Message Removed]
-                    </div>
-                  ) : (
-                    <div
-                      className="whitespace-normal w-full assistant-code-scope chat-markdown"
-                      style={{
-                        color: "var(--chatty-text)",
-                        overflow: "hidden",
-                        maxWidth: "100%",
-                      }}
-                    >
-                      <style
-                        dangerouslySetInnerHTML={{
-                          __html: assistantCodeStyles,
+                  <div className="flex flex-col items-start text-left w-full">
+                    {formattedResponseTime && (
+                      <div
+                        className="text-xs mb-1"
+                        style={{
+                          color: "var(--chatty-text)",
+                          opacity: 0.55,
                         }}
-                      />
-                      <R
-                        packets={
-                          Array.isArray((m as any).packets)
-                            ? (m as any).packets.map((p: any) => ({
+                      >
+                        Generated in {formattedResponseTime}
+                      </div>
+                    )}
+                    {isRemoved ? (
+                      <div
+                        className="whitespace-normal w-full opacity-50 italic"
+                        style={{ color: "var(--chatty-text)" }}
+                      >
+                        [Message Removed]
+                      </div>
+                    ) : (
+                      <div
+                        className="whitespace-normal w-full assistant-code-scope chat-markdown"
+                        style={{
+                          color: "var(--chatty-text)",
+                          overflow: "hidden",
+                          maxWidth: "100%",
+                        }}
+                      >
+                        <style
+                          dangerouslySetInnerHTML={{
+                            __html: assistantCodeStyles,
+                          }}
+                        />
+                        <R
+                          packets={
+                            Array.isArray((m as any).packets)
+                              ? (m as any).packets.map((p: any) => ({
                                 ...p,
                                 payload: p.payload ? {
                                   ...p.payload,
                                   content: prepareMessageContent(p.payload.content),
                                 } : p.payload
                               }))
-                            : [
+                              : [
                                 // fallback for legacy/invalid assistant messages
                                 {
                                   op: "answer.v1",
@@ -1773,100 +1773,100 @@ export default function Chat() {
                                   },
                                 },
                               ]
-                        }
-                      />
-                      {/* Dev Info (only in development and when toggle is on) */}
-                      {isDev && showDevInfo && (
-                        <div
-                          className="mt-2 p-2 rounded text-xs font-mono"
-                          style={{
-                            backgroundColor: "var(--chatty-bg-secondary)",
-                            border: "1px solid var(--chatty-line)",
-                            opacity: 0.7,
-                          }}
-                        >
-                          <div style={{ color: "var(--chatty-text)" }}>
-                            <div>
-                              <strong>Message ID:</strong> {m.id}
-                            </div>
-                            <div>
-                              <strong>Packets:</strong>{" "}
-                              {Array.isArray((m as any).packets)
-                                ? (m as any).packets.length
-                                : 0}
-                            </div>
-                            {(m as any).metadata && (
-                              <>
-                                <div>
-                                  <strong>Model:</strong>{" "}
-                                  {(m as any).metadata.model || "unknown"}
-                                </div>
-                                <div>
-                                  <strong>Response Time:</strong>{" "}
-                                  {formattedResponseTime || "N/A"}
-                                </div>
-                                {(m as any).metadata.orchestration_status && (
-                                  <div>
-                                    <strong>Orchestration:</strong>{" "}
-                                    {(m as any).metadata.orchestration_status}
-                                  </div>
-                                )}
-                              </>
-                            )}
-                            {m.text && (
-                              <div className="mt-1">
-                                <strong>Text Length:</strong> {m.text.length}{" "}
-                                chars
+                          }
+                        />
+                        {/* Dev Info (only in development and when toggle is on) */}
+                        {isDev && showDevInfo && (
+                          <div
+                            className="mt-2 p-2 rounded text-xs font-mono"
+                            style={{
+                              backgroundColor: "var(--chatty-bg-secondary)",
+                              border: "1px solid var(--chatty-line)",
+                              opacity: 0.7,
+                            }}
+                          >
+                            <div style={{ color: "var(--chatty-text)" }}>
+                              <div>
+                                <strong>Message ID:</strong> {m.id}
                               </div>
-                            )}
+                              <div>
+                                <strong>Packets:</strong>{" "}
+                                {Array.isArray((m as any).packets)
+                                  ? (m as any).packets.length
+                                  : 0}
+                              </div>
+                              {(m as any).metadata && (
+                                <>
+                                  <div>
+                                    <strong>Model:</strong>{" "}
+                                    {(m as any).metadata.model || "unknown"}
+                                  </div>
+                                  <div>
+                                    <strong>Response Time:</strong>{" "}
+                                    {formattedResponseTime || "N/A"}
+                                  </div>
+                                  {(m as any).metadata.orchestration_status && (
+                                    <div>
+                                      <strong>Orchestration:</strong>{" "}
+                                      {(m as any).metadata.orchestration_status}
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                              {m.text && (
+                                <div className="mt-1">
+                                  <strong>Text Length:</strong> {m.text.length}{" "}
+                                  chars
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
+                    )}
+                    {!!m.files?.length && (
+                      <div className="mt-2 space-y-1">
+                        {m.files.map((f, i) => (
+                          <div
+                            key={i}
+                            className="text-xs"
+                            style={{ opacity: 0.7 }}
+                          >
+                            {f.name}{" "}
+                            <span className="opacity-60">
+                              ({Math.round(f.size / 1024)} KB)
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-1 flex items-center gap-2">
+                      <MessageOptionsMenu
+                        message={m}
+                        isUser={false}
+                        isLatest={isLatest}
+                        messageIndex={index}
+                        threadId={threadId || ""}
+                        onCopy={handleCopyMessage}
+                        onCarryPrompt={handleCarryPrompt}
+                        onPin={handlePinMessage}
+                        onRemove={handleRemoveMessage}
+                        onRewind={handleRewind}
+                        onReport={handleReportMessage}
+                        onRequestId={handleRequestId}
+                        alignRight={false}
+                      />
+                      <span
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+                        style={{ color: "#ADA587" }}
+                      >
+                        {formatMessageTimestamp(m.ts)}
+                      </span>
                     </div>
-                  )}
-                  {!!m.files?.length && (
-                    <div className="mt-2 space-y-1">
-                      {m.files.map((f, i) => (
-                        <div
-                          key={i}
-                          className="text-xs"
-                          style={{ opacity: 0.7 }}
-                        >
-                          {f.name}{" "}
-                          <span className="opacity-60">
-                            ({Math.round(f.size / 1024)} KB)
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="mt-1 flex items-center gap-2">
-                    <MessageOptionsMenu
-                      message={m}
-                      isUser={false}
-                      isLatest={isLatest}
-                      messageIndex={index}
-                      threadId={threadId || ""}
-                      onCopy={handleCopyMessage}
-                      onCarryPrompt={handleCarryPrompt}
-                      onPin={handlePinMessage}
-                      onRemove={handleRemoveMessage}
-                      onRewind={handleRewind}
-                      onReport={handleReportMessage}
-                      onRequestId={handleRequestId}
-                      alignRight={false}
-                    />
-                    <span
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-xs"
-                      style={{ color: "#ADA587" }}
-                    >
-                      {formatMessageTimestamp(m.ts)}
-                    </span>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
         <div ref={messagesEndRef} />
       </div>
 

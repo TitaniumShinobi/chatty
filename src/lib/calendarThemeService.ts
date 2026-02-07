@@ -37,8 +37,8 @@ export function getChristmasThemeScript(): ThemeScript {
     activePeriod: {
       startMonth: 12,
       startDay: 1,
-      endMonth: 12,
-      endDay: 31
+      endMonth: 1, // Updated to end on January 1
+      endDay: 1
     },
     colors: {
       night: {
@@ -89,6 +89,47 @@ export function getValentinesThemeScript(): ThemeScript {
   }
 }
 
+export function getBlackHistoryMonthThemeScript(): ThemeScript {
+  return {
+    id: 'black-history-month',
+    name: 'Black History Month',
+    description: 'Planned theme for celebrating Black history and culture (assets pending)',
+    activePeriod: {
+      startMonth: 2,
+      startDay: 1,
+      endMonth: 2,
+      endDay: 28 // February 28 (or 29 in leap years)
+    },
+    colors: {
+      night: {}, // Assets pending
+      light: {}  // Assets pending
+    },
+    starColors: {} // Assets pending
+  }
+}
+
+export function getWinterOlympicsThemeScript(year: number): ThemeScript {
+  const isOlympicYear = year % 4 === 2 // Winter Olympics occur every 4 years, next in 2026
+  if (!isOlympicYear) return null
+
+  return {
+    id: 'winter-olympics',
+    name: 'Winter Olympics',
+    description: 'Planned theme for celebrating the Winter Olympics (assets pending)',
+    activePeriod: {
+      startMonth: 2,
+      startDay: 4, // Typical start date for Winter Olympics
+      endMonth: 2,
+      endDay: 20 // Typical end date for Winter Olympics
+    },
+    colors: {
+      night: {}, // Assets pending
+      light: {}  // Assets pending
+    },
+    starColors: {} // Assets pending
+  }
+}
+
 export function isDateInPeriod(
   date: Date,
   startMonth: number,
@@ -135,8 +176,37 @@ export function getActiveThemeScript(date: Date = new Date()): ThemeScript | nul
 }
 
 export function getAvailableThemeScripts(): ThemeScript[] {
+  const year = new Date().getFullYear()
   return [
     getChristmasThemeScript(),
-    getValentinesThemeScript()
-  ]
+    getValentinesThemeScript(),
+    getBlackHistoryMonthThemeScript(),
+    getWinterOlympicsThemeScript(year) // Add Winter Olympics theme if applicable
+  ].filter(Boolean) // Filter out null values
 }
+
+/*
+Schedule of Events and Themes:
+
+01-01                                          -- New Years Day
+3rd Monday of January                          -- MLK Day
+Four year cycle (2026, 2030)                  -- Winter Olympics
+02-01                                          -- Black History Month
+02-14                                          -- Valentines Day
+02-16                                          -- Washington's Birthday
+03-17                                          -- St Patrick's Day
+1 week before resurrection Sunday              -- Palm Sunday
+Friday before resurrection Sunday              -- Good Friday
+1st Sun after spring equinox + full moon cycle -- Resurrection Sunday
+04-01                                          -- April Fools
+05-25                                          -- Memorial Day
+06-19                                          -- Juneteenth
+07-04                                          -- US Independence Day
+Four year cycle (2024, 2028)                  -- Summer Olympics
+09-07                                          -- Labor Day
+10-31                                          -- Halloween
+11-11                                          -- Veterans Day
+4th Thursday in November                       -- Thanksgiving
+12-01 to 12-31                                 -- Christmas
+12-26 to 01-01                                 -- Kwanzaa
+*/

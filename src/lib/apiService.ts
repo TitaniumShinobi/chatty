@@ -69,10 +69,10 @@ class ApiService {
   }
 
   async sendMessage(conversationId: string, content: string): Promise<{ userMessage: Message; assistantMessage: Message }> {
-    const response = await this.request<{ 
-      ok: boolean; 
-      userMessage: Message; 
-      assistantMessage: Message 
+    const response = await this.request<{
+      ok: boolean;
+      userMessage: Message;
+      assistantMessage: Message
     }>(`/conversations/${conversationId}/messages`, {
       method: 'POST',
       body: JSON.stringify({ content }),

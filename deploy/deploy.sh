@@ -25,7 +25,128 @@ log()  { echo -e "${GREEN}[deploy]${NC} $1"; }
 warn() { echo -e "${YELLOW}[deploy]${NC} $1"; }
 err()  { echo -e "${RED}[deploy]${NC} $1"; exit 1; }
 
+usage() {
+    cat <<'USAGE'
+Chatty Deploy Script
+
+Usage:
+  ./deploy/deploy.sh [full|--sync-only|--build|--restart] [flags]
+
+Modes:
+  full         rsync + remote build + restart + health check (default)
+  --sync-only  rsync only
+  --build      remote build + restart + health check (no rsync)
+  --restart    restart + health check (no rsync/build)
+
+Flags:
+  --allow-dirty     allow deploying with uncommitted local changes (not recommended)
+  --allow-unpushed  allow deploying with commits not pushed to upstream (not recommended)
+  --allow-non-main  allow deploying from a branch other than 'main' (not recommended)
+  -h, --help        show this help
+USAGE
+}
+
+MODE="full"
+ALLOW_DIRTY=0
+ALLOW_UNPUSHED=0
+ALLOW_NON_MAIN=0
+
+while [ "${1:-}" != "" ]; do
+    case "$1" in
+        full|--sync-only|--build|--restart)
+            MODE="$1"
+            ;;
+        --allow-dirty)
+            ALLOW_DIRTY=1
+            ;;
+        --allow-unpushed)
+            ALLOW_UNPUSHED=1
+            ;;
+        --allow-non-main)
+            ALLOW_NON_MAIN=1
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            err "Unknown argument: $1 (use --help)"
+            ;;
+    esac
+    shift
+done
+
+preflight_git() {
+    if ! command -v git >/dev/null 2>&1; then
+        warn "git not found; skipping deploy git preflight checks"
+        return 0
+    fi
+    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        warn "Not in a git worktree; skipping deploy git preflight checks"
+        return 0
+    fi
+
+    local branch
+    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+    if [ "$branch" != "main" ] && [ "$ALLOW_NON_MAIN" -ne 1 ]; then
+        err "Refusing to deploy from branch '$branch' (expected 'main'). Use --allow-non-main to override."
+    fi
+
+    local dirty
+    dirty="$(git status --porcelain 2>/dev/null || true)"
+    if [ -n "$dirty" ] && [ "$ALLOW_DIRTY" -ne 1 ]; then
+        err "Refusing to deploy with a dirty working tree. Commit/stash changes or use --allow-dirty to override."
+    fi
+
+    # Ensure local branch is not behind upstream, and (by default) not ahead either.
+    # This keeps GitHub 'main' as the source of truth for prod.
+    if git rev-parse --abbrev-ref @{u} >/dev/null 2>&1; then
+        # Best-effort fetch so ahead/behind counts are meaningful.
+        git fetch -q || true
+
+        local behind ahead
+        behind="$(git rev-list --left-right --count @{u}...HEAD 2>/dev/null | awk '{print $1}')"
+        ahead="$(git rev-list --left-right --count @{u}...HEAD 2>/dev/null | awk '{print $2}')"
+
+        if [ "${behind:-0}" -gt 0 ]; then
+            err "Refusing to deploy: local branch is behind upstream by ${behind} commit(s). Pull first."
+        fi
+        if [ "${ahead:-0}" -gt 0 ] && [ "$ALLOW_UNPUSHED" -ne 1 ]; then
+            err "Refusing to deploy: local branch has ${ahead} unpushed commit(s). Push first or use --allow-unpushed."
+        fi
+    else
+        warn "No upstream configured for this branch; skipping ahead/behind checks"
+    fi
+}
+
+stamp_deployed_sha() {
+    if ! command -v git >/dev/null 2>&1 || ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        warn "Skipping DEPLOYED_SHA stamp (not a git repo)"
+        return 0
+    fi
+
+    local sha branch ts dirty_flag
+    sha="$(git rev-parse HEAD 2>/dev/null || echo 'unknown')"
+    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')"
+    ts="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+    dirty_flag="clean"
+    if [ -n "$(git status --porcelain 2>/dev/null || true)" ]; then
+        dirty_flag="dirty"
+    fi
+
+    log "Stamping deployed SHA on droplet: ${sha} (${branch}, ${dirty_flag}, ${ts})"
+    ssh "${SSH_TARGET}" "cat > \"${REMOTE_PATH}/DEPLOYED_SHA\" <<EOF
+sha=${sha}
+branch=${branch}
+state=${dirty_flag}
+deployed_at_utc=${ts}
+EOF
+chmod 644 \"${REMOTE_PATH}/DEPLOYED_SHA\" || true"
+}
+
 sync_code() {
+    preflight_git
+
     log "Syncing code to ${SSH_TARGET}:${REMOTE_PATH}..."
     rsync -avz --delete \
         --exclude='node_modules' \
@@ -44,6 +165,8 @@ sync_code() {
         --exclude='deploy/' \
         ./ "${SSH_TARGET}:${REMOTE_PATH}/"
     log "Code synced successfully."
+
+    stamp_deployed_sha
 }
 
 remote_build() {
@@ -103,7 +226,7 @@ check_health() {
     fi
 }
 
-case "${1:-full}" in
+case "${MODE:-full}" in
     --sync-only)
         sync_code
         ;;
