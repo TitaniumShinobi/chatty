@@ -46,9 +46,9 @@ router.get('/health', async (req, res) => {
     });
   }
 
+  const base = normalizeFxBase(FXSHINOBI_API_BASE);
+  const url = `${base}/api/health`;
   try {
-    const base = normalizeFxBase(FXSHINOBI_API_BASE);
-    const url = `${base}/api/health`;
     const response = await fetchWithTimeout(url, { method: 'GET' }, 5000);
     
     if (response.ok) {
@@ -63,24 +63,26 @@ router.get('/health', async (req, res) => {
         timestamp: new Date().toISOString(),
       });
     } else {
-      return res.status(response.status).json({
-        status: 'error',
+      // Never 5xx the UI for health checks; degrade gracefully with diagnostics.
+      return res.json({
+        status: response.status === 404 ? 'not_supported' : 'error',
         live_mode: false,
         upstream: { url, status: response.status },
         message: `FXShinobi returned ${response.status}`,
+        error_kind: response.status === 404 ? 'not_supported' : 'upstream_error',
+        timestamp: new Date().toISOString(),
       });
     }
   } catch (err) {
-    const base = normalizeFxBase(FXSHINOBI_API_BASE);
-    const url = `${base}/api/health`;
     const kind = err?.name === 'AbortError' ? 'timeout' : 'unreachable';
     console.log(`[FXShinobi] Health check failed (${kind}):`, err?.message || err);
-    return res.status(503).json({
+    return res.json({
       status: 'offline',
       live_mode: false,
       message: 'FXShinobi engine is not reachable',
       error_kind: kind,
       upstream: { url },
+      timestamp: new Date().toISOString(),
     });
   }
 });
@@ -98,9 +100,9 @@ router.get('/status', async (req, res) => {
     });
   }
 
+  const base = normalizeFxBase(FXSHINOBI_API_BASE);
+  const url = `${base}/api/status`;
   try {
-    const base = normalizeFxBase(FXSHINOBI_API_BASE);
-    const url = `${base}/api/status`;
     const response = await fetchWithTimeout(url, { method: 'GET' }, 5000);
     
     if (response.ok) {
@@ -134,8 +136,9 @@ router.get('/status', async (req, res) => {
         timestamp: new Date().toISOString(),
       });
     } else {
-      return res.status(response.status).json({
-        status: 'error',
+      // Never 5xx the UI for status checks; degrade gracefully with diagnostics.
+      return res.json({
+        status: response.status === 404 ? 'not_supported' : 'error',
         live_mode: false,
         broker_configured: false,
         active_broker_id: null,
@@ -143,14 +146,14 @@ router.get('/status', async (req, res) => {
         account_type: 'unknown',
         upstream: { url, status: response.status },
         message: `FXShinobi returned ${response.status}`,
+        error_kind: response.status === 404 ? 'not_supported' : 'upstream_error',
+        timestamp: new Date().toISOString(),
       });
     }
   } catch (err) {
-    const base = normalizeFxBase(FXSHINOBI_API_BASE);
-    const url = `${base}/api/status`;
     const kind = err?.name === 'AbortError' ? 'timeout' : 'unreachable';
     console.log(`[FXShinobi] Status check failed (${kind}):`, err?.message || err);
-    return res.status(503).json({
+    return res.json({
       status: 'offline',
       live_mode: false,
       broker_configured: false,
@@ -160,22 +163,24 @@ router.get('/status', async (req, res) => {
       message: 'FXShinobi engine is not reachable',
       error_kind: kind,
       upstream: { url },
+      timestamp: new Date().toISOString(),
     });
   }
 });
 
 router.get('/snapshot', async (req, res) => {
   if (!isConfigured()) {
-    return res.status(503).json({
+    return res.json({
       error: 'FXShinobi not configured',
       fallback: true,
       live_mode: false,
+      error_kind: 'not_configured',
     });
   }
 
+  const base = normalizeFxBase(FXSHINOBI_API_BASE);
+  const url = `${base}/api/snapshot`;
   try {
-    const base = normalizeFxBase(FXSHINOBI_API_BASE);
-    const url = `${base}/api/snapshot`;
     const response = await fetchWithTimeout(
       url,
       { method: 'GET' },
@@ -191,15 +196,22 @@ router.get('/snapshot', async (req, res) => {
         current_timeframe: data.current_timeframe || data.timeframe || '15m',
       });
     } else {
-      throw new Error(`API returned ${response.status}`);
+      return res.json({
+        error: 'Failed to fetch market snapshot',
+        fallback: true,
+        live_mode: false,
+        error_kind: response.status === 404 ? 'not_supported' : 'upstream_error',
+        upstream: { url, status: response.status },
+      });
     }
   } catch (err) {
     console.log('[FXShinobi] Snapshot fetch failed:', err.message);
-    return res.status(503).json({
+    return res.json({
       error: 'Failed to fetch market snapshot',
       fallback: true,
       live_mode: false,
       error_kind: err?.name === 'AbortError' ? 'timeout' : 'unreachable',
+      upstream: { url },
     });
   }
 });
@@ -208,17 +220,18 @@ router.get('/trades/history', async (req, res) => {
   const { limit = 50, offset = 0 } = req.query;
   
   if (!isConfigured()) {
-    return res.status(503).json({
+    return res.json({
       error: 'FXShinobi not configured',
       trades: [],
       fallback: true,
       live_mode: false,
+      error_kind: 'not_configured',
     });
   }
 
+  const base = normalizeFxBase(FXSHINOBI_API_BASE);
+  const url = `${base}/api/trades/history?limit=${limit}&offset=${offset}`;
   try {
-    const base = normalizeFxBase(FXSHINOBI_API_BASE);
-    const url = `${base}/api/trades/history?limit=${limit}&offset=${offset}`;
     const response = await fetchWithTimeout(
       url,
       { method: 'GET' },
@@ -232,16 +245,24 @@ router.get('/trades/history', async (req, res) => {
         live_mode: data.live_mode ?? false,
       });
     } else {
-      throw new Error(`API returned ${response.status}`);
+      return res.json({
+        error: 'Failed to fetch trade history',
+        trades: [],
+        fallback: true,
+        live_mode: false,
+        error_kind: response.status === 404 ? 'not_supported' : 'upstream_error',
+        upstream: { url, status: response.status },
+      });
     }
   } catch (err) {
     console.log('[FXShinobi] Trade history fetch failed:', err.message);
-    return res.status(503).json({
+    return res.json({
       error: 'Failed to fetch trade history',
       trades: [],
       fallback: true,
       live_mode: false,
       error_kind: err?.name === 'AbortError' ? 'timeout' : 'unreachable',
+      upstream: { url },
     });
   }
 });
@@ -250,16 +271,17 @@ router.get('/performance', async (req, res) => {
   const { period = '30d' } = req.query;
   
   if (!isConfigured()) {
-    return res.status(503).json({
+    return res.json({
       error: 'FXShinobi not configured',
       fallback: true,
       live_mode: false,
+      error_kind: 'not_configured',
     });
   }
 
+  const base = normalizeFxBase(FXSHINOBI_API_BASE);
+  const url = `${base}/api/performance?period=${period}`;
   try {
-    const base = normalizeFxBase(FXSHINOBI_API_BASE);
-    const url = `${base}/api/performance?period=${period}`;
     const response = await fetchWithTimeout(
       url,
       { method: 'GET' },
@@ -273,34 +295,41 @@ router.get('/performance', async (req, res) => {
         live_mode: data.live_mode ?? false,
       });
     } else {
-      throw new Error(`API returned ${response.status}`);
+      return res.json({
+        error: 'Failed to fetch performance metrics',
+        fallback: true,
+        live_mode: false,
+        error_kind: response.status === 404 ? 'not_supported' : 'upstream_error',
+        upstream: { url, status: response.status },
+      });
     }
   } catch (err) {
     console.log('[FXShinobi] Performance fetch failed:', err.message);
-    return res.status(503).json({
+    return res.json({
       error: 'Failed to fetch performance metrics',
       fallback: true,
       live_mode: false,
+      error_kind: err?.name === 'AbortError' ? 'timeout' : 'unreachable',
+      upstream: { url },
     });
   }
 });
 
 router.get('/markets', async (req, res) => {
   if (!isConfigured()) {
-    return res.status(503).json({
+    return res.json({
       error: 'FXShinobi not configured',
       markets: [],
       fallback: true,
       live_mode: false,
+      error_kind: 'not_configured',
     });
   }
 
+  const base = normalizeFxBase(FXSHINOBI_API_BASE);
+  const url = `${base}/api/markets`;
   try {
-    const response = await fetchWithTimeout(
-      `${FXSHINOBI_API_BASE}/api/markets`,
-      { method: 'GET' },
-      10000
-    );
+    const response = await fetchWithTimeout(url, { method: 'GET' }, 10000);
     
     if (response.ok) {
       const data = await response.json();
@@ -309,35 +338,43 @@ router.get('/markets', async (req, res) => {
         live_mode: data.live_mode ?? false,
       });
     } else {
-      throw new Error(`API returned ${response.status}`);
+      return res.json({
+        error: 'Failed to fetch markets',
+        markets: [],
+        fallback: true,
+        live_mode: false,
+        error_kind: response.status === 404 ? 'not_supported' : 'upstream_error',
+        upstream: { url, status: response.status },
+      });
     }
   } catch (err) {
     console.log('[FXShinobi] Markets fetch failed:', err.message);
-    return res.status(503).json({
+    return res.json({
       error: 'Failed to fetch markets',
       markets: [],
       fallback: true,
       live_mode: false,
+      error_kind: err?.name === 'AbortError' ? 'timeout' : 'unreachable',
+      upstream: { url },
     });
   }
 });
 
 router.get('/insights', async (req, res) => {
   if (!isConfigured()) {
-    return res.status(503).json({
+    return res.json({
       error: 'FXShinobi not configured',
       insights: [],
       fallback: true,
       live_mode: false,
+      error_kind: 'not_configured',
     });
   }
 
+  const base = normalizeFxBase(FXSHINOBI_API_BASE);
+  const url = `${base}/api/insights`;
   try {
-    const response = await fetchWithTimeout(
-      `${FXSHINOBI_API_BASE}/api/insights`,
-      { method: 'GET' },
-      10000
-    );
+    const response = await fetchWithTimeout(url, { method: 'GET' }, 10000);
     
     if (response.ok) {
       const data = await response.json();
@@ -346,15 +383,24 @@ router.get('/insights', async (req, res) => {
         live_mode: data.live_mode ?? false,
       });
     } else {
-      throw new Error(`API returned ${response.status}`);
+      return res.json({
+        error: 'Failed to fetch insights',
+        insights: [],
+        fallback: true,
+        live_mode: false,
+        error_kind: response.status === 404 ? 'not_supported' : 'upstream_error',
+        upstream: { url, status: response.status },
+      });
     }
   } catch (err) {
     console.log('[FXShinobi] Insights fetch failed:', err.message);
-    return res.status(503).json({
+    return res.json({
       error: 'Failed to fetch insights',
       insights: [],
       fallback: true,
       live_mode: false,
+      error_kind: err?.name === 'AbortError' ? 'timeout' : 'unreachable',
+      upstream: { url },
     });
   }
 });
