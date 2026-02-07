@@ -18,12 +18,21 @@ export function requireAuth(req, res, next) {
   }
 
   // Original OAuth authentication for production
-  const raw = req.cookies?.[process.env.COOKIE_NAME || "sid"];
-  if (!raw) return res.status(401).json({ ok: false });
+  const cookieName = process.env.COOKIE_NAME || "sid";
+  const raw = req.cookies?.[cookieName];
+
+  if (!raw) {
+    console.log(`[AUTH FAIL] ${req.method} ${req.url} - IP: ${req.ip} - No ${cookieName} cookie`);
+    return res.status(401).json({ ok: false });
+  }
+
   try {
-    req.user = jwt.verify(raw, process.env.JWT_SECRET);
+    const decoded = jwt.verify(raw, process.env.JWT_SECRET);
+    console.log(`[AUTH SUCCESS] User: ${decoded.email || decoded.sub || decoded.id || 'unknown'}`);
+    req.user = decoded;
     return next();
-  } catch {
+  } catch (err) {
+    console.log(`[AUTH FAIL] ${req.method} ${req.url} - JWT verify error:`, err.message);
     return res.status(401).json({ ok: false });
   }
 }
