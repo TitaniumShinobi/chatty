@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import SunCalc from 'suncalc'
 import { type User } from './auth'
 import { getActiveThemeScript, getAvailableThemeScripts, isThemeScriptActive, type ThemeScript } from './calendarThemeService'
@@ -61,6 +61,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
   const [activeThemeScript, setActiveThemeScript] = useState<ThemeScript | null>(null)
   const [themeInitialized, setThemeInitialized] = useState(false)
   const availableThemeScripts = useMemo(() => getAvailableThemeScripts(), [])
+  const lastAppliedScriptIdRef = useRef<string | null>(null)
   
   const setTheme = useCallback((newTheme: Theme) => {
     setThemeInternal(newTheme)
@@ -193,10 +194,14 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
       }
     }
     
-    setActiveThemeScript(prev => {
-      if (prev?.id === script?.id) return prev
-      return script
-    })
+    const nextId = script?.id ?? null
+    const prevId = lastAppliedScriptIdRef.current
+
+    if (nextId === prevId) return
+
+    lastAppliedScriptIdRef.current = nextId
+
+    setActiveThemeScript(script)
     
     const root = document.documentElement
     availableThemeScripts.forEach(s => {
