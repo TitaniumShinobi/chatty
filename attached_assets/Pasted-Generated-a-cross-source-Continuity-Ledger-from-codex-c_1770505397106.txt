@@ -1,0 +1,23 @@
+Generated a cross-source Continuity Ledger from `codex_conversations/` + `cursor_conversations/` at `CHATTTY_CONTINUITY_LEDGER_CROSS_SOURCE.md:1` (158 entries; 2025-08-30 12:33:29 → 2026-01-16 10:05:29).
+
+Key continuity anchors (Lin/Casa Madrigal → Agent Squad → Ollama seats for Zen/Lin):
+- Ollama + multi-seat synthesis foundation: `CHATTTY_CONTINUITY_LEDGER_CROSS_SOURCE.md:139` (`cursor-finalize-synth-integration-in-ch-20251012`, 2025-10-12 17:05:38)
+- Zen continuity framing: `CHATTTY_CONTINUITY_LEDGER_CROSS_SOURCE.md:326` (`cursor-digital-continuity-audit-for-nov-20251108`, 2025-11-08 23:03:02)
+- “Default seats” (DeepSeek/Mistral/Phi-3) discussed in Chatty CLI context: `CHATTTY_CONTINUITY_LEDGER_CROSS_SOURCE.md:1616` (`cursor-why-did-chatty-cli-fail-20251116`, 2025-11-16 13:58:16)
+- Lin “Casa Madrigal” metaphor appears explicitly: `CHATTTY_CONTINUITY_LEDGER_CROSS_SOURCE.md:2456` (`cursor-updating-documentation-with-gene-20251116`, 2025-11-16 14:00:47)
+- “Amazon / AWS Labs Agent Squad” appears in Codex capture: `CHATTTY_CONTINUITY_LEDGER_CROSS_SOURCE.md:4778` (`codex-gemini-do-you-think-you-could-help-20251215`, mtime-anchored 2025-12-15 08:20:20)
+- Agent Squad + triad seat mapping/Zen anomalies cluster (export-anchored): `CHATTTY_CONTINUITY_LEDGER_CROSS_SOURCE.md:6120` (`cursor-zen-001-conversation-anomalies-20260116`, 2026-01-16 10:00:11) and `CHATTTY_CONTINUITY_LEDGER_CROSS_SOURCE.md:6491` (`cursor-agent-squad-framework-integratio-20260116`, 2026-01-16 10:01:42)
+
+Timestamp policy used (recorded per-entry in `Evidence:`):
+- Cursor exports: `_Exported on ...` header inside the file (confidence `0.85`).
+- Codex captures: file mtime fallback (confidence `0.7`), or `Last login:` line when present (confidence `0.6`, year inferred from mtime).
+
+That exact LIN pipeline line (and close variants) shows up in these sessions/files:
+
+- Earliest variant mention (mtime-anchored): `codex_conversations/codex_hello_1.txt:1269` and `codex_conversations/codex_hello_1.txt:1284` → ledger entry `CHATTTY_CONTINUITY_LEDGER_CROSS_SOURCE.md:4172` (`codex-hello-1-20251123`, anchored to mtime `2025-11-23 12:19:30`).
+- Canonical “**LIN ORCHESTRATION: deep file parsing → … → identity drift prevention**” header (mtime-anchored): `codex_conversations/codex_lin_orchestration.txt:1` → ledger entry `CHATTTY_CONTINUITY_LEDGER_CROSS_SOURCE.md:4443` (`codex-lin-orchestration-20251126`, anchored to mtime `2025-11-26 15:03:15`).
+- Same header repeated in the deep parsing variant (mtime-anchored): `codex_conversations/codex_lin_orchestration_deep_file_parsing.txt:1` → ledger entry `CHATTTY_CONTINUITY_LEDGER_CROSS_SOURCE.md:4674` (`codex-lin-orchestration-deep-file-parsing-20251211`, anchored to mtime `2025-12-11 17:55:22`).
+- Cursor export where the phrase is repeated many times (export-header anchored): `cursor_conversations/cursor_continue_discussion_on_transcrip.md:13439` → ledger entry `CHATTTY_CONTINUITY_LEDGER_CROSS_SOURCE.md:6775` (`cursor-continue-discussion-on-transcrip-20260116`, exported `2026-01-16 10:02:51 EST`).
+- Cursor export explicitly telling you to search for the phrase (export-header anchored): `cursor_conversations/cursor_system_updates_and_zen_identity.md:160655` → ledger entry `CHATTTY_CONTINUITY_LEDGER_CROSS_SOURCE.md:6228` (`cursor-system-updates-and-zen-identity-20260116`, exported `2026-01-16 10:00:43 EST`).
+- Cursor export w/ abbreviated variant (“tone matching → identity drift … PREVENTION”) (export-header anchored): `cursor_conversations/cursor_what_happens_when_i_delete_a_gpt.md:40316` → ledger entry `CHATTTY_CONTINUITY_LEDGER_CROSS_SOURCE.md:6829` (`cursor-what-happens-when-i-delete-a-gpt-20260116`, exported `2026-01-16 10:03:06 EST`).
+- Cursor export with variant mention: `cursor_conversations/cursor_building_persistent_identity_in.md:1268` → ledger entry `CHATTTY_CONTINUITY_LEDGER_CROSS_SOURCE.md:6987` (`cursor-building-persistent-identity-in-20260116`, exported `2026-01-16 10:03:40 EST`).
