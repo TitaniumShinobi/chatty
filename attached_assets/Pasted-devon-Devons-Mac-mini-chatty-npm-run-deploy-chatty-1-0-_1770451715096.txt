@@ -1,0 +1,241 @@
+devon@Devons-Mac-mini chatty % npm run deploy
+
+> chatty@1.0.0 deploy
+> ./deploy/deploy.sh
+
+[deploy] Syncing code to vvault@165.245.136.194:/opt/chatty...
+Enter passphrase for key '/Users/devon/.ssh/id_ed25519': 
+Transfer starting: 1405 files
+deleting users/shard_0000/
+deleting users/
+deleting gpt-uploads/
+deleting ai-uploads/
+deleting chatty_app.db-wal
+deleting chatty_app.db-shm
+deleting .env.production
+./
+chatty.db-wal
+memory.db-shm
+memory.db-wal
+package-lock.json
+package.json
+replit.md
+users.json
+server/
+server/package-lock.json
+server/server.js
+server/routes/
+server/routes/conversations.js
+src/
+src/main.tsx
+src/lib/
+src/lib/ThemeContext.tsx
+src/pages/
+src/pages/finance/
+
+sent 205011 bytes  received 7688 bytes  282056 bytes/sec
+total size is 116068926  speedup is 545.70
+[deploy] Code synced successfully.
+[deploy] Installing dependencies and building on droplet...
+[deploy] Ensuring .env.production exists on droplet...
+Enter passphrase for key '/Users/devon/.ssh/id_ed25519': 
+env.production                                                   100%  685     7.9KB/s   00:00    
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+Enter passphrase for key '/Users/devon/.ssh/id_ed25519': 
+Welcome to Ubuntu 24.04.3 LTS (GNU/Linux 6.8.0-94-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/pro
+
+ System information as of Sat Feb  7 08:07:04 UTC 2026
+
+  System load:  0.0                Processes:             111
+  Usage of /:   31.2% of 32.86GB   Users logged in:       0
+  Memory usage: 52%                IPv4 address for eth0: 165.245.136.194
+  Swap usage:   4%                 IPv4 address for eth0: 10.50.0.5
+
+Expanded Security Maintenance for Applications is not enabled.
+
+14 updates can be applied immediately.
+To see these additional updates run: apt list --upgradable
+
+Enable ESM Apps to receive additional future security updates.
+See https://ubuntu.com/esm or run: sudo pro status
+
+
+>>> Installing root dependencies...
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+>>> Installing server dependencies...
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+>>> Building Vite frontend...
+
+> chatty@1.0.0 build
+> vite build
+
+vite v5.4.18 building for production...
+transforming...
+Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+[plugin:vite:resolve] [plugin vite:resolve] Module "node:fs" has been externalized for browser compatibility, imported by "/opt/chatty/src/engine/seatRunner.ts". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin:vite:resolve] [plugin vite:resolve] Module "node:path" has been externalized for browser compatibility, imported by "/opt/chatty/src/engine/seatRunner.ts". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin:vite:resolve] [plugin vite:resolve] Module "node:http" has been externalized for browser compatibility, imported by "/opt/chatty/src/engine/seatRunner.ts". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin:vite:resolve] [plugin vite:resolve] Module "node:https" has been externalized for browser compatibility, imported by "/opt/chatty/src/engine/seatRunner.ts". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin:vite:resolve] [plugin vite:resolve] Module "events" has been externalized for browser compatibility, imported by "/opt/chatty/node_modules/pg/lib/connection.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin:vite:resolve] [plugin vite:resolve] Module "net" has been externalized for browser compatibility, imported by "/opt/chatty/node_modules/pg/lib/connection.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin:vite:resolve] [plugin vite:resolve] Module "events" has been externalized for browser compatibility, imported by "/opt/chatty/node_modules/pg/lib/client.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin:vite:resolve] [plugin vite:resolve] Module "events" has been externalized for browser compatibility, imported by "/opt/chatty/node_modules/pg-pool/index.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin:vite:resolve] [plugin vite:resolve] Module "net" has been externalized for browser compatibility, imported by "/opt/chatty/node_modules/pg/lib/stream.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin:vite:resolve] [plugin vite:resolve] Module "tls" has been externalized for browser compatibility, imported by "/opt/chatty/node_modules/pg/lib/stream.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin:vite:resolve] [plugin vite:resolve] Module "events" has been externalized for browser compatibility, imported by "/opt/chatty/node_modules/pg/lib/native/client.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin:vite:resolve] [plugin vite:resolve] Module "events" has been externalized for browser compatibility, imported by "/opt/chatty/node_modules/pg/lib/query.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin:vite:resolve] [plugin vite:resolve] Module "dns" has been externalized for browser compatibility, imported by "/opt/chatty/node_modules/pg/lib/connection-parameters.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin:vite:resolve] [plugin vite:resolve] Module "events" has been externalized for browser compatibility, imported by "/opt/chatty/node_modules/pg/lib/native/query.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin:vite:resolve] [plugin vite:resolve] Module "stream" has been externalized for browser compatibility, imported by "/opt/chatty/node_modules/pgpass/lib/helper.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin:vite:resolve] [plugin vite:resolve] Module "node:process" has been externalized for browser compatibility, imported by "/opt/chatty/node_modules/pg-connection-string/index.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin:vite:resolve] [plugin vite:resolve] Module "stream" has been externalized for browser compatibility, imported by "/opt/chatty/node_modules/split2/index.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+✓ 2733 modules transformed.
+rendering chunks...
+[plugin:vite:reporter] [plugin vite:reporter] 
+(!) /opt/chatty/src/lib/auth.ts is dynamically imported by /opt/chatty/src/components/GPTCreator.tsx but also statically imported by /opt/chatty/src/App.tsx, /opt/chatty/src/components/GPTCreator.tsx, /opt/chatty/src/components/Layout.tsx, /opt/chatty/src/components/settings/DataControlsTab.tsx, /opt/chatty/src/lib/conversationManager.ts, /opt/chatty/src/lib/sessionManager.ts, /opt/chatty/src/lib/vvaultConversationManager.ts, /opt/chatty/src/pages/Chat.tsx, /opt/chatty/src/pages/Home.tsx, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter] 
+(!) /opt/chatty/src/lib/vvaultConversationManager.ts is dynamically imported by /opt/chatty/src/engine/character/IdentityMatcher.ts, /opt/chatty/src/lib/messageRecovery.ts but also statically imported by /opt/chatty/src/components/GPTCreator.tsx, /opt/chatty/src/components/Layout.tsx, /opt/chatty/src/engine/context/WorkspaceContextBuilder.ts, /opt/chatty/src/pages/Chat.tsx, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter] 
+(!) /opt/chatty/src/lib/automaticRuntimeOrchestrator.ts is dynamically imported by /opt/chatty/src/components/Layout.tsx but also statically imported by /opt/chatty/src/lib/automaticDependencyResolver.ts, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter] 
+(!) /opt/chatty/src/lib/timeAwareness.ts is dynamically imported by /opt/chatty/src/components/GPTCreator.tsx, /opt/chatty/src/components/GPTCreator.tsx, /opt/chatty/src/components/GPTCreator.tsx but also statically imported by /opt/chatty/src/lib/sessionActivityTracker.ts, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter] 
+(!) /opt/chatty/src/lib/runtimeContextManager.ts is dynamically imported by /opt/chatty/src/components/Layout.tsx but also statically imported by /opt/chatty/src/lib/automaticDependencyResolver.ts, dynamic import will not move module into another chunk.
+
+[plugin:vite:reporter] [plugin vite:reporter] 
+(!) /opt/chatty/src/lib/aiService.ts is dynamically imported by /opt/chatty/src/components/Layout.tsx, /opt/chatty/src/lib/runtimeContextManager.ts but also statically imported by /opt/chatty/src/components/GPTCreator.tsx, /opt/chatty/src/components/Layout.tsx, /opt/chatty/src/pages/GPTsPage.tsx, /opt/chatty/src/pages/SimForge.tsx, dynamic import will not move module into another chunk.
+
+computing gzip size...
+dist/index.html                                             0.59 kB │ gzip:   0.36 kB
+dist/assets/litChatty_star-D3MDYVEx.svg                     4.57 kB │ gzip:   1.60 kB
+dist/assets/chatty_star-Bpy5bWs_.png                       12.47 kB
+dist/assets/Chatty_Christmas-C6LW7EMu.svg                  34.32 kB │ gzip:  12.34 kB
+dist/assets/Chatty-CBzyaTCo.svg                            34.32 kB │ gzip:  12.34 kB
+dist/assets/Chatty_Valentines-DKBuDMgT.svg                 34.32 kB │ gzip:  12.34 kB
+dist/assets/chatty_collapsed_2_Christmas-S71XkXeG.svg      34.91 kB │ gzip:  12.61 kB
+dist/assets/chatty_collapsed_Valentines_2-DazK7u0Y.svg     34.91 kB │ gzip:  12.61 kB
+dist/assets/chatty_collapsed_Valentines-CEK0ix72.svg       34.95 kB │ gzip:  12.52 kB
+dist/assets/chatty_collapsed_Christmas-CJ9JvWe_.svg        34.96 kB │ gzip:  12.53 kB
+dist/assets/chatty_collapsed_1_Christmas-DuNeeblS.svg      35.10 kB │ gzip:  12.51 kB
+dist/assets/chatty_collapsed_Valentines_1-CaWEJ8b8.svg     35.10 kB │ gzip:  12.51 kB
+dist/assets/chatty_collapsed_3_Christmas-CE9odJJa.svg      35.21 kB │ gzip:  12.66 kB
+dist/assets/chatty_collapsed_Valentines_3-Bc7HYjTs.svg     35.22 kB │ gzip:  12.66 kB
+dist/assets/chatty_collapsed_4_Christmas-CY3J3pfr.svg      35.46 kB │ gzip:  12.58 kB
+dist/assets/chatty_collapsed_Valentines_4-7FySAOH7.svg     35.46 kB │ gzip:  12.58 kB
+dist/assets/chatty_collapsed-BB2zVaYR.png               1,786.12 kB
+dist/assets/chatty_collapsed_1-BXzbIbr8.png             1,788.07 kB
+dist/assets/chatty_collapsed_2-CygVz_7-.png             1,881.91 kB
+dist/assets/chatty_collapsed_3-BaV-3oXC.png             1,885.52 kB
+dist/assets/chatty_collapsed_4-DPBukyfW.png             1,909.50 kB
+dist/assets/index--jNMPk2r.css                             58.29 kB │ gzip:  10.54 kB
+dist/assets/__vite-browser-external-D7Ct-6yo.js             0.13 kB │ gzip:   0.14 kB
+dist/assets/readCharacterProfile-BPrF5PZn.js                0.17 kB │ gzip:   0.14 kB
+dist/assets/nodeCryptoStub-BEO8gSEa.js                      0.41 kB │ gzip:   0.25 kB
+dist/assets/nodeFsStub-BS5u9W34.js                          0.42 kB │ gzip:   0.30 kB
+dist/assets/nodePathStub-vk1OVm-E.js                        0.54 kB │ gzip:   0.32 kB
+dist/assets/index-_AGyKQQl.js                               0.56 kB │ gzip:   0.29 kB
+dist/assets/memoryPermission-DVjxa9bA.js                    0.65 kB │ gzip:   0.35 kB
+dist/assets/backendReady-DDU7q4oZ.js                        0.67 kB │ gzip:   0.43 kB
+dist/assets/orchestrationBridge-DQWeTYRI.js                 1.28 kB │ gzip:   0.61 kB
+dist/assets/browserSeatRunner-DztWUjdg.js                   2.19 kB │ gzip:   1.11 kB
+dist/assets/mocrClient-Dic3GTnx.js                          2.43 kB │ gzip:   1.11 kB
+dist/assets/OutputFilter-rYKoFb_b.js                        3.10 kB │ gzip:   1.35 kB
+dist/assets/readConversations-CaB2Hht8.js                   3.26 kB │ gzip:   1.32 kB
+dist/assets/writeTranscript-CH761-n0.js                     4.61 kB │ gzip:   1.51 kB
+dist/assets/gptManager-B9vEIGm8.js                          9.27 kB │ gzip:   3.13 kB
+dist/assets/TranscriptManager-CSEi_h_l.js                  10.09 kB │ gzip:   3.14 kB
+dist/assets/memoryLedger-Fp3X8Rw9.js                       12.32 kB │ gzip:   3.79 kB
+dist/assets/ocrService-CDWYBT0Y.js                         17.17 kB │ gzip:   7.44 kB
+dist/assets/unifiedFileParser-5YIsru4B.js                  23.65 kB │ gzip:   6.81 kB
+dist/assets/DynamicPersonaOrchestrator-CVEehh_L.js         79.36 kB │ gzip:  24.47 kB
+dist/assets/supabaseStore-CojM8fPI.js                     297.73 kB │ gzip:  83.81 kB
+dist/assets/index-G9UvHmoD.js                           1,871.85 kB │ gzip: 567.73 kB
+✓ built in 16.94s
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+>>> Build complete. dist/ contents:
+total 120
+drwxrwxr-x  3 vvault vvault  4096 Feb  7 08:07 .
+drwxr-xr-x 25 vvault vvault  4096 Feb  7 08:07 ..
+drwxrwxr-x  4 vvault vvault  4096 Feb  7 08:07 assets
+-rw-r--r--  1 vvault vvault  2188 Feb  7 08:07 clear-storage.js
+-rw-r--r--  1 vvault vvault  3779 Feb  7 08:07 emergency-cleanup.js
+-rw-rw-r--  1 vvault vvault   593 Feb  7 08:07 index.html
+-rw-r--r--  1 vvault vvault 12301 Feb  7 08:07 lin-test-dashboard.html
+-rw-r--r--  1 vvault vvault   259 Feb  7 08:07 models.json
+-rw-r--r--  1 vvault vvault 22519 Feb  7 08:07 vvault-eeccd.html
+[deploy] Remote build completed.
+[deploy] Restarting Chatty service...
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+Enter passphrase for key '/Users/devon/.ssh/id_ed25519': 
+Welcome to Ubuntu 24.04.3 LTS (GNU/Linux 6.8.0-94-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/pro
+
+ System information as of Sat Feb  7 08:07:04 UTC 2026
+
+  System load:  0.0                Processes:             111
+  Usage of /:   31.2% of 32.86GB   Users logged in:       0
+  Memory usage: 52%                IPv4 address for eth0: 165.245.136.194
+  Swap usage:   4%                 IPv4 address for eth0: 10.50.0.5
+
+Expanded Security Maintenance for Applications is not enabled.
+
+14 updates can be applied immediately.
+To see these additional updates run: apt list --upgradable
+
+Enable ESM Apps to receive additional future security updates.
+See https://ubuntu.com/esm or run: sudo pro status
+
+
+● chatty.service - Chatty Web App
+     Loaded: loaded (/etc/systemd/system/chatty.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-02-07 08:07:54 UTC; 3s ago
+   Main PID: 39269 (npm exec tsx se)
+      Tasks: 35 (limit: 1107)
+     Memory: 186.8M (peak: 190.1M)
+        CPU: 1.939s
+     CGroup: /system.slice/chatty.service
+             ├─39269 "npm exec tsx server/server.js"
+             ├─39281 sh -c "tsx server/server.js"
+             ├─39282 node /opt/chatty/node_modules/.bin/tsx server/server.js
+             └─39293 /usr/bin/node --require /opt/chatty/node_modules/tsx/dist/preflight.cjs --import file:///opt/chatty/node_modules/tsx/dist/loader.mjs server/server.js
+
+Feb 07 08:07:56 vvault-server npx[39293]: 2026-02-07T08:07:56.696Z 🤖 [CapsuleRuntime] Loading GPT: katana-001
+Feb 07 08:07:56 vvault-server npx[39293]: 2026-02-07T08:07:56.696Z %s: %s 🕐 [MEMORY-CACHE] Memory cache check for katana-001 0.002ms
+Feb 07 08:07:56 vvault-server npx[39293]: 2026-02-07T08:07:56.696Z 💾 [CapsuleIntegration] CACHE MISS for katana-001 - loading from disk...
+Feb 07 08:07:56 vvault-server npx[39293]: 2026-02-07T08:07:56.696Z %s: %s 🕐 [FIND] Finding capsule file for katana-001 0.315ms
+Feb 07 08:07:56 vvault-server npx[39293]: 2026-02-07T08:07:56.696Z ⚠️ [CapsuleIntegration] No capsule found for katana-001
+Feb 07 08:07:56 vvault-server npx[39293]: 2026-02-07T08:07:56.696Z %s: %s 🕐 [LOAD] Total capsule load for katana-001 0.411ms
+Feb 07 08:07:56 vvault-server npx[39293]: 2026-02-07T08:07:56.696Z %s: %s 🕐 [LOAD-CAPSULE] Loading capsule for katana-001 0.43ms
+Feb 07 08:07:56 vvault-server npx[39293]: 2026-02-07T08:07:56.696Z ⚠️ [CapsuleRuntime] No capsule found for katana-001, using fallback personality
+Feb 07 08:07:56 vvault-server npx[39293]: 2026-02-07T08:07:56.696Z %s: %s 🕐 [LOAD-GPT-TOTAL] Loading GPT katana-001 0.467ms
+Feb 07 08:07:56 vvault-server npx[39293]: 2026-02-07T08:07:56.696Z ✅ [Server] GPTRuntime preloaded for katana-001
+[deploy] Service restarted.
+[deploy] Checking health...
+[deploy] Health check passed (HTTP 200)
+[deploy] Done.
+devon@Devons-Mac-mini chatty % 

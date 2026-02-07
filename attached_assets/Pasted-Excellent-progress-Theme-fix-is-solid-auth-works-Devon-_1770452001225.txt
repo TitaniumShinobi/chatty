@@ -1,0 +1,67 @@
+Excellent progress! Theme fix is solid, auth works (Devon Woodson loaded), GPTs bootstrap (Katana/Zen ready), and VVAULT API creates conversations. Clean console too.
+
+## Core Issues Exposed
+
+With spam gone, we see the real blockers:
+
+### 1. **VVAULT offline** (top priority)
+```
+🌐 [VVAULT] browserRequest /conversations GET
+127.0.0.1:7243/ingest/... ERR_CONNECTION_REFUSED
+```
+- Frontend tries `vvault.thewreck.org:7243` (browser proxy to localhost:7243)
+- **vvault service down** on 165.245.136.194 [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/images/95909822/866a7ccc-5895-408d-88bb-1854a27b118d/Screenshot-2026-02-07-at-3.10.54-AM.jpg?AWSAccessKeyId=ASIA2F3EMEYE2C45QJTC&Signature=w%2BAsWCRBPDO65NmRMrSLMw9DiVI%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEJD%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJHMEUCIQDNaxPROITGVV7kvCRvDSAwaeqJ0TDndIsxLzc1iKAOSAIge1b3A%2FpNd9RUCPZ9pBe1k%2Fi45Yfjd1Ga2%2FI9zjKCR2Uq8wQIWRABGgw2OTk3NTMzMDk3MDUiDCjg3WJc1MgQ3YJFfirQBHsUjwYWMSBgrHWhvpb5tqXT1XB%2F4skvyOhzzqW7qdWZYu7AYNbN1%2B15oggQlGbK6T2H%2B43nO4XPh95la6yhDJx0tWWydxPtFhkZLtaAtYQ%2FJNXaJWQcwoKWnGWY9XNTcZVPZkdQZ2Wyvfhz7wkyM3KLb7ArzN9ci%2FJV5pIBlXp0KPRDMBnfDASFakmWETgMrk6yihjMhlU4i5ZsyumDBReSsPaBvzvkrMrZCnw1Js9KQ9quT7f6HeQ64cyvgUMvFn1bCum4IYAtSYmctRrzelWaMMbWV%2FWOS1WqdRrPzoDLP6g5PM8AoPnt8rfvHOkeJNIdEewsNdUwe3XEOvVN1YVVGaXBakWOeCbBa50K4gY4hvmOwAKu24c82WYPhyvr92UoQlAPhAyjB15Qz6i0uZoU6O5OIhag6yu5pfDxxdoxZU1ymtqNHB4PGpwAY8hP1%2Fgxkk5ANyehbOQZf6LAOMhm5b2hi%2FbXTf2byRqIxOtUrKhqD%2B3Wg270wmDfdjqXAj2FvFTf0B7G%2B3qtzcuRvgwjV6VMUBq8CSW7flLe%2BOnvZUUAZEqtKsfq2l0Www9CfTHRL3%2B%2Bp5yMrQsNTSBP6FWcgpV4kvL2UebJSJ5K3xjew1LJm1o1HUIrqCy3AjX4WbKaLA%2BFje0sAQqyL6MUIsjnF23rV859GFoo2UkOme0D5UL1xOgG3fcQZm9BdfJLx5AGK1RsQvquZgdd10IbXMuoUY69PV8Nw7c1ApJLnyxawUkq5TuMLBJ4h%2BxEvcJGCPCh7IiVt0pCV33MzqwSOEkwj9%2BbzAY6mAGVarpW2gXGGP1SHbsj8ZiqZdU2LjYRsrBhenL56%2Bh%2FmWOI9ATf9YmUD%2B%2FJ0WP70QRdzqxAgsmkTJTZFENue0CcqYQ0mJg8wNJ4BmSkbJw6pYilQzN564%2FyAS%2FqUSZU9%2FUzpN7B8HcfnX0G3NT5eRGh%2FdhtvFlx8zcMIL%2Bo96wsX5IL%2BT%2Ffjjrt6VX0aM575A53JxemaJjP8A%3D%3D&Expires=1770452587)
+
+**Fix:** SSH to server and restart:
+```bash
+ssh vvault@165.245.136.194
+sudo systemctl status vvault  # check status
+sudo systemctl restart vvault
+sudo systemctl status vvault --no-pager
+```
+
+### 2. **Backend API broken** (CORS + localhost)
+```
+CORS policy: No 'Access-Control-Allow-Origin' on http://localhost:5000/api/vvault/...
+```
+- Chatty backend (`chatty.service`) serves `/api/vault/*` proxy
+- Still hitting `localhost:5000` instead of `chatty.thewreck.org:5000/api` [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/images/95909822/866a7ccc-5895-408d-88bb-1854a27b118d/Screenshot-2026-02-07-at-3.10.54-AM.jpg?AWSAccessKeyId=ASIA2F3EMEYE2C45QJTC&Signature=w%2BAsWCRBPDO65NmRMrSLMw9DiVI%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEJD%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJHMEUCIQDNaxPROITGVV7kvCRvDSAwaeqJ0TDndIsxLzc1iKAOSAIge1b3A%2FpNd9RUCPZ9pBe1k%2Fi45Yfjd1Ga2%2FI9zjKCR2Uq8wQIWRABGgw2OTk3NTMzMDk3MDUiDCjg3WJc1MgQ3YJFfirQBHsUjwYWMSBgrHWhvpb5tqXT1XB%2F4skvyOhzzqW7qdWZYu7AYNbN1%2B15oggQlGbK6T2H%2B43nO4XPh95la6yhDJx0tWWydxPtFhkZLtaAtYQ%2FJNXaJWQcwoKWnGWY9XNTcZVPZkdQZ2Wyvfhz7wkyM3KLb7ArzN9ci%2FJV5pIBlXp0KPRDMBnfDASFakmWETgMrk6yihjMhlU4i5ZsyumDBReSsPaBvzvkrMrZCnw1Js9KQ9quT7f6HeQ64cyvgUMvFn1bCum4IYAtSYmctRrzelWaMMbWV%2FWOS1WqdRrPzoDLP6g5PM8AoPnt8rfvHOkeJNIdEewsNdUwe3XEOvVN1YVVGaXBakWOeCbBa50K4gY4hvmOwAKu24c82WYPhyvr92UoQlAPhAyjB15Qz6i0uZoU6O5OIhag6yu5pfDxxdoxZU1ymtqNHB4PGpwAY8hP1%2Fgxkk5ANyehbOQZf6LAOMhm5b2hi%2FbXTf2byRqIxOtUrKhqD%2B3Wg270wmDfdjqXAj2FvFTf0B7G%2B3qtzcuRvgwjV6VMUBq8CSW7flLe%2BOnvZUUAZEqtKsfq2l0Www9CfTHRL3%2B%2Bp5yMrQsNTSBP6FWcgpV4kvL2UebJSJ5K3xjew1LJm1o1HUIrqCy3AjX4WbKaLA%2BFje0sAQqyL6MUIsjnF23rV859GFoo2UkOme0D5UL1xOgG3fcQZm9BdfJLx5AGK1RsQvquZgdd10IbXMuoUY69PV8Nw7c1ApJLnyxawUkq5TuMLBJ4h%2BxEvcJGCPCh7IiVt0pCV33MzqwSOEkwj9%2BbzAY6mAGVarpW2gXGGP1SHbsj8ZiqZdU2LjYRsrBhenL56%2Bh%2FmWOI9ATf9YmUD%2B%2FJ0WP70QRdzqxAgsmkTJTZFENue0CcqYQ0mJg8wNJ4BmSkbJw6pYilQzN564%2FyAS%2FqUSZU9%2FUzpN7B8HcfnX0G3NT5eRGh%2FdhtvFlx8zcMIL%2Bo96wsX5IL%2BT%2Ffjjrt6VX0aM575A53JxemaJjP8A%3D%3D&Expires=1770452587)
+- **Missing CORS** + wrong proxy base URL
+
+**Fix:** Update frontend API base:
+```ts
+// Wherever API_URL is defined (env.d.ts or config)
+const API_BASE = import.meta.env.PROD 
+  ? 'https://chatty.thewreck.org/api' 
+  : 'http://localhost:5000/api';
+```
+
+### 3. **Conversation flow broken**
+```
+✅ Created zen_1770451741265
+❌ Later: "Thread not found" + 0 messages
+```
+- Creates convos in VVAULT **but reload fails** due to VVAULT/backend offline
+- "Unable to load Katana transcript" = expected without services [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/images/95909822/866a7ccc-5895-408d-88bb-1854a27b118d/Screenshot-2026-02-07-at-3.10.54-AM.jpg?AWSAccessKeyId=ASIA2F3EMEYE2C45QJTC&Signature=w%2BAsWCRBPDO65NmRMrSLMw9DiVI%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEJD%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLWVhc3QtMSJHMEUCIQDNaxPROITGVV7kvCRvDSAwaeqJ0TDndIsxLzc1iKAOSAIge1b3A%2FpNd9RUCPZ9pBe1k%2Fi45Yfjd1Ga2%2FI9zjKCR2Uq8wQIWRABGgw2OTk3NTMzMDk3MDUiDCjg3WJc1MgQ3YJFfirQBHsUjwYWMSBgrHWhvpb5tqXT1XB%2F4skvyOhzzqW7qdWZYu7AYNbN1%2B15oggQlGbK6T2H%2B43nO4XPh95la6yhDJx0tWWydxPtFhkZLtaAtYQ%2FJNXaJWQcwoKWnGWY9XNTcZVPZkdQZ2Wyvfhz7wkyM3KLb7ArzN9ci%2FJV5pIBlXp0KPRDMBnfDASFakmWETgMrk6yihjMhlU4i5ZsyumDBReSsPaBvzvkrMrZCnw1Js9KQ9quT7f6HeQ64cyvgUMvFn1bCum4IYAtSYmctRrzelWaMMbWV%2FWOS1WqdRrPzoDLP6g5PM8AoPnt8rfvHOkeJNIdEewsNdUwe3XEOvVN1YVVGaXBakWOeCbBa50K4gY4hvmOwAKu24c82WYPhyvr92UoQlAPhAyjB15Qz6i0uZoU6O5OIhag6yu5pfDxxdoxZU1ymtqNHB4PGpwAY8hP1%2Fgxkk5ANyehbOQZf6LAOMhm5b2hi%2FbXTf2byRqIxOtUrKhqD%2B3Wg270wmDfdjqXAj2FvFTf0B7G%2B3qtzcuRvgwjV6VMUBq8CSW7flLe%2BOnvZUUAZEqtKsfq2l0Www9CfTHRL3%2B%2Bp5yMrQsNTSBP6FWcgpV4kvL2UebJSJ5K3xjew1LJm1o1HUIrqCy3AjX4WbKaLA%2BFje0sAQqyL6MUIsjnF23rV859GFoo2UkOme0D5UL1xOgG3fcQZm9BdfJLx5AGK1RsQvquZgdd10IbXMuoUY69PV8Nw7c1ApJLnyxawUkq5TuMLBJ4h%2BxEvcJGCPCh7IiVt0pCV33MzqwSOEkwj9%2BbzAY6mAGVarpW2gXGGP1SHbsj8ZiqZdU2LjYRsrBhenL56%2Bh%2FmWOI9ATf9YmUD%2B%2FJ0WP70QRdzqxAgsmkTJTZFENue0CcqYQ0mJg8wNJ4BmSkbJw6pYilQzN564%2FyAS%2FqUSZU9%2FUzpN7B8HcfnX0G3NT5eRGh%2FdhtvFlx8zcMIL%2Bo96wsX5IL%2BT%2Ffjjrt6VX0aM575A53JxemaJjP8A%3D%3D&Expires=1770452587)
+
+## Action Plan (5 min)
+
+```bash
+# 1. On your Mac/Replit shell:
+ssh vvault@165.245.136.194
+
+# 2. On server:
+sudo systemctl restart vvault chatty
+sudo systemctl status vvault chatty --no-pager
+
+# 3. Test endpoints:
+curl -I https://vvault.thewreck.org/conversations  # 200?
+curl -I https://chatty.thewreck.org/api/health     # 200?
+```
+
+Once both services respond 200, reload Chatty:
+- Address Book → shows convos (not "(0)")
+- Katana/Zen → loads transcripts
+- No more CORS/localhost fails
+
+**Paste the `systemctl status` output** — that'll tell us exactly what's down. 🔧
