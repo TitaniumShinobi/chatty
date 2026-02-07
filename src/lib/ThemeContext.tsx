@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import SunCalc from 'suncalc'
 import { type User } from './auth'
 import { getActiveThemeScript, getAvailableThemeScripts, isThemeScriptActive, type ThemeScript } from './calendarThemeService'
@@ -62,19 +62,19 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
   const [themeInitialized, setThemeInitialized] = useState(false)
   const availableThemeScripts = useMemo(() => getAvailableThemeScripts(), [])
   
-  const setTheme = (newTheme: Theme) => {
+  const setTheme = useCallback((newTheme: Theme) => {
     setThemeInternal(newTheme)
     setSessionThemeOverride(null)
-  }
+  }, [])
   
-  const toggleQuickTheme = () => {
+  const toggleQuickTheme = useCallback(() => {
     if (theme === 'auto') {
       const currentActual = sessionThemeOverride ?? systemTheme
       setSessionThemeOverride(currentActual === 'light' ? 'night' : 'light')
     } else {
       setThemeInternal(theme === 'light' ? 'night' : 'light')
     }
-  }
+  }, [theme, sessionThemeOverride, systemTheme])
 
   // === GEOLOCATION - Get user's location for accurate sunrise/sunset ===
   useEffect(() => {
@@ -256,20 +256,22 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
     }
   }, [theme, user, themeInitialized])
 
+  const contextValue = useMemo(() => ({ 
+    theme, 
+    setTheme, 
+    actualTheme, 
+    sunTimes,
+    activeThemeScript,
+    themeScriptSetting,
+    setThemeScriptSetting,
+    availableThemeScripts,
+    sessionThemeOverride,
+    setSessionThemeOverride,
+    toggleQuickTheme
+  }), [theme, setTheme, actualTheme, sunTimes, activeThemeScript, themeScriptSetting, setThemeScriptSetting, availableThemeScripts, sessionThemeOverride, setSessionThemeOverride, toggleQuickTheme])
+
   return (
-    <ThemeContext.Provider value={{ 
-      theme, 
-      setTheme, 
-      actualTheme, 
-      sunTimes,
-      activeThemeScript,
-      themeScriptSetting,
-      setThemeScriptSetting,
-      availableThemeScripts,
-      sessionThemeOverride,
-      setSessionThemeOverride,
-      toggleQuickTheme
-    }}>
+    <ThemeContext.Provider value={contextValue}>
       {children}
     </ThemeContext.Provider>
   )
