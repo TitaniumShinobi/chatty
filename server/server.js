@@ -39,6 +39,16 @@ import { getChatService } from "./services/chatService.js";
 
 dotenv.config();
 
+console.log('[ENV CHECK]', {
+  JWT_SECRET: process.env.JWT_SECRET ? 'SET' : 'MISSING',
+  COOKIE_NAME: process.env.COOKIE_NAME || 'sid',
+  NODE_ENV: process.env.NODE_ENV
+});
+console.log('[OPENROUTER]', {
+  API_KEY_SET: !!process.env.OPENROUTER_API_KEY,
+  MODEL: process.env.OPENROUTER_MODEL || 'default'
+});
+
 // Global error handlers to prevent silent crashes
 process.on('uncaughtException', (err) => {
   console.error('💥 [CRASH] Uncaught Exception:', err);
@@ -321,13 +331,24 @@ app.post("/api/auth/dev-login", async (req, res) => {
 
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: "30d" });
 
-    res.cookie(COOKIE_NAME, token, {
-      httpOnly: false,
-      sameSite: "lax",
-      secure: false,
-      path: "/",
-      maxAge: 1000 * 60 * 60 * 24 * 30
+    const domain = req.hostname && req.hostname.includes('thewreck.org') ? '.thewreck.org' : undefined;
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 1000 * 60 * 60 * 24 * 30,
+      ...(domain ? { domain } : {})
+    };
+    console.log('[COOKIE SET]', {
+      name: COOKIE_NAME,
+      secure: cookieOptions.secure,
+      sameSite: cookieOptions.sameSite,
+      domain: cookieOptions.domain,
+      maxAge: cookieOptions.maxAge
     });
+
+    res.cookie(COOKIE_NAME, token, cookieOptions);
 
     console.log('✅ [Dev Auth] Dev login successful for:', email);
     res.json({ ok: true, user: payload, token });
@@ -484,14 +505,24 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
 
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: "30d" });
 
-    res.cookie(COOKIE_NAME, token, {
-      httpOnly: false,       // Allow JavaScript access for debugging
-      sameSite: "lax",
-      secure: false,         // true behind HTTPS
-      path: "/",             // critical so /api/me can read it
-      maxAge: 1000 * 60 * 60 * 24 * 30
-      // Don't set domain - let browser handle it for localhost
+    const domain = req.hostname && req.hostname.includes('thewreck.org') ? '.thewreck.org' : undefined;
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 1000 * 60 * 60 * 24 * 30,
+      ...(domain ? { domain } : {})
+    };
+    console.log('[COOKIE SET]', {
+      name: COOKIE_NAME,
+      secure: cookieOptions.secure,
+      sameSite: cookieOptions.sameSite,
+      domain: cookieOptions.domain,
+      maxAge: cookieOptions.maxAge
     });
+
+    res.cookie(COOKIE_NAME, token, cookieOptions);
 
     // 4) redirect back to app (to /app route which shows Home)
     console.log(`✅ OAuth success! Redirecting to ${POST_LOGIN_REDIRECT}/app`);

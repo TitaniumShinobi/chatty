@@ -3541,15 +3541,26 @@ router.post("/message", async (req, res) => {
         aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
       } else {
         // OpenRouter
-        console.log(`🟠 [VVAULT Proxy] Calling OpenRouter (${effectiveModel}) for ${constructId}`);
-        completion = await openrouter.chat.completions.create({
-          model: effectiveModel,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: message }
-          ],
-          max_tokens: 2048,
-        });
+        console.log('[OPENROUTER] Calling', { model: effectiveModel, user: req.user?.email });
+        try {
+          completion = await openrouter.chat.completions.create({
+            model: effectiveModel,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: message }
+            ],
+            max_tokens: 2048,
+          });
+          console.log('[OPENROUTER] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+        } catch (err) {
+          console.error('[OPENROUTER FAIL]', {
+            status: err?.status,
+            message: err?.message,
+            model: effectiveModel,
+            apiKeySet: !!process.env.OPENROUTER_API_KEY
+          });
+          throw err;
+        }
         aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
       }
       
@@ -3696,11 +3707,23 @@ router.post("/message", async (req, res) => {
               const ollamaData = await ollamaResp.json();
               aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
             } else {
-              completion = await openrouter.chat.completions.create({
-                model: effectiveModel,
-                messages: [{ role: "system", content: systemPrompt }, { role: "user", content: message }],
-                max_tokens: 2048,
-              });
+              console.log('[OPENROUTER] Calling', { model: effectiveModel, user: req.user?.email });
+              try {
+                completion = await openrouter.chat.completions.create({
+                  model: effectiveModel,
+                  messages: [{ role: "system", content: systemPrompt }, { role: "user", content: message }],
+                  max_tokens: 2048,
+                });
+                console.log('[OPENROUTER] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+              } catch (err) {
+                console.error('[OPENROUTER FAIL]', {
+                  status: err?.status,
+                  message: err?.message,
+                  model: effectiveModel,
+                  apiKeySet: !!process.env.OPENROUTER_API_KEY
+                });
+                throw err;
+              }
               aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
             }
             
@@ -3826,11 +3849,23 @@ router.post("/message", async (req, res) => {
           const ollamaData = await ollamaResp.json();
           aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
         } else {
-          completion = await openrouter.chat.completions.create({
-            model: effectiveModel,
-            messages: [{ role: "system", content: systemPrompt }, { role: "user", content: message }],
-            max_tokens: 2048,
-          });
+          console.log('[OPENROUTER] Calling', { model: effectiveModel, user: req.user?.email });
+          try {
+            completion = await openrouter.chat.completions.create({
+              model: effectiveModel,
+              messages: [{ role: "system", content: systemPrompt }, { role: "user", content: message }],
+              max_tokens: 2048,
+            });
+            console.log('[OPENROUTER] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+          } catch (err) {
+            console.error('[OPENROUTER FAIL]', {
+              status: err?.status,
+              message: err?.message,
+              model: effectiveModel,
+              apiKeySet: !!process.env.OPENROUTER_API_KEY
+            });
+            throw err;
+          }
           aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
         }
         
