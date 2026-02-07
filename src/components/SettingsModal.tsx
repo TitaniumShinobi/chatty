@@ -3,7 +3,9 @@ import {
   X, Settings, Bell, User, Plus, Clock, ShoppingCart, Database, Lock, ShieldCheck
 } from 'lucide-react'
 import { User as UserType } from '../lib/auth'
-import wreckSymbolInvertedUrl from '../../WRECK/assets/WRECKSymbolInverted.png?url'
+import wreckSymbolLightUrl from '../../WRECK/assets/WRECK_symbol.png?url'
+import wreckSymbolDarkUrl from '../../WRECK/assets/WRECKSymbolInverted.png?url'
+import { useTheme } from '../lib/ThemeContext'
 import AccountTab from './settings/AccountTab'
 import GeneralTab from './settings/GeneralTab'
 import NotificationsTab from './settings/NotificationsTab'
@@ -29,6 +31,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   onLogout 
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>('general')
+  const { actualTheme } = useTheme()
 
   if (!isVisible) return null
 
@@ -137,7 +140,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                 >
                   <img
-                    src={wreckSymbolInvertedUrl}
+                    src={actualTheme === 'night' ? wreckSymbolDarkUrl : wreckSymbolLightUrl}
                     alt=""
                     className="block h-5 w-5 opacity-80 hover:opacity-100 transition-opacity"
                   />
