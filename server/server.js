@@ -44,6 +44,10 @@ console.log('[ENV CHECK]', {
   COOKIE_NAME: process.env.COOKIE_NAME || 'sid',
   NODE_ENV: process.env.NODE_ENV
 });
+console.log('[OPENROUTER]', {
+  API_KEY_SET: !!process.env.OPENROUTER_API_KEY,
+  MODEL: process.env.OPENROUTER_MODEL || 'default'
+});
 
 // Global error handlers to prevent silent crashes
 process.on('uncaughtException', (err) => {
