@@ -1,0 +1,29 @@
+vvault@vvault-server:~$ sudo journalctl -u chatty --no-pager -n 50 | grep -i "callback\|redirect\|oauth\|PUBLIC_CALLBACK"
+Feb 06 23:23:20 vvault-server npx[35437]:   redirect_uri: 'https://chatty.thewreck.org/api/auth/google/callback',
+Feb 06 23:23:20 vvault-server npx[35437]:   oauth_object: {
+Feb 06 23:23:20 vvault-server npx[35437]:     redirect_uri: 'https://chatty.thewreck.org/api/auth/google/callback'
+Feb 06 23:23:20 vvault-server npx[35437]: 2026-02-06T23:23:20.629Z 🔍 [OAuth] Generating state and building OAuth URL
+Feb 06 23:23:20 vvault-server npx[35437]: 2026-02-06T23:23:20.629Z ✅ [OAuth] Redirecting to Google OAuth URL: https://accounts.google.com/o/oauth2/v2/auth?client_id=633884797416-d8imb5942bqa6q0mgk9c1rcncvngnlko...
+Feb 06 23:24:16 vvault-server npx[35437]: 2026-02-06T23:24:16.496Z OAuth callback missing code parameter
+Feb 06 23:26:15 vvault-server npx[35437]: 2026-02-06T23:26:15.864Z 🔍 [OAuth] /api/auth/google endpoint hit
+Feb 06 23:26:15 vvault-server npx[35437]: 2026-02-06T23:26:15.864Z 🔍 [OAuth] Environment check: {
+Feb 06 23:26:15 vvault-server npx[35437]:   redirect_uri: 'https://chatty.thewreck.org/api/auth/google/callback',
+Feb 06 23:26:15 vvault-server npx[35437]:   oauth_object: {
+Feb 06 23:26:15 vvault-server npx[35437]:     redirect_uri: 'https://chatty.thewreck.org/api/auth/google/callback'
+Feb 06 23:26:15 vvault-server npx[35437]: 2026-02-06T23:26:15.864Z 🔍 [OAuth] Generating state and building OAuth URL
+Feb 06 23:26:15 vvault-server npx[35437]: 2026-02-06T23:26:15.865Z ✅ [OAuth] Redirecting to Google OAuth URL: https://accounts.google.com/o/oauth2/v2/auth?client_id=633884797416-d8imb5942bqa6q0mgk9c1rcncvngnlko...
+Feb 06 23:26:20 vvault-server npx[35437]: 2026-02-06T23:26:20.174Z 🔍 [OAuth] /api/auth/google endpoint hit
+Feb 06 23:26:20 vvault-server npx[35437]: 2026-02-06T23:26:20.175Z 🔍 [OAuth] Environment check: {
+Feb 06 23:26:20 vvault-server npx[35437]:   redirect_uri: 'https://chatty.thewreck.org/api/auth/google/callback',
+Feb 06 23:26:20 vvault-server npx[35437]:   oauth_object: {
+Feb 06 23:26:20 vvault-server npx[35437]:     redirect_uri: 'https://chatty.thewreck.org/api/auth/google/callback'
+Feb 06 23:26:20 vvault-server npx[35437]: 2026-02-06T23:26:20.176Z 🔍 [OAuth] Generating state and building OAuth URL
+Feb 06 23:26:20 vvault-server npx[35437]: 2026-02-06T23:26:20.176Z ✅ [OAuth] Redirecting to Google OAuth URL: https://accounts.google.com/o/oauth2/v2/auth?client_id=633884797416-d8imb5942bqa6q0mgk9c1rcncvngnlko...
+Feb 06 23:26:34 vvault-server npx[35437]: 2026-02-06T23:26:34.803Z 🔍 [OAuth] /api/auth/google endpoint hit
+Feb 06 23:26:34 vvault-server npx[35437]: 2026-02-06T23:26:34.803Z 🔍 [OAuth] Environment check: {
+Feb 06 23:26:34 vvault-server npx[35437]:   redirect_uri: 'https://chatty.thewreck.org/api/auth/google/callback',
+Feb 06 23:26:34 vvault-server npx[35437]:   oauth_object: {
+Feb 06 23:26:34 vvault-server npx[35437]:     redirect_uri: 'https://chatty.thewreck.org/api/auth/google/callback'
+Feb 06 23:26:34 vvault-server npx[35437]: 2026-02-06T23:26:34.803Z 🔍 [OAuth] Generating state and building OAuth URL
+Feb 06 23:26:34 vvault-server npx[35437]: 2026-02-06T23:26:34.803Z ✅ [OAuth] Redirecting to Google OAuth URL: https://accounts.google.com/o/oauth2/v2/auth?client_id=633884797416-d8imb5942bqa6q0mgk9c1rcncvngnlko...
+vvault@vvault-server:~$ 
