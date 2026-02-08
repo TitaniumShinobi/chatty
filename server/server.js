@@ -718,7 +718,14 @@ app.get("/api/profile-image/:userId", async (req, res) => {
 
 // logout
 app.post("/api/logout", (req, res) => {
-  res.clearCookie(COOKIE_NAME, { path: "/" });
+  const domain = req.hostname && req.hostname.includes('thewreck.org') ? '.thewreck.org' : undefined;
+  res.clearCookie(COOKIE_NAME, {
+    path: "/",
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    ...(domain ? { domain } : {})
+  });
   res.json({ ok: true });
 });
 

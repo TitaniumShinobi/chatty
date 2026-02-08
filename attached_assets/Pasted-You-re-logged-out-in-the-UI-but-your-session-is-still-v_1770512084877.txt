@@ -1,0 +1,32 @@
+You’re “logged out” in the UI, but your session is still valid on the server, so a refresh just auto-logs you back in.  
+
+Most likely causes for chatty.thewreck.org:
+
+1. **Logout only clears client state, not the `sid` cookie**  
+   - If the Settings → Logout just clears React state and routes you to `/login`, but never calls a backend `/api/logout` that expires the `sid` cookie, then:  
+     - React thinks you’re logged out.  
+     - On refresh, the auth effect runs, sees a valid `sid`, calls `/api/me`, gets your profile, and sets `user` again → you land back in your workspace. [stackoverflow](https://stackoverflow.com/questions/62645421/why-user-is-logging-out-after-refresh-the-page-react-redux-app)
+
+2. **Backend logout route doesn’t actually invalidate the cookie**  
+   - If `/api/logout` exists but only clears some server session without sending `Set-Cookie: sid=; Max-Age=0; path=/; domain=.thewreck.org;` then the browser keeps the cookie and it continues to be accepted on `/api/me`. [reddit](https://www.reddit.com/r/learnprogramming/comments/jtuok9/my_session_cookie_is_still_in_the_browser_after_i/)
+
+3. **Auth effect on load is doing exactly what it should**  
+   - Your logs show `fetchMe() resolved: user: dwoodson92@gmail.com` and then `Auth effect complete - isLoading → false`, which means any time there’s a valid `sid`, the app will happily repopulate your profile on refresh. That’s correct behavior; what’s missing is true logout.  
+
+Concretely, for Chatty you want:
+
+- A backend route, e.g. `POST /api/logout`, that:  
+  ```js
+  res.clearCookie('sid', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+    path: '/',
+    domain: '.thewreck.org',
+  });
+  return res.json({ ok: true });
+  ```  
+- The Settings modal’s Logout button should call that endpoint, await 200, then hard‑navigate to `/login` or `/auth`.  
+- On next refresh, the auth effect runs, **finds no `sid` cookie**, `/api/me` returns 401, and React keeps you unauthenticated instead of dropping you back into your profile. [developer.mozilla](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie)
+
+So the reason you “refresh back into your user profile” is: the **server still sees you as logged in** because the `sid` cookie is never actually invalidated. Fix logout to clear that cookie and the behavior will match what you expect.

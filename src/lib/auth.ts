@@ -162,5 +162,5 @@ export async function signupWithEmail(
 
 export async function logout() {
   await fetch("/api/logout", { method: "POST", credentials: "include" });
-  window.location.reload();
+  window.location.href = "/";
 }
