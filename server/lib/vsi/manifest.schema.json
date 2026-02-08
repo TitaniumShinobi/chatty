@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "chatty.vsi.manifest.schema.json",
+  "title": "VSI Action Manifest (Minimal Runner Schema)",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["manifestId", "actor", "scope", "target", "action", "status", "createdAt", "expiresAt"],
+  "properties": {
+    "manifestId": { "type": "string", "minLength": 1 },
+    "actor": { "type": "string", "minLength": 1, "description": "Construct callsign (e.g. zen-001)" },
+    "scope": { "type": "string", "minLength": 1 },
+    "target": { "type": "string", "minLength": 1 },
+    "action": { "type": "string", "minLength": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["proposed", "previewing", "approved", "rejected", "executed", "rolled_back", "expired"]
+    },
+    "rationale": { "type": ["string", "null"] },
+    "riskLevel": { "type": ["string", "null"], "enum": ["low", "medium", "high", null] },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "approvedAt": { "type": ["string", "null"], "format": "date-time" },
+    "approvedBy": { "type": ["string", "null"] },
+    "executedAt": { "type": ["string", "null"], "format": "date-time" },
+    "executionResult": { "type": ["object", "null"] }
+  }
+}
+
