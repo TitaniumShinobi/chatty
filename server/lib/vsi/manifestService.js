@@ -3,6 +3,9 @@
  * Manages proposal, approval, and execution of VSI actions
  */
 
+import fs from 'fs';
+import path from 'path';
+import process from 'process';
 import { 
   createActionManifest, 
   MANIFEST_STATUS, 
@@ -11,6 +14,12 @@ import {
 } from './types.js';
 import { getPermissionService } from './permissionService.js';
 import { getAuditLogger } from './auditLogger.js';
+
+const SPOOL_DIR = process.env.VSI_SPOOL_DIR || '/vvault/spool/vsi';
+
+function ensureDir(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+}
 
 export class ManifestService {
   constructor() {
@@ -217,41 +226,44 @@ export class ManifestService {
       }
     }
 
-    try {
-      // Execute the action
-      const result = await executor(manifest);
+    // Enqueue for runner instead of executing in-process
+    const enqueueTs = new Date().toISOString();
+    const jobId = `job_${manifest.manifestId}`;
+    const spoolPayload = {
+      manifestId: manifest.manifestId,
+      actor: manifest.actor,
+      status: MANIFEST_STATUS.QUEUED,
+      action: manifest.action,
+      target: manifest.target,
+      payload: manifest.proposedState ?? null,
+      approvedAt: manifest.approvedAt,
+      expiresAt: manifest.expiresAt,
+      signature: manifest.actorSignature || null,
+      prev_hash: manifest.prev_hash || null,
+      hash: manifest.hash || null,
+      enqueueTs,
+      manifest
+    };
 
-      manifest.status = MANIFEST_STATUS.EXECUTED;
-      manifest.executedAt = new Date().toISOString();
-      manifest.executedBy = userId;
-      manifest.executionResult = result;
+    ensureDir(SPOOL_DIR);
+    const spoolPath = path.join(SPOOL_DIR, `${jobId}.json`);
+    fs.writeFileSync(spoolPath, JSON.stringify(spoolPayload, null, 2));
 
-      // Track executed
-      if (!this.executedByUser.has(userId)) {
-        this.executedByUser.set(userId, []);
-      }
-      this.executedByUser.get(userId).push(manifestId);
+    manifest.status = MANIFEST_STATUS.QUEUED;
+    manifest.queuedAt = enqueueTs;
+    manifest.jobId = jobId;
 
-      await auditLogger.logManifest(manifest.actor, 'executed', manifestId, {
-        userId,
-        target: manifest.target,
-        result: result.success ? 'success' : 'failed'
-      });
+    await auditLogger.logManifest(manifest.actor, 'queued', manifestId, {
+      userId,
+      target: manifest.target,
+      jobId,
+      spoolPath
+    });
 
-      await auditLogger.logIndependence(manifest.actor, 'action_completed', {
-        manifestId,
-        target: manifest.target,
-        scope: manifest.scope
-      });
+    // Remove from pending tracker
+    this.removePending(userId, manifestId);
 
-      return { success: true, manifest, result };
-    } catch (err) {
-      await auditLogger.logManifest(manifest.actor, 'execution_failed', manifestId, {
-        userId,
-        error: err.message
-      });
-      return { success: false, error: err.message };
-    }
+    return { success: true, manifest, jobId };
   }
 
   async rollback(manifestId, userId, executor) {

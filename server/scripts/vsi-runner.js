@@ -10,8 +10,10 @@
  *   node server/scripts/vsi-runner.js --poll 2
  *
  * Env:
- *   VSI_SPOOL_DIR=/tmp/vsi-manifests
- *   VVAULT_VSI_ROOT=/path/to/vvault/intelligences/shard_0000
+ *   VSI_SPOOL_DIR=/vvault/spool/vsi
+ *   VVAULT_VSI_ROOT=/vvault/intelligences
+ *   VSI_RUNNER_POLL_MS=2000
+ *   VSI_RUNNER_TIMEOUT_MS=5000
  */
 
 import fs from 'fs';
@@ -31,6 +33,12 @@ const ManifestSchema = z.object({
   rationale: z.string().optional().nullable(),
   riskLevel: z.enum(['low', 'medium', 'high']).optional(),
 }).passthrough();
+
+const SPOOL_DIR = process.env.VSI_SPOOL_DIR || '/vvault/spool/vsi';
+const EXECUTED_DIR = path.join(SPOOL_DIR, 'executed');
+const FAILED_DIR = path.join(SPOOL_DIR, 'failed');
+const HEARTBEAT = path.join(SPOOL_DIR, 'runner.heartbeat');
+const JOB_TIMEOUT = Number(process.env.VSI_RUNNER_TIMEOUT_MS || '5000');
 
 function nowIso() {
   return new Date().toISOString();
@@ -61,8 +69,7 @@ function safeJoin(root, rel) {
 }
 
 function logAudit(manifest, event, details) {
-  const spoolDir = process.env.VSI_SPOOL_DIR || '/tmp/vsi-manifests';
-  ensureDir(spoolDir);
+  ensureDir(SPOOL_DIR);
   const line = JSON.stringify({
     timestamp: nowIso(),
     event,
@@ -73,7 +80,7 @@ function logAudit(manifest, event, details) {
     action: manifest.action,
     ...details,
   }) + '\n';
-  fs.appendFileSync(path.join(spoolDir, 'vsi_runner.audit.log'), line);
+  fs.appendFileSync(path.join(SPOOL_DIR, 'vsi_runner.audit.log'), line);
 
   const vsiRoot = process.env.VVAULT_VSI_ROOT;
   if (vsiRoot) {
@@ -162,7 +169,7 @@ function processOne(filePath) {
   logAudit(manifest, 'execute_start', {});
 
   try {
-    const result = executeManifest(manifest);
+    const result = runWithTimeout(() => executeManifest(manifest));
     manifest.status = 'executed';
     manifest.executedAt = nowIso();
     manifest.executionResult = result;
@@ -173,6 +180,7 @@ function processOne(filePath) {
     }
     writeManifest(filePath, manifest);
     logAudit(manifest, 'execute_ok', { result: result.success ? 'success' : 'failed' });
+    moveProcessed(filePath, EXECUTED_DIR);
     return { ok: true };
   } catch (err) {
     manifest.executionResult = { success: false, error: err.message };
@@ -183,20 +191,49 @@ function processOne(filePath) {
     }
     writeManifest(filePath, manifest);
     logAudit(manifest, 'execute_fail', { error: err.message });
+    moveProcessed(filePath, FAILED_DIR);
     return { ok: false, error: err.message };
   }
 }
 
 function runOnce() {
-  const spoolDir = process.env.VSI_SPOOL_DIR || '/tmp/vsi-manifests';
-  ensureDir(spoolDir);
-  const files = listJsonFiles(spoolDir);
+  ensureDir(SPOOL_DIR);
+  ensureDir(EXECUTED_DIR);
+  ensureDir(FAILED_DIR);
+  const files = listJsonFiles(SPOOL_DIR);
   let processed = 0;
   for (const f of files) {
     processOne(f);
     processed++;
   }
   return processed;
+}
+
+function moveProcessed(src, destDir) {
+  try {
+    ensureDir(destDir);
+    const base = path.basename(src);
+    fs.renameSync(src, path.join(destDir, base));
+  } catch {
+    // best effort
+  }
+}
+
+function runWithTimeout(fn) {
+  const timeout = JOB_TIMEOUT;
+  return new Promise((resolve, reject) => {
+    const to = setTimeout(() => reject(new Error(`runner timeout after ${timeout}ms`)), timeout);
+    Promise.resolve()
+      .then(fn)
+      .then((val) => {
+        clearTimeout(to);
+        resolve(val);
+      })
+      .catch((err) => {
+        clearTimeout(to);
+        reject(err);
+      });
+  });
 }
 
 async function main() {
@@ -211,6 +248,12 @@ async function main() {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     runOnce();
+    try {
+      ensureDir(path.dirname(HEARTBEAT));
+      fs.writeFileSync(HEARTBEAT, nowIso());
+    } catch {
+      // ignore heartbeat failures
+    }
     await new Promise((r) => setTimeout(r, args.pollSeconds * 1000));
   }
 }

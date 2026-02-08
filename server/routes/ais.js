@@ -4,11 +4,28 @@ import multer from 'multer';
 import path from 'path';
 import { AIManager } from '../lib/aiManager.js';
 import { getGPTSaveHook } from '../lib/gptSaveHook.js';
+import { normalizeModelString } from '../lib/modelResolver.js';
 
 const router = express.Router();
 
 // Initialize AI Manager
 const aiManager = AIManager.getInstance();
+
+function normalizeModelFields(payload) {
+  if (!payload || typeof payload !== 'object') return payload;
+
+  const next = { ...payload };
+  for (const key of ['modelId', 'conversationModel', 'creativeModel', 'codingModel']) {
+    if (typeof next[key] !== 'string') continue;
+    const before = next[key];
+    const after = normalizeModelString(before);
+    if (after && after !== before) {
+      console.log(`🤖 [AIs API] Normalized ${key}: "${before}" -> "${after}"`);
+      next[key] = after;
+    }
+  }
+  return next;
+}
 
 // Configure multer for file uploads
 const upload = multer({
@@ -199,7 +216,7 @@ router.post('/', async (req, res) => {
       isActive: false
     };
 
-    const ai = await aiManager.createAI(aiData);
+    const ai = await aiManager.createAI(normalizeModelFields(aiData));
     
     // Ensure all required files are created in VVAULT
     try {
@@ -267,7 +284,7 @@ router.post('/:id/clone', async (req, res) => {
 // Update an AI
 router.put('/:id', async (req, res) => {
   try {
-    const ai = await aiManager.updateAI(req.params.id, req.body);
+    const ai = await aiManager.updateAI(req.params.id, normalizeModelFields(req.body));
     if (!ai) {
       return res.status(404).json({ success: false, error: 'AI not found' });
     }

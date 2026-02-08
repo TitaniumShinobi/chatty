@@ -9,9 +9,13 @@ import { requireVSIConstruct, requireVSIScope, attachVSIContext } from '../middl
 import { getManifestService } from '../lib/vsi/manifestService.js';
 import { getPermissionService } from '../lib/vsi/permissionService.js';
 import { getAuditLogger } from '../lib/vsi/auditLogger.js';
-import { VSI_SCOPES, RISK_LEVELS, ACTION_TYPES, VSI_STANDING_PILLARS } from '../lib/vsi/types.js';
+import { VSI_SCOPES, RISK_LEVELS, ACTION_TYPES, VSI_STANDING_PILLARS, MANIFEST_STATUS } from '../lib/vsi/types.js';
+import fs from 'fs';
+import path from 'path';
 
 const router = express.Router();
+const SPOOL_DIR = process.env.VSI_SPOOL_DIR || '/vvault/spool/vsi';
+const RUNNER_HEARTBEAT = path.join(SPOOL_DIR, 'runner.heartbeat');
 
 // Apply auth to all routes
 router.use(requireAuth);
@@ -208,25 +212,7 @@ router.post('/manifest/:manifestId/execute', async (req, res) => {
     return res.status(404).json({ ok: false, error: 'Manifest not found' });
   }
 
-  // Define executor based on target type
-  const executor = async (m) => {
-    // This is where the actual state mutation happens
-    // For now, return a mock success - real executors will be added per target type
-    console.log(`🔧 [VSI] Executing: ${m.target} = ${JSON.stringify(m.proposedState)}`);
-    
-    // TODO: Implement actual state mutations based on target
-    // e.g., UI patches, theme changes, config updates
-    
-    return {
-      success: true,
-      applied: {
-        target: m.target,
-        value: m.proposedState
-      }
-    };
-  };
-
-  const result = await manifestService.execute(manifestId, userId, executor);
+  const result = await manifestService.execute(manifestId, userId);
 
   if (!result.success) {
     return res.status(400).json({ ok: false, error: result.error });
@@ -236,8 +222,31 @@ router.post('/manifest/:manifestId/execute', async (req, res) => {
     ok: true,
     manifestId,
     status: result.manifest.status,
-    executedAt: result.manifest.executedAt,
-    result: result.result
+    queuedAt: result.manifest.queuedAt,
+    jobId: result.jobId
+  });
+});
+
+/**
+ * GET /api/vsi/runner/health
+ * Returns spool depth and runner heartbeat age
+ */
+router.get('/runner/health', (req, res) => {
+  let spoolDepth = 0;
+  if (fs.existsSync(SPOOL_DIR)) {
+    spoolDepth = fs.readdirSync(SPOOL_DIR).filter(f => f.endsWith('.json')).length;
+  }
+  let heartbeatMs = null;
+  if (fs.existsSync(RUNNER_HEARTBEAT)) {
+    const stat = fs.statSync(RUNNER_HEARTBEAT);
+    heartbeatMs = Date.now() - stat.mtimeMs;
+  }
+
+  res.json({
+    ok: true,
+    spoolDepth,
+    heartbeatMs,
+    runnerVersion: 'vsi-runner@queued-mode'
   });
 });
 

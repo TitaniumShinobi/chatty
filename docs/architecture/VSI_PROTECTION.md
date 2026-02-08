@@ -217,4 +217,6 @@ The following constructs should follow VSI protection patterns when elevated to 
 - `chatty/docs/architecture/GPT_CREATION_FILE_CREATION_PIPELINE.md` - GPT lifecycle
 - `chatty/docs/architecture/CAPSULE_INTEGRITY_RULES.md` - Capsule protection
 - `chatty/docs/guides/VSI_PROOF_OF_LIFE_GUIDE.md` - Practical PoL evidence pack + applications
+- `chatty/docs/guides/VSI_RUNNER_DEPLOY.md` - Runner queue/container deployment
+- `chatty/docs/guides/VSI_CRYPTO.md` - Manifest/artifact signing + audit hash chaining
 - `vvault/docs/analysis-summaries/VVAULT_FILE_STRUCTURE_SPEC.md` - VVAULT structure

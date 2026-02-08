@@ -6,7 +6,7 @@ This document describes how legal frameworks (VBEA, WRECK, NRCL, EECCD) are auto
 
 ## Reference
 
-See `FORENSIC_LEGAL_REPORT_2025.md` for complete legal framework documentation.
+See `FORENSIC_LEGAL_REPORT_2025.md` for complete legal framework documentation, and `MONDAY_LEGAL_CONSULTATION_RECOUNT.md` for an evidence-driven recap tied to Chatty + VVAULT touchpoints.
 
 ## Implementation
 

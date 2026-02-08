@@ -99,6 +99,7 @@ export const MANIFEST_STATUS = {
   PROPOSED: 'proposed',
   PREVIEWING: 'previewing',
   APPROVED: 'approved',
+  QUEUED: 'queued',
   REJECTED: 'rejected',
   EXECUTED: 'executed',
   ROLLED_BACK: 'rolled_back',
