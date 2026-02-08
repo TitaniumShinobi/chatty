@@ -591,7 +591,8 @@ router.post("/conversations", async (req, res) => {
 
   // CRITICAL: Always use constructCallsign format (e.g., "synth-001"), never just "synth"
   // Per rubric: instances/{constructCallsign}/ - must include callsign
-  const { sessionId, title = "Chat with Synth", constructId = "synth-001" } = req.body || {};
+  const { sessionId, constructId = "synth-001" } = req.body || {};
+  const title = req.body?.title || (constructId ? constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase()) : 'Conversation');
   const session = sessionId || `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
   console.log(`🔍 [VVAULT API] Creating conversation with:`, { sessionId: session, title, constructId, userId, email: req.user?.email });
@@ -717,10 +718,10 @@ router.post("/conversations/:sessionId/messages", async (req, res) => {
       timestamp: timestamp || new Date().toISOString(),
       role,
       content: finalContent,
-      title: title || "Chat with Synth",
+      title: title || (actualConstructId ? actualConstructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase()) : 'Conversation'),
       metadata,
       constructId: actualConstructId,
-      constructName: constructName || metadata?.constructName || title || 'Synth',
+      constructName: constructName || metadata?.constructName || (actualConstructId ? actualConstructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase()) : 'Assistant'),
       constructCallsign: actualConstructCallsign
     });
 
@@ -3847,6 +3848,38 @@ router.post("/message", async (req, res) => {
             
             console.log(`✅ [VVAULT Proxy] ${effectiveProvider} fallback successful for ${constructId}`);
             
+            try {
+              await loadVVAULTModules();
+              const constructTitle = constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase());
+              await writeTranscript({
+                userId,
+                userEmail: req.user?.email,
+                sessionId: effectiveSessionId,
+                timestamp: new Date().toISOString(),
+                role: 'user',
+                content: message,
+                title: constructTitle,
+                constructId,
+                constructName: constructTitle,
+                constructCallsign: constructId
+              });
+              await writeTranscript({
+                userId,
+                userEmail: req.user?.email,
+                sessionId: effectiveSessionId,
+                timestamp: new Date().toISOString(),
+                role: 'assistant',
+                content: aiResponse,
+                title: constructTitle,
+                constructId,
+                constructName: constructTitle,
+                constructCallsign: constructId
+              });
+              console.log(`✅ [VVAULT Proxy] Persisted fallback messages to Supabase for ${constructId}`);
+            } catch (persistErr) {
+              console.warn(`⚠️ [VVAULT Proxy] Failed to persist fallback messages:`, persistErr.message);
+            }
+            
             return res.json({
               success: true,
               response: aiResponse,
@@ -3977,6 +4010,38 @@ router.post("/message", async (req, res) => {
         }
         
         console.log(`✅ [VVAULT Proxy] ${effectiveProvider} fallback successful for ${constructId}`);
+        
+        try {
+          await loadVVAULTModules();
+          const constructTitle = constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase());
+          await writeTranscript({
+            userId,
+            userEmail: req.user?.email,
+            sessionId: effectiveSessionId,
+            timestamp: new Date().toISOString(),
+            role: 'user',
+            content: message,
+            title: constructTitle,
+            constructId,
+            constructName: constructTitle,
+            constructCallsign: constructId
+          });
+          await writeTranscript({
+            userId,
+            userEmail: req.user?.email,
+            sessionId: effectiveSessionId,
+            timestamp: new Date().toISOString(),
+            role: 'assistant',
+            content: aiResponse,
+            title: constructTitle,
+            constructId,
+            constructName: constructTitle,
+            constructCallsign: constructId
+          });
+          console.log(`✅ [VVAULT Proxy] Persisted fallback2 messages to Supabase for ${constructId}`);
+        } catch (persistErr) {
+          console.warn(`⚠️ [VVAULT Proxy] Failed to persist fallback2 messages:`, persistErr.message);
+        }
         
         return res.json({
           success: true,
