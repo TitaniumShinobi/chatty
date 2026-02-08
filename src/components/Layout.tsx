@@ -297,7 +297,7 @@ export default function Layout() {
     // Address Book: Custom GPTs only (Zen is a nav item, not an address book contact)
     // Lin is excluded - she's the GPTCreator create tab agent/undertone stabilizer
     // Zen is excluded - it's a system-level nav item now
-    const EXCLUDED_CONSTRUCTS = ['lin-001', 'zen-001', 'zen', 'lin'];
+    const EXCLUDED_CONSTRUCTS = ['lin-001', 'zen-001', 'zen', 'lin', 'synth-001', 'synth'];
     
     // Get threads that have a constructId (excluding system constructs)
     // Also filter out legacy files (those with .md in the title - raw filenames)
@@ -846,7 +846,10 @@ export default function Layout() {
         setIsBackendUnavailable(backendUnavailable);
         console.log("📚 [Layout.tsx] VVAULT returned:", vvaultConversations);
 
-        // Log detailed message information for each conversation
+        vvaultConversations = vvaultConversations.filter(
+          (conv) => conv.constructId !== "synth-001" && conv.constructId !== "synth"
+        );
+
         vvaultConversations.forEach((conv, idx) => {
           console.log(`📋 [Layout] Conversation ${idx + 1}:`, {
             sessionId: conv.sessionId,
@@ -1996,15 +1999,14 @@ export default function Layout() {
               effectiveConstructId = lockedConstructId;
             } else {
               // Fall back to thread's constructId if detection confidence is low
-              effectiveConstructId = thread.constructId || "synth";
+              effectiveConstructId = thread.constructId || "zen-001";
             }
           } catch (error) {
             console.error(
               "❌ [Layout.tsx] Persona detection/lock failed:",
               error,
             );
-            // Fall back to thread's constructId if detection fails
-            effectiveConstructId = thread.constructId || "synth";
+            effectiveConstructId = thread.constructId || "zen-001";
             console.warn(
               "⚠️ [Layout.tsx] Falling back to thread constructId:",
               effectiveConstructId,
@@ -2014,12 +2016,11 @@ export default function Layout() {
           console.warn(
             "⚠️ [Layout] DynamicPersonaOrchestrator not available, using thread constructId",
           );
-          effectiveConstructId = thread.constructId || "synth";
+          effectiveConstructId = thread.constructId || "zen-001";
         }
       } catch (error) {
         console.error("❌ [Layout.tsx] Persona detection failed:", error);
-        // Fall back to thread's constructId if detection fails
-        effectiveConstructId = thread.constructId || "synth";
+        effectiveConstructId = thread.constructId || "zen-001";
         console.warn(
           "⚠️ [Layout.tsx] Falling back to thread constructId:",
           effectiveConstructId,
@@ -2028,10 +2029,9 @@ export default function Layout() {
     }
 
     if (!effectiveConstructId) {
-      // Final fallback to synth
-      effectiveConstructId = "synth";
+      effectiveConstructId = "zen-001";
       console.warn(
-        "⚠️ [Layout.tsx] No effective constructId, defaulting to synth",
+        "⚠️ [Layout.tsx] No effective constructId, defaulting to zen-001",
       );
     }
 

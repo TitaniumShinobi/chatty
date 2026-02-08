@@ -794,13 +794,21 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
         return baseName.charAt(0).toUpperCase() + baseName.slice(1).toLowerCase();
       };
       
-      const cleanTitle = metadata.title || generateCleanTitle(extractedConstructId) || file.filename;
+      const generatedTitle = generateCleanTitle(extractedConstructId);
+      let cleanTitle = metadata.title || generatedTitle || file.filename;
+      if (generatedTitle && cleanTitle !== generatedTitle) {
+        const baseFromTitle = cleanTitle.replace(/^Chat with\s+/i, '').replace(/-\d+$/, '').toLowerCase();
+        const baseFromId = (extractedConstructId || '').replace(/-\d+$/, '').toLowerCase();
+        if (baseFromId && baseFromTitle !== baseFromId) {
+          cleanTitle = generatedTitle;
+        }
+      }
 
       return {
         sessionId: canonicalSessionId,
         title: cleanTitle,
         constructId: extractedConstructId,
-        constructName: metadata.constructName || generateCleanTitle(extractedConstructId),
+        constructName: generatedTitle || metadata.constructName || extractedConstructId,
         constructCallsign: metadata.constructCallsign || extractedConstructId,
         createdAt: file.created_at,
         updatedAt: file.created_at,
@@ -808,8 +816,58 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
       };
     });
 
-    console.log(`📥 [SupabaseStore] Read ${conversations.length} conversations for user: ${userEmailOrId}`);
-    return conversations;
+    const normalizeConstructBase = (id) => (id || '').replace(/-\d+$/, '').toLowerCase();
+    const grouped = new Map();
+    for (const conv of conversations) {
+      const base = normalizeConstructBase(conv.constructId);
+      if (!grouped.has(base)) {
+        grouped.set(base, []);
+      }
+      grouped.get(base).push(conv);
+    }
+
+    const deduplicated = [];
+    for (const [base, group] of grouped) {
+      if (group.length === 1) {
+        deduplicated.push(group[0]);
+        continue;
+      }
+
+      const canonical = group.find(c => /^[a-z]+-\d+$/.test(c.constructId)) || group[0];
+      const others = group.filter(c => c !== canonical);
+
+      const existingTimestamps = new Set(
+        canonical.messages
+          .filter(m => !m.isDateHeader)
+          .map(m => `${m.role}:${(m.content || '').substring(0, 80)}`)
+      );
+
+      for (const other of others) {
+        for (const msg of other.messages) {
+          if (msg.isDateHeader) continue;
+          const key = `${msg.role}:${(msg.content || '').substring(0, 80)}`;
+          if (!existingTimestamps.has(key)) {
+            canonical.messages.push(msg);
+            existingTimestamps.add(key);
+          }
+        }
+        console.log(`🔄 [SupabaseStore] Merged ${other.messages.length} messages from ${other.sessionId} into ${canonical.sessionId}`);
+      }
+
+      canonical.messages.sort((a, b) => {
+        if (a.isDateHeader && !b.isDateHeader) return -1;
+        if (!a.isDateHeader && b.isDateHeader) return 1;
+        const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+        return ta - tb;
+      });
+
+      console.log(`🔗 [SupabaseStore] Deduplicated ${group.length} files for "${base}" → ${canonical.sessionId} (${canonical.messages.length} messages)`);
+      deduplicated.push(canonical);
+    }
+
+    console.log(`📥 [SupabaseStore] Read ${deduplicated.length} conversations (from ${conversations.length} files) for user: ${userEmailOrId}`);
+    return deduplicated;
   } catch (err) {
     console.error('❌ [SupabaseStore] Read failed:', err.message);
     return null;

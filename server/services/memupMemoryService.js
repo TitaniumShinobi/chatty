@@ -112,7 +112,7 @@ class MemupMemoryService {
       });
 
       // Construct-specific collection name
-      const constructCallsign = args.constructCallsign || 'synth-001';
+      const constructCallsign = args.constructCallsign || 'zen-001';
       const collectionName = `${constructCallsign}_${args.memoryType || 'long_term'}_memory`;
 
       switch (command) {

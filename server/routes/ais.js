@@ -181,7 +181,17 @@ router.post('/sync-from-vvault', async (req, res) => {
 // Get a specific AI
 router.get('/:id', async (req, res) => {
   try {
-    const ai = await aiManager.getAI(req.params.id);
+    let ai = await aiManager.getAI(req.params.id);
+    if (!ai) {
+      const chattyUserId = req.user?.id || req.user?.uid || req.user?.sub || req.user?.email || 'anonymous';
+      let userId = chattyUserId;
+      try {
+        const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
+        const vvaultUserId = await resolveVVAULTUserId(chattyUserId, req.user?.email, false);
+        if (vvaultUserId) userId = vvaultUserId;
+      } catch (e) {}
+      ai = await aiManager.getAIByCallsign(req.params.id, userId);
+    }
     if (!ai) {
       return res.status(404).json({ success: false, error: 'AI not found' });
     }

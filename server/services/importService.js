@@ -1094,7 +1094,7 @@ async function extractChatGPTConfig(conversation, zip = null) {
   const detectedModel = model || mappingSlug || 'gpt-4';
   return {
     modelId: detectedModel,
-    constructId: 'synth-001', // CRITICAL: Always use constructCallsign format (e.g., "synth-001"), never just "synth"
+    constructId: 'zen-001', // CRITICAL: Always use constructCallsign format (e.g., "zen-001"), never just "zen"
     isCustomGPT: false,
     instructions: null,
     name: null,
@@ -1119,9 +1119,9 @@ async function convertConversationToTranscript(conversation, userId, userName, g
   const { appendToConstructTranscript } = require('../../vvaultConnector/writeTranscript');
   const crypto = require('crypto');
   
-  // Use detected construct or default to synth
-  // CRITICAL: Always use constructCallsign format (e.g., "synth-001"), never just "synth"
-  const constructId = gptConfig.constructId || 'synth-001';
+  // Use detected construct or default to zen
+  // CRITICAL: Always use constructCallsign format (e.g., "zen-001"), never just "zen"
+  const constructId = gptConfig.constructId || 'zen-001';
   
   // Create unique callsign for each conversation to ensure separate files
   // Use a hash of conversation ID to get a consistent callsign (1-999 range)
@@ -1311,7 +1311,7 @@ async function convertConversationToTranscript(conversation, userId, userName, g
  * @param {Buffer} buffer - ZIP file buffer
  * @param {string} userId - User ID
  * @param {string} source - Provider source ('chatgpt', 'gemini', 'claude', etc.)
- * @param {string} constructId - Construct ID (defaults to 'synth-001', but will be auto-detected per conversation)
+ * @param {string} constructId - Construct ID (defaults to 'zen-001', but will be auto-detected per conversation)
  */
 export async function persistImportToVVAULT(buffer, userId, source, runtimeMetadata = null, identity = null) {
   if (!buffer || !userId || !source) {
@@ -1649,7 +1649,7 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
         ? await extractChatGPTConfig(convo, zip)
         : {
             modelId: 'unknown',
-            constructId: 'synth-001', // CRITICAL: Always use constructCallsign format
+            constructId: 'zen-001', // CRITICAL: Always use constructCallsign format
             isCustomGPT: false,
             instructions: null,
             name: null,

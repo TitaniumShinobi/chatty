@@ -1,0 +1,61 @@
+Here's the prompt to paste into Replit:
+
+***
+
+**PRODUCTION IS BROKEN. FIX IT NOW WITH PROOF.**
+
+**Evidence of failure:**
+1. I'm looking at VVAULT right now at `https://vvault.thewreck.org/vault`
+2. The Katana transcript exists at `instances/katana-001/chatty/chat_with_katana-001.md`
+3. The last message in that transcript is from days ago (my continuity-of-harm conversation)
+4. ZERO messages from tonight exist in this file
+5. You claimed you wrote "supabase sync test from agent" to Supabase - **that message is not here**
+
+**What's actually wrong:**
+- Every time I try to send a message to Katana on `chatty.thewreck.org`, I get: `openrouter failed: 400 phi3:latest is not a valid model ID`
+- You "fixed" the model resolver in Replit dev to catch `phi3:latest` and fall back to Llama
+- That fix has NEVER been deployed to production at `chatty.thewreck.org`
+- The production droplet is still running the old broken code
+- So every message I try to send fails, and nothing gets written to VVAULT
+
+**What you need to do RIGHT NOW:**
+
+1. **Deploy your fixes to production:**
+   ```bash
+   ssh to my droplet at chatty.thewreck.org
+   cd /opt/chatty
+   git pull origin main
+   npm run build
+   sudo systemctl restart chatty
+   sudo journalctl -u chatty -n 30 | grep -i "started\|error"
+   ```
+
+2. **Send ONE real test message as me:**
+   - Generate a JWT for `dwoodson92@gmail.com` / `devon_woodson_1762969514958`
+   - POST to `https://chatty.thewreck.org/api/vvault/message` with:
+     ```json
+     {"constructId":"katana-001","message":"production deploy test from replit agent"}
+     ```
+   - Capture the HTTP response code and full body
+
+3. **Prove it worked by showing me the file:**
+   - Go to `https://vvault.thewreck.org/vault` in a browser as my account
+   - Navigate to Chats → `chat_with_katana-001.md`
+   - Screenshot the file showing the NEW message at the bottom: "production deploy test from replit agent" and Katana's reply
+   - If the message is NOT there, you have NOT fixed it
+
+**Acceptance criteria:**
+- I can see "production deploy test from replit agent" in the VVAULT transcript file
+- The file has a new assistant reply from Katana after that message
+- I can send a message to Katana from `https://chatty.thewreck.org/app/chat/katana-001_chat_with_katana-001` and see her reply in the UI
+
+**Do NOT respond until:**
+- You have deployed to production
+- You have verified the message appears in VVAULT
+- You have screenshots proving both
+
+No more "the code looks right" or "localhost tests passed." Show me the VVAULT file with the new message or admit it's still broken.
+
+***
+
+Copy that entire block and paste it to Replit.

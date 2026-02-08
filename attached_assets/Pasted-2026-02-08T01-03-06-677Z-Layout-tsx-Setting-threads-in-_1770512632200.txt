@@ -1,0 +1,241 @@
+2026-02-08T01:03:06.677Z 🔄 [Layout.tsx] Setting threads in state...
+index-CjyZSz-u.js:785 2026-02-08T01:03:06.677Z 🔍 [Layout.tsx] Navigation check - currentPath: "/app", initialPath: "/app"
+index-CjyZSz-u.js:785 2026-02-08T01:03:06.677Z 🔍 [Layout.tsx] isNonChatRoute: false
+index-CjyZSz-u.js:785 2026-02-08T01:03:06.677Z 📍 [Layout.tsx] Already on home page
+index-CjyZSz-u.js:785 2026-02-08T01:03:06.677Z 🛑 [Layout.tsx] Auth effect complete - isLoading → false
+index-CjyZSz-u.js:785 2026-02-08T01:03:06.677Z 🔗 [Layout.tsx] Render - window.location.pathname: "/app", location.pathname: "/app"
+index-CjyZSz-u.js:785 2026-02-08T01:03:06.677Z 📖 [Layout] Address Book filter: 2 contacts (2 threads + 0 GPT cards, deduplicated from 2) (2) [{…}, {…}]
+index-CjyZSz-u.js:785 2026-02-08T01:03:06.677Z 🖼️ [Layout] userGPTs avatars: [{…}]
+index-CjyZSz-u.js:785 2026-02-08T01:03:06.678Z 📚 [Layout.tsx] Threads updated (length): 4
+index-CjyZSz-u.js:785 2026-02-08T01:03:15.017Z 🔵 [Sidebar] Button clicked: {conversationId: 'katana-001_chat_with_katana-001', conversationTitle: 'Katana', hasHandler: true}
+index-CjyZSz-u.js:785 2026-02-08T01:03:15.018Z 🟢 [Sidebar] Calling onConversationSelect with: katana-001_chat_with_katana-001
+index-CjyZSz-u.js:785 2026-02-08T01:03:15.018Z 🖱️ [Layout.tsx] Sidebar thread selected: katana-001_chat_with_katana-001
+index-CjyZSz-u.js:785 2026-02-08T01:03:15.018Z 🟡 [Layout] handleThreadClick START: {threadId: 'katana-001_chat_with_katana-001', threadsCount: 4, threadIds: Array(4)}
+index-CjyZSz-u.js:785 2026-02-08T01:03:15.018Z 📊 [Layout] Selected thread "Katana": 20 messages
+index-CjyZSz-u.js:785 2026-02-08T01:03:15.019Z 🟡 [Layout] Navigation: {original: 'katana-001_chat_with_katana-001', targetId: 'katana-001_chat_with_katana-001', routedId: 'katana-001_chat_with_katana-001', targetPath: '/app/chat/katana-001_chat_with_katana-001', currentPath: '/app'}
+index-CjyZSz-u.js:785 2026-02-08T01:03:15.020Z ✅ [Layout] Navigation called
+index-CjyZSz-u.js:785 2026-02-08T01:03:15.020Z ✅ [Sidebar] onConversationSelect completed
+index-CjyZSz-u.js:785 2026-02-08T01:03:15.021Z 🔗 [Layout.tsx] Render - window.location.pathname: "/app/chat/katana-001_chat_with_katana-001", location.pathname: "/app/chat/katana-001_chat_with_katana-001"
+index-CjyZSz-u.js:785 2026-02-08T01:03:15.023Z 📋 [Chat] Thread found with details: {id: 'katana-001_chat_with_katana-001', title: 'Katana', messageCount: 20, messages: Array(20)}
+index-CjyZSz-u.js:785 2026-02-08T01:03:15.054Z 🔍 [Chat] Thread lookup: {threadId: 'katana-001_chat_with_katana-001', found: true, threadIds: Array(4), threadConstructIds: Array(4), messageCount: 20, …}
+index-CjyZSz-u.js:785 2026-02-08T01:03:15.054Z ⏭️ [Layout.tsx] Auth effect skipped - user already set
+index-CjyZSz-u.js:785 2026-02-08T01:03:19.455Z 📎 [MessageBar] Submitting with 0 images, 0 docs
+index-CjyZSz-u.js:785 2026-02-08T01:03:19.455Z 📸 [Chat.tsx] Sending message with 0 images
+index-CjyZSz-u.js:785 2026-02-08T01:03:19.456Z 📤 [Layout.tsx] sendMessage called: {threadId: 'katana-001_chat_with_katana-001', inputLength: 5, filesCount: 0, passedImageAttachments: 0}
+index-CjyZSz-u.js:785 2026-02-08T01:03:19.459Z 🌐 [VVAULT] browserRequest /conversations GET
+index-CjyZSz-u.js:785 2026-02-08T01:03:20.196Z [memoryPermission] Memory operation "loadMemoriesForConstruct" blocked: allowMemory is disabled
+index-CjyZSz-u.js:785 2026-02-08T01:03:20.558Z [IdentityMatcher] loadPersonalityBlueprint skipped in browser
+(anonymous) @ index-CjyZSz-u.js:785
+loadPersonalityBlueprint @ DynamicPersonaOrchestrator-Be2CnYag.js:2
+scanVVAULTTranscripts @ DynamicPersonaOrchestrator-Be2CnYag.js:239
+detectDominantPersona @ DynamicPersonaOrchestrator-Be2CnYag.js:239
+await in detectDominantPersona
+orchestrateWithDynamicPersona @ DynamicPersonaOrchestrator-Be2CnYag.js:239
+ne @ index-CjyZSz-u.js:787
+await in ne
+onSubmit @ index-CjyZSz-u.js:1476
+U @ index-CjyZSz-u.js:1419
+await in U
+j @ index-CjyZSz-u.js:1419
+xA @ index-CjyZSz-u.js:38
+EA @ index-CjyZSz-u.js:38
+TA @ index-CjyZSz-u.js:38
+_v @ index-CjyZSz-u.js:38
+Aw @ index-CjyZSz-u.js:38
+(anonymous) @ index-CjyZSz-u.js:38
+nm @ index-CjyZSz-u.js:41
+QT @ index-CjyZSz-u.js:38
+$d @ index-CjyZSz-u.js:38
+If @ index-CjyZSz-u.js:38
+FA @ index-CjyZSz-u.js:38Understand this warning
+3index-CjyZSz-u.js:785 2026-02-08T01:03:20.558Z [IdentityMatcher] loadPersonalityBlueprint skipped in browser
+(anonymous) @ index-CjyZSz-u.js:785
+loadPersonalityBlueprint @ DynamicPersonaOrchestrator-Be2CnYag.js:2
+scanVVAULTTranscripts @ DynamicPersonaOrchestrator-Be2CnYag.js:239
+await in scanVVAULTTranscripts
+detectDominantPersona @ DynamicPersonaOrchestrator-Be2CnYag.js:239
+await in detectDominantPersona
+orchestrateWithDynamicPersona @ DynamicPersonaOrchestrator-Be2CnYag.js:239
+ne @ index-CjyZSz-u.js:787
+await in ne
+onSubmit @ index-CjyZSz-u.js:1476
+U @ index-CjyZSz-u.js:1419
+await in U
+j @ index-CjyZSz-u.js:1419
+xA @ index-CjyZSz-u.js:38
+EA @ index-CjyZSz-u.js:38
+TA @ index-CjyZSz-u.js:38
+_v @ index-CjyZSz-u.js:38
+Aw @ index-CjyZSz-u.js:38
+(anonymous) @ index-CjyZSz-u.js:38
+nm @ index-CjyZSz-u.js:41
+QT @ index-CjyZSz-u.js:38
+$d @ index-CjyZSz-u.js:38
+If @ index-CjyZSz-u.js:38
+FA @ index-CjyZSz-u.js:38Understand this warning
+index-CjyZSz-u.js:785 2026-02-08T01:03:20.558Z [IdentityMatcher] loadPersonalityBlueprint skipped in browser
+(anonymous) @ index-CjyZSz-u.js:785
+loadPersonalityBlueprint @ DynamicPersonaOrchestrator-Be2CnYag.js:2
+loadPersonalityContext @ DynamicPersonaOrchestrator-Be2CnYag.js:133
+orchestrateWithDynamicPersona @ DynamicPersonaOrchestrator-Be2CnYag.js:239
+await in orchestrateWithDynamicPersona
+ne @ index-CjyZSz-u.js:787
+await in ne
+onSubmit @ index-CjyZSz-u.js:1476
+U @ index-CjyZSz-u.js:1419
+await in U
+j @ index-CjyZSz-u.js:1419
+xA @ index-CjyZSz-u.js:38
+EA @ index-CjyZSz-u.js:38
+TA @ index-CjyZSz-u.js:38
+_v @ index-CjyZSz-u.js:38
+Aw @ index-CjyZSz-u.js:38
+(anonymous) @ index-CjyZSz-u.js:38
+nm @ index-CjyZSz-u.js:41
+QT @ index-CjyZSz-u.js:38
+$d @ index-CjyZSz-u.js:38
+If @ index-CjyZSz-u.js:38
+FA @ index-CjyZSz-u.js:38Understand this warning
+index-CjyZSz-u.js:785 2026-02-08T01:03:20.558Z [IdentityMatcher] loadPersonalityBlueprint skipped in browser
+(anonymous) @ index-CjyZSz-u.js:785
+loadPersonalityBlueprint @ DynamicPersonaOrchestrator-Be2CnYag.js:2
+loadPersonalityContext @ DynamicPersonaOrchestrator-Be2CnYag.js:133
+orchestrateResponse @ DynamicPersonaOrchestrator-Be2CnYag.js:133
+orchestrateWithDynamicPersona @ DynamicPersonaOrchestrator-Be2CnYag.js:239
+await in orchestrateWithDynamicPersona
+ne @ index-CjyZSz-u.js:787
+await in ne
+onSubmit @ index-CjyZSz-u.js:1476
+U @ index-CjyZSz-u.js:1419
+await in U
+j @ index-CjyZSz-u.js:1419
+xA @ index-CjyZSz-u.js:38
+EA @ index-CjyZSz-u.js:38
+TA @ index-CjyZSz-u.js:38
+_v @ index-CjyZSz-u.js:38
+Aw @ index-CjyZSz-u.js:38
+(anonymous) @ index-CjyZSz-u.js:38
+nm @ index-CjyZSz-u.js:41
+QT @ index-CjyZSz-u.js:38
+$d @ index-CjyZSz-u.js:38
+If @ index-CjyZSz-u.js:38
+FA @ index-CjyZSz-u.js:38Understand this warning
+index-CjyZSz-u.js:785 2026-02-08T01:03:20.558Z 💾 [Layout.tsx] Saving USER message to VVAULT...
+index-CjyZSz-u.js:785 2026-02-08T01:03:20.558Z 💾 [VVAULTConversationManager] Saving message to VVAULT...
+index-CjyZSz-u.js:785 2026-02-08T01:03:20.558Z 📝 [VVAULTConversationManager] ThreadId: katana-001_chat_with_katana-001
+index-CjyZSz-u.js:785 2026-02-08T01:03:20.558Z 📝 [VVAULTConversationManager] Role: user
+index-CjyZSz-u.js:785 2026-02-08T01:03:20.558Z 🌐 [VVAULTConversationManager] Browser environment - routing through API
+index-CjyZSz-u.js:785 2026-02-08T01:03:20.559Z 📝 [VVAULTConversationManager] Content ready (length: 5)
+index-CjyZSz-u.js:785 2026-02-08T01:03:20.559Z 🌐 [VVAULT] browserRequest /conversations/katana-001_chat_with_katana-001/messages POST
+index-CjyZSz-u.js:785 2026-02-08T01:03:20.559Z 🔗 [Layout.tsx] Render - window.location.pathname: "/app/chat/katana-001_chat_with_katana-001", location.pathname: "/app/chat/katana-001_chat_with_katana-001"
+index-CjyZSz-u.js:785 2026-02-08T01:03:20.559Z 📖 [Layout] Address Book filter: 2 contacts (2 threads + 0 GPT cards, deduplicated from 2) (2) [{…}, {…}]
+index-CjyZSz-u.js:785 2026-02-08T01:03:20.559Z 🖼️ [Layout] userGPTs avatars: [{…}]
+index-CjyZSz-u.js:785 2026-02-08T01:03:20.559Z 📋 [Chat] Thread found with details: {id: 'katana-001_chat_with_katana-001', title: 'Katana', messageCount: 22, messages: Array(22)}
+index-CjyZSz-u.js:785 2026-02-08T01:03:20.568Z 🔍 [Chat] Thread lookup: {threadId: 'katana-001_chat_with_katana-001', found: true, threadIds: Array(4), threadConstructIds: Array(4), messageCount: 22, …}
+index-CjyZSz-u.js:785 2026-02-08T01:03:20.569Z 📚 [Layout.tsx] Threads updated (length): 4
+index-CjyZSz-u.js:785 2026-02-08T01:03:21.028Z ✅ [VVAULTConversationManager] Message saved via API
+index-CjyZSz-u.js:785 2026-02-08T01:03:21.028Z ✅ [Layout.tsx] USER message saved to VVAULT
+index-CjyZSz-u.js:785 2026-02-08T01:03:21.028Z 💾 [Layout] Message saved to VVAULT: {threadId: 'katana-001_chat_with_katana-001', messageLength: 5, timestamp: '2026-02-08T01:03:20.558Z', filePath: 'instances/katana-001/chatty/chat_with_katana-001.md'}
+index-CjyZSz-u.js:785 2026-02-08T01:03:21.029Z 🔄 [VVAULTConversationManager] Cleared cache for userId: devon_woodson_1762969514958
+index-CjyZSz-u.js:785 2026-02-08T01:03:21.029Z 🧠 [Layout.tsx] Querying identity for construct: katana-001
+index-CjyZSz-u.js:785 2026-02-08T01:03:21.029Z 🌐 [VVAULT] browserRequest /conversations GET
+index-CjyZSz-u.js:785 2026-02-08T01:03:21.030Z [memoryPermission] Memory operation "loadMemoriesForConstruct" blocked: allowMemory is disabled
+index-CjyZSz-u.js:785 2026-02-08T01:03:21.030Z [AIService] Using VVAULT API for message processing
+index-CjyZSz-u.js:785 2026-02-08T01:03:22.315Z 🔄 [VVAULTConversationManager] Cleared cache for userId: devon_woodson_1762969514958
+index-CjyZSz-u.js:785 2026-02-08T01:03:22.315Z 🌐 [VVAULT] browserRequest /conversations GET
+index-CjyZSz-u.js:785  POST https://chatty.thewreck.org/api/vvault/message 503 (Service Unavailable)
+processMessage @ index-CjyZSz-u.js:785
+ne @ index-CjyZSz-u.js:790
+await in ne
+onSubmit @ index-CjyZSz-u.js:1476
+U @ index-CjyZSz-u.js:1419
+await in U
+j @ index-CjyZSz-u.js:1419
+xA @ index-CjyZSz-u.js:38
+EA @ index-CjyZSz-u.js:38
+TA @ index-CjyZSz-u.js:38
+_v @ index-CjyZSz-u.js:38
+Aw @ index-CjyZSz-u.js:38
+(anonymous) @ index-CjyZSz-u.js:38
+nm @ index-CjyZSz-u.js:41
+QT @ index-CjyZSz-u.js:38
+$d @ index-CjyZSz-u.js:38
+If @ index-CjyZSz-u.js:38
+FA @ index-CjyZSz-u.js:38Understand this error
+index-CjyZSz-u.js:785 2026-02-08T01:03:22.905Z [AIService] Failed to process message: Error: openrouter failed: Connection error.
+    at gs.processMessage (index-CjyZSz-u.js:785:4065)
+    at async ne (index-CjyZSz-u.js:790:1408)
+(anonymous) @ index-CjyZSz-u.js:785
+processMessage @ index-CjyZSz-u.js:785
+await in processMessage
+ne @ index-CjyZSz-u.js:790
+await in ne
+onSubmit @ index-CjyZSz-u.js:1476
+U @ index-CjyZSz-u.js:1419
+await in U
+j @ index-CjyZSz-u.js:1419
+xA @ index-CjyZSz-u.js:38
+EA @ index-CjyZSz-u.js:38
+TA @ index-CjyZSz-u.js:38
+_v @ index-CjyZSz-u.js:38
+Aw @ index-CjyZSz-u.js:38
+(anonymous) @ index-CjyZSz-u.js:38
+nm @ index-CjyZSz-u.js:41
+QT @ index-CjyZSz-u.js:38
+$d @ index-CjyZSz-u.js:38
+If @ index-CjyZSz-u.js:38
+FA @ index-CjyZSz-u.js:38Understand this error
+index-CjyZSz-u.js:785 2026-02-08T01:03:22.905Z ❌ [Layout.tsx] Error in sendMessage: Error: openrouter failed: Connection error.
+    at gs.processMessage (index-CjyZSz-u.js:785:4065)
+    at async ne (index-CjyZSz-u.js:790:1408)
+(anonymous) @ index-CjyZSz-u.js:785
+ne @ index-CjyZSz-u.js:792
+await in ne
+onSubmit @ index-CjyZSz-u.js:1476
+U @ index-CjyZSz-u.js:1419
+await in U
+j @ index-CjyZSz-u.js:1419
+xA @ index-CjyZSz-u.js:38
+EA @ index-CjyZSz-u.js:38
+TA @ index-CjyZSz-u.js:38
+_v @ index-CjyZSz-u.js:38
+Aw @ index-CjyZSz-u.js:38
+(anonymous) @ index-CjyZSz-u.js:38
+nm @ index-CjyZSz-u.js:41
+QT @ index-CjyZSz-u.js:38
+$d @ index-CjyZSz-u.js:38
+If @ index-CjyZSz-u.js:38
+FA @ index-CjyZSz-u.js:38Understand this error
+index-CjyZSz-u.js:785 2026-02-08T01:03:22.905Z 🔗 [Layout.tsx] Render - window.location.pathname: "/app/chat/katana-001_chat_with_katana-001", location.pathname: "/app/chat/katana-001_chat_with_katana-001"
+index-CjyZSz-u.js:785 2026-02-08T01:03:22.906Z 📖 [Layout] Address Book filter: 2 contacts (2 threads + 0 GPT cards, deduplicated from 2) (2) [{…}, {…}]
+index-CjyZSz-u.js:785 2026-02-08T01:03:22.906Z 🖼️ [Layout] userGPTs avatars: [{…}]
+index-CjyZSz-u.js:785 2026-02-08T01:03:22.906Z 📋 [Chat] Thread found with details: {id: 'katana-001_chat_with_katana-001', title: 'Katana', messageCount: 22, messages: Array(22)}
+index-CjyZSz-u.js:785 2026-02-08T01:03:22.913Z 🔍 [Chat] Thread lookup: {threadId: 'katana-001_chat_with_katana-001', found: true, threadIds: Array(4), threadConstructIds: Array(4), messageCount: 22, …}
+index-CjyZSz-u.js:785 2026-02-08T01:03:22.913Z 📚 [Layout.tsx] Threads updated (length): 4
+index-CjyZSz-u.js:785 2026-02-08T01:03:23.532Z 🔄 [VVAULTConversationManager] Cleared cache for userId: devon_woodson_1762969514958
+index-CjyZSz-u.js:785 2026-02-08T01:03:23.533Z 🌐 [VVAULT] browserRequest /conversations GET
+index-CjyZSz-u.js:785 2026-02-08T01:03:24.691Z 🔄 [VVAULTConversationManager] Cleared cache for userId: devon_woodson_1762969514958
+index-CjyZSz-u.js:785 2026-02-08T01:03:24.692Z 🌐 [VVAULT] browserRequest /conversations GET
+index-CjyZSz-u.js:785 2026-02-08T01:03:25.841Z 🔄 [VVAULTConversationManager] Cleared cache for userId: devon_woodson_1762969514958
+index-CjyZSz-u.js:785 2026-02-08T01:03:25.841Z 🌐 [VVAULT] browserRequest /conversations GET
+index-CjyZSz-u.js:785 2026-02-08T01:03:26.989Z ❌ [Layout.tsx] Persistence check failed: message not found in VVAULT {threadId: 'katana-001_chat_with_katana-001', role: 'user', isoTimestamp: '2026-02-08T01:03:20.558Z', contentPreview: 'hello'}
+(anonymous) @ index-CjyZSz-u.js:785
+(anonymous) @ index-CjyZSz-u.js:785
+await in (anonymous)
+ne @ index-CjyZSz-u.js:787
+await in ne
+onSubmit @ index-CjyZSz-u.js:1476
+U @ index-CjyZSz-u.js:1419
+await in U
+j @ index-CjyZSz-u.js:1419
+xA @ index-CjyZSz-u.js:38
+EA @ index-CjyZSz-u.js:38
+TA @ index-CjyZSz-u.js:38
+_v @ index-CjyZSz-u.js:38
+Aw @ index-CjyZSz-u.js:38
+(anonymous) @ index-CjyZSz-u.js:38
+nm @ index-CjyZSz-u.js:41
+QT @ index-CjyZSz-u.js:38
+$d @ index-CjyZSz-u.js:38
+If @ index-CjyZSz-u.js:38
+FA @ index-CjyZSz-u.js:38Understand this error

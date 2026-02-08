@@ -241,8 +241,8 @@ function resolveClientIp(req) {
   return req.ip || req.connection?.remoteAddress || "127.0.0.1";
 }
 
-function normalizeRuntime(runtimeId = "synth") {
-  const id = (runtimeId || "synth").toLowerCase();
+function normalizeRuntime(runtimeId = "zen") {
+  const id = (runtimeId || "zen").toLowerCase();
   if (id === "lin" || id === "linear" || id === "baseline") {
     return {
       id: "lin",
@@ -253,9 +253,9 @@ function normalizeRuntime(runtimeId = "synth") {
     };
   }
   return {
-    id: "synth",
-    name: "Synth",
-    mode: "synth",
+    id: "zen",
+    name: "Zen",
+    mode: "zen",
     tone: "Warm, conversational synthesis with adaptive empathy.",
     description: "Chatty's calibrated orchestration layer blending helper seats.",
   };
