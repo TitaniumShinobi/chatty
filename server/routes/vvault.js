@@ -3619,6 +3619,17 @@ router.post("/message", async (req, res) => {
         aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
       } else {
         // OpenRouter
+        if (!openrouter) {
+          const errMsg = 'OpenRouter API key is not configured. Set OPENROUTER_API_KEY in environment.';
+          console.error(`❌ [VVAULT Proxy] ${errMsg}`);
+          return res.status(503).json({
+            success: false,
+            error: errMsg,
+            provider: 'openrouter',
+            model: effectiveModel,
+            fix: 'Add OPENROUTER_API_KEY to your .env file and restart the server.'
+          });
+        }
         console.log('[OPENROUTER] Calling', { model: effectiveModel, user: req.user?.email, historyMessages: conversationHistoryMessages.length });
         try {
           completion = await openrouter.chat.completions.create({
@@ -3782,6 +3793,9 @@ router.post("/message", async (req, res) => {
               const ollamaData = await ollamaResp.json();
               aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
             } else {
+              if (!openrouter) {
+                throw new Error('OpenRouter API key is not configured. Set OPENROUTER_API_KEY in environment.');
+              }
               console.log('[OPENROUTER] Calling', { model: effectiveModel, user: req.user?.email, historyMessages: fbHistoryMessages.length });
               try {
                 completion = await openrouter.chat.completions.create({
@@ -3910,6 +3924,9 @@ router.post("/message", async (req, res) => {
           const ollamaData = await ollamaResp.json();
           aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
         } else {
+          if (!openrouter) {
+            throw new Error('OpenRouter API key is not configured. Set OPENROUTER_API_KEY in environment.');
+          }
           console.log('[OPENROUTER] Calling', { model: effectiveModel, user: req.user?.email, historyMessages: fb2HistoryMessages.length });
           try {
             completion = await openrouter.chat.completions.create({
