@@ -706,7 +706,7 @@ router.post("/conversations/:sessionId/messages", async (req, res) => {
   try {
     // Ensure modules are loaded for standalone writeTranscript function
     await loadVVAULTModules();
-    // CRITICAL: Always use constructCallsign format (e.g., "synth-001"), never just "synth"
+    // CRITICAL: Always use constructCallsign format (e.g., "zen-001"), never just "zen"
     const actualConstructId = constructId || metadata?.constructId || 'zen-001';
     const actualConstructCallsign = metadata?.constructCallsign || constructId || metadata?.constructId;
 

@@ -7,7 +7,7 @@ const { VVAULT_ROOT } = require('./config');
  * Adds or updates the connectedConstructId field in the IMPORT_METADATA comment
  * 
  * @param {string} userId - User ID
- * @param {string} sessionId - Session/thread ID (e.g., "synth-001" or detected construct ID)
+ * @param {string} sessionId - Session/thread ID (e.g., "zen-001" or detected construct ID)
  * @param {string} connectedConstructId - The construct ID to connect this conversation to
  * @returns {Promise<boolean>} - True if update was successful
  */

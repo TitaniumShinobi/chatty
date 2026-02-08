@@ -120,7 +120,7 @@ class IdentityService {
   /**
    * Get or create collection for a construct (USER-SCOPED)
    * @param {string} vvaultUserId - VVAULT user ID (for isolation)
-   * @param {string} constructCallsign - Construct-callsign (e.g., "synth-001")
+   * @param {string} constructCallsign - Construct-callsign (e.g., "zen-001")
    * @param {string} memoryType - "short-term" or "long-term"
    */
   async getCollection(vvaultUserId, constructCallsign, memoryType) {

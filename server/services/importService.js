@@ -1311,7 +1311,7 @@ async function convertConversationToTranscript(conversation, userId, userName, g
  * @param {Buffer} buffer - ZIP file buffer
  * @param {string} userId - User ID
  * @param {string} source - Provider source ('chatgpt', 'gemini', 'claude', etc.)
- * @param {string} constructId - Construct ID (defaults to 'synth-001', but will be auto-detected per conversation)
+ * @param {string} constructId - Construct ID (defaults to 'zen-001', but will be auto-detected per conversation)
  */
 export async function persistImportToVVAULT(buffer, userId, source, runtimeMetadata = null, identity = null) {
   if (!buffer || !userId || !source) {

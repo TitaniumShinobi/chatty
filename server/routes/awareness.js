@@ -5,7 +5,7 @@ const router = express.Router();
 
 router.get("/awareness", async (req, res) => {
   try {
-    const runtime = typeof req.query.runtime === "string" ? req.query.runtime : "synth";
+    const runtime = typeof req.query.runtime === "string" ? req.query.runtime : "zen";
     const context = await buildRuntimeAwareness(req, runtime);
     res.json({ ok: true, ...context });
   } catch (error) {
