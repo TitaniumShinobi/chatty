@@ -77,6 +77,14 @@ function resolveModelForGPT(gptConfig, availability = {}) {
     } else if (/^(gpt-|o1-|o3-|davinci|curie|babbage|ada)/.test(configured)) {
       provider = 'openai';
       model = configured;
+    } else if (/^[a-z0-9_-]+:[a-z]/.test(configured) && !configured.includes('/')) {
+      provider = 'ollama';
+      model = configured;
+    } else if (!configured.includes('/') && !configured.includes(':')) {
+      console.warn(`⚠️ [ModelResolver] Bare model name "${configured}" detected (likely stale Ollama ref), falling back to default`);
+      provider = 'openrouter';
+      model = DEFAULT_OPENROUTER_MODEL;
+      source = 'fallback_from_bare_model';
     } else {
       provider = 'openrouter';
       model = configured;
@@ -3405,8 +3413,6 @@ router.get("/chat/:sessionId", requireAuth, async (req, res) => {
     const sanitizedSessionId = sessionId.replace(/[^a-zA-Z0-9_-]/g, "");
     const [constructIdCandidate] = sanitizedSessionId.split("_chat_with_");
     const constructId = constructIdCandidate || sanitizedSessionId;
-    // CRITICAL: Extract constructName (without version suffix) for folder path
-    const constructName = constructId.replace(/-\d+$/, '');
     const fileName = `chat_with_${constructId}.md`;
     const fs = require("fs").promises;
     const transcriptPath = path.join(
@@ -3415,12 +3421,35 @@ router.get("/chat/:sessionId", requireAuth, async (req, res) => {
       "shard_0000",
       vvaultUserId,
       "instances",
-      constructName,  // Use name without version suffix for folder
+      constructId,
       "chatty",
       fileName
     );
 
-    const content = await fs.readFile(transcriptPath, "utf8");
+    let content;
+    try {
+      content = await fs.readFile(transcriptPath, "utf8");
+    } catch (primaryErr) {
+      if (primaryErr.code === 'ENOENT') {
+        const legacyName = constructId.replace(/-\d+$/, '');
+        if (legacyName !== constructId) {
+          const legacyPath = path.join(
+            VVAULT_ROOT, "users", "shard_0000", vvaultUserId,
+            "instances", legacyName, "chatty", fileName
+          );
+          try {
+            content = await fs.readFile(legacyPath, "utf8");
+            console.log(`📂 [VVAULT API] Found transcript at legacy path: instances/${legacyName}/chatty/`);
+          } catch (legacyErr) {
+            throw primaryErr;
+          }
+        } else {
+          throw primaryErr;
+        }
+      } else {
+        throw primaryErr;
+      }
+    }
     return res.json({ ok: true, content });
   } catch (error) {
     if (error?.code === "ENOENT") {
