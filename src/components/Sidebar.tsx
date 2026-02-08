@@ -9,7 +9,7 @@ import React, {
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   MessageSquare,
-  Trash2,
+  MoreVertical,
   Search,
   PanelLeftClose,
   Shield,
@@ -1056,10 +1056,12 @@ const Sidebar: React.FC<SidebarProps> = ({
                       />
                     ) : null}
                   </div>
-                  {/* Hide delete button for primary construct (Zen) */}
+                  {/* Settings button for GPT constructs (not Zen/Lin) */}
                   {!(
                     (conversation as any).isPrimary ||
-                    (conversation as any).constructId === "zen-001"
+                    (conversation as any).constructId === "zen-001" ||
+                    (conversation as any).constructId === "lin-001" ||
+                    (conversation as any).constructId === "lin"
                   ) && (
                     <div
                       role="button"
@@ -1067,13 +1069,15 @@ const Sidebar: React.FC<SidebarProps> = ({
                       className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all ml-2"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onDeleteConversation(conversation.id);
+                        const cid = (conversation as any).constructId || "";
+                        navigate(`/app/ais/edit/${cid}`);
                       }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
                           e.stopPropagation();
-                          onDeleteConversation(conversation.id);
+                          const cid = (conversation as any).constructId || "";
+                          navigate(`/app/ais/edit/${cid}`);
                         }
                       }}
                       style={{ color: "var(--chatty-text)" }}
@@ -1084,9 +1088,9 @@ const Sidebar: React.FC<SidebarProps> = ({
                       onMouseLeave={(e) => {
                         e.currentTarget.style.backgroundColor = "transparent";
                       }}
-                      aria-label={`Delete conversation ${conversation.title}`}
+                      aria-label={`Settings for ${conversation.title}`}
                     >
-                      <Trash2 size={12} />
+                      <MoreVertical size={12} />
                     </div>
                   )}
                 </>
