@@ -33,7 +33,7 @@ import {
   getUserFriendlyErrorMessage,
   isOrchestrationError,
 } from "../engine/orchestration/OrchestrationErrors";
-import { OPENAI_MODELS, OPENROUTER_MODELS, OLLAMA_MODELS } from "../lib/modelProviders";
+import { OPENAI_MODELS, OPENROUTER_MODELS, OLLAMA_MODELS, ALL_MODELS } from "../lib/modelProviders";
 
 interface GPTCreatorProps {
   isVisible: boolean;
@@ -112,8 +112,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       imageGeneration: false,
       codeInterpreter: true,
     },
-    modelId: "openrouter:microsoft/phi-3-mini-128k-instruct",
-    conversationModel: "openrouter:microsoft/phi-3-mini-128k-instruct",
+    modelId: "openrouter:meta-llama/llama-3.3-70b-instruct",
+    conversationModel: "openrouter:meta-llama/llama-3.3-70b-instruct",
     creativeModel: "openrouter:mistralai/mistral-7b-instruct",
     codingModel: "openrouter:deepseek/deepseek-coder-33b-instruct",
   });
@@ -615,6 +615,11 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         ...initialConfig,
         avatar: normalizeAvatarUrl(initialConfig.avatar),
       });
+      const savedModel = initialConfig.conversationModel || initialConfig.modelId;
+      const isLinDefault = !savedModel || savedModel === "openrouter:microsoft/phi-3-mini-128k-instruct";
+      if (!isLinDefault) {
+        setOrchestrationMode("custom");
+      }
       // Extract filename from avatar URL if it's a URL, or set a generic name
       if (initialConfig.avatar) {
         if (initialConfig.avatar.startsWith("/api/")) {
@@ -715,6 +720,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       }
     } else if (!initialConfig && isVisible) {
       resetForm();
+      setOrchestrationMode("lin");
+      orchestrationModeUserChanged.current = false;
     }
   }, [isVisible, initialConfig]);
 
@@ -791,16 +798,18 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     adjustPreviewTextareaHeight();
   }, [previewInput]);
 
-  // Set default models when Chatty's Lin mode is selected
+  // Set default models when user manually switches TO Lin mode (not on initial load)
+  const orchestrationModeUserChanged = useRef(false);
   useEffect(() => {
-    if (orchestrationMode === "lin") {
+    if (orchestrationMode === "lin" && orchestrationModeUserChanged.current) {
       setConfig((prev) => ({
         ...prev,
-        conversationModel: "openrouter:microsoft/phi-3-mini-128k-instruct",
+        conversationModel: "openrouter:meta-llama/llama-3.3-70b-instruct",
         creativeModel: "openrouter:mistralai/mistral-7b-instruct",
         codingModel: "openrouter:deepseek/deepseek-coder-33b-instruct",
       }));
     }
+    orchestrationModeUserChanged.current = true;
   }, [orchestrationMode]);
 
   // Load Lin's conversation history from Supabase when GPTCreator opens
@@ -898,8 +907,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         imageGeneration: false,
         codeInterpreter: true,
       },
-      modelId: "openrouter:microsoft/phi-3-mini-128k-instruct",
-      conversationModel: "openrouter:microsoft/phi-3-mini-128k-instruct",
+      modelId: "openrouter:meta-llama/llama-3.3-70b-instruct",
+      conversationModel: "openrouter:meta-llama/llama-3.3-70b-instruct",
       creativeModel: "openrouter:mistralai/mistral-7b-instruct",
       codingModel: "openrouter:deepseek/deepseek-coder-33b-instruct",
       hasPersistentMemory: true, // VVAULT integration - defaults to true
@@ -2082,7 +2091,7 @@ Assistant:`;
       const selectedModel =
         config.conversationModel ||
         config.modelId ||
-        "openrouter:microsoft/phi-3-mini-128k-instruct";
+        "openrouter:meta-llama/llama-3.3-70b-instruct";
       // Preview using model - pass constructId for memory injection
 
       const constructIdForMemory =
@@ -3530,7 +3539,7 @@ ALWAYS:
                           <select
                             value={
                               config.conversationModel ||
-                              "openrouter:meta-llama/llama-3.1-8b-instruct"
+                              "openrouter:meta-llama/llama-3.3-70b-instruct"
                             }
                             onChange={(e) =>
                               setConfig((prev) => ({
@@ -3546,6 +3555,13 @@ ALWAYS:
                               width: "250px",
                             }}
                           >
+                            {config.conversationModel && !ALL_MODELS.some(m => m.value === config.conversationModel) && (
+                              <optgroup label="📌 Current Model">
+                                <option value={config.conversationModel}>
+                                  {config.conversationModel.replace(/^(openrouter|openai|ollama):/, '')}
+                                </option>
+                              </optgroup>
+                            )}
                             <optgroup label="🔷 OpenAI (Managed)">
                               {OPENAI_MODELS.map((m) => (
                                 <option key={m.value} value={m.value}>

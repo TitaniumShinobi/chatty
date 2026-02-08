@@ -181,10 +181,10 @@ export class GPTManager {
         null,
         JSON.stringify({ webBrowsing: false, imageGeneration: false, codeInterpreter: true }),
         'katana-001',
-        'meta-llama/llama-3.3-70b-instruct',
-        'meta-llama/llama-3.3-70b-instruct',
-        'meta-llama/llama-3.3-70b-instruct',
-        'meta-llama/llama-3.3-70b-instruct',
+        'openrouter:meta-llama/llama-3.3-70b-instruct',
+        'openrouter:meta-llama/llama-3.3-70b-instruct',
+        'openrouter:mistralai/mistral-7b-instruct',
+        'openrouter:deepseek/deepseek-coder-33b-instruct',
         'lin',
         1,
         now,
@@ -386,6 +386,36 @@ export class GPTManager {
   async getGPTByCallsign(constructCallsign) {
     if (!constructCallsign) return null;
     
+    // Check ais table first (GPTCreator saves here)
+    try {
+      const aiStmt = this.db.prepare('SELECT * FROM ais WHERE construct_callsign = ? LIMIT 1');
+      const aiRow = aiStmt.get(constructCallsign);
+      if (aiRow) {
+        return {
+          id: aiRow.id,
+          name: aiRow.name,
+          description: aiRow.description,
+          instructions: aiRow.instructions,
+          conversationStarters: JSON.parse(aiRow.conversation_starters || '[]'),
+          avatar: aiRow.avatar,
+          capabilities: JSON.parse(aiRow.capabilities || '{}'),
+          constructCallsign: aiRow.construct_callsign,
+          modelId: aiRow.model_id,
+          conversationModel: aiRow.conversation_model,
+          creativeModel: aiRow.creative_model,
+          codingModel: aiRow.coding_model,
+          orchestrationMode: aiRow.orchestration_mode || 'lin',
+          isActive: Boolean(aiRow.is_active),
+          createdAt: aiRow.created_at,
+          updatedAt: aiRow.updated_at,
+          userId: aiRow.user_id
+        };
+      }
+    } catch (e) {
+      // ais table may not exist or lack columns - fall through to gpts
+    }
+
+    // Fallback to gpts table (legacy/seed data)
     const stmt = this.db.prepare('SELECT * FROM gpts WHERE construct_callsign = ? LIMIT 1');
     const row = stmt.get(constructCallsign);
 

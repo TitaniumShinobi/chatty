@@ -31,6 +31,7 @@ export interface ModelOption {
  */
 export const OPENROUTER_MODELS: ModelOption[] = [
   // General Purpose - Popular
+  { value: 'openrouter:meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B (Recommended)', provider: 'openrouter', category: 'general' },
   { value: 'openrouter:meta-llama/llama-3.1-8b-instruct', label: 'Llama 3.1 8B', provider: 'openrouter', category: 'general' },
   { value: 'openrouter:meta-llama/llama-3.1-70b-instruct', label: 'Llama 3.1 70B', provider: 'openrouter', category: 'general' },
   { value: 'openrouter:meta-llama/llama-3.1-405b-instruct', label: 'Llama 3.1 405B', provider: 'openrouter', category: 'general' },
@@ -208,7 +209,7 @@ export function parseModelString(modelString: string): { provider: ModelProvider
 export const LIN_DEFAULT_MODELS = {
   creative: 'openrouter:mistralai/mistral-7b-instruct',
   coding: 'openrouter:deepseek/deepseek-coder-33b-instruct',
-  smalltalk: 'openrouter:microsoft/phi-3-mini-128k-instruct',
+  smalltalk: 'openrouter:meta-llama/llama-3.3-70b-instruct',
 };
 
 /**

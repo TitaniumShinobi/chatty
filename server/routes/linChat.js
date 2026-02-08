@@ -443,11 +443,11 @@ router.get('/models', async (req, res) => {
   try {
     const models = {
       openrouter: [
+        'openrouter:meta-llama/llama-3.3-70b-instruct',
         'openrouter:meta-llama/llama-3.1-8b-instruct',
         'openrouter:meta-llama/llama-3.1-70b-instruct',
         'openrouter:mistralai/mistral-7b-instruct',
         'openrouter:deepseek/deepseek-coder-33b-instruct',
-        'openrouter:microsoft/phi-3-mini-128k-instruct',
       ],
       ollama: process.env.OLLAMA_HOST ? [
         'ollama:phi3:latest',
