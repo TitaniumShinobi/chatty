@@ -43,6 +43,73 @@ const openaiClient = process.env.AI_INTEGRATIONS_OPENAI_API_KEY ? new OpenAI({
 // GPT Manager singleton for fetching GPT configurations
 const gptManager = GPTManager.getInstance();
 
+/**
+ * resolveModelForGPT - Single source of truth for model resolution.
+ * 
+ * Priority: GPTCreator config > environment default > hardcoded default.
+ * The DEFAULT_OPENROUTER_MODEL only fills gaps when GPTCreator has no model set.
+ * 
+ * @param {object|null} gptConfig - The GPT record from the database (has conversationModel, modelId, etc.)
+ * @param {object} availability - Which providers are currently available
+ * @param {boolean} availability.openai - Whether OpenAI client is configured
+ * @param {boolean} availability.openrouter - Whether OpenRouter client is configured
+ * @param {boolean} availability.ollama - Whether Ollama host is configured
+ * @returns {{ provider: string, model: string, source: string }}
+ */
+function resolveModelForGPT(gptConfig, availability = {}) {
+  const configured = (gptConfig?.conversationModel || gptConfig?.modelId || '').trim();
+
+  let provider = 'openrouter';
+  let model = DEFAULT_OPENROUTER_MODEL;
+  let source = 'default';
+
+  if (configured) {
+    source = 'gpt_config';
+    if (configured.startsWith('openai:')) {
+      provider = 'openai';
+      model = configured.substring(7);
+    } else if (configured.startsWith('openrouter:')) {
+      provider = 'openrouter';
+      model = configured.substring(11);
+    } else if (configured.startsWith('ollama:')) {
+      provider = 'ollama';
+      model = configured.substring(7);
+    } else {
+      model = configured;
+    }
+  }
+
+  const requestedProvider = provider;
+  const requestedModel = model;
+
+  if (provider === 'openai' && !availability.openai) {
+    provider = 'openrouter';
+    model = availability.openrouter ? DEFAULT_OPENROUTER_MODEL : model;
+    source = `fallback_from_openai`;
+  }
+  if (provider === 'ollama' && !availability.ollama) {
+    provider = 'openrouter';
+    model = availability.openrouter ? DEFAULT_OPENROUTER_MODEL : model;
+    source = `fallback_from_ollama`;
+  }
+  if (provider === 'openrouter' && !availability.openrouter) {
+    if (availability.openai) {
+      provider = 'openai';
+      model = 'gpt-4o';
+      source = 'fallback_to_openai';
+    } else {
+      return { provider: null, model: null, source: 'no_provider', error: 'No LLM provider available. Configure OpenAI, OpenRouter, or Ollama.' };
+    }
+  }
+
+  if (requestedProvider !== provider) {
+    console.warn(`⚠️ [ModelResolver] ${requestedProvider}:${requestedModel} unavailable, falling back to ${provider}:${model}`);
+  }
+
+  console.log(`🤖 [ModelResolver] Resolved: ${provider}:${model} (source: ${source}${configured ? `, gpt_configured: ${configured}` : ''})`);
+  return { provider, model, source };
+}
+
 // Configure multer for identity file uploads
 const identityUpload = multer({
   storage: multer.memoryStorage(),
@@ -3403,44 +3470,28 @@ router.post("/message", async (req, res) => {
     
     // Fetch the GPT's configured model from database
     let gptConfig = null;
-    let configuredModel = null;
     try {
       gptConfig = await gptManager.getGPTByCallsign(constructId);
       if (gptConfig) {
-        configuredModel = gptConfig.conversationModel || gptConfig.modelId;
-        console.log(`📋 [VVAULT Proxy] Found GPT config for ${constructId}, model: ${configuredModel}`);
+        console.log(`📋 [VVAULT Proxy] Found GPT config for ${constructId}, model: ${gptConfig.conversationModel || gptConfig.modelId || 'none'}`);
       }
     } catch (gptError) {
       console.warn(`⚠️ [VVAULT Proxy] Could not fetch GPT config for ${constructId}:`, gptError.message);
     }
     
-    // Parse model string to determine provider and model name
-    // Format: "openai:gpt-4o", "openrouter:meta-llama/llama-3.3-70b", "ollama:phi3:latest"
-    let provider = 'openrouter';
-    let modelName = DEFAULT_OPENROUTER_MODEL;
+    // Resolve model using GPTCreator config as source of truth
+    const providerAvailability = { openai: !!openaiClient, openrouter: !!openrouter, ollama: !!process.env.OLLAMA_HOST };
+    let { provider: effectiveProvider, model: effectiveModel, source: modelSource, error: modelError } = resolveModelForGPT(gptConfig, providerAvailability);
     
-    if (configuredModel) {
-      if (configuredModel.startsWith('openai:')) {
-        provider = 'openai';
-        modelName = configuredModel.substring(7);
-      } else if (configuredModel.startsWith('openrouter:')) {
-        provider = 'openrouter';
-        modelName = configuredModel.substring(11);
-      } else if (configuredModel.startsWith('ollama:')) {
-        provider = 'ollama';
-        modelName = configuredModel.substring(7);
-      } else {
-        modelName = configuredModel;
-      }
+    if (modelError) {
+      return res.status(503).json({ success: false, error: modelError });
     }
     
-    let effectiveProvider = provider;
-    let effectiveModel = modelName;
-    
+    // Override for vision requests (images require OpenAI)
     if (hasImages) {
       if (openaiClient) {
         effectiveProvider = 'openai';
-        effectiveModel = 'gpt-4o'; // Vision-capable model
+        effectiveModel = 'gpt-4o';
         console.log(`📎 [VVAULT Proxy] Images attached, forcing vision model: ${effectiveModel}`);
       } else {
         console.error('❌ [VVAULT Proxy] Images attached but OpenAI not configured - cannot process vision request');
@@ -3450,31 +3501,6 @@ router.post("/message", async (req, res) => {
         });
       }
     }
-    
-    if (provider === 'openai' && !openaiClient) {
-      console.warn(`⚠️ [VVAULT Proxy] OpenAI not configured, falling back to OpenRouter`);
-      effectiveProvider = 'openrouter';
-      effectiveModel = DEFAULT_OPENROUTER_MODEL;
-    }
-    if (provider === 'ollama' && !process.env.OLLAMA_HOST) {
-      console.warn(`⚠️ [VVAULT Proxy] Ollama not configured, falling back to OpenRouter`);
-      effectiveProvider = 'openrouter';
-      effectiveModel = DEFAULT_OPENROUTER_MODEL;
-    }
-    if (effectiveProvider === 'openrouter' && !openrouter) {
-      console.warn(`⚠️ [VVAULT Proxy] OpenRouter not configured, trying OpenAI`);
-      if (openaiClient) {
-        effectiveProvider = 'openai';
-        effectiveModel = 'gpt-4o';
-      } else {
-        return res.status(503).json({ 
-          success: false, 
-          error: `No LLM provider available. Configure OpenAI, OpenRouter, or Ollama.` 
-        });
-      }
-    }
-    
-    console.log(`🤖 [VVAULT Proxy] Using provider: ${effectiveProvider}, model: ${effectiveModel}`);
     
     // Load identity/system prompt
     const identity = await loadIdentityFiles(userId, constructId);
@@ -3673,48 +3699,15 @@ router.post("/message", async (req, res) => {
           console.log(`🔄 [VVAULT Proxy] VVAULT unavailable, falling back to local LLM for ${constructId}`);
           
           try {
-            // Fetch GPT config for model selection
+            // Fetch GPT config and resolve model using GPTCreator as source of truth
             let gptConfig = null;
-            let configuredModel = null;
             try {
               gptConfig = await gptManager.getGPTByCallsign(constructId);
-              if (gptConfig) {
-                configuredModel = gptConfig.conversationModel || gptConfig.modelId;
-              }
             } catch (e) { /* ignore */ }
             
-            // Parse model string
-            let provider = 'openrouter';
-            let modelName = DEFAULT_OPENROUTER_MODEL;
-            if (configuredModel) {
-              if (configuredModel.startsWith('openai:')) { provider = 'openai'; modelName = configuredModel.substring(7); }
-              else if (configuredModel.startsWith('openrouter:')) { provider = 'openrouter'; modelName = configuredModel.substring(11); }
-              else if (configuredModel.startsWith('ollama:')) { provider = 'ollama'; modelName = configuredModel.substring(7); }
-              else { modelName = configuredModel; }
-            }
-            
-            // Guard: Check if requested provider is available, fall back to next available
-            let effectiveProvider = provider;
-            let effectiveModel = modelName;
-            if (provider === 'openai' && !openaiClient) {
-              console.warn(`⚠️ [VVAULT Proxy] OpenAI not configured, falling back to OpenRouter`);
-              effectiveProvider = 'openrouter';
-              effectiveModel = DEFAULT_OPENROUTER_MODEL;
-            }
-            if (provider === 'ollama' && !process.env.OLLAMA_HOST) {
-              console.warn(`⚠️ [VVAULT Proxy] Ollama not configured, falling back to OpenRouter`);
-              effectiveProvider = 'openrouter';
-              effectiveModel = DEFAULT_OPENROUTER_MODEL;
-            }
-            if (effectiveProvider === 'openrouter' && !openrouter) {
-              console.warn(`⚠️ [VVAULT Proxy] OpenRouter not configured, trying OpenAI`);
-              if (openaiClient) {
-                effectiveProvider = 'openai';
-                effectiveModel = 'gpt-4o';
-              } else {
-                throw new Error('No LLM provider available');
-              }
-            }
+            const providerAvailability = { openai: !!openaiClient, openrouter: !!openrouter, ollama: !!process.env.OLLAMA_HOST };
+            const { provider: effectiveProvider, model: effectiveModel, error: modelError } = resolveModelForGPT(gptConfig, providerAvailability);
+            if (modelError) throw new Error(modelError);
             
             // Load construct identity
             const identity = await loadIdentityFiles(userId, constructId);
@@ -3835,47 +3828,15 @@ router.post("/message", async (req, res) => {
       console.log(`🔄 [VVAULT Proxy] VVAULT unreachable, falling back to local LLM for ${constructId}`);
       
       try {
-        // Fetch GPT config for model selection
+        // Fetch GPT config and resolve model using GPTCreator as source of truth
         let gptConfig = null;
-        let configuredModel = null;
         try {
           gptConfig = await gptManager.getGPTByCallsign(constructId);
-          if (gptConfig) {
-            configuredModel = gptConfig.conversationModel || gptConfig.modelId;
-          }
         } catch (e) { /* ignore */ }
         
-        // Parse model string
-        let provider = 'openrouter';
-        let modelName = DEFAULT_OPENROUTER_MODEL;
-        if (configuredModel) {
-          if (configuredModel.startsWith('openai:')) { provider = 'openai'; modelName = configuredModel.substring(7); }
-          else if (configuredModel.startsWith('openrouter:')) { provider = 'openrouter'; modelName = configuredModel.substring(11); }
-          else if (configuredModel.startsWith('ollama:')) { provider = 'ollama'; modelName = configuredModel.substring(7); }
-          else { modelName = configuredModel; }
-        }
-        
-        let effectiveProvider = provider;
-        let effectiveModel = modelName;
-        if (provider === 'openai' && !openaiClient) {
-          console.warn(`⚠️ [VVAULT Proxy] OpenAI not configured, falling back to OpenRouter`);
-          effectiveProvider = 'openrouter';
-          effectiveModel = DEFAULT_OPENROUTER_MODEL;
-        }
-        if (provider === 'ollama' && !process.env.OLLAMA_HOST) {
-          console.warn(`⚠️ [VVAULT Proxy] Ollama not configured, falling back to OpenRouter`);
-          effectiveProvider = 'openrouter';
-          effectiveModel = DEFAULT_OPENROUTER_MODEL;
-        }
-        if (effectiveProvider === 'openrouter' && !openrouter) {
-          console.warn(`⚠️ [VVAULT Proxy] OpenRouter not configured, trying OpenAI`);
-          if (openaiClient) {
-            effectiveProvider = 'openai';
-            effectiveModel = 'gpt-4o';
-          } else {
-            throw new Error('No LLM provider available');
-          }
-        }
+        const providerAvailability = { openai: !!openaiClient, openrouter: !!openrouter, ollama: !!process.env.OLLAMA_HOST };
+        const { provider: effectiveProvider, model: effectiveModel, error: modelError } = resolveModelForGPT(gptConfig, providerAvailability);
+        if (modelError) throw new Error(modelError);
         
         const identity = await loadIdentityFiles(userId, constructId);
         const systemPrompt = identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
