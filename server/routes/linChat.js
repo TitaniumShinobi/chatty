@@ -54,6 +54,11 @@ function parseModelString(modelString) {
     return { provider: 'ollama', model: modelString.substring(7) };
   }
   
+  // Detect OpenAI model names (gpt-*, o1-*, o3-*, etc.)
+  if (/^(gpt-|o1-|o3-|davinci|curie|babbage|ada)/.test(modelString)) {
+    return { provider: 'openai', model: modelString };
+  }
+  
   // Legacy format - assume it's an OpenRouter model if it contains '/'
   if (modelString.includes('/')) {
     return { provider: 'openrouter', model: modelString };

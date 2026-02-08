@@ -74,7 +74,11 @@ function resolveModelForGPT(gptConfig, availability = {}) {
     } else if (configured.startsWith('ollama:')) {
       provider = 'ollama';
       model = configured.substring(7);
+    } else if (/^(gpt-|o1-|o3-|davinci|curie|babbage|ada)/.test(configured)) {
+      provider = 'openai';
+      model = configured;
     } else {
+      provider = 'openrouter';
       model = configured;
     }
   }
@@ -3560,16 +3564,36 @@ router.post("/message", async (req, res) => {
           userMessageContent = message;
         }
         
-        completion = await openaiClient.chat.completions.create({
-          model: effectiveModel,
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...conversationHistoryMessages,
-            { role: "user", content: userMessageContent }
-          ],
-          max_tokens: 2048,
-        });
-        aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+        try {
+          completion = await openaiClient.chat.completions.create({
+            model: effectiveModel,
+            messages: [
+              { role: "system", content: systemPrompt },
+              ...conversationHistoryMessages,
+              { role: "user", content: userMessageContent }
+            ],
+            max_tokens: 2048,
+          });
+          aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+        } catch (openaiErr) {
+          if (openaiErr?.code === 'unknown_model' && openrouter) {
+            console.warn(`⚠️ [VVAULT Proxy] OpenAI rejected model "${effectiveModel}", falling back to OpenRouter`);
+            effectiveProvider = 'openrouter';
+            effectiveModel = DEFAULT_OPENROUTER_MODEL;
+            completion = await openrouter.chat.completions.create({
+              model: effectiveModel,
+              messages: [
+                { role: "system", content: systemPrompt },
+                ...conversationHistoryMessages,
+                { role: "user", content: typeof userMessageContent === 'string' ? userMessageContent : message }
+              ],
+              max_tokens: 2048,
+            });
+            aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+          } else {
+            throw openaiErr;
+          }
+        }
       } else if (effectiveProvider === 'ollama') {
         // Ollama requires different handling - use fetch directly
         const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
