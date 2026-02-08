@@ -6,7 +6,8 @@ Chatty is an AI-powered workspace application providing a thin UI layer for inte
 ## User Preferences
 - Primary construct: Zen (not Synth)
 - Sidebar Navigation: Zen, Lin, VVAULT, simForge, Library, Finance (default items) + "Get More" linking to Apps page
-- Address Book: Shows custom GPTs only (e.g., Katana) - Zen and Lin are excluded as they're system nav items
+- Address Book: Shows custom GPTs only (e.g., Katana) - Zen, Lin, and Synth are excluded as they're system nav items
+- Synth is a deprecated/legacy construct name — all defaults now use zen-001 instead of synth-001
 - GPTCreator: Tool for creating/editing GPTs
 - GPTCreator Create Tab: Lin (conversational agent users speak to when creating GPTs)
 - Lin is a system construct for character brainstorming and simForge guidance - appears in sidebar below Zen

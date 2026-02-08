@@ -589,9 +589,9 @@ router.post("/conversations", async (req, res) => {
 
   console.log(`✅ [VVAULT API] POST /conversations - User validated: ${userId}`);
 
-  // CRITICAL: Always use constructCallsign format (e.g., "synth-001"), never just "synth"
+  // CRITICAL: Always use constructCallsign format (e.g., "zen-001"), never just "zen"
   // Per rubric: instances/{constructCallsign}/ - must include callsign
-  const { sessionId, constructId = "synth-001" } = req.body || {};
+  const { sessionId, constructId = "zen-001" } = req.body || {};
   const title = req.body?.title || (constructId ? constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase()) : 'Conversation');
   const session = sessionId || `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
@@ -621,7 +621,7 @@ router.post("/conversations", async (req, res) => {
         role: "system",
         content: `CONVERSATION_CREATED:${title}`,
         title,
-        constructId: constructId || 'synth-001', // Must use callsign format
+        constructId: constructId || 'zen-001', // Must use callsign format
         constructName: title,
         constructCallsign: constructId // constructId may already be in callsign format (e.g., "example-construct-001")
       });
@@ -707,7 +707,7 @@ router.post("/conversations/:sessionId/messages", async (req, res) => {
     // Ensure modules are loaded for standalone writeTranscript function
     await loadVVAULTModules();
     // CRITICAL: Always use constructCallsign format (e.g., "synth-001"), never just "synth"
-    const actualConstructId = constructId || metadata?.constructId || 'synth-001';
+    const actualConstructId = constructId || metadata?.constructId || 'zen-001';
     const actualConstructCallsign = metadata?.constructCallsign || constructId || metadata?.constructId;
 
     // Use standalone writeTranscript function (not a method on connector)
