@@ -692,7 +692,14 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         const loadScripts = async () => {
           try {
             setIsLoadingScripts(true);
-            const constructCallsign = initialConfig.id!.replace("gpt-", "");
+            const constructCallsignRaw =
+              (initialConfig as any).constructCallsign ||
+              (initialConfig as any).callsign ||
+              initialConfig.id;
+            const constructCallsign = String(constructCallsignRaw || "")
+              .replace(/^gpt-/, "")
+              .trim();
+            if (!constructCallsign) return;
             const user = await fetchMe().catch(() => null);
             const userId = user ? getUserId(user) : null;
             if (!userId) return;
@@ -732,7 +739,12 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     const loadScripts = async () => {
       try {
         setIsLoadingScripts(true);
-        const constructCallsign = config.id.replace("gpt-", "");
+        const constructCallsignRaw =
+          (config as any).constructCallsign || (config as any).callsign || config.id;
+        const constructCallsign = String(constructCallsignRaw || "")
+          .replace(/^gpt-/, "")
+          .trim();
+        if (!constructCallsign) return;
         const user = await fetchMe().catch(() => null);
         const userId = user ? getUserId(user) : null;
         if (!userId) return;
@@ -4514,8 +4526,17 @@ ALWAYS:
                                     </span>
                                     <button
                                       onClick={async () => {
-                                        const constructCallsign =
-                                          config.id?.replace("gpt-", "") || "";
+                                        const constructCallsignRaw =
+                                          (config as any).constructCallsign ||
+                                          (config as any).callsign ||
+                                          config.id ||
+                                          "";
+                                        const constructCallsign = String(
+                                          constructCallsignRaw,
+                                        )
+                                          .replace(/^gpt-/, "")
+                                          .trim();
+                                        if (!constructCallsign) return;
                                         const user = await fetchMe().catch(
                                           () => null,
                                         );

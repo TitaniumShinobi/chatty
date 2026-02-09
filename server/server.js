@@ -29,6 +29,7 @@ import vsiRoutes from './routes/vsi.js';
 import gptsRoutes from './routes/gpts.js';
 import transcriptsRoutes from './routes/transcripts.js';
 import masterScriptsRoutes from './routes/masterScripts.js';
+import scriptsRoutes from './routes/scripts.js';
 import simForgeRoutes from './routes/simForge.js';
 import fxshinobiRoutes from './routes/fxshinobi.js';
 import vaultProxyRoutes from './routes/vault.js';
@@ -1001,6 +1002,10 @@ console.log('✅ [Server] Transcripts routes mounted at /api/transcripts');
 // Master Scripts routes (autonomy stack for constructs)
 app.use("/api/master", requireAuth, masterScriptsRoutes);
 console.log('✅ [Server] Master Scripts routes mounted at /api/master');
+
+// Scripts routes (GPTCreator compatibility)
+app.use("/api/scripts", requireAuth, scriptsRoutes);
+console.log('✅ [Server] Scripts routes mounted at /api/scripts');
 
 // simForge routes (personality extraction and identity forging)
 app.use("/api/simforge", requireAuth, simForgeRoutes);

@@ -6,6 +6,7 @@ integrations = ["github:1.0.0", "javascript_openrouter_ai_integrations:2.0.0", "
 [nix]
 channel = "stable-25_05"
 packages = ["rsync"]
+ignoredFiles = ["__pycache__/", "*.pyc"]
 
 [workflows]
 runButton = "Project"
