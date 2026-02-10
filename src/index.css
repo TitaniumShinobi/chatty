@@ -28,7 +28,7 @@
   /* Night Mode - Outer Space Theme */
   --chatty-bg-main: #000110; /* Deep space - Main Area */
   --chatty-bg-sidebar: #000110; /* Unified cosmic surface */
-  --chatty-bg-message: rgba(173, 165, 135, 0.25); /* #ADA587 at 25% opacity - matches user bubbles & selected cards */
+  --chatty-bg-message: #0D0F1E; /* Dark navy offset - lighter than deep space but stays blue */
   --chatty-hover: #1A1C2B; /* Atmospheric hover highlight */
   --chatty-highlight: #1A1C2B; /* Highlight (legacy alias) */
   --chatty-selected: #ADA587; /* Authority / active state */
