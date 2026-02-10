@@ -699,8 +699,13 @@ router.post("/conversations/:sessionId/messages", async (req, res) => {
   }
 
   if (!finalContent || finalContent.trim() === '') {
-    res.status(400).json({ ok: false, error: "Missing content (empty message)" });
-    return;
+    const hasAttachments = Array.isArray(metadata?.attachments) && metadata.attachments.length > 0;
+    if (!hasAttachments) {
+      res.status(400).json({ ok: false, error: "Missing content (empty message)" });
+      return;
+    }
+    console.log(`📎 [VVAULT API] Allowing attachment-only message for ${sessionId} (${metadata.attachments.length} attachments)`);
+    finalContent = '';
   }
 
   try {

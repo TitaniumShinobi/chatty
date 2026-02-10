@@ -30,7 +30,16 @@ function formatMarkdownTranscript(title, messages) {
       md += `${msg.content}\n\n`;
     } else {
       const roleLabel = msg.role === 'user' ? '**User**' : '**Assistant**';
-      md += `${roleLabel}: ${msg.content}\n\n`;
+      let displayContent = typeof msg.content === 'string' ? msg.content : (msg.content == null ? '' : String(msg.content));
+      const hasNoContent = !displayContent || displayContent.trim() === '';
+      const hasAttachments = Array.isArray(msg.attachments) && msg.attachments.length > 0;
+      if (hasNoContent && hasAttachments) {
+        const names = msg.attachments
+          .map((a) => (a && (a.filename || a.name)) || null)
+          .filter(Boolean);
+        displayContent = `[attached: ${names.length ? names.join(', ') : 'attachment'}]`;
+      }
+      md += `${roleLabel}: ${displayContent}\n\n`;
     }
   }
   return md;
@@ -603,18 +612,11 @@ async function readConversationsFromVVAULTApi(userEmailOrId, constructId = null)
 }
 
 async function readConversationsFromSupabase(userEmailOrId, constructId = null) {
-  // First try VVAULT API (canonical source of truth)
-  const apiResult = await readConversationsFromVVAULTApi(userEmailOrId, constructId);
-  if (apiResult !== null) {
-    return apiResult;
-  }
-
-  console.log('⚠️ [SupabaseStore] VVAULT API unavailable, falling back to direct Supabase');
-  
   const supabase = getSupabaseClient();
   if (!supabase) {
     console.log('⚠️ [SupabaseStore] No Supabase client - falling back to PostgreSQL');
-    return null;
+    const apiResult = await readConversationsFromVVAULTApi(userEmailOrId, constructId);
+    return apiResult;
   }
 
   try {
@@ -870,7 +872,8 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
     return deduplicated;
   } catch (err) {
     console.error('❌ [SupabaseStore] Read failed:', err.message);
-    return null;
+    const apiResult = await readConversationsFromVVAULTApi(userEmailOrId, constructId);
+    return apiResult;
   }
 }
 
@@ -924,7 +927,14 @@ async function writeConversationToSupabase(params) {
       messages = existingMetadata.messages || parseMarkdownTranscript(existing.content);
     }
 
-    if (content && !content.startsWith('CONVERSATION_CREATED:')) {
+    const contentStr = typeof content === 'string' ? content : '';
+    const isConversationCreated = contentStr.startsWith('CONVERSATION_CREATED:');
+    const attachments = Array.isArray(metadata?.attachments) ? metadata.attachments : [];
+    const hasAttachments = attachments.length > 0;
+    const hasContent = contentStr.trim() !== '';
+
+    // Append messages even when content is empty as long as we have attachments.
+    if (!isConversationCreated && (hasContent || hasAttachments)) {
       const newTimestamp = timestamp || new Date().toISOString();
       const newDate = getDateFromTimestamp(newTimestamp);
       
@@ -945,14 +955,14 @@ async function writeConversationToSupabase(params) {
       
       const newMessage = {
         role: role || 'user',
-        content,
+        content: contentStr,
         timestamp: newTimestamp
       };
       
       // Include attachments if provided in metadata
-      if (metadata?.attachments && Array.isArray(metadata.attachments) && metadata.attachments.length > 0) {
-        newMessage.attachments = metadata.attachments;
-        console.log(`📎 [SupabaseStore] Storing ${metadata.attachments.length} attachments with message`);
+      if (hasAttachments) {
+        newMessage.attachments = attachments;
+        console.log(`📎 [SupabaseStore] Storing ${attachments.length} attachments with message`);
       }
       
       messages.push(newMessage);
