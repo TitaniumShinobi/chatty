@@ -23,7 +23,7 @@ function getBaseUrl() {
 
 function getChattyAuthHeaders(userEmail) {
   const headers = { 'Content-Type': 'application/json' };
-  const apiKey = process.env.CHATTY_API_KEY;
+  const apiKey = process.env.VVAULT_SERVICE_TOKEN;
   if (apiKey) {
     headers['X-Chatty-Key'] = apiKey;
   }

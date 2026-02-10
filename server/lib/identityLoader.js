@@ -186,8 +186,8 @@ async function fetchIdentityFromVVAULTApi(constructId, userEmail) {
   try {
     const baseUrl = VVAULT_API_BASE_URL.replace(/\/$/, '');
     const headers = { 'Content-Type': 'application/json' };
-    const chattyApiKey = process.env.CHATTY_API_KEY;
-    if (chattyApiKey) headers['X-Chatty-Key'] = chattyApiKey;
+    const serviceToken = process.env.VVAULT_SERVICE_TOKEN;
+    if (serviceToken) headers['X-Chatty-Key'] = serviceToken;
     if (userEmail) headers['X-Chatty-User'] = userEmail;
     const response = await fetch(`${baseUrl}/api/identity/${constructId}`, {
       method: 'GET',
