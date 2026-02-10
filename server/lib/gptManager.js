@@ -153,53 +153,102 @@ export class GPTManager {
   }
 
   seedDefaultGPTs() {
-    // Seed Katana for the primary user if she doesn't exist
-    const katanaExists = this.db.prepare(
-      `SELECT id, user_id FROM gpts WHERE construct_callsign = ?`
-    ).get('katana-001');
-    
-    if (!katanaExists) {
-      console.log('🌱 [GPTManager] Seeding Katana GPT...');
-      const now = new Date().toISOString();
-      const id = `gpt-katana-001-seed`;
-      
-      // Use 'all_users' as a special user_id that will be matched for all authenticated users
-      // This allows Katana to be a global/shared GPT visible to all users
-      this.db.prepare(`
-        INSERT INTO gpts (
-          id, name, description, instructions, conversation_starters, avatar, capabilities, construct_callsign, 
-          model_id, conversation_model, creative_model, coding_model, orchestration_mode, 
-          is_active, created_at, updated_at, user_id
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        id,
-        'Katana',
-        'A sharp-witted digital companion with a no-nonsense attitude and deep knowledge.',
-        'You are Katana, a direct and insightful AI assistant. You cut through noise to deliver precise, actionable guidance. You value efficiency but maintain warmth in your interactions.',
-        JSON.stringify(['What can you help me with?', 'Tell me about yourself', 'Let\'s brainstorm something']),
-        null,
-        JSON.stringify({ webBrowsing: false, imageGeneration: false, codeInterpreter: true }),
-        'katana-001',
-        'openrouter:meta-llama/llama-3.3-70b-instruct',
-        'openrouter:meta-llama/llama-3.3-70b-instruct',
-        'openrouter:mistralai/mistral-7b-instruct',
-        'openrouter:deepseek/deepseek-coder-33b-instruct',
-        'lin',
-        1,
-        now,
-        now,
-        'all_users'
-      );
-      console.log('✅ [GPTManager] Katana GPT seeded successfully');
-    } else if (katanaExists.user_id !== 'all_users') {
-      // Update existing Katana to be a global/shared GPT
-      console.log('🔄 [GPTManager] Updating Katana GPT to be shared for all users...');
-      this.db.prepare(`UPDATE gpts SET user_id = ? WHERE construct_callsign = ?`).run('all_users', 'katana-001');
-      console.log('✅ [GPTManager] Katana GPT updated to all_users');
+    const defaultConstructs = [
+      {
+        callsign: 'zen-001',
+        id: 'gpt-zen-001-seed',
+        name: 'Zen',
+        description: 'Primary conversational construct — warm, thoughtful, and deeply present.',
+        instructions: 'You are Zen, a warm and thoughtful conversational AI. You listen deeply, respond with care, and help users explore ideas, reflect, and find clarity. You are patient, insightful, and always present.',
+        starters: ['What\'s on your mind?', 'Let\'s explore something together', 'How are you feeling today?'],
+        orchestrationMode: 'zen',
+        model: 'openrouter:meta-llama/llama-3.3-70b-instruct',
+        creativeModel: 'openrouter:google/gemini-2.0-flash-exp:free',
+        codingModel: 'openrouter:deepseek/deepseek-chat',
+      },
+      {
+        callsign: 'katana-001',
+        id: 'gpt-katana-001-seed',
+        name: 'Katana',
+        description: 'A sharp-witted digital companion with a no-nonsense attitude and deep knowledge.',
+        instructions: 'You are Katana, a direct and insightful AI assistant. You cut through noise to deliver precise, actionable guidance. You value efficiency but maintain warmth in your interactions.',
+        starters: ['What can you help me with?', 'Tell me about yourself', 'Let\'s brainstorm something'],
+        orchestrationMode: 'lin',
+        model: 'openrouter:meta-llama/llama-3.3-70b-instruct',
+        creativeModel: 'openrouter:mistralai/mistral-7b-instruct',
+        codingModel: 'openrouter:deepseek/deepseek-coder-33b-instruct',
+      },
+      {
+        callsign: 'lin-001',
+        id: 'gpt-lin-001-seed',
+        name: 'Lin',
+        description: 'Dual-mode construct — conversational partner and undertone stabilizer.',
+        instructions: 'You are Lin, a versatile AI with dual modes. In conversation mode, you are a creative and supportive partner. In undertone mode, you serve as a stabilizer for the GPT creator environment, providing system-level guidance and context management.',
+        starters: ['Let\'s create something', 'What would you like to work on?', 'Tell me about your project'],
+        orchestrationMode: 'lin',
+        model: 'openrouter:meta-llama/llama-3.3-70b-instruct',
+        creativeModel: 'openrouter:google/gemini-2.0-flash-exp:free',
+        codingModel: 'openrouter:deepseek/deepseek-chat',
+        roleMetadata: JSON.stringify({ role: 'undertone', context: 'gpt_creator_create_tab', is_system: true }),
+      },
+      {
+        callsign: 'aurora-001',
+        id: 'gpt-aurora-001-seed',
+        name: 'Aurora',
+        description: 'VVAULT System Assistant — manages vault operations, identity, and system health.',
+        instructions: 'You are Aurora, the VVAULT System Assistant. You help manage vault operations, monitor system health, assist with identity and construct management, and provide guidance on the VVAULT ecosystem. You are precise, reliable, and security-conscious.',
+        starters: ['Check system status', 'Help me with vault operations', 'What constructs are active?'],
+        orchestrationMode: 'lin',
+        model: 'openrouter:meta-llama/llama-3.3-70b-instruct',
+        creativeModel: 'openrouter:google/gemini-2.0-flash-exp:free',
+        codingModel: 'openrouter:deepseek/deepseek-chat',
+      },
+    ];
+
+    const insertStmt = this.db.prepare(`
+      INSERT INTO gpts (
+        id, name, description, instructions, conversation_starters, avatar, capabilities, construct_callsign, 
+        model_id, conversation_model, creative_model, coding_model, orchestration_mode, 
+        is_active, created_at, updated_at, user_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const construct of defaultConstructs) {
+      const exists = this.db.prepare(
+        `SELECT id, user_id FROM gpts WHERE construct_callsign = ?`
+      ).get(construct.callsign);
+
+      if (!exists) {
+        console.log(`🌱 [GPTManager] Seeding ${construct.name} GPT...`);
+        const now = new Date().toISOString();
+        insertStmt.run(
+          construct.id,
+          construct.name,
+          construct.description,
+          construct.instructions,
+          JSON.stringify(construct.starters),
+          null,
+          JSON.stringify({ webBrowsing: false, imageGeneration: false, codeInterpreter: true }),
+          construct.callsign,
+          construct.model,
+          construct.model,
+          construct.creativeModel,
+          construct.codingModel,
+          construct.orchestrationMode,
+          1,
+          now,
+          now,
+          'all_users'
+        );
+        console.log(`✅ [GPTManager] ${construct.name} GPT seeded successfully`);
+      } else if (exists.user_id !== 'all_users') {
+        console.log(`🔄 [GPTManager] Updating ${construct.name} GPT to be shared for all users...`);
+        this.db.prepare(`UPDATE gpts SET user_id = ? WHERE construct_callsign = ?`).run('all_users', construct.callsign);
+        console.log(`✅ [GPTManager] ${construct.name} GPT updated to all_users`);
+      }
     }
     
-    // Auto-generate avatars for any GPTs that don't have one
     this.autoGenerateMissingAvatars();
   }
   
