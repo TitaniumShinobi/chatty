@@ -64,6 +64,14 @@ Any update where the new content is less than half the size of what's already st
 - There is NO separate `CHATTY_API_KEY` — the `VVAULT_SERVICE_TOKEN` secret serves as the shared auth key between Chatty and VVAULT.
 - Auth header logic lives in: `vvaultConnector/vvaultApiClient.js` (getChattyAuthHeaders), `server/routes/vvault.js` (proxy routes), `server/lib/identityLoader.js` (identity fetch).
 
+**Construct Seeding & Identity Hydration:**
+- Seed constructs (zen-001, katana-001, lin-001) are minimal shells: callsign, ID, models, orchestration mode only. No fabricated identity data.
+- Aurora is NOT a seed — she is only added through the GPTCreator GUI.
+- On startup, GPTManager attempts VVAULT identity hydration: calls `/api/chatty/construct/<id>/files` to load real identity (name, description, instructions, avatars, knowledge files).
+- If VVAULT API returns non-JSON (SPA catch-all), falls back to direct Supabase `vault_files` query for `instances/<callsign>/identity/prompt.json`.
+- If no identity data is found anywhere, constructs show empty identity until configured — no fake data is ever injected.
+- Known issue: VVAULT SPA catch-all route intercepts `/api/chatty/construct/*` API endpoints, returning HTML. This is a VVAULT-side fix needed to expose the files API properly.
+
 ## External Dependencies
 - **VVAULT API:** Primary API for AI inference, memory management, and conversation transcripts.
 - **Supabase:** Persistent storage for conversations, attachments, and backend.
