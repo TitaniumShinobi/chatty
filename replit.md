@@ -59,6 +59,11 @@ Any update where the new content is less than half the size of what's already st
 - **Image/Vision Upload Support:** Full support for image and document uploads, with persistence to Supabase Storage and integration with AI vision APIs (e.g., GPT-4o).
 - **Conversation Persistence:** GPT conversations and messages are persisted to Supabase after each exchange, ensuring continuity.
 
+**VVAULT Authentication:**
+- All outbound VVAULT API calls include `X-Chatty-Key` (from `VVAULT_SERVICE_TOKEN` env secret) and `X-Chatty-User` (user email) headers.
+- There is NO separate `CHATTY_API_KEY` — the `VVAULT_SERVICE_TOKEN` secret serves as the shared auth key between Chatty and VVAULT.
+- Auth header logic lives in: `vvaultConnector/vvaultApiClient.js` (getChattyAuthHeaders), `server/routes/vvault.js` (proxy routes), `server/lib/identityLoader.js` (identity fetch).
+
 ## External Dependencies
 - **VVAULT API:** Primary API for AI inference, memory management, and conversation transcripts.
 - **Supabase:** Persistent storage for conversations, attachments, and backend.

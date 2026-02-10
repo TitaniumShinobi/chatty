@@ -3745,7 +3745,7 @@ router.post("/message", async (req, res) => {
       // VVAULT handles: LLM inference, transcript saving, memory management
       // Include model info so VVAULT can use the GPT's configured model
       const vvaultHeaders = { 'Content-Type': 'application/json' };
-      if (process.env.CHATTY_API_KEY) vvaultHeaders['X-Chatty-Key'] = process.env.CHATTY_API_KEY;
+      if (process.env.VVAULT_SERVICE_TOKEN) vvaultHeaders['X-Chatty-Key'] = process.env.VVAULT_SERVICE_TOKEN;
       const userEmail = req.user?.email || userId;
       if (userEmail) vvaultHeaders['X-Chatty-User'] = userEmail;
 
@@ -4114,7 +4114,7 @@ router.post("/transcript/:constructId/append", async (req, res) => {
     const baseUrl = VVAULT_API_BASE_URL.replace(/\/$/, '');
     
     const appendHeaders = { 'Content-Type': 'application/json' };
-    if (process.env.CHATTY_API_KEY) appendHeaders['X-Chatty-Key'] = process.env.CHATTY_API_KEY;
+    if (process.env.VVAULT_SERVICE_TOKEN) appendHeaders['X-Chatty-Key'] = process.env.VVAULT_SERVICE_TOKEN;
     const appendUserEmail = req.user?.email;
     if (appendUserEmail) appendHeaders['X-Chatty-User'] = appendUserEmail;
 
