@@ -337,6 +337,38 @@ export class GPTManager {
       if (!hydrated) {
         console.log(`ℹ️ [GPTManager] No identity data found for ${gpt.construct_callsign} — will show empty until configured`);
       }
+
+      const currentAvatar = this.db.prepare('SELECT avatar FROM gpts WHERE id = ?').get(gpt.id);
+      const hasRealAvatar = currentAvatar?.avatar && !currentAvatar.avatar.startsWith('data:image/svg');
+      if (!hasRealAvatar) {
+        try {
+          const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+          const supabase = getSupabaseClient();
+          if (supabase) {
+            const constructVariants = [
+              gpt.construct_callsign,
+              gpt.construct_callsign.replace(/-\d+$/, '')
+            ];
+            for (const cid of constructVariants) {
+              const { data } = await supabase
+                .from('vault_files')
+                .select('id, filename, storage_path')
+                .eq('construct_id', cid)
+                .ilike('filename', '%avatar%')
+                .limit(1);
+
+              if (data && data.length > 0) {
+                const avatarPath = `/api/ais/${gpt.id}/avatar`;
+                this.db.prepare('UPDATE gpts SET avatar = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(avatarPath, gpt.id);
+                console.log(`✅ [GPTManager] Set avatar URL for ${gpt.construct_callsign} from Supabase (${data[0].filename})`);
+                break;
+              }
+            }
+          }
+        } catch (avatarErr) {
+          console.log(`⚠️ [GPTManager] Avatar hydration failed for ${gpt.construct_callsign}: ${avatarErr.message}`);
+        }
+      }
     }
 
     console.log('✅ [GPTManager] VVAULT identity hydration complete');
@@ -346,7 +378,13 @@ export class GPTManager {
     try {
       let parsed = {};
       if (typeof content === 'string') {
-        try { parsed = JSON.parse(content); } catch { parsed = {}; }
+        try { parsed = JSON.parse(content); } catch {
+          const trimmed = content.trim();
+          if (trimmed.length > 10) {
+            parsed = { instructions: trimmed };
+            console.log(`📝 [GPTManager] Treating plain-text prompt.txt as instructions for ${gpt.construct_callsign} (${trimmed.length} chars)`);
+          }
+        }
       } else {
         parsed = content;
       }

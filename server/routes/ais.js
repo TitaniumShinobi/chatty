@@ -502,7 +502,7 @@ router.get('/:id/files', async (req, res) => {
               if (!error && data && data.length > 0) {
                 const mapped = data.map(f => {
                   const meta = typeof f.metadata === 'string' ? JSON.parse(f.metadata || '{}') : (f.metadata || {});
-                  const origPath = meta.original_path || f.storage_path || '';
+                  const origPath = meta.original_path || f.storage_path || f.filename || '';
                   let category = 'knowledge';
                   if (origPath.includes('/identity/')) category = 'identity';
                   else if (origPath.includes('/assets/')) category = 'knowledge';
@@ -510,13 +510,17 @@ router.get('/:id/files', async (req, res) => {
                   else if (origPath.includes('/tests/')) category = 'test';
                   else if (origPath.includes('/chatgpt/')) category = 'chatgpt';
 
-                  const mimeType = f.file_type === 'binary' ? 'application/octet-stream' : 'text/plain';
+                  const isImage = /\.(png|jpg|jpeg|svg|gif|webp)$/i.test(f.filename || '');
+                  const mimeType = isImage
+                    ? `image/${(f.filename.split('.').pop() || 'png').toLowerCase()}`
+                    : (f.file_type === 'binary' ? 'application/octet-stream' : 'text/plain');
+                  const displayName = f.filename.split('/').pop() || f.filename;
 
                   return {
                     id: f.id,
                     aiId: req.params.id,
-                    filename: f.filename,
-                    originalName: f.filename,
+                    filename: displayName,
+                    originalName: displayName,
                     mimeType,
                     size: meta.size || 0,
                     content: '',
@@ -524,7 +528,7 @@ router.get('/:id/files', async (req, res) => {
                     isActive: true,
                     category,
                     source: 'supabase',
-                    storagePath: f.storage_path
+                    storagePath: f.storage_path || f.filename
                   };
                 });
                 vvaultFiles.push(...mapped);
