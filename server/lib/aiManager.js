@@ -917,13 +917,14 @@ export class AIManager {
             hasValue: !!avatarValue
           });
 
-          // Process avatar: if it's a filesystem path (not data URL), return API URL
+          // Process avatar: for constructs with callsigns, always use the API URL
+          // so the avatar endpoint can check Supabase for real avatars
           let avatarUrl = row.avatar;
-          if (avatarUrl && !avatarUrl.startsWith('data:image/') && avatarUrl.startsWith('instances/')) {
-            // It's a filesystem path, return API URL
+          if (row.construct_callsign) {
+            avatarUrl = `/api/ais/${row.id}/avatar`;
+          } else if (avatarUrl && !avatarUrl.startsWith('data:image/') && avatarUrl.startsWith('instances/')) {
             avatarUrl = `/api/ais/${row.id}/avatar`;
           }
-          // If it's a data URL (legacy) or null, return as-is
 
           // Get privacy field, default to 'private' if not set, or derive from isActive for backward compatibility
           let privacy = row.privacy;

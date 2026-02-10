@@ -427,11 +427,69 @@ router.post('/:id/files', upload.single('file'), async (req, res) => {
   }
 });
 
-// Get files for an AI
+// Get files for an AI (local DB + Supabase identity files fallback)
 router.get('/:id/files', async (req, res) => {
   try {
-    const files = await aiManager.getAIFiles(req.params.id);
-    res.json({ success: true, files });
+    const localFiles = await aiManager.getAIFiles(req.params.id);
+
+    const ai = await aiManager.getAI(req.params.id);
+    let supabaseFiles = [];
+
+    if (ai && ai.constructCallsign) {
+      try {
+        const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          const constructVariants = [
+            ai.constructCallsign,
+            ai.constructCallsign.replace(/-\d+$/, '')
+          ];
+
+          for (const cid of constructVariants) {
+            const { data, error } = await supabase
+              .from('vault_files')
+              .select('id, filename, file_type, storage_path, created_at, metadata')
+              .eq('construct_id', cid)
+              .not('file_type', 'eq', 'transcript')
+              .not('file_type', 'eq', 'conversation');
+
+            if (!error && data && data.length > 0) {
+              const mapped = data.map(f => {
+                const meta = typeof f.metadata === 'string' ? JSON.parse(f.metadata || '{}') : (f.metadata || {});
+                const origPath = meta.original_path || f.storage_path || '';
+                let category = 'knowledge';
+                if (origPath.includes('/identity/')) category = 'identity';
+                else if (origPath.includes('/tests/')) category = 'test';
+                else if (origPath.includes('/chatgpt/')) category = 'chatgpt';
+
+                const mimeType = f.file_type === 'binary' ? 'application/octet-stream' : 'text/plain';
+
+                return {
+                  id: f.id,
+                  aiId: req.params.id,
+                  filename: f.filename,
+                  originalName: f.filename,
+                  mimeType,
+                  size: meta.size || 0,
+                  content: '',
+                  uploadedAt: f.created_at,
+                  isActive: true,
+                  category,
+                  source: 'supabase',
+                  storagePath: f.storage_path
+                };
+              });
+              supabaseFiles.push(...mapped);
+            }
+          }
+        }
+      } catch (sbErr) {
+        console.warn(`⚠️ [AIs API] Supabase files lookup failed for ${ai.constructCallsign}:`, sbErr.message);
+      }
+    }
+
+    const allFiles = [...localFiles, ...supabaseFiles];
+    res.json({ success: true, files: allFiles });
   } catch (error) {
     console.error('Error fetching files:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -553,9 +611,73 @@ router.get('/:id/avatar', async (req, res) => {
       console.warn(`⚠️ [AIs API] Failed to get avatar path from database: ${error.message}`);
     }
 
-    // If avatar is a data URL (legacy), return it directly
+    // If construct has a callsign, try Supabase for a real avatar FIRST
+    // This takes priority over auto-generated SVG placeholders
+    if (ai.constructCallsign) {
+      try {
+        const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          const constructVariants = [
+            ai.constructCallsign,
+            ai.constructCallsign.replace(/-\d+$/, '')
+          ];
+
+          let supabaseAvatarData = null;
+          for (const cid of constructVariants) {
+            const { data, error } = await supabase
+              .from('vault_files')
+              .select('content, file_type, storage_path')
+              .eq('construct_id', cid)
+              .ilike('filename', '%avatar%')
+              .limit(1)
+              .single();
+
+            if (!error && data) {
+              supabaseAvatarData = data;
+              console.log(`✅ [AIs API] Found real avatar in Supabase for construct: ${cid}`);
+              break;
+            }
+          }
+
+          if (supabaseAvatarData) {
+            let buffer;
+
+            if (!supabaseAvatarData.content && supabaseAvatarData.storage_path) {
+              const { data: storageData, error: storageError } = await supabase.storage
+                .from('vault-files')
+                .download(supabaseAvatarData.storage_path);
+
+              if (!storageError && storageData) {
+                const arrayBuffer = await storageData.arrayBuffer();
+                buffer = Buffer.from(arrayBuffer);
+                console.log(`✅ [AIs API] Downloaded real avatar from Supabase Storage: ${buffer.length} bytes`);
+              }
+            } else if (supabaseAvatarData.content) {
+              if (supabaseAvatarData.content.startsWith('data:image/')) {
+                const base64Match = supabaseAvatarData.content.match(/^data:image\/[^;]+;base64,(.+)$/);
+                if (base64Match) buffer = Buffer.from(base64Match[1], 'base64');
+              } else {
+                buffer = Buffer.from(supabaseAvatarData.content, 'base64');
+              }
+            }
+
+            if (buffer && buffer.length > 0) {
+              const ext = supabaseAvatarData.storage_path ? path.extname(supabaseAvatarData.storage_path).toLowerCase().slice(1) : 'png';
+              const mimeTypes = { 'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif', 'webp': 'image/webp', 'svg': 'image/svg+xml' };
+              res.setHeader('Content-Type', mimeTypes[ext] || 'image/png');
+              res.setHeader('Cache-Control', 'public, max-age=3600');
+              return res.send(buffer);
+            }
+          }
+        }
+      } catch (supabaseErr) {
+        console.warn(`⚠️ [AIs API] Supabase avatar lookup failed for ${ai.constructCallsign}:`, supabaseErr.message);
+      }
+    }
+
+    // Fallback: If avatar is a data URL (legacy/placeholder), return it directly
     if (rawAvatarPath && rawAvatarPath.startsWith('data:image/')) {
-      // Extract base64 data and serve as image
       const base64Match = rawAvatarPath.match(/^data:image\/([^;]+);base64,(.+)$/);
       if (base64Match) {
         const mimeType = base64Match[1];
@@ -563,7 +685,7 @@ router.get('/:id/avatar', async (req, res) => {
         const buffer = Buffer.from(base64Data, 'base64');
         
         res.setHeader('Content-Type', `image/${mimeType}`);
-        res.setHeader('Cache-Control', 'public, max-age=31536000'); // 1 year cache
+        res.setHeader('Cache-Control', 'public, max-age=31536000');
         return res.send(buffer);
       }
     }
