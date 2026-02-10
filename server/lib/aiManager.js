@@ -733,10 +733,10 @@ export class AIManager {
       let fromAIsTable = false;
       let fromGPTsTable = false;
 
-      // First, try the new ais table
+      // First, try the new ais table (match user_id OR 'all_users' for shared/global GPTs)
       try {
-        const aisStmt = this.db.prepare('SELECT * FROM ais WHERE user_id = ? ORDER BY updated_at DESC');
-        const aisRows = aisStmt.all(userId);
+        const aisStmt = this.db.prepare('SELECT * FROM ais WHERE user_id = ? OR user_id = ? ORDER BY updated_at DESC');
+        const aisRows = aisStmt.all(userId, 'all_users');
         if (aisRows && aisRows.length > 0) {
           rows = aisRows;
           fromAIsTable = true;
@@ -750,11 +750,11 @@ export class AIManager {
         console.log(`ℹ️ [AIManager] ais table query failed (may not exist): ${error.message}`);
       }
 
-      // Fallback to old gpts table if ais table had no results
+      // Fallback to old gpts table if ais table had no results (match user_id OR 'all_users')
       if (rows.length === 0) {
         try {
-          const gptsStmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? ORDER BY updated_at DESC');
-          const gptsRows = gptsStmt.all(userId);
+          const gptsStmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? OR user_id = ? ORDER BY updated_at DESC');
+          const gptsRows = gptsStmt.all(userId, 'all_users');
           if (gptsRows && gptsRows.length > 0) {
             rows = gptsRows;
             fromGPTsTable = true;
