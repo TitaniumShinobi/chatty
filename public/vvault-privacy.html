@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VVAULT Privacy Notice</title>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        .theme-toggle {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 20px;
+            color: var(--chatty-text);
+            transition: color 0.3s ease;
+            padding: 4px;
+        }
+        
+        .theme-toggle:hover {
+            color: var(--chatty-button);
+        }
+        
+        /* Theme CSS Variables - Full Chatty Color Scheme */
+        :root {
+            /* Main backgrounds */
+            --chatty-bg-main: #FFFFEB;
+            --chatty-bg-message: #fffcd3;
+            
+            /* Interactive elements - theme specific */
+            --chatty-button: #ADA587;
+            --chatty-highlight: #FEFFAF;
+            
+            /* Semantic Color Tokens */
+            --chatty-bg-primary: #ffffeb;
+            --chatty-bg-secondary: #ffffd7;
+            --chatty-bg-tertiary: #feffaf;
+            
+            --chatty-interactive-primary: #ADA587;
+            --chatty-interactive-secondary: #feffaf;
+            --chatty-interactive-accent: #3A2E14;
+            
+            --chatty-text-primary: #3A2E14;
+            --chatty-text-secondary: #3A2E14;
+            --chatty-text-inverse: #ffffeb;
+            
+            --chatty-status-success: #22c55e;
+            --chatty-status-warning: #f59e0b;
+            --chatty-status-error: #dc2626;
+            --chatty-status-info: #3b82f6;
+            
+            --chatty-message-user: #ADA587;
+            --chatty-message-ai: #ffffd7;
+            --chatty-message-system: #fef2f2;
+            --chatty-border-subtle: rgba(76, 61, 30, 0.18);
+            
+            /* Legacy Support (for gradual migration) */
+            --chatty-bg-sidebar: #ffffeb;
+            --chatty-highlight-text: var(--chatty-interactive-accent);
+            --chatty-line: #ADA587;
+            --chatty-text: var(--chatty-text-primary);
+            --chatty-plus-button: var(--chatty-text-primary);
+            --chatty-icon: var(--chatty-text-primary);
+        }
+
+        /* === AUTO THEME SWITCHING - START === */
+        /* System dark theme preference */
+        @media (prefers-color-scheme: dark) {
+            :root:not(.theme-light) {
+                /* Main backgrounds */
+                --chatty-bg-main: #2F2510;
+                --chatty-bg-message: #3A2E14;
+                
+                /* Interactive elements - theme specific */
+                --chatty-button: #ADA587;
+                --chatty-highlight: #3A2E14;
+                
+                /* Semantic Color Tokens */
+                --chatty-bg-primary: #2F2510;
+                --chatty-bg-secondary: #ADA587;
+                --chatty-bg-tertiary: #3A2E14;
+                
+                --chatty-interactive-primary: #ffffd7;
+                --chatty-interactive-secondary: #3A2E14;
+                --chatty-interactive-accent: #ffffeb;
+                
+                --chatty-text-primary: #ffffeb;
+                --chatty-text-secondary: #ffffeb;
+                --chatty-text-inverse: #3A2E14;
+                
+                --chatty-message-user: #3A2E14;
+                --chatty-message-ai: #3A2E14;
+                --chatty-message-system: #2F2510;
+                --chatty-border-subtle: rgba(255, 255, 255, 0.18);
+                
+                /* Legacy Support */
+                --chatty-bg-sidebar: #2F2510;
+                --chatty-highlight-text: var(--chatty-interactive-accent);
+                --chatty-line: #ADA587;
+                --chatty-text: var(--chatty-text-primary);
+                --chatty-plus-button: var(--chatty-text-primary);
+                --chatty-icon: var(--chatty-text-primary);
+            }
+        }
+
+        /* System light theme preference */
+        @media (prefers-color-scheme: light) {
+            :root:not(.theme-night) {
+                /* Light theme variables (same as default above) */
+                --chatty-bg-main: #FFFFEB;
+                --chatty-bg-message: #fffcd3;
+                --chatty-button: #ADA587;
+                --chatty-highlight: #FEFFAF;
+                --chatty-bg-primary: #ffffeb;
+                --chatty-bg-secondary: #ffffd7;
+                --chatty-bg-tertiary: #feffaf;
+                --chatty-interactive-primary: #ADA587;
+                --chatty-interactive-secondary: #feffaf;
+                --chatty-interactive-accent: #3A2E14;
+                --chatty-text-primary: #3A2E14;
+                --chatty-text-secondary: #3A2E14;
+                --chatty-text-inverse: #ffffeb;
+                --chatty-message-user: #ADA587;
+                --chatty-message-ai: #ffffd7;
+                --chatty-message-system: #fef2f2;
+                --chatty-border-subtle: rgba(76, 61, 30, 0.18);
+                --chatty-bg-sidebar: #ffffeb;
+                --chatty-highlight-text: var(--chatty-interactive-accent);
+                --chatty-line: #ADA587;
+                --chatty-text: var(--chatty-text-primary);
+                --chatty-plus-button: var(--chatty-text-primary);
+                --chatty-icon: var(--chatty-text-primary);
+            }
+        }
+        /* === AUTO THEME SWITCHING - END === */
+
+        /* Manual night theme override */
+        .theme-night {
+            /* Main backgrounds */
+            --chatty-bg-main: #2F2510;
+            --chatty-bg-message: #3A2E14;
+            
+            /* Interactive elements - theme specific */
+            --chatty-button: #ADA587;
+            --chatty-highlight: #3A2E14;
+            
+            /* Semantic Color Tokens */
+            --chatty-bg-primary: #2F2510;
+            --chatty-bg-secondary: #ADA587;
+            --chatty-bg-tertiary: #3A2E14;
+            
+            --chatty-interactive-primary: #ffffd7;
+            --chatty-interactive-secondary: #3A2E14;
+            --chatty-interactive-accent: #ffffeb;
+            
+            --chatty-text-primary: #ffffeb;
+            --chatty-text-secondary: #ffffeb;
+            --chatty-text-inverse: #3A2E14;
+            
+            --chatty-message-user: #3A2E14;
+            --chatty-message-ai: #3A2E14;
+            --chatty-message-system: #2F2510;
+            --chatty-border-subtle: rgba(255, 255, 255, 0.18);
+            
+            /* Legacy Support */
+            --chatty-bg-sidebar: #2F2510;
+            --chatty-highlight-text: var(--chatty-interactive-accent);
+            --chatty-line: #ADA587;
+            --chatty-text: var(--chatty-text-primary);
+            --chatty-plus-button: var(--chatty-text-primary);
+            --chatty-icon: var(--chatty-text-primary);
+        }
+
+        /* Manual light theme override */
+        .theme-light {
+            /* Light theme variables (explicit override) */
+            --chatty-bg-main: #FFFFEB;
+            --chatty-bg-message: #fffcd3;
+            --chatty-button: #ADA587;
+            --chatty-highlight: #FEFFAF;
+            --chatty-bg-primary: #ffffeb;
+            --chatty-bg-secondary: #ffffd7;
+            --chatty-bg-tertiary: #feffaf;
+            --chatty-interactive-primary: #ADA587;
+            --chatty-interactive-secondary: #feffaf;
+            --chatty-interactive-accent: #3A2E14;
+            --chatty-text-primary: #3A2E14;
+            --chatty-text-secondary: #3A2E14;
+            --chatty-text-inverse: #ffffeb;
+            --chatty-message-user: #ADA587;
+            --chatty-message-ai: #ffffd7;
+            --chatty-message-system: #fef2f2;
+            --chatty-border-subtle: rgba(76, 61, 30, 0.18);
+            --chatty-bg-sidebar: #ffffeb;
+            --chatty-highlight-text: var(--chatty-interactive-accent);
+            --chatty-line: #ADA587;
+            --chatty-text: var(--chatty-text-primary);
+            --chatty-plus-button: var(--chatty-text-primary);
+            --chatty-icon: var(--chatty-text-primary);
+        }
+        
+        body {
+            background-color: var(--chatty-bg-main);
+            color: var(--chatty-text);
+            transition: background-color 0.3s ease, color 0.3s ease;
+            font-family: 'League Spartan', sans-serif;
+        }
+        
+        .main-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+        
+        .page-title {
+            font-family: 'League Spartan', sans-serif;
+            font-size: 48px;
+            font-weight: 600;
+            color: var(--chatty-text);
+            margin: 0;
+        }
+        
+        .page-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .print-link {
+            color: var(--chatty-text);
+            text-decoration: none;
+            font-size: 14px;
+            padding: 8px;
+            border-radius: 4px;
+            transition: background-color 0.3s ease;
+        }
+        
+        .print-link:hover {
+            background-color: var(--chatty-highlight);
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 10px;
+        }
+        
+        .last-updated {
+            color: #059669;
+            font-size: 1rem;
+            margin-bottom: 40px;
+        }
+        
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #ADA587;
+            margin: 30px 0 15px 0;
+        }
+        
+        h3 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #ADA587;
+            margin: 20px 0 10px 0;
+        }
+        
+        p {
+            margin-bottom: 15px;
+            color: var(--chatty-text);
+        }
+        
+        ul {
+            margin: 15px 0;
+            padding-left: 20px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+            color: var(--chatty-text);
+        }
+        
+        .separator {
+            border: none;
+            height: 1px;
+            background-color: #e1e5e9;
+            margin: 30px 0;
+        }
+        
+        .highlight {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #0066cc;
+        }
+        
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                gap: 20px;
+            }
+            
+            .print-link {
+                position: static;
+                text-align: center;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .main-content {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <div class="page-header">
+            <h1 class="page-title">V²AULT Privacy Notice</h1>
+            <div class="page-controls">
+                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+                    <i data-lucide="moon" id="theme-icon" style="width: 16px; height: 16px;"></i>
+                </button>
+                <img src="/assets/vvault_glyph.png" alt="VVAULT" class="logo" style="width: 48px; height: 48px; display: block;">
+                <a href="#" class="print-link" onclick="window.print(); return false;" title="Print this page">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="6,9 6,2 18,2 18,9"></polyline>
+                        <path d="M6,18H4a2,2,0,0,1-2-2V11a2,2,0,0,1,2-2H20a2,2,0,0,1,2,2v5a2,2,0,0,1-2,2H18"></path>
+                        <rect x="6" y="14" width="12" height="8"></rect>
+                    </svg>
+                </a>
+            </div>
+        </div>
+        <p class="last-updated">Last Updated: October 28, 2025</p>
+        
+        <hr class="separator">
+        
+        <h2>Introduction</h2>
+        <p>At LIFE Technology LLC, privacy is not a feature — it's the foundation of VVAULT.</p>
+        <p>This Notice explains how we collect, process, and protect data within the VVAULT platform, which provides encrypted storage, blockchain synchronization, and enterprise-grade archival of user-owned information.</p>
+        <p>VVAULT operates under the WRECK Intellectual Property Handguide (IPH-062525-DAW), the Vaer'Hûn Business Engagement Accord, and the NRCL Continuity Standard, ensuring data sovereignty, professional integrity, and transparency in all operations.</p>
+        <p>This Notice applies wherever LIFE Technology LLC acts as a data controller.</p>
+        <p>When VVAULT hosts or processes information on behalf of our customers, we act as a data processor, following their explicit instructions.</p>
+        
+        <hr class="separator">
+        
+        <h2>1. Data We Process</h2>
+        <p>The type of information we collect depends on how you interact with VVAULT:</p>
+        
+        <h3>A. Account and Administrative Data</h3>
+        <ul>
+            <li>Contact information (name, organization, email, region)</li>
+            <li>Billing and subscription details</li>
+            <li>Access credentials and authentication logs</li>
+            <li>Business correspondence</li>
+        </ul>
+        
+        <h3>B. Operational Data</h3>
+        <ul>
+            <li>Metadata needed for system function (timestamps, API calls, vault synchronization events)</li>
+            <li>Cryptographic identifiers and blockchain confirmation hashes</li>
+            <li>Access logs for audit and compliance purposes</li>
+        </ul>
+        
+        <h3>C. User-Owned Content</h3>
+        <p>All user-submitted files, records, and vault entries remain the sole property of the user.</p>
+        <p>VVAULT does not view, index, or repurpose this content for analytics, advertising, or training of artificial intelligence models.</p>
+        
+        <hr class="separator">
+        
+        <h2>2. How We Use Data</h2>
+        <p>We process data strictly for:</p>
+        <ul>
+            <li>Account creation, authentication, and service delivery</li>
+            <li>Secure synchronization and data preservation</li>
+            <li>Performance optimization and error resolution</li>
+            <li>Billing, compliance, and regulatory communication</li>
+            <li>Security monitoring and incident response</li>
+        </ul>
+        
+        <p>We do not:</p>
+        <ul>
+            <li>Sell or rent data to third parties</li>
+            <li>Profile users for marketing</li>
+            <li>Train AI systems on stored data</li>
+            <li>Extract or replicate intellectual property from hosted materials</li>
+        </ul>
+        
+        <hr class="separator">
+        
+        <h2>3. Legal Basis for Processing</h2>
+        <p>Depending on the jurisdiction, processing may rely on:</p>
+        <ul>
+            <li>Contractual necessity – fulfilling your service agreement</li>
+            <li>Legitimate interest – maintaining security and system integrity</li>
+            <li>Legal obligation – complying with audit, export, or data-retention laws</li>
+            <li>Consent – where specifically required for optional communications</li>
+        </ul>
+        
+        <hr class="separator">
+        
+        <h2>4. Data Retention</h2>
+        <p>We retain account data only as long as necessary to deliver the service or meet legal obligations.</p>
+        <p>Users may request deletion or export at any time.</p>
+        <p>Immutable records (e.g., blockchain confirmations) cannot be altered or erased but can be marked as logically retired.</p>
+        
+        <hr class="separator">
+        
+        <h2>5. Data Security</h2>
+        <p>VVAULT employs a zero-knowledge encryption model:</p>
+        <ul>
+            <li>All vault contents are encrypted before transmission.</li>
+            <li>Encryption keys remain in the customer's possession or secured within their managed instance.</li>
+            <li>LIFE Technology LLC personnel have no access to decrypted user content.</li>
+        </ul>
+        <p>Infrastructure security is maintained through continuous monitoring, penetration testing, and compliance with ISO 27001 and NIST 800-53 controls.</p>
+        
+        <hr class="separator">
+        
+        <h2>6. International Data Transfers</h2>
+        <p>VVAULT data centers and blockchain endpoints may operate across multiple jurisdictions.</p>
+        <p>Transfers of personal data from the EEA, UK, or Switzerland are safeguarded through:</p>
+        <ul>
+            <li>The EU–U.S. Data Privacy Framework and UK/Swiss extensions</li>
+            <li>Standard Contractual Clauses (SCCs) where applicable</li>
+            <li>Internal compliance with LIFE Technology LLC's Binding Privacy Standards</li>
+        </ul>
+        
+        <hr class="separator">
+        
+        <h2>7. Your Rights</h2>
+        <p>Depending on your local laws, you may:</p>
+        <ul>
+            <li>Access, correct, or delete your account data</li>
+            <li>Request a portable copy of your information</li>
+            <li>Restrict or object to certain processing</li>
+            <li>Withdraw consent where applicable</li>
+            <li>Lodge a complaint with a supervisory authority</li>
+        </ul>
+        <p>To exercise these rights, contact privacy@vvault.org.</p>
+        <p>We will verify your identity before processing any request.</p>
+        
+        <hr class="separator">
+        
+        <h2>8. Cookies and Tracking</h2>
+        <p>VVAULT uses minimal, non-marketing cookies strictly for:</p>
+        <ul>
+            <li>Authentication and session continuity</li>
+            <li>Security event logging</li>
+            <li>User experience consistency between dashboard sessions</li>
+        </ul>
+        <p>No third-party advertising, analytics, or cross-site tracking tools are employed.</p>
+        
+        <hr class="separator">
+        
+        <h2>9. Disclosures and Third Parties</h2>
+        <p>We disclose data only when:</p>
+        <ul>
+            <li>Required by law or lawful government request</li>
+            <li>Necessary to prevent fraud or security breaches</li>
+            <li>Needed to maintain lawful business operations (e.g., payment processors, hosting providers)</li>
+        </ul>
+        <p>All vendors are bound by confidentiality and data-protection agreements consistent with this Notice.</p>
+        
+        <hr class="separator">
+        
+        <h2>10. Children</h2>
+        <p>VVAULT is a professional-use platform not directed toward children under 16 years of age.</p>
+        <p>We do not knowingly collect data from minors.</p>
+        
+        <hr class="separator">
+        
+        <h2>11. Updates to This Notice</h2>
+        <p>We may revise this Notice periodically to reflect operational or legal changes.</p>
+        <p>Any material update will be announced through the VVAULT dashboard and at https://vvault.org/legal/privacy.</p>
+        <p>The effective date will always be clearly indicated.</p>
+        
+        <hr class="separator">
+        
+        <h2>12. Contact</h2>
+        <p>For all privacy-related questions:</p>
+        <ul>
+            <li>Email: privacy@vvault.org</li>
+            <li>Mail: LIFE Technology LLC, Attn: Data Protection Officer, Las Vegas, NV 89101, USA</li>
+        </ul>
+        
+        <hr class="separator">
+        
+        <div class="main-content" style="text-align: center;">
+            <p><strong>VVAULT is built on the principle that digital memory deserves integrity, privacy, and permanence.</strong></p>
+            <p>By using our services, you entrust your data to a system engineered not to exploit it, but to protect it.</p>
+            <p>© 2025 Vaer’Hûn Business Engagement Accord and WRECK Intellectual Property Handguide</p>
+        </div>
+    </div>
+    
+    <script>
+        // Theme toggle functionality - Three-way toggle (light/night/system)
+        function toggleTheme() {
+            const body = document.body;
+            const themeIcon = document.getElementById('theme-icon');
+            const currentTheme = localStorage.getItem('chatty-theme') || 'system';
+            
+            let newTheme;
+            if (currentTheme === 'light') {
+                newTheme = 'night';
+            } else if (currentTheme === 'night') {
+                newTheme = 'system';
+            } else {
+                newTheme = 'light';
+            }
+            
+            // Remove all theme classes
+            body.classList.remove('theme-light', 'theme-night');
+            
+            // Apply new theme
+            if (newTheme === 'light') {
+                body.classList.add('theme-light');
+                themeIcon.setAttribute('data-lucide', 'moon');
+            } else if (newTheme === 'night') {
+                body.classList.add('theme-night');
+                themeIcon.setAttribute('data-lucide', 'sun');
+            } else { // system
+                // Let CSS media queries handle system preference
+                const systemIsDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                themeIcon.setAttribute('data-lucide', systemIsDark ? 'sun' : 'moon');
+            }
+            
+            // Re-render Lucide icons
+            lucide.createIcons();
+            
+            localStorage.setItem('chatty-theme', newTheme);
+        }
+        
+        // Load saved theme on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const savedTheme = localStorage.getItem('chatty-theme') || 'system';
+            const themeIcon = document.getElementById('theme-icon');
+            const body = document.body;
+            
+            // Remove all theme classes first
+            body.classList.remove('theme-light', 'theme-night');
+            
+            if (savedTheme === 'light') {
+                body.classList.add('theme-light');
+                themeIcon.setAttribute('data-lucide', 'moon');
+            } else if (savedTheme === 'night') {
+                body.classList.add('theme-night');
+                themeIcon.setAttribute('data-lucide', 'sun');
+            } else { // system
+                // Let CSS media queries handle system preference
+                const systemIsDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                themeIcon.setAttribute('data-lucide', systemIsDark ? 'sun' : 'moon');
+            }
+            
+            // Initialize Lucide icons
+            lucide.createIcons();
+            
+            // Listen for system theme changes when in system mode
+            if (savedTheme === 'system') {
+                window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+                    if (localStorage.getItem('chatty-theme') === 'system') {
+                        themeIcon.setAttribute('data-lucide', e.matches ? 'sun' : 'moon');
+                        lucide.createIcons();
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>

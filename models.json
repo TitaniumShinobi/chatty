@@ -1,0 +1,5 @@
+{
+  "smalltalk": { "tag": "phi3:latest", "role": "general chat and synthesis" },
+  "coding": { "tag": "deepseek-coder:latest", "role": "technical and code reasoning" },
+  "creative": { "tag": "mistral:latest", "role": "creative language and storytelling" }
+}

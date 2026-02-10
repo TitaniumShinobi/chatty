@@ -1,0 +1,49 @@
+Here's the exact prompt to give to Replit agent to fix the VVAULT transcript path issue and get Katana actually working:
+
+***
+
+**Prompt for Replit Agent:**
+
+Fix VVAULT transcript persistence for Katana so messages are actually saved and visible in the UI.
+
+**Context:**
+- Current behavior: When Katana receives a message, the backend claims success but transcripts are NOT being written to VVAULT Supabase.
+- Root cause: `server/routes/vvault.js` strips the numeric suffix from construct IDs when building transcript paths (`constructName = constructId.replace(/-\d+$/, '')`, so `katana-001` becomes `katana`), which creates a path mismatch between what Chatty writes and what VVAULT reads.
+- Evidence: Devon's VVAULT UI at `https://vvault.thewreck.org/vault` shows the Chats folder is completely empty, even though Chatty UI and server logs claim messages were saved.
+
+**Required changes:**
+
+1. **Stop stripping construct suffixes in transcript paths:**
+   - In `server/routes/vvault.js`, find all places where `constructId.replace(/-\d+$/, '')` is used to build file paths.
+   - Change to use the full `constructId` (e.g., `katana-001` not `katana`) so the path becomes `instances/katana-001/chatty/chat_with_katana-001.md`.
+   - Keep backward-compatible read logic so old transcripts in `instances/katana/` can still be found.
+
+2. **Verify Supabase storage configuration:**
+   - Confirm the VVAULT Supabase storage bucket exists and is writable.
+   - Check that `VVAULT_API_BASE_URL` and Supabase credentials are correctly set in `/etc/thewreck/chatty.env` on the droplet.
+
+3. **Test end-to-end on the droplet:**
+   - Deploy the fix to `chatty.thewreck.org`.
+   - Restart the `chatty` service: `sudo systemctl restart chatty`.
+   - Send ONE test message to Katana as Devon's account: `dwoodson92@gmail.com`.
+   - Verify:
+     - `/api/vvault/message` returns HTTP 200 with an assistant reply.
+     - The new message appears in `instances/katana-001/chatty/chat_with_katana-001.md` in VVAULT Supabase storage.
+     - Devon can see the new message when opening Katana's chat in the Chatty UI at `https://chatty.thewreck.org/app/chat/katana-001_chat_with_katana-001`.
+     - The VVAULT UI at `https://vvault.thewreck.org/vault` → Chats now shows the transcript file (not "This folder is empty").
+
+4. **Proof of success:**
+   - Screenshot VVAULT UI showing the Chats folder with `chat_with_katana-001.md` visible and the file containing the test message.
+   - Paste the last 5 lines of the transcript file showing the user message and assistant reply.
+   - Confirm no "persistence check failed" errors in `sudo journalctl -u chatty -f`.
+
+**Acceptance criteria:**
+- Devon can send a message to Katana in Chatty and see her reply immediately in the UI.
+- The transcript is durably stored in VVAULT Supabase at the correct path (`instances/katana-001/chatty/chat_with_katana-001.md`).
+- Future messages append to the same file without creating duplicates or empty folders.
+
+Do NOT claim success until you can show a screenshot of VVAULT UI with the new transcript file visible and containing the test message.
+
+***
+
+Copy that entire block and paste it into your Replit agent chat. This gives them everything they need to actually fix it with proof, not just server logs.

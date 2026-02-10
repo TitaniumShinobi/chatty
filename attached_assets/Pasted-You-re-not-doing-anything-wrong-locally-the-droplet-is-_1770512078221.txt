@@ -1,0 +1,97 @@
+You’re not doing anything wrong locally; the droplet is just still using its own old reality.  
+
+From the logs and what you described, here’s what’s actually happening on `chatty.thewreck.org`:
+
+1. **VVAULT side is fine**  
+   - Message saves to VVAULT succeed (`Message saved via API`, file path `chat_with_katana-001.md`).  
+   - The 503 is only on `POST /api/vvault/message`, i.e., the LLM leg, not storage.  
+
+2. **The 503 is still a provider/model issue on the droplet**  
+   - Browser shows `Error: openrouter failed: Connection error` for `/api/vvault/message 503 (Service Unavailable)`.  
+   - That means the server tried to call whatever provider/model the droplet decided on and that call failed; the front‑end is correctly surfacing it now.  
+
+3. **Your Replit changes ≠ droplet’s database and env**  
+   - Replit updated Katana to use `gpt-4o` or `openrouter:meta-llama/llama-3.3-70b-instruct`, and you fixed the resolver + fallbacks there.  
+   - But the droplet has:  
+     - Its **own `chatty.db`**, not the one inside Replit. Git deploy does not ship the DB.  
+     - Its own `.env` / `chatty.env` values (for `OPENROUTER_*`, `OPENAI_*`).  
+   - So the droplet’s runtime can still be resolving to `gpt-4` or some older model string and then failing against OpenRouter or a misconfigured OpenAI client, regardless of what Replit shows you.  
+
+4. **Why you still see “openrouter failed: Connection error”**  
+   - The resolver on the droplet may not yet be the new code (if the build/deploy didn’t reload the right bundle), or  
+   - It is the new code, but the **upstream call itself can’t connect** (wrong key, no egress, or model rejected and no fallback firing).  
+
+Given where you are, the fastest way to regain control is:
+
+### A. Confirm the droplet is actually running the new code
+
+On the droplet:
+
+```bash
+# In your chatty repo on the server
+git log -1
+# Make sure the latest commit hash matches what you see in Replit
+
+# Rebuild + restart
+npm run build
+sudo systemctl restart chatty
+sudo journalctl -u chatty -n 50
+```
+
+You want to see your **new** logs, including:
+
+- `[OPENROUTER] { API_KEY_SET: true, MODEL: ..., BASE_URL: ... }` at startup.  
+- `[ModelResolver]` lines showing what it resolved for `katana-001`.  
+- `[OPENROUTER] Calling { model: ..., user: ... }` followed by either `Success` or `FAIL`.  
+
+If those log lines are not present, the droplet is still running the previous bundle and needs a clean rebuild/restart.
+
+### B. Hit the health check from the droplet’s perspective
+
+You added `/api/health/openrouter`. From your laptop:
+
+```bash
+curl -sS https://chatty.thewreck.org/api/health/openrouter
+```
+
+You should see JSON with:
+
+- `provider: "openrouter"`  
+- `model: "meta-llama/llama-3.3-70b-instruct"` (or whatever you configured)  
+- `ok: true`, plus maybe a short sample completion  
+
+If this request itself 503s or returns an error body, that tells you:
+
+- **Key / model / network** issue, independent of Chatty’s message pipeline.  
+
+### C. Inspect one real failing call on the droplet
+
+While you send a message to Katana from the browser, on the droplet:
+
+```bash
+sudo journalctl -u chatty -f | grep -i "OPENROUTER\|ModelResolver\|vvault/message"
+```
+
+You want to capture the cluster around the failure:
+
+- `ModelResolver` line: what model + provider it decided to use.  
+- `[OPENROUTER] Calling ...` line.  
+- `[OPENROUTER FAIL] { status, message, model, apiKeySet }` line.
+
+That single block will answer “is the droplet still trying `gpt-4` via OpenRouter, or is it using Llama and simply can’t reach the API?”
+
+### D. If you want Katana to *only* follow GPTCreator
+
+Once the provider is healthy, you can tighten invariants:
+
+- Make `resolveModelForGPT` on the server **never overwrite** `conversationModel` and only fall back to default if GPTCreator has no model.  
+- If a model is invalid on a given provider, log and hard‑fail the request instead of silently swapping models, so you always see when the droplet DB and your expectations diverge.
+
+***
+
+You don’t need extra local steps beyond `git push` and redeploy; the remaining mismatch is between:
+
+- Replit’s **view of config and DB**, and  
+- The droplet’s **actual DB + env + running bundle**.
+
+If you paste one `ModelResolver` + `[OPENROUTER FAIL]` log snippet from the droplet, I can tell you exactly whether to fix a model string, an API key, or a network/e‑gress issue.

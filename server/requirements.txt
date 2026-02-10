@@ -1,0 +1,5 @@
+# Chatty Authentication Dependencies
+# PBKDF2 + Passlib for secure password hashing
+
+passlib[bcrypt]==1.7.4
+argon2-cffi==21.3.0

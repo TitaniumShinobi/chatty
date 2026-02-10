@@ -1,0 +1,106 @@
+FILES WITH DIFFERENT CONTENT - MANUAL REVIEW REQUIRED
+================================================================================
+
+Total: 17 files
+
+File: src/components/WorkerNotification 2.tsx
+  Original: src/components/WorkerNotification.tsx
+  Duplicate size: 5523 bytes
+  Original size: 2986 bytes
+  Size difference: +2537 bytes
+
+File: src/pages/LibraryPage 2.tsx
+  Original: src/pages/LibraryPage.tsx
+  Duplicate size: 14362 bytes
+  Original size: 14165 bytes
+  Size difference: +197 bytes
+
+File: src/pages/VVAULTPage 2.tsx
+  Original: src/pages/VVAULTPage.tsx
+  Duplicate size: 18489 bytes
+  Original size: 17997 bytes
+  Size difference: +492 bytes
+
+File: vvaultConnector/config 2.js
+  Original: vvaultConnector/config.js
+  Duplicate size: 5368 bytes
+  Original size: 102 bytes
+  Size difference: +5266 bytes
+
+File: vvaultConnector/config 3.js
+  Original: vvaultConnector/config.js
+  Duplicate size: 5368 bytes
+  Original size: 102 bytes
+  Size difference: +5266 bytes
+
+File: vvaultConnector/index 2.js
+  Original: vvaultConnector/index.js
+  Duplicate size: 11395 bytes
+  Original size: 453 bytes
+  Size difference: +10942 bytes
+
+File: vvaultConnector/index 3.js
+  Original: vvaultConnector/index.js
+  Duplicate size: 11395 bytes
+  Original size: 453 bytes
+  Size difference: +10942 bytes
+
+File: vvaultConnector/package 2.json
+  Original: vvaultConnector/package.json
+  Duplicate size: 817 bytes
+  Original size: 25 bytes
+  Size difference: +792 bytes
+
+File: vvaultConnector/package 3.json
+  Original: vvaultConnector/package.json
+  Duplicate size: 817 bytes
+  Original size: 25 bytes
+  Size difference: +792 bytes
+
+File: vvaultConnector/readCharacterProfile 2.js
+  Original: vvaultConnector/readCharacterProfile.js
+  Duplicate size: 1140 bytes
+  Original size: 144 bytes
+  Size difference: +996 bytes
+
+File: vvaultConnector/readCharacterProfile 3.js
+  Original: vvaultConnector/readCharacterProfile.js
+  Duplicate size: 1140 bytes
+  Original size: 144 bytes
+  Size difference: +996 bytes
+
+File: vvaultConnector/readConversations 2.js
+  Original: vvaultConnector/readConversations.js
+  Duplicate size: 30965 bytes
+  Original size: 113 bytes
+  Size difference: +30852 bytes
+
+File: vvaultConnector/readConversations 3.js
+  Original: vvaultConnector/readConversations.js
+  Duplicate size: 30965 bytes
+  Original size: 113 bytes
+  Size difference: +30852 bytes
+
+File: vvaultConnector/readMemories 2.js
+  Original: vvaultConnector/readMemories.js
+  Duplicate size: 13847 bytes
+  Original size: 108 bytes
+  Size difference: +13739 bytes
+
+File: vvaultConnector/readMemories 3.js
+  Original: vvaultConnector/readMemories.js
+  Duplicate size: 13847 bytes
+  Original size: 108 bytes
+  Size difference: +13739 bytes
+
+File: vvaultConnector/writeTranscript 2.js
+  Original: vvaultConnector/writeTranscript.js
+  Duplicate size: 10968 bytes
+  Original size: 111 bytes
+  Size difference: +10857 bytes
+
+File: vvaultConnector/writeTranscript 3.js
+  Original: vvaultConnector/writeTranscript.js
+  Duplicate size: 10968 bytes
+  Original size: 111 bytes
+  Size difference: +10857 bytes

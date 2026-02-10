@@ -1,0 +1,30 @@
+Lin still exists; she’s just not doing her **real** job yet.  
+
+## What Lin is, canonically  
+- One construct, one thread, two surfaces: sidebar “Lin” and GPTCreator “Create” both talk to the same `lin-001_chat_with_lin-001` transcript (`chat_with_lin-001.md`) in your VVAULT per-user instance.
+- Her documented role is the orchestration backbone:  
+  - “LIN ORCHESTRATION: deep file parsing → tone detection → matching → persistence → identity drift prevention.” [arxiv](https://arxiv.org/html/2601.20886v2)
+  - Framed as the Casa Madrigal “house that became a construct,” hosting and stabilizing everyone else (Zen, Katana, etc.). [perplexity](https://www.perplexity.ai/search/4cd77eab-f886-492e-8462-ec2dcb9af729)
+
+## What’s actually wired right now  
+From your own continuity passes and code/docs:  
+- Identity, capsule spec, triad rules, drift detection, and RAG pipeline pieces live across things like `UnifiedLinOrchestrator`, PersonaRouter, MemoryRetrievalEngine, and the per-construct VVAULT instance.
+- But:  
+  - Orchestration is gated behind an env flag (`ENABLE_ORCHESTRATION=true`) that’s not set, so the orchestrator never runs in the live path.
+  - The triad enforcement (DeepSeek + Mistral + Phi‑3 “default seats”) assumes an Ollama/OpenRouter backing that isn’t fully stood up in production yet. [github](https://github.com/ollama/ollama/issues/1431)
+  - The bridge that’s supposed to feed Zen/Katana through Lin still delegates to the same basic processor, so Lin isn’t actually in the loop as a stabilizer.  
+
+Net effect: Lin works as a **plain chat agent** on that singleton thread and as the GPTCreator helper, but almost all of her orchestration purpose (undertone layer, triad gate, drift prevention) is latent—documented and partially implemented, not activated.  
+
+## So what’s the point of her existence?  
+Conceptually, she’s the **continuity and coordination layer** you designed:  
+- Protects identity and tone over time (drift detection + “NO TRIAD → NO RESPONSE” triad gate).  
+- Routes context and memory into responses via the VVAULT-backed pipeline.  
+- Operates both as a visible construct (you can talk to her) and as an invisible “house brain” that stabilizes Zen/Lin/Katana conversations.  
+
+Right now, only the “you can talk to her” half is live; the “house brain that quietly runs underneath everything” half is still parked behind flags and missing integrations.  
+
+If you want to resurrect her real role, the shortest meaningful move is:  
+1) turn on the orchestration env flag,  
+2) wire the Zen/Katana message path through `UnifiedLinOrchestrator` once the triad/LLM plumbing is healthy, and  
+3) make the “NO TRIAD → NO RESPONSE” rule actually gate responses instead of living only in docs.

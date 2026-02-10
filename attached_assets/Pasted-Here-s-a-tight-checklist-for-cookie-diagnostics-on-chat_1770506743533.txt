@@ -1,0 +1,43 @@
+Here’s a tight checklist for **cookie diagnostics on chatty.thewreck.org** using the sid JWT you’ve already wired.  
+
+## 1) Verify what the server is setting  
+From your recent changes, each login should emit:  
+
+- `[ENV CHECK] { JWT_SECRET: 'SET', COOKIE_NAME: 'sid', NODE_ENV: 'production' }`  
+- `[COOKIE SET] { name: 'sid', secure: true, sameSite: 'lax', domain: '.thewreck.org', path: '/', maxAge: ... }`  
+
+Confirm in `journalctl -u chatty -n 50` that:  
+- `COOKIE_NAME` is `sid`.  
+- `domain` is `.thewreck.org` (so `chatty.thewreck.org` will receive it). [docs.descope](https://docs.descope.com/security-best-practices/crossite-cookies)
+- `SameSite` is `Lax`, `Secure` is true, `HttpOnly` is true. [developer.mozilla](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie)
+
+## 2) Confirm the browser actually has the cookie  
+In Chrome DevTools on `https://chatty.thewreck.org`:  
+
+- Application → Storage → Cookies → `https://chatty.thewreck.org`.  
+- You should see `sid` with:  
+  - Domain `.thewreck.org` or `chatty.thewreck.org`.  
+  - Path `/`.  
+  - Secure, HttpOnly set; SameSite `Lax`. [privacysandbox.google](https://privacysandbox.google.com/cookies/basics/cookie-attributes)
+
+If it’s missing:  
+- Make sure you logged in via a **top-level navigation** to `chatty.thewreck.org` (SameSite=Lax only sends cookies on top-level navigations, not in random iframes). [stackoverflow](https://stackoverflow.com/questions/68695366/configure-a-cookie-to-work-with-cors-but-only-on-subdomains)
+
+## 3) Confirm it’s sent on API calls  
+Still in DevTools → Network:  
+
+- Trigger `/api/me` or `/api/vvault/conversations`.  
+- Click the request → Headers → “Request Headers”.  
+- Ensure there is a `Cookie: sid=...` header going out. [reddit](https://www.reddit.com/r/webdev/comments/1bs4ez2/getting_401_unauthorized_with_empty_cookie/)
+
+If the cookie exists but is **not** sent:  
+- Double‑check the request URL is also `https://chatty.thewreck.org/...` (not hitting a different subdomain or bare `thewreck.org`). [docs.descope](https://docs.descope.com/security-best-practices/crossite-cookies)
+- Check that your frontend fetch/axios calls use `credentials: 'include'` if you ever move to cross‑origin calls; same-origin XHR should include cookies automatically. [reddit](https://www.reddit.com/r/webdev/comments/1bs4ez2/getting_401_unauthorized_with_empty_cookie/)
+
+## 4) Interpret auth logs on 401s  
+With your new `requireAuth` logs, a failed call will show either:  
+
+- `[AUTH FAIL] ... No sid cookie` → browser did not send it; go back to steps 1–3.  
+- `[AUTH FAIL] ... JWT verify error: <message>` → token is expired or `JWT_SECRET` changed; log out/in to mint a new one and ensure `JWT_SECRET` is stable across deploys. [dev](https://dev.to/sanjokale/jwt-authentication-in-expressjs-using-cookies-27gi)
+
+That’s the loop: **server log → DevTools cookie view → DevTools request headers → auth log reason.** Once all three line up (sid set, sent, and verified), chatty.thewreck.org’s cookie auth should be stable.

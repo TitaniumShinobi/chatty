@@ -1,0 +1,22 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Minimal deps for vsi-runner (zod only)
+COPY server/scripts/vsi-runner.js /app/server/scripts/vsi-runner.js
+
+RUN npm init -y >/dev/null 2>&1 \
+  && npm install zod@4.1.1 \
+  && adduser -D runner \
+  && mkdir -p /vvault/spool/vsi \
+  && chown -R runner:runner /app /vvault
+
+USER runner
+
+ENV NODE_ENV=production \
+    VSI_SPOOL_DIR=/vvault/spool/vsi \
+    VVAULT_VSI_ROOT=/vvault/intelligences \
+    VSI_RUNNER_POLL_MS=2000 \
+    VSI_RUNNER_TIMEOUT_MS=5000
+
+CMD ["node", "/app/server/scripts/vsi-runner.js", "--poll", "2000"]

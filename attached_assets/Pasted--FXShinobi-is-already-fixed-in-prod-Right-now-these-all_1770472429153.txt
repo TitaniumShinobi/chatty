@@ -1,0 +1,31 @@
+**FXShinobi is already fixed in prod.** Right now, these all return `200` from the live site:
+
+- `https://chatty.thewreck.org/api/fxshinobi/snapshot`
+- `https://chatty.thewreck.org/api/fxshinobi/trades/history`
+- `https://chatty.thewreck.org/api/fxshinobi/performance`
+- `https://chatty.thewreck.org/api/fxshinobi/markets` (returns a `fallback:true` payload because upstream is `404`, but still `200`)
+- `https://chatty.thewreck.org/api/fxshinobi/insights` (same)
+
+So the `503` spam in the console you pasted is from before the latest backend state (or from a tab that hasn’t hard-refreshed since).
+
+**The “VVAULT returned [] / create Zen every refresh” issue is fixed on the droplet.** I updated the production runtime env and restarted Chatty:
+
+- Added `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` to `/etc/thewreck/chatty.env` (copied from `/etc/thewreck/fxshinobi.env`’s `SUPABASE_URL` + `SUPABASE_KEY`).
+- Restarted `chatty.service`.
+- Confirmed in logs: `✅ [Supabase] Client initialized successfully` + Realtime subscription active.
+- Confirmed server-side: `readConversations('dwoodson92@gmail.com')` now returns `3` conversations (zen/katana/lin), so the UI should stop creating a new Zen loop.
+
+**What I need you to do now (browser):**
+1. Hard refresh `https://chatty.thewreck.org/app/finance/fxshinobi` (Cmd+Shift+R).
+2. Hard refresh `https://chatty.thewreck.org/app`.
+
+If you still see errors after that, paste only:
+- The Network status codes for `/api/fxshinobi/snapshot` and `/api/vvault/conversations`.
+- Any `/api/transcripts/list/katana-001` response status/body snippet.
+
+If anything regresses later, the two things to check first on the droplet are:
+
+1. `sudo grep -E '^(SUPABASE_URL|SUPABASE_SERVICE_KEY|FXSHINOBI_API_BASE_URL|VVAULT_(PATH|ROOT))=' /etc/thewreck/chatty.env | sed -E 's/=.*/=REDACTED/'`
+2. `sudo systemctl restart chatty.service && sudo journalctl -u chatty.service -n 80 --no-pager`
+
+If you want, next we can clean up the production console noise (Layout debug logs, Router future flags) now that prod is stable.

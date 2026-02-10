@@ -1,0 +1,60 @@
+Perfect, this gives us exactly what we need: Chatty is a Vite + React SPA with an Express backend that serves both the API and the built frontend on port 5000 via `npm run start:prod`. [dev](https://dev.to/herudi/single-port-spa-react-and-express-using-vite-same-port-in-dev-or-prod-2od4)
+
+Given that, the most useful thing to start with is the “prepare the config files” option. Here’s what I’ll generate for you next (unless you’d rather start with the deploy script):
+
+### What we now know about Chatty
+
+- Tech stack: **Vite + React** frontend, **Express** backend in the same repo. [dev](https://dev.to/herudi/single-port-spa-react-and-express-using-vite-same-port-in-dev-or-prod-2od4)
+- Dev: `npm run dev:full` (concurrent Vite + Express).  
+- Prod:  
+  - `npm run build` → builds Vite app into `dist/`.  
+  - `npm run start:prod` → Express serves both API and `dist` on **port 5000**.  
+- Domain handling: if `REPLIT_DOMAIN` is missing, Express uses:
+  - `PUBLIC_CALLBACK_BASE` for OAuth redirect base.  
+  - `FRONTEND_URL` for post-login redirects.  
+- Target domain: `https://chatty.thewreck.org` on the **vvault-server** droplet (165.245.136.194) behind Cloudflare. [perplexity](https://www.perplexity.ai/search/d7747bd0-331e-4fbf-933b-39adf6390f4b)
+
+### The config files I’ll write for you
+
+If you confirm you’re ready, I’ll give you concrete, copy‑pasteable files:
+
+1. **systemd unit** – `/etc/systemd/system/chatty.service`  
+   - Runs as user `vvault`.  
+   - `WorkingDirectory=/opt/chatty`.  
+   - `ExecStart=/usr/bin/npm run start:prod`.  
+   - Loads env from `/etc/thewreck/chatty.env`.  
+   - Restarts on failure.
+
+2. **nginx vhost** – `/etc/nginx/sites-available/chatty`  
+   - `server_name chatty.thewreck.org;`  
+   - Listens on port 80 only (Cloudflare terminates TLS and connects via HTTP). [stackoverflow](https://stackoverflow.com/questions/64525885/subdomain-proxy-pass-using-cloudflare-and-nginx)
+   - Proxies all paths `/` → `http://127.0.0.1:5000`.  
+   - Includes HSTS header so it plays nicely with Cloudflare Full/Full strict. [perplexity](https://www.perplexity.ai/search/214dba67-bd7d-47e6-8850-89e60fc2e6e8)
+
+3. **Environment template** – `/etc/thewreck/chatty.env`  
+   - Includes non‑secret placeholders you can fill:  
+     - `NODE_ENV=production`  
+     - `PORT=5000`  
+     - `PUBLIC_CALLBACK_BASE=https://chatty.thewreck.org`  
+     - `FRONTEND_URL=https://chatty.thewreck.org`  
+     - `SUPABASE_URL=...`, `SUPABASE_ANON_KEY=...`, `OPENROUTER_API_KEY=...`, `GOOGLE_CLIENT_ID=...`, etc. [digitalocean](https://www.digitalocean.com/community/tutorials/deploy-react-application-with-nginx-on-ubuntu)
+   - We can later move sensitive parts into VVault and keep only VVault tokens here if you want. [perplexity](https://www.perplexity.ai/search/d7747bd0-331e-4fbf-933b-39adf6390f4b)
+
+4. **Cloudflare DNS reminder** (one‑time)  
+   - A record:  
+     - Name: `chatty`  
+     - IPv4: `165.245.136.194`  
+     - Proxy: ON (orange cloud). [perplexity](https://www.perplexity.ai/search/9141a94e-a47a-4dab-97c4-62921b36ede3)
+
+5. **Deploy script outline** (if you choose it next)  
+   - From your Mac: `rsync -avz --exclude=node_modules --exclude=.git ... /opt/chatty`. [kitemetric](https://kitemetric.com/blogs/deploying-your-react-vite-app-with-nginx-on-ubuntu-a-comprehensive-guide)
+   - Then on droplet: `npm install` in root and server folders, `npm run build`, `sudo systemctl restart chatty`.
+
+***
+
+To proceed, tell me which you want **first**:
+
+- “Give me the systemd + nginx + env template”  
+- or “Give me the rsync/SSH deploy script first”
+
+Once you choose, I’ll paste the exact files/commands tailored to `vvault-server` and `chatty.thewreck.org`.

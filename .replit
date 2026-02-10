@@ -1,0 +1,66 @@
+modules = ["nodejs-20", "web", "bash", "python-3.12", "postgresql-16"]
+[agent]
+expertMode = true
+integrations = ["github:1.0.0", "javascript_openrouter_ai_integrations:2.0.0", "javascript_openai_ai_integrations:2.0.0"]
+
+[nix]
+channel = "stable-25_05"
+packages = ["rsync"]
+ignoredFiles = ["__pycache__/", "*.pyc"]
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Chatty App"
+
+[[workflows.workflow]]
+name = "Chatty App"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev:full"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[ports]]
+localPort = 3000
+externalPort = 3000
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 5050
+externalPort = 3002
+
+[[ports]]
+localPort = 5173
+externalPort = 5173
+
+[deployment]
+deploymentTarget = "autoscale"
+run = ["npm", "run", "start:prod"]
+build = ["npm", "run", "build:prod"]
+
+[userenv]
+
+[userenv.development]
+NODE_ENV = "development"
+
+[userenv.shared]
+VVAULT_API_BASE_URL = "https://vvault.thewreck.org"
+AI_INTEGRATIONS_OPENAI_BASE_URL = "http://localhost:1106/modelfarm/openai"
+AI_INTEGRATIONS_OPENAI_API_KEY = "_DUMMY_API_KEY_"
+FXSHINOBI_API_BASE_URL = "https://e0a21a10-a007-4328-8b26-4be3a2eb056b-00-1u4qswx5jl1f0.janeway.replit.dev"
+OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct"

@@ -1,0 +1,15 @@
+[Unit]
+Description=VSI Runner (containerized)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/env bash -c 'cd /opt/chatty && VSI_SPOOL_DIR=${VSI_SPOOL_DIR:-/vvault/spool/vsi} VVAULT_VSI_ROOT=${VVAULT_VSI_ROOT:-/vvault/intelligences} VSI_RUNNER_POLL_MS=${VSI_RUNNER_POLL_MS:-2000} VSI_RUNNER_TIMEOUT_MS=${VSI_RUNNER_TIMEOUT_MS:-5000} deploy/scripts/deploy_vsi_runner.sh'
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

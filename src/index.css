@@ -1,0 +1,490 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Chatty Color Scheme CSS Variables */
+/* Based on docs/styling/CHATTY_COLOR_SCHEME.md (Authoritative) */
+
+:root {
+  /* Day Mode - Light cream background, Dark text */
+  --chatty-bg-main: #fffff0; /* Light cream - Main Area */
+  --chatty-bg-sidebar: #fffff0; /* Same cream as main background */
+  --chatty-bg-message: rgba(173, 165, 135, 0.25); /* #ADA587 at 25% opacity - matches user bubbles & selected cards */
+  --chatty-hover: #ffffd7; /* Hover states */
+  --chatty-highlight: #ffffd7; /* Highlight for hover states (legacy alias) */
+  --chatty-selected: #ADA587; /* Active/selected items */
+  --chatty-button: #ADA587; /* Primary button color */
+  --chatty-line: #ADA587; /* Borders, dividers, structural elements */
+  --chatty-text: #3A2E14; /* Primary text color */
+  --chatty-text-inverse: #fffff0; /* Inverse text (for buttons) */
+  --chatty-placeholder: #ADA587; /* Placeholder text color */
+  --chatty-timestamp: #ADA587; /* Timestamp text color */
+  --chatty-status-success: #22c55e; /* Green for success */
+  --chatty-status-error: #dc2626; /* Red for errors */
+}
+
+[data-theme="night"],
+:root.night-mode {
+  /* Night Mode - Outer Space Theme */
+  --chatty-bg-main: #000110; /* Deep space - Main Area */
+  --chatty-bg-sidebar: #000110; /* Unified cosmic surface */
+  --chatty-bg-message: rgba(173, 165, 135, 0.25); /* #ADA587 at 25% opacity - matches user bubbles & selected cards */
+  --chatty-hover: #1A1C2B; /* Atmospheric hover highlight */
+  --chatty-highlight: #1A1C2B; /* Highlight (legacy alias) */
+  --chatty-selected: #ADA587; /* Authority / active state */
+  --chatty-button: #ADA587; /* Primary actions */
+  --chatty-line: #ADA587; /* Dividers and borders */
+  --chatty-text: #fffff0; /* Cloud lemon - ALL text */
+  --chatty-text-inverse: #000110; /* Deep space for text on light buttons */
+  --chatty-placeholder: rgba(255, 255, 240, 0.6); /* Cloud lemon at 60% */
+  --chatty-timestamp: rgba(255, 255, 240, 0.6); /* Cloud lemon at 60% */
+  --chatty-status-success: #22c55e; /* Green for success */
+  --chatty-status-error: #dc2626; /* Red for errors */
+}
+
+/* Christmas Theme - Deep forest green night palette */
+.theme-script-christmas[data-theme="night"],
+.theme-script-christmas:root.night-mode,
+[data-theme="night"].theme-script-christmas,
+:root.night-mode.theme-script-christmas {
+  --chatty-bg-main: #0f1f0f; /* Deep forest green */
+  --chatty-bg-sidebar: #0f1f0f;
+  --chatty-bg-message: rgba(173, 165, 135, 0.25); /* #ADA587 at 25% opacity - matches user bubbles & selected cards */
+  --chatty-highlight: #1a2d1a; /* Forest highlight */
+  --chatty-star-starburst-color: #fffff0; /* Cloud lemon starbursts */
+  --chatty-star-nova-color: #ffffff; /* White nova */
+  --chatty-star-ray-color: #ffd700; /* Gold rays */
+}
+
+/* Valentine's Day Theme - Dark Mode */
+.theme-script-valentines[data-theme="night"],
+.theme-script-valentines:root.night-mode,
+[data-theme="night"].theme-script-valentines,
+:root.night-mode.theme-script-valentines {
+  --chatty-bg-main: #2e0f22; /* Deep passion rose */
+  --chatty-bg-sidebar: #2e0f22;
+  --chatty-bg-message: rgba(212, 0, 95, 0.15); /* Passion rose at 15% opacity */
+  --chatty-highlight: #4a1f36; /* Rose highlight */
+  --chatty-text: #f1dff2; /* Gelato pink text */
+  --chatty-placeholder: rgba(241, 223, 242, 0.6);
+  --chatty-timestamp: rgba(241, 223, 242, 0.6);
+  --chatty-star-starburst-color: #ffffeb; /* Cloud-lemon outer */
+  --chatty-star-nova-color: #d4005f; /* Passion rose nova */
+  --chatty-star-ray-color: #ffef42; /* Golden glow */
+}
+
+/* Valentine's Day Theme - Light Mode */
+.theme-script-valentines,
+.theme-script-valentines:root {
+  --chatty-bg-main: #f1dff2; /* Gelato pink */
+  --chatty-bg-sidebar: #f1dff2;
+  --chatty-bg-message: rgba(212, 0, 95, 0.1); /* Passion rose at 10% opacity */
+  --chatty-highlight: #d9c9d6; /* Slightly darker pink */
+  --chatty-text: #2e0f22; /* Deep passion rose text */
+  --chatty-placeholder: rgba(46, 15, 34, 0.6);
+  --chatty-timestamp: rgba(46, 15, 34, 0.6);
+  --chatty-star-starburst-color: #ffffeb;
+  --chatty-star-nova-color: #d4005f;
+  --chatty-star-ray-color: #ffef42;
+}
+
+@layer base {
+  * {
+    @apply border-app-yellow-800;
+  }
+  
+  html, body, #root {
+    height: 100%;
+  }
+  
+  body {
+    background-color: var(--chatty-bg-main);
+    color: var(--chatty-text);
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Override tailwind text utility colors to follow theme vars */
+  .text-app-text-900 { color: var(--chatty-text) !important; }
+  .text-app-text-800 { color: var(--chatty-text) !important; opacity: 0.85; }
+  .text-app-text-700 { color: var(--chatty-text) !important; opacity: 0.75; }
+  .text-app-text-600 { color: var(--chatty-text) !important; opacity: 0.65; }
+
+  .chatty-placeholder::placeholder {
+    color: var(--chatty-placeholder);
+    opacity: 1;
+  }
+
+  [data-theme="night"] .chatty-placeholder::placeholder,
+  :root.night-mode .chatty-placeholder::placeholder {
+    opacity: 0.7;
+  }
+
+  /* Global placeholder styling for form inputs */
+  input::placeholder,
+  textarea::placeholder,
+  select::placeholder {
+    color: var(--chatty-placeholder);
+  }
+
+  [data-theme="night"] input::placeholder,
+  [data-theme="night"] textarea::placeholder,
+  [data-theme="night"] select::placeholder,
+  :root.night-mode input::placeholder,
+  :root.night-mode textarea::placeholder,
+  :root.night-mode select::placeholder {
+    opacity: 0.7;
+  }
+
+  /* Slim scrollbars globally */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--chatty-highlight) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--chatty-highlight);
+    border-radius: 999px;
+  }
+}
+
+@layer components {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .message-gradient {
+    background: linear-gradient(180deg, rgba(254, 255, 175, 0), rgba(254, 255, 175, 0.8) 58.85%);
+  }
+  
+  .typing-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #facc15;
+    animation: typing 1.4s infinite ease-in-out;
+  }
+  
+  .typing-indicator:nth-child(1) {
+    animation-delay: -0.32s;
+  }
+  
+  .typing-indicator:nth-child(2) {
+    animation-delay: -0.16s;
+  }
+  
+  @keyframes typing {
+    0%, 80%, 100% {
+      transform: scale(0.8);
+      opacity: 0.5;
+    }
+    40% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Animated Chatty Star Logo */
+  @keyframes chatty-star-pulse {
+    0%, 100% {
+      transform: scale(1) rotate(0deg);
+      filter: brightness(1) drop-shadow(0 0 8px rgba(255, 235, 59, 0.6));
+    }
+    50% {
+      transform: scale(1.1) rotate(5deg);
+      filter: brightness(1.2) drop-shadow(0 0 12px rgba(255, 235, 59, 0.9));
+    }
+  }
+
+  @keyframes chatty-star-rotate {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .chatty-star-animated {
+    animation: chatty-star-pulse 3s ease-in-out infinite, chatty-star-rotate 20s linear infinite;
+    transition: all 0.3s ease;
+  }
+
+  .chatty-star-animated:hover {
+    animation: chatty-star-pulse 1s ease-in-out infinite, chatty-star-rotate 10s linear infinite;
+    filter: brightness(1.3) drop-shadow(0 0 16px rgba(255, 235, 59, 1));
+  }
+
+  .chatty-logo {
+    filter: none;
+    transition: transform 0.3s ease;
+  }
+
+
+  .chatty-logo:hover,
+  .chatty-star-wrapper:hover .chatty-star {
+    animation: chatty-logo-swim 3s ease-in-out infinite;
+    transform: scale(1.02);
+  }
+
+  @keyframes chatty-logo-swim {
+    0% {
+      filter:
+        drop-shadow(-4px -2px 4px rgba(255, 235, 59, 0.2))
+        drop-shadow(2px 4px 10px rgba(255, 211, 78, 0.35));
+    }
+    25% {
+      filter:
+        drop-shadow(4px -2px 6px rgba(255, 235, 59, 0.3))
+        drop-shadow(-2px 4px 12px rgba(255, 221, 120, 0.4));
+    }
+    50% {
+      filter:
+        drop-shadow(2px 4px 6px rgba(255, 235, 59, 0.25))
+        drop-shadow(-4px -2px 14px rgba(255, 199, 46, 0.45));
+    }
+    75% {
+      filter:
+        drop-shadow(-3px 4px 8px rgba(255, 235, 59, 0.3))
+        drop-shadow(4px -3px 12px rgba(255, 211, 78, 0.4));
+    }
+    100% {
+      filter:
+        drop-shadow(-4px -2px 4px rgba(255, 235, 59, 0.2))
+        drop-shadow(2px 4px 10px rgba(255, 211, 78, 0.35));
+    }
+  }
+
+  .chatty-star-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    filter: none;
+    transition: transform 0.3s ease;
+  }
+
+  .chatty-star {
+    transition: opacity 0.2s ease;
+  }
+
+  .chatty-starburst {
+    position: absolute;
+    width: 50%;
+    height: 50%;
+    opacity: 0;
+    z-index: 10; /* Increased z-index for proper layering */
+    transition: opacity 0.3s ease;
+  }
+
+  /* Default: No animations - stars are static */
+  .chatty-starburst-left {
+    transform: rotate(0deg);
+  }
+
+  .chatty-starburst-right {
+    transform: rotate(45deg);
+  }
+
+  .chatty-starburst-nova-left {
+    width: 90%;
+    height: 90%;
+    opacity: 0;
+    z-index: 5; /* Adjusted z-index for nova elements */
+    transform: rotate(0deg);
+  }
+
+  .chatty-starburst-nova-right {
+    width: 90%;
+    height: 90%;
+    opacity: 0;
+    z-index: 5; /* Adjusted z-index for nova elements */
+    transform: rotate(45deg);
+  }
+
+  .chatty-starburst-ray-left {
+    width: 90%;
+    height: 90%;
+    opacity: 0;
+    z-index: 8; /* Adjusted z-index for ray elements */
+    transform: rotate(0deg);
+  }
+
+  .chatty-starburst-ray-right {
+    width: 90%;
+    height: 90%;
+    opacity: 0;
+    z-index: 8; /* Adjusted z-index for ray elements */
+    transform: rotate(45deg);
+  }
+
+  /* Christmas Theme - Animated Stars (only on hover) with tiered timing */
+  .theme-script-christmas .chatty-star-wrapper:hover .chatty-starburst-left {
+    animation: chatty-starburst-ccw 7s linear infinite;
+  }
+
+  .theme-script-christmas .chatty-star-wrapper:hover .chatty-starburst-right {
+    animation: chatty-starburst-cw 7s linear infinite;
+  }
+
+  .theme-script-christmas .chatty-star-wrapper:hover .chatty-starburst-nova-left {
+    animation: chatty-starburst-ccw 28s linear infinite;
+  }
+
+  .theme-script-christmas .chatty-star-wrapper:hover .chatty-starburst-nova-right {
+    animation: chatty-starburst-cw 28s linear infinite;
+  }
+
+  .theme-script-christmas .chatty-star-wrapper:hover .chatty-starburst-ray-left {
+    animation: chatty-starburst-ccw 14s linear infinite;
+  }
+
+  .theme-script-christmas .chatty-star-wrapper:hover .chatty-starburst-ray-right {
+    animation: chatty-starburst-cw 14s linear infinite;
+  }
+
+  /* Hide decorative overlays during Christmas theme - they clash with the Christmas star */
+  .theme-script-christmas .chatty-starburst,
+  .theme-script-christmas .chatty-starburst-ray-left,
+  .theme-script-christmas .chatty-starburst-ray-right,
+  .theme-script-christmas .chatty-starburst-nova-left,
+  .theme-script-christmas .chatty-starburst-nova-right {
+    opacity: 0 !important;
+    display: none;
+  }
+
+  /* Default hover behavior - hide main star, show overlay stars */
+  .chatty-star-wrapper:hover .chatty-star {
+    opacity: 0;
+  }
+
+  .chatty-star-wrapper:hover .chatty-starburst {
+    opacity: 1;
+  }
+
+  .chatty-star-wrapper:hover .chatty-starburst-ray-left,
+  .chatty-star-wrapper:hover .chatty-starburst-ray-right {
+    opacity: 0.7;
+  }
+
+  .chatty-star-wrapper:hover .chatty-starburst-nova-left,
+  .chatty-star-wrapper:hover .chatty-starburst-nova-right {
+    opacity: 0.9;
+  }
+
+  /* Default theme hover animations: Starburst=7s, Ray=14s, Nova=28s */
+  .chatty-star-wrapper:hover .chatty-starburst-left {
+    animation: chatty-starburst-ccw 7s linear infinite;
+  }
+
+  .chatty-star-wrapper:hover .chatty-starburst-right {
+    animation: chatty-starburst-cw 7s linear infinite;
+  }
+
+  .chatty-star-wrapper:hover .chatty-starburst-nova-left {
+    animation: chatty-starburst-ccw 28s linear infinite;
+  }
+
+  .chatty-star-wrapper:hover .chatty-starburst-nova-right {
+    animation: chatty-starburst-cw 28s linear infinite;
+  }
+
+  .chatty-star-wrapper:hover .chatty-starburst-ray-left {
+    animation: chatty-starburst-ccw 14s linear infinite;
+  }
+
+  .chatty-star-wrapper:hover .chatty-starburst-ray-right {
+    animation: chatty-starburst-cw 14s linear infinite;
+  }
+
+  @keyframes chatty-starburst-cw {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes chatty-starburst-ccw {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(-360deg);
+    }
+  }
+
+  pre, code {
+    white-space: pre !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: auto !important;
+    word-break: normal;
+  }
+
+  .prose pre,
+  .prose code {
+    white-space: pre !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    word-break: normal !important;
+  }
+
+}
+
+/* Chat markdown paragraph spacing */
+.chat-markdown p,
+.chat-markdown div {
+  margin: 0 0 0.75rem;
+  line-height: 1.5;
+}
+
+.chat-markdown p:last-child,
+.chat-markdown div:last-child {
+  margin-bottom: 0;
+}
+
+.chat-markdown h2,
+.chat-markdown h3 {
+  margin: 1rem 0 0.5rem;
+  font-weight: 600;
+}
+
+.chat-markdown h2:first-child,
+.chat-markdown h3:first-child {
+  margin-top: 0;
+}
+
+.chat-markdown ul,
+.chat-markdown ol {
+  margin: 0 0 0.75rem;
+  padding-left: 1.25rem;
+}
+
+.chat-markdown ul:last-child,
+.chat-markdown ol:last-child {
+  margin-bottom: 0;
+}

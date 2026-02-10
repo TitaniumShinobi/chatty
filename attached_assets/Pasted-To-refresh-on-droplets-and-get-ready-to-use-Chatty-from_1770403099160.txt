@@ -1,0 +1,44 @@
+To “refresh on droplets” and get ready to use Chatty from `chatty.thewreck.org`, think of your stack like this: Cloudflare is the **edge**, and your DigitalOcean droplets are the actual Linux boxes where Chatty, VVault, and FXShinobi run. [github](https://github.com/nextjs/deploy-github-pages)
+
+### 1) What a droplet is (for this project)
+
+- A DigitalOcean droplet is just a virtual Ubuntu server: filesystem, SSH, systemd, nginx, Node, etc. [hostmycode](https://www.hostmycode.in/tutorials/host-next-js-application-with-nginx-on-ubuntu)
+- You already have two droplets:  
+  - `vvault-server` (165.245.136.194) → runs VVault + FXShinobi; will also host Chatty at `chatty.thewreck.org`. [perplexity](https://www.perplexity.ai/search/d7747bd0-331e-4fbf-933b-39adf6390f4b)
+  - `novarunner` (104.131.177.9) → planned for vxrunner/neat backends later.
+
+### 2) How droplets interact with Cloudflare
+
+- Cloudflare holds DNS for `thewreck.org` and proxies traffic to your droplets via A records (orange cloud). [documentation.breadnet.co](https://documentation.breadnet.co.uk/kubernetes/nginx-ingress/nginx-ingress-with-cloudflare-origin-server-ssl-tls/)
+- For Chatty you’ll add: `chatty.thewreck.org` → A record pointing to `165.245.136.194`, proxied, so Cloudflare terminates TLS and forwards HTTP to nginx on `vvault-server`. [perplexity](https://www.perplexity.ai/search/11847e95-9768-4b1c-b7df-c6a05078705b)
+
+### 3) Using a droplet as “Chatty’s box”
+
+On `vvault-server`, the droplet gives you:
+
+- `/opt/chatty` → where the Chatty code will live (rsync from your Mac, no `.git`). [perplexity](https://www.perplexity.ai/search/d7747bd0-331e-4fbf-933b-39adf6390f4b)
+- `chatty.service` → systemd unit to keep the Next/Node process running, similar to `fxshinobi.service`. [perplexity](https://www.perplexity.ai/search/9141a94e-a47a-4dab-97c4-62921b36ede3)
+- nginx vhost `chatty` → listens on `chatty.thewreck.org` and either serves a static build or proxies to Chatty’s Node port. [hostmycode](https://www.hostmycode.in/tutorials/host-next-js-application-with-nginx-on-ubuntu)
+
+### 4) Where each major piece lives
+
+- Cloudflare: DNS, TLS, WAF, caching for `thewreck.org` and all subdomains. [documentation.breadnet.co](https://documentation.breadnet.co.uk/kubernetes/nginx-ingress/nginx-ingress-with-cloudflare-origin-server-ssl-tls/)
+- DigitalOcean droplets:  
+  - `vvault-server`: VVault API, FXShinobi API, and soon Chatty UI. [perplexity](https://www.perplexity.ai/search/013adef6-2332-4bed-9d89-d0ac7ac8f5c5)
+  - `novarunner`: future home for neat/vxrunner backends. [perplexity](https://www.perplexity.ai/search/7653eb0b-b195-459f-822a-ba54bd2b1d1a)
+- GoDaddy: just domain ownership and nameservers pointing to Cloudflare. [stackoverflow](https://stackoverflow.com/questions/64525885/subdomain-proxy-pass-using-cloudflare-and-nginx)
+- Supabase: database/auth backend Chatty or your APIs can talk to; not where Chatty itself runs. [blog.logrocket](https://blog.logrocket.com/gh-pages-react-apps/)
+
+### 5) Next concrete step for “using Chatty properly”
+
+To move forward with actually serving Chatty from `https://chatty.thewreck.org` on `vvault-server`, tell me:
+
+- Does Chatty currently run locally with `npm run dev` or `next dev` / `next start`?  
+- Do you want it SSR (Node service) or static export (pure nginx)?  
+- Are you okay hosting it on `vvault-server` alongside VVault/FXShinobi (no extra droplet)?
+
+Once you answer those, I’ll give you the exact commands and config snippets for:
+
+1) Cloudflare A record for `chatty.thewreck.org`,  
+2) systemd unit `chatty.service`, and  
+3) `/etc/nginx/sites-available/chatty` for that droplet.

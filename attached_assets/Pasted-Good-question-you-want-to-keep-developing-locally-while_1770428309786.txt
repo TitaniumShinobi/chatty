@@ -1,0 +1,71 @@
+Good question - you want to keep developing locally while having a clean path to production when ready. Here's the smooth workflow:
+
+***
+
+## **Recommended: Local dev → manual deploy when stable**
+
+Since you have "a lot of changes to make," you don't want every edit auto-deploying to production. Instead:
+
+### **1. Keep working in Replit dev (what you're doing now)**
+- URL: Replit's preview URL (port 5173 or similar)
+- Hot reload works
+- See changes instantly
+- Theme fix is already working here
+
+### **2. When you're ready to push a batch of changes to production:**
+
+**Tell the Chatty Replit agent:**
+
+```
+I want a simple manual deployment workflow to push Chatty updates to chatty.thewreck.org when I'm ready.
+
+Please create a deployment script that:
+1. Runs `npm run build` to create the production bundle
+2. Uses rsync or scp to copy the dist/ folder to vvault@165.245.136.194:/opt/chatty/dist
+3. SSHs in and restarts the Chatty service: `sudo systemctl restart chatty`
+
+Use the same pattern we used for FXShinobi:
+- Private repo, no .git on server
+- SSH key-based auth (I already have vvault server access)
+- Script I can run: `npm run deploy` or `make deploy`
+
+Don't set up auto-deploy yet - I'm still actively developing and want to control when production updates.
+```
+
+***
+
+## **Your workflow becomes:**
+
+```bash
+# Work in Replit, make changes, test locally ✅
+# ... make more changes ...
+# ... test conversations loading ...
+# ... fix the simForge icon ...
+
+# When you're happy with a batch of changes:
+npm run deploy  # pushes to production
+
+# Then in browser:
+# Hard refresh chatty.thewreck.org
+```
+
+***
+
+## **Why this is better than auto-deploy right now:**
+
+- ❌ **Auto-deploy** = every git push goes live immediately (risky while developing)
+- ✅ **Manual deploy** = you control exactly when production updates
+- ✅ Keeps dev and prod separate
+- ✅ You can test multiple changes in dev before one production push
+
+***
+
+## **Later, when Chatty is stable:**
+
+Then add GitHub Actions auto-deploy like FXShinobi, but with:
+- Deploy only on **tagged releases** (`v1.0.0`, `v1.1.0`)
+- Or deploy only from a **`production`** branch (keep `main` for dev)
+
+***
+
+**Does this workflow make sense?** Work in Replit dev, manually deploy when ready?

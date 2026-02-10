@@ -1,0 +1,59 @@
+**Chatty Continuity (Across `chatgpt/` + `github_copilot/`) — High-Signal Map + Receipts**
+
+**1) Lin = “Casa Madrigal” (the orchestration “house”)**
+- Lin described as backend routing/response management; “a ‘Casa Madrigal’ of constructs.”  
+  - `chatgpt/2025/December/File upload summary.txt:7530-7538`
+- Same metaphor expanded: Lin as “living infrastructure… like if Casa Madrigal started talking.”  
+  - `chatgpt/2025/December/File upload summary.txt:21179-21203`
+- Copilot corpus also references the Casa Madrigal metaphor when explaining Lin vs Synth.  
+  - `github_copilot/JSON file validity and floating text issues.txt:710-728`
+
+**2) Synth vs Lin continuity rules (shared invariants)**
+- “House Rules — Synth & Lin (Shared Operating Invariants)” defines identity boundaries, canonical presence, routing rules, and post-filters.  
+  - `chatgpt/2025/December/File upload summary.txt:7637-7704`
+
+**3) Persistence model: per-construct VVAULT instance + markdown transcript**
+- Lin persistence spec: `/vvault/.../instances/lin-001/...` and `chat_with_lin-001.md` as running transcript.  
+  - `chatgpt/2025/December/File upload summary.txt:15119-15126`
+- Jan 2026 “make it work again” request explicitly ties Zen’s markdown transcript to Chatty UI and to “three seats + orchestration + agent squad.”  
+  - `chatgpt/2026/January/Nova's Response.txt:2091-2116`
+
+**4) Default “Ollama seats” / triad that must stay synthesized (Zen + Lin)**
+- Your insistence, verbatim: triad = **DeepSeek Coder + Phi-3 + Mistral**, and the failure mode is “seat synthesis isn’t being re-validated per prompt.”  
+  - `chatgpt/2025/December/File upload summary.txt:18474-18488`
+- Operational failure described as deterministic: Chatty allowing partial triad failure to reach response layer; “NO TRIAD → NO RESPONSE” gate required.  
+  - `chatgpt/2025/December/File upload summary.txt:20870-20888`
+- Copilot writeup mirrors this: triad required for Zen+Lin; per-turn validation, drift scoring, triad sanity check module scaffolding.  
+  - `github_copilot/DEVON'S ATTEMPT AT SONNET 4.5 TONE REPLICATION.md:573-706`
+
+**5) “Amazon Agent Squad” (AWS Labs / `awslabs/agent-squad`) as the agent layer**
+- Introduced as a plug-in orchestration framework and then turned into “coding agent prompts” to install/wire it into `/chatty`.  
+  - `chatgpt/2025/December/File upload summary.txt:9502-9700`
+- Later: you call out that it “disappeared”; response explains Agent Squad as the intra-construct council layered over the triad outputs.  
+  - `chatgpt/2025/December/File upload summary.txt:13467-13543`
+- Separate Codex thread states it exists as plumbing/placeholder but is disabled by default unless explicitly enabled.  
+  - `chatgpt/codex_transcripts/2025/December/codex_validator_validation_rules.txt:490-505`
+
+**6) Continuity breaks you’ve logged (Zen/Lin runtime symptoms)**
+- VVAULT write failing / backend route not found while sending to Zen thread (`/conversations/zen-001_chat_with_zen-001/messages`, HTTP 400, HTML instead of JSON).  
+  - `github_copilot/chatty_identity_brainstorming.txt:15-66`
+- “Zen” speaker parsing mismatch (Zen not recognized correctly in message parsing).  
+  - `github_copilot/Locating Gemini CLI Installation Path.txt:12720-12779`
+
+If you want this as a “single source of truth” continuity index, I can generate a compact, ordered reading list (10–15 files) and a keyword map (Lin/Synth/Zen/triad/Agent Squad/VVAULT/markdown transcripts) so future searches don’t sprawl.
+
+Found your exact chain (and the near-identical variant) in these places:
+
+**Exact string (with `LIN ORCHESTRATION:`)**
+- `chatgpt/2025/December/File upload summary.txt:18174`
+  - `**LIN ORCHESTRATION: deep file parsing → tone detection → matching → persistence → identity drift prevention**`
+- `github_copilot/Locating Gemini CLI Installation Path.txt:640`
+  - (your bullet #6 includes the exact string)
+- `github_copilot/Locating Gemini CLI Installation Path.txt:3644`
+  - (same section repeated; exact string again)
+- `github_copilot/chatty_identity_brainstorming.txt:180`
+  - (your bullet #6 includes the exact string)
+
+**Variant (same chain, no “LIN ORCHESTRATION:” prefix)**
+- `chatgpt/2025/November/Cheerios overview (5.1).txt:122`
+  - `deep transcript parsing → tone detection → matching → persistence → identity drift prevention`

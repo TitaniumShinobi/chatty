@@ -1,0 +1,25 @@
+/// <reference types="vite/client" />
+
+declare module '*.md?raw' {
+  const content: string
+  export default content
+}
+
+declare module '*.png' {
+  const src: string
+  export default src
+}
+
+declare module '*.svg' {
+  const src: string
+  export default src
+}
+
+interface ImportMetaEnv {
+  readonly VITE_AGENT_INGEST_URL?: string
+  readonly VITE_AGENT_INGEST_SOURCE_ID?: string
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv
+}

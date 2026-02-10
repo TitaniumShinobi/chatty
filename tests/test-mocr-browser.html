@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOCR Test - Chatty Video Analysis</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin: 20px 0;
+            background-color: #fafafa;
+        }
+        .upload-area.dragover {
+            border-color: #007bff;
+            background-color: #e3f2fd;
+        }
+        .results {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+        }
+        .error {
+            border-left-color: #dc3545;
+            background-color: #f8d7da;
+        }
+        .success {
+            border-left-color: #28a745;
+            background-color: #d4edda;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .file-info {
+            background-color: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .analysis-section {
+            background-color: white;
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+            margin: 10px 0;
+        }
+        .analysis-section h4 {
+            margin-top: 0;
+            color: #007bff;
+        }
+        .content-text {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+            margin: 10px 0;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 14px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .stat-card {
+            background-color: #e3f2fd;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #007bff;
+            transition: width 0.3s ease;
+        }
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #dee2e6;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+        }
+        .tab.active {
+            border-bottom-color: #007bff;
+            color: #007bff;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 MOCR Test - Chatty Video Analysis</h1>
+        <p>Test the MOCR (Moving Optical Character Recognition) and ASR (Automatic Speech Recognition) functionality by uploading a video file.</p>
+        
+        <div class="upload-area" id="uploadArea">
+            <p>📁 Drag and drop a video file here, or click to select</p>
+            <input type="file" id="fileInput" accept="video/*" style="display: none;">
+            <button onclick="document.getElementById('fileInput').click()">Choose Video File</button>
+        </div>
+        
+        <div id="results"></div>
+    </div>
+
+    <script type="module">
+        // Mock MOCR and ASR services for browser testing
+        class MockMOCRService {
+            static async processVideo(file, options = {}) {
+                // Simulate video processing
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                return {
+                    success: true,
+                    videoMetadata: {
+                        width: 1920,
+                        height: 1080,
+                        duration: 120.5,
+                        fps: 30,
+                        bitrate: 5000000,
+                        codec: 'h264',
+                        format: 'mp4',
+                        size: file.size
+                    },
+                    textContent: [
+                        {
+                            timestamp: 0,
+                            frameNumber: 1,
+                            text: "Welcome to this tutorial",
+                            confidence: 95,
+                            sceneType: 'title'
+                        },
+                        {
+                            timestamp: 5,
+                            frameNumber: 2,
+                            text: "Today we'll learn about AI",
+                            confidence: 88,
+                            sceneType: 'content'
+                        },
+                        {
+                            timestamp: 15,
+                            frameNumber: 3,
+                            text: "Let's start with the basics",
+                            confidence: 92,
+                            sceneType: 'content'
+                        }
+                    ],
+                    temporalAnalysis: {
+                        textSegments: [
+                            {
+                                startTime: 0,
+                                endTime: 10,
+                                text: "Welcome to this tutorial",
+                                confidence: 95,
+                                frameCount: 2,
+                                isStable: true
+                            }
+                        ],
+                        sceneTransitions: [
+                            {
+                                timestamp: 5,
+                                type: 'text_change',
+                                description: 'Text changes from title to content',
+                                confidence: 90
+                            }
+                        ],
+                        textConsistency: [
+                            {
+                                text: "tutorial",
+                                frequency: 2,
+                                averageConfidence: 91,
+                                firstAppearance: 0,
+                                lastAppearance: 5,
+                                stability: 0.8
+                            }
+                        ],
+                        summary: "Video contains tutorial content with clear text transitions and stable text elements."
+                    },
+                    processingTime: 2000,
+                    frameCount: 3,
+                    totalTextExtracted: 65,
+                    averageConfidence: 91.7
+                };
+            }
+        }
+
+        class MockASRService {
+            static async transcribeVideo(file, options = {}) {
+                // Simulate audio transcription
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                
+                return {
+                    success: true,
+                    text: "Hello, welcome to this video tutorial. Today we're going to learn about artificial intelligence and machine learning. Let's start with the basics of how these technologies work.",
+                    segments: [
+                        {
+                            start: 0,
+                            end: 3,
+                            text: "Hello, welcome to this video tutorial.",
+                            confidence: 95
+                        },
+                        {
+                            start: 3,
+                            end: 8,
+                            text: "Today we're going to learn about artificial intelligence and machine learning.",
+                            confidence: 92
+                        },
+                        {
+                            start: 8,
+                            end: 12,
+                            text: "Let's start with the basics of how these technologies work.",
+                            confidence: 88
+                        }
+                    ],
+                    language: 'en',
+                    duration: 12.5,
+                    processingTime: 1500,
+                    wordCount: 28,
+                    averageConfidence: 91.7
+                };
+            }
+        }
+
+        class MockVideoAnalysisPipeline {
+            static async analyzeVideo(file, options = {}) {
+                console.log(`🎬 Starting video analysis for: ${file.name}`);
+                
+                // Run MOCR and ASR in parallel
+                const [mocrResult, asrResult] = await Promise.all([
+                    MockMOCRService.processVideo(file, options.mocr),
+                    MockASRService.transcribeVideo(file, options.asr)
+                ]);
+
+                // Simulate synchronization
+                const synchronizedContent = [
+                    {
+                        timestamp: 0,
+                        visualText: "Welcome to this tutorial",
+                        audioText: "Hello, welcome to this video tutorial.",
+                        combinedText: "Welcome to this tutorial | Hello, welcome to this video tutorial.",
+                        confidence: 95,
+                        sceneType: 'title'
+                    },
+                    {
+                        timestamp: 5,
+                        visualText: "Today we'll learn about AI",
+                        audioText: "Today we're going to learn about artificial intelligence and machine learning.",
+                        combinedText: "Today we'll learn about AI | Today we're going to learn about artificial intelligence and machine learning.",
+                        confidence: 90,
+                        sceneType: 'content'
+                    }
+                ];
+
+                const contentSummary = {
+                    title: "AI Tutorial Introduction",
+                    description: "This video contains both visual text elements and audio content. Key topics include: tutorial, artificial, intelligence, machine, learning.",
+                    keyTopics: ['tutorial', 'artificial', 'intelligence', 'machine', 'learning'],
+                    visualElements: ["Welcome to this tutorial", "Today we'll learn about AI", "Let's start with the basics"],
+                    audioElements: ["Hello, welcome to this video tutorial.", "Today we're going to learn about artificial intelligence and machine learning.", "Let's start with the basics of how these technologies work."],
+                    sceneBreakdown: [
+                        {
+                            startTime: 0,
+                            endTime: 24,
+                            type: 'intro',
+                            description: 'Intro scene: Welcome message and tutorial introduction',
+                            visualText: 'Welcome to this tutorial',
+                            audioText: 'Hello, welcome to this video tutorial.',
+                            confidence: 95
+                        }
+                    ],
+                    totalDuration: 120.5,
+                    processingTime: 3500
+                };
+
+                return {
+                    success: true,
+                    videoMetadata: mocrResult.videoMetadata,
+                    mocrResult,
+                    asrResult,
+                    synchronizedContent,
+                    contentSummary,
+                    processingTime: 3500
+                };
+            }
+        }
+
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const results = document.getElementById('results');
+
+        // Drag and drop functionality
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                processFile(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                processFile(e.target.files[0]);
+            }
+        });
+
+        async function processFile(file) {
+            if (!file.type.startsWith('video/')) {
+                showResults(`❌ Unsupported file type: ${file.type}. Please upload a video file.`, 'error');
+                return;
+            }
+
+            if (file.size > 100 * 1024 * 1024) { // 100MB limit
+                showResults(`❌ File too large: ${(file.size / 1024 / 1024).toFixed(2)}MB. Maximum size is 100MB.`, 'error');
+                return;
+            }
+
+            showLoading();
+            
+            try {
+                const analysisResult = await MockVideoAnalysisPipeline.analyzeVideo(file, {
+                    enableMOCR: true,
+                    enableASR: true,
+                    enableSynchronization: true,
+                    enableContentSummarization: true,
+                    enableSceneAnalysis: true
+                });
+
+                displayResults(file, analysisResult);
+            } catch (error) {
+                showResults(`❌ Video analysis failed: ${error.message}`, 'error');
+            }
+        }
+
+        function showLoading() {
+            results.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>🎬 Analyzing video content...</p>
+                    <p><small>This may take 30-120 seconds depending on video size and complexity.</small></p>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+            `;
+
+            // Animate progress bar
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += Math.random() * 10;
+                if (progress > 90) progress = 90;
+                document.querySelector('.progress-fill').style.width = progress + '%';
+            }, 500);
+
+            // Store interval for cleanup
+            results.dataset.progressInterval = interval;
+        }
+
+        function showResults(message, type = 'results') {
+            // Clear any progress interval
+            if (results.dataset.progressInterval) {
+                clearInterval(results.dataset.progressInterval);
+            }
+            results.innerHTML = `<div class="${type}">${message}</div>`;
+        }
+
+        function displayResults(file, analysisResult) {
+            // Clear any progress interval
+            if (results.dataset.progressInterval) {
+                clearInterval(results.dataset.progressInterval);
+            }
+
+            const fileInfo = `
+                <div class="file-info">
+                    <strong>File:</strong> ${file.name}<br>
+                    <strong>Type:</strong> ${file.type}<br>
+                    <strong>Size:</strong> ${(file.size / 1024 / 1024).toFixed(2)} MB<br>
+                    <strong>Last Modified:</strong> ${new Date(file.lastModified).toLocaleString()}
+                </div>
+            `;
+
+            const stats = `
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="stat-value">${analysisResult.videoMetadata.width}x${analysisResult.videoMetadata.height}</div>
+                        <div class="stat-label">Resolution</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${formatDuration(analysisResult.videoMetadata.duration)}</div>
+                        <div class="stat-label">Duration</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${analysisResult.mocrResult.totalTextExtracted}</div>
+                        <div class="stat-label">Visual Text</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${analysisResult.asrResult.wordCount}</div>
+                        <div class="stat-label">Audio Words</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${analysisResult.synchronizedContent.length}</div>
+                        <div class="stat-label">Synced Segments</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${(analysisResult.processingTime / 1000).toFixed(1)}s</div>
+                        <div class="stat-label">Processing Time</div>
+                    </div>
+                </div>
+            `;
+
+            const tabs = `
+                <div class="tabs">
+                    <div class="tab active" onclick="showTab('overview')">Overview</div>
+                    <div class="tab" onclick="showTab('mocr')">MOCR Results</div>
+                    <div class="tab" onclick="showTab('asr')">ASR Results</div>
+                    <div class="tab" onclick="showTab('synchronized')">Synchronized</div>
+                    <div class="tab" onclick="showTab('summary')">Summary</div>
+                </div>
+            `;
+
+            const overviewContent = `
+                <div class="tab-content active" id="overview">
+                    <h4>📊 Video Analysis Overview</h4>
+                    <p><strong>Title:</strong> ${analysisResult.contentSummary.title}</p>
+                    <p><strong>Description:</strong> ${analysisResult.contentSummary.description}</p>
+                    
+                    <h5>Key Topics:</h5>
+                    <p>${analysisResult.contentSummary.keyTopics.join(', ')}</p>
+                    
+                    <h5>Scene Breakdown:</h5>
+                    ${analysisResult.contentSummary.sceneBreakdown.map(scene => 
+                        `<div class="analysis-section">
+                            <strong>[${formatDuration(scene.startTime)} - ${formatDuration(scene.endTime)}] ${scene.type}</strong><br>
+                            ${scene.description}
+                        </div>`
+                    ).join('')}
+                </div>
+            `;
+
+            const mocrContent = `
+                <div class="tab-content" id="mocr">
+                    <h4>🎬 MOCR (Moving OCR) Results</h4>
+                    <p><strong>Frames Processed:</strong> ${analysisResult.mocrResult.frameCount}</p>
+                    <p><strong>Total Text Extracted:</strong> ${analysisResult.mocrResult.totalTextExtracted} characters</p>
+                    <p><strong>Average Confidence:</strong> ${analysisResult.mocrResult.averageConfidence.toFixed(1)}%</p>
+                    
+                    <h5>Visual Text Content:</h5>
+                    ${analysisResult.mocrResult.textContent.map(content => 
+                        `<div class="analysis-section">
+                            <strong>[${formatDuration(content.timestamp)}s] ${content.sceneType}</strong><br>
+                            <div class="content-text">${content.text}</div>
+                            <small>Confidence: ${content.confidence}%</small>
+                        </div>`
+                    ).join('')}
+                </div>
+            `;
+
+            const asrContent = `
+                <div class="tab-content" id="asr">
+                    <h4>🎤 ASR (Automatic Speech Recognition) Results</h4>
+                    <p><strong>Language:</strong> ${analysisResult.asrResult.language}</p>
+                    <p><strong>Word Count:</strong> ${analysisResult.asrResult.wordCount}</p>
+                    <p><strong>Average Confidence:</strong> ${analysisResult.asrResult.averageConfidence.toFixed(1)}%</p>
+                    
+                    <h5>Audio Transcription:</h5>
+                    <div class="content-text">${analysisResult.asrResult.text}</div>
+                    
+                    <h5>Segments:</h5>
+                    ${analysisResult.asrResult.segments.map(segment => 
+                        `<div class="analysis-section">
+                            <strong>[${formatDuration(segment.start)} - ${formatDuration(segment.end)}]</strong><br>
+                            <div class="content-text">${segment.text}</div>
+                            <small>Confidence: ${segment.confidence}%</small>
+                        </div>`
+                    ).join('')}
+                </div>
+            `;
+
+            const synchronizedContent = `
+                <div class="tab-content" id="synchronized">
+                    <h4>🔄 Synchronized Content</h4>
+                    <p>Time-synchronized visual and audio content:</p>
+                    
+                    ${analysisResult.synchronizedContent.map(content => 
+                        `<div class="analysis-section">
+                            <strong>[${formatDuration(content.timestamp)}s] ${content.sceneType}</strong><br>
+                            ${content.visualText ? `<strong>Visual:</strong> ${content.visualText}<br>` : ''}
+                            ${content.audioText ? `<strong>Audio:</strong> ${content.audioText}<br>` : ''}
+                            <div class="content-text">${content.combinedText}</div>
+                            <small>Confidence: ${content.confidence}%</small>
+                        </div>`
+                    ).join('')}
+                </div>
+            `;
+
+            const summaryContent = `
+                <div class="tab-content" id="summary">
+                    <h4>📄 Content Summary</h4>
+                    <div class="analysis-section">
+                        <h5>Visual Elements:</h5>
+                        <ul>
+                            ${analysisResult.contentSummary.visualElements.map(element => `<li>${element}</li>`).join('')}
+                        </ul>
+                    </div>
+                    
+                    <div class="analysis-section">
+                        <h5>Audio Elements:</h5>
+                        <ul>
+                            ${analysisResult.contentSummary.audioElements.map(element => `<li>${element}</li>`).join('')}
+                        </ul>
+                    </div>
+                    
+                    <div class="analysis-section">
+                        <h5>Processing Summary:</h5>
+                        <p>This video has been analyzed for both visual text and audio content, making it searchable and referenceable in conversations. The MOCR system extracted text from video frames, while ASR transcribed the spoken content. Both streams were synchronized to create a comprehensive understanding of the video's content.</p>
+                    </div>
+                </div>
+            `;
+
+            results.innerHTML = `
+                <div class="success">
+                    <h3>✅ Video Analysis Complete</h3>
+                    ${fileInfo}
+                    ${stats}
+                    ${tabs}
+                    ${overviewContent}
+                    ${mocrContent}
+                    ${asrContent}
+                    ${synchronizedContent}
+                    ${summaryContent}
+                </div>
+            `;
+        }
+
+        function showTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab content
+            document.getElementById(tabName).classList.add('active');
+            
+            // Add active class to clicked tab
+            event.target.classList.add('active');
+        }
+
+        function formatDuration(seconds) {
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = Math.floor(seconds % 60);
+            
+            if (hours > 0) {
+                return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            } else {
+                return `${minutes}:${secs.toString().padStart(2, '0')}`;
+            }
+        }
+
+        // Test with a sample video if available
+        console.log('🎬 MOCR Test Page Loaded');
+        console.log('📋 Supported formats: MP4, AVI, MOV, MKV, WebM, FLV, WMV, M4V, 3GP, OGV');
+    </script>
+</body>
+</html>

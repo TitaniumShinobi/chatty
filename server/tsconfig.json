@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "noEmit": false,
+    "outDir": "./dist",
+    "rootDir": "../",
+    "allowImportingTsExtensions": false
+  },
+  "include": ["*.ts", "../src/engine/optimizedZen.ts", "../src/engine/toneModulation.ts"],
+  "exclude": ["node_modules", "dist"]
+}
