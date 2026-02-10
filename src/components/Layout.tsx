@@ -314,9 +314,10 @@ export default function Layout() {
       });
     
     // Create contact cards for GPTs that don't have a conversation thread yet
+    // Also exclude system constructs (Zen, Lin, Synth) - they're nav items, not address book contacts
     const existingConstructIds = new Set(conversationThreads.map(t => t.constructId));
     const gptContactCards: Thread[] = userGPTs
-      .filter(gpt => gpt.constructCallsign && !existingConstructIds.has(gpt.constructCallsign))
+      .filter(gpt => gpt.constructCallsign && !existingConstructIds.has(gpt.constructCallsign) && !EXCLUDED_CONSTRUCTS.includes(gpt.constructCallsign))
       .map(gpt => ({
         id: `${gpt.constructCallsign}_contact`,
         title: gpt.name,
