@@ -64,9 +64,9 @@ export function getValentinesThemeScript(): ThemeScript {
     description: "Romantic theme with passion rose and golden rays",
     activePeriod: {
       startMonth: 2,
-      startDay: 1,
+      startDay: 13,
       endMonth: 2,
-      endDay: 15,
+      endDay: 14,
     },
     colors: {
       night: {
