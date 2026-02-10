@@ -262,12 +262,6 @@ export class GPTManager {
     ).all();
 
     for (const gpt of constructs) {
-      const needsHydration = !gpt.description || !gpt.instructions;
-      if (!needsHydration) {
-        console.log(`ℹ️ [GPTManager] ${gpt.construct_callsign} already has identity data, skipping hydration`);
-        continue;
-      }
-
       let hydrated = false;
 
       if (VVAULT_API_BASE_URL) {
@@ -381,8 +375,9 @@ export class GPTManager {
         try { parsed = JSON.parse(content); } catch {
           const trimmed = content.trim();
           if (trimmed.length > 10) {
-            parsed = { instructions: trimmed };
-            console.log(`📝 [GPTManager] Treating plain-text prompt.txt as instructions for ${gpt.construct_callsign} (${trimmed.length} chars)`);
+            parsed = this._parseStructuredPrompt(trimmed);
+            const fields = Object.keys(parsed).filter(k => parsed[k]);
+            console.log(`📝 [GPTManager] Parsed prompt.txt for ${gpt.construct_callsign}: ${fields.join(', ')} (${trimmed.length} chars)`);
           }
         }
       } else {
@@ -408,6 +403,55 @@ export class GPTManager {
     }
   }
   
+  _parseStructuredPrompt(text) {
+    const result = {};
+    const lines = text.split('\n');
+    let instructionsStart = -1;
+
+    for (let i = 0; i < Math.min(lines.length, 5); i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      const nameMatch = line.match(/^\*\*(.+?)\*\*$/);
+      if (nameMatch && !result.name) {
+        let rawName = nameMatch[1].trim();
+        rawName = rawName.replace(/^you are\s+/i, '');
+        result.name = rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase();
+        continue;
+      }
+
+      const descMatch = line.match(/^\*([^*].+?)\*$/);
+      if (descMatch && !result.description) {
+        result.description = descMatch[1].trim();
+        continue;
+      }
+
+      if (/^instructions\s+(for|:)/i.test(line) || /^instructions:/i.test(line)) {
+        instructionsStart = i;
+        break;
+      }
+    }
+
+    if (instructionsStart >= 0) {
+      const header = lines[instructionsStart].trim();
+      const afterColon = header.includes(':') ? header.split(':').slice(1).join(':').trim() : '';
+      const remaining = lines.slice(instructionsStart + 1).join('\n').trim();
+      result.instructions = afterColon ? afterColon + '\n' + remaining : remaining;
+    } else if (!result.name && !result.description) {
+      result.instructions = text;
+    } else {
+      const consumed = lines.findIndex((l, i) => {
+        const t = l.trim();
+        return i > 0 && t && !t.match(/^\*\*(.+?)\*\*$/) && !t.match(/^\*([^*].+?)\*$/);
+      });
+      if (consumed >= 0) {
+        result.instructions = lines.slice(consumed).join('\n').trim();
+      }
+    }
+
+    return result;
+  }
+
   autoGenerateMissingAvatars() {
     try {
       const gptsWithoutAvatars = this.db.prepare(`
