@@ -3745,13 +3745,7 @@ ALWAYS:
                                 updateConversationStarter(index, e.target.value)
                               }
                               placeholder="Add a conversation starter"
-                              className="flex-1 p-2 rounded focus:outline-none focus:ring-2 focus:ring-app-green-500"
-                              style={{
-                                backgroundColor:
-                                  "var(--chatty-input-bg, #3a3520)",
-                                color: "var(--chatty-text)",
-                                border: "none",
-                              }}
+                              className="flex-1 p-2 rounded focus:outline-none focus:ring-2 focus:ring-app-green-500 bg-app-bg-100 text-app-text-900 border border-app-border-200 placeholder-app-text-700"
                             />
                             <button
                               onClick={() => removeConversationStarter(index)}
