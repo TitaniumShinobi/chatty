@@ -6,7 +6,7 @@ const r = express.Router();
 
 const openrouter = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL,
-  apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY,
+  apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || 'dummy',
 });
 
 function getTimeContext() {
