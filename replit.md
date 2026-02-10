@@ -64,6 +64,13 @@ Any update where the new content is less than half the size of what's already st
 - There is NO separate `CHATTY_API_KEY` — the `VVAULT_SERVICE_TOKEN` secret serves as the shared auth key between Chatty and VVAULT.
 - Auth header logic lives in: `vvaultConnector/vvaultApiClient.js` (getChattyAuthHeaders), `server/routes/vvault.js` (proxy routes), `server/lib/identityLoader.js` (identity fetch).
 
+**Construct Naming Convention (CRITICAL):**
+- **Name** = display label shown in UI (e.g., "Katana", "Zen", "Lin", "Aurora"). Always capitalized, no suffix.
+- **Callsign** = unique instance identifier used in ALL file paths, APIs, and database records (e.g., `katana-001`, `zen-001`, `lin-001`). Always lowercase with `-NNN` suffix.
+- Multiple instances of the same construct increment the suffix: `katana-001`, `katana-002`, `katana-003`, etc.
+- **File paths MUST always use the callsign, never the bare name.** Correct: `instances/katana-001/chatty/chat_with_katana-001.md`. Wrong: `instances/katana/chatty/chat_with_katana.md`.
+- The write path auto-normalizes bare names by appending `-001` if the `-NNN` suffix is missing, and logs a warning.
+
 **Construct Seeding & Identity Hydration:**
 - Seed constructs (zen-001, katana-001, lin-001) are minimal shells: callsign, ID, models, orchestration mode only. No fabricated identity data.
 - Aurora is NOT a seed — she is only added through the GPTCreator GUI.

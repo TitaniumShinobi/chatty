@@ -85,6 +85,12 @@ async function writeTranscriptToPostgres(params) {
   const safeUserId = userId || userEmail || 'unknown_user';
   const safeUserEmail = userEmail || null;
 
+  // Normalize constructId to callsign format (e.g., "katana" → "katana-001")
+  let normalizedId = constructCallsign || constructId || 'unknown';
+  if (normalizedId !== 'unknown' && !/\-\d{3}$/.test(normalizedId)) {
+    normalizedId = `${normalizedId}-001`;
+  }
+
   try {
     await ensureTable();
 
@@ -100,7 +106,7 @@ async function writeTranscriptToPostgres(params) {
           user_id = COALESCE(EXCLUDED.user_id, vvault_conversations.user_id),
           user_email = COALESCE(EXCLUDED.user_email, vvault_conversations.user_email),
           updated_at = CURRENT_TIMESTAMP
-      `, [safeUserId, safeUserEmail, sessionId, title, constructId, constructName, constructCallsign]);
+      `, [safeUserId, safeUserEmail, sessionId, title, normalizedId, constructName, normalizedId]);
       
       console.log(`✅ [VVAULT Postgres] Created conversation: ${sessionId}`);
     } else {
@@ -115,7 +121,7 @@ async function writeTranscriptToPostgres(params) {
           user_id = COALESCE(EXCLUDED.user_id, vvault_conversations.user_id),
           user_email = COALESCE(EXCLUDED.user_email, vvault_conversations.user_email),
           updated_at = CURRENT_TIMESTAMP
-      `, [safeUserId, safeUserEmail, sessionId, title || 'Untitled', constructId, constructName, constructCallsign]);
+      `, [safeUserId, safeUserEmail, sessionId, title || 'Untitled', normalizedId, constructName, normalizedId]);
 
       await db.query(`
         INSERT INTO vvault_messages (session_id, role, content, timestamp, metadata)
