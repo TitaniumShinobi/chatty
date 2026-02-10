@@ -906,9 +906,16 @@ async function writeConversationToSupabase(params) {
       return null;
     }
 
-    // CRITICAL: Match VVAULT Supabase path pattern - instances/{constructId}/chatty/chat_with_{constructId}.md
-    // Use FULL constructId with version suffix in folder path (zen-001, lin-001, katana-001)
-    const filename = `instances/${constructId || 'unknown'}/chatty/chat_with_${constructId || 'unknown'}.md`;
+    // CRITICAL: Normalize constructId to callsign format (e.g., "katana" → "katana-001")
+    // The callsign MUST always include the -NNN suffix. Bare names create duplicate instance folders.
+    let normalizedConstructId = constructCallsign || constructId || 'unknown';
+    if (normalizedConstructId !== 'unknown' && !/\-\d{3}$/.test(normalizedConstructId)) {
+      console.warn(`⚠️ [SupabaseStore] constructId "${normalizedConstructId}" missing callsign suffix, normalizing to "${normalizedConstructId}-001"`);
+      normalizedConstructId = `${normalizedConstructId}-001`;
+    }
+
+    // CRITICAL: Match VVAULT Supabase path pattern - instances/{callsign}/chatty/chat_with_{callsign}.md
+    const filename = `instances/${normalizedConstructId}/chatty/chat_with_${normalizedConstructId}.md`;
 
     const { data: existing } = await supabase
       .from('vault_files')
@@ -975,16 +982,16 @@ async function writeConversationToSupabase(params) {
       ...existingMetadata,
       sessionId,
       title: title || existingMetadata.title || 'Untitled',
-      constructId,
+      constructId: normalizedConstructId,
       constructName,
-      constructCallsign,
+      constructCallsign: normalizedConstructId,
       messages,
       lastUpdated: new Date().toISOString()
     };
 
     const record = {
       user_id: supabaseUserId,
-      construct_id: constructId || null,
+      construct_id: normalizedConstructId,
       filename,
       content: mdContent,
       sha256: sha256(mdContent),
