@@ -3747,8 +3747,8 @@ ALWAYS:
                               placeholder="Add a conversation starter"
                               className="flex-1 p-2 rounded focus:outline-none focus:ring-2 focus:ring-app-green-500"
                               style={{
-                                backgroundColor: "var(--chatty-input-bg, #3a3520)",
-                                color: "var(--chatty-bg, #f5f0e8)",
+                                backgroundColor: "#3a3520",
+                                color: "#f5f0e8",
                                 border: "none",
                               }}
                             />
