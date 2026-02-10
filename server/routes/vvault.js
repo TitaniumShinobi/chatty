@@ -3744,16 +3744,21 @@ router.post("/message", async (req, res) => {
     try {
       // VVAULT handles: LLM inference, transcript saving, memory management
       // Include model info so VVAULT can use the GPT's configured model
+      const vvaultHeaders = { 'Content-Type': 'application/json' };
+      if (process.env.CHATTY_API_KEY) vvaultHeaders['X-Chatty-Key'] = process.env.CHATTY_API_KEY;
+      const userEmail = req.user?.email || userId;
+      if (userEmail) vvaultHeaders['X-Chatty-User'] = userEmail;
+
       const vvaultResponse = await fetch(`${baseUrl}/api/chatty/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: vvaultHeaders,
         body: JSON.stringify({
           constructId,
           message,
-          userId: req.user?.email || userId,
+          userId: userEmail,
           sessionId: effectiveSessionId,
           userName: req.user?.name || 'Devon',
-          model: configuredModelForVVAULT // Pass configured model to VVAULT
+          model: configuredModelForVVAULT
         }),
         signal: controller.signal
       });
@@ -4108,9 +4113,14 @@ router.post("/transcript/:constructId/append", async (req, res) => {
     
     const baseUrl = VVAULT_API_BASE_URL.replace(/\/$/, '');
     
+    const appendHeaders = { 'Content-Type': 'application/json' };
+    if (process.env.CHATTY_API_KEY) appendHeaders['X-Chatty-Key'] = process.env.CHATTY_API_KEY;
+    const appendUserEmail = req.user?.email;
+    if (appendUserEmail) appendHeaders['X-Chatty-User'] = appendUserEmail;
+
     const vvaultResponse = await fetch(`${baseUrl}/api/chatty/transcript/${constructId}/message`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: appendHeaders,
       body: JSON.stringify({
         role,
         content,

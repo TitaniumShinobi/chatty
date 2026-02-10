@@ -21,6 +21,18 @@ function getBaseUrl() {
   return VVAULT_API_BASE_URL.replace(/\/$/, '');
 }
 
+function getChattyAuthHeaders(userEmail) {
+  const headers = { 'Content-Type': 'application/json' };
+  const apiKey = process.env.CHATTY_API_KEY;
+  if (apiKey) {
+    headers['X-Chatty-Key'] = apiKey;
+  }
+  if (userEmail) {
+    headers['X-Chatty-User'] = userEmail;
+  }
+  return headers;
+}
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -41,7 +53,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
  * @param {string} constructId - e.g., "zen-001"
  * @returns {Promise<{success: boolean, content: string, messages: Array, construct_id: string} | null>}
  */
-async function getTranscript(constructId) {
+async function getTranscript(constructId, userEmail) {
   const baseUrl = getBaseUrl();
   if (!baseUrl) return null;
 
@@ -52,7 +64,7 @@ async function getTranscript(constructId) {
       `${baseUrl}/api/chatty/transcript/${constructId}`,
       {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
+        headers: getChattyAuthHeaders(userEmail)
       }
     );
 
@@ -89,7 +101,7 @@ async function getTranscript(constructId) {
  * @param {string} content - markdown transcript content
  * @returns {Promise<boolean>}
  */
-async function updateTranscript(constructId, content) {
+async function updateTranscript(constructId, content, userEmail) {
   const baseUrl = getBaseUrl();
   if (!baseUrl) return false;
 
@@ -100,7 +112,7 @@ async function updateTranscript(constructId, content) {
       `${baseUrl}/api/chatty/transcript/${constructId}`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getChattyAuthHeaders(userEmail),
         body: JSON.stringify({ content })
       }
     );
@@ -123,7 +135,7 @@ async function updateTranscript(constructId, content) {
  * List all constructs with transcripts
  * @returns {Promise<Array<{construct_id: string, filename: string}> | null>}
  */
-async function listConstructs() {
+async function listConstructs(userEmail) {
   const baseUrl = getBaseUrl();
   if (!baseUrl) return null;
 
@@ -134,7 +146,7 @@ async function listConstructs() {
       `${baseUrl}/api/chatty/constructs`,
       {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
+        headers: getChattyAuthHeaders(userEmail)
       }
     );
 
@@ -313,7 +325,7 @@ function formatMessagesToMarkdown(title, messages) {
  * @param {string} [params.userId] - optional user ID
  * @returns {Promise<{success: boolean, response: string, construct_id: string} | null>}
  */
-async function postMessage({ constructId, message, userId }) {
+async function postMessage({ constructId, message, userId, userEmail }) {
   const baseUrl = getBaseUrl();
   if (!baseUrl) {
     console.error('❌ [VVAULTApiClient] VVAULT_API_BASE_URL not set, cannot post message');
@@ -327,7 +339,7 @@ async function postMessage({ constructId, message, userId }) {
       `${baseUrl}/api/chatty/message`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getChattyAuthHeaders(userEmail || userId),
         body: JSON.stringify({ 
           constructId, 
           message,
@@ -376,7 +388,7 @@ async function postMessage({ constructId, message, userId }) {
  * @param {string} [params.timestamp] - ISO timestamp (optional, defaults to now)
  * @returns {Promise<{success: boolean, action: string} | null>}
  */
-async function appendMessage({ constructId, role, content, name, timestamp }) {
+async function appendMessage({ constructId, role, content, name, timestamp, userEmail }) {
   const baseUrl = getBaseUrl();
   if (!baseUrl) {
     console.error('❌ [VVAULTApiClient] VVAULT_API_BASE_URL not set, cannot append message');
@@ -390,7 +402,7 @@ async function appendMessage({ constructId, role, content, name, timestamp }) {
       `${baseUrl}/api/chatty/transcript/${constructId}/message`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getChattyAuthHeaders(userEmail),
         body: JSON.stringify({ 
           role, 
           content,
@@ -427,6 +439,7 @@ export {
   parseMarkdownToMessages,
   formatMessagesToMarkdown,
   getBaseUrl,
+  getChattyAuthHeaders,
   postMessage,
   appendMessage
 };
