@@ -653,6 +653,27 @@ export class AIManager {
       }
     }
 
+    // Fallback for seed constructs stored with user_id='all_users'
+    if (!row) {
+      try {
+        const seedAisStmt = this.db.prepare('SELECT * FROM ais WHERE construct_callsign = ? AND user_id = ?');
+        row = seedAisStmt.get(constructCallsign, 'all_users');
+        if (row) {
+          console.log(`📊 [AIManager] Found seed AI with callsign ${constructCallsign} in ais table (all_users)`);
+        }
+      } catch (error) {}
+      if (!row) {
+        try {
+          const seedGptsStmt = this.db.prepare('SELECT * FROM gpts WHERE construct_callsign = ? AND user_id = ?');
+          row = seedGptsStmt.get(constructCallsign, 'all_users');
+          if (row) {
+            fromGPTsTable = true;
+            console.log(`📊 [AIManager] Found seed AI with callsign ${constructCallsign} in gpts table (all_users)`);
+          }
+        } catch (error) {}
+      }
+    }
+
     if (!row) {
       return null;
     }
