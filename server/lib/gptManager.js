@@ -389,11 +389,22 @@ export class GPTManager {
       if (parsed.description && parsed.description !== gpt.description) updates.description = parsed.description;
       if (parsed.instructions && parsed.instructions !== gpt.instructions) updates.instructions = parsed.instructions;
 
+      let startersUpdated = false;
+      if (parsed.conversationStarters && parsed.conversationStarters.length > 0) {
+        const existingStarters = JSON.parse(gpt.conversation_starters || '[]');
+        const newJson = JSON.stringify(parsed.conversationStarters);
+        if (newJson !== JSON.stringify(existingStarters)) {
+          updates.conversation_starters = newJson;
+          startersUpdated = true;
+        }
+      }
+
       if (Object.keys(updates).length > 0) {
         const setClauses = Object.keys(updates).map(k => `${k} = ?`).join(', ');
         const values = [...Object.values(updates), gpt.id];
         this.db.prepare(`UPDATE gpts SET ${setClauses}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(...values);
-        console.log(`✅ [GPTManager] Hydrated ${gpt.construct_callsign} from ${source}: ${Object.keys(updates).join(', ')}`);
+        const fieldNames = Object.keys(updates).map(k => k === 'conversation_starters' ? `conversationStarters (${parsed.conversationStarters.length})` : k);
+        console.log(`✅ [GPTManager] Hydrated ${gpt.construct_callsign} from ${source}: ${fieldNames.join(', ')}`);
         return true;
       }
       return false;
@@ -427,18 +438,39 @@ export class GPTManager {
     }
 
     let instructionsStart = -1;
+    let startersStart = -1;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (/^instructions\s+for\s+/i.test(line) || /^instructions:/i.test(line)) {
         instructionsStart = i;
-        break;
+      }
+      if (/^\*\*conversation\s+starters:?\*\*$/i.test(line)) {
+        startersStart = i;
       }
     }
+
+    if (startersStart >= 0) {
+      const starters = [];
+      for (let i = startersStart + 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        if (/^\*\*/.test(line)) break;
+        const starterMatch = line.match(/^-\s*\*(.+?)\*$/);
+        if (starterMatch) {
+          starters.push(starterMatch[1].trim());
+        }
+      }
+      if (starters.length > 0) {
+        result.conversationStarters = starters;
+      }
+    }
+
+    const instructionsEnd = startersStart >= 0 ? startersStart : lines.length;
 
     if (instructionsStart >= 0) {
       const header = lines[instructionsStart].trim();
       const afterColon = header.includes(':') ? header.split(':').slice(1).join(':').trim() : '';
-      const remaining = lines.slice(instructionsStart + 1).join('\n').trim();
+      const remaining = lines.slice(instructionsStart + 1, instructionsEnd).join('\n').trim();
       const raw = afterColon ? afterColon + '\n' + remaining : remaining;
       result.instructions = raw.replace(/^```\s*\n?/gm, '').replace(/\n?```\s*$/gm, '').trim();
     } else if (!result.name && !result.description) {
@@ -447,6 +479,7 @@ export class GPTManager {
       const allAfterHeader = [];
       let pastHeader = false;
       for (let i = 0; i < lines.length; i++) {
+        if (i >= instructionsEnd) break;
         const line = lines[i].trim();
         if (!pastHeader) {
           if (line.match(/^\*\*(.+?)\*\*$/) || line.match(/^\*([^*].+?)\*$/) || !line) continue;
