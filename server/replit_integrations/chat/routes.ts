@@ -5,7 +5,7 @@ import { chatStorage } from "./storage";
 // This is using Replit's AI Integrations service, which provides OpenRouter-compatible API access without requiring your own OpenRouter API key.
 const openrouter = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL,
-  apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY,
+  apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || 'dummy',
 });
 
 export function registerChatRoutes(app: Express): void {
