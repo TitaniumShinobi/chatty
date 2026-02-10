@@ -946,7 +946,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
   // Save preview conversation to construct's transcript in Supabase
   const savePreviewConversation = async () => {
-    if (previewMessages.length === 0 || !config.callsign) {
+    if (previewMessages.length === 0 || !config.constructCallsign) {
       console.log('[GPTCreator] No preview messages to save or missing callsign');
       onClose();
       return;
@@ -968,8 +968,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          constructCallsign: config.callsign,
-          constructName: config.name || config.callsign,
+          constructCallsign: config.constructCallsign,
+          constructName: config.name || config.constructCallsign,
           messages: formattedMessages,
           source: 'chatty-preview'
         })

@@ -882,16 +882,23 @@ export default function Layout() {
               })) || [],
           });
 
-          // Normalize title: strip "Chat with " prefix and callsigns for address book display
-          let normalizedTitle = conv.title || "Zen";// Remove "Chat with " prefix if present
-          normalizedTitle = normalizedTitle.replace(/^Chat with /i, "");
-          // Extract construct name (remove callsigns like "-001")
-          normalizedTitle = normalizedTitle.replace(/-\d{3,}$/i, "");const constructId =
+          const constructId =
             conv.constructId ||
             conv.importMetadata?.constructId ||
             conv.importMetadata?.connectedConstructId ||
             conv.constructFolder ||
             null;
+
+          // Normalize title: strip "Chat with " prefix and callsigns for address book display
+          let normalizedTitle =
+            conv.title || constructId || conv.sessionId || "Conversation";
+          normalizedTitle = normalizedTitle.replace(/^Chat with /i, "");
+          // Extract construct name (remove callsigns like "-001")
+          normalizedTitle = normalizedTitle.replace(/-\d{3,}$/i, "");
+          if (normalizedTitle) {
+            normalizedTitle =
+              normalizedTitle.charAt(0).toUpperCase() + normalizedTitle.slice(1);
+          }
           const runtimeId =
             conv.runtimeId ||
             conv.importMetadata?.runtimeId ||
@@ -968,11 +975,12 @@ export default function Layout() {
 
           // Normalize thread ID for Zen conversations to match URL pattern
           let threadId = conv.sessionId;
-          if (
+          const isZenConversation =
             constructId === "zen-001" ||
             constructId === "zen" ||
-            normalizedTitle.toLowerCase() === "zen"
-          ) {
+            conv.sessionId === DEFAULT_ZEN_CANONICAL_SESSION_ID ||
+            conv.sessionId?.startsWith("zen-001_chat_with_");
+          if (isZenConversation) {
             // Use canonical ID format for Zen to match URL routing
             threadId = DEFAULT_ZEN_CANONICAL_SESSION_ID;
             console.log(

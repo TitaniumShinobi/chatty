@@ -1566,7 +1566,10 @@ export default function Chat() {
         {thread.messages.length === 0 && !isReloading && (
           <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
             <p className="text-lg mb-2" style={{ color: "var(--chatty-text)" }}>
-              {thread.title || thread.constructId || 'Your assistant'} is listening.
+              {(isCanonicalThread ? canonicalConstructName : thread.title) ||
+                thread.constructId ||
+                "Your assistant"}{" "}
+              is listening.
             </p>
             <p
               className="text-sm"
