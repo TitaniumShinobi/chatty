@@ -74,7 +74,7 @@ export default function ImageAttachmentPreview({ files, onRemove }: ImageAttachm
           <img
             src={previews[0]}
             alt={imageFiles[0].name}
-            className="w-full h-48 object-cover rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+            className="max-w-full max-h-[70vh] w-auto h-auto object-contain rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
             onClick={() => openLightbox(0)}
           />
           <button
@@ -213,7 +213,7 @@ function Lightbox({ previews, index, onClose, onPrev, onNext, fileNames }: Light
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+      className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center"
       onClick={onClose}
     >
       <button
