@@ -406,7 +406,6 @@ export class GPTManager {
   _parseStructuredPrompt(text) {
     const result = {};
     const lines = text.split('\n');
-    let instructionsStart = -1;
 
     for (let i = 0; i < Math.min(lines.length, 5); i++) {
       const line = lines[i].trim();
@@ -425,8 +424,12 @@ export class GPTManager {
         result.description = descMatch[1].trim();
         continue;
       }
+    }
 
-      if (/^instructions\s+(for|:)/i.test(line) || /^instructions:/i.test(line)) {
+    let instructionsStart = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (/^instructions\s+for\s+/i.test(line) || /^instructions:/i.test(line)) {
         instructionsStart = i;
         break;
       }
@@ -436,17 +439,23 @@ export class GPTManager {
       const header = lines[instructionsStart].trim();
       const afterColon = header.includes(':') ? header.split(':').slice(1).join(':').trim() : '';
       const remaining = lines.slice(instructionsStart + 1).join('\n').trim();
-      result.instructions = afterColon ? afterColon + '\n' + remaining : remaining;
+      const raw = afterColon ? afterColon + '\n' + remaining : remaining;
+      result.instructions = raw.replace(/^```\s*\n?/gm, '').replace(/\n?```\s*$/gm, '').trim();
     } else if (!result.name && !result.description) {
       result.instructions = text;
     } else {
-      const consumed = lines.findIndex((l, i) => {
-        const t = l.trim();
-        return i > 0 && t && !t.match(/^\*\*(.+?)\*\*$/) && !t.match(/^\*([^*].+?)\*$/);
-      });
-      if (consumed >= 0) {
-        result.instructions = lines.slice(consumed).join('\n').trim();
+      const allAfterHeader = [];
+      let pastHeader = false;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!pastHeader) {
+          if (line.match(/^\*\*(.+?)\*\*$/) || line.match(/^\*([^*].+?)\*$/) || !line) continue;
+          pastHeader = true;
+        }
+        if (pastHeader) allAfterHeader.push(lines[i]);
       }
+      const raw = allAfterHeader.join('\n').trim();
+      result.instructions = raw.replace(/^```\s*$/gm, '').trim();
     }
 
     return result;
