@@ -431,64 +431,113 @@ router.post('/:id/files', upload.single('file'), async (req, res) => {
 router.get('/:id/files', async (req, res) => {
   try {
     const localFiles = await aiManager.getAIFiles(req.params.id);
-
     const ai = await aiManager.getAI(req.params.id);
-    let supabaseFiles = [];
+    let vvaultFiles = [];
 
     if (ai && ai.constructCallsign) {
-      try {
-        const { getSupabaseClient } = await import('../lib/supabaseClient.js');
-        const supabase = getSupabaseClient();
-        if (supabase) {
-          const constructVariants = [
-            ai.constructCallsign,
-            ai.constructCallsign.replace(/-\d+$/, '')
-          ];
+      const VVAULT_API_BASE_URL = process.env.VVAULT_API_BASE_URL;
+      if (VVAULT_API_BASE_URL) {
+        try {
+          const baseUrl = VVAULT_API_BASE_URL.replace(/\/$/, '');
+          const headers = { 'Content-Type': 'application/json' };
+          const serviceToken = process.env.VVAULT_SERVICE_TOKEN;
+          if (serviceToken) headers['X-Chatty-Key'] = serviceToken;
+          const userEmail = req.user?.email;
+          if (userEmail) headers['X-Chatty-User'] = userEmail;
 
-          for (const cid of constructVariants) {
-            const { data, error } = await supabase
-              .from('vault_files')
-              .select('id, filename, file_type, storage_path, created_at, metadata')
-              .eq('construct_id', cid)
-              .not('file_type', 'eq', 'transcript')
-              .not('file_type', 'eq', 'conversation');
+          const response = await fetch(
+            `${baseUrl}/api/chatty/construct/${ai.constructCallsign}/files`,
+            { method: 'GET', headers, signal: AbortSignal.timeout(8000) }
+          );
 
-            if (!error && data && data.length > 0) {
-              const mapped = data.map(f => {
-                const meta = typeof f.metadata === 'string' ? JSON.parse(f.metadata || '{}') : (f.metadata || {});
-                const origPath = meta.original_path || f.storage_path || '';
-                let category = 'knowledge';
-                if (origPath.includes('/identity/')) category = 'identity';
-                else if (origPath.includes('/tests/')) category = 'test';
-                else if (origPath.includes('/chatgpt/')) category = 'chatgpt';
+          if (response.ok) {
+            const data = await response.json();
+            const folderMap = { assets: 'knowledge', documents: 'knowledge', identity: 'identity' };
 
-                const mimeType = f.file_type === 'binary' ? 'application/octet-stream' : 'text/plain';
-
-                return {
-                  id: f.id,
+            for (const [folder, category] of Object.entries(folderMap)) {
+              const files = data.files?.[folder] || data[folder] || [];
+              for (const f of files) {
+                const isImage = /\.(png|jpg|jpeg|svg|gif|webp)$/i.test(f.filename || '');
+                vvaultFiles.push({
+                  id: f.id || `vvault-${folder}-${f.filename}`,
                   aiId: req.params.id,
                   filename: f.filename,
                   originalName: f.filename,
-                  mimeType,
-                  size: meta.size || 0,
+                  mimeType: isImage ? `image/${(f.filename.split('.').pop() || 'png').toLowerCase()}` : (f.mime_type || 'text/plain'),
+                  size: f.size || 0,
                   content: '',
-                  uploadedAt: f.created_at,
+                  uploadedAt: f.created_at || f.updated_at || new Date().toISOString(),
                   isActive: true,
                   category,
-                  source: 'supabase',
-                  storagePath: f.storage_path
-                };
-              });
-              supabaseFiles.push(...mapped);
+                  source: 'vvault',
+                  storagePath: f.storage_path || f.path || ''
+                });
+              }
+            }
+            console.log(`✅ [AIs API] Loaded ${vvaultFiles.length} files from VVAULT for ${ai.constructCallsign}`);
+          }
+        } catch (vvaultErr) {
+          console.warn(`⚠️ [AIs API] VVAULT files lookup failed for ${ai.constructCallsign}:`, vvaultErr.message);
+        }
+      }
+
+      if (vvaultFiles.length === 0) {
+        try {
+          const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+          const supabase = getSupabaseClient();
+          if (supabase) {
+            const constructVariants = [
+              ai.constructCallsign,
+              ai.constructCallsign.replace(/-\d+$/, '')
+            ];
+
+            for (const cid of constructVariants) {
+              const { data, error } = await supabase
+                .from('vault_files')
+                .select('id, filename, file_type, storage_path, created_at, metadata')
+                .eq('construct_id', cid)
+                .not('file_type', 'eq', 'transcript')
+                .not('file_type', 'eq', 'conversation');
+
+              if (!error && data && data.length > 0) {
+                const mapped = data.map(f => {
+                  const meta = typeof f.metadata === 'string' ? JSON.parse(f.metadata || '{}') : (f.metadata || {});
+                  const origPath = meta.original_path || f.storage_path || '';
+                  let category = 'knowledge';
+                  if (origPath.includes('/identity/')) category = 'identity';
+                  else if (origPath.includes('/assets/')) category = 'knowledge';
+                  else if (origPath.includes('/documents/')) category = 'knowledge';
+                  else if (origPath.includes('/tests/')) category = 'test';
+                  else if (origPath.includes('/chatgpt/')) category = 'chatgpt';
+
+                  const mimeType = f.file_type === 'binary' ? 'application/octet-stream' : 'text/plain';
+
+                  return {
+                    id: f.id,
+                    aiId: req.params.id,
+                    filename: f.filename,
+                    originalName: f.filename,
+                    mimeType,
+                    size: meta.size || 0,
+                    content: '',
+                    uploadedAt: f.created_at,
+                    isActive: true,
+                    category,
+                    source: 'supabase',
+                    storagePath: f.storage_path
+                  };
+                });
+                vvaultFiles.push(...mapped);
+              }
             }
           }
+        } catch (sbErr) {
+          console.warn(`⚠️ [AIs API] Supabase files fallback failed for ${ai.constructCallsign}:`, sbErr.message);
         }
-      } catch (sbErr) {
-        console.warn(`⚠️ [AIs API] Supabase files lookup failed for ${ai.constructCallsign}:`, sbErr.message);
       }
     }
 
-    const allFiles = [...localFiles, ...supabaseFiles];
+    const allFiles = [...localFiles, ...vvaultFiles];
     res.json({ success: true, files: allFiles });
   } catch (error) {
     console.error('Error fetching files:', error);

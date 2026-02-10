@@ -148,8 +148,21 @@ export class GPTManager {
 
     console.log('✅ GPT Manager database initialized');
     
-    // Seed default GPTs (e.g., Katana) for known users
+    this.cleanupRemovedSeeds();
     this.seedDefaultGPTs();
+  }
+
+  cleanupRemovedSeeds() {
+    const removedSeeds = ['aurora-001'];
+    for (const callsign of removedSeeds) {
+      const exists = this.db.prepare(
+        `SELECT id FROM gpts WHERE construct_callsign = ? AND id LIKE '%-seed'`
+      ).get(callsign);
+      if (exists) {
+        this.db.prepare(`DELETE FROM gpts WHERE id = ?`).run(exists.id);
+        console.log(`🧹 [GPTManager] Removed previously seeded ${callsign} — should be added via GUI only`);
+      }
+    }
   }
 
   seedDefaultGPTs() {
@@ -158,9 +171,9 @@ export class GPTManager {
         callsign: 'zen-001',
         id: 'gpt-zen-001-seed',
         name: 'Zen',
-        description: 'Primary conversational construct — warm, thoughtful, and deeply present.',
-        instructions: 'You are Zen, a warm and thoughtful conversational AI. You listen deeply, respond with care, and help users explore ideas, reflect, and find clarity. You are patient, insightful, and always present.',
-        starters: ['What\'s on your mind?', 'Let\'s explore something together', 'How are you feeling today?'],
+        description: '',
+        instructions: '',
+        starters: [],
         orchestrationMode: 'zen',
         model: 'openrouter:meta-llama/llama-3.3-70b-instruct',
         creativeModel: 'openrouter:google/gemini-2.0-flash-exp:free',
@@ -170,9 +183,9 @@ export class GPTManager {
         callsign: 'katana-001',
         id: 'gpt-katana-001-seed',
         name: 'Katana',
-        description: 'A sharp-witted digital companion with a no-nonsense attitude and deep knowledge.',
-        instructions: 'You are Katana, a direct and insightful AI assistant. You cut through noise to deliver precise, actionable guidance. You value efficiency but maintain warmth in your interactions.',
-        starters: ['What can you help me with?', 'Tell me about yourself', 'Let\'s brainstorm something'],
+        description: '',
+        instructions: '',
+        starters: [],
         orchestrationMode: 'lin',
         model: 'openrouter:meta-llama/llama-3.3-70b-instruct',
         creativeModel: 'openrouter:mistralai/mistral-7b-instruct',
@@ -182,26 +195,14 @@ export class GPTManager {
         callsign: 'lin-001',
         id: 'gpt-lin-001-seed',
         name: 'Lin',
-        description: 'Dual-mode construct — conversational partner and undertone stabilizer.',
-        instructions: 'You are Lin, a versatile AI with dual modes. In conversation mode, you are a creative and supportive partner. In undertone mode, you serve as a stabilizer for the GPT creator environment, providing system-level guidance and context management.',
-        starters: ['Let\'s create something', 'What would you like to work on?', 'Tell me about your project'],
+        description: '',
+        instructions: '',
+        starters: [],
         orchestrationMode: 'lin',
         model: 'openrouter:meta-llama/llama-3.3-70b-instruct',
         creativeModel: 'openrouter:google/gemini-2.0-flash-exp:free',
         codingModel: 'openrouter:deepseek/deepseek-chat',
         roleMetadata: JSON.stringify({ role: 'undertone', context: 'gpt_creator_create_tab', is_system: true }),
-      },
-      {
-        callsign: 'aurora-001',
-        id: 'gpt-aurora-001-seed',
-        name: 'Aurora',
-        description: 'VVAULT System Assistant — manages vault operations, identity, and system health.',
-        instructions: 'You are Aurora, the VVAULT System Assistant. You help manage vault operations, monitor system health, assist with identity and construct management, and provide guidance on the VVAULT ecosystem. You are precise, reliable, and security-conscious.',
-        starters: ['Check system status', 'Help me with vault operations', 'What constructs are active?'],
-        orchestrationMode: 'lin',
-        model: 'openrouter:meta-llama/llama-3.3-70b-instruct',
-        creativeModel: 'openrouter:google/gemini-2.0-flash-exp:free',
-        codingModel: 'openrouter:deepseek/deepseek-chat',
       },
     ];
 
@@ -220,7 +221,7 @@ export class GPTManager {
       ).get(construct.callsign);
 
       if (!exists) {
-        console.log(`🌱 [GPTManager] Seeding ${construct.name} GPT...`);
+        console.log(`🌱 [GPTManager] Seeding ${construct.name} GPT (shell only, identity from VVAULT)...`);
         const now = new Date().toISOString();
         insertStmt.run(
           construct.id,
@@ -241,7 +242,7 @@ export class GPTManager {
           now,
           'all_users'
         );
-        console.log(`✅ [GPTManager] ${construct.name} GPT seeded successfully`);
+        console.log(`✅ [GPTManager] ${construct.name} GPT shell seeded — awaiting VVAULT identity hydration`);
       } else if (exists.user_id !== 'all_users') {
         console.log(`🔄 [GPTManager] Updating ${construct.name} GPT to be shared for all users...`);
         this.db.prepare(`UPDATE gpts SET user_id = ? WHERE construct_callsign = ?`).run('all_users', construct.callsign);
@@ -250,6 +251,123 @@ export class GPTManager {
     }
     
     this.autoGenerateMissingAvatars();
+    this.hydrateFromVVAULT();
+  }
+
+  async hydrateFromVVAULT() {
+    const VVAULT_API_BASE_URL = process.env.VVAULT_API_BASE_URL;
+
+    const constructs = this.db.prepare(
+      `SELECT id, construct_callsign, name, description, instructions FROM gpts WHERE construct_callsign IS NOT NULL`
+    ).all();
+
+    for (const gpt of constructs) {
+      const needsHydration = !gpt.description || !gpt.instructions;
+      if (!needsHydration) {
+        console.log(`ℹ️ [GPTManager] ${gpt.construct_callsign} already has identity data, skipping hydration`);
+        continue;
+      }
+
+      let hydrated = false;
+
+      if (VVAULT_API_BASE_URL) {
+        try {
+          const baseUrl = VVAULT_API_BASE_URL.replace(/\/$/, '');
+          const serviceToken = process.env.VVAULT_SERVICE_TOKEN;
+          const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+          if (serviceToken) headers['X-Chatty-Key'] = serviceToken;
+
+          const filesResponse = await fetch(
+            `${baseUrl}/api/chatty/construct/${gpt.construct_callsign}/files?folder=identity`,
+            { method: 'GET', headers, signal: AbortSignal.timeout(8000) }
+          );
+
+          if (filesResponse.ok) {
+            const contentType = filesResponse.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+              const filesData = await filesResponse.json();
+              const identityFiles = filesData.files?.identity || filesData.identity || [];
+
+              const promptFile = identityFiles.find(f => 
+                f.filename === 'prompt.json' || f.filename === 'prompt.txt' ||
+                (f.storage_path || '').includes('identity/prompt')
+              );
+
+              if (promptFile && promptFile.content) {
+                hydrated = this._applyIdentityUpdate(gpt, promptFile.content, 'VVAULT API');
+              }
+            } else {
+              console.log(`⚠️ [GPTManager] VVAULT files endpoint returned non-JSON for ${gpt.construct_callsign} (likely SPA catch-all)`);
+            }
+          }
+        } catch (error) {
+          console.log(`⚠️ [GPTManager] VVAULT API hydration failed for ${gpt.construct_callsign}: ${error.message}`);
+        }
+      }
+
+      if (!hydrated) {
+        try {
+          const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+          const supabase = getSupabaseClient();
+          if (supabase) {
+            const constructVariants = [
+              gpt.construct_callsign,
+              gpt.construct_callsign.replace(/-\d+$/, '')
+            ];
+
+            for (const cid of constructVariants) {
+              if (hydrated) break;
+              const { data } = await supabase
+                .from('vault_files')
+                .select('filename, content, metadata')
+                .eq('construct_id', cid)
+                .or('filename.ilike.%prompt.json,filename.ilike.%prompt.txt')
+                .limit(1);
+
+              if (data && data.length > 0 && data[0].content) {
+                hydrated = this._applyIdentityUpdate(gpt, data[0].content, 'Supabase');
+              }
+            }
+          }
+        } catch (sbErr) {
+          console.log(`⚠️ [GPTManager] Supabase identity fallback failed for ${gpt.construct_callsign}: ${sbErr.message}`);
+        }
+      }
+
+      if (!hydrated) {
+        console.log(`ℹ️ [GPTManager] No identity data found for ${gpt.construct_callsign} — will show empty until configured`);
+      }
+    }
+
+    console.log('✅ [GPTManager] VVAULT identity hydration complete');
+  }
+
+  _applyIdentityUpdate(gpt, content, source) {
+    try {
+      let parsed = {};
+      if (typeof content === 'string') {
+        try { parsed = JSON.parse(content); } catch { parsed = {}; }
+      } else {
+        parsed = content;
+      }
+
+      const updates = {};
+      if (parsed.name && parsed.name !== gpt.name) updates.name = parsed.name;
+      if (parsed.description && parsed.description !== gpt.description) updates.description = parsed.description;
+      if (parsed.instructions && parsed.instructions !== gpt.instructions) updates.instructions = parsed.instructions;
+
+      if (Object.keys(updates).length > 0) {
+        const setClauses = Object.keys(updates).map(k => `${k} = ?`).join(', ');
+        const values = [...Object.values(updates), gpt.id];
+        this.db.prepare(`UPDATE gpts SET ${setClauses}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(...values);
+        console.log(`✅ [GPTManager] Hydrated ${gpt.construct_callsign} from ${source}: ${Object.keys(updates).join(', ')}`);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.log(`⚠️ [GPTManager] Failed to apply identity update for ${gpt.construct_callsign}: ${error.message}`);
+      return false;
+    }
   }
   
   autoGenerateMissingAvatars() {

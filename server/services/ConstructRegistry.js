@@ -44,18 +44,6 @@ const DEFAULT_CONSTRUCTS = [
     created: '2023-03-10T00:00:00.000Z',
   },
   {
-    id: 'aurora',
-    name: 'Aurora',
-    callsign: '001',
-    isSystemShell: false,
-    persona: {
-      description: 'Research and data synthesis specialist.',
-      keywords: ['aurora', 'analysis', 'research', 'data'],
-    },
-    fingerprint: null,
-    created: '2023-04-05T00:00:00.000Z',
-  },
-  {
     id: 'lin',
     name: 'Lin',
     callsign: '001',
