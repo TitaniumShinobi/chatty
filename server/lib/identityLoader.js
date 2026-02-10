@@ -177,7 +177,7 @@ Response constraints:
   }
 };
 
-async function fetchIdentityFromVVAULTApi(constructId) {
+async function fetchIdentityFromVVAULTApi(constructId, userEmail) {
   if (!VVAULT_API_BASE_URL) {
     console.log(`⚠️ [IdentityLoader] VVAULT_API_BASE_URL not set, skipping API fetch`);
     return null;
@@ -185,9 +185,13 @@ async function fetchIdentityFromVVAULTApi(constructId) {
 
   try {
     const baseUrl = VVAULT_API_BASE_URL.replace(/\/$/, '');
+    const headers = { 'Content-Type': 'application/json' };
+    const chattyApiKey = process.env.CHATTY_API_KEY;
+    if (chattyApiKey) headers['X-Chatty-Key'] = chattyApiKey;
+    if (userEmail) headers['X-Chatty-User'] = userEmail;
     const response = await fetch(`${baseUrl}/api/identity/${constructId}`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       signal: AbortSignal.timeout(5000)
     });
 
