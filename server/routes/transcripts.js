@@ -395,16 +395,32 @@ router.get('/list/:constructCallsign', async (req, res) => {
     let transcripts = [];
     if (supabase) {
       const userId = await resolveSupabaseUserId(supabase, userEmail);
-      if (!userId) {
-        return res.json({ success: true, transcripts: [] });
+
+      const constructVariants = [
+        constructCallsign,
+        constructCallsign.replace(/-\d+$/, '')
+      ];
+
+      let allFiles = [];
+      for (const cid of constructVariants) {
+        let query = supabase
+          .from('vault_files')
+          .select('filename, metadata, created_at')
+          .eq('file_type', 'transcript')
+          .eq('construct_id', cid);
+
+        if (userId) {
+          query = query.or(`user_id.eq.${userId},user_id.is.null`);
+        }
+
+        const { data: files, error: filesError } = await query;
+        if (!filesError && files && files.length > 0) {
+          allFiles.push(...files);
+        }
       }
 
-      const { data: files, error: filesError } = await supabase
-        .from('vault_files')
-        .select('filename, metadata, created_at')
-        .eq('user_id', userId)
-        .eq('file_type', 'transcript')
-        .eq('construct_id', constructCallsign);
+      const { data: files, error: filesError } = { data: allFiles, error: null };
+      const _ = filesError;
 
       if (filesError) {
         console.error('❌ [Transcripts] List error:', filesError);
