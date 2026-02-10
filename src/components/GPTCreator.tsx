@@ -4395,7 +4395,6 @@ ALWAYS:
                           className="p-4 rounded-lg"
                           style={{
                             backgroundColor: "var(--chatty-bg-message)",
-                            border: "1px solid var(--chatty-line)",
                           }}
                         >
                           <label className="flex items-center gap-2 cursor-pointer">
@@ -4431,7 +4430,6 @@ ALWAYS:
                           className="p-4 rounded-lg space-y-3"
                           style={{
                             backgroundColor: "var(--chatty-bg-message)",
-                            border: "1px solid var(--chatty-line)",
                           }}
                         >
                           <h4
@@ -4496,7 +4494,6 @@ ALWAYS:
                                 className="p-3 rounded-lg"
                                 style={{
                                   backgroundColor: "var(--chatty-bg-message)",
-                                  border: "1px solid var(--chatty-line)",
                                 }}
                               >
                                 <div className="flex items-center justify-between mb-2">
