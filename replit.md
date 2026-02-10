@@ -51,7 +51,7 @@ Any update where the new content is less than half the size of what's already st
 **Key Features:**
 - **Dynamic Address Book:** Automatically includes custom GPTs, with Zen sorted first.
 - **GPT Creation Workflow:** Bootstraps conversations in Supabase upon GPT creation.
-- **Identity Loading:** Prioritizes VVAULT API for construct identities.
+- **Identity Loading:** Prioritizes Supabase `vault_files` for construct identity data (avatars, knowledge files, prompt/conditioning). Avatar endpoint checks Supabase first by `construct_id` (both with/without `-001` suffix), falling back to local placeholder. Knowledge files endpoint merges local DB with Supabase vault_files. Transcript list endpoint handles null `user_id` records and construct_id variants.
 - **Robust Transcript Parsing & Upload:** Handles various VVAULT and Chatty transcript formats and supports multi-platform uploads.
 - **GPT Seat Memory Injection:** Injects transcript memories into GPT constructs during conversations.
 - **Canonical Session and Supabase File Patterns:** Consistent naming conventions for session IDs and Supabase file paths.
