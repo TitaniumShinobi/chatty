@@ -924,7 +924,9 @@ async function writeConversationToSupabase(params) {
       existingMetadata = typeof existing.metadata === 'string' 
         ? JSON.parse(existing.metadata) 
         : (existing.metadata || {});
-      messages = existingMetadata.messages || parseMarkdownTranscript(existing.content);
+      messages = Array.isArray(existingMetadata.messages)
+        ? existingMetadata.messages
+        : parseMarkdownTranscript(existing.content);
     }
 
     const contentStr = typeof content === 'string' ? content : '';
