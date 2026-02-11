@@ -229,11 +229,77 @@ router.post('/:id/files', upload.single('file'), async (req, res) => {
   }
 });
 
-// Get files for a GPT
+// Get files for a GPT (local DB + Supabase fallback)
 router.get('/:id/files', async (req, res) => {
   try {
-    const files = await gptManager.getGPTFiles(req.params.id);
-    res.json({ success: true, files });
+    const localFiles = await gptManager.getGPTFiles(req.params.id);
+    let supabaseFiles = [];
+
+    const gpt = await gptManager.getGPT(req.params.id);
+    const constructCallsign = gpt?.constructCallsign;
+
+    if (constructCallsign) {
+      try {
+        const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          const constructVariants = [
+            constructCallsign,
+            constructCallsign.replace(/-\d+$/, '')
+          ];
+
+          for (const cid of constructVariants) {
+            const { data, error } = await supabase
+              .from('vault_files')
+              .select('id, filename, file_type, storage_path, created_at, metadata')
+              .eq('construct_id', cid)
+              .not('file_type', 'eq', 'transcript')
+              .not('file_type', 'eq', 'conversation');
+
+            if (!error && data && data.length > 0) {
+              const mapped = data.map(f => {
+                const meta = typeof f.metadata === 'string' ? JSON.parse(f.metadata || '{}') : (f.metadata || {});
+                const origPath = meta.original_path || f.storage_path || f.filename || '';
+                let category = 'knowledge';
+                if (origPath.includes('/identity/')) category = 'identity';
+                else if (origPath.includes('/tests/')) category = 'test';
+                else if (origPath.includes('/chatgpt/')) category = 'chatgpt';
+
+                const isImage = /\.(png|jpg|jpeg|svg|gif|webp)$/i.test(f.filename || '');
+                const mimeType = isImage
+                  ? `image/${(f.filename.split('.').pop() || 'png').toLowerCase()}`
+                  : (f.file_type === 'binary' ? 'application/octet-stream' : 'text/plain');
+                const displayName = f.filename.split('/').pop() || f.filename;
+
+                return {
+                  id: f.id,
+                  gptId: req.params.id,
+                  filename: displayName,
+                  originalName: displayName,
+                  mimeType,
+                  size: meta.size || 0,
+                  content: '',
+                  uploadedAt: f.created_at,
+                  isActive: true,
+                  category,
+                  source: 'supabase',
+                  storagePath: f.storage_path || f.filename
+                };
+              });
+              supabaseFiles.push(...mapped);
+            }
+          }
+          if (supabaseFiles.length > 0) {
+            console.log(`✅ [GPTs API] Loaded ${supabaseFiles.length} files from Supabase for ${constructCallsign}`);
+          }
+        }
+      } catch (sbErr) {
+        console.warn(`⚠️ [GPTs API] Supabase files fallback failed for ${constructCallsign}:`, sbErr.message);
+      }
+    }
+
+    const allFiles = [...localFiles, ...supabaseFiles];
+    res.json({ success: true, files: allFiles });
   } catch (error) {
     console.error('Error fetching files:', error);
     res.status(500).json({ success: false, error: error.message });
