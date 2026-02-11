@@ -1412,6 +1412,7 @@ export default function Chat() {
     // First sanitize the message text to remove VVAULT timestamp prefixes
     const sanitized = prepareMessageContent(messageText);
     const trimmed = sanitized.trim();
+    if (!trimmed) return null;
     let isJson = false;
     let prettyJson = "";
 
@@ -1620,12 +1621,12 @@ export default function Chat() {
                   >
                     <div className="flex flex-col items-end">
                       <div
-                        className={`px-4 py-3 shadow-sm transition-colors inline-block ${maxWidth} ml-auto text-left relative`}
+                        className={`${!m.text?.trim() && (m as any).attachments?.length ? 'p-1' : 'px-4 py-3'} shadow-sm transition-colors inline-block ${maxWidth} ml-auto text-left relative`}
                         style={{
-                          backgroundColor: "rgba(173, 165, 135, 0.25)",
+                          backgroundColor: !m.text?.trim() && (m as any).attachments?.length ? "transparent" : "rgba(173, 165, 135, 0.25)",
                           borderRadius: "22px 22px 6px 22px",
                           border: "none",
-                          boxShadow: "0 1px 0 rgba(58, 46, 20, 0.12)",
+                          boxShadow: !m.text?.trim() && (m as any).attachments?.length ? "none" : "0 1px 0 rgba(58, 46, 20, 0.12)",
                           color: "var(--chatty-text)",
                           overflow: "hidden",
                           minWidth: 0,
@@ -1641,6 +1642,7 @@ export default function Chat() {
                           </div>
                         ) : (
                           <>
+                            {renderUserContent(m.text) && (
                             <div
                               className="break-words"
                               style={{
@@ -1653,6 +1655,7 @@ export default function Chat() {
                             >
                               {renderUserContent(m.text)}
                             </div>
+                            )}
                             {!!m.files?.length && (
                               <div className="mt-2 space-y-1">
                                 {m.files.map((f, i) => (
@@ -1670,7 +1673,7 @@ export default function Chat() {
                               </div>
                             )}
                             {(m as any).attachments && (m as any).attachments.length > 0 && (
-                              <div className="flex flex-wrap gap-2 mt-2">
+                              <div className={`flex flex-wrap gap-2 ${m.text?.trim() ? 'mt-2' : ''}`}>
                                 {(m as any).attachments.map((att: any, idx: number) => (
                                   <img
                                     key={idx}
