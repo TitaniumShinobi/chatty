@@ -656,8 +656,10 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
               initialConfig.id!,
             );
           }
-          setFiles(loadedFiles as GPTFile[]);
-          // Files loaded
+          const knowledgeOnly = (loadedFiles as GPTFile[]).filter(
+            (f: any) => f.category === 'knowledge'
+          );
+          setFiles(knowledgeOnly);
         } catch (error) {
           console.error("Failed to load files:", error);
         }
