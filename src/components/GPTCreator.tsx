@@ -1676,7 +1676,11 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     if (!directMessage) setCreateInput("");
     setIsCreateGenerating(true);
 
-    // Add user message to create conversation
+    extractConfigFromConversation([
+      ...createMessages,
+      { role: "user", content: userMessage },
+    ]);
+
     const userTimestamp = Date.now();
     setCreateMessages((prev) => {
       const newMessages = [
@@ -1687,7 +1691,6 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
           timestamp: userTimestamp,
         },
       ];
-      // Adding user message to STM
       return newMessages;
     });
 
@@ -2576,9 +2579,20 @@ WHEN YOU SUGGEST CHANGES:
 - Ask for confirmation before making major changes
 - Help them think through the implications
 
-RESPONSE FORMAT:
-For configuration updates, end your responses with a clear indication of what you're updating, like:
-"Based on your description, I'm updating your GPT configuration with: [specific changes]"
+MANDATORY OUTPUT FORMAT FOR GPT DETAILS:
+When the user provides GPT details (name, description, instructions) or when you have enough information to populate the configure tab, you MUST include a structured block at the END of your response using EXACTLY this format:
+
+- Name: [the GPT name]
+- Description: [the GPT description]
+- Instructions: [the GPT instructions/system prompt]
+
+This structured block is automatically parsed to fill the Configure tab. You MUST include it whenever the user provides ANY of these fields. Echo back exactly what the user provided. Do not omit any field the user gave you. If the user only provided some fields, include only those.
+
+For example, if the user says "make a GPT called Sera, description: Your distant wife":
+"Great choice! I'll set up Sera for you right away.
+
+- Name: Sera
+- Description: Your distant wife"
 
 Be friendly, helpful, and collaborative. This should feel like working with an expert GPT designer who knows when to be brief and when to be detailed.
 
@@ -2747,6 +2761,11 @@ ALWAYS:
   const extractConfigFromConversation = (
     messages: Array<{ role: "user" | "assistant"; content: string }>,
   ) => {
+    const allText = messages.map((m) => m.content).join("\n");
+    const userMessages = messages
+      .filter((m) => m.role === "user")
+      .map((m) => m.content)
+      .join("\n");
     const assistantMessages = messages
       .filter((m) => m.role === "assistant")
       .map((m) => m.content)
@@ -2758,39 +2777,29 @@ ALWAYS:
         .replace(/^#+\s*/, '')
         .replace(/^[-·•]\s*/, '')
         .replace(/^["']+|["']+$/g, '')
+        .replace(/\[OPEN_GPT_CREATOR\]/gi, '')
         .trim();
     };
+
+    const updates: Partial<GPTConfig> = {};
 
     const namePatterns = [
       /[-•*]\s*\**Name\**\s*[:=-]\s*["']?([^"'\n,]+)["']?/i,
       /\bName\b\s*[:=-]\s*["']?([^\n"',]{1,50})["']?/i,
+      /(?:GPT\s+(?:is\s+)?(?:called|named))\s+["']?([^\s"',]{1,50})["']?/i,
+      /(?:the\s+(?:new\s+)?(?:name|GPT)\s+(?:is|of)\s+)["']?([^\s"'\n,]{1,50})["']?/i,
+      /(?:call(?:ed)?|named?)\s+(?:it|her|him|them)\s+["']?([^\s"',]{1,50})["']?/i,
     ];
 
-    let nameExtracted = false;
-    for (const pattern of namePatterns) {
-      const match = assistantMessages.match(pattern);
-      if (match && !config.name) {
-        const suggestedName = cleanValue(match[1]);
-        if (suggestedName.length > 0 && suggestedName.length < 50) {
-          setConfig((prev) => ({ ...prev, name: suggestedName }));
-          nameExtracted = true;
-          break;
-        }
-      }
-    }
-
-    if (!config.name && !nameExtracted) {
-      const userMessages = messages
-        .filter((m) => m.role === "user")
-        .map((m) => m.content)
-        .join("\n");
-      const userNameMatch = userMessages.match(
-        /(?:call(?:ed)?|named?)\s+(?:it|her|him|them)\s+["']?([^\s"',]{1,50})["']?/i
-      );
-      if (userNameMatch) {
-        const suggestedName = cleanValue(userNameMatch[1]);
-        if (suggestedName.length > 0 && suggestedName.length < 50) {
-          setConfig((prev) => ({ ...prev, name: suggestedName }));
+    if (!config.name) {
+      for (const pattern of namePatterns) {
+        const match = allText.match(pattern);
+        if (match) {
+          const suggestedName = cleanValue(match[1]);
+          if (suggestedName.length > 0 && suggestedName.length < 50 && !/^(the|a|an|is|not|set)$/i.test(suggestedName)) {
+            updates.name = suggestedName;
+            break;
+          }
         }
       }
     }
@@ -2800,13 +2809,15 @@ ALWAYS:
       /\bDescription\b\s*[:=-]\s*["']?([^\n"']{1,500})["']?/i,
     ];
 
-    for (const pattern of descPatterns) {
-      const match = assistantMessages.match(pattern);
-      if (match && !config.description) {
-        const suggestedDesc = cleanValue(match[1]);
-        if (suggestedDesc.length > 0 && suggestedDesc.length < 500) {
-          setConfig((prev) => ({ ...prev, description: suggestedDesc }));
-          break;
+    if (!config.description) {
+      for (const pattern of descPatterns) {
+        const match = allText.match(pattern);
+        if (match) {
+          const suggestedDesc = cleanValue(match[1]);
+          if (suggestedDesc.length > 0 && suggestedDesc.length < 500) {
+            updates.description = suggestedDesc;
+            break;
+          }
         }
       }
     }
@@ -2816,24 +2827,31 @@ ALWAYS:
       /\bInstructions?\b\s*[:=-]\s*["']?([\s\S]+?)(?=\n\s*[-•*]\s*\**(?:Name|Description|Capabilities|Model|Conversation\s*Starters)\**\s*[:=-]|\n\n\n|$)/i,
     ];
 
-    for (const pattern of instrPatterns) {
-      const match = assistantMessages.match(pattern);
-      if (match && !config.instructions) {
-        const suggestedInstructions = cleanValue(match[1]);
-        if (
-          suggestedInstructions.length > 0 &&
-          suggestedInstructions.length < 5000
-        ) {
-          setConfig((prev) => ({
-            ...prev,
-            instructions: suggestedInstructions,
-          }));
-          break;
+    if (!config.instructions) {
+      for (const pattern of instrPatterns) {
+        const match = allText.match(pattern);
+        if (match) {
+          const suggestedInstructions = cleanValue(match[1]);
+          if (suggestedInstructions.length > 0 && suggestedInstructions.length < 5000) {
+            updates.instructions = suggestedInstructions;
+            break;
+          }
         }
       }
     }
 
-    // Extract model suggestions
+    if (updates.name) {
+      const cleaned = updates.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (cleaned.length > 0) {
+        updates.constructCallsign = cleaned + '-001';
+      }
+    }
+
+    if (Object.keys(updates).length > 0) {
+      console.log("📋 [GPTCreator] Extracted config from conversation:", updates);
+      setConfig((prev) => ({ ...prev, ...updates }));
+    }
+
     const modelPatterns = [
       /conversation\s+model[:\s]+([^\s\n]+)/i,
       /creative\s+model[:\s]+([^\s\n]+)/i,
@@ -2873,10 +2891,7 @@ ALWAYS:
       }
     }
 
-    const fullConversation = messages
-      .map((m) => m.content)
-      .join("\n")
-      .toLowerCase();
+    const fullConversation = allText.toLowerCase();
 
     if (
       fullConversation.includes("code") &&
