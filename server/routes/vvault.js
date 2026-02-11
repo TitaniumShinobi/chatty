@@ -4399,8 +4399,13 @@ router.post("/files/save", async (req, res) => {
     }
 
     const callsign = constructCallsign.match(/-\d+$/) ? constructCallsign : `${constructCallsign}-001`;
-    const folderPath = folder ? `instances/${callsign}/${folder}` : `instances/${callsign}`;
-    const fullPath = `${folderPath}/${filename}`;
+    const MEDIA_EXTS = new Set(['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp']);
+    const fileExt = (filename.split('.').pop() || '').toLowerCase();
+    const autoFolder = MEDIA_EXTS.has(fileExt) ? 'assets' : 'documents';
+    const resolvedFolder = folder || autoFolder;
+    const folderPath = `instances/${callsign}/${resolvedFolder}`;
+    const cleanFilename = filename.replace(/^(assets|documents|transcripts)\//, '');
+    const fullPath = `${folderPath}/${cleanFilename}`;
 
     assertValidVaultFilename(fullPath);
 

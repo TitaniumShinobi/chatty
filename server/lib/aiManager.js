@@ -28,6 +28,21 @@ const stripLegalFrameworks = (text = '') => {
 
 const sanitizeInstructions = (text = '') => stripLegalFrameworks(text).trim();
 
+function guessMimeType(filename) {
+  if (!filename) return null;
+  const ext = filename.toLowerCase().split('.').pop();
+  const mimeMap = {
+    pdf: 'application/pdf', json: 'application/json', txt: 'text/plain',
+    md: 'text/markdown', csv: 'text/csv', xml: 'application/xml',
+    yaml: 'application/x-yaml', yml: 'application/x-yaml',
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', svg: 'image/svg+xml',
+    gif: 'image/gif', webp: 'image/webp',
+    html: 'text/html', css: 'text/css', js: 'application/javascript',
+    rtf: 'application/rtf', doc: 'application/msword',
+  };
+  return mimeMap[ext] || null;
+}
+
 export class AIManager {
   static instance = null;
   db = null;
@@ -1619,12 +1634,13 @@ export class AIManager {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
+    const mimeType = file.type || guessMimeType(file.name) || 'application/octet-stream';
     stmt.run(
       id, 
       aiId, 
       filename, 
       file.name, 
-      file.type, 
+      mimeType, 
       file.size, 
       parsedContent.content, 
       parsedContent.extractedText,

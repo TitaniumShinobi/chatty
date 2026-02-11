@@ -364,9 +364,17 @@ export function TranscriptManager() {
         for (const [path, zipEntry] of Object.entries(contents.files)) {
           if (zipEntry.dir) continue;
           const ext = path.split('.').pop()?.toLowerCase();
-          if (!['md', 'txt', 'rtf', 'json'].includes(ext || '')) continue;
+          if (!['md', 'txt', 'rtf', 'json', 'pdf', 'csv', 'xml', 'yaml', 'yml', 'log', 'png', 'jpg', 'jpeg', 'svg'].includes(ext || '')) continue;
           
-          const content = await zipEntry.async('string');
+          const isImage = ['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp'].includes(ext || '');
+          let content: string;
+          if (isImage) {
+            const base64Data = await zipEntry.async('base64');
+            const mimeMap: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', svg: 'image/svg+xml', gif: 'image/gif', webp: 'image/webp' };
+            content = `data:${mimeMap[ext || 'png'] || 'application/octet-stream'};base64,${base64Data}`;
+          } else {
+            content = await zipEntry.async('string');
+          }
           const pathParts = path.split('/').filter(p => p);
           const filename = pathParts.pop() || 'unknown';
           
@@ -459,6 +467,31 @@ export function TranscriptManager() {
             month: transcriptMonth
           });
         }
+      } else if (file.name.match(/\.(png|jpg|jpeg|svg|gif|webp)$/i)) {
+        const arrayBuffer = await file.arrayBuffer();
+        const base64 = btoa(
+          new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+        );
+        const mimeType = file.type || 'application/octet-stream';
+        const content = `data:${mimeType};base64,${base64}`;
+        newFiles.push({
+          id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          name: file.name,
+          content,
+          source: transcriptSource || 'transcripts',
+          year: transcriptYear,
+          month: transcriptMonth
+        });
+      } else {
+        const content = await file.text();
+        newFiles.push({
+          id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          name: file.name,
+          content,
+          source: transcriptSource || 'transcripts',
+          year: transcriptYear,
+          month: transcriptMonth
+        });
       }
     }
 
@@ -690,7 +723,7 @@ export function TranscriptManager() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".md,.txt,.rtf,.zip,.json"
+              accept=".md,.txt,.rtf,.zip,.json,.pdf,.csv,.xml,.yaml,.yml,.log,.png,.jpg,.jpeg,.svg"
               multiple
               onChange={handleFileSelect}
               className="hidden"

@@ -10,6 +10,18 @@ const router = express.Router();
 
 const MAX_TEXT_SIZE = 50 * 1024 * 1024; // 50MB for text files
 
+const MEDIA_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp']);
+
+function isMediaFile(filename) {
+  if (!filename) return false;
+  const ext = filename.toLowerCase().split('.').pop();
+  return MEDIA_EXTENSIONS.has(ext);
+}
+
+function getFileRouteFolder(filename) {
+  return isMediaFile(filename) ? 'assets' : 'documents';
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -23,8 +35,17 @@ const upload = multer({
       'application/rtf',
       'application/pdf',
       'application/json',
+      'image/png',
+      'image/jpeg',
+      'image/svg+xml',
+      'image/gif',
+      'image/webp',
+      'text/csv',
+      'text/xml',
+      'application/xml',
+      'application/x-yaml',
     ];
-    const allowedExts = ['.md', '.txt', '.rtf', '.pdf', '.json'];
+    const allowedExts = ['.md', '.txt', '.rtf', '.pdf', '.json', '.png', '.jpg', '.jpeg', '.svg', '.gif', '.webp', '.csv', '.xml', '.yaml', '.yml', '.log'];
     const ext = file.originalname.toLowerCase().slice(file.originalname.lastIndexOf('.'));
     
     if (allowedTypes.includes(file.mimetype) || allowedExts.includes(ext)) {
@@ -150,6 +171,8 @@ router.post('/save', async (req, res) => {
       
       let filename;
       
+      const routeFolder = getFileRouteFolder(transcript.name);
+      
       if (transcript.path && transcript.path.includes('/')) {
         const zipParts = transcript.path.split('/').filter(p => p && !p.startsWith('.'));
         const months = ['january', 'february', 'march', 'april', 'may', 'june', 
@@ -171,19 +194,29 @@ router.post('/save', async (req, res) => {
           }
         }
         
-        filename = `instances/${constructCallsign}/${transcript.path}`;
+        let cleanedPath = transcript.path;
+        const routedFolders = ['assets', 'documents', 'transcripts'];
+        const firstSegment = cleanedPath.split('/')[0]?.toLowerCase();
+        if (routedFolders.includes(firstSegment)) {
+          cleanedPath = cleanedPath.split('/').slice(1).join('/');
+        }
+        
+        filename = `instances/${constructCallsign}/${routeFolder}/${cleanedPath}`;
       } else {
         let pathParts = [
           'instances',
           constructCallsign,
-          transcriptSource
+          routeFolder
         ];
+        if (transcriptSource && transcriptSource !== 'transcripts') pathParts.push(transcriptSource);
         if (transcriptYear) pathParts.push(transcriptYear);
         if (transcriptYear && transcriptMonth) pathParts.push(transcriptMonth);
         pathParts.push(transcript.name);
         
         filename = pathParts.join('/');
       }
+      
+      console.log(`📁 [Transcripts] Routing ${transcript.name} → ${routeFolder}/ (media: ${isMediaFile(transcript.name)})`);
       
       // Auto-detect start date from transcript content (runs in milliseconds)
       const dateResult = extractStartDate(transcript.content, transcript.name);
