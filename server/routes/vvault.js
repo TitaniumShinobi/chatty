@@ -3649,7 +3649,13 @@ router.post("/message", async (req, res) => {
     
     // Load identity/system prompt (allow override from GPTCreator preview)
     const identity = await loadIdentityFiles(userId, constructId);
-    const systemPrompt = systemPromptOverride || identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
+    let systemPrompt = systemPromptOverride || identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
+    
+    const directUserName = req.user?.name || req.user?.given_name || 'the user';
+    systemPrompt += `\n\n## User Identity\nThe user you are speaking with is named "${directUserName}". Address them by name when appropriate. Remember their name throughout the conversation.`;
+    if (req.user?.email) {
+      systemPrompt += `\nTheir email is ${req.user.email}.`;
+    }
     
     console.log(`🧠 [VVAULT Proxy] System prompt length: ${systemPrompt.length}`);
     
@@ -4036,6 +4042,12 @@ router.post("/message", async (req, res) => {
             } catch (capsuleErr) {
               console.warn(`⚠️ [VVAULT Proxy] Could not load capsule for ${constructId}:`, capsuleErr.message);
             }
+            const userName = req.user?.name || req.user?.given_name || 'the user';
+            systemPrompt += `\n\n## User Identity\nThe user you are speaking with is named "${userName}". Address them by name when appropriate. Remember their name throughout the conversation.`;
+            if (req.user?.email) {
+              systemPrompt += `\nTheir email is ${req.user.email}.`;
+            }
+
             if (constructId === 'lin-001') {
               const userMsg = (message || '').toLowerCase();
               const hasGptCommand = userMsg.includes('/gpt') || userMsg.includes('create a gpt') || userMsg.includes('make a gpt') || userMsg.includes('new gpt') || userMsg.includes('build a gpt');
@@ -4302,6 +4314,12 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           console.warn(`⚠️ [VVAULT Proxy] Fallback2 capsule load failed for ${constructId}:`, capsuleErr.message);
         }
         
+        const userName2 = req.user?.name || req.user?.given_name || 'the user';
+        systemPrompt += `\n\n## User Identity\nThe user you are speaking with is named "${userName2}". Address them by name when appropriate. Remember their name throughout the conversation.`;
+        if (req.user?.email) {
+          systemPrompt += `\nTheir email is ${req.user.email}.`;
+        }
+
         if (constructId === 'lin-001') {
           const userMsg2 = (message || '').toLowerCase();
           const hasGptCommand2 = userMsg2.includes('/gpt') || userMsg2.includes('create a gpt') || userMsg2.includes('make a gpt') || userMsg2.includes('new gpt') || userMsg2.includes('build a gpt');
