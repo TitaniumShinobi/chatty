@@ -749,150 +749,85 @@ export class AIManager {
         return [];
       }
 
-      // DUAL-TABLE SUPPORT: Check both ais and gpts tables
-      let rows = [];
-      let fromAIsTable = false;
-      let fromGPTsTable = false;
+      // DUAL-TABLE MERGE: Collect from BOTH ais and gpts tables, deduplicate by construct_callsign
+      const aisRows = [];
+      const gptsRows = [];
+      const userIds = [userId];
+      if (originalUserId && originalUserId !== userId) userIds.push(originalUserId);
 
-      // First, try the new ais table (match user_id OR 'all_users' for shared/global GPTs)
-      try {
-        const aisStmt = this.db.prepare('SELECT * FROM ais WHERE user_id = ? OR user_id = ? ORDER BY updated_at DESC');
-        const aisRows = aisStmt.all(userId, 'all_users');
-        if (aisRows && aisRows.length > 0) {
-          rows = aisRows;
-          fromAIsTable = true;
-          console.log(`📊 [AIManager] Found ${aisRows.length} AIs from ais table for user: ${userId}`);
-          console.log(`📊 [AIManager] AI names from ais table:`, aisRows.map(r => ({ id: r.id, name: r.name, constructCallsign: r.construct_callsign })));
-        } else {
-          console.log(`ℹ️ [AIManager] No AIs found in ais table for user: ${userId}`);
+      // Collect from ais table
+      for (const uid of userIds) {
+        try {
+          const stmt = this.db.prepare('SELECT * FROM ais WHERE user_id = ? OR user_id = ? ORDER BY updated_at DESC');
+          const found = stmt.all(uid, 'all_users');
+          if (found.length > 0) {
+            aisRows.push(...found);
+            console.log(`📊 [AIManager] Found ${found.length} AIs from ais table for user: ${uid}`);
+          }
+        } catch (error) {
+          console.log(`ℹ️ [AIManager] ais table query failed: ${error.message}`);
         }
-      } catch (error) {
-        // Table might not exist yet, that's okay
-        console.log(`ℹ️ [AIManager] ais table query failed (may not exist): ${error.message}`);
       }
 
-      // Fallback to old gpts table if ais table had no results (match user_id OR 'all_users')
-      if (rows.length === 0) {
+      // Collect from gpts table (seed GPTs like Katana live here)
+      for (const uid of userIds) {
         try {
-          const gptsStmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? OR user_id = ? ORDER BY updated_at DESC');
-          const gptsRows = gptsStmt.all(userId, 'all_users');
-          if (gptsRows && gptsRows.length > 0) {
-            rows = gptsRows;
-            fromGPTsTable = true;
-            console.log(`📊 [AIManager] Found ${gptsRows.length} GPTs from gpts table (fallback) for user: ${userId}`);
-            console.log(`📊 [AIManager] GPT names from gpts table:`, gptsRows.map(r => ({ id: r.id, name: r.name })));
-          } else {
-            console.log(`ℹ️ [AIManager] No GPTs found in gpts table for user: ${userId}`);
+          const stmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? OR user_id = ? ORDER BY updated_at DESC');
+          const found = stmt.all(uid, 'all_users');
+          if (found.length > 0) {
+            gptsRows.push(...found);
+            console.log(`📊 [AIManager] Found ${found.length} GPTs from gpts table for user: ${uid}`);
           }
         } catch (error) {
           console.log(`ℹ️ [AIManager] gpts table query failed: ${error.message}`);
         }
       }
-      
-      // If still no results and we have an originalUserId, try querying with that too
-      if (rows.length === 0 && originalUserId && originalUserId !== userId) {
-        console.log(`🔄 [AIManager] Trying fallback query with originalUserId: ${originalUserId}`);
-        try {
-          const fallbackAisStmt = this.db.prepare('SELECT * FROM ais WHERE user_id = ? ORDER BY updated_at DESC');
-          const fallbackAisRows = fallbackAisStmt.all(originalUserId);
-          if (fallbackAisRows && fallbackAisRows.length > 0) {
-            rows = fallbackAisRows;
-            fromAIsTable = true;
-            console.log(`📊 [AIManager] Found ${fallbackAisRows.length} AIs using originalUserId from ais table`);
-            console.log(`📊 [AIManager] AI names:`, fallbackAisRows.map(r => ({ id: r.id, name: r.name, constructCallsign: r.construct_callsign })));
-          }
-        } catch (error) {
-          console.log(`ℹ️ [AIManager] Fallback ais query failed: ${error.message}`);
-        }
-        
-        if (rows.length === 0) {
-          try {
-            const fallbackGptsStmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? ORDER BY updated_at DESC');
-            const fallbackGptsRows = fallbackGptsStmt.all(originalUserId);
-            if (fallbackGptsRows && fallbackGptsRows.length > 0) {
-              rows = fallbackGptsRows;
-              fromGPTsTable = true;
-              console.log(`📊 [AIManager] Found ${fallbackGptsRows.length} GPTs using originalUserId from gpts table`);
-              console.log(`📊 [AIManager] GPT names:`, fallbackGptsRows.map(r => ({ id: r.id, name: r.name })));
-            }
-          } catch (error) {
-            console.log(`ℹ️ [AIManager] Fallback gpts query failed: ${error.message}`);
-          }
-        }
-      }
 
-      // Fallback: if none found and we have an original user ID (email/ObjectId), try that too
-      if (rows.length === 0 && originalUserId && originalUserId !== userId) {
-        console.log(`🔄 [AIManager] Trying fallback query with original user ID: ${originalUserId}`);
-        
-        // Try ais table first
-        try {
-          const fallbackAisStmt = this.db.prepare('SELECT * FROM ais WHERE user_id = ? ORDER BY updated_at DESC');
-          const fallbackAisRows = fallbackAisStmt.all(originalUserId);
-          if (fallbackAisRows && fallbackAisRows.length > 0) {
-            rows = fallbackAisRows;
-            fromAIsTable = true;
-            console.log(`📊 [AIManager] Found ${fallbackAisRows.length} AIs from ais table with original user ID`);
-          }
-        } catch (error) {
-          // Continue to gpts fallback
-        }
-
-        // If still no results, try gpts table
-        if (rows.length === 0) {
-          try {
-            const fallbackGptsStmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? ORDER BY updated_at DESC');
-            const fallbackGptsRows = fallbackGptsStmt.all(originalUserId);
-            if (fallbackGptsRows && fallbackGptsRows.length > 0) {
-              rows = fallbackGptsRows;
-              fromGPTsTable = true;
-              console.log(`📊 [AIManager] Found ${fallbackGptsRows.length} GPTs from gpts table with original user ID`);
-            }
-          } catch (error) {
-            // Continue to email lookup
-          }
-        }
-      }
-
-      // Last resort: if still none found, try email-based lookup (for backward compatibility)
-      if (rows.length === 0 && originalUserId && originalUserId.includes('@')) {
+      // Email-based fallback if still empty
+      if (aisRows.length === 0 && gptsRows.length === 0 && originalUserId && originalUserId.includes('@')) {
         console.log(`🔄 [AIManager] Trying email-based lookup: ${originalUserId}`);
-        
-        // Try ais table first
         try {
-          const emailAisStmt = this.db.prepare('SELECT * FROM ais WHERE user_id LIKE ? ORDER BY updated_at DESC');
-          const emailAisRows = emailAisStmt.all(`%${originalUserId}%`);
-          if (emailAisRows && emailAisRows.length > 0) {
-            rows = emailAisRows;
-            fromAIsTable = true;
-            console.log(`📊 [AIManager] Found ${emailAisRows.length} AIs from ais table with email lookup`);
-          }
-        } catch (error) {
-          // Continue to gpts lookup
-        }
+          const found = this.db.prepare('SELECT * FROM ais WHERE user_id LIKE ? ORDER BY updated_at DESC').all(`%${originalUserId}%`);
+          aisRows.push(...found);
+        } catch (e) { /* ignore */ }
+        try {
+          const found = this.db.prepare('SELECT * FROM gpts WHERE user_id LIKE ? ORDER BY updated_at DESC').all(`%${originalUserId}%`);
+          gptsRows.push(...found);
+        } catch (e) { /* ignore */ }
+      }
 
-        // If still no results, try gpts table
-        if (rows.length === 0) {
-          try {
-            const emailGptsStmt = this.db.prepare('SELECT * FROM gpts WHERE user_id LIKE ? ORDER BY updated_at DESC');
-            const emailGptsRows = emailGptsStmt.all(`%${originalUserId}%`);
-            if (emailGptsRows && emailGptsRows.length > 0) {
-              rows = emailGptsRows;
-              fromGPTsTable = true;
-              console.log(`📊 [AIManager] Found ${emailGptsRows.length} GPTs from gpts table with email lookup`);
-            }
-          } catch (error) {
-            // No more fallbacks
-          }
+      // Merge: ais table rows take priority, then add gpts rows that don't overlap by construct_callsign
+      const seenCallsigns = new Set();
+      const seenIds = new Set();
+      const mergedRows = [];
+      const rowSourceMap = new Map(); // track which table each row came from
+
+      for (const row of aisRows) {
+        const key = row.construct_callsign || row.id;
+        if (!seenIds.has(row.id) && !seenCallsigns.has(key)) {
+          seenIds.add(row.id);
+          seenCallsigns.add(key);
+          mergedRows.push(row);
+          rowSourceMap.set(row.id, 'ais');
+        }
+      }
+      for (const row of gptsRows) {
+        const key = row.construct_callsign || row.id;
+        if (!seenIds.has(row.id) && !seenCallsigns.has(key)) {
+          seenIds.add(row.id);
+          seenCallsigns.add(key);
+          mergedRows.push(row);
+          rowSourceMap.set(row.id, 'gpts');
         }
       }
 
-      console.log(`📊 [AIManager] Total found: ${rows?.length || 0} AIs for user: ${userId}${originalUserId && originalUserId !== userId ? ` (original: ${originalUserId})` : ''}${fromAIsTable ? ' [from ais table]' : ''}${fromGPTsTable ? ' [from gpts table - legacy]' : ''}`);
+      const rows = mergedRows;
+      console.log(`📊 [AIManager] Total found: ${rows.length} AIs (${aisRows.length} from ais, ${gptsRows.length} from gpts, merged to ${rows.length}) for user: ${userId}`);
 
       const ais = [];
       for (const row of rows) {
         try {
-          // Use appropriate file/action getters based on which table the row came from
+          const fromGPTsTable = rowSourceMap.get(row.id) === 'gpts';
           const files = fromGPTsTable ? await this.getAIFilesFromGPTsTable(row.id) : await this.getAIFiles(row.id);
           const actions = fromGPTsTable ? await this.getAIActionsFromGPTsTable(row.id) : await this.getAIActions(row.id);
 
