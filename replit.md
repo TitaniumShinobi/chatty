@@ -56,7 +56,7 @@ Any update where the new content is less than half the size of what's already st
 - **GPT Seat Memory Injection:** Injects transcript memories into GPT constructs during conversations.
 - **Canonical Session and Supabase File Patterns:** Consistent naming conventions for session IDs and Supabase file paths.
 - **Finance Tab Architecture:** A first-class section with a plugin architecture for finance apps, starting with FXShinobi integration featuring TradingView charts, prediction markets, and AI insights. Supports a broker adapter architecture for multi-broker support.
-- **Image/Vision Upload Support:** Full support for image and document uploads, with persistence to Supabase Storage and integration with AI vision APIs (e.g., GPT-4o).
+- **Image/Vision Upload Support:** Full support for image and document uploads, with persistence to Supabase Storage and integration with AI vision APIs. Vision routing: OpenAI GPT-4o (preferred) or OpenRouter Qwen 2.5 VL 72B (fallback). Image-only messages (no text) are supported. Attachments persist in Supabase metadata and survive session reloads.
 - **Conversation Persistence:** GPT conversations and messages are persisted to Supabase after each exchange, ensuring continuity.
 
 **VVAULT Authentication:**
