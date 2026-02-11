@@ -31,7 +31,7 @@ const openrouter = new OpenAI({
 const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
 
 const DEFAULT_SEAT_MODELS = {
-  creative: `openrouter:google/gemini-2.0-flash-exp:free`,
+  creative: `openrouter:google/gemini-2.5-flash:free`,
   coding: `openrouter:deepseek/deepseek-chat`, 
   smalltalk: `openrouter:${DEFAULT_OPENROUTER_MODEL}`
 };
