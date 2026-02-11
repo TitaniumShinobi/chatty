@@ -2,6 +2,9 @@
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import {
@@ -11,12 +14,46 @@ import {
   FileText,
   FileImage,
   FileCode,
+  ExternalLink,
+  Globe,
 } from "lucide-react";
 import { MessageProps, Attachment } from "../types";
 import { formatDate } from "../lib/utils";
 import { cn } from "../lib/utils";
 import { R } from "../runtime/render";
 import AttachmentDisplay from "./AttachmentDisplay";
+
+interface SourceInfo {
+  index: number;
+  title: string;
+  url: string;
+}
+
+function extractSources(content: string): { cleanContent: string; sources: SourceInfo[] } {
+  const sources: SourceInfo[] = [];
+  const sourceBlockRegex = /\n---\n\s*\*\*Sources:?\*\*\s*\n([\s\S]*?)$/i;
+  const altSourceRegex = /\n\s*(?:Sources|References):?\s*\n((?:\s*\[\d+\].*\n?)+)$/i;
+
+  let cleanContent = content;
+  const blockMatch = content.match(sourceBlockRegex) || content.match(altSourceRegex);
+
+  if (blockMatch) {
+    cleanContent = content.slice(0, blockMatch.index).trimEnd();
+    const sourceLines = blockMatch[1].trim().split('\n');
+    for (const line of sourceLines) {
+      const match = line.match(/\[(\d+)\]\s*\[?(.*?)\]?\s*(?:\(?(https?:\/\/[^\s\)]+)\)?)?/);
+      if (match) {
+        sources.push({
+          index: parseInt(match[1]),
+          title: match[2].replace(/[\[\]]/g, '').trim(),
+          url: match[3] || '',
+        });
+      }
+    }
+  }
+
+  return { cleanContent, sources };
+}
 
 const MessageComponent: React.FC<MessageProps> = ({ message }) => {
   const [copiedCode, setCopiedCode] = React.useState<string | null>(null);
@@ -46,6 +83,13 @@ const MessageComponent: React.FC<MessageProps> = ({ message }) => {
 
   const contentString =
     typeof message.content === "string" ? message.content : "";
+
+  const { cleanContent, sources } = React.useMemo(() => {
+    if (!isUser && typeof message.content === "string") {
+      return extractSources(message.content);
+    }
+    return { cleanContent: contentString, sources: [] };
+  }, [message.content, isUser]);
 
   const getFileIcon = (fileType: string) => {
     if (fileType.startsWith("image/")) {
@@ -134,7 +178,8 @@ const MessageComponent: React.FC<MessageProps> = ({ message }) => {
           {/* Handle both string content and packet content */}
           {typeof message.content === "string" ? (
             <ReactMarkdown
-              remarkPlugins={[remarkBreaks]}
+              remarkPlugins={[remarkBreaks, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
               components={{
                 // Code blocks with syntax highlighting
                 code({ node, inline, className, children, ...props }) {
@@ -258,12 +303,38 @@ const MessageComponent: React.FC<MessageProps> = ({ message }) => {
               }}
               className="text-app-text-900"
             >
-              {message.content}
+              {cleanContent}
             </ReactMarkdown>
           ) : (
             <R packets={message.content as any} />
           )}
         </div>
+
+        {/* Sources section for cited responses */}
+        {sources.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-app-orange-600/30">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Globe size={14} className="text-app-text-800" />
+              <span className="text-xs font-semibold text-app-text-800 uppercase tracking-wider">Sources</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {sources.map((source) => (
+                <a
+                  key={source.index}
+                  href={source.url || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-app-orange-600/50 hover:bg-app-orange-500/50 border border-app-orange-500/30 text-xs text-app-text-900 transition-colors group"
+                  title={source.url}
+                >
+                  <span className="font-semibold text-app-green-600">{source.index}</span>
+                  <span className="truncate max-w-[180px]">{source.title || new URL(source.url).hostname}</span>
+                  {source.url && <ExternalLink size={10} className="opacity-50 group-hover:opacity-100 flex-shrink-0" />}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Timestamp (fallback to ts if timestamp is missing) */}
         <div className="text-xs text-app-text-800 mt-2">

@@ -35,6 +35,7 @@ import fxshinobiRoutes from './routes/fxshinobi.js';
 import vaultProxyRoutes from './routes/vault.js';
 import suggestionsRoutes from './routes/suggestions.js';
 import attachmentsRoutes from './routes/attachments.js';
+import searchRoutes from './routes/search.js';
 import { initializeChromaDB, shutdownChromaDB, getChromaDBService } from "./services/chromadbService.js";
 import { getChatService } from "./services/chatService.js";
 
@@ -1013,6 +1014,7 @@ app.use("/api/fxshinobi", fxshinobiRoutes);
 app.use("/api/vault", vaultProxyRoutes);
 app.use("/api/suggestions", requireAuth, suggestionsRoutes);
 app.use("/api/attachments", requireAuth, attachmentsRoutes);
+app.use("/api/search", requireAuth, searchRoutes);
 console.log('✅ [Server] simForge routes mounted at /api/simforge');
 console.log('✅ [Server] FXShinobi proxy routes mounted at /api/fxshinobi');
 console.log('✅ [Server] VVAULT proxy routes mounted at /api/vault');
