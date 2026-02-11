@@ -38,7 +38,7 @@ const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/lla
 
 const GPT_SEAT_MODELS = {
   default: DEFAULT_OPENROUTER_MODEL,
-  creative: 'google/gemini-2.5-flash:free',
+  creative: 'google/gemma-3-27b-it:free',
   analytical: 'deepseek/deepseek-chat',
 };
 
