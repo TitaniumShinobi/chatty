@@ -3709,40 +3709,67 @@ router.post("/message", async (req, res) => {
         } else {
           openrouterUserContent = message;
         }
+        const mainMsgs = [
+          { role: "system", content: systemPrompt },
+          ...conversationHistoryMessages,
+          { role: "user", content: openrouterUserContent }
+        ];
+        let llmSuccess = false;
+        const providerErrors = [];
+        
         console.log(`[${clientLabel}] Calling`, { model: effectiveModel, user: req.user?.email, historyMessages: conversationHistoryMessages.length, hasImages });
         try {
           completion = await orClient.chat.completions.create({
             model: effectiveModel,
-            messages: [
-              { role: "system", content: systemPrompt },
-              ...conversationHistoryMessages,
-              { role: "user", content: openrouterUserContent }
-            ],
+            messages: mainMsgs,
             max_tokens: 2048,
           });
           console.log(`[${clientLabel}] Success`, { finish_reason: completion?.choices?.[0]?.finish_reason });
+          llmSuccess = true;
         } catch (err) {
-          console.error(`[${clientLabel} FAIL]`, {
-            status: err?.status,
-            message: err?.message,
-            model: effectiveModel,
-            apiKeySet: !!OPENROUTER_API_KEY
-          });
+          console.error(`[${clientLabel} FAIL]`, { status: err?.status, message: err?.message });
+          providerErrors.push(`${clientLabel}: ${err?.status} ${err?.message}`);
+          
           if (replitOpenrouter && orClient !== replitOpenrouter && (err?.status === 401 || err?.status === 403 || err?.status === 404 || err?.status === 429)) {
-            console.log(`🔄 [VVAULT Proxy] OpenRouter ${err?.status}, falling back to Replit-managed OpenRouter for ${constructId}`);
-            completion = await replitOpenrouter.chat.completions.create({
-              model: effectiveModel,
-              messages: [
-                { role: "system", content: systemPrompt },
-                ...conversationHistoryMessages,
-                { role: "user", content: openrouterUserContent }
-              ],
+            try {
+              console.log(`🔄 [VVAULT Proxy] Trying Replit-managed OpenRouter for ${constructId}`);
+              completion = await replitOpenrouter.chat.completions.create({
+                model: effectiveModel,
+                messages: mainMsgs,
+                max_tokens: 2048,
+              });
+              console.log('[REPLIT OPENROUTER FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+              llmSuccess = true;
+            } catch (err2) {
+              console.error('[REPLIT OPENROUTER FALLBACK FAIL]', { status: err2?.status, message: err2?.message });
+              providerErrors.push(`Replit OpenRouter: ${err2?.status} ${err2?.message}`);
+            }
+          }
+        }
+        
+        if (!llmSuccess && openaiClient) {
+          try {
+            console.log(`🔄 [VVAULT Proxy] All OpenRouter failed, trying OpenAI for ${constructId}`);
+            completion = await openaiClient.chat.completions.create({
+              model: 'gpt-4.1-mini',
+              messages: mainMsgs,
               max_tokens: 2048,
             });
-            console.log('[REPLIT OPENROUTER FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
-          } else {
-            throw err;
+            console.log('[OPENAI FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+            llmSuccess = true;
+          } catch (err3) {
+            console.error('[OPENAI FALLBACK FAIL]', { status: err3?.status, message: err3?.message });
+            providerErrors.push(`OpenAI: ${err3?.status} ${err3?.message}`);
           }
+        }
+        
+        if (!llmSuccess) {
+          return res.status(503).json({
+            success: false,
+            error: `All LLM providers failed: ${providerErrors.join(' | ')}`,
+            provider: effectiveProvider,
+            model: effectiveModel
+          });
         }
         aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
       }
@@ -3898,36 +3925,63 @@ router.post("/message", async (req, res) => {
               aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
             } else {
               const orClient = openrouter || replitOpenrouter;
-              if (!orClient) {
-                throw new Error('OpenRouter API key is not configured. Set OPENROUTER_API_KEY in environment.');
+              if (!orClient && !openaiClient) {
+                throw new Error('No LLM provider available. Configure OPENROUTER_API_KEY or enable Replit AI Integrations.');
               }
-              const clientLabel = openrouter ? 'OpenRouter' : 'Replit OpenRouter';
-              console.log(`[${clientLabel}] Calling`, { model: effectiveModel, user: req.user?.email, historyMessages: fbHistoryMessages.length });
-              try {
-                completion = await orClient.chat.completions.create({
-                  model: effectiveModel,
-                  messages: fbMsgs,
-                  max_tokens: 2048,
-                });
-                console.log(`[${clientLabel}] Success`, { finish_reason: completion?.choices?.[0]?.finish_reason });
-              } catch (err) {
-                console.error(`[${clientLabel} FAIL]`, {
-                  status: err?.status,
-                  message: err?.message,
-                  model: effectiveModel,
-                  apiKeySet: !!OPENROUTER_API_KEY
-                });
-                if (replitOpenrouter && orClient !== replitOpenrouter && (err?.status === 401 || err?.status === 403 || err?.status === 404 || err?.status === 429)) {
-                  console.log(`🔄 [VVAULT Proxy] OpenRouter ${err?.status}, falling back to Replit-managed OpenRouter for ${constructId}`);
-                  completion = await replitOpenrouter.chat.completions.create({
+              let llmSuccess = false;
+              const providerErrors = [];
+              
+              if (orClient) {
+                const clientLabel = openrouter ? 'OpenRouter' : 'Replit OpenRouter';
+                console.log(`[${clientLabel}] Calling`, { model: effectiveModel, user: req.user?.email, historyMessages: fbHistoryMessages.length });
+                try {
+                  completion = await orClient.chat.completions.create({
                     model: effectiveModel,
                     messages: fbMsgs,
                     max_tokens: 2048,
                   });
-                  console.log('[REPLIT OPENROUTER FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
-                } else {
-                  throw err;
+                  console.log(`[${clientLabel}] Success`, { finish_reason: completion?.choices?.[0]?.finish_reason });
+                  llmSuccess = true;
+                } catch (err) {
+                  console.error(`[${clientLabel} FAIL]`, { status: err?.status, message: err?.message });
+                  providerErrors.push(`${clientLabel}: ${err?.status} ${err?.message}`);
+                  
+                  if (replitOpenrouter && orClient !== replitOpenrouter && (err?.status === 401 || err?.status === 403 || err?.status === 404 || err?.status === 429)) {
+                    try {
+                      console.log(`🔄 [VVAULT Proxy] Trying Replit-managed OpenRouter for ${constructId}`);
+                      completion = await replitOpenrouter.chat.completions.create({
+                        model: effectiveModel,
+                        messages: fbMsgs,
+                        max_tokens: 2048,
+                      });
+                      console.log('[REPLIT OPENROUTER FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+                      llmSuccess = true;
+                    } catch (err2) {
+                      console.error('[REPLIT OPENROUTER FALLBACK FAIL]', { status: err2?.status, message: err2?.message });
+                      providerErrors.push(`Replit OpenRouter: ${err2?.status} ${err2?.message}`);
+                    }
+                  }
                 }
+              }
+              
+              if (!llmSuccess && openaiClient) {
+                try {
+                  console.log(`🔄 [VVAULT Proxy] All OpenRouter failed, trying OpenAI for ${constructId}`);
+                  completion = await openaiClient.chat.completions.create({
+                    model: 'gpt-4.1-mini',
+                    messages: fbMsgs,
+                    max_tokens: 2048,
+                  });
+                  console.log('[OPENAI FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+                  llmSuccess = true;
+                } catch (err3) {
+                  console.error('[OPENAI FALLBACK FAIL]', { status: err3?.status, message: err3?.message });
+                  providerErrors.push(`OpenAI: ${err3?.status} ${err3?.message}`);
+                }
+              }
+              
+              if (!llmSuccess) {
+                throw new Error(`All LLM providers failed: ${providerErrors.join(' | ')}`);
               }
               aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
             }
@@ -4080,36 +4134,63 @@ router.post("/message", async (req, res) => {
           aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
         } else {
           const orClient = openrouter || replitOpenrouter;
-          if (!orClient) {
-            throw new Error('OpenRouter API key is not configured. Set OPENROUTER_API_KEY in environment.');
+          if (!orClient && !openaiClient) {
+            throw new Error('No LLM provider available. Configure OPENROUTER_API_KEY or enable Replit AI Integrations.');
           }
-          const clientLabel = openrouter ? 'OpenRouter' : 'Replit OpenRouter';
-          console.log(`[${clientLabel}] Calling`, { model: effectiveModel, user: req.user?.email, historyMessages: fb2HistoryMessages.length });
-          try {
-            completion = await orClient.chat.completions.create({
-              model: effectiveModel,
-              messages: fb2Msgs,
-              max_tokens: 2048,
-            });
-            console.log(`[${clientLabel}] Success`, { finish_reason: completion?.choices?.[0]?.finish_reason });
-          } catch (err) {
-            console.error(`[${clientLabel} FAIL]`, {
-              status: err?.status,
-              message: err?.message,
-              model: effectiveModel,
-              apiKeySet: !!OPENROUTER_API_KEY
-            });
-            if (replitOpenrouter && orClient !== replitOpenrouter && (err?.status === 401 || err?.status === 403 || err?.status === 404 || err?.status === 429)) {
-              console.log(`🔄 [VVAULT Proxy] OpenRouter ${err?.status}, falling back to Replit-managed OpenRouter for ${constructId}`);
-              completion = await replitOpenrouter.chat.completions.create({
+          let llmSuccess = false;
+          const providerErrors = [];
+          
+          if (orClient) {
+            const clientLabel = openrouter ? 'OpenRouter' : 'Replit OpenRouter';
+            console.log(`[${clientLabel}] Calling`, { model: effectiveModel, user: req.user?.email, historyMessages: fb2HistoryMessages.length });
+            try {
+              completion = await orClient.chat.completions.create({
                 model: effectiveModel,
                 messages: fb2Msgs,
                 max_tokens: 2048,
               });
-              console.log('[REPLIT OPENROUTER FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
-            } else {
-              throw err;
+              console.log(`[${clientLabel}] Success`, { finish_reason: completion?.choices?.[0]?.finish_reason });
+              llmSuccess = true;
+            } catch (err) {
+              console.error(`[${clientLabel} FAIL]`, { status: err?.status, message: err?.message });
+              providerErrors.push(`${clientLabel}: ${err?.status} ${err?.message}`);
+              
+              if (replitOpenrouter && orClient !== replitOpenrouter && (err?.status === 401 || err?.status === 403 || err?.status === 404 || err?.status === 429)) {
+                try {
+                  console.log(`🔄 [VVAULT Proxy] Trying Replit-managed OpenRouter for ${constructId}`);
+                  completion = await replitOpenrouter.chat.completions.create({
+                    model: effectiveModel,
+                    messages: fb2Msgs,
+                    max_tokens: 2048,
+                  });
+                  console.log('[REPLIT OPENROUTER FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+                  llmSuccess = true;
+                } catch (err2) {
+                  console.error('[REPLIT OPENROUTER FALLBACK FAIL]', { status: err2?.status, message: err2?.message });
+                  providerErrors.push(`Replit OpenRouter: ${err2?.status} ${err2?.message}`);
+                }
+              }
             }
+          }
+          
+          if (!llmSuccess && openaiClient) {
+            try {
+              console.log(`🔄 [VVAULT Proxy] All OpenRouter failed, trying OpenAI for ${constructId}`);
+              completion = await openaiClient.chat.completions.create({
+                model: 'gpt-4.1-mini',
+                messages: fb2Msgs,
+                max_tokens: 2048,
+              });
+              console.log('[OPENAI FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+              llmSuccess = true;
+            } catch (err3) {
+              console.error('[OPENAI FALLBACK FAIL]', { status: err3?.status, message: err3?.message });
+              providerErrors.push(`OpenAI: ${err3?.status} ${err3?.message}`);
+            }
+          }
+          
+          if (!llmSuccess) {
+            throw new Error(`All LLM providers failed: ${providerErrors.join(' | ')}`);
           }
           aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
         }
