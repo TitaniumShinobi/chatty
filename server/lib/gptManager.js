@@ -176,7 +176,7 @@ export class GPTManager {
         starters: [],
         orchestrationMode: 'zen',
         model: 'openrouter:meta-llama/llama-3.3-70b-instruct',
-        creativeModel: 'openrouter:google/gemini-2.0-flash-exp:free',
+        creativeModel: 'openrouter:google/gemini-2.5-flash:free',
         codingModel: 'openrouter:deepseek/deepseek-chat',
       },
       {
@@ -200,7 +200,7 @@ export class GPTManager {
         starters: [],
         orchestrationMode: 'lin',
         model: 'openrouter:meta-llama/llama-3.3-70b-instruct',
-        creativeModel: 'openrouter:google/gemini-2.0-flash-exp:free',
+        creativeModel: 'openrouter:google/gemini-2.5-flash:free',
         codingModel: 'openrouter:deepseek/deepseek-chat',
         roleMetadata: JSON.stringify({ role: 'undertone', context: 'gpt_creator_create_tab', is_system: true }),
       },
