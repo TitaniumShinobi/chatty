@@ -14,6 +14,7 @@ interface VaultFile {
   construct_id: string;
   metadata: any;
   content_length: number;
+  updated_at?: string;
 }
 
 const FOLDER_OPTIONS = [
