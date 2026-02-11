@@ -264,8 +264,13 @@ router.get('/:id/files', async (req, res) => {
                 const isIdentityFile = origPath.includes('/identity/') ||
                   /^(avatar|prompt|conditioning|personality|memory)\.(png|jpg|jpeg|txt|json)$/i.test(baseName) ||
                   /^(continuity|CONTINUITY_GPT_PROMPT)/i.test(baseName);
-                let category = 'knowledge';
+                const isKnowledgeFile = origPath.includes('/assets/') ||
+                  origPath.includes('/documents/') ||
+                  /\.(pdf)$/i.test(baseName) ||
+                  (/\.(png|jpg|jpeg|gif|webp|svg)$/i.test(baseName) && !isIdentityFile);
+                let category = 'other';
                 if (isIdentityFile) category = 'identity';
+                else if (isKnowledgeFile) category = 'knowledge';
                 else if (origPath.includes('/tests/') || /^test_/i.test(baseName)) category = 'test';
                 else if (origPath.includes('/chatgpt/') || /-K1\.md$/i.test(baseName)) category = 'chatgpt';
 
