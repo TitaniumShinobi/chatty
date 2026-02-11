@@ -375,7 +375,20 @@ router.post('/generate', async (req, res) => {
     let response;
     
     if (provider === 'openrouter') {
-      response = await callOpenRouter(model, messages);
+      try {
+        response = await callOpenRouter(model, messages);
+      } catch (err) {
+        const errStatus = err?.status || err?.response?.status || err?.error?.status;
+        const is429 = errStatus === 429 || err.message?.includes('429');
+        const isFreeModel = model.includes(':free');
+        if (is429 && isFreeModel) {
+          const fallbackModel = DEFAULT_OPENROUTER_MODEL;
+          console.log(`⚠️ [Lin Chat] Free model ${model} rate-limited (429), falling back to ${fallbackModel}`);
+          response = await callOpenRouter(fallbackModel, messages);
+        } else {
+          throw err;
+        }
+      }
     } else if (provider === 'ollama') {
       // Check if Ollama is configured
       if (!process.env.OLLAMA_HOST) {
