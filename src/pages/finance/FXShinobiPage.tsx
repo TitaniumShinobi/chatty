@@ -544,13 +544,13 @@ const FXShinobiPage: React.FC = () => {
                                     trade.side === 'buy' ? 'text-green-500' : 'text-red-500'
                                   }
                                 >
-                                  {trade.side.toUpperCase()}
+                                  {(trade.side ?? 'buy').toUpperCase()}
                                 </span>
                               </td>
                               <td className="py-2 text-right">
-                                {trade.quantity.toLocaleString()}
+                                {(trade.quantity ?? (trade as any).lots ?? 0).toLocaleString()}
                               </td>
-                              <td className="py-2 text-right">{trade.price.toFixed(4)}</td>
+                              <td className="py-2 text-right">{(trade.price ?? 0).toFixed(4)}</td>
                               <td className="py-2 text-right">
                                 {trade.pnl !== undefined ? (
                                   <span
