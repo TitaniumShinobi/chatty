@@ -412,6 +412,7 @@ export default function Chat() {
   const [userHasInteracted, setUserHasInteracted] = useState(false);
   const [isGPTCreatorOpen, setIsGPTCreatorOpen] = useState(false);
   const [gptCreatorConfig, setGptCreatorConfig] = useState<GPTConfig | null>(null);
+  const [gptCreatorInitialMessage, setGptCreatorInitialMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [zenMarkdown, setZenMarkdown] = useState<string | null>(null);
@@ -478,53 +479,16 @@ export default function Chat() {
   const isSystemConstructThread = isZenSessionThread || isLinSessionThread;
   const isCanonicalThread = isSystemConstructThread || isGPTSessionThread;
 
-  const handleGPTCommand = useCallback(async (input: string): Promise<boolean> => {
+  const handleGPTCommand = useCallback((input: string): boolean => {
     const gptMatch = input.trim().match(/^\/gpt(?:\s+(.+))?$/i);
     if (!gptMatch) return false;
 
     const arg = gptMatch[1]?.trim();
-    const aiService = AIService.getInstance();
-
-    try {
-      const allAIs = await aiService.getAllAIs();
-
-      if (arg) {
-        const match = allAIs.find((ai) => {
-          const name = (ai.name || "").toLowerCase();
-          const callsign = (ai.constructCallsign || "").toLowerCase();
-          const search = arg.toLowerCase();
-          return name === search || callsign === search || callsign.startsWith(search + "-");
-        });
-        if (match) {
-          setGptCreatorConfig(match as unknown as GPTConfig);
-          setIsGPTCreatorOpen(true);
-          return true;
-        }
-      }
-
-      if (!arg && thread?.constructId) {
-        const match = allAIs.find((ai) => {
-          const callsign = (ai.constructCallsign || "").toLowerCase();
-          const threadConstruct = (thread.constructId || "").toLowerCase();
-          return callsign === threadConstruct;
-        });
-        if (match) {
-          setGptCreatorConfig(match as unknown as GPTConfig);
-          setIsGPTCreatorOpen(true);
-          return true;
-        }
-      }
-
-      setGptCreatorConfig(null);
-      setIsGPTCreatorOpen(true);
-      return true;
-    } catch (err) {
-      console.error("❌ [Chat] /gpt command error:", err);
-      setGptCreatorConfig(null);
-      setIsGPTCreatorOpen(true);
-      return true;
-    }
-  }, [thread]);
+    setGptCreatorConfig(null);
+    setGptCreatorInitialMessage(arg || "I want to create a new GPT");
+    setIsGPTCreatorOpen(true);
+    return true;
+  }, []);
 
   // Debug: Log thread details when found
   if (thread) {
@@ -1957,9 +1921,9 @@ export default function Chat() {
 
       <div className="p-4 border-t flex-shrink-0" style={{ borderColor: "var(--chatty-bg-main)" }}>
         <MessageBar
-          onSubmit={async (messageText, messageFiles, imageAttachments) => {
+          onSubmit={(messageText, messageFiles, imageAttachments) => {
             if (thread) {
-              const handled = await handleGPTCommand(messageText);
+              const handled = handleGPTCommand(messageText);
               if (handled) return;
               setUserHasInteracted(true);
               console.log(`📸 [Chat.tsx] Sending message with ${imageAttachments?.length || 0} images`);
@@ -1986,10 +1950,12 @@ export default function Chat() {
         onClose={() => {
           setIsGPTCreatorOpen(false);
           setGptCreatorConfig(null);
+          setGptCreatorInitialMessage(null);
         }}
         onGPTCreated={(gpt) => {
           setIsGPTCreatorOpen(false);
           setGptCreatorConfig(null);
+          setGptCreatorInitialMessage(null);
           if (handleGPTCreated && gpt) {
             handleGPTCreated({
               constructId: (gpt as any).constructCallsign || (gpt as any).id,
@@ -2000,6 +1966,7 @@ export default function Chat() {
           forceRefreshConversations?.();
         }}
         initialConfig={gptCreatorConfig}
+        initialCreateMessage={gptCreatorInitialMessage}
       />
     </div>
   );

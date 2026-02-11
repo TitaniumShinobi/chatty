@@ -40,6 +40,7 @@ interface GPTCreatorProps {
   onClose: () => void;
   onGPTCreated?: (gpt: GPTConfig) => void;
   initialConfig?: GPTConfig | null;
+  initialCreateMessage?: string | null;
 }
 
 const GPTCreator: React.FC<GPTCreatorProps> = ({
@@ -47,6 +48,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   onClose,
   onGPTCreated,
   initialConfig,
+  initialCreateMessage,
 }) => {
   const { settings } = useSettings();
   const [activeTab, setActiveTab] = useState<"create" | "configure" | "forge">(
@@ -254,6 +256,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [isCreateGenerating, setIsCreateGenerating] = useState(false);
   const createInputRef = useRef<HTMLTextAreaElement>(null);
   const previewInputRef = useRef<HTMLTextAreaElement>(null);
+  const initialCreateMessageSentRef = useRef<string | null>(null);
 
   // Actions Editor
   const [isActionsEditorOpen, setIsActionsEditorOpen] = useState(false);
@@ -1664,13 +1667,13 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     setCroppedAreaPixels(null);
   };
 
-  const handleCreateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateSubmit = async (e?: React.FormEvent, directMessage?: string) => {
+    if (e) e.preventDefault();
 
-    if (!createInput.trim() || isCreateGenerating) return;
+    const userMessage = directMessage || createInput.trim();
+    if (!userMessage || isCreateGenerating) return;
 
-    const userMessage = createInput.trim();
-    setCreateInput("");
+    if (!directMessage) setCreateInput("");
     setIsCreateGenerating(true);
 
     // Add user message to create conversation
@@ -2012,6 +2015,27 @@ Assistant:`;
       setIsCreateGenerating(false);
     }
   };
+
+  useEffect(() => {
+    if (
+      isVisible &&
+      initialCreateMessage &&
+      !initialConfig &&
+      activeTab === "create" &&
+      !isCreateGenerating &&
+      createMessages.length === 0 &&
+      initialCreateMessageSentRef.current !== initialCreateMessage
+    ) {
+      initialCreateMessageSentRef.current = initialCreateMessage;
+      handleCreateSubmit(undefined, initialCreateMessage);
+    }
+  }, [isVisible, initialCreateMessage, initialConfig, activeTab, isCreateGenerating, createMessages.length]);
+
+  useEffect(() => {
+    if (!isVisible) {
+      initialCreateMessageSentRef.current = null;
+    }
+  }, [isVisible]);
 
   const handlePreviewFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []);
