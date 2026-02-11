@@ -1413,6 +1413,19 @@ export default function Chat() {
     const sanitized = prepareMessageContent(messageText);
     const trimmed = sanitized.trim();
     if (!trimmed) return null;
+
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+          const values = Object.values(parsed);
+          if (values.length === 0 || values.every(v => v === "" || v === null || v === undefined)) {
+            return null;
+          }
+        }
+      } catch {}
+    }
+
     let isJson = false;
     let prettyJson = "";
 
@@ -1620,13 +1633,18 @@ export default function Chat() {
                     className="group relative flex items-end gap-3 py-3 px-4 flex-row-reverse"
                   >
                     <div className="flex flex-col items-end">
+                      {(() => {
+                        const renderedText = renderUserContent(m.text);
+                        const hasAttachments = !!(m as any).attachments?.length;
+                        const imageOnly = !renderedText && hasAttachments;
+                        return (
                       <div
-                        className={`${!m.text?.trim() && (m as any).attachments?.length ? 'p-1' : 'px-4 py-3'} shadow-sm transition-colors inline-block ${maxWidth} ml-auto text-left relative`}
+                        className={`${imageOnly ? 'p-1' : 'px-4 py-3'} shadow-sm transition-colors inline-block ${maxWidth} ml-auto text-left relative`}
                         style={{
-                          backgroundColor: !m.text?.trim() && (m as any).attachments?.length ? "transparent" : "rgba(173, 165, 135, 0.25)",
-                          borderRadius: "22px 22px 6px 22px",
+                          backgroundColor: imageOnly ? "transparent" : "rgba(173, 165, 135, 0.25)",
+                          borderRadius: imageOnly ? "12px" : "22px 22px 6px 22px",
                           border: "none",
-                          boxShadow: !m.text?.trim() && (m as any).attachments?.length ? "none" : "0 1px 0 rgba(58, 46, 20, 0.12)",
+                          boxShadow: imageOnly ? "none" : "0 1px 0 rgba(58, 46, 20, 0.12)",
                           color: "var(--chatty-text)",
                           overflow: "hidden",
                           minWidth: 0,
@@ -1642,7 +1660,7 @@ export default function Chat() {
                           </div>
                         ) : (
                           <>
-                            {renderUserContent(m.text) && (
+                            {renderedText && (
                             <div
                               className="break-words"
                               style={{
@@ -1653,7 +1671,7 @@ export default function Chat() {
                                 width: "100%",
                               }}
                             >
-                              {renderUserContent(m.text)}
+                              {renderedText}
                             </div>
                             )}
                             {!!m.files?.length && (
@@ -1672,8 +1690,8 @@ export default function Chat() {
                                 ))}
                               </div>
                             )}
-                            {(m as any).attachments && (m as any).attachments.length > 0 && (
-                              <div className={`flex flex-wrap gap-2 ${m.text?.trim() ? 'mt-2' : ''}`}>
+                            {hasAttachments && (
+                              <div className={`flex flex-wrap gap-2 ${renderedText ? 'mt-2' : ''}`}>
                                 {(m as any).attachments.map((att: any, idx: number) => (
                                   <img
                                     key={idx}
@@ -1688,6 +1706,8 @@ export default function Chat() {
                           </>
                         )}
                       </div>
+                        );
+                      })()}
                       <div className="mt-1 flex items-center gap-2">
                         <span
                           className="opacity-0 group-hover:opacity-100 transition-opacity text-xs"
