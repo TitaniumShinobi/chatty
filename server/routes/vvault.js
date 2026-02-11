@@ -3504,8 +3504,12 @@ router.post("/message", async (req, res) => {
 
   const VVAULT_API_BASE_URL = process.env.VVAULT_API_BASE_URL;
   
-  if (!VVAULT_API_BASE_URL) {
-    console.warn('⚠️ [VVAULT Proxy] VVAULT_API_BASE_URL not configured, using local LLM providers');
+  if (!VVAULT_API_BASE_URL || hasImages) {
+    if (hasImages && VVAULT_API_BASE_URL) {
+      console.log(`📎 [VVAULT Proxy] Images attached — bypassing external VVAULT API, using local vision-capable provider`);
+    } else {
+      console.warn('⚠️ [VVAULT Proxy] VVAULT_API_BASE_URL not configured, using local LLM providers');
+    }
     
     // Fetch the GPT's configured model from database
     let gptConfig = null;
@@ -3615,16 +3619,28 @@ router.post("/message", async (req, res) => {
           });
           aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
         } catch (openaiErr) {
-          if (openaiErr?.code === 'unknown_model' && openrouter) {
-            console.warn(`⚠️ [VVAULT Proxy] OpenAI rejected model "${effectiveModel}", falling back to OpenRouter`);
+          if (openrouter) {
+            console.warn(`⚠️ [VVAULT Proxy] OpenAI failed (${openaiErr?.status || openaiErr?.code || 'unknown'}), falling back to OpenRouter`);
             effectiveProvider = 'openrouter';
-            effectiveModel = DEFAULT_OPENROUTER_MODEL;
+            effectiveModel = hasImages ? 'qwen/qwen2.5-vl-72b-instruct' : DEFAULT_OPENROUTER_MODEL;
+            let fallbackContent;
+            if (hasImages) {
+              fallbackContent = [
+                { type: 'text', text: message || 'What do you see in this image?' },
+                ...attachments.map(att => ({
+                  type: 'image_url',
+                  image_url: { url: `data:${att.type};base64,${att.data}`, detail: 'auto' }
+                }))
+              ];
+            } else {
+              fallbackContent = typeof userMessageContent === 'string' ? userMessageContent : message;
+            }
             completion = await openrouter.chat.completions.create({
               model: effectiveModel,
               messages: [
                 { role: "system", content: systemPrompt },
                 ...conversationHistoryMessages,
-                { role: "user", content: typeof userMessageContent === 'string' ? userMessageContent : message }
+                { role: "user", content: fallbackContent }
               ],
               max_tokens: 2048,
             });
