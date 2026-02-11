@@ -162,3 +162,7 @@ server/uploads/
 # Python cache files
 __pycache__/
 *.pyc
+
+# Database files
+chatty.db
+*.db
