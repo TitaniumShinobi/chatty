@@ -711,8 +711,9 @@ export function TranscriptManager() {
                 disabled={isUploading}
                 className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-semibold transition-colors disabled:opacity-50"
                 style={{
-                  backgroundColor: 'var(--chatty-accent)',
-                  color: 'white'
+                  backgroundColor: '#16a34a',
+                  color: 'white',
+                  border: '2px solid #15803d'
                 }}
               >
                 {isUploading ? <RefreshCw size={18} className="animate-spin" /> : <CheckCircle size={18} />}
