@@ -3164,7 +3164,7 @@ export default function Layout() {
   }
 
   // Check if we're on a non-chat route that should render even during auth loading
-  const isNonChatRouteRender = ["/app/gpts", "/app/explore", "/app/vvault", "/app/library", "/app/codex"].some(
+  const isNonChatRouteRender = ["/app/gpts", "/app/explore", "/app/vvault", "/app/library", "/app/codex", "/app/finance", "/app/simforge"].some(
     (r) => window.location.pathname.startsWith(r)
   );
 
