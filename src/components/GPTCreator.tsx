@@ -232,10 +232,12 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
   // Preview
   const [previewMessages, setPreviewMessages] = useState<
-    Array<{ role: "user" | "assistant"; content: string; timestamp?: number }>
+    Array<{ role: "user" | "assistant"; content: string; timestamp?: number; attachments?: Array<{ name: string; type: string; data: string }> }>
   >([]);
   const [previewInput, setPreviewInput] = useState("");
   const [isPreviewGenerating, setIsPreviewGenerating] = useState(false);
+  const [previewImageFiles, setPreviewImageFiles] = useState<File[]>([]);
+  const previewFileInputRef = useRef<HTMLInputElement>(null);
   
   // Exit confirmation (save preview conversation)
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
@@ -2011,22 +2013,56 @@ Assistant:`;
     }
   };
 
+  const handlePreviewFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(e.target.files || []);
+    const imageFiles = selectedFiles.filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length > 0) {
+      setPreviewImageFiles(prev => [...prev, ...imageFiles].slice(0, 5));
+    }
+    if (previewFileInputRef.current) {
+      previewFileInputRef.current.value = "";
+    }
+  };
+
+  const removePreviewImage = (index: number) => {
+    setPreviewImageFiles(prev => {
+      const removed = prev[index];
+      if (removed) URL.revokeObjectURL(URL.createObjectURL(removed));
+      return prev.filter((_, i) => i !== index);
+    });
+  };
+
+  const convertFilesToBase64 = async (files: File[]): Promise<Array<{ name: string; type: string; data: string }>> => {
+    return Promise.all(files.map(file => new Promise<{ name: string; type: string; data: string }>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = (reader.result as string).split(',')[1];
+        resolve({ name: file.name, type: file.type, data: base64 });
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    })));
+  };
+
   const handlePreviewSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!previewInput.trim() || isPreviewGenerating) return;
+    if ((!previewInput.trim() && previewImageFiles.length === 0) || isPreviewGenerating) return;
 
     const userMessage = previewInput.trim();
     setPreviewInput("");
+    const currentImages = [...previewImageFiles];
+    setPreviewImageFiles([]);
     setIsPreviewGenerating(true);
 
-    // Add user message to preview conversation (with timestamp for saving)
-    setPreviewMessages((prev) => [
-      ...prev,
-      { role: "user", content: userMessage, timestamp: Date.now() },
-    ]);
-
     try {
+      const imageAttachments = currentImages.length > 0 ? await convertFilesToBase64(currentImages) : [];
+      // Add user message to preview conversation (with timestamp for saving)
+      setPreviewMessages((prev) => [
+        ...prev,
+        { role: "user", content: userMessage || "", timestamp: Date.now(), attachments: imageAttachments.length > 0 ? imageAttachments : undefined },
+      ]);
+
       // Build system prompt from current config
       let systemPrompt = buildPreviewSystemPrompt(config);
 
@@ -2106,28 +2142,51 @@ Assistant:`;
         config.conversationModel ||
         config.modelId ||
         "openrouter:meta-llama/llama-3.3-70b-instruct";
-      // Preview using model - pass constructId for memory injection
 
       const constructIdForMemory =
         config.constructCallsign || initialConfig?.constructCallsign;
-      const response = await runSeat({
-        seat: "smalltalk",
-        prompt: fullPrompt,
-        modelOverride: selectedModel,
-        constructId: constructIdForMemory, // Enable transcript memory injection
-      });
+
+      let aiResponseText: string;
+
+      if (imageAttachments.length > 0) {
+        const constructId = config.constructCallsign || initialConfig?.constructCallsign || 'preview';
+        const vvaultResponse = await fetch('/api/vvault/message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            constructId,
+            message: userMessage || 'What do you see in this image?',
+            attachments: imageAttachments,
+            systemPromptOverride: systemPrompt,
+          }),
+        });
+        if (!vvaultResponse.ok) {
+          const errData = await vvaultResponse.json().catch(() => ({}));
+          throw new Error(errData.error || `Vision API error: ${vvaultResponse.status}`);
+        }
+        const data = await vvaultResponse.json();
+        aiResponseText = data.response || data.aiResponse || "No response received.";
+      } else {
+        aiResponseText = (await runSeat({
+          seat: "smalltalk",
+          prompt: fullPrompt,
+          modelOverride: selectedModel,
+          constructId: constructIdForMemory,
+        })).trim();
+      }
 
       // Add AI response to preview conversation (with timestamp for saving)
       setPreviewMessages((prev) => [
         ...prev,
-        { role: "assistant", content: response.trim(), timestamp: Date.now() },
+        { role: "assistant", content: aiResponseText, timestamp: Date.now() },
       ]);
 
       // Try to extract GPT configuration from the conversation
       extractConfigFromConversation([
         ...previewMessages,
         { role: "user", content: userMessage },
-        { role: "assistant", content: response.trim() },
+        { role: "assistant", content: aiResponseText },
       ]);
     } catch (error) {
       console.error("Error in preview:", error);
@@ -4805,6 +4864,18 @@ ALWAYS:
                                   You:
                                 </span>{" "}
                                 {message.content}
+                                {message.attachments && message.attachments.length > 0 && (
+                                  <div className="flex gap-2 mt-2 flex-wrap">
+                                    {message.attachments.map((att: any, idx: number) => (
+                                      <img
+                                        key={idx}
+                                        src={`data:${att.type};base64,${att.data}`}
+                                        alt={att.name}
+                                        className="w-20 h-20 rounded-lg object-cover"
+                                      />
+                                    ))}
+                                  </div>
+                                )}
                               </>
                             ) : (
                               <>
@@ -4826,7 +4897,35 @@ ALWAYS:
 
                 {/* Input Preview */}
                 <div className="p-4">
+                  <input
+                    ref={previewFileInputRef}
+                    type="file"
+                    multiple
+                    accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                    onChange={handlePreviewFileChange}
+                    className="hidden"
+                  />
                   <form onSubmit={handlePreviewSubmit} className="space-y-2">
+                    {previewImageFiles.length > 0 && (
+                      <div className="flex gap-2 px-3 pt-2 flex-wrap">
+                        {previewImageFiles.map((file, idx) => (
+                          <div key={idx} className="relative group">
+                            <img
+                              src={URL.createObjectURL(file)}
+                              alt={file.name}
+                              className="w-12 h-12 rounded-lg object-cover border border-white/10"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removePreviewImage(idx)}
+                              className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div
                       className="flex items-center gap-2 p-3 rounded-lg"
                       style={{ backgroundColor: "transparent" }}
@@ -4848,17 +4947,16 @@ ALWAYS:
                       <button
                         type="button"
                         onClick={() => {
-                          // Preview tab paperclip clicked
-                          fileInputRef.current?.click();
+                          previewFileInputRef.current?.click();
                         }}
                         className="p-1 hover:bg-app-button-600 rounded text-app-text-800 hover:text-app-text-900"
-                        title="Upload knowledge files"
+                        title="Upload images"
                       >
                         <Paperclip size={16} />
                       </button>
                       <button
                         type="submit"
-                        disabled={!previewInput.trim() || isPreviewGenerating}
+                        disabled={(!previewInput.trim() && previewImageFiles.length === 0) || isPreviewGenerating}
                         className="p-1 hover:bg-app-button-600 rounded disabled:opacity-50"
                       >
                         {isPreviewGenerating ? (
