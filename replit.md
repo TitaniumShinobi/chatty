@@ -52,7 +52,8 @@ Any update where the new content is less than half the size of what's already st
 - **Dynamic Address Book:** Automatically includes custom GPTs, with Zen sorted first.
 - **GPT Creation Workflow:** Bootstraps conversations in Supabase upon GPT creation.
 - **Identity Loading:** Prioritizes Supabase `vault_files` for construct identity data (avatars, knowledge files, prompt/conditioning). Avatar endpoint checks Supabase first by `construct_id` (both with/without `-001` suffix), falling back to local placeholder. Knowledge files endpoint merges local DB with Supabase vault_files. Transcript list endpoint handles null `user_id` records and construct_id variants.
-- **Robust Transcript Parsing & Upload:** Handles various VVAULT and Chatty transcript formats and supports multi-platform uploads.
+- **Robust Transcript Parsing & Upload:** Handles various VVAULT and Chatty transcript formats and supports multi-platform uploads. Character.AI JSON imports are automatically parsed with timestamp normalization (Unix seconds, ISO strings, milliseconds) and converted to markdown.
+- **Fresh Canvas Chat UX:** On page load/refresh, all chats render with a full-page blank spacer pushing messages below the fold. Auto-scroll only activates after the user sends their first message in the session. No forced greetings — user speaks first.
 - **GPT Seat Memory Injection:** Injects transcript memories into GPT constructs during conversations.
 - **Canonical Session and Supabase File Patterns:** Consistent naming conventions for session IDs and Supabase file paths.
 - **Finance Tab Architecture:** A first-class section with a plugin architecture for finance apps, starting with FXShinobi integration featuring TradingView charts, prediction markets, and AI insights. Supports a broker adapter architecture for multi-broker support.

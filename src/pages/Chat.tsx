@@ -402,6 +402,7 @@ export default function Chat() {
   const [removedMessages, setRemovedMessages] = useState<Set<string>>(
     new Set(),
   );
+  const [userHasInteracted, setUserHasInteracted] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [zenMarkdown, setZenMarkdown] = useState<string | null>(null);
@@ -519,21 +520,24 @@ export default function Chat() {
     }
   }, [thread, threadId, navigate, threads, isCanonicalThread, isZenSessionThread, isLinSessionThread, isGPTSessionThread]);
 
-  // Auto-scroll when thread loads or changes
+  // Reset interaction flag when thread changes, but only if user navigated to a different thread
+  // (not when a new thread was created from the user's first message)
+  const prevThreadId = useRef(thread?.id);
   useEffect(() => {
-    if (thread && thread.messages.length > 0) {
-      // Scroll to bottom when thread loads or changes
-      setTimeout(() => scrollToBottom(false), 100);
+    if (prevThreadId.current !== thread?.id) {
+      if (!userHasInteracted || (thread && thread.messages.length === 0)) {
+        setUserHasInteracted(false);
+      }
+      prevThreadId.current = thread?.id;
     }
-  }, [thread?.id, thread?.messages.length]);
+  }, [thread?.id]);
 
-  // Auto-scroll when new messages are added
+  // Auto-scroll only after user has interacted (sent a message)
   useEffect(() => {
-    if (thread && thread.messages.length > 0) {
-      // Scroll when messages array changes (new message added)
+    if (thread && thread.messages.length > 0 && userHasInteracted) {
       scrollToBottom(true);
     }
-  }, [thread?.messages]);
+  }, [thread?.messages, userHasInteracted]);
 
   // Load transcript for canonical threads (Zen, Lin, or GPTs)
   // Only attempt fallback transcript loading if threads have loaded (threads.length > 0)
@@ -1574,23 +1578,18 @@ export default function Chat() {
         </div>
       )}
       <div ref={messagesContainerRef} className="flex-1 overflow-auto min-h-0">
-        <div className="mb-2 px-4 pt-4"></div>
-
-        {/* Fallback UI for empty messages */}
-        {thread.messages.length === 0 && !isReloading && (
-          <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
-            <p className="text-lg mb-2" style={{ color: "var(--chatty-text)" }}>
-              {(isCanonicalThread ? canonicalConstructName : thread.title) ||
-                thread.constructId ||
-                "Your assistant"}{" "}
-              is listening.
-            </p>
-            <p
-              className="text-sm"
-              style={{ color: "var(--chatty-text)", opacity: 0.7 }}
-            >
-              Say something to begin.
-            </p>
+        {/* Fresh canvas spacer — pushes all messages below the fold on load */}
+        {!userHasInteracted && (
+          <div className="flex flex-col items-end justify-end" style={{ minHeight: "calc(100vh - 140px)" }}>
+            {thread.messages.length === 0 && !isReloading && (
+              <div className="w-full flex flex-col items-center gap-3 pb-6 px-6">
+                <p className="text-sm" style={{ color: "var(--chatty-text)", opacity: 0.35 }}>
+                  {(isCanonicalThread ? canonicalConstructName : thread.title) ||
+                    thread.constructId ||
+                    ""}
+                </p>
+              </div>
+            )}
           </div>
         )}
 
@@ -1913,6 +1912,7 @@ export default function Chat() {
         <MessageBar
           onSubmit={(messageText, messageFiles, imageAttachments) => {
             if (thread) {
+              setUserHasInteracted(true);
               console.log(`📸 [Chat.tsx] Sending message with ${imageAttachments?.length || 0} images`);
               onSendMessage(thread.id, messageText, messageFiles || [], imageAttachments);
             }

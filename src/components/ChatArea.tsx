@@ -32,6 +32,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   const [isParsing, setIsParsing] = useState(false)
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const [userHasInteracted, setUserHasInteracted] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -48,11 +49,18 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     setShowScrollButton(!isNearBottom)
   }, [])
 
-  // Auto-scroll to bottom when new messages arrive
+  // Reset interaction flag when conversation changes
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    setShowScrollButton(false)
-  }, [conversation?.messages])
+    setUserHasInteracted(false)
+  }, [conversation?.id])
+
+  // Auto-scroll only after user has interacted
+  useEffect(() => {
+    if (userHasInteracted) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      setShowScrollButton(false)
+    }
+  }, [conversation?.messages, userHasInteracted])
 
   // Add scroll listener
   useEffect(() => {
@@ -127,6 +135,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     setInputValue('')
     setAttachedFiles([])
     setIsTyping(true)
+    setUserHasInteracted(true)
     onSendMessage(userMessage)
 
     // Clear any existing typing timeout
@@ -501,46 +510,11 @@ const ChatArea: React.FC<ChatAreaProps> = ({
 
       {/* Messages Area */}
       <div ref={messagesContainerRef} className="flex-1 overflow-y-auto relative">
-        {!conversation || conversation.messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center px-4">
-            <div className="max-w-md">
-              <h1 className="text-2xl font-bold text-app-text-900 mb-4">
-                Welcome to Chatty
-              </h1>
-              <p className="text-app-orange-400 mb-8">
-                Your AI assistant is ready to help. Ask me anything!
-              </p>
-              
-              {/* Example prompts */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[
-                  "Tell me about artificial intelligence",
-                  "Write a JavaScript function for me",
-                  "Create a short story about technology",
-                  "Explain how machine learning works"
-                ].map((prompt, index) => (
-                  <button
-                    key={index}
-                    onClick={() => {
-                      if (conversation) {
-                        const message = {
-                          id: Date.now().toString(),
-                          role: 'user' as const,
-                          content: prompt,
-                          timestamp: new Date().toISOString()
-                        }
-                        onSendMessage(message)
-                      }
-                    }}
-                    className="p-3 text-left text-sm border border-app-butter-300 rounded-lg hover:bg-app-chat-50 transition-colors"
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : (
+        {/* Fresh canvas spacer */}
+        {!userHasInteracted && (
+          <div style={{ minHeight: "calc(100vh - 140px)" }} />
+        )}
+        {conversation && conversation.messages.length > 0 ? (
           <div className="space-y-6 p-4">
             {conversation.messages.map((message, index) => (
               <MessageComponent
@@ -568,6 +542,8 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             
             <div ref={messagesEndRef} />
           </div>
+        ) : (
+          <div ref={messagesEndRef} />
         )}
       </div>
 
