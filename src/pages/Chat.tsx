@@ -479,15 +479,15 @@ export default function Chat() {
   const isSystemConstructThread = isZenSessionThread || isLinSessionThread;
   const isCanonicalThread = isSystemConstructThread || isGPTSessionThread;
 
-  const handleGPTCommand = useCallback((input: string): boolean => {
-    const gptMatch = input.trim().match(/^\/gpt(?:\s+(.+))?$/i);
-    if (!gptMatch) return false;
-
-    const arg = gptMatch[1]?.trim();
-    setGptCreatorConfig(null);
-    setGptCreatorInitialMessage(arg || "I want to create a new GPT");
-    setIsGPTCreatorOpen(true);
-    return true;
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      setGptCreatorConfig(null);
+      setGptCreatorInitialMessage(detail?.initialMessage || "I want to create a new GPT");
+      setIsGPTCreatorOpen(true);
+    };
+    window.addEventListener("chatty:open-gpt-creator", handler);
+    return () => window.removeEventListener("chatty:open-gpt-creator", handler);
   }, []);
 
   // Debug: Log thread details when found
@@ -1923,8 +1923,6 @@ export default function Chat() {
         <MessageBar
           onSubmit={(messageText, messageFiles, imageAttachments) => {
             if (thread) {
-              const handled = handleGPTCommand(messageText);
-              if (handled) return;
               setUserHasInteracted(true);
               console.log(`📸 [Chat.tsx] Sending message with ${imageAttachments?.length || 0} images`);
               onSendMessage(thread.id, messageText, messageFiles || [], imageAttachments);

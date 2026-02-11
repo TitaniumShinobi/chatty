@@ -118,5 +118,6 @@ export function prepareMessageContent(raw: string | undefined): string {
   const sanitized = sanitizeMessageText(raw || "");
   const withBreaks = ensureParagraphBreaks(sanitized);
   const noDates = stripDateLines(withBreaks);
-  return normalizeParagraphs(noDates);
+  const noSignals = noDates.replace(/\[OPEN_GPT_CREATOR\]/g, "").trim();
+  return normalizeParagraphs(noSignals);
 }

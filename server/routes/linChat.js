@@ -353,10 +353,13 @@ router.post('/generate', async (req, res) => {
       memoryContext = await loadTranscriptMemories(constructId, userEmail, memoryOptions);
     }
 
-    // Build enhanced system prompt: identity + passed systemPrompt + memories
     let enhancedSystemPrompt = '';
     if (identityPrompt) {
       enhancedSystemPrompt = identityPrompt;
+    }
+    if (constructId === 'lin-001' || !constructId) {
+      const gptSignal = 'GPT CREATION: When the user asks to create or build a new GPT/AI/construct (e.g. "/gpt", "create a GPT", "build me an AI"), respond naturally acknowledging their request, then include the exact signal [OPEN_GPT_CREATOR] at the end of your response. This opens the GPT workshop. Keep your response brief and professional.';
+      enhancedSystemPrompt = enhancedSystemPrompt ? `${enhancedSystemPrompt}\n\n${gptSignal}` : gptSignal;
     }
     if (systemPrompt) {
       enhancedSystemPrompt = enhancedSystemPrompt ? `${enhancedSystemPrompt}\n\n${systemPrompt}` : systemPrompt;
