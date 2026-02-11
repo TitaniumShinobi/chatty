@@ -1259,10 +1259,13 @@ export default function Layout() {
           // User is on a specific page like /app/vvault, /app/gpts - do NOT navigate away
           console.log(`🧭 [Layout.tsx] Preserving non-chat route: ${currentPath}`);
         } else {
-          const isAppRoot = initialPath === "/app" || initialPath === "/app/";
-          const isChatRoute =
-            initialPath.startsWith("/app/chat") && initialPath !== "/app/chat";
-          const shouldFocusFirstConversation = isChatRoute && !isAppRoot;
+          // Navigation decisions must be based on the *current* URL, not the
+          // initial path at mount. Users can navigate (e.g. click a thread or the
+          // star home button) before the async thread load completes.
+          const isAppRoot = currentPath === "/app" || currentPath === "/app/";
+          const isChatRoot = currentPath === "/app/chat" || currentPath === "/app/chat/";
+          const isSpecificChatRoute = currentPath.startsWith("/app/chat/") && !isChatRoot;
+          const shouldFocusFirstConversation = isChatRoot;
 
           if (
             !didNavigateToCanonical &&
@@ -1280,6 +1283,10 @@ export default function Layout() {
             } else {
               console.log(`📍 [Layout.tsx] Already on route: ${targetPath}`);
             }
+          } else if (isSpecificChatRoute) {
+            console.log(
+              `🧭 [Layout.tsx] Preserving explicit chat route: ${currentPath}`,
+            );
           } else if (isAppRoot) {
             // Show home page when landing on /app
             if (currentPath !== "/app") {
