@@ -1578,20 +1578,6 @@ export default function Chat() {
         </div>
       )}
       <div ref={messagesContainerRef} className="flex-1 overflow-auto min-h-0" style={{ scrollBehavior: "smooth", WebkitOverflowScrolling: "touch" }}>
-        {/* Fresh canvas spacer — pushes all messages below the fold on load */}
-        {!userHasInteracted && (
-          <div className="flex flex-col items-end justify-end" style={{ minHeight: "calc(100vh - 140px)" }}>
-            {thread.messages.length === 0 && !isReloading && (
-              <div className="w-full flex flex-col items-center gap-3 pb-6 px-6">
-                <p className="text-sm" style={{ color: "var(--chatty-text)", opacity: 0.35 }}>
-                  {(isCanonicalThread ? canonicalConstructName : thread.title) ||
-                    thread.constructId ||
-                    ""}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Loading state while reloading */}
         {isReloading && (
@@ -1905,6 +1891,10 @@ export default function Chat() {
                 </div>
               );
             })}
+        {/* Fresh canvas spacer — large gap after last message on fresh session, disappears on first send */}
+        {!userHasInteracted && thread.messages.length > 0 && (
+          <div style={{ height: "calc(100vh - 200px)" }} />
+        )}
         <div ref={messagesEndRef} />
       </div>
 
