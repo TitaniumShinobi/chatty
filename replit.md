@@ -107,6 +107,7 @@ instances/{constructID}/
 - Core directories (assets, chatty, config, data, identity, logs, memup) are always created on GPT creation.
 - Optional directories (character.ai, chatgpt, documents, github_copilot) are created only if the user enables them.
 - Additional logs (cns.log, independence.log, ltm.log, stm.log, self_improvement_agent.log, watchdog.log) are created by their respective VVAULT features when enabled.
+- **Vault File Organization (confirmed Feb 11, 2026):** VVAULT now properly organizes all construct files into the hierarchical folder structure. The vault root shows only top-level folders (account, capsules, instances, library, system) — construct files are nested inside `instances/{callsign}/` subdirectories, not flat in the root. Both VVAULT-side scaffolding and Chatty's Supabase fallback scaffolder write files with proper relative-path filenames.
 
 **Construct Seeding & Identity Hydration:**
 - Seed constructs (zen-001, katana-001, lin-001) are minimal shells: callsign, ID, models, orchestration mode only. No fabricated identity data.
