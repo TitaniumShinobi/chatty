@@ -919,7 +919,8 @@ export default function Layout() {
           const sessionStableTs = conv.createdAt ? new Date(conv.createdAt).getTime() : 0;
           const mappedMessages = (conv.messages || [])
             .map((msg: any, idx: number) => {
-              if (!msg || (!msg.content && !msg.text)) {
+              const hasAttachmentData = Array.isArray(msg.attachments) && msg.attachments.length > 0;
+              if (!msg || (!msg.content && !msg.text && !hasAttachmentData)) {
                 console.warn("⚠️ [Layout] Invalid message found (no content):", msg);
                 return null;
               }
@@ -944,12 +945,13 @@ export default function Layout() {
                     ? [{ op: "answer.v1", payload: { content: messageContent } }]
                     : undefined,
                 ts,
-                parseIndex: idx, // Preserve original parse order for display
-                hasOriginalTimestamp, // Flag for deduplication scoring
+                parseIndex: idx,
+                hasOriginalTimestamp,
                 metadata: msg.metadata || undefined,
+                attachments: msg.attachments || undefined,
                 responseTimeMs: msg.metadata?.responseTimeMs,
                 thinkingLog: msg.metadata?.thinkingLog,
-                isDateHeader: msg.isDateHeader || false, // Preserve date header flag from parser
+                isDateHeader: msg.isDateHeader || false,
               };
             })
             .filter((msg): msg is NonNullable<typeof msg> => msg !== null);

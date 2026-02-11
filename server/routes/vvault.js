@@ -3492,12 +3492,12 @@ router.post("/message", async (req, res) => {
     return res.status(400).json({ success: false, error: "Missing constructId" });
   }
 
-  if (!message || message.trim() === '') {
-    return res.status(400).json({ success: false, error: "Missing message content" });
-  }
-  
   // Handle image attachments for vision
   const hasImages = attachments && Array.isArray(attachments) && attachments.length > 0;
+
+  if ((!message || message.trim() === '') && !hasImages) {
+    return res.status(400).json({ success: false, error: "Missing message content" });
+  }
   if (hasImages) {
     console.log(`📎 [VVAULT Proxy] Processing ${attachments.length} image attachments`);
   }
@@ -3526,17 +3526,21 @@ router.post("/message", async (req, res) => {
       return res.status(503).json({ success: false, error: modelError });
     }
     
-    // Override for vision requests (images require OpenAI)
+    // Override for vision requests (images need a vision-capable model)
     if (hasImages) {
       if (openaiClient) {
         effectiveProvider = 'openai';
         effectiveModel = 'gpt-4o';
-        console.log(`📎 [VVAULT Proxy] Images attached, forcing vision model: ${effectiveModel}`);
+        console.log(`📎 [VVAULT Proxy] Images attached, forcing OpenAI vision model: ${effectiveModel}`);
+      } else if (openrouter) {
+        effectiveProvider = 'openrouter';
+        effectiveModel = 'qwen/qwen2.5-vl-72b-instruct';
+        console.log(`📎 [VVAULT Proxy] Images attached, using OpenRouter vision model: ${effectiveModel}`);
       } else {
-        console.error('❌ [VVAULT Proxy] Images attached but OpenAI not configured - cannot process vision request');
+        console.error('❌ [VVAULT Proxy] Images attached but no vision-capable provider configured');
         return res.status(503).json({ 
           success: false, 
-          error: 'Image processing requires OpenAI, which is not currently configured. Please configure OpenAI or try without images.' 
+          error: 'Image processing requires OpenAI or OpenRouter. Please configure one of these providers.' 
         });
       }
     }
@@ -3585,7 +3589,7 @@ router.post("/message", async (req, res) => {
         let userMessageContent;
         if (hasImages) {
           userMessageContent = [
-            { type: 'text', text: message },
+            { type: 'text', text: message || 'What do you see in this image?' },
             ...attachments.map(att => ({
               type: 'image_url',
               image_url: {
@@ -3665,14 +3669,30 @@ router.post("/message", async (req, res) => {
             fix: 'Add OPENROUTER_API_KEY to your .env file and restart the server.'
           });
         }
-        console.log('[OPENROUTER] Calling', { model: effectiveModel, user: req.user?.email, historyMessages: conversationHistoryMessages.length });
+        let openrouterUserContent;
+        if (hasImages) {
+          openrouterUserContent = [
+            { type: 'text', text: message || 'What do you see in this image?' },
+            ...attachments.map(att => ({
+              type: 'image_url',
+              image_url: {
+                url: `data:${att.type};base64,${att.data}`,
+                detail: 'auto'
+              }
+            }))
+          ];
+          console.log(`📎 [VVAULT Proxy] Formatted ${attachments.length} images for OpenRouter vision API`);
+        } else {
+          openrouterUserContent = message;
+        }
+        console.log('[OPENROUTER] Calling', { model: effectiveModel, user: req.user?.email, historyMessages: conversationHistoryMessages.length, hasImages });
         try {
           completion = await openrouter.chat.completions.create({
             model: effectiveModel,
             messages: [
               { role: "system", content: systemPrompt },
               ...conversationHistoryMessages,
-              { role: "user", content: message }
+              { role: "user", content: openrouterUserContent }
             ],
             max_tokens: 2048,
           });
