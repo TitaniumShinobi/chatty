@@ -993,6 +993,7 @@ async function writeConversationToSupabase(params) {
       user_id: supabaseUserId,
       construct_id: normalizedConstructId,
       filename,
+      storage_path: filename,
       content: mdContent,
       sha256: sha256(mdContent),
       metadata: fileMetadata,
