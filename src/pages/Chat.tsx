@@ -1577,7 +1577,7 @@ export default function Chat() {
           )}
         </div>
       )}
-      <div ref={messagesContainerRef} className="flex-1 overflow-auto min-h-0">
+      <div ref={messagesContainerRef} className="flex-1 overflow-auto min-h-0" style={{ scrollBehavior: "smooth", WebkitOverflowScrolling: "touch" }}>
         {/* Fresh canvas spacer — pushes all messages below the fold on load */}
         {!userHasInteracted && (
           <div className="flex flex-col items-end justify-end" style={{ minHeight: "calc(100vh - 140px)" }}>
