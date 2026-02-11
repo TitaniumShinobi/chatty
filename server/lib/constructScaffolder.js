@@ -5,13 +5,32 @@
  * 
  * Priority:
  * 1. Call VVAULT API POST /api/chatty/construct/create (VVAULT owns the file structure)
- * 2. If VVAULT is unreachable, write minimum identity files directly to Supabase vault_files
+ * 2. If VVAULT is unreachable, write files directly to Supabase vault_files
  * 
- * Files created:
- * - instances/{callsign}/identity/prompt.txt
- * - instances/{callsign}/identity/conditioning.txt
- * - instances/{callsign}/identity/personality.json
- * - instances/{callsign}/chatty/chat_with_{callsign}.md
+ * Full directory template (under instances/{callsign}/):
+ *   assets/                          - Images (png, jpg, jpeg, svg)
+ *   chatty/
+ *     chat_with_{callsign}.md        - Primary Chatty conversation transcript
+ *   config/
+ *     metadata.json                  - Construct metadata (updated w/capsule)
+ *     personality.json               - Personality traits (updated w/capsule)
+ *   data/                            - General data storage
+ *   identity/
+ *     avatar.png                     - Construct avatar (placeholder until user uploads)
+ *     conditioning.txt               - Conditioning directives
+ *     prompt.json                    - Identity prompt (name, description, instructions)
+ *   logs/
+ *     capsule.log
+ *     chat.log
+ *     identity_guard.log
+ *     server.log
+ *   memup/                           - Capsule memory storage
+ * 
+ * Optional directories (created only if user enables them):
+ *   character.ai/                    - Manually organized
+ *   chatgpt/                         - Manually organized
+ *   documents/                       - Raw files with folder organization
+ *   github_copilot/                  - Manually organized
  * 
  * All filenames are RELATIVE paths. The user_id and construct_id columns
  * handle user/construct association. NEVER use full internal VVAULT paths.
@@ -33,17 +52,19 @@ function getChattyAuthHeaders(userEmail) {
   return headers;
 }
 
-function buildPromptContent(constructCallsign, config) {
+function buildPromptJson(constructCallsign, config) {
   const name = config.name || constructCallsign.split('-')[0];
-  const description = config.description || 'A custom AI construct created in Chatty.';
-  const instructions = config.instructions || `You are ${name}, a custom AI construct created in Chatty.`;
+  const description = config.description || '';
+  const instructions = config.instructions || `You are ${name}.`;
 
-  return `**You Are ${name}**
-*${description}*
-\`\`\`
-${instructions}
-\`\`\`
-`;
+  return JSON.stringify({
+    name,
+    description,
+    instructions,
+    conversationStarters: config.conversationStarters || [],
+    createdAt: new Date().toISOString(),
+    source: 'chatty-gpt-creator'
+  }, null, 2);
 }
 
 function buildConditioningContent(constructCallsign) {
@@ -57,7 +78,28 @@ Identity enforcement:
 `;
 }
 
-function buildPersonalityContent(constructCallsign, config) {
+function buildMetadataJson(constructCallsign, config) {
+  const name = config.name || constructCallsign.split('-')[0];
+  return JSON.stringify({
+    construct: constructCallsign,
+    name,
+    description: config.description || '',
+    version: '1.0.0',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    source: 'chatty-gpt-creator',
+    orchestrationMode: config.orchestrationMode || 'lin',
+    models: {
+      conversationModel: config.conversationModel || config.modelId || null,
+      creativeModel: config.creativeModel || null,
+      codingModel: config.codingModel || null,
+    },
+    capsuleVersion: null,
+    status: 'active'
+  }, null, 2);
+}
+
+function buildPersonalityJson(constructCallsign, config) {
   const name = config.name || constructCallsign.split('-')[0];
   return JSON.stringify({
     construct: constructCallsign,
@@ -96,6 +138,71 @@ function buildConversationContent(constructCallsign, config) {
 `;
 }
 
+function buildLogContent(logName, constructCallsign) {
+  const now = new Date().toISOString();
+  return `# ${logName} - ${constructCallsign}\n# Created: ${now}\n# ---\n`;
+}
+
+function buildScaffoldFiles(constructCallsign, config) {
+  const base = `instances/${constructCallsign}`;
+
+  const files = [
+    {
+      filename: `${base}/identity/prompt.json`,
+      content: buildPromptJson(constructCallsign, config),
+      file_type: 'identity',
+    },
+    {
+      filename: `${base}/identity/conditioning.txt`,
+      content: buildConditioningContent(constructCallsign),
+      file_type: 'identity',
+    },
+    {
+      filename: `${base}/config/metadata.json`,
+      content: buildMetadataJson(constructCallsign, config),
+      file_type: 'config',
+    },
+    {
+      filename: `${base}/config/personality.json`,
+      content: buildPersonalityJson(constructCallsign, config),
+      file_type: 'config',
+    },
+    {
+      filename: `${base}/chatty/chat_with_${constructCallsign}.md`,
+      content: buildConversationContent(constructCallsign, config),
+      file_type: 'conversation',
+    },
+    {
+      filename: `${base}/logs/capsule.log`,
+      content: buildLogContent('Capsule Log', constructCallsign),
+      file_type: 'log',
+    },
+    {
+      filename: `${base}/logs/chat.log`,
+      content: buildLogContent('Chat Log', constructCallsign),
+      file_type: 'log',
+    },
+    {
+      filename: `${base}/logs/identity_guard.log`,
+      content: buildLogContent('Identity Guard Log', constructCallsign),
+      file_type: 'log',
+    },
+    {
+      filename: `${base}/logs/server.log`,
+      content: buildLogContent('Server Log', constructCallsign),
+      file_type: 'log',
+    },
+  ];
+
+  const dirMarkers = [
+    { filename: `${base}/assets/.gitkeep`, content: '', file_type: 'system' },
+    { filename: `${base}/data/.gitkeep`, content: '', file_type: 'system' },
+    { filename: `${base}/memup/.gitkeep`, content: '', file_type: 'system' },
+  ];
+
+  return [...files, ...dirMarkers];
+}
+
 async function scaffoldViaVVAULT(constructCallsign, config, userEmail) {
   if (!VVAULT_API_BASE_URL) {
     return { success: false, reason: 'VVAULT_API_BASE_URL not configured' };
@@ -116,8 +223,15 @@ async function scaffoldViaVVAULT(constructCallsign, config, userEmail) {
         name: config.name,
         description: config.description,
         instructions: config.instructions,
+        conversationStarters: config.conversationStarters || [],
         traits: config.traits,
         personality: config.personality || config.personalityType || null,
+        orchestrationMode: config.orchestrationMode || 'lin',
+        models: {
+          conversationModel: config.conversationModel || config.modelId || null,
+          creativeModel: config.creativeModel || null,
+          codingModel: config.codingModel || null,
+        },
       }),
       signal: controller.signal,
     });
@@ -149,29 +263,7 @@ async function scaffoldViaSupabase(constructCallsign, config, userId, supabase) 
     return { success: false, reason: 'No Supabase client' };
   }
 
-  const files = [
-    {
-      filename: `instances/${constructCallsign}/identity/prompt.txt`,
-      content: buildPromptContent(constructCallsign, config),
-      file_type: 'identity',
-    },
-    {
-      filename: `instances/${constructCallsign}/identity/conditioning.txt`,
-      content: buildConditioningContent(constructCallsign),
-      file_type: 'identity',
-    },
-    {
-      filename: `instances/${constructCallsign}/identity/personality.json`,
-      content: buildPersonalityContent(constructCallsign, config),
-      file_type: 'identity',
-    },
-    {
-      filename: `instances/${constructCallsign}/chatty/chat_with_${constructCallsign}.md`,
-      content: buildConversationContent(constructCallsign, config),
-      file_type: 'conversation',
-    },
-  ];
-
+  const files = buildScaffoldFiles(constructCallsign, config);
   const results = [];
 
   for (const file of files) {
@@ -232,7 +324,7 @@ async function scaffoldViaSupabase(constructCallsign, config, userId, supabase) 
 }
 
 export async function scaffoldConstruct(constructCallsign, config, { userId, userEmail, supabase }) {
-  console.log(`📦 [ConstructScaffolder] Scaffolding instance for ${constructCallsign}...`);
+  console.log(`📦 [ConstructScaffolder] Scaffolding full instance for ${constructCallsign}...`);
 
   if (!constructCallsign || !constructCallsign.match(/-\d+$/)) {
     console.warn(`⚠️ [ConstructScaffolder] Invalid callsign format: ${constructCallsign}. Expected format: name-001`);

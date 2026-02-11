@@ -74,11 +74,39 @@ Any update where the new content is less than half the size of what's already st
 
 **Construct Creation & Instance Scaffolding:**
 - When a new GPT is created via GPTCreator, Chatty calls VVAULT `POST /api/chatty/construct/create` to scaffold the full instance folder structure.
-- If VVAULT is unreachable, Chatty falls back to writing identity files directly to Supabase `vault_files` using relative paths.
-- Files created on scaffold: `instances/{callsign}/identity/prompt.txt`, `instances/{callsign}/identity/conditioning.txt`, `instances/{callsign}/identity/personality.json`, `instances/{callsign}/chatty/chat_with_{callsign}.md`.
-- All filenames in `vault_files` are RELATIVE paths (e.g., `instances/sera-001/identity/prompt.txt`). NEVER use full internal VVAULT paths.
+- If VVAULT is unreachable, Chatty falls back to writing files directly to Supabase `vault_files` using relative paths.
+- All filenames in `vault_files` are RELATIVE paths (e.g., `instances/sera-001/identity/prompt.json`). NEVER use full internal VVAULT paths.
 - A `VaultPathGuard` utility (`server/lib/vaultPathGuard.js`) validates every filename before insert/upsert, blocking any path containing `vvault/users/shard_0000` or other full internal prefixes.
 - Scaffolding code: `server/lib/constructScaffolder.js`. Wired into both `server/routes/ais.js` and `server/routes/gpts.js` POST creation routes.
+
+**GPT Creation File Directory Template:**
+```
+instances/{constructID}/
+├── assets/                          (images: png, jpg, jpeg, svg)
+├── chatty/
+│   └── chat_with_{constructID}.md   (primary Chatty conversation transcript)
+├── config/
+│   ├── metadata.json                (construct metadata, updated w/capsule)
+│   └── personality.json             (personality traits, updated w/capsule)
+├── data/                            (general data storage)
+├── identity/
+│   ├── avatar.png                   (construct avatar)
+│   ├── conditioning.txt             (conditioning directives)
+│   └── prompt.json                  (name, description, instructions)
+├── logs/
+│   ├── capsule.log
+│   ├── chat.log
+│   ├── identity_guard.log
+│   └── server.log
+├── memup/                           (capsule memory storage: {id}.capsule)
+├── character.ai/*                   (manually organized, optional)
+├── chatgpt/*                        (manually organized, optional)
+├── documents/*                      (raw files w/folder organization, optional)
+└── github_copilot/*                 (manually organized, optional)
+```
+- Core directories (assets, chatty, config, data, identity, logs, memup) are always created on GPT creation.
+- Optional directories (character.ai, chatgpt, documents, github_copilot) are created only if the user enables them.
+- Additional logs (cns.log, independence.log, ltm.log, stm.log, self_improvement_agent.log, watchdog.log) are created by their respective VVAULT features when enabled.
 
 **Construct Seeding & Identity Hydration:**
 - Seed constructs (zen-001, katana-001, lin-001) are minimal shells: callsign, ID, models, orchestration mode only. No fabricated identity data.
