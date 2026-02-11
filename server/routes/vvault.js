@@ -24,12 +24,18 @@ const require = createRequire(import.meta.url);
 const router = express.Router();
 
 // OpenRouter client for fallback when VVAULT API is unavailable
-// Supports both Replit AI Integrations (AI_INTEGRATIONS_*) and standard env vars (OPENROUTER_*)
-const OPENROUTER_API_KEY = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY;
-const OPENROUTER_BASE_URL = process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL || process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+// Primary: user's own OpenRouter key; Fallback: Replit AI Integrations (managed, billed to credits)
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const openrouter = OPENROUTER_API_KEY ? new OpenAI({
-  baseURL: OPENROUTER_BASE_URL,
+  baseURL: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
   apiKey: OPENROUTER_API_KEY,
+}) : null;
+
+// Replit-managed OpenRouter client (fallback when user's key fails)
+const REPLIT_OPENROUTER_KEY = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY;
+const replitOpenrouter = REPLIT_OPENROUTER_KEY ? new OpenAI({
+  baseURL: process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL,
+  apiKey: REPLIT_OPENROUTER_KEY,
 }) : null;
 
 const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
@@ -3523,7 +3529,7 @@ router.post("/message", async (req, res) => {
     }
     
     // Resolve model using GPTCreator config as source of truth
-    const providerAvailability = { openai: !!openaiClient, openrouter: !!openrouter, ollama: !!process.env.OLLAMA_HOST };
+    const providerAvailability = { openai: !!openaiClient, openrouter: !!(openrouter || replitOpenrouter), ollama: !!process.env.OLLAMA_HOST };
     let { provider: effectiveProvider, model: effectiveModel, source: modelSource, error: modelError } = resolveModelForGPT(gptConfig, providerAvailability);
     
     if (modelError) {
@@ -3674,7 +3680,8 @@ router.post("/message", async (req, res) => {
         aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
       } else {
         // OpenRouter
-        if (!openrouter) {
+        const orClient = openrouter || replitOpenrouter;
+        if (!orClient) {
           const errMsg = 'OpenRouter API key is not configured. Set OPENROUTER_API_KEY in environment.';
           console.error(`❌ [VVAULT Proxy] ${errMsg}`);
           return res.status(503).json({
@@ -3685,6 +3692,7 @@ router.post("/message", async (req, res) => {
             fix: 'Add OPENROUTER_API_KEY to your .env file and restart the server.'
           });
         }
+        const clientLabel = openrouter ? 'OpenRouter' : 'Replit OpenRouter';
         let openrouterUserContent;
         if (hasImages) {
           openrouterUserContent = [
@@ -3701,9 +3709,9 @@ router.post("/message", async (req, res) => {
         } else {
           openrouterUserContent = message;
         }
-        console.log('[OPENROUTER] Calling', { model: effectiveModel, user: req.user?.email, historyMessages: conversationHistoryMessages.length, hasImages });
+        console.log(`[${clientLabel}] Calling`, { model: effectiveModel, user: req.user?.email, historyMessages: conversationHistoryMessages.length, hasImages });
         try {
-          completion = await openrouter.chat.completions.create({
+          completion = await orClient.chat.completions.create({
             model: effectiveModel,
             messages: [
               { role: "system", content: systemPrompt },
@@ -3712,15 +3720,29 @@ router.post("/message", async (req, res) => {
             ],
             max_tokens: 2048,
           });
-          console.log('[OPENROUTER] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+          console.log(`[${clientLabel}] Success`, { finish_reason: completion?.choices?.[0]?.finish_reason });
         } catch (err) {
-          console.error('[OPENROUTER FAIL]', {
+          console.error(`[${clientLabel} FAIL]`, {
             status: err?.status,
             message: err?.message,
             model: effectiveModel,
             apiKeySet: !!OPENROUTER_API_KEY
           });
-          throw err;
+          if (replitOpenrouter && orClient !== replitOpenrouter && (err?.status === 401 || err?.status === 403 || err?.status === 404 || err?.status === 429)) {
+            console.log(`🔄 [VVAULT Proxy] OpenRouter ${err?.status}, falling back to Replit-managed OpenRouter for ${constructId}`);
+            completion = await replitOpenrouter.chat.completions.create({
+              model: effectiveModel,
+              messages: [
+                { role: "system", content: systemPrompt },
+                ...conversationHistoryMessages,
+                { role: "user", content: openrouterUserContent }
+              ],
+              max_tokens: 2048,
+            });
+            console.log('[REPLIT OPENROUTER FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+          } else {
+            throw err;
+          }
         }
         aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
       }
@@ -3816,7 +3838,7 @@ router.post("/message", async (req, res) => {
               gptConfig = await gptManager.getGPTByCallsign(constructId);
             } catch (e) { /* ignore */ }
             
-            const providerAvailability = { openai: !!openaiClient, openrouter: !!openrouter, ollama: !!process.env.OLLAMA_HOST };
+            const providerAvailability = { openai: !!openaiClient, openrouter: !!(openrouter || replitOpenrouter), ollama: !!process.env.OLLAMA_HOST };
             let { provider: effectiveProvider, model: effectiveModel, error: modelError } = resolveModelForGPT(gptConfig, providerAvailability);
             if (modelError) throw new Error(modelError);
             
@@ -3875,33 +3897,34 @@ router.post("/message", async (req, res) => {
               const ollamaData = await ollamaResp.json();
               aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
             } else {
-              if (!openrouter) {
+              const orClient = openrouter || replitOpenrouter;
+              if (!orClient) {
                 throw new Error('OpenRouter API key is not configured. Set OPENROUTER_API_KEY in environment.');
               }
-              console.log('[OPENROUTER] Calling', { model: effectiveModel, user: req.user?.email, historyMessages: fbHistoryMessages.length });
+              const clientLabel = openrouter ? 'OpenRouter' : 'Replit OpenRouter';
+              console.log(`[${clientLabel}] Calling`, { model: effectiveModel, user: req.user?.email, historyMessages: fbHistoryMessages.length });
               try {
-                completion = await openrouter.chat.completions.create({
+                completion = await orClient.chat.completions.create({
                   model: effectiveModel,
                   messages: fbMsgs,
                   max_tokens: 2048,
                 });
-                console.log('[OPENROUTER] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+                console.log(`[${clientLabel}] Success`, { finish_reason: completion?.choices?.[0]?.finish_reason });
               } catch (err) {
-                console.error('[OPENROUTER FAIL]', {
+                console.error(`[${clientLabel} FAIL]`, {
                   status: err?.status,
                   message: err?.message,
                   model: effectiveModel,
                   apiKeySet: !!OPENROUTER_API_KEY
                 });
-                if (openaiClient && (err?.status === 401 || err?.status === 403 || err?.status === 404 || err?.status === 429)) {
-                  console.log(`🔄 [VVAULT Proxy] OpenRouter ${err?.status}, falling back to OpenAI for ${constructId}`);
-                  effectiveProvider = 'openai';
-                  completion = await openaiClient.chat.completions.create({
-                    model: 'gpt-4.1-mini',
+                if (replitOpenrouter && orClient !== replitOpenrouter && (err?.status === 401 || err?.status === 403 || err?.status === 404 || err?.status === 429)) {
+                  console.log(`🔄 [VVAULT Proxy] OpenRouter ${err?.status}, falling back to Replit-managed OpenRouter for ${constructId}`);
+                  completion = await replitOpenrouter.chat.completions.create({
+                    model: effectiveModel,
                     messages: fbMsgs,
                     max_tokens: 2048,
                   });
-                  console.log('[OPENAI FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+                  console.log('[REPLIT OPENROUTER FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
                 } else {
                   throw err;
                 }
@@ -3997,7 +4020,7 @@ router.post("/message", async (req, res) => {
           gptConfig = await gptManager.getGPTByCallsign(constructId);
         } catch (e) { /* ignore */ }
         
-        const providerAvailability = { openai: !!openaiClient, openrouter: !!openrouter, ollama: !!process.env.OLLAMA_HOST };
+        const providerAvailability = { openai: !!openaiClient, openrouter: !!(openrouter || replitOpenrouter), ollama: !!process.env.OLLAMA_HOST };
         let { provider: effectiveProvider, model: effectiveModel, error: modelError } = resolveModelForGPT(gptConfig, providerAvailability);
         if (modelError) throw new Error(modelError);
         
@@ -4056,33 +4079,34 @@ router.post("/message", async (req, res) => {
           const ollamaData = await ollamaResp.json();
           aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
         } else {
-          if (!openrouter) {
+          const orClient = openrouter || replitOpenrouter;
+          if (!orClient) {
             throw new Error('OpenRouter API key is not configured. Set OPENROUTER_API_KEY in environment.');
           }
-          console.log('[OPENROUTER] Calling', { model: effectiveModel, user: req.user?.email, historyMessages: fb2HistoryMessages.length });
+          const clientLabel = openrouter ? 'OpenRouter' : 'Replit OpenRouter';
+          console.log(`[${clientLabel}] Calling`, { model: effectiveModel, user: req.user?.email, historyMessages: fb2HistoryMessages.length });
           try {
-            completion = await openrouter.chat.completions.create({
+            completion = await orClient.chat.completions.create({
               model: effectiveModel,
               messages: fb2Msgs,
               max_tokens: 2048,
             });
-            console.log('[OPENROUTER] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+            console.log(`[${clientLabel}] Success`, { finish_reason: completion?.choices?.[0]?.finish_reason });
           } catch (err) {
-            console.error('[OPENROUTER FAIL]', {
+            console.error(`[${clientLabel} FAIL]`, {
               status: err?.status,
               message: err?.message,
               model: effectiveModel,
               apiKeySet: !!OPENROUTER_API_KEY
             });
-            if (openaiClient && (err?.status === 401 || err?.status === 403 || err?.status === 404 || err?.status === 429)) {
-              console.log(`🔄 [VVAULT Proxy] OpenRouter ${err?.status}, falling back to OpenAI for ${constructId}`);
-              effectiveProvider = 'openai';
-              completion = await openaiClient.chat.completions.create({
-                model: 'gpt-4.1-mini',
+            if (replitOpenrouter && orClient !== replitOpenrouter && (err?.status === 401 || err?.status === 403 || err?.status === 404 || err?.status === 429)) {
+              console.log(`🔄 [VVAULT Proxy] OpenRouter ${err?.status}, falling back to Replit-managed OpenRouter for ${constructId}`);
+              completion = await replitOpenrouter.chat.completions.create({
+                model: effectiveModel,
                 messages: fb2Msgs,
                 max_tokens: 2048,
               });
-              console.log('[OPENAI FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+              console.log('[REPLIT OPENROUTER FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
             } else {
               throw err;
             }
