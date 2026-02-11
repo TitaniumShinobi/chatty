@@ -260,10 +260,14 @@ router.get('/:id/files', async (req, res) => {
               const mapped = data.map(f => {
                 const meta = typeof f.metadata === 'string' ? JSON.parse(f.metadata || '{}') : (f.metadata || {});
                 const origPath = meta.original_path || f.storage_path || f.filename || '';
+                const baseName = (f.filename || '').split('/').pop() || '';
+                const isIdentityFile = origPath.includes('/identity/') ||
+                  /^(avatar|prompt|conditioning|personality|memory)\.(png|jpg|jpeg|txt|json)$/i.test(baseName) ||
+                  /^(continuity|CONTINUITY_GPT_PROMPT)/i.test(baseName);
                 let category = 'knowledge';
-                if (origPath.includes('/identity/')) category = 'identity';
-                else if (origPath.includes('/tests/')) category = 'test';
-                else if (origPath.includes('/chatgpt/')) category = 'chatgpt';
+                if (isIdentityFile) category = 'identity';
+                else if (origPath.includes('/tests/') || /^test_/i.test(baseName)) category = 'test';
+                else if (origPath.includes('/chatgpt/') || /-K1\.md$/i.test(baseName)) category = 'chatgpt';
 
                 const isImage = /\.(png|jpg|jpeg|svg|gif|webp)$/i.test(f.filename || '');
                 const mimeType = isImage
