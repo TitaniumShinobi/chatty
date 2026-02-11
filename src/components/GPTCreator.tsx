@@ -2723,42 +2723,63 @@ ALWAYS:
   const extractConfigFromConversation = (
     messages: Array<{ role: "user" | "assistant"; content: string }>,
   ) => {
-    // Enhanced extraction logic - look for patterns in the conversation
-    const fullConversation = messages
-      .map((m) => `${m.role}: ${m.content}`)
+    const assistantMessages = messages
+      .filter((m) => m.role === "assistant")
+      .map((m) => m.content)
       .join("\n");
 
-    // Extract name suggestions (more flexible patterns)
+    const cleanValue = (val: string): string => {
+      return val
+        .replace(/^\*+|\*+$/g, '')
+        .replace(/^#+\s*/, '')
+        .replace(/^[-·•]\s*/, '')
+        .replace(/^["']+|["']+$/g, '')
+        .trim();
+    };
+
     const namePatterns = [
-      /name[:\s]+["']?([^"'\n]+)["']?/i,
-      /"([^"]+)"\s*as\s*the\s*name/i,
-      /call\s+it\s+["']?([^"'\n]+)["']?/i,
-      /gpt\s+name[:\s]+["']?([^"'\n]+)["']?/i,
+      /[-•*]\s*\**Name\**\s*[:=-]\s*["']?([^"'\n,]+)["']?/i,
+      /\bName\b\s*[:=-]\s*["']?([^\n"',]{1,50})["']?/i,
     ];
 
+    let nameExtracted = false;
     for (const pattern of namePatterns) {
-      const match = fullConversation.match(pattern);
+      const match = assistantMessages.match(pattern);
       if (match && !config.name) {
-        const suggestedName = match[1].trim();
-        if (suggestedName.length > 0 && suggestedName.length < 100) {
+        const suggestedName = cleanValue(match[1]);
+        if (suggestedName.length > 0 && suggestedName.length < 50) {
           setConfig((prev) => ({ ...prev, name: suggestedName }));
+          nameExtracted = true;
           break;
         }
       }
     }
 
-    // Extract description suggestions (more flexible patterns)
+    if (!config.name && !nameExtracted) {
+      const userMessages = messages
+        .filter((m) => m.role === "user")
+        .map((m) => m.content)
+        .join("\n");
+      const userNameMatch = userMessages.match(
+        /(?:call(?:ed)?|named?)\s+(?:it|her|him|them)\s+["']?([^\s"',]{1,50})["']?/i
+      );
+      if (userNameMatch) {
+        const suggestedName = cleanValue(userNameMatch[1]);
+        if (suggestedName.length > 0 && suggestedName.length < 50) {
+          setConfig((prev) => ({ ...prev, name: suggestedName }));
+        }
+      }
+    }
+
     const descPatterns = [
-      /description[:\s]+["']?([^"'\n]+)["']?/i,
-      /it\s+should\s+["']?([^"'\n]+)["']?/i,
-      /helps?\s+users?\s+with\s+["']?([^"'\n]+)["']?/i,
-      /designed\s+to\s+["']?([^"'\n]+)["']?/i,
+      /[-•*]\s*\**Description\**\s*[:=-]\s*["']?([^"'\n]+)["']?/i,
+      /\bDescription\b\s*[:=-]\s*["']?([^\n"']{1,500})["']?/i,
     ];
 
     for (const pattern of descPatterns) {
-      const match = fullConversation.match(pattern);
+      const match = assistantMessages.match(pattern);
       if (match && !config.description) {
-        const suggestedDesc = match[1].trim();
+        const suggestedDesc = cleanValue(match[1]);
         if (suggestedDesc.length > 0 && suggestedDesc.length < 500) {
           setConfig((prev) => ({ ...prev, description: suggestedDesc }));
           break;
@@ -2766,21 +2787,18 @@ ALWAYS:
       }
     }
 
-    // Extract instruction suggestions (more flexible patterns)
-    const instructionPatterns = [
-      /instructions?[:\s]+["']?([^"'\n]+)["']?/i,
-      /should\s+["']?([^"'\n]+)["']?/i,
-      /behave\s+["']?([^"'\n]+)["']?/i,
-      /tone[:\s]+["']?([^"'\n]+)["']?/i,
+    const instrPatterns = [
+      /[-•*]\s*\**Instructions?\**\s*[:=-]\s*["']?([\s\S]+?)(?=\n\s*[-•*]\s*\**(?:Name|Description|Capabilities|Model|Conversation\s*Starters)\**\s*[:=-]|\n\n\n|$)/i,
+      /\bInstructions?\b\s*[:=-]\s*["']?([\s\S]+?)(?=\n\s*[-•*]\s*\**(?:Name|Description|Capabilities|Model|Conversation\s*Starters)\**\s*[:=-]|\n\n\n|$)/i,
     ];
 
-    for (const pattern of instructionPatterns) {
-      const match = fullConversation.match(pattern);
+    for (const pattern of instrPatterns) {
+      const match = assistantMessages.match(pattern);
       if (match && !config.instructions) {
-        const suggestedInstructions = match[1].trim();
+        const suggestedInstructions = cleanValue(match[1]);
         if (
           suggestedInstructions.length > 0 &&
-          suggestedInstructions.length < 1000
+          suggestedInstructions.length < 5000
         ) {
           setConfig((prev) => ({
             ...prev,
@@ -2802,7 +2820,7 @@ ALWAYS:
     ];
 
     for (const pattern of modelPatterns) {
-      const match = fullConversation.match(pattern);
+      const match = assistantMessages.match(pattern);
       if (match) {
         const modelName = match[1].trim();
         if (
@@ -2831,9 +2849,13 @@ ALWAYS:
       }
     }
 
-    // Extract capability suggestions
+    const fullConversation = messages
+      .map((m) => m.content)
+      .join("\n")
+      .toLowerCase();
+
     if (
-      fullConversation.toLowerCase().includes("code") &&
+      fullConversation.includes("code") &&
       config.capabilities &&
       !config.capabilities.codeInterpreter
     ) {
@@ -2849,7 +2871,7 @@ ALWAYS:
     }
 
     if (
-      fullConversation.toLowerCase().includes("web search") &&
+      fullConversation.includes("web search") &&
       config.capabilities &&
       !config.capabilities.webSearch
     ) {
@@ -2865,7 +2887,7 @@ ALWAYS:
     }
 
     if (
-      fullConversation.toLowerCase().includes("image") &&
+      fullConversation.includes("image") &&
       config.capabilities &&
       !config.capabilities.imageGeneration
     ) {
