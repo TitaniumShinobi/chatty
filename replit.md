@@ -72,6 +72,14 @@ Any update where the new content is less than half the size of what's already st
 - **File paths MUST always use the callsign, never the bare name.** Correct: `instances/katana-001/chatty/chat_with_katana-001.md`. Wrong: `instances/katana/chatty/chat_with_katana.md`.
 - The write path auto-normalizes bare names by appending `-001` if the `-NNN` suffix is missing, and logs a warning.
 
+**Construct Creation & Instance Scaffolding:**
+- When a new GPT is created via GPTCreator, Chatty calls VVAULT `POST /api/chatty/construct/create` to scaffold the full instance folder structure.
+- If VVAULT is unreachable, Chatty falls back to writing identity files directly to Supabase `vault_files` using relative paths.
+- Files created on scaffold: `instances/{callsign}/identity/prompt.txt`, `instances/{callsign}/identity/conditioning.txt`, `instances/{callsign}/identity/personality.json`, `instances/{callsign}/chatty/chat_with_{callsign}.md`.
+- All filenames in `vault_files` are RELATIVE paths (e.g., `instances/sera-001/identity/prompt.txt`). NEVER use full internal VVAULT paths.
+- A `VaultPathGuard` utility (`server/lib/vaultPathGuard.js`) validates every filename before insert/upsert, blocking any path containing `vvault/users/shard_0000` or other full internal prefixes.
+- Scaffolding code: `server/lib/constructScaffolder.js`. Wired into both `server/routes/ais.js` and `server/routes/gpts.js` POST creation routes.
+
 **Construct Seeding & Identity Hydration:**
 - Seed constructs (zen-001, katana-001, lin-001) are minimal shells: callsign, ID, models, orchestration mode only. No fabricated identity data.
 - Aurora is NOT a seed — she is only added through the GPTCreator GUI.

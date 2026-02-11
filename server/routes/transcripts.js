@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getSupabaseClient } from '../lib/supabaseClient.js';
 import { extractStartDate, extractFromPath } from '../lib/transcriptDateExtractor.js';
+import { assertValidVaultFilename } from '../lib/vaultPathGuard.js';
 
 const router = express.Router();
 
@@ -190,6 +191,8 @@ router.post('/save', async (req, res) => {
       const dateConfidence = dateResult.confidence || 0;
       
       console.log(`📅 [Transcripts] Date extraction for ${transcript.name}: ${detectedStartDate || 'null'} (${dateResult.processingTimeMs}ms, confidence: ${dateConfidence})`);
+      
+      assertValidVaultFilename(filename);
       
       // Check if file already exists
       const { data: existing } = await supabase
