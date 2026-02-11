@@ -478,32 +478,39 @@ export function TranscriptManager() {
     setSuccess(null);
 
     try {
-      let successCount = 0;
-      for (const file of stagedFiles) {
-        const response = await fetch('/api/transcripts/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            constructId: selectedGpt.constructCallsign,
-            filename: file.name,
-            content: file.content,
-            source: file.source,
-            year: file.year,
-            month: file.month
-          })
-        });
-        if (response.ok) successCount++;
+      const transcriptsPayload = stagedFiles.map(file => ({
+        name: file.name,
+        content: file.content,
+        source: file.source || transcriptSource || 'transcripts',
+        year: file.year || transcriptYear || '',
+        month: file.month || transcriptMonth || ''
+      }));
+
+      const response = await fetch('/api/transcripts/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          constructCallsign: selectedGpt.constructCallsign,
+          transcripts: transcriptsPayload
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        const savedCount = result.saved?.length || transcriptsPayload.length;
+        setStagedFiles([]);
+        setSuccess(`Uploaded ${savedCount} transcript(s) successfully`);
+        loadTranscripts(selectedGpt.constructCallsign);
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        setError(errData.error || `Upload failed (${response.status})`);
       }
       
-      setStagedFiles([]);
-      setSuccess(`Uploaded ${successCount} transcript(s) successfully`);
-      loadTranscripts(selectedGpt.constructCallsign);
-      
-      setTimeout(() => setSuccess(null), 3000);
+      setTimeout(() => setSuccess(null), 5000);
     } catch (err) {
       console.error('Failed to upload transcripts:', err);
-      setError('Failed to upload some transcripts');
+      setError('Failed to upload transcripts');
     } finally {
       setIsUploading(false);
     }
