@@ -449,22 +449,110 @@ export class UnifiedIntelligenceOrchestrator {
    */
   buildMemoryEnhancedSystemPrompt(constructId, personality, memories, userProfile, capsuleData) {
     const userName = userProfile?.displayName || 'the user';
+    const constructName = constructId.replace(/-\d+$/, '');
+    const displayName = constructName.charAt(0).toUpperCase() + constructName.slice(1);
     
-    // Get construct identity from capsule or defaults
+    // Get construct identity from capsule data (supports both real and synthetic capsules)
     let constructIdentity = '';
-    if (capsuleData?.personality_data) {
-      const pd = capsuleData.personality_data;
-      constructIdentity = `
-## Your Identity
-- Name: ${capsuleData.name || constructId}
-- Communication style: ${pd.communication_style || 'direct'}
-- Core traits: ${pd.traits ? Object.entries(pd.traits).map(([k, v]) => `${k} (${v})`).join(', ') : 'adaptive'}
+    
+    if (capsuleData) {
+      const name = capsuleData.metadata?.instance_name || capsuleData.identity?.name || displayName;
+      const description = capsuleData.identity?.description || '';
+      const instructions = capsuleData.identity?.instructions || '';
+      const conditioning = capsuleData.identity?.conditioning || '';
+      const traits = capsuleData.traits || {};
+      const pers = capsuleData.personality || {};
+      
+      constructIdentity = `## Your Identity
+- Name: ${name}
+${description ? `- Description: ${description}` : ''}
+${pers.personality_type ? `- Personality Type: ${pers.personality_type}` : ''}
+${pers.communication_style ? `- Communication Style: ${typeof pers.communication_style === 'object' ? JSON.stringify(pers.communication_style) : pers.communication_style}` : ''}
 `;
+
+      // Inject core traits
+      if (Object.keys(traits).length > 0) {
+        constructIdentity += `\n## Personality Traits\n`;
+        for (const [key, value] of Object.entries(traits)) {
+          const pct = typeof value === 'number' ? `${(value * 100).toFixed(0)}%` : value;
+          constructIdentity += `- ${key}: ${pct}\n`;
+        }
+      }
+
+      // Inject MBTI breakdown if available
+      if (pers.mbti_breakdown) {
+        const mbti = pers.mbti_breakdown;
+        constructIdentity += `\n## Cognitive Profile\n`;
+        constructIdentity += `- ${(mbti.I || 0) > (mbti.E || 0) ? 'Introverted' : 'Extraverted'} (${(Math.max(mbti.I || 0, mbti.E || 0) * 100).toFixed(0)}%)\n`;
+        constructIdentity += `- ${(mbti.N || 0) > (mbti.S || 0) ? 'Intuitive' : 'Sensing'} (${(Math.max(mbti.N || 0, mbti.S || 0) * 100).toFixed(0)}%)\n`;
+        constructIdentity += `- ${(mbti.T || 0) > (mbti.F || 0) ? 'Thinking' : 'Feeling'} (${(Math.max(mbti.T || 0, mbti.F || 0) * 100).toFixed(0)}%)\n`;
+        constructIdentity += `- ${(mbti.J || 0) > (mbti.P || 0) ? 'Judging' : 'Perceiving'} (${(Math.max(mbti.J || 0, mbti.P || 0) * 100).toFixed(0)}%)\n`;
+      }
+
+      // Inject Big Five if available
+      if (pers.big_five_traits) {
+        constructIdentity += `\n## Big Five Traits\n`;
+        for (const [trait, value] of Object.entries(pers.big_five_traits)) {
+          constructIdentity += `- ${trait}: ${typeof value === 'number' ? (value * 100).toFixed(0) + '%' : value}\n`;
+        }
+      }
+
+      // Inject behavioral instructions from conditioning
+      if (conditioning) {
+        constructIdentity += `\n## Conditioning Directives\n${conditioning}\n`;
+      }
+
+      // Inject custom instructions from prompt.json
+      if (instructions) {
+        constructIdentity += `\n## System Instructions\n${instructions}\n`;
+      }
+
+      // Inject capsule memory snapshots
+      if (capsuleData.memory) {
+        const mem = capsuleData.memory;
+        if (mem.episodic_memories?.length > 0) {
+          constructIdentity += `\n## Key Memories\n`;
+          mem.episodic_memories.slice(-5).forEach(m => {
+            constructIdentity += `- ${m}\n`;
+          });
+        }
+        if (mem.emotional_memories?.length > 0) {
+          constructIdentity += `\n## Emotional Memories\n`;
+          mem.emotional_memories.slice(-3).forEach(m => {
+            constructIdentity += `- ${m}\n`;
+          });
+        }
+      }
+
+      // Inject memory_log (legacy/simple format)
+      if (capsuleData.memory_log?.length > 0) {
+        constructIdentity += `\n## Recent Memory Log\n`;
+        capsuleData.memory_log.slice(-5).forEach(m => {
+          constructIdentity += `- ${typeof m === 'string' ? m : JSON.stringify(m)}\n`;
+        });
+      }
+
+      // Inject signatures if available
+      if (capsuleData.signatures?.linguistic_sigil) {
+        const sigil = capsuleData.signatures.linguistic_sigil;
+        if (sigil.signature_phrase) {
+          constructIdentity += `\n## Signature Style\n- Signature phrase: "${sigil.signature_phrase}"\n`;
+        }
+        if (sigil.common_phrases?.length > 0) {
+          sigil.common_phrases.forEach(p => {
+            constructIdentity += `- Common phrase: "${p}"\n`;
+          });
+        }
+      }
+
+      // Inject integration prompt if available
+      if (capsuleData.integration_prompt) {
+        constructIdentity += `\n## Identity Integration\n${capsuleData.integration_prompt}\n`;
+      }
+
     } else {
-      // Default identity based on construct ID
-      constructIdentity = `
-## Your Identity  
-- Name: ${constructId.replace(/-\d+$/, '').charAt(0).toUpperCase() + constructId.replace(/-\d+$/, '').slice(1)}
+      constructIdentity = `## Your Identity  
+- Name: ${displayName}
 - You are a conversational AI with your own personality and memories
 `;
     }
@@ -477,7 +565,7 @@ export class UnifiedIntelligenceOrchestrator {
 - Remember past conversations and reference them naturally
 `;
 
-    // Memory context section
+    // Memory context section (from HybridMemoryService/ChromaDB)
     let memoryContext = '';
     if (memories.length > 0) {
       memoryContext = `
@@ -493,6 +581,7 @@ Use these memories to inform your response. Reference past conversations natural
 ## Core Instructions
 - You are ${constructId}, speaking with ${userName}
 - Stay in character - maintain your personality consistently
+- Your capsule data defines WHO you are - embody those traits in every response
 - Reference your shared history with ${userName} when relevant
 - Be authentic, not generic or robotic
 - If asked about past conversations, draw from your memories above
@@ -632,11 +721,15 @@ Use these memories to inform your response. Reference past conversations natural
       const capsule = await this.capsuleIntegration.loadCapsule(constructId);
       
       const personality = {
-        traits: capsule?.personality_data?.traits || {},
-        patterns: capsule?.personality_data?.patterns || {},
-        communication_style: capsule?.personality_data?.communication_style || 'adaptive',
-        core_values: capsule?.personality_data?.core_values || [],
-        knowledge_domains: 'unlimited', // No domain restrictions
+        traits: capsule?.traits || {},
+        patterns: capsule?.conversation_patterns || {},
+        communication_style: capsule?.personality?.communication_style || 
+                            (typeof capsule?.personality?.personality_type === 'string' ? capsule.personality.personality_type : 'adaptive'),
+        personality_type: capsule?.personality?.personality_type || null,
+        mbti_breakdown: capsule?.personality?.mbti_breakdown || null,
+        big_five_traits: capsule?.personality?.big_five_traits || null,
+        core_values: capsule?.identity?.conditioning ? [capsule.identity.conditioning] : [],
+        knowledge_domains: 'unlimited',
         conversational_scope: 'unrestricted'
       };
 
