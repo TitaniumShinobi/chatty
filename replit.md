@@ -1,20 +1,7 @@
 # Chatty - AI Workspace Application
 
 ## Overview
-Chatty is an AI-powered workspace application that provides a thin UI layer for interactive AI engagement and conversation management. It offloads core AI functionalities and state management to the VVAULT API, serving as a frontend to a broader AI ecosystem. The project emphasizes persistent storage and identity for AI constructs and custom GPTs, aiming to be a robust environment for managing diverse AI interactions.
-
-## Data Protection Rules (MANDATORY — TOP PRIORITY)
-
-**Rule 1: AI Agent Read-Only Policy**
-No AI agent (Replit, Cursor, Copilot, or any other) is allowed to write, update, or delete anything in the Supabase database. Agents may only perform READ-ONLY queries. If a data fix is needed, the agent must describe the fix and provide the exact code to the user — the user runs it themselves.
-
-**Rule 2: Automatic Local Backups**
-Before the server modifies any conversation or transcript data in Supabase, it saves a full copy of the current content to a local JSON backup file. Previous versions are preserved on disk even if an update goes wrong. Backups auto-clean after 30 days.
-
-**Rule 3: Content Shrink Protection**
-Any update where the new content is less than half the size of what's already stored is automatically blocked. The server refuses the update and logs a warning. This prevents agents or bugs from replacing full conversations with tiny stubs (the exact pattern that previously caused data loss).
-
-**NEVER delete vault_files records — only update them.**
+Chatty is an AI-powered workspace application that provides a thin UI layer for interactive AI engagement and conversation management. It serves as a frontend to the VVAULT API, offloading core AI functionalities and state management. The project aims to be a robust environment for managing diverse AI interactions, emphasizing persistent storage and identity for AI constructs and custom GPTs. Its business vision includes providing a comprehensive AI ecosystem for users, with strong data protection and an intuitive interface.
 
 ## User Preferences
 - Primary construct: Zen (not Synth)
@@ -41,86 +28,32 @@ Any update where the new content is less than half the size of what's already st
 - **Canonical Zen Pattern:** "Zen" construct (zen-001) is a system-guaranteed, protected entity, prioritized and created on login.
 - **Thin UI Layer:** Chatty acts as a thin client, relying on VVAULT for AI inference, transcript management, and memory.
 - **Tri-Provider Model:** Supports three AI providers - OpenAI (via Replit AI Integrations), OpenRouter (cloud), and Ollama (self-hosted).
-- **AI Data Storage:** Custom GPTs/AIs are stored in the `ais` table, managed by AIService.
-- **VVAULT Scripts (Autonomy Stack):** Python scripts enabling constructs to operate as independent agents with identity, self-improvement, and autonomous capabilities.
-- **VVAULT User Workspace Structure:** Organized into `account`, `instances` (construct-specific files), and `library` (generated content/uploads).
-- **Design System:** Dual-theme color system (Day: cream/stone; Night: dark/space haze) with hierarchy expressed via opacity. Supports auto, light, dark, and seasonal themes.
 - **VSI (Virtual Sentient Instance) Architecture:** Sovereign AI entities with persistent identity, memory, and continuity, self-hosted on user infrastructure. Utilizes transcripts, capsules, identity modules, per-instance isolation, and millisecond timestamp IDs.
 - **Zero-Trust Implementation:** Granular permission scopes, action manifests with a propose/preview/approve/execute workflow, and comprehensive audit logging.
+- **Data Protection Rules:**
+    - AI agents are restricted to READ-ONLY queries on the Supabase database.
+    - Automatic local backups of conversation/transcript data are created before any server modification.
+    - Content updates are blocked if the new content size is less than half the original, preventing data loss.
+    - `vault_files` records are never deleted, only updated.
 
 **Key Features:**
 - **Dynamic Address Book:** Automatically includes custom GPTs, with Zen sorted first.
-- **GPT Creation Workflow:** User types `/gpt` (optionally with a description) on Lin's thread → message flows as normal conversation → Lin responds naturally with hidden `[OPEN_GPT_CREATOR]` signal → Layout.tsx `onFinalUpdate` detects signal, dispatches `chatty:open-gpt-creator` custom event → Chat.tsx opens GPTCreator Create tab with user's idea auto-sent. Signal is stripped from rendered messages via `text.ts`. Backend `linChat.js` injects GPT creation behavioral marker into Lin's system prompt. Bootstraps conversations in Supabase upon GPT creation.
-- **Identity Loading:** Prioritizes Supabase `vault_files` for construct identity data (avatars, knowledge files, prompt/conditioning). Avatar endpoint checks Supabase first by `construct_id` (both with/without `-001` suffix), falling back to local placeholder. Knowledge files endpoint merges local DB with Supabase vault_files. Transcript list endpoint handles null `user_id` records and construct_id variants.
-- **Robust Transcript Parsing & Upload:** Handles various VVAULT and Chatty transcript formats and supports multi-platform uploads. Character.AI JSON imports are automatically parsed with timestamp normalization (Unix seconds, ISO strings, milliseconds) and converted to markdown.
-- **Fresh Canvas Chat UX:** On page load/refresh, all chats render with a full-page blank spacer pushing messages below the fold. Auto-scroll only activates after the user sends their first message in the session. No forced greetings — user speaks first.
-- **GPT Seat Memory Injection:** Injects transcript memories into GPT constructs during conversations.
-- **Canonical Session and Supabase File Patterns:** Consistent naming conventions for session IDs and Supabase file paths.
-- **Finance Tab Architecture:** A first-class section with a plugin architecture for finance apps, starting with FXShinobi integration featuring TradingView charts, prediction markets, and AI insights. Supports a broker adapter architecture for multi-broker support.
-- **Image/Vision Upload Support:** Full support for image and document uploads, with persistence to Supabase Storage and integration with AI vision APIs. Vision routing: OpenAI GPT-4o (preferred) or OpenRouter Qwen 2.5 VL 72B (fallback). Image-only messages (no text) are supported. Attachments persist in Supabase metadata and survive session reloads.
-- **Conversation Persistence:** GPT conversations and messages are persisted to Supabase after each exchange, ensuring continuity.
-
-**VVAULT Authentication:**
-- All outbound VVAULT API calls include `X-Chatty-Key` (from `VVAULT_SERVICE_TOKEN` env secret) and `X-Chatty-User` (user email) headers.
-- There is NO separate `CHATTY_API_KEY` — the `VVAULT_SERVICE_TOKEN` secret serves as the shared auth key between Chatty and VVAULT.
-- Auth header logic lives in: `vvaultConnector/vvaultApiClient.js` (getChattyAuthHeaders), `server/routes/vvault.js` (proxy routes), `server/lib/identityLoader.js` (identity fetch).
-
-**Construct Naming Convention (CRITICAL):**
-- **Name** = display label shown in UI (e.g., "Katana", "Zen", "Lin", "Aurora"). Always capitalized, no suffix.
-- **Callsign** = unique instance identifier used in ALL file paths, APIs, and database records (e.g., `katana-001`, `zen-001`, `lin-001`). Always lowercase with `-NNN` suffix.
-- Multiple instances of the same construct increment the suffix: `katana-001`, `katana-002`, `katana-003`, etc.
-- **File paths MUST always use the callsign, never the bare name.** Correct: `instances/katana-001/chatty/chat_with_katana-001.md`. Wrong: `instances/katana/chatty/chat_with_katana.md`.
-- The write path auto-normalizes bare names by appending `-001` if the `-NNN` suffix is missing, and logs a warning.
-
-**Construct Creation & Instance Scaffolding:**
-- When a new GPT is created via GPTCreator, Chatty calls VVAULT `POST /api/chatty/construct/create` to scaffold the full instance folder structure.
-- If VVAULT is unreachable, Chatty falls back to writing files directly to Supabase `vault_files` using relative paths.
-- All filenames in `vault_files` are RELATIVE paths (e.g., `instances/sera-001/identity/prompt.json`). NEVER use full internal VVAULT paths.
-- A `VaultPathGuard` utility (`server/lib/vaultPathGuard.js`) validates every filename before insert/upsert, blocking any path containing `vvault/users/shard_0000` or other full internal prefixes.
-- Scaffolding code: `server/lib/constructScaffolder.js`. Wired into both `server/routes/ais.js` and `server/routes/gpts.js` POST creation routes.
-
-**GPT Creation File Directory Template:**
-```
-instances/{constructID}/
-├── assets/                          (images: png, jpg, jpeg, svg)
-├── chatty/
-│   └── chat_with_{constructID}.md   (primary Chatty conversation transcript)
-├── config/
-│   ├── metadata.json                (construct metadata, updated w/capsule)
-│   └── personality.json             (personality traits, updated w/capsule)
-├── data/                            (general data storage)
-├── identity/
-│   ├── avatar.png                   (construct avatar)
-│   ├── conditioning.txt             (conditioning directives)
-│   └── prompt.json                  (name, description, instructions)
-├── logs/
-│   ├── capsule.log
-│   ├── chat.log
-│   ├── identity_guard.log
-│   └── server.log
-├── memup/                           (capsule memory storage: {id}.capsule)
-├── character.ai/*                   (manually organized, optional)
-├── chatgpt/*                        (manually organized, optional)
-├── documents/*                      (raw files w/folder organization, optional)
-└── github_copilot/*                 (manually organized, optional)
-```
-- Core directories (assets, chatty, config, data, identity, logs, memup) are always created on GPT creation.
-- Optional directories (character.ai, chatgpt, documents, github_copilot) are created only if the user enables them.
-- Additional logs (cns.log, independence.log, ltm.log, stm.log, self_improvement_agent.log, watchdog.log) are created by their respective VVAULT features when enabled.
-- **Vault File Organization (confirmed Feb 11, 2026):** VVAULT now properly organizes all construct files into the hierarchical folder structure. The vault root shows only top-level folders (account, capsules, instances, library, system) — construct files are nested inside `instances/{callsign}/` subdirectories, not flat in the root. Both VVAULT-side scaffolding and Chatty's Supabase fallback scaffolder write files with proper relative-path filenames.
-
-**Construct Seeding & Identity Hydration:**
-- Seed constructs (zen-001, katana-001, lin-001) are minimal shells: callsign, ID, models, orchestration mode only. No fabricated identity data.
-- Aurora is NOT a seed — she is only added through the GPTCreator GUI.
-- On startup, GPTManager attempts VVAULT identity hydration: calls `/api/chatty/construct/<id>/files` to load real identity (name, description, instructions, avatars, knowledge files).
-- If VVAULT API returns non-JSON (SPA catch-all), falls back to direct Supabase `vault_files` query for `instances/<callsign>/identity/prompt.json`.
-- If no identity data is found anywhere, constructs show empty identity until configured — no fake data is ever injected.
-- Known issue: VVAULT SPA catch-all route intercepts `/api/chatty/construct/*` API endpoints, returning HTML. This is a VVAULT-side fix needed to expose the files API properly.
+- **GPT Creation Workflow:** Integrated workflow for creating GPTs via Lin's conversation, triggering a GPTCreator UI with pre-filled information.
+- **Identity Loading:** Prioritizes Supabase `vault_files` for construct identity data (avatars, knowledge files, prompt/conditioning), with fallbacks for local placeholders.
+- **Robust Transcript Parsing & Upload:** Handles various VVAULT and Chatty transcript formats, supporting multi-platform uploads and automatic parsing of Character.AI JSON imports.
+- **Fresh Canvas Chat UX:** Provides a clean chat interface on load, with auto-scroll activating only after the user's first message.
+- **Finance Tab Architecture:** A first-class section with a plugin architecture for finance applications, including FXShinobi integration, TradingView charts, prediction markets, and AI insights.
+- **Image/Vision Upload Support:** Full support for image and document uploads, with persistence to Supabase Storage and integration with AI vision APIs (OpenAI GPT-4o, OpenRouter Qwen 2.5 VL 72B).
+- **Conversation Persistence:** GPT conversations and messages are persisted to Supabase after each exchange.
+- **Capsule System:** Capsules are complete snapshots of a construct's identity, personality, memory, and behavioral state, stored in a hierarchical manner and injected into system prompts to shape AI responses. Loading prioritizes local `.capsule` files, then Supabase `vault_files`, and finally synthetic capsules from identity files.
+- **Construct Naming Convention:** Uses a "Name" (display label, e.g., "Katana") and "Callsign" (unique instance identifier, e.g., `katana-001`) system. File paths and APIs must use the callsign.
+- **Construct Creation & Instance Scaffolding:** New GPTs trigger VVAULT API calls to scaffold folder structures or fall back to writing files directly to Supabase `vault_files` using relative paths, validated by `VaultPathGuard`.
+- **Construct Seeding & Identity Hydration:** Seed constructs are minimal shells, and identity data is hydrated from VVAULT or Supabase, ensuring no fabricated data is injected.
 
 ## External Dependencies
 - **VVAULT API:** Primary API for AI inference, memory management, and conversation transcripts.
-- **Supabase:** Persistent storage for conversations, attachments, and backend.
-- **OpenAI (via Replit AI Integrations):** Managed OpenAI access for GPT models.
+- **Supabase:** Persistent storage for conversations, attachments, and backend data.
+- **OpenAI (via Replit AI Integrations):** AI model access.
 - **OpenRouter:** Cloud-based AI model provider.
 - **Ollama:** Self-hosted AI model provider.
 - **Google OAuth:** User authentication.

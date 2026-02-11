@@ -8,6 +8,7 @@
 
 import fs from 'fs/promises';
 import path from 'path';
+import { getSupabaseClient } from './supabaseClient.js';
 
 // VVAULT user directory structure - use env vars with local dev fallbacks
 const VVAULT_BASE = process.env.VVAULT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
@@ -60,25 +61,34 @@ export class CapsuleIntegration {
       }
       console.timeEnd(`🕐 [MEMORY-CACHE] Memory cache check for ${constructId}`);
       
-      // Cache miss - need to load from disk
+      // Cache miss - need to load from disk or Supabase
       this.cacheStats.misses++;
       this.cacheStats.totalLoads++;
-      console.log(`💾 [CapsuleIntegration] CACHE MISS for ${constructId} - loading from disk...`);
+      console.log(`💾 [CapsuleIntegration] CACHE MISS for ${constructId} - loading...`);
 
-      // Try to find the latest capsule file
+      let capsuleData = null;
+
+      // Try filesystem first (local VVAULT)
       console.time(`🕐 [FIND] Finding capsule file for ${constructId}`);
       const capsuleFile = await this.findLatestCapsule(constructId);
       console.timeEnd(`🕐 [FIND] Finding capsule file for ${constructId}`);
       
-      if (!capsuleFile) {
-        console.warn(`⚠️ [CapsuleIntegration] No capsule found for ${constructId}`);
+      if (capsuleFile) {
+        console.time(`🕐 [READ] Reading capsule file for ${constructId}`);
+        capsuleData = JSON.parse(await fs.readFile(capsuleFile, 'utf8'));
+        console.timeEnd(`🕐 [READ] Reading capsule file for ${constructId}`);
+      } else {
+        // Fallback: Load from Supabase vault_files
+        console.time(`🕐 [SUPABASE] Loading capsule from Supabase for ${constructId}`);
+        capsuleData = await this.loadCapsuleFromSupabase(constructId);
+        console.timeEnd(`🕐 [SUPABASE] Loading capsule from Supabase for ${constructId}`);
+      }
+
+      if (!capsuleData) {
+        console.warn(`⚠️ [CapsuleIntegration] No capsule found for ${constructId} (filesystem or Supabase)`);
         console.timeEnd(`🕐 [LOAD] Total capsule load for ${constructId}`);
         return null;
       }
-
-      console.time(`🕐 [READ] Reading capsule file for ${constructId}`);
-      const capsuleData = JSON.parse(await fs.readFile(capsuleFile, 'utf8'));
-      console.timeEnd(`🕐 [READ] Reading capsule file for ${constructId}`);
       
       // Load transcript data from instance directory (EXPENSIVE OPERATION)
       console.time(`🕐 [TRANSCRIPT-TOTAL] Loading transcript data for ${constructId}`);
@@ -94,7 +104,8 @@ export class CapsuleIntegration {
       const loadTime = Date.now() - startTime;
       this.cacheStats.avgLoadTime = ((this.cacheStats.avgLoadTime * (this.cacheStats.totalLoads - 1)) + loadTime) / this.cacheStats.totalLoads;
       
-      console.log(`✅ [CapsuleIntegration] Loaded capsule for ${constructId} from ${path.basename(capsuleFile)} (${loadTime}ms)`);
+      const sourceLabel = capsuleFile ? path.basename(capsuleFile) : 'Supabase';
+      console.log(`✅ [CapsuleIntegration] Loaded capsule for ${constructId} from ${sourceLabel} (${loadTime}ms)`);
       console.timeEnd(`🕐 [LOAD] Total capsule load for ${constructId}`);
       return capsuleData;
 
@@ -251,6 +262,152 @@ export class CapsuleIntegration {
 
     } catch (error) {
       console.error(`❌ [CapsuleIntegration] Error finding capsule for ${constructId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Load capsule from Supabase vault_files (Replit fallback when no local VVAULT)
+   * Searches for .capsule files in the construct's instance directory
+   */
+  async loadCapsuleFromSupabase(constructId) {
+    try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        console.log(`⚠️ [CapsuleIntegration] Supabase not available for capsule lookup`);
+        return null;
+      }
+
+      const callsign = constructId.match(/-\d+$/) ? constructId : `${constructId}-001`;
+
+      const { data, error } = await supabase
+        .from('vault_files')
+        .select('filename, content')
+        .eq('construct_id', callsign)
+        .like('filename', `%${callsign}%.capsule`)
+        .order('filename', { ascending: false })
+        .limit(1);
+
+      if (error) {
+        console.error(`❌ [CapsuleIntegration] Supabase capsule query error:`, error.message);
+        return null;
+      }
+
+      if (!data || data.length === 0) {
+        // Also try memup directory pattern
+        const { data: memupData, error: memupError } = await supabase
+          .from('vault_files')
+          .select('filename, content')
+          .eq('construct_id', callsign)
+          .like('filename', `%.capsule`)
+          .order('filename', { ascending: false })
+          .limit(1);
+
+        if (memupError || !memupData || memupData.length === 0) {
+          // Final fallback: try to build capsule from identity files (prompt.json, conditioning.txt)
+          return await this.buildCapsuleFromIdentityFiles(supabase, callsign);
+        }
+
+        try {
+          const capsuleData = JSON.parse(memupData[0].content);
+          console.log(`✅ [CapsuleIntegration] Loaded capsule from Supabase memup: ${memupData[0].filename}`);
+          return capsuleData;
+        } catch (parseErr) {
+          console.error(`❌ [CapsuleIntegration] Failed to parse capsule from Supabase:`, parseErr.message);
+          return null;
+        }
+      }
+
+      try {
+        const capsuleData = JSON.parse(data[0].content);
+        console.log(`✅ [CapsuleIntegration] Loaded capsule from Supabase: ${data[0].filename}`);
+        return capsuleData;
+      } catch (parseErr) {
+        console.error(`❌ [CapsuleIntegration] Failed to parse capsule from Supabase:`, parseErr.message);
+        return null;
+      }
+    } catch (error) {
+      console.error(`❌ [CapsuleIntegration] Supabase capsule load failed:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Build a synthetic capsule from identity files when no .capsule file exists
+   * Uses prompt.json and conditioning.txt from vault_files
+   */
+  async buildCapsuleFromIdentityFiles(supabase, callsign) {
+    try {
+      const { data: identityFiles, error } = await supabase
+        .from('vault_files')
+        .select('filename, content')
+        .eq('construct_id', callsign)
+        .or(`filename.like.%/identity/prompt.json,filename.like.%/identity/conditioning.txt,filename.like.%/config/personality.json`)
+        .limit(5);
+
+      if (error || !identityFiles || identityFiles.length === 0) {
+        console.log(`⚠️ [CapsuleIntegration] No identity files found for ${callsign} in Supabase`);
+        return null;
+      }
+
+      let promptData = null;
+      let conditioningText = '';
+      let personalityData = null;
+
+      for (const file of identityFiles) {
+        if (file.filename.endsWith('prompt.json')) {
+          try { promptData = JSON.parse(file.content); } catch {}
+        } else if (file.filename.endsWith('conditioning.txt')) {
+          conditioningText = file.content || '';
+        } else if (file.filename.endsWith('personality.json')) {
+          try { personalityData = JSON.parse(file.content); } catch {}
+        }
+      }
+
+      if (!promptData && !conditioningText) {
+        return null;
+      }
+
+      const constructName = callsign.replace(/-\d+$/, '');
+      const displayName = constructName.charAt(0).toUpperCase() + constructName.slice(1);
+
+      const syntheticCapsule = {
+        metadata: {
+          instance_name: promptData?.name || displayName,
+          uuid: callsign,
+          timestamp: new Date().toISOString(),
+          capsule_version: '1.0.0-synthetic',
+          generator: 'CapsuleIntegration-Supabase',
+          vault_source: 'Supabase'
+        },
+        traits: personalityData?.traits || {
+          creativity: 0.7,
+          persistence: 0.8,
+          empathy: 0.6,
+          curiosity: 0.7,
+          organization: 0.8
+        },
+        personality: personalityData?.personality || {
+          personality_type: 'INFJ',
+          communication_style: personalityData?.communication_style || 'adaptive'
+        },
+        memory_log: [],
+        identity: {
+          name: promptData?.name || displayName,
+          description: promptData?.description || '',
+          instructions: promptData?.instructions || '',
+          conditioning: conditioningText
+        },
+        environment: {
+          context_awareness: 0.8,
+          session_continuity: 0.9
+        }
+      };
+
+      console.log(`✅ [CapsuleIntegration] Built synthetic capsule from identity files for ${callsign}`);
+      return syntheticCapsule;
+    } catch (error) {
+      console.error(`❌ [CapsuleIntegration] Failed to build capsule from identity files:`, error.message);
       return null;
     }
   }
