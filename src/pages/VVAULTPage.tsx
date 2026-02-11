@@ -2,6 +2,7 @@ import React, { useState, useEffect, Suspense, lazy } from 'react'
 import { Database, FileText, Users, Clock, CheckCircle, AlertCircle, RefreshCw, Link2, ExternalLink, Unlink } from 'lucide-react'
 
 const TranscriptManager = lazy(() => import('../components/TranscriptManager').then(m => ({ default: m.TranscriptManager })))
+const VaultFileManager = lazy(() => import('../components/VaultFileManager').then(m => ({ default: m.VaultFileManager })))
 
 interface VVAULTStats {
   totalUsers: number
@@ -309,6 +310,13 @@ export default function VVAULTPage() {
             </div>
           </div>
         )}
+
+        {/* Vault File Manager - save/edit files directly to Supabase */}
+        <div className="rounded-lg border border-[var(--chatty-line)] p-6 mb-6" style={{ backgroundColor: 'var(--chatty-bg-sidebar)', opacity: 0.9 }}>
+          <Suspense fallback={<div className="text-center py-4" style={{ color: 'var(--chatty-text)' }}>Loading File Manager...</div>}>
+            <VaultFileManager />
+          </Suspense>
+        </div>
 
         {/* Transcript Manager - always shown since it uses Supabase directly */}
         <div className="rounded-lg border border-[var(--chatty-line)] p-6 mb-6" style={{ backgroundColor: 'var(--chatty-bg-sidebar)', opacity: 0.9 }}>
