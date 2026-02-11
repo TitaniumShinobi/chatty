@@ -1248,7 +1248,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     const uploadedFiles = e.target.files;
     if (!uploadedFiles || uploadedFiles.length === 0) return;
 
-    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB limit for text files
+    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB limit for text files
     const MAX_PDF_SIZE = 10 * 1024 * 1024; // 10MB limit for PDFs
     const MAX_ZIP_SIZE = 100 * 1024 * 1024; // 100MB limit for zip files
 
@@ -1289,7 +1289,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
               try {
                 const content = await zipEntry.async("text");
                 if (content.length > MAX_FILE_SIZE) {
-                  skippedFiles.push(`${entryName} (exceeds 5MB limit)`);
+                  skippedFiles.push(`${entryName} (exceeds 50MB limit)`);
                   continue;
                 }
                 const parsed = parseZipPath(entryName);
@@ -1325,7 +1325,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
           ["md", "txt", "rtf"].includes(ext) &&
           file.size > MAX_FILE_SIZE
         ) {
-          skippedFiles.push(`${file.name} (exceeds 5MB limit)`);
+          skippedFiles.push(`${file.name} (exceeds 50MB limit)`);
           continue;
         }
 
