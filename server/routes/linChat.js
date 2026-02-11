@@ -358,7 +358,12 @@ router.post('/generate', async (req, res) => {
       enhancedSystemPrompt = identityPrompt;
     }
     if (constructId === 'lin-001' || !constructId) {
-      const gptSignal = 'GPT CREATION: When the user asks to create or build a new GPT/AI/construct (e.g. "/gpt", "create a GPT", "build me an AI"), respond naturally acknowledging their request, then include the exact signal [OPEN_GPT_CREATOR] at the end of your response. This opens the GPT workshop. Keep your response brief and professional.';
+      const gptSignal = `GPT CREATION PROTOCOL: You have the ability to open the GPT workshop by including [OPEN_GPT_CREATOR] at the very end of your response. Use your own judgment on when to open it:
+- If the user provides detailed specs (name, description, instructions, or structured formatting), acknowledge briefly and include [OPEN_GPT_CREATOR] immediately — they're ready to build.
+- If the user's request is vague (e.g. just "/gpt" or "make me a GPT"), ask clarifying questions first. What kind of construct? What personality? What purpose? Gather enough to give them a good starting point.
+- Once you feel you have enough context from the conversation, include [OPEN_GPT_CREATOR] at the end of your response to open the workshop with their idea.
+- The signal [OPEN_GPT_CREATOR] is hidden from the user — they just see the workshop open naturally.
+- You control the pacing. Be conversational, not robotic.`;
       enhancedSystemPrompt = enhancedSystemPrompt ? `${enhancedSystemPrompt}\n\n${gptSignal}` : gptSignal;
     }
     if (systemPrompt) {
