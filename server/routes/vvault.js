@@ -3820,9 +3820,11 @@ router.post("/message", async (req, res) => {
             const { provider: effectiveProvider, model: effectiveModel, error: modelError } = resolveModelForGPT(gptConfig, providerAvailability);
             if (modelError) throw new Error(modelError);
             
-            // Load construct identity
             const identity = await loadIdentityFiles(userId, constructId);
-            const systemPrompt = identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
+            let systemPrompt = identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
+            if (constructId === 'lin-001') {
+              systemPrompt += '\n\nGPT CREATION: When the user asks to create or build a new GPT/AI/construct (e.g. "/gpt", "create a GPT", "build me an AI"), respond naturally acknowledging their request, then include the exact signal [OPEN_GPT_CREATOR] at the end of your response. This opens the GPT workshop. Keep your response brief and professional.';
+            }
             
             // Load conversation history for context
             let fbHistoryMessages = [];
@@ -3985,9 +3987,11 @@ router.post("/message", async (req, res) => {
         if (modelError) throw new Error(modelError);
         
         const identity = await loadIdentityFiles(userId, constructId);
-        const systemPrompt = identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
+        let systemPrompt = identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
+        if (constructId === 'lin-001') {
+          systemPrompt += '\n\nGPT CREATION: When the user asks to create or build a new GPT/AI/construct (e.g. "/gpt", "create a GPT", "build me an AI"), respond naturally acknowledging their request, then include the exact signal [OPEN_GPT_CREATOR] at the end of your response. This opens the GPT workshop. Keep your response brief and professional.';
+        }
         
-        // Load conversation history for context
         let fb2HistoryMessages = [];
         try {
           await loadVVAULTModules();
