@@ -3101,6 +3101,94 @@ router.get("/capsules/load", (req, res, next) => {
   }
 });
 
+// ============================================
+// Occupational Role Sync Endpoints
+// ============================================
+
+router.post("/capsules/role-sync", requireAuth, async (req, res) => {
+  const userId = validateUser(res, req.user);
+  if (!userId) return;
+
+  const { constructCallsign } = req.body;
+
+  if (!constructCallsign) {
+    return res.status(400).json({ ok: false, error: "Missing constructCallsign" });
+  }
+
+  try {
+    const { getCapsuleIntegration } = await import('../lib/capsuleIntegration.js');
+    const capsuleIntegration = getCapsuleIntegration();
+
+    let gptConfig = null;
+    try {
+      gptConfig = await gptManager.getGPTByCallsign(constructCallsign);
+    } catch (e) { /* GPT config not found — ok */ }
+
+    const result = await capsuleIntegration.syncOccupationalRole(constructCallsign, gptConfig);
+
+    res.json({
+      ok: true,
+      ...result
+    });
+  } catch (error) {
+    console.error("❌ [VVAULT API] Role sync failed:", error);
+    res.status(500).json({ ok: false, error: "Role sync failed", details: error.message });
+  }
+});
+
+router.post("/capsules/role-sync-all", requireAuth, async (req, res) => {
+  const userId = validateUser(res, req.user);
+  if (!userId) return;
+
+  try {
+    const { getCapsuleIntegration } = await import('../lib/capsuleIntegration.js');
+    const capsuleIntegration = getCapsuleIntegration();
+
+    const allGPTs = await gptManager.getAllGPTs(userId) || [];
+    const result = await capsuleIntegration.syncAllRoles(allGPTs);
+
+    res.json({
+      ok: true,
+      ...result
+    });
+  } catch (error) {
+    console.error("❌ [VVAULT API] Bulk role sync failed:", error);
+    res.status(500).json({ ok: false, error: "Bulk role sync failed", details: error.message });
+  }
+});
+
+router.get("/capsules/role-history", requireAuth, async (req, res) => {
+  const userId = validateUser(res, req.user);
+  if (!userId) return;
+
+  const { constructCallsign } = req.query;
+
+  if (!constructCallsign) {
+    return res.status(400).json({ ok: false, error: "Missing constructCallsign" });
+  }
+
+  try {
+    const { getCapsuleIntegration } = await import('../lib/capsuleIntegration.js');
+    const capsuleIntegration = getCapsuleIntegration();
+
+    const capsuleData = await capsuleIntegration.loadCapsule(constructCallsign);
+    const roleHistory = capsuleData?.role_history || [];
+    const currentRole = capsuleData?.identity?.occupationalRole
+      || capsuleData?.metadata?.occupationalRole
+      || null;
+
+    res.json({
+      ok: true,
+      constructCallsign,
+      currentRole,
+      history: roleHistory
+    });
+  } catch (error) {
+    console.error("❌ [VVAULT API] Role history fetch failed:", error);
+    res.status(500).json({ ok: false, error: "Role history fetch failed", details: error.message });
+  }
+});
+
 // Query brevity-optimized memories
 router.get("/brevity/memories", requireAuth, async (req, res) => {
   const userId = validateUser(res, req.user);
