@@ -502,6 +502,7 @@ export function TranscriptManager() {
         setStagedFiles([]);
         setSuccess(`Uploaded ${savedCount} transcript(s) successfully`);
         loadTranscripts(selectedGpt.constructCallsign);
+        window.dispatchEvent(new Event('vault-files-changed'));
       } else {
         const errData = await response.json().catch(() => ({}));
         setError(errData.error || `Upload failed (${response.status})`);

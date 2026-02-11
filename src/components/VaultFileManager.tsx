@@ -51,6 +51,16 @@ export function VaultFileManager() {
     }
   }, [selectedConstruct]);
 
+  useEffect(() => {
+    const handleVaultRefresh = () => {
+      if (selectedConstruct) {
+        fetchFiles();
+      }
+    };
+    window.addEventListener('vault-files-changed', handleVaultRefresh);
+    return () => window.removeEventListener('vault-files-changed', handleVaultRefresh);
+  }, [selectedConstruct]);
+
   const fetchConstructs = async () => {
     try {
       const response = await fetch('/api/ais', { credentials: 'include' });
