@@ -1340,9 +1340,249 @@ export class CapsuleIntegration {
   /**
    * Clear capsule cache
    */
-  clearCache() {
+  clearCapsuleCache() {
     this.capsuleCache.clear();
     console.log(`🧹 [CapsuleIntegration] Cache cleared`);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // OCCUPATIONAL ROLE SYNC SYSTEM
+  // Detects and commits changes to construct occupational roles
+  // (e.g., ambassador, strategist, librarian)
+  // ═══════════════════════════════════════════════════════════════
+
+  static KNOWN_ROLES = [
+    'ambassador', 'strategist', 'librarian', 'architect', 'guardian',
+    'oracle', 'sentinel', 'harbinger', 'mediator', 'scribe',
+    'curator', 'navigator', 'enforcer', 'counselor', 'analyst'
+  ];
+
+  static DEFAULT_FALLBACK_ROLE = 'general';
+
+  resolveOccupationalRole(constructId, gptConfig, capsuleData) {
+    const sources = [];
+
+    if (gptConfig?.occupationalRole) {
+      sources.push({ source: 'gptConfig', role: gptConfig.occupationalRole });
+    }
+
+    if (capsuleData?.identity?.occupationalRole) {
+      sources.push({ source: 'capsule.identity', role: capsuleData.identity.occupationalRole });
+    }
+
+    if (capsuleData?.metadata?.occupationalRole) {
+      sources.push({ source: 'capsule.metadata', role: capsuleData.metadata.occupationalRole });
+    }
+
+    if (gptConfig?.instructions) {
+      const inferred = this.inferRoleFromInstructions(gptConfig.instructions);
+      if (inferred) {
+        sources.push({ source: 'instructions_inferred', role: inferred });
+      }
+    }
+
+    if (capsuleData?.identity?.conditioning) {
+      const inferred = this.inferRoleFromInstructions(capsuleData.identity.conditioning);
+      if (inferred) {
+        sources.push({ source: 'conditioning_inferred', role: inferred });
+      }
+    }
+
+    if (sources.length === 0) {
+      return { role: CapsuleIntegration.DEFAULT_FALLBACK_ROLE, source: 'fallback', confidence: 'low' };
+    }
+
+    const explicit = sources.find(s => s.source === 'gptConfig' || s.source === 'capsule.identity');
+    if (explicit) {
+      return { role: explicit.role.toLowerCase().trim(), source: explicit.source, confidence: 'high' };
+    }
+
+    return { role: sources[0].role.toLowerCase().trim(), source: sources[0].source, confidence: 'medium' };
+  }
+
+  inferRoleFromInstructions(text) {
+    if (!text) return null;
+    const lower = text.toLowerCase();
+    for (const role of CapsuleIntegration.KNOWN_ROLES) {
+      const patterns = [
+        new RegExp(`\\brole\\b[^.]{0,30}\\b${role}\\b`, 'i'),
+        new RegExp(`\\b${role}\\b[^.]{0,20}\\brole\\b`, 'i'),
+        new RegExp(`you are (?:a |an |the )?${role}`, 'i'),
+        new RegExp(`acts? as (?:a |an |the )?${role}`, 'i'),
+        new RegExp(`serves? as (?:a |an |the )?${role}`, 'i'),
+        new RegExp(`occupational[_\\s]?role[:\\s]+${role}`, 'i')
+      ];
+      if (patterns.some(p => p.test(lower))) return role;
+    }
+    return null;
+  }
+
+  async syncOccupationalRole(constructId, gptConfig = null) {
+    const timestamp = new Date().toISOString();
+    const result = {
+      constructId,
+      timestamp,
+      changed: false,
+      previousRole: null,
+      newRole: null,
+      source: null,
+      confidence: null,
+      log: null
+    };
+
+    try {
+      const capsuleData = await this.loadCapsule(constructId);
+      if (!capsuleData) {
+        console.warn(`⚠️ [RoleSync] No capsule found for ${constructId}, creating stub role entry`);
+        result.newRole = CapsuleIntegration.DEFAULT_FALLBACK_ROLE;
+        result.source = 'fallback';
+        result.confidence = 'low';
+        result.log = `[${timestamp}] ${constructId}: No capsule found. Assigned fallback role "${result.newRole}".`;
+        return result;
+      }
+
+      const storedRole = capsuleData.identity?.occupationalRole
+        || capsuleData.metadata?.occupationalRole
+        || null;
+
+      const resolved = this.resolveOccupationalRole(constructId, gptConfig, capsuleData);
+
+      result.previousRole = storedRole;
+      result.newRole = resolved.role;
+      result.source = resolved.source;
+      result.confidence = resolved.confidence;
+
+      if (storedRole === resolved.role) {
+        result.log = `[${timestamp}] ${constructId}: Role unchanged ("${storedRole}"). No update needed.`;
+        console.log(`✅ [RoleSync] ${constructId} role unchanged: "${storedRole}"`);
+        return result;
+      }
+
+      result.changed = true;
+
+      capsuleData.identity = capsuleData.identity || {};
+      capsuleData.identity.occupationalRole = resolved.role;
+
+      capsuleData.metadata = capsuleData.metadata || {};
+      capsuleData.metadata.occupationalRole = resolved.role;
+
+      capsuleData.role_history = capsuleData.role_history || [];
+      const historyEntry = {
+        timestamp,
+        previousRole: storedRole || 'undefined',
+        newRole: resolved.role,
+        source: resolved.source,
+        confidence: resolved.confidence
+      };
+      capsuleData.role_history.push(historyEntry);
+
+      if (capsuleData.role_history.length > 50) {
+        capsuleData.role_history = capsuleData.role_history.slice(-50);
+      }
+
+      capsuleData.metadata.timestamp = timestamp;
+      capsuleData.metadata.last_role_sync = timestamp;
+
+      await this.commitCapsuleRoleUpdate(constructId, capsuleData);
+
+      if (this.memoryCache.has(constructId)) {
+        this.memoryCache.delete(constructId);
+        console.log(`🗑️ [RoleSync] Invalidated cache for ${constructId} after role update`);
+      }
+
+      const mergeNote = storedRole && resolved.role !== CapsuleIntegration.DEFAULT_FALLBACK_ROLE
+        ? ` (merged from "${storedRole}" → "${resolved.role}")`
+        : '';
+      result.log = `[${timestamp}] ${constructId}: Role updated from "${storedRole || 'undefined'}" to "${resolved.role}" (source: ${resolved.source}, confidence: ${resolved.confidence})${mergeNote}`;
+
+      console.log(`🔄 [RoleSync] ${result.log}`);
+      return result;
+
+    } catch (error) {
+      console.error(`❌ [RoleSync] Failed to sync role for ${constructId}:`, error.message);
+      result.log = `[${timestamp}] ${constructId}: Role sync FAILED — ${error.message}`;
+      return result;
+    }
+  }
+
+  async commitCapsuleRoleUpdate(constructId, capsuleData) {
+    const supabase = getSupabaseClient();
+
+    try {
+      const instanceDir = path.join(USER_INSTANCES_DIR, constructId, 'identity');
+      const capsuleFile = path.join(instanceDir, `${constructId}.capsule`);
+      await fs.mkdir(instanceDir, { recursive: true });
+      await fs.writeFile(capsuleFile, JSON.stringify(capsuleData, null, 2), 'utf8');
+      console.log(`💾 [RoleSync] Committed capsule to filesystem: ${capsuleFile}`);
+    } catch (fsErr) {
+      console.warn(`⚠️ [RoleSync] Filesystem write skipped (Replit mode): ${fsErr.message}`);
+    }
+
+    if (supabase) {
+      try {
+        const callsign = constructId.match(/-\d+$/) ? constructId : `${constructId}-001`;
+        const filename = `instances/${callsign}/identity/${callsign}.capsule`;
+
+        const { data: existing } = await supabase
+          .from('vault_files')
+          .select('id')
+          .eq('construct_id', callsign)
+          .like('filename', `%${callsign}.capsule`)
+          .limit(1);
+
+        if (existing && existing.length > 0) {
+          await supabase
+            .from('vault_files')
+            .update({
+              content: JSON.stringify(capsuleData, null, 2),
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', existing[0].id);
+          console.log(`💾 [RoleSync] Updated capsule in Supabase vault_files: ${existing[0].id}`);
+        } else {
+          console.log(`⚠️ [RoleSync] No existing Supabase capsule record for ${callsign} — skipping remote update`);
+        }
+      } catch (sbErr) {
+        console.warn(`⚠️ [RoleSync] Supabase commit failed:`, sbErr.message);
+      }
+    }
+  }
+
+  async syncAllRoles(gptConfigs = []) {
+    const timestamp = new Date().toISOString();
+    console.log(`🔄 [RoleSync] Starting bulk role sync at ${timestamp}...`);
+
+    const constructIds = gptConfigs.length > 0
+      ? gptConfigs.map(g => g.construct_callsign || g.constructCallsign).filter(Boolean)
+      : Array.from(this.memoryCache.keys());
+
+    if (constructIds.length === 0) {
+      console.log(`⚠️ [RoleSync] No constructs to sync`);
+      return { timestamp, results: [], summary: 'No constructs found' };
+    }
+
+    const results = [];
+    for (const cid of constructIds) {
+      const gptConfig = gptConfigs.find(g =>
+        (g.construct_callsign || g.constructCallsign) === cid
+      ) || null;
+      const result = await this.syncOccupationalRole(cid, gptConfig);
+      results.push(result);
+    }
+
+    const changed = results.filter(r => r.changed);
+    const summary = `Synced ${results.length} constructs: ${changed.length} role(s) updated, ${results.length - changed.length} unchanged.`;
+    console.log(`✅ [RoleSync] ${summary}`);
+
+    return { timestamp, results, summary };
+  }
+
+  getRoleHistory(constructId) {
+    const cached = this.memoryCache.get(constructId);
+    if (cached?.capsule?.role_history) {
+      return cached.capsule.role_history;
+    }
+    return [];
   }
 }
 
