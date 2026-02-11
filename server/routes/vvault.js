@@ -4192,37 +4192,8 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               }
             }
             
-            try {
-              await loadVVAULTModules();
-              const constructTitle = constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase());
-              await writeTranscript({
-                userId,
-                userEmail: req.user?.email,
-                sessionId: effectiveSessionId,
-                timestamp: new Date().toISOString(),
-                role: 'user',
-                content: message,
-                title: constructTitle,
-                constructId,
-                constructName: constructTitle,
-                constructCallsign: constructId
-              });
-              await writeTranscript({
-                userId,
-                userEmail: req.user?.email,
-                sessionId: effectiveSessionId,
-                timestamp: new Date().toISOString(),
-                role: 'assistant',
-                content: aiResponse,
-                title: constructTitle,
-                constructId,
-                constructName: constructTitle,
-                constructCallsign: constructId
-              });
-              console.log(`✅ [VVAULT Proxy] Persisted fallback messages to Supabase for ${constructId}`);
-            } catch (persistErr) {
-              console.warn(`⚠️ [VVAULT Proxy] Failed to persist fallback messages:`, persistErr.message);
-            }
+            // NOTE: Frontend (Layout.tsx) handles message persistence via conversationManager.addMessageToConversation()
+            // Do NOT writeTranscript here — it causes duplicate messages in the database and UI
             
             return res.json({
               success: true,
@@ -4485,37 +4456,8 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           }
         }
         
-        try {
-          await loadVVAULTModules();
-          const constructTitle = constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase());
-          await writeTranscript({
-            userId,
-            userEmail: req.user?.email,
-            sessionId: effectiveSessionId,
-            timestamp: new Date().toISOString(),
-            role: 'user',
-            content: message,
-            title: constructTitle,
-            constructId,
-            constructName: constructTitle,
-            constructCallsign: constructId
-          });
-          await writeTranscript({
-            userId,
-            userEmail: req.user?.email,
-            sessionId: effectiveSessionId,
-            timestamp: new Date().toISOString(),
-            role: 'assistant',
-            content: aiResponse,
-            title: constructTitle,
-            constructId,
-            constructName: constructTitle,
-            constructCallsign: constructId
-          });
-          console.log(`✅ [VVAULT Proxy] Persisted fallback2 messages to Supabase for ${constructId}`);
-        } catch (persistErr) {
-          console.warn(`⚠️ [VVAULT Proxy] Failed to persist fallback2 messages:`, persistErr.message);
-        }
+        // NOTE: Frontend (Layout.tsx) handles message persistence via conversationManager.addMessageToConversation()
+        // Do NOT writeTranscript here — it causes duplicate messages in the database and UI
         
         return res.json({
           success: true,
