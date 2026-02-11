@@ -3975,12 +3975,31 @@ CRITICAL: Do NOT say "Sera GPT is now live" or pretend to create it. You are NOT
               const lookupId = req.user?.email || userId;
               const fbConvos = readConversations ? await readConversations(lookupId, constructId) : null;
               if (fbConvos?.length > 0) {
-                const fbMessages = fbConvos[0].messages || [];
-                const fbRecent = fbMessages.slice(-20);
-                fbHistoryMessages = fbRecent
-                  .filter(m => (m.role === 'user' || m.role === 'assistant') && m.content && !m.isDateHeader)
-                  .map(m => ({ role: m.role, content: m.content }));
-                console.log(`📚 [VVAULT Proxy] Fallback loaded ${fbHistoryMessages.length} history messages for ${constructId}`);
+                const targetConvo = fbConvos.find(c => 
+                  c.constructId === constructId || 
+                  c.constructCallsign === constructId ||
+                  c.sessionId?.includes(constructId)
+                ) || fbConvos[0];
+                
+                const fbMessages = targetConvo.messages || [];
+                console.log(`📚 [VVAULT Proxy] Found conversation for ${constructId}: "${targetConvo.title}" with ${fbMessages.length} total messages (from ${fbConvos.length} conversations returned)`);
+                
+                const validMessages = fbMessages.filter(m => 
+                  (m.role === 'user' || m.role === 'assistant') && m.content && !m.isDateHeader
+                );
+                
+                const fbRecent = validMessages.slice(-40);
+                fbHistoryMessages = fbRecent.map(m => ({ role: m.role, content: m.content }));
+                console.log(`📚 [VVAULT Proxy] Loaded ${fbHistoryMessages.length} history messages for ${constructId} (filtered from ${validMessages.length} valid messages)`);
+                
+                if (fbHistoryMessages.length > 0) {
+                  systemPrompt += `\n\n## Conversation Continuity
+You have an ongoing relationship with this user. The conversation history below represents your prior interactions. 
+Reference past exchanges naturally. Remember what the user told you. Maintain emotional and contextual continuity.
+Do NOT treat this as a first meeting if there is conversation history.`;
+                }
+              } else {
+                console.log(`⚠️ [VVAULT Proxy] No conversations found for ${constructId} with lookupId: ${lookupId}`);
               }
             } catch (histErr) {
               console.warn(`⚠️ [VVAULT Proxy] Could not load fallback history:`, histErr.message);
@@ -4177,6 +4196,53 @@ CRITICAL: Do NOT say "Sera GPT is now live" or pretend to create it. You are NOT
         
         const identity = await loadIdentityFiles(userId, constructId);
         let systemPrompt = identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
+        
+        // Load capsule data for this fallback path too
+        try {
+          const { getCapsuleIntegration } = await import('../lib/capsuleIntegration.js');
+          const capsuleIntegration = getCapsuleIntegration();
+          const capsuleData = await capsuleIntegration.loadCapsule(constructId);
+          if (capsuleData) {
+            const constructName = constructId.replace(/-\d+$/, '');
+            const displayName = constructName.charAt(0).toUpperCase() + constructName.slice(1);
+            const name = capsuleData.metadata?.instance_name || capsuleData.identity?.name || displayName;
+            const traits = capsuleData.traits || {};
+            const pers = capsuleData.personality || {};
+            const conditioning = capsuleData.identity?.conditioning || '';
+            const instructions = capsuleData.identity?.instructions || '';
+            let capsulePrompt = `\n\n## Capsule Identity (${name})`;
+            if (Object.keys(traits).length > 0) {
+              capsulePrompt += `\n### Personality Traits`;
+              for (const [key, value] of Object.entries(traits)) {
+                const pct = typeof value === 'number' ? `${(value * 100).toFixed(0)}%` : value;
+                capsulePrompt += `\n- ${key}: ${pct}`;
+              }
+            }
+            if (pers.personality_type) capsulePrompt += `\n### Cognitive Profile\n- Type: ${pers.personality_type}`;
+            if (pers.big_five_traits) {
+              capsulePrompt += `\n### Big Five`;
+              for (const [trait, value] of Object.entries(pers.big_five_traits)) {
+                capsulePrompt += `\n- ${trait}: ${typeof value === 'number' ? (value * 100).toFixed(0) + '%' : value}`;
+              }
+            }
+            if (conditioning) capsulePrompt += `\n### Conditioning Directives\n${conditioning}`;
+            if (instructions && !systemPrompt.includes(instructions)) capsulePrompt += `\n### Behavioral Instructions\n${instructions}`;
+            if (capsuleData.memory?.episodic_memories?.length > 0) {
+              capsulePrompt += `\n### Key Memories`;
+              capsuleData.memory.episodic_memories.slice(-5).forEach(m => { capsulePrompt += `\n- ${m}`; });
+            }
+            if (capsuleData.memory_log?.length > 0) {
+              capsulePrompt += `\n### Recent Memory Log`;
+              capsuleData.memory_log.slice(-5).forEach(m => { capsulePrompt += `\n- ${typeof m === 'string' ? m : JSON.stringify(m)}`; });
+            }
+            capsulePrompt += `\n\nYou MUST embody these traits and personality in every response. Stay in character.`;
+            systemPrompt += capsulePrompt;
+            console.log(`✅ [VVAULT Proxy] Fallback2 capsule injected for ${constructId}`);
+          }
+        } catch (capsuleErr) {
+          console.warn(`⚠️ [VVAULT Proxy] Fallback2 capsule load failed for ${constructId}:`, capsuleErr.message);
+        }
+        
         if (constructId === 'lin-001') {
           const userMsg2 = (message || '').toLowerCase();
           const hasGptCommand2 = userMsg2.includes('/gpt') || userMsg2.includes('create a gpt') || userMsg2.includes('make a gpt') || userMsg2.includes('new gpt') || userMsg2.includes('build a gpt');
@@ -4204,12 +4270,29 @@ CRITICAL: Do NOT say the GPT is "live" or pretend to create it. You are NOT crea
           const lookupId = req.user?.email || userId;
           const fb2Convos = readConversations ? await readConversations(lookupId, constructId) : null;
           if (fb2Convos?.length > 0) {
-            const fb2Messages = fb2Convos[0].messages || [];
-            const fb2Recent = fb2Messages.slice(-20);
-            fb2HistoryMessages = fb2Recent
-              .filter(m => (m.role === 'user' || m.role === 'assistant') && m.content && !m.isDateHeader)
-              .map(m => ({ role: m.role, content: m.content }));
+            const targetConvo2 = fb2Convos.find(c => 
+              c.constructId === constructId || 
+              c.constructCallsign === constructId ||
+              c.sessionId?.includes(constructId)
+            ) || fb2Convos[0];
+            
+            const fb2Messages = targetConvo2.messages || [];
+            console.log(`📚 [VVAULT Proxy] Fallback2 found conversation for ${constructId}: "${targetConvo2.title}" with ${fb2Messages.length} total messages`);
+            
+            const validMessages2 = fb2Messages.filter(m => 
+              (m.role === 'user' || m.role === 'assistant') && m.content && !m.isDateHeader
+            );
+            
+            const fb2Recent = validMessages2.slice(-40);
+            fb2HistoryMessages = fb2Recent.map(m => ({ role: m.role, content: m.content }));
             console.log(`📚 [VVAULT Proxy] Fallback2 loaded ${fb2HistoryMessages.length} history messages for ${constructId}`);
+            
+            if (fb2HistoryMessages.length > 0) {
+              systemPrompt += `\n\n## Conversation Continuity
+You have an ongoing relationship with this user. The conversation history below represents your prior interactions. 
+Reference past exchanges naturally. Remember what the user told you. Maintain emotional and contextual continuity.
+Do NOT treat this as a first meeting if there is conversation history.`;
+            }
           }
         } catch (histErr) {
           console.warn(`⚠️ [VVAULT Proxy] Could not load fallback2 history:`, histErr.message);
