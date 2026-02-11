@@ -390,8 +390,10 @@ router.post('/generate', async (req, res) => {
     let response;
     
     if (provider === 'openrouter') {
+      let orSuccess = false;
       try {
         response = await callOpenRouter(model, messages);
+        orSuccess = true;
       } catch (err) {
         const errStatus = err?.status || err?.response?.status || err?.error?.status;
         const is429 = errStatus === 429 || err.message?.includes('429');
@@ -399,13 +401,46 @@ router.post('/generate', async (req, res) => {
         if (is429 && isFreeModel) {
           const fallbackModel = DEFAULT_OPENROUTER_MODEL;
           console.log(`⚠️ [Lin Chat] Free model ${model} rate-limited (429), falling back to ${fallbackModel}`);
-          response = await callOpenRouter(fallbackModel, messages);
+          try {
+            response = await callOpenRouter(fallbackModel, messages);
+            orSuccess = true;
+          } catch (err2) {
+            console.error(`❌ [Lin Chat] OpenRouter fallback model also failed:`, err2.message);
+          }
         } else {
-          throw err;
+          console.error(`❌ [Lin Chat] OpenRouter failed:`, err.message);
         }
       }
+      if (!orSuccess) {
+        if (openaiDirect) {
+          console.log(`🔄 [Lin Chat] All OpenRouter failed, trying OpenAI direct for ${seat} seat`);
+          try {
+            const completion = await openaiDirect.chat.completions.create({
+              model: 'gpt-4.1-mini',
+              messages,
+              max_tokens: 2048,
+            });
+            response = completion.choices[0]?.message?.content || '';
+            console.log(`✅ [Lin Chat] OpenAI direct fallback success (${response.length} chars)`);
+          } catch (oaiErr) {
+            console.error(`❌ [Lin Chat] OpenAI direct also failed:`, oaiErr.message);
+            throw oaiErr;
+          }
+        } else {
+          throw new Error('OpenRouter failed and no OpenAI fallback available');
+        }
+      }
+    } else if (provider === 'openai') {
+      if (!openaiDirect) {
+        return res.status(503).json({ error: 'OpenAI not configured', details: 'Set OPENAI_API_KEY environment variable.' });
+      }
+      const completion = await openaiDirect.chat.completions.create({
+        model: model || 'gpt-4.1-mini',
+        messages,
+        max_tokens: 2048,
+      });
+      response = completion.choices[0]?.message?.content || '';
     } else if (provider === 'ollama') {
-      // Check if Ollama is configured
       if (!process.env.OLLAMA_HOST) {
         return res.status(503).json({
           error: 'Ollama not configured',
