@@ -137,20 +137,19 @@ router.post('/save', async (req, res) => {
       }
       
       // VVAULT hierarchical path format:
-      // - With organization: /vvault/users/shard_0000/{userId}/instances/{constructId}/{source}/{year}/{month}/{filename}
-      // - Without organization: /vvault/users/shard_0000/{userId}/instances/{constructId}/transcripts/{filename}
-      // - From zip: uses transcript.path directly (preserves original directory structure)
+      // Filename uses RELATIVE paths rooted at instances/{callsign}/
+      // The user_id column links to the user; construct_id links to the construct.
+      // NEVER use full internal VVAULT paths (vvault/users/shard_0000/...) as filenames.
+      // Correct: instances/sera-001/transcripts/chat.txt
+      // Wrong:   vvault/users/shard_0000/devon_woodson_.../instances/sera-001/transcripts/chat.txt
       
-      // Parse source/year/month from zip path or use provided values
       let transcriptSource = transcript.source || 'transcripts';
       let transcriptYear = transcript.year || '';
       let transcriptMonth = transcript.month || '';
       
       let filename;
       
-      // If transcript has a path from zip extraction, parse and use it
       if (transcript.path && transcript.path.includes('/')) {
-        // Parse source/year/month from zip path for metadata
         const zipParts = transcript.path.split('/').filter(p => p && !p.startsWith('.'));
         const months = ['january', 'february', 'march', 'april', 'may', 'june', 
                         'july', 'august', 'september', 'october', 'november', 'december'];
@@ -161,7 +160,6 @@ router.post('/save', async (req, res) => {
           } else if (months.includes(part.toLowerCase())) {
             transcriptMonth = part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
           } else if (!transcriptSource || transcriptSource === 'transcripts') {
-            // First non-year, non-month segment is likely the platform
             const normalizedPart = part.toLowerCase().replace(/\s+/g, '_');
             if (['chatgpt', 'gemini', 'grok', 'copilot', 'claude', 'chai', 
                  'character.ai', 'deepseek', 'codex', 'github_copilot'].includes(normalizedPart)) {
@@ -172,13 +170,9 @@ router.post('/save', async (req, res) => {
           }
         }
         
-        // Preserve the zip directory structure
-        filename = `vvault/users/shard_0000/${userIdentifier}/instances/${constructCallsign}/${transcript.path}`;
+        filename = `instances/${constructCallsign}/${transcript.path}`;
       } else {
-        // Build hierarchical path from dropdowns
         let pathParts = [
-          'vvault/users/shard_0000',
-          userIdentifier,
           'instances',
           constructCallsign,
           transcriptSource
@@ -436,7 +430,8 @@ router.get('/list/:constructCallsign', async (req, res) => {
 
         // If metadata missing, parse from path
         if (!source || source === 'transcripts') {
-          // Path format: vvault/users/shard_0000/{userId}/instances/{constructId}/{source}/{year?}/{month?}/{filename}
+          // Path format: instances/{constructCallsign}/{source}/{year?}/{month?}/{filename}
+          // Legacy format: vvault/users/shard_0000/{userId}/instances/{constructId}/{source}/...
           const pathParts = f.filename.split('/');
           const constructIdx = pathParts.indexOf('instances');
           if (constructIdx >= 0 && pathParts.length > constructIdx + 2) {
