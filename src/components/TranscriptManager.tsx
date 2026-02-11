@@ -60,6 +60,102 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
+function parseCharacterAIJson(jsonString: string, filename: string): TranscriptFile[] | null {
+  try {
+    const data = JSON.parse(jsonString);
+
+    if (data.histories && Array.isArray(data.histories)) {
+      const results: TranscriptFile[] = [];
+      for (const history of data.histories) {
+        const msgs = history.msgs || history.messages || [];
+        if (msgs.length === 0) continue;
+        const md = convertCAIMessagesToMarkdown(msgs, data.character_name || data.name || 'Character');
+        const firstTs = getMessageTimestamp(msgs[0]);
+        const dateInfo = extractDateFromTimestamp(firstTs);
+        results.push({
+          id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          name: filename.replace(/\.json$/i, '') + `_chat_${results.length + 1}.md`,
+          content: md,
+          source: 'character_ai',
+          year: dateInfo.year,
+          month: dateInfo.month,
+        });
+      }
+      return results.length > 0 ? results : null;
+    }
+
+    if (data.messages && Array.isArray(data.messages)) {
+      const md = convertCAIMessagesToMarkdown(data.messages, data.character_name || data.name || 'Character');
+      const firstTs = getMessageTimestamp(data.messages[0]);
+      const dateInfo = extractDateFromTimestamp(firstTs);
+      return [{
+        id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        name: filename.replace(/\.json$/i, '.md'),
+        content: md,
+        source: 'character_ai',
+        year: dateInfo.year,
+        month: dateInfo.month,
+      }];
+    }
+
+    if (data.chat && Array.isArray(data.chat)) {
+      const md = convertCAIMessagesToMarkdown(data.chat, data.character_name || data.name || 'Character');
+      const firstTs = getMessageTimestamp(data.chat[0]);
+      const dateInfo = extractDateFromTimestamp(firstTs);
+      return [{
+        id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        name: filename.replace(/\.json$/i, '.md'),
+        content: md,
+        source: 'character_ai',
+        year: dateInfo.year,
+        month: dateInfo.month,
+      }];
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeTimestamp(ts: any): Date | null {
+  if (!ts) return null;
+  if (typeof ts === 'number') {
+    const d = ts < 1e12 ? new Date(ts * 1000) : new Date(ts);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(ts);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function getMessageTimestamp(msg: any): any {
+  return msg.created_at || msg.create_time || msg.timestamp || msg.date || msg.sent_at || null;
+}
+
+function convertCAIMessagesToMarkdown(messages: any[], characterName: string): string {
+  const lines: string[] = [`# Character.AI Transcript — ${characterName}\n`];
+
+  for (const msg of messages) {
+    const role = msg.author?.name || msg.src?.name || msg.name || (msg.is_human || msg.role === 'user' ? 'User' : characterName);
+    const text = msg.text || msg.content || msg.message || '';
+    const ts = getMessageTimestamp(msg);
+    const d = normalizeTimestamp(ts);
+    const tsLabel = d ? ` _(${d.toLocaleString()})_` : '';
+    lines.push(`**${role}**${tsLabel}:\n${text}\n`);
+  }
+
+  return lines.join('\n');
+}
+
+function extractDateFromTimestamp(ts: any): { year: string; month: string } {
+  const d = normalizeTimestamp(ts);
+  if (!d) return { year: '', month: '' };
+  return {
+    year: String(d.getFullYear()),
+    month: ['January','February','March','April','May','June','July','August','September','October','November','December'][d.getMonth()],
+  };
+}
+
 export function TranscriptManager() {
   const [gpts, setGpts] = useState<GPT[]>([]);
   const [selectedGpt, setSelectedGpt] = useState<GPT | null>(null);
@@ -146,7 +242,7 @@ export function TranscriptManager() {
         for (const [path, zipEntry] of Object.entries(contents.files)) {
           if (zipEntry.dir) continue;
           const ext = path.split('.').pop()?.toLowerCase();
-          if (!['md', 'txt', 'rtf'].includes(ext || '')) continue;
+          if (!['md', 'txt', 'rtf', 'json'].includes(ext || '')) continue;
           
           const content = await zipEntry.async('string');
           const pathParts = path.split('/').filter(p => p);
@@ -165,6 +261,19 @@ export function TranscriptManager() {
               source = part.toLowerCase();
             }
           }
+
+          if (ext === 'json') {
+            const parsed = parseCharacterAIJson(content, filename);
+            if (parsed) {
+              newFiles.push(...parsed.map(p => ({
+                ...p,
+                source: source === 'transcripts' ? 'character_ai' : source,
+                year: year || p.year,
+                month: month || p.month,
+              })));
+              continue;
+            }
+          }
           
           newFiles.push({
             id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -173,6 +282,26 @@ export function TranscriptManager() {
             source,
             year,
             month
+          });
+        }
+      } else if (file.name.match(/\.json$/i)) {
+        const content = await file.text();
+        const parsed = parseCharacterAIJson(content, file.name);
+        if (parsed) {
+          newFiles.push(...parsed.map(p => ({
+            ...p,
+            source: transcriptSource || 'character_ai',
+            year: transcriptYear || p.year,
+            month: transcriptMonth || p.month,
+          })));
+        } else {
+          newFiles.push({
+            id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            name: file.name,
+            content,
+            source: transcriptSource || 'transcripts',
+            year: transcriptYear,
+            month: transcriptMonth
           });
         }
       } else if (file.name.match(/\.(md|txt|rtf)$/i)) {
@@ -376,7 +505,7 @@ export function TranscriptManager() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".md,.txt,.rtf,.zip"
+              accept=".md,.txt,.rtf,.zip,.json"
               multiple
               onChange={handleFileSelect}
               className="hidden"

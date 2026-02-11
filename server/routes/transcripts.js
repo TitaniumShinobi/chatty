@@ -21,8 +21,9 @@ const upload = multer({
       'text/rtf',
       'application/rtf',
       'application/pdf',
+      'application/json',
     ];
-    const allowedExts = ['.md', '.txt', '.rtf', '.pdf'];
+    const allowedExts = ['.md', '.txt', '.rtf', '.pdf', '.json'];
     const ext = file.originalname.toLowerCase().slice(file.originalname.lastIndexOf('.'));
     
     if (allowedTypes.includes(file.mimetype) || allowedExts.includes(ext)) {
