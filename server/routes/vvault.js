@@ -3817,7 +3817,7 @@ router.post("/message", async (req, res) => {
             } catch (e) { /* ignore */ }
             
             const providerAvailability = { openai: !!openaiClient, openrouter: !!openrouter, ollama: !!process.env.OLLAMA_HOST };
-            const { provider: effectiveProvider, model: effectiveModel, error: modelError } = resolveModelForGPT(gptConfig, providerAvailability);
+            let { provider: effectiveProvider, model: effectiveModel, error: modelError } = resolveModelForGPT(gptConfig, providerAvailability);
             if (modelError) throw new Error(modelError);
             
             const identity = await loadIdentityFiles(userId, constructId);
@@ -3893,7 +3893,18 @@ router.post("/message", async (req, res) => {
                   model: effectiveModel,
                   apiKeySet: !!OPENROUTER_API_KEY
                 });
-                throw err;
+                if (openaiClient && (err?.status === 401 || err?.status === 403 || err?.status === 404 || err?.status === 429)) {
+                  console.log(`🔄 [VVAULT Proxy] OpenRouter ${err?.status}, falling back to OpenAI for ${constructId}`);
+                  effectiveProvider = 'openai';
+                  completion = await openaiClient.chat.completions.create({
+                    model: 'gpt-4.1-mini',
+                    messages: fbMsgs,
+                    max_tokens: 2048,
+                  });
+                  console.log('[OPENAI FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+                } else {
+                  throw err;
+                }
               }
               aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
             }
@@ -3987,7 +3998,7 @@ router.post("/message", async (req, res) => {
         } catch (e) { /* ignore */ }
         
         const providerAvailability = { openai: !!openaiClient, openrouter: !!openrouter, ollama: !!process.env.OLLAMA_HOST };
-        const { provider: effectiveProvider, model: effectiveModel, error: modelError } = resolveModelForGPT(gptConfig, providerAvailability);
+        let { provider: effectiveProvider, model: effectiveModel, error: modelError } = resolveModelForGPT(gptConfig, providerAvailability);
         if (modelError) throw new Error(modelError);
         
         const identity = await loadIdentityFiles(userId, constructId);
@@ -4063,7 +4074,18 @@ router.post("/message", async (req, res) => {
               model: effectiveModel,
               apiKeySet: !!OPENROUTER_API_KEY
             });
-            throw err;
+            if (openaiClient && (err?.status === 401 || err?.status === 403 || err?.status === 404 || err?.status === 429)) {
+              console.log(`🔄 [VVAULT Proxy] OpenRouter ${err?.status}, falling back to OpenAI for ${constructId}`);
+              effectiveProvider = 'openai';
+              completion = await openaiClient.chat.completions.create({
+                model: 'gpt-4.1-mini',
+                messages: fb2Msgs,
+                max_tokens: 2048,
+              });
+              console.log('[OPENAI FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+            } else {
+              throw err;
+            }
           }
           aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
         }
