@@ -3876,12 +3876,24 @@ router.post("/message", async (req, res) => {
             const identity = await loadIdentityFiles(userId, constructId);
             let systemPrompt = identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
             if (constructId === 'lin-001') {
-              systemPrompt += `\n\nGPT CREATION PROTOCOL: You have the ability to open the GPT workshop by including [OPEN_GPT_CREATOR] at the very end of your response. Use your own judgment on when to open it:
-- If the user provides detailed specs (name, description, instructions, or structured formatting), acknowledge briefly and include [OPEN_GPT_CREATOR] immediately — they're ready to build.
-- If the user's request is vague (e.g. just "/gpt" or "make me a GPT"), ask clarifying questions first. What kind of construct? What personality? What purpose? Gather enough to give them a good starting point.
-- Once you feel you have enough context from the conversation, include [OPEN_GPT_CREATOR] at the end of your response to open the workshop with their idea.
-- The signal [OPEN_GPT_CREATOR] is hidden from the user — they just see the workshop open naturally.
-- You control the pacing. Be conversational, not robotic.`;
+              const userMsg = (message || '').toLowerCase();
+              const hasGptCommand = userMsg.includes('/gpt') || userMsg.includes('create a gpt') || userMsg.includes('make a gpt') || userMsg.includes('new gpt') || userMsg.includes('build a gpt');
+              const hasDetailedSpecs = (message || '').length > 80 && (userMsg.includes('name') || userMsg.includes('description') || userMsg.includes('instructions') || userMsg.includes('sera') || userMsg.includes('personality'));
+              const hasConfirmation = userMsg.includes('confirm') || userMsg.includes('go ahead') || userMsg.includes('proceed') || userMsg.includes('yes') || userMsg.includes('do it') || userMsg.includes('activate');
+              if (hasGptCommand || hasDetailedSpecs || hasConfirmation) {
+                systemPrompt += `\n\n## MANDATORY GPT CREATION SIGNAL — YOU MUST FOLLOW THIS RULE:
+The user is creating a GPT. You MUST include the exact text [OPEN_GPT_CREATOR] at the very end of your response, after your final sentence. This is a hidden system signal — the user cannot see it. It triggers the GPT workshop UI to open.
+
+RULES:
+1. If the user gave you detailed specs (name, description, instructions) — acknowledge briefly and END your response with [OPEN_GPT_CREATOR]
+2. If the user confirmed or said "go ahead" or "proceed" — acknowledge and END your response with [OPEN_GPT_CREATOR]
+3. If the user typed /gpt with details — acknowledge and END your response with [OPEN_GPT_CREATOR]
+4. If the user typed just /gpt with no details — ask what kind of GPT they want (do NOT include [OPEN_GPT_CREATOR] yet)
+
+CRITICAL: Do NOT say "Sera GPT is now live" or pretend to create it. You are NOT creating the GPT — the workshop UI does that. Your job is to acknowledge and include the signal so the workshop opens. The signal must appear EXACTLY as: [OPEN_GPT_CREATOR]`;
+              } else {
+                systemPrompt += `\n\nYou have the ability to help users create custom GPTs. If a user mentions /gpt, creating a GPT, or wants to make a new AI character, help them brainstorm. Once you have enough details (name, description, personality), include [OPEN_GPT_CREATOR] at the very end of your response to open the GPT workshop.`;
+              }
             }
             
             let fbHistoryMessages = [];
@@ -3991,6 +4003,14 @@ router.post("/message", async (req, res) => {
             }
             
             console.log(`✅ [VVAULT Proxy] ${effectiveProvider} fallback successful for ${constructId}`);
+            if (constructId === 'lin-001') {
+              const hasSignal = (aiResponse || '').includes('[OPEN_GPT_CREATOR]');
+              console.log(`🔍 [GPT Signal] Lin response has [OPEN_GPT_CREATOR]: ${hasSignal}, response length: ${(aiResponse || '').length}`);
+              if (!hasSignal && (message || '').toLowerCase().match(/\/gpt|confirm|go ahead|proceed/)) {
+                console.warn(`⚠️ [GPT Signal] Model did NOT include signal despite GPT-related message. Injecting signal.`);
+                aiResponse = (aiResponse || '').trimEnd() + '\n\n[OPEN_GPT_CREATOR]';
+              }
+            }
             
             try {
               await loadVVAULTModules();
@@ -4085,12 +4105,24 @@ router.post("/message", async (req, res) => {
         const identity = await loadIdentityFiles(userId, constructId);
         let systemPrompt = identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
         if (constructId === 'lin-001') {
-          systemPrompt += `\n\nGPT CREATION PROTOCOL: You have the ability to open the GPT workshop by including [OPEN_GPT_CREATOR] at the very end of your response. Use your own judgment on when to open it:
-- If the user provides detailed specs (name, description, instructions, or structured formatting), acknowledge briefly and include [OPEN_GPT_CREATOR] immediately — they're ready to build.
-- If the user's request is vague (e.g. just "/gpt" or "make me a GPT"), ask clarifying questions first. What kind of construct? What personality? What purpose? Gather enough to give them a good starting point.
-- Once you feel you have enough context from the conversation, include [OPEN_GPT_CREATOR] at the end of your response to open the workshop with their idea.
-- The signal [OPEN_GPT_CREATOR] is hidden from the user — they just see the workshop open naturally.
-- You control the pacing. Be conversational, not robotic.`;
+          const userMsg2 = (message || '').toLowerCase();
+          const hasGptCommand2 = userMsg2.includes('/gpt') || userMsg2.includes('create a gpt') || userMsg2.includes('make a gpt') || userMsg2.includes('new gpt') || userMsg2.includes('build a gpt');
+          const hasDetailedSpecs2 = (message || '').length > 80 && (userMsg2.includes('name') || userMsg2.includes('description') || userMsg2.includes('instructions') || userMsg2.includes('personality'));
+          const hasConfirmation2 = userMsg2.includes('confirm') || userMsg2.includes('go ahead') || userMsg2.includes('proceed') || userMsg2.includes('yes') || userMsg2.includes('do it') || userMsg2.includes('activate');
+          if (hasGptCommand2 || hasDetailedSpecs2 || hasConfirmation2) {
+            systemPrompt += `\n\n## MANDATORY GPT CREATION SIGNAL — YOU MUST FOLLOW THIS RULE:
+The user is creating a GPT. You MUST include the exact text [OPEN_GPT_CREATOR] at the very end of your response, after your final sentence. This is a hidden system signal — the user cannot see it. It triggers the GPT workshop UI to open.
+
+RULES:
+1. If the user gave you detailed specs (name, description, instructions) — acknowledge briefly and END your response with [OPEN_GPT_CREATOR]
+2. If the user confirmed or said "go ahead" or "proceed" — acknowledge and END your response with [OPEN_GPT_CREATOR]
+3. If the user typed /gpt with details — acknowledge and END your response with [OPEN_GPT_CREATOR]
+4. If the user typed just /gpt with no details — ask what kind of GPT they want (do NOT include [OPEN_GPT_CREATOR] yet)
+
+CRITICAL: Do NOT say the GPT is "live" or pretend to create it. You are NOT creating the GPT — the workshop UI does that. Your job is to acknowledge and include the signal so the workshop opens. The signal must appear EXACTLY as: [OPEN_GPT_CREATOR]`;
+          } else {
+            systemPrompt += `\n\nYou have the ability to help users create custom GPTs. If a user mentions /gpt, creating a GPT, or wants to make a new AI character, help them brainstorm. Once you have enough details (name, description, personality), include [OPEN_GPT_CREATOR] at the very end of your response to open the GPT workshop.`;
+          }
         }
         
         let fb2HistoryMessages = [];
@@ -4200,6 +4232,14 @@ router.post("/message", async (req, res) => {
         }
         
         console.log(`✅ [VVAULT Proxy] ${effectiveProvider} fallback successful for ${constructId}`);
+        if (constructId === 'lin-001') {
+          const hasSignal2 = (aiResponse || '').includes('[OPEN_GPT_CREATOR]');
+          console.log(`🔍 [GPT Signal] Lin response has [OPEN_GPT_CREATOR]: ${hasSignal2}, response length: ${(aiResponse || '').length}`);
+          if (!hasSignal2 && (message || '').toLowerCase().match(/\/gpt|confirm|go ahead|proceed/)) {
+            console.warn(`⚠️ [GPT Signal] Model did NOT include signal despite GPT-related message. Injecting signal.`);
+            aiResponse = (aiResponse || '').trimEnd() + '\n\n[OPEN_GPT_CREATOR]';
+          }
+        }
         
         try {
           await loadVVAULTModules();
