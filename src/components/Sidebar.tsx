@@ -17,6 +17,7 @@ import {
   Pin,
   X,
   Grid3X3,
+  ImageOff,
 } from "lucide-react";
 import { SidebarProps } from "../types";
 import { cn } from "../lib/utils";
@@ -1033,13 +1034,21 @@ const Sidebar: React.FC<SidebarProps> = ({
                   src={avatar} 
                   alt={conversation.title}
                   className="w-4 h-4 rounded-full object-cover flex-shrink-0"
+                  onError={(e) => {
+                    const target = e.currentTarget as HTMLImageElement;
+                    target.style.display = "none";
+                    const fallback = target.nextElementSibling;
+                    if (fallback) (fallback as HTMLElement).style.display = "flex";
+                  }}
                 />
+              ) : null}
+              {!avatar ? (
+                <div className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0">
+                  <ImageOff size={12} style={{ color: "#ef4444" }} />
+                </div>
               ) : (
-                <div 
-                  className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[8px] font-bold text-white"
-                  style={{ backgroundColor: bgColor }}
-                >
-                  {initial}
+                <div className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0" style={{ display: "none" }}>
+                  <ImageOff size={12} style={{ color: "#ef4444" }} />
                 </div>
               )}
               {!collapsed && (
