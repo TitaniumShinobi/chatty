@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -12,6 +12,9 @@ import { VVAULTConversationManager } from "../lib/vvaultConversationManager";
 import { getUserId } from "../lib/auth";
 import MessageBar, { ImageAttachment } from "../components/MessageBar";
 import { prepareMessageContent, stripDateLines } from "../utils/text";
+import GPTCreator from "../components/GPTCreator";
+import { AIService } from "../lib/aiService";
+import type { GPTConfig } from "../lib/gptService";
 
 type Message = {
   id: string;
@@ -385,6 +388,8 @@ interface LayoutContext {
   }) => void | Promise<any>;
   reloadThreadMessages?: (threadId: string) => Promise<void>;
   user?: any;
+  handleGPTCreated?: (gptConfig: { constructId?: string; constructCallsign?: string; name?: string }) => void;
+  forceRefreshConversations?: () => void;
 }
 
 export default function Chat() {
@@ -394,6 +399,8 @@ export default function Chat() {
     reloadThreadMessages,
     newThread,
     user,
+    handleGPTCreated,
+    forceRefreshConversations,
   } = useOutletContext<LayoutContext>();
   const { threadId } = useParams<{ threadId: string }>();
   const navigate = useNavigate();
@@ -403,6 +410,8 @@ export default function Chat() {
     new Set(),
   );
   const [userHasInteracted, setUserHasInteracted] = useState(false);
+  const [isGPTCreatorOpen, setIsGPTCreatorOpen] = useState(false);
+  const [gptCreatorConfig, setGptCreatorConfig] = useState<GPTConfig | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [zenMarkdown, setZenMarkdown] = useState<string | null>(null);
@@ -468,6 +477,54 @@ export default function Chat() {
 
   const isSystemConstructThread = isZenSessionThread || isLinSessionThread;
   const isCanonicalThread = isSystemConstructThread || isGPTSessionThread;
+
+  const handleGPTCommand = useCallback(async (input: string): Promise<boolean> => {
+    const gptMatch = input.trim().match(/^\/gpt(?:\s+(.+))?$/i);
+    if (!gptMatch) return false;
+
+    const arg = gptMatch[1]?.trim();
+    const aiService = AIService.getInstance();
+
+    try {
+      const allAIs = await aiService.getAllAIs();
+
+      if (arg) {
+        const match = allAIs.find((ai) => {
+          const name = (ai.name || "").toLowerCase();
+          const callsign = (ai.constructCallsign || "").toLowerCase();
+          const search = arg.toLowerCase();
+          return name === search || callsign === search || callsign.startsWith(search + "-");
+        });
+        if (match) {
+          setGptCreatorConfig(match as unknown as GPTConfig);
+          setIsGPTCreatorOpen(true);
+          return true;
+        }
+      }
+
+      if (!arg && thread?.constructId) {
+        const match = allAIs.find((ai) => {
+          const callsign = (ai.constructCallsign || "").toLowerCase();
+          const threadConstruct = (thread.constructId || "").toLowerCase();
+          return callsign === threadConstruct;
+        });
+        if (match) {
+          setGptCreatorConfig(match as unknown as GPTConfig);
+          setIsGPTCreatorOpen(true);
+          return true;
+        }
+      }
+
+      setGptCreatorConfig(null);
+      setIsGPTCreatorOpen(true);
+      return true;
+    } catch (err) {
+      console.error("❌ [Chat] /gpt command error:", err);
+      setGptCreatorConfig(null);
+      setIsGPTCreatorOpen(true);
+      return true;
+    }
+  }, [thread]);
 
   // Debug: Log thread details when found
   if (thread) {
@@ -1900,8 +1957,10 @@ export default function Chat() {
 
       <div className="p-4 border-t flex-shrink-0" style={{ borderColor: "var(--chatty-bg-main)" }}>
         <MessageBar
-          onSubmit={(messageText, messageFiles, imageAttachments) => {
+          onSubmit={async (messageText, messageFiles, imageAttachments) => {
             if (thread) {
+              const handled = await handleGPTCommand(messageText);
+              if (handled) return;
               setUserHasInteracted(true);
               console.log(`📸 [Chat.tsx] Sending message with ${imageAttachments?.length || 0} images`);
               onSendMessage(thread.id, messageText, messageFiles || [], imageAttachments);
@@ -1921,6 +1980,27 @@ export default function Chat() {
       >
         Chatty can make mistakes. Consider checking important information.
       </div>
+
+      <GPTCreator
+        isVisible={isGPTCreatorOpen}
+        onClose={() => {
+          setIsGPTCreatorOpen(false);
+          setGptCreatorConfig(null);
+        }}
+        onGPTCreated={(gpt) => {
+          setIsGPTCreatorOpen(false);
+          setGptCreatorConfig(null);
+          if (handleGPTCreated && gpt) {
+            handleGPTCreated({
+              constructId: (gpt as any).constructCallsign || (gpt as any).id,
+              constructCallsign: (gpt as any).constructCallsign,
+              name: gpt.name,
+            });
+          }
+          forceRefreshConversations?.();
+        }}
+        initialConfig={gptCreatorConfig}
+      />
     </div>
   );
 }
