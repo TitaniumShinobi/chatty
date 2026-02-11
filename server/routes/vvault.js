@@ -3486,7 +3486,7 @@ router.post("/message", async (req, res) => {
   const userId = validateUser(res, req.user);
   if (!userId) return;
 
-  const { constructId, message, threadId, sessionId, attachments } = req.body || {};
+  const { constructId, message, threadId, sessionId, attachments, systemPromptOverride } = req.body || {};
 
   if (!constructId) {
     return res.status(400).json({ success: false, error: "Missing constructId" });
@@ -3549,9 +3549,9 @@ router.post("/message", async (req, res) => {
       }
     }
     
-    // Load identity/system prompt
+    // Load identity/system prompt (allow override from GPTCreator preview)
     const identity = await loadIdentityFiles(userId, constructId);
-    const systemPrompt = identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
+    const systemPrompt = systemPromptOverride || identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
     
     console.log(`🧠 [VVAULT Proxy] System prompt length: ${systemPrompt.length}`);
     
