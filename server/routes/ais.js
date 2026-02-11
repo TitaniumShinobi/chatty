@@ -228,23 +228,24 @@ router.post('/', async (req, res) => {
 
     const ai = await aiManager.createAI(normalizeModelFields(aiData));
     
-    // Ensure all required files are created in VVAULT
+    // Scaffold instance folder structure in VVAULT (API first, Supabase fallback)
     try {
-      const { FileManagementAutomation } = await import('../lib/fileManagementAutomation.js');
+      const { scaffoldConstruct } = await import('../lib/constructScaffolder.js');
+      const { getSupabaseClient } = await import('../lib/supabaseClient.js');
       const constructCallsign = ai.constructCallsign || ai.id.replace(/^(ai-|gpt-)/, '');
       if (constructCallsign) {
-        const fileManager = new FileManagementAutomation(userId);
-        // Ensure files exist (creates if missing)
-        await fileManager.ensureGPTCreationFiles(constructCallsign, ai);
-        // Update prompt.txt with current form data (name, description, instructions)
-        await fileManager.updateGPTPrompt(constructCallsign, ai);
-        console.log(`✅ [AIs API] Created and updated all required files for ${ai.id} (${constructCallsign})`);
+        const supabase = getSupabaseClient();
+        const result = await scaffoldConstruct(constructCallsign, ai, {
+          userId,
+          userEmail: req.user?.email,
+          supabase,
+        });
+        console.log(`✅ [AIs API] Scaffolded instance for ${ai.id} (${constructCallsign}) via ${result.source || 'unknown'}`);
       } else {
-        console.warn(`⚠️ [AIs API] No constructCallsign for ${ai.id}, skipping file creation`);
+        console.warn(`⚠️ [AIs API] No constructCallsign for ${ai.id}, skipping scaffold`);
       }
-    } catch (fileError) {
-      console.warn(`⚠️ [AIs API] File creation failed for ${ai.id}:`, fileError);
-      // Don't fail the creation operation if file creation fails
+    } catch (scaffoldError) {
+      console.warn(`⚠️ [AIs API] Instance scaffold failed for ${ai.id}:`, scaffoldError.message);
     }
     
     // Trigger capsule generation for new GPT

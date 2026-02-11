@@ -138,37 +138,25 @@ router.post('/', async (req, res) => {
 
     const gpt = await gptManager.createGPT(gptData);
     
-    // Bootstrap conversation scaffold in Supabase so GPT appears in Address Book immediately
+    // Scaffold instance folder structure in VVAULT (API first, Supabase fallback)
     if (gpt.constructCallsign) {
       try {
-        const { writeConversationToSupabase } = await import('../../vvaultConnector/supabaseStore.js');
+        const { scaffoldConstruct } = await import('../lib/constructScaffolder.js');
+        const { getSupabaseClient } = await import('../lib/supabaseClient.js');
         const constructId = gpt.constructCallsign;
-        const sessionId = `${constructId}_chat_with_${constructId}`;
+        const supabase = getSupabaseClient();
         
-        console.log(`📝 [GPTs API] Bootstrapping conversation for new GPT: ${constructId}`);
+        console.log(`📦 [GPTs API] Scaffolding instance for new GPT: ${constructId}`);
         
-        await writeConversationToSupabase({
+        const result = await scaffoldConstruct(constructId, gpt, {
           userId,
           userEmail,
-          sessionId,
-          title: gpt.name,
-          constructId,
-          constructName: gpt.name,
-          constructCallsign: constructId,
-          role: 'assistant',
-          content: 'CONVERSATION_CREATED:New conversation',
-          timestamp: new Date().toISOString(),
-          metadata: {
-            source: 'chatty',
-            createdBy: userEmail || userId,
-            isPrimary: false
-          }
+          supabase,
         });
         
-        console.log(`✅ [GPTs API] Conversation scaffold created for: ${constructId}`);
-      } catch (bootstrapError) {
-        console.warn(`⚠️ [GPTs API] Failed to bootstrap conversation: ${bootstrapError.message}`);
-        // Don't fail the GPT creation if conversation bootstrap fails
+        console.log(`✅ [GPTs API] Scaffolded instance for ${constructId} via ${result.source || 'unknown'}`);
+      } catch (scaffoldError) {
+        console.warn(`⚠️ [GPTs API] Instance scaffold failed for ${gpt.constructCallsign}: ${scaffoldError.message}`);
       }
     }
     
