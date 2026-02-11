@@ -406,7 +406,7 @@ router.get('/list/:constructCallsign', async (req, res) => {
       for (const cid of constructVariants) {
         let query = supabase
           .from('vault_files')
-          .select('filename, metadata, created_at')
+          .select('id, filename, metadata, created_at')
           .eq('file_type', 'transcript')
           .eq('construct_id', cid);
 
@@ -456,6 +456,7 @@ router.get('/list/:constructCallsign', async (req, res) => {
         }
 
         return {
+          id: f.id,
           name: f.metadata?.originalName || f.filename.split('/').pop(),
           type: f.metadata?.type || 'unknown',
           source: source || 'unknown',
@@ -665,6 +666,66 @@ router.post('/auto-organize/:constructCallsign', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ [ContinuityGPT] Auto-organize error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/move', async (req, res) => {
+  try {
+    const { fileId, year, month } = req.body;
+
+    if (!fileId) {
+      return res.status(400).json({ success: false, error: 'fileId is required' });
+    }
+
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return res.status(500).json({ success: false, error: 'Supabase not configured' });
+    }
+
+    const userEmail = req.user?.email || 'anonymous';
+    const userId = await resolveSupabaseUserId(supabase, userEmail);
+
+    console.log(`📦 [Transcripts] Moving file ${fileId} → ${year || 'Unsorted'}/${month || ''}`);
+
+    const { data: file, error: fetchError } = await supabase
+      .from('vault_files')
+      .select('id, metadata, user_id, filename')
+      .eq('id', fileId)
+      .eq('file_type', 'transcript')
+      .single();
+
+    if (fetchError || !file) {
+      console.error('❌ [Transcripts] File not found for move:', fetchError);
+      return res.status(404).json({ success: false, error: 'Transcript file not found' });
+    }
+
+    if (file.user_id && userId && file.user_id !== userId) {
+      return res.status(403).json({ success: false, error: 'Not authorized to move this file' });
+    }
+
+    const updatedMetadata = {
+      ...file.metadata,
+      year: year || null,
+      month: month || null,
+      movedAt: new Date().toISOString(),
+    };
+
+    const { error: updateError } = await supabase
+      .from('vault_files')
+      .update({ metadata: updatedMetadata })
+      .eq('id', file.id);
+
+    if (updateError) {
+      console.error('❌ [Transcripts] Move update error:', updateError);
+      return res.status(500).json({ success: false, error: updateError.message });
+    }
+
+    const displayName = file.filename?.split('/').pop() || fileId;
+    console.log(`✅ [Transcripts] Moved ${displayName} → ${year || 'Unsorted'}/${month || ''}`);
+    res.json({ success: true, year: year || null, month: month || null });
+  } catch (error) {
+    console.error('❌ [Transcripts] Move error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

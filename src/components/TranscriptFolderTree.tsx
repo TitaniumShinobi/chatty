@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText } from "lucide-react";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText, MoveRight, X } from "lucide-react";
 
 interface TranscriptFile {
   name: string;
@@ -11,11 +11,13 @@ interface TranscriptFile {
   dateConfidence?: number;
   uploadedAt?: string;
   filename?: string;
+  id?: string;
 }
 
 interface TranscriptFolderTreeProps {
   transcripts: TranscriptFile[];
   onFileClick?: (file: TranscriptFile) => void;
+  onMoveFile?: (file: TranscriptFile, year: string | null, month: string | null) => void;
 }
 
 interface FolderNode {
@@ -25,6 +27,11 @@ interface FolderNode {
   file?: TranscriptFile;
   count?: number;
 }
+
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+];
 
 function buildFolderTree(transcripts: TranscriptFile[]): FolderNode[] {
   const yearMap: Record<string, Record<string, TranscriptFile[]>> = {};
@@ -47,10 +54,7 @@ function buildFolderTree(transcripts: TranscriptFile[]): FolderNode[] {
   
   for (const year of sortedYears) {
     const months = yearMap[year];
-    const monthOrder = [
-      "January", "February", "March", "April", "May", "June",
-      "July", "August", "September", "October", "November", "December", "Unknown"
-    ];
+    const monthOrder = [...MONTHS, "Unknown"];
     
     const sortedMonths = Object.keys(months).sort((a, b) => {
       return monthOrder.indexOf(a) - monthOrder.indexOf(b);
@@ -93,21 +97,156 @@ function buildFolderTree(transcripts: TranscriptFile[]): FolderNode[] {
   return tree;
 }
 
+function MoveDialog({
+  file,
+  existingYears,
+  onMove,
+  onClose,
+}: {
+  file: TranscriptFile;
+  existingYears: string[];
+  onMove: (file: TranscriptFile, year: string | null, month: string | null) => void;
+  onClose: () => void;
+}) {
+  const [year, setYear] = useState(file.year || "");
+  const [month, setMonth] = useState(file.month || "");
+  const [customYear, setCustomYear] = useState("");
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dialogRef.current && !dialogRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [onClose]);
+
+  const finalYear = year === "__custom__" ? customYear : year;
+
+  const handleSubmit = () => {
+    onMove(file, finalYear || null, month || null);
+    onClose();
+  };
+
+  const yearOptions = [...new Set([...existingYears, ...(file.year ? [file.year] : [])])].sort((a, b) => parseInt(b) - parseInt(a));
+
+  return (
+    <div
+      ref={dialogRef}
+      className="absolute z-50 p-3 rounded-lg shadow-lg space-y-2"
+      style={{
+        backgroundColor: "var(--chatty-bg-sidebar)",
+        border: "1px solid var(--chatty-line)",
+        minWidth: "220px",
+        right: 0,
+        top: "100%",
+        marginTop: "4px",
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-medium" style={{ color: "var(--chatty-text)" }}>
+          Move to folder
+        </span>
+        <button onClick={onClose} className="p-0.5 rounded hover:bg-white/10">
+          <X size={12} style={{ color: "var(--chatty-text)", opacity: 0.6 }} />
+        </button>
+      </div>
+
+      <div>
+        <label className="text-[10px] block mb-0.5" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>Year</label>
+        <select
+          value={year}
+          onChange={(e) => setYear(e.target.value)}
+          className="w-full p-1.5 rounded text-xs"
+          style={{
+            backgroundColor: "var(--chatty-bg-main)",
+            borderColor: "var(--chatty-line)",
+            color: "var(--chatty-text)",
+            border: "1px solid var(--chatty-line)",
+          }}
+        >
+          <option value="">Unsorted</option>
+          {yearOptions.map(y => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+          <option value="__custom__">Custom year...</option>
+        </select>
+        {year === "__custom__" && (
+          <input
+            type="text"
+            placeholder="e.g. 2024"
+            value={customYear}
+            onChange={(e) => setCustomYear(e.target.value.replace(/\D/g, "").slice(0, 4))}
+            className="w-full p-1.5 rounded text-xs mt-1"
+            style={{
+              backgroundColor: "var(--chatty-bg-main)",
+              border: "1px solid var(--chatty-line)",
+              color: "var(--chatty-text)",
+            }}
+            autoFocus
+          />
+        )}
+      </div>
+
+      {(finalYear) && (
+        <div>
+          <label className="text-[10px] block mb-0.5" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>Month</label>
+          <select
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="w-full p-1.5 rounded text-xs"
+            style={{
+              backgroundColor: "var(--chatty-bg-main)",
+              border: "1px solid var(--chatty-line)",
+              color: "var(--chatty-text)",
+            }}
+          >
+            <option value="">Unknown</option>
+            {MONTHS.map(m => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <button
+        onClick={handleSubmit}
+        disabled={year === "__custom__" && (!customYear || customYear.length !== 4)}
+        className="w-full p-1.5 rounded text-xs font-medium transition-colors disabled:opacity-40"
+        style={{
+          backgroundColor: "var(--chatty-accent)",
+          color: "white",
+        }}
+      >
+        Move
+      </button>
+    </div>
+  );
+}
+
 function FolderItem({
   node,
   depth,
   onFileClick,
+  onMoveFile,
+  existingYears,
 }: {
   node: FolderNode;
   depth: number;
   onFileClick?: (file: TranscriptFile) => void;
+  onMoveFile?: (file: TranscriptFile, year: string | null, month: string | null) => void;
+  existingYears: string[];
 }) {
   const [isOpen, setIsOpen] = useState(depth === 0);
+  const [showMoveDialog, setShowMoveDialog] = useState(false);
 
   if (node.type === "file") {
     return (
       <div
-        className="flex items-center gap-2 py-1 px-2 rounded cursor-pointer hover:bg-white/10 transition-colors"
+        className="group flex items-center gap-2 py-1 px-2 rounded cursor-pointer hover:bg-white/10 transition-colors relative"
         style={{ paddingLeft: `${(depth + 1) * 12}px` }}
         onClick={() => node.file && onFileClick?.(node.file)}
       >
@@ -137,6 +276,26 @@ function FolderItem({
           >
             {Math.round(node.file.dateConfidence * 100)}%
           </span>
+        )}
+        {onMoveFile && node.file?.id && (
+          <button
+            className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-white/20 transition-opacity"
+            title="Move to folder"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMoveDialog(true);
+            }}
+          >
+            <MoveRight size={12} style={{ color: "var(--chatty-text)", opacity: 0.7 }} />
+          </button>
+        )}
+        {showMoveDialog && node.file && onMoveFile && (
+          <MoveDialog
+            file={node.file}
+            existingYears={existingYears}
+            onMove={onMoveFile}
+            onClose={() => setShowMoveDialog(false)}
+          />
         )}
       </div>
     );
@@ -187,6 +346,8 @@ function FolderItem({
               node={child}
               depth={depth + 1}
               onFileClick={onFileClick}
+              onMoveFile={onMoveFile}
+              existingYears={existingYears}
             />
           ))}
         </div>
@@ -195,8 +356,16 @@ function FolderItem({
   );
 }
 
-export function TranscriptFolderTree({ transcripts, onFileClick }: TranscriptFolderTreeProps) {
+export function TranscriptFolderTree({ transcripts, onFileClick, onMoveFile }: TranscriptFolderTreeProps) {
   const tree = useMemo(() => buildFolderTree(transcripts), [transcripts]);
+
+  const existingYears = useMemo(() => {
+    const years = new Set<string>();
+    for (const t of transcripts) {
+      if (t.year) years.add(t.year);
+    }
+    return Array.from(years).sort((a, b) => parseInt(b) - parseInt(a));
+  }, [transcripts]);
 
   if (transcripts.length === 0) {
     return (
@@ -218,6 +387,8 @@ export function TranscriptFolderTree({ transcripts, onFileClick }: TranscriptFol
           node={node}
           depth={0}
           onFileClick={onFileClick}
+          onMoveFile={onMoveFile}
+          existingYears={existingYears}
         />
       ))}
     </div>
