@@ -40,8 +40,12 @@ const replitOpenrouter = REPLIT_OPENROUTER_KEY ? new OpenAI({
 
 const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
 
-// OpenAI client via Replit AI Integrations (managed, billed to credits)
-const openaiClient = process.env.AI_INTEGRATIONS_OPENAI_API_KEY ? new OpenAI({
+// OpenAI client - prefer direct API key, fall back to Replit AI Integrations
+const DIRECT_OPENAI_KEY = process.env.OPENAI_API_KEY;
+const openaiClient = DIRECT_OPENAI_KEY ? new OpenAI({
+  baseURL: 'https://api.openai.com/v1',
+  apiKey: DIRECT_OPENAI_KEY,
+}) : (process.env.AI_INTEGRATIONS_OPENAI_API_KEY && process.env.AI_INTEGRATIONS_OPENAI_API_KEY !== '_DUMMY_API_KEY_') ? new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || 'https://api.openai.com/v1',
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
 }) : null;

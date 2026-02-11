@@ -28,6 +28,13 @@ const openrouter = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || 'dummy',
 });
 
+// Direct OpenAI client as fallback
+const DIRECT_OPENAI_KEY = process.env.OPENAI_API_KEY;
+const openaiDirect = DIRECT_OPENAI_KEY ? new OpenAI({
+  baseURL: 'https://api.openai.com/v1',
+  apiKey: DIRECT_OPENAI_KEY,
+}) : null;
+
 const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
 
 const DEFAULT_SEAT_MODELS = {
