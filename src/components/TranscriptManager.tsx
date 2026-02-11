@@ -307,18 +307,17 @@ export function TranscriptManager() {
 
   const loadGpts = async () => {
     try {
-      const response = await fetch('/api/gpts', { credentials: 'include' });
+      const response = await fetch('/api/ais', { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
-        // API returns { success: true, gpts: [...] } or just array
-        const gptList = Array.isArray(data) ? data : (data.gpts || []);
+        const gptList = Array.isArray(data) ? data : (data.ais || data.gpts || []);
         setGpts(gptList);
         if (gptList.length > 0) {
           setSelectedGpt(gptList[0]);
         }
       }
     } catch (err) {
-      console.error('Failed to load GPTs:', err);
+      console.error('Failed to load constructs:', err);
     }
   };
 
