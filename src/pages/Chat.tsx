@@ -1669,6 +1669,19 @@ export default function Chat() {
                                 ))}
                               </div>
                             )}
+                            {(m as any).attachments && (m as any).attachments.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {(m as any).attachments.map((att: any, idx: number) => (
+                                  <img
+                                    key={idx}
+                                    src={att.url || att.data}
+                                    alt={att.name || 'attachment'}
+                                    className="rounded-lg max-w-[200px] max-h-[200px] object-cover cursor-pointer"
+                                    onClick={() => window.open(att.url || att.data, '_blank')}
+                                  />
+                                ))}
+                              </div>
+                            )}
                           </>
                         )}
                       </div>
