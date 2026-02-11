@@ -7,12 +7,12 @@ import { extractStartDate, extractFromPath } from '../lib/transcriptDateExtracto
 
 const router = express.Router();
 
-const MAX_TEXT_SIZE = 5 * 1024 * 1024; // 5MB for text files
+const MAX_TEXT_SIZE = 50 * 1024 * 1024; // 50MB for text files
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 50 * 1024 * 1024, // 50MB limit
   },
   fileFilter: (req, file, cb) => {
     const allowedTypes = [
@@ -132,7 +132,7 @@ router.post('/save', async (req, res) => {
     for (const transcript of transcripts) {
       if (transcript.content && transcript.content.length > MAX_TEXT_SIZE) {
         console.warn(`⚠️ [Transcripts] File too large: ${transcript.name} (${transcript.content.length} bytes)`);
-        failedTranscripts.push({ name: transcript.name, error: 'File too large (max 5MB)' });
+        failedTranscripts.push({ name: transcript.name, error: 'File too large (max 50MB)' });
         continue;
       }
       

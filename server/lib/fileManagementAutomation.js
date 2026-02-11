@@ -42,6 +42,9 @@ function extractConstructName(constructCallsign) {
 
 export class FileManagementAutomation {
   constructor(vvaultUserId, shard = 'shard_0000') {
+    if (!VVAULT_ROOT) {
+      throw new Error('VVAULT_ROOT is not configured - FileManagementAutomation requires a local VVAULT path');
+    }
     this.vvaultUserId = vvaultUserId;
     this.shard = shard;
     this.basePath = path.join(VVAULT_ROOT, 'users', shard, vvaultUserId);
