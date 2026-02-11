@@ -259,20 +259,16 @@ router.get('/:id/files', async (req, res) => {
             if (!error && data && data.length > 0) {
               const mapped = data.map(f => {
                 const meta = typeof f.metadata === 'string' ? JSON.parse(f.metadata || '{}') : (f.metadata || {});
-                const origPath = meta.original_path || f.storage_path || f.filename || '';
-                const baseName = (f.filename || '').split('/').pop() || '';
-                const isIdentityFile = origPath.includes('/identity/') ||
-                  /^(avatar|prompt|conditioning|personality|memory)\.(png|jpg|jpeg|txt|json)$/i.test(baseName) ||
-                  /^(continuity|CONTINUITY_GPT_PROMPT)/i.test(baseName);
-                const isKnowledgeFile = origPath.includes('/assets/') ||
-                  origPath.includes('/documents/') ||
-                  /\.(pdf)$/i.test(baseName) ||
-                  (/\.(png|jpg|jpeg|gif|webp|svg)$/i.test(baseName) && !isIdentityFile);
+                const storagePath = f.storage_path || '';
+                const pathParts = storagePath.split('/');
+                const constructIdx = pathParts.findIndex(p => /^[a-z]+-\d{3}$/.test(p));
+                const subdir = constructIdx >= 0 && pathParts[constructIdx + 1] ? pathParts[constructIdx + 1] : '';
+
                 let category = 'other';
-                if (isIdentityFile) category = 'identity';
-                else if (isKnowledgeFile) category = 'knowledge';
-                else if (origPath.includes('/tests/') || /^test_/i.test(baseName)) category = 'test';
-                else if (origPath.includes('/chatgpt/') || /-K1\.md$/i.test(baseName)) category = 'chatgpt';
+                if (subdir === 'identity') category = 'identity';
+                else if (subdir === 'assets' || subdir === 'documents') category = 'knowledge';
+                else if (subdir === 'chatgpt') category = 'chatgpt';
+                else if (subdir === 'tests') category = 'test';
 
                 const isImage = /\.(png|jpg|jpeg|svg|gif|webp)$/i.test(f.filename || '');
                 const mimeType = isImage
