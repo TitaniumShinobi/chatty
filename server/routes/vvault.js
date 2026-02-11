@@ -4371,4 +4371,268 @@ router.post("/transcript/:constructId/append", async (req, res) => {
   }
 });
 
+// ============================================================
+// File Save to Supabase vault_files
+// ============================================================
+
+router.post("/files/save", async (req, res) => {
+  const userId = validateUser(res, req.user);
+  if (!userId) return;
+
+  const { constructCallsign, folder, filename, content, fileType } = req.body || {};
+
+  if (!constructCallsign || !filename) {
+    return res.status(400).json({ ok: false, error: "Missing constructCallsign or filename" });
+  }
+
+  if (content === undefined || content === null) {
+    return res.status(400).json({ ok: false, error: "Missing file content" });
+  }
+
+  try {
+    const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+    const { assertValidVaultFilename } = await import('../lib/vaultPathGuard.js');
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      return res.status(503).json({ ok: false, error: "Supabase not available" });
+    }
+
+    const callsign = constructCallsign.match(/-\d+$/) ? constructCallsign : `${constructCallsign}-001`;
+    const folderPath = folder ? `instances/${callsign}/${folder}` : `instances/${callsign}`;
+    const fullPath = `${folderPath}/${filename}`;
+
+    assertValidVaultFilename(fullPath);
+
+    const userEmail = req.user?.email;
+    let supabaseUserId = null;
+
+    if (userEmail) {
+      const { data: userRecord } = await supabase
+        .from('users')
+        .select('id')
+        .or(`email.eq.${userEmail},name.eq.${userEmail}`)
+        .limit(1)
+        .maybeSingle();
+      if (userRecord) {
+        supabaseUserId = userRecord.id;
+      }
+    }
+
+    if (!supabaseUserId) {
+      console.warn(`⚠️ [VVAULT Files] Could not resolve Supabase user ID for ${userEmail}`);
+      return res.status(400).json({ ok: false, error: "Could not resolve user identity in Supabase" });
+    }
+
+    const { data: existing } = await supabase
+      .from('vault_files')
+      .select('id, content')
+      .eq('user_id', supabaseUserId)
+      .eq('filename', fullPath)
+      .maybeSingle();
+
+    if (existing) {
+      const existingLen = existing.content?.length || 0;
+      const newLen = content.length;
+      if (newLen > 0 && existingLen > 0 && newLen < existingLen * 0.5) {
+        console.warn(`🚫 [VVAULT Files] Content shrink protection: ${fullPath} (${existingLen} → ${newLen})`);
+        return res.status(400).json({
+          ok: false,
+          error: "Content shrink protection: new content is less than half the current size. This update was blocked to prevent data loss.",
+          existingSize: existingLen,
+          newSize: newLen
+        });
+      }
+
+      const { error } = await supabase
+        .from('vault_files')
+        .update({
+          content,
+          file_type: fileType || 'text',
+          metadata: {
+            source: 'chatty-gui',
+            updatedAt: new Date().toISOString(),
+            folder: folder || null,
+            constructCallsign: callsign,
+          },
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existing.id);
+
+      if (error) {
+        console.error(`❌ [VVAULT Files] Update failed: ${error.message}`);
+        return res.status(500).json({ ok: false, error: error.message });
+      }
+
+      console.log(`✅ [VVAULT Files] Updated ${fullPath}`);
+      return res.json({ ok: true, action: 'updated', path: fullPath });
+    }
+
+    const { error } = await supabase
+      .from('vault_files')
+      .insert({
+        user_id: supabaseUserId,
+        filename: fullPath,
+        content,
+        file_type: fileType || 'text',
+        construct_id: callsign,
+        metadata: {
+          source: 'chatty-gui',
+          createdAt: new Date().toISOString(),
+          folder: folder || null,
+          constructCallsign: callsign,
+        }
+      });
+
+    if (error) {
+      console.error(`❌ [VVAULT Files] Insert failed: ${error.message}`);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+
+    console.log(`✅ [VVAULT Files] Created ${fullPath}`);
+    return res.json({ ok: true, action: 'created', path: fullPath });
+  } catch (error) {
+    console.error(`❌ [VVAULT Files] Save failed:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+router.get("/files/list", async (req, res) => {
+  const userId = validateUser(res, req.user);
+  if (!userId) return;
+
+  const { constructCallsign } = req.query;
+  console.log(`📂 [VVAULT Files] List request for construct: ${constructCallsign}, user: ${req.user?.email}`);
+
+  try {
+    const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      return res.status(503).json({ ok: false, error: "Supabase not available" });
+    }
+
+    const userEmail = req.user?.email;
+    let supabaseUserId = null;
+
+    if (userEmail) {
+      const { data: userRecord, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .or(`email.eq.${userEmail},name.eq.${userEmail}`)
+        .limit(1)
+        .maybeSingle();
+      if (userError) {
+        console.error(`❌ [VVAULT Files] User lookup error:`, userError);
+      }
+      if (userRecord) {
+        supabaseUserId = userRecord.id;
+        console.log(`✅ [VVAULT Files] Resolved user: ${userEmail} → ${supabaseUserId}`);
+      }
+    }
+
+    if (!supabaseUserId) {
+      console.error(`❌ [VVAULT Files] Could not resolve user identity for email: ${userEmail}`);
+      return res.status(400).json({ ok: false, error: "Could not resolve user identity" });
+    }
+
+    const callsign = constructCallsign
+      ? (constructCallsign.match(/-\d+$/) ? constructCallsign : `${constructCallsign}-001`)
+      : null;
+
+    let query = supabase
+      .from('vault_files')
+      .select('id, filename, file_type, construct_id, metadata, content')
+      .eq('user_id', supabaseUserId)
+      .order('filename', { ascending: true });
+
+    if (callsign) {
+      query = query.eq('construct_id', callsign);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error(`❌ [VVAULT Files] Supabase query error:`, error.message, error.details || '');
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+
+    console.log(`📋 [VVAULT Files] Found ${(data || []).length} files for ${callsign || 'all constructs'}`);
+
+    const files = (data || []).map(f => ({
+      id: f.id,
+      filename: f.filename,
+      file_type: f.file_type,
+      construct_id: f.construct_id,
+      metadata: f.metadata,
+      content_length: f.content ? f.content.length : 0
+    }));
+
+    return res.json({ ok: true, files });
+  } catch (error) {
+    console.error(`❌ [VVAULT Files] List failed:`, error?.message || error);
+    return res.status(500).json({ ok: false, error: error?.message || 'Unknown error' });
+  }
+});
+
+router.get("/files/read", async (req, res) => {
+  const userId = validateUser(res, req.user);
+  if (!userId) return;
+
+  const { path: filePath } = req.query;
+
+  if (!filePath) {
+    return res.status(400).json({ ok: false, error: "Missing path parameter" });
+  }
+
+  try {
+    const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      return res.status(503).json({ ok: false, error: "Supabase not available" });
+    }
+
+    const userEmail = req.user?.email;
+    let supabaseUserId = null;
+
+    if (userEmail) {
+      const { data: userRecord } = await supabase
+        .from('users')
+        .select('id')
+        .or(`email.eq.${userEmail},name.eq.${userEmail}`)
+        .limit(1)
+        .maybeSingle();
+      if (userRecord) {
+        supabaseUserId = userRecord.id;
+      }
+    }
+
+    if (!supabaseUserId) {
+      return res.status(400).json({ ok: false, error: "Could not resolve user identity" });
+    }
+
+    const { data, error } = await supabase
+      .from('vault_files')
+      .select('id, filename, content, file_type, construct_id, metadata')
+      .eq('user_id', supabaseUserId)
+      .eq('filename', filePath)
+      .maybeSingle();
+
+    if (error) {
+      console.error(`❌ [VVAULT Files] Read query error:`, error.message);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+
+    if (!data) {
+      return res.status(404).json({ ok: false, error: "File not found" });
+    }
+
+    return res.json({ ok: true, file: data });
+  } catch (error) {
+    console.error(`❌ [VVAULT Files] Read failed:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 export default router;
