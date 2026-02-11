@@ -381,6 +381,15 @@ router.post('/generate', async (req, res) => {
     const linUserName = req.user?.name || req.user?.given_name || 'the user';
     const userIdentityBlock = `## User Identity\nThe user you are speaking with is named "${linUserName}". Address them by name when appropriate. Remember their name throughout the conversation.${req.user?.email ? `\nTheir email is ${req.user.email}.` : ''}`;
     enhancedSystemPrompt = enhancedSystemPrompt ? `${enhancedSystemPrompt}\n\n${userIdentityBlock}` : userIdentityBlock;
+    try {
+      const { injectSearchContext } = await import('./search.js');
+      if (injectSearchContext) {
+        const { enhancedPrompt } = await injectSearchContext(prompt, enhancedSystemPrompt);
+        enhancedSystemPrompt = enhancedPrompt;
+      }
+    } catch (searchErr) {
+      console.warn('⚠️ [LinChat] Search injection skipped:', searchErr.message);
+    }
     if (memoryContext) {
       enhancedSystemPrompt = enhancedSystemPrompt ? `${enhancedSystemPrompt}\n\n${memoryContext}` : memoryContext;
     }

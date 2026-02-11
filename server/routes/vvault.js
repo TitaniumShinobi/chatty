@@ -8,6 +8,7 @@ import multer from "multer";
 import OpenAI from "openai";
 import { loadIdentityFiles } from "../lib/identityLoader.js";
 import { GPTManager } from "../lib/gptManager.js";
+import { performSearch, injectSearchContext } from "./search.js";
 
 // Timestamp all console output from this module
 const patchConsoleWithTimestamp = () => {
@@ -3656,6 +3657,9 @@ router.post("/message", async (req, res) => {
     if (req.user?.email) {
       systemPrompt += `\nTheir email is ${req.user.email}.`;
     }
+
+    const { enhancedPrompt: searchEnhancedPrompt } = await injectSearchContext(message, systemPrompt);
+    systemPrompt = searchEnhancedPrompt;
     
     console.log(`🧠 [VVAULT Proxy] System prompt length: ${systemPrompt.length}`);
     
@@ -4048,6 +4052,9 @@ router.post("/message", async (req, res) => {
               systemPrompt += `\nTheir email is ${req.user.email}.`;
             }
 
+            const { enhancedPrompt: fb1SearchPrompt } = await injectSearchContext(message, systemPrompt);
+            systemPrompt = fb1SearchPrompt;
+
             if (constructId === 'lin-001') {
               const userMsg = (message || '').toLowerCase();
               const hasGptCommand = userMsg.includes('/gpt') || userMsg.includes('create a gpt') || userMsg.includes('make a gpt') || userMsg.includes('new gpt') || userMsg.includes('build a gpt');
@@ -4319,6 +4326,9 @@ Do NOT treat this as a first meeting if there is conversation history.`;
         if (req.user?.email) {
           systemPrompt += `\nTheir email is ${req.user.email}.`;
         }
+
+        const { enhancedPrompt: fb2SearchPrompt } = await injectSearchContext(message, systemPrompt);
+        systemPrompt = fb2SearchPrompt;
 
         if (constructId === 'lin-001') {
           const userMsg2 = (message || '').toLowerCase();
