@@ -25,6 +25,7 @@ interface TranscriptFileForTree {
   dateConfidence?: number;
   uploadedAt?: string;
   filename?: string;
+  id?: string;
 }
 
 interface TranscriptFile {
@@ -537,6 +538,38 @@ export function TranscriptManager() {
     }
   };
 
+  const handleMoveFile = async (file: TranscriptFileForTree, year: string | null, month: string | null) => {
+    if (!selectedGpt || !file.id) return;
+
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await fetch('/api/transcripts/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          fileId: file.id,
+          year,
+          month,
+        })
+      });
+
+      if (response.ok) {
+        setSuccess(`Moved "${file.name}" to ${year || 'Unsorted'}${month ? '/' + month : ''}`);
+        loadTranscripts(selectedGpt.constructCallsign);
+        setTimeout(() => setSuccess(null), 3000);
+      } else {
+        const data = await response.json();
+        throw new Error(data.error || 'Move failed');
+      }
+    } catch (err: any) {
+      console.error('Failed to move transcript:', err);
+      setError(err.message || 'Failed to move transcript');
+    }
+  };
+
   const totalFiles = stagedFiles.length + transcripts.length;
 
   return (
@@ -731,6 +764,7 @@ export function TranscriptManager() {
           ) : selectedGpt ? (
             <TranscriptFolderTree
               transcripts={transcripts.map((t): TranscriptFileForTree => ({
+                id: t.id,
                 name: t.filename,
                 filename: t.filename,
                 source: t.source,
@@ -740,6 +774,7 @@ export function TranscriptManager() {
                 dateConfidence: t.dateConfidence
               }))}
               onFileClick={(file) => console.log('Selected:', file)}
+              onMoveFile={handleMoveFile}
             />
           ) : (
             <div className="flex items-center justify-center h-64 text-center" style={{ color: 'var(--chatty-text)', opacity: 0.5 }}>
