@@ -118,6 +118,128 @@ function parseCharacterAIJson(jsonString: string, filename: string): TranscriptF
   }
 }
 
+function parseCharacterAIText(text: string, filename: string): TranscriptFile[] | null {
+  const lines = text.split('\n');
+
+  const caiCount = lines.filter(l => l.trim() === 'c.ai').length;
+  if (caiCount < 2) return null;
+
+  let characterName = '';
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === 'c.ai' && i >= 2) {
+      const a = lines[i - 2].trim();
+      const b = lines[i - 1].trim();
+      if (a && a === b) {
+        characterName = a;
+        break;
+      }
+    }
+  }
+  if (!characterName) return null;
+
+  let userName = '';
+  for (let i = 0; i < lines.length - 1; i++) {
+    const a = lines[i].trim();
+    const b = lines[i + 1].trim();
+    if (a && a === b && a !== characterName) {
+      const after = (i + 2 < lines.length) ? lines[i + 2].trim() : '';
+      if (after !== 'c.ai') {
+        userName = a;
+        break;
+      }
+    }
+  }
+  if (!userName) return null;
+
+  while (lines.length > 0) {
+    const last = lines[lines.length - 1].trim();
+    if (!last || /^character\.ai\s*\|/i.test(last) || /^Message\s+\w/i.test(last)) {
+      lines.pop();
+    } else {
+      break;
+    }
+  }
+
+  const isUIArtifact = (line: string): boolean => {
+    const t = line.trim();
+    if (/^\d+\s*\/\s*\d+$/.test(t)) return true;
+    if (/^Tell us more$/i.test(t)) return true;
+    return false;
+  };
+
+  const isCharMarker = (idx: number): boolean => {
+    return idx + 2 < lines.length &&
+      lines[idx].trim() === characterName &&
+      lines[idx + 1].trim() === characterName &&
+      lines[idx + 2].trim() === 'c.ai';
+  };
+
+  const isUserMarker = (idx: number): boolean => {
+    if (idx + 1 >= lines.length) return false;
+    if (lines[idx].trim() !== userName || lines[idx + 1].trim() !== userName) return false;
+    const after = (idx + 2 < lines.length) ? lines[idx + 2].trim() : '';
+    return after !== 'c.ai';
+  };
+
+  let i = 0;
+  while (i < lines.length) {
+    if (isCharMarker(i) || isUserMarker(i)) break;
+    i++;
+  }
+
+  const messages: Array<{ role: string; name: string; content: string }> = [];
+
+  while (i < lines.length) {
+    if (isCharMarker(i)) {
+      i += 3;
+      while (i < lines.length && isUIArtifact(lines[i])) i++;
+      const contentLines: string[] = [];
+      while (i < lines.length && !isCharMarker(i) && !isUserMarker(i)) {
+        contentLines.push(lines[i]);
+        i++;
+      }
+      const content = contentLines.join('\n').trim();
+      if (content) {
+        messages.push({ role: 'character', name: characterName, content });
+      }
+    } else if (isUserMarker(i)) {
+      i += 2;
+      const contentLines: string[] = [];
+      while (i < lines.length && !isCharMarker(i) && !isUserMarker(i)) {
+        contentLines.push(lines[i]);
+        i++;
+      }
+      const content = contentLines.join('\n').trim();
+      if (content) {
+        messages.push({ role: 'user', name: userName, content });
+      }
+    } else {
+      i++;
+    }
+  }
+
+  if (messages.length === 0) return null;
+
+  messages.reverse();
+
+  const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  const displayChar = capitalize(characterName);
+  const mdLines: string[] = [`# Character.AI Transcript — ${displayChar}\n`];
+  for (const msg of messages) {
+    const displayName = msg.role === 'user' ? 'User' : displayChar;
+    mdLines.push(`**${displayName}**:\n${msg.content}\n`);
+  }
+
+  return [{
+    id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    name: filename.replace(/\.txt$/i, '.md'),
+    content: mdLines.join('\n'),
+    source: 'character_ai',
+    year: '',
+    month: '',
+  }];
+}
+
 function normalizeTimestamp(ts: any): Date | null {
   if (!ts) return null;
   if (typeof ts === 'number') {
@@ -274,6 +396,19 @@ export function TranscriptManager() {
               continue;
             }
           }
+
+          if (ext === 'txt') {
+            const caiParsed = parseCharacterAIText(content, filename);
+            if (caiParsed) {
+              newFiles.push(...caiParsed.map(p => ({
+                ...p,
+                source: source === 'transcripts' ? 'character_ai' : source,
+                year: year || p.year,
+                month: month || p.month,
+              })));
+              continue;
+            }
+          }
           
           newFiles.push({
             id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -306,14 +441,24 @@ export function TranscriptManager() {
         }
       } else if (file.name.match(/\.(md|txt|rtf)$/i)) {
         const content = await file.text();
-        newFiles.push({
-          id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          name: file.name,
-          content,
-          source: transcriptSource || 'transcripts',
-          year: transcriptYear,
-          month: transcriptMonth
-        });
+        const caiParsed = parseCharacterAIText(content, file.name);
+        if (caiParsed) {
+          newFiles.push(...caiParsed.map(p => ({
+            ...p,
+            source: transcriptSource || 'character_ai',
+            year: transcriptYear || p.year,
+            month: transcriptMonth || p.month,
+          })));
+        } else {
+          newFiles.push({
+            id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            name: file.name,
+            content,
+            source: transcriptSource || 'transcripts',
+            year: transcriptYear,
+            month: transcriptMonth
+          });
+        }
       }
     }
 
