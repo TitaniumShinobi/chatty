@@ -6,6 +6,7 @@ import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import type { Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import rehypeRaw from "rehype-raw";
+import { ChevronDown } from "lucide-react";
 import { R } from "../runtime/render";
 import { MessageOptionsMenu } from "../components/MessageOptionsMenu";
 import { VVAULTConversationManager } from "../lib/vvaultConversationManager";
@@ -413,6 +414,7 @@ export default function Chat() {
   const [isGPTCreatorOpen, setIsGPTCreatorOpen] = useState(false);
   const [gptCreatorConfig, setGptCreatorConfig] = useState<GPTConfig | null>(null);
   const [gptCreatorInitialMessage, setGptCreatorInitialMessage] = useState<string | null>(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [zenMarkdown, setZenMarkdown] = useState<string | null>(null);
@@ -559,6 +561,18 @@ export default function Chat() {
       scrollToBottom(true);
     }
   }, [thread?.messages, userHasInteracted]);
+
+  // Scroll position listener for scroll-to-bottom button
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const onScroll = () => {
+      const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+      setShowScrollButton(!isNearBottom);
+    };
+    container.addEventListener("scroll", onScroll);
+    return () => container.removeEventListener("scroll", onScroll);
+  }, [thread?.id]);
 
   // Load transcript for canonical threads (Zen, Lin, or GPTs)
   // Only attempt fallback transcript loading if threads have loaded (threads.length > 0)
@@ -1918,6 +1932,22 @@ export default function Chat() {
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {showScrollButton && (
+        <div className="relative flex-shrink-0">
+          <button
+            onClick={() => scrollToBottom(true)}
+            className="absolute left-1/2 -translate-x-1/2 -top-12 w-9 h-9 rounded-full flex items-center justify-center shadow-lg transition-all duration-200 hover:scale-110 z-10 opacity-80 hover:opacity-100"
+            style={{
+              backgroundColor: "var(--chatty-highlight, #444)",
+              color: "var(--chatty-text, #fff)",
+              border: "1px solid var(--chatty-border, #555)",
+            }}
+          >
+            <ChevronDown size={18} />
+          </button>
+        </div>
+      )}
 
       <div className="p-4 border-t flex-shrink-0" style={{ borderColor: "var(--chatty-bg-main)" }}>
         <MessageBar
