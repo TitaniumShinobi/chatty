@@ -3875,6 +3875,79 @@ router.post("/message", async (req, res) => {
             
             const identity = await loadIdentityFiles(userId, constructId);
             let systemPrompt = identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
+            
+            // Load capsule data to inject personality into system prompt
+            try {
+              const { getCapsuleIntegration } = await import('../lib/capsuleIntegration.js');
+              const capsuleIntegration = getCapsuleIntegration();
+              const capsuleData = await capsuleIntegration.loadCapsule(constructId);
+              if (capsuleData) {
+                const constructName = constructId.replace(/-\d+$/, '');
+                const displayName = constructName.charAt(0).toUpperCase() + constructName.slice(1);
+                const name = capsuleData.metadata?.instance_name || capsuleData.identity?.name || displayName;
+                const traits = capsuleData.traits || {};
+                const pers = capsuleData.personality || {};
+                const conditioning = capsuleData.identity?.conditioning || '';
+                const instructions = capsuleData.identity?.instructions || '';
+                
+                let capsulePrompt = `\n\n## Capsule Identity (${name})`;
+                
+                if (Object.keys(traits).length > 0) {
+                  capsulePrompt += `\n### Personality Traits`;
+                  for (const [key, value] of Object.entries(traits)) {
+                    const pct = typeof value === 'number' ? `${(value * 100).toFixed(0)}%` : value;
+                    capsulePrompt += `\n- ${key}: ${pct}`;
+                  }
+                }
+                
+                if (pers.personality_type) {
+                  capsulePrompt += `\n### Cognitive Profile\n- Type: ${pers.personality_type}`;
+                }
+                if (pers.communication_style) {
+                  capsulePrompt += `\n- Communication Style: ${typeof pers.communication_style === 'object' ? JSON.stringify(pers.communication_style) : pers.communication_style}`;
+                }
+                if (pers.mbti_breakdown) {
+                  const mbti = pers.mbti_breakdown;
+                  capsulePrompt += `\n- ${(mbti.I || 0) > (mbti.E || 0) ? 'Introverted' : 'Extraverted'}, ${(mbti.N || 0) > (mbti.S || 0) ? 'Intuitive' : 'Sensing'}, ${(mbti.T || 0) > (mbti.F || 0) ? 'Thinking' : 'Feeling'}, ${(mbti.J || 0) > (mbti.P || 0) ? 'Judging' : 'Perceiving'}`;
+                }
+                if (pers.big_five_traits) {
+                  capsulePrompt += `\n### Big Five`;
+                  for (const [trait, value] of Object.entries(pers.big_five_traits)) {
+                    capsulePrompt += `\n- ${trait}: ${typeof value === 'number' ? (value * 100).toFixed(0) + '%' : value}`;
+                  }
+                }
+                
+                if (conditioning) {
+                  capsulePrompt += `\n### Conditioning Directives\n${conditioning}`;
+                }
+                if (instructions && !systemPrompt.includes(instructions)) {
+                  capsulePrompt += `\n### Behavioral Instructions\n${instructions}`;
+                }
+                
+                if (capsuleData.memory?.episodic_memories?.length > 0) {
+                  capsulePrompt += `\n### Key Memories`;
+                  capsuleData.memory.episodic_memories.slice(-5).forEach(m => {
+                    capsulePrompt += `\n- ${m}`;
+                  });
+                }
+                if (capsuleData.memory_log?.length > 0) {
+                  capsulePrompt += `\n### Recent Memory Log`;
+                  capsuleData.memory_log.slice(-5).forEach(m => {
+                    capsulePrompt += `\n- ${typeof m === 'string' ? m : JSON.stringify(m)}`;
+                  });
+                }
+                
+                if (capsuleData.signatures?.linguistic_sigil?.signature_phrase) {
+                  capsulePrompt += `\n### Signature Style\n- "${capsuleData.signatures.linguistic_sigil.signature_phrase}"`;
+                }
+                
+                capsulePrompt += `\n\nYou MUST embody these traits and personality in every response. Stay in character.`;
+                systemPrompt += capsulePrompt;
+                console.log(`✅ [VVAULT Proxy] Capsule data injected into system prompt for ${constructId} (${capsulePrompt.length} chars)`);
+              }
+            } catch (capsuleErr) {
+              console.warn(`⚠️ [VVAULT Proxy] Could not load capsule for ${constructId}:`, capsuleErr.message);
+            }
             if (constructId === 'lin-001') {
               const userMsg = (message || '').toLowerCase();
               const hasGptCommand = userMsg.includes('/gpt') || userMsg.includes('create a gpt') || userMsg.includes('make a gpt') || userMsg.includes('new gpt') || userMsg.includes('build a gpt');
