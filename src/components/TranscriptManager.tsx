@@ -678,7 +678,7 @@ export function TranscriptManager() {
             Upload path: <code className="font-mono">{selectedGpt?.constructCallsign}/{getUploadPath()}/</code>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2">
             <input
               ref={fileInputRef}
               type="file"
@@ -689,7 +689,7 @@ export function TranscriptManager() {
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="flex-1 flex items-center justify-center gap-2 p-3 rounded-lg transition-colors"
+              className="w-full flex items-center justify-center gap-2 p-3 rounded-lg transition-colors"
               style={{
                 backgroundColor: 'var(--chatty-button)',
                 color: 'var(--chatty-text)'
@@ -709,14 +709,14 @@ export function TranscriptManager() {
               <button
                 onClick={uploadStagedFiles}
                 disabled={isUploading}
-                className="flex items-center gap-2 px-4 py-3 rounded-lg transition-colors disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-semibold transition-colors disabled:opacity-50"
                 style={{
                   backgroundColor: 'var(--chatty-accent)',
                   color: 'white'
                 }}
               >
                 {isUploading ? <RefreshCw size={18} className="animate-spin" /> : <CheckCircle size={18} />}
-                Upload {stagedFiles.length}
+                Upload {stagedFiles.length} File{stagedFiles.length !== 1 ? 's' : ''} to Vault
               </button>
             )}
           </div>
