@@ -264,11 +264,13 @@ router.get('/:id/files', async (req, res) => {
                 const constructIdx = pathParts.findIndex(p => /^[a-z]+-\d{3}$/.test(p));
                 const subdir = constructIdx >= 0 && pathParts[constructIdx + 1] ? pathParts[constructIdx + 1] : '';
 
+                const transcriptPlatforms = ['chatty', 'chatgpt', 'gemini', 'claude', 'openrouter', 'ollama'];
                 let category = 'other';
                 if (subdir === 'identity') category = 'identity';
                 else if (subdir === 'assets' || subdir === 'documents') category = 'knowledge';
-                else if (subdir === 'chatgpt') category = 'chatgpt';
+                else if (transcriptPlatforms.includes(subdir)) category = 'transcript';
                 else if (subdir === 'tests') category = 'test';
+                else if (subdir === 'lin') category = 'orchestration';
 
                 const isImage = /\.(png|jpg|jpeg|svg|gif|webp)$/i.test(f.filename || '');
                 const mimeType = isImage
