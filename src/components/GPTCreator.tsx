@@ -18,6 +18,7 @@ import {
   Bot,
   Paperclip,
   Crop,
+  ImageOff,
 } from "lucide-react";
 import JSZip from "jszip";
 import { GPTService, GPTConfig, GPTFile, GPTAction } from "../lib/gptService";
@@ -3407,22 +3408,27 @@ ALWAYS:
                             }}
                           ></div>
                         ) : config.avatar ? (
-                          <img
-                            src={avatarBlobUrl || config.avatar}
-                            alt="GPT Avatar"
-                            className="w-full h-full object-cover rounded-lg"
-                            crossOrigin={
-                              config.avatar.startsWith("/api/")
-                                ? "use-credentials"
-                                : undefined
-                            }
-                            onError={(e) => {
-                              // Fallback to placeholder if image fails to load
-                              const target =
-                                e.currentTarget as HTMLImageElement;
-                              target.style.display = "none";
-                            }}
-                          />
+                          <>
+                            <img
+                              src={avatarBlobUrl || config.avatar}
+                              alt="GPT Avatar"
+                              className="w-full h-full object-cover rounded-lg"
+                              crossOrigin={
+                                config.avatar.startsWith("/api/")
+                                  ? "use-credentials"
+                                  : undefined
+                              }
+                              onError={(e) => {
+                                const target = e.currentTarget as HTMLImageElement;
+                                target.style.display = "none";
+                                const fallback = target.nextElementSibling;
+                                if (fallback) (fallback as HTMLElement).style.display = "flex";
+                              }}
+                            />
+                            <div className="w-full h-full flex items-center justify-center" style={{ display: "none" }}>
+                              <ImageOff size={20} style={{ color: "#ef4444" }} />
+                            </div>
+                          </>
                         ) : (
                           <Plus
                             size={24}
@@ -4862,42 +4868,21 @@ ALWAYS:
                                   : undefined
                               }
                               onError={(e) => {
-                                // If image fails to load, hide it
-                                const target =
-                                  e.currentTarget as HTMLImageElement;
+                                const target = e.currentTarget as HTMLImageElement;
                                 target.style.display = "none";
-                                // Show the fallback bot icon
-                                const parent = target.parentElement;
-                                const fallback =
-                                  parent?.querySelector(".avatar-fallback");
-                                if (fallback) {
-                                  (fallback as HTMLElement).style.display =
-                                    "flex";
-                                }
+                                const fallback = target.nextElementSibling;
+                                if (fallback) (fallback as HTMLElement).style.display = "flex";
                               }}
                             />
-                            {/* Fallback bot icon (hidden by default, shown on image error) */}
                             <div
-                              className="avatar-fallback absolute inset-0 flex items-center justify-center"
+                              className="absolute inset-0 flex items-center justify-center"
                               style={{ display: "none" }}
                             >
-                              <Bot
-                                size={32}
-                                style={{
-                                  color: "var(--chatty-text)",
-                                  opacity: 0.5,
-                                }}
-                              />
+                              <ImageOff size={20} style={{ color: "#ef4444" }} />
                             </div>
                           </>
                         ) : (
-                          <Bot
-                            size={32}
-                            style={{
-                              color: "var(--chatty-text)",
-                              opacity: 0.5,
-                            }}
-                          />
+                          <ImageOff size={20} style={{ color: "#ef4444" }} />
                         )}
                       </div>
                       <h3
