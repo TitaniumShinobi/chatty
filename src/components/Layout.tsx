@@ -2458,9 +2458,18 @@ export default function Layout() {
               }
             }
 
-            // Update UI even if save failed (unsaved flagged for debugging)
+            if (assistantContent.includes("[OPEN_GPT_CREATOR]") && threadId.startsWith("lin-001")) {
+              const currentThread = threads.find(t => t.id === threadId);
+              const userMessages = currentThread?.messages?.filter(m => m.role === "user") || [];
+              const lastUserMsg = userMessages[userMessages.length - 1];
+              const gptIdea = lastUserMsg?.text?.replace(/^\/gpt\s*/i, "").trim() || null;
+              window.dispatchEvent(new CustomEvent("chatty:open-gpt-creator", {
+                detail: { initialMessage: gptIdea || "I want to create a new GPT" }
+              }));
+            }
+
             const aiMsg: Message = {
-              id: typingMsg.id, // Use same ID to replace
+              id: typingMsg.id,
               role: "assistant",
               packets: finalPackets,
               ts: Date.now() + 2,
