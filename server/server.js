@@ -742,6 +742,152 @@ app.post("/api/logout", (req, res) => {
   res.json({ ok: true });
 });
 
+// Delete account - full cleanup
+app.post("/api/auth/delete-account", requireAuth, async (req, res) => {
+  const userId = req.user?.sub || req.user?.id;
+  const userEmail = req.user?.email;
+
+  if (!userId) {
+    return res.status(401).json({ success: false, error: 'Not authenticated' });
+  }
+
+  console.log(`🗑️ [DeleteAccount] Starting account deletion for user: ${userId} (${userEmail})`);
+
+  const deletionLog = {
+    userId,
+    email: userEmail,
+    deletedAt: new Date().toISOString(),
+    results: {}
+  };
+
+  try {
+    // 1. Delete from Supabase vault_files
+    try {
+      const { getSupabaseClient } = await import('./lib/supabaseClient.js');
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        const { data: userFiles, error: countError } = await supabase
+          .from('vault_files')
+          .select('id, filename')
+          .eq('user_id', userId);
+
+        const fileCount = userFiles?.length || 0;
+        console.log(`🗑️ [DeleteAccount] Found ${fileCount} vault_files for user ${userId}`);
+
+        if (fileCount > 0) {
+          const { error: deleteError } = await supabase
+            .from('vault_files')
+            .delete()
+            .eq('user_id', userId);
+
+          if (deleteError) {
+            console.error(`❌ [DeleteAccount] Supabase vault_files delete error:`, deleteError);
+            deletionLog.results.vault_files = { error: deleteError.message, attempted: fileCount };
+          } else {
+            console.log(`✅ [DeleteAccount] Deleted ${fileCount} vault_files`);
+            deletionLog.results.vault_files = { deleted: fileCount };
+          }
+        } else {
+          deletionLog.results.vault_files = { deleted: 0 };
+        }
+
+        // 2. Delete from Supabase conversations table if it exists
+        try {
+          const { data: convos } = await supabase
+            .from('conversations')
+            .select('id')
+            .eq('user_id', userId);
+
+          if (convos && convos.length > 0) {
+            const { error: convDeleteError } = await supabase
+              .from('conversations')
+              .delete()
+              .eq('user_id', userId);
+
+            deletionLog.results.supabase_conversations = convDeleteError
+              ? { error: convDeleteError.message }
+              : { deleted: convos.length };
+            console.log(`✅ [DeleteAccount] Deleted ${convos.length} Supabase conversations`);
+          }
+        } catch (convErr) {
+          console.log(`ℹ️ [DeleteAccount] No conversations table or no user data:`, convErr.message);
+        }
+
+        // 3. Delete from Supabase Storage buckets (attachments, avatars)
+        try {
+          const buckets = ['attachments', 'avatars', 'construct-assets'];
+          for (const bucket of buckets) {
+            const { data: files } = await supabase.storage.from(bucket).list(userId);
+            if (files && files.length > 0) {
+              const filePaths = files.map(f => `${userId}/${f.name}`);
+              await supabase.storage.from(bucket).remove(filePaths);
+              console.log(`✅ [DeleteAccount] Removed ${files.length} files from ${bucket} bucket`);
+              deletionLog.results[`storage_${bucket}`] = { deleted: files.length };
+            }
+          }
+        } catch (storageErr) {
+          console.log(`ℹ️ [DeleteAccount] Storage cleanup note:`, storageErr.message);
+        }
+      } else {
+        console.log(`ℹ️ [DeleteAccount] Supabase client not available - skipping Supabase cleanup`);
+        deletionLog.results.supabase = { skipped: 'client not available' };
+      }
+    } catch (supabaseErr) {
+      console.error(`❌ [DeleteAccount] Supabase cleanup error:`, supabaseErr);
+      deletionLog.results.supabase = { error: supabaseErr.message };
+    }
+
+    // 4. Delete from SQLite: GPTs + AIs + user_registry via managers
+    try {
+      const { GPTManager } = await import('./lib/gptManager.js');
+      const { AIManager } = await import('./lib/aiManager.js');
+      const gptManager = GPTManager.getInstance();
+      const aiManager = AIManager.getInstance();
+      const db = gptManager.db;
+
+      const gptResult = db.prepare('DELETE FROM gpts WHERE user_id = ?').run(userId);
+      console.log(`✅ [DeleteAccount] Deleted ${gptResult.changes} GPTs from SQLite`);
+      deletionLog.results.sqlite_gpts = { deleted: gptResult.changes };
+
+      const aiResult = db.prepare('DELETE FROM ais WHERE user_id = ?').run(userId);
+      console.log(`✅ [DeleteAccount] Deleted ${aiResult.changes} AIs from SQLite`);
+      deletionLog.results.sqlite_ais = { deleted: aiResult.changes };
+
+      try {
+        const regResult = db.prepare('DELETE FROM user_registry WHERE user_id = ?').run(userId);
+        console.log(`✅ [DeleteAccount] Deleted user registry entry`);
+        deletionLog.results.sqlite_registry = { deleted: regResult.changes };
+      } catch (regErr) {
+        console.log(`ℹ️ [DeleteAccount] User registry cleanup:`, regErr.message);
+      }
+    } catch (dbErr) {
+      console.error(`❌ [DeleteAccount] SQLite cleanup error:`, dbErr.message);
+      deletionLog.results.sqlite = { error: dbErr.message };
+    }
+
+    // 7. Clear cookie / session
+    const domain = req.hostname && req.hostname.includes('thewreck.org') ? '.thewreck.org' : undefined;
+    res.clearCookie(COOKIE_NAME, {
+      path: "/",
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      ...(domain ? { domain } : {})
+    });
+
+    console.log(`✅ [DeleteAccount] Account deletion complete for ${userId}`, deletionLog.results);
+
+    res.json({
+      success: true,
+      message: 'Account and all associated data have been permanently deleted.',
+      deletionSummary: deletionLog.results
+    });
+  } catch (error) {
+    console.error(`❌ [DeleteAccount] Fatal error:`, error);
+    res.status(500).json({ success: false, error: 'Account deletion failed. Please try again.' });
+  }
+});
+
 // Debug session endpoint (dev only)
 if (process.env.NODE_ENV !== 'production') {
   app.get('/api/debug/session', (req, res) => {

@@ -23,15 +23,23 @@ const AccountTab: React.FC<AccountTabProps> = ({ user, onLogout }) => {
     
     const confirmed = window.confirm(
       `Are you sure you want to delete your account?\n\n` +
-      `This will:\n` +
-      `• Schedule your account for deletion\n` +
-      `• Give you 30 days to restore it\n` +
-      `• Permanently delete all data after 30 days\n` +
-      `• Prevent re-registration with the same email\n\n` +
-      `This action cannot be undone after 30 days.`
+      `This will permanently delete:\n` +
+      `• All your conversations and messages\n` +
+      `• All your constructs (GPTs, AIs)\n` +
+      `• All uploaded files and transcripts in Supabase\n` +
+      `• Your account and profile data\n\n` +
+      `This action cannot be undone.`
     );
 
     if (!confirmed) return;
+
+    const doubleConfirm = window.confirm(
+      `Final confirmation:\n\n` +
+      `Type OK to permanently delete your account and ALL associated data.\n\n` +
+      `There is no recovery after this.`
+    );
+
+    if (!doubleConfirm) return;
 
     setIsDeleting(true);
     
@@ -42,15 +50,12 @@ const AccountTab: React.FC<AccountTabProps> = ({ user, onLogout }) => {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify({
-          reason: 'user_requested'
-        })
       });
 
       const result = await response.json();
 
       if (result.success) {
-        alert(`Account deletion scheduled successfully!\n\nYou have until ${new Date(result.canRestoreUntil).toLocaleString()} to restore your account.\n\nYou will now be logged out.`);
+        alert('Your account and all associated data have been permanently deleted. You will now be logged out.');
         onLogout();
       } else {
         alert(`Failed to delete account: ${result.error}`);
@@ -329,18 +334,19 @@ const AccountTab: React.FC<AccountTabProps> = ({ user, onLogout }) => {
             disabled={isDeleting}
             className="px-4 py-2 text-sm rounded-lg font-medium transition-colors"
             style={{ 
-              backgroundColor: 'transparent', 
-              color: '#fffff0',
-              border: 'none',
-              opacity: isDeleting ? 0.6 : 1
+              backgroundColor: '#dc2626', 
+              color: '#ffffff',
+              border: '1px solid #b91c1c',
+              opacity: isDeleting ? 0.6 : 1,
+              cursor: isDeleting ? 'not-allowed' : 'pointer'
             }}
             onMouseEnter={(e) => {
               if (!isDeleting) {
-                e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)'
+                e.currentTarget.style.backgroundColor = '#b91c1c'
               }
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'transparent'
+              e.currentTarget.style.backgroundColor = '#dc2626'
             }}
           >
             {isDeleting ? 'Deleting...' : 'Delete'}
