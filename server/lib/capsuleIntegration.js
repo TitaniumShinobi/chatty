@@ -282,7 +282,7 @@ export class CapsuleIntegration {
 
       const { data, error } = await supabase
         .from('vault_files')
-        .select('filename, content')
+        .select('filename, content, storage_path, file_type')
         .eq('construct_id', callsign)
         .like('filename', `%${callsign}%.capsule`)
         .order('filename', { ascending: false })
@@ -294,40 +294,67 @@ export class CapsuleIntegration {
       }
 
       if (!data || data.length === 0) {
-        // Also try memup directory pattern
         const { data: memupData, error: memupError } = await supabase
           .from('vault_files')
-          .select('filename, content')
+          .select('filename, content, storage_path, file_type')
           .eq('construct_id', callsign)
           .like('filename', `%.capsule`)
           .order('filename', { ascending: false })
           .limit(1);
 
         if (memupError || !memupData || memupData.length === 0) {
-          // Final fallback: try to build capsule from identity files (prompt.json, conditioning.txt)
           return await this.buildCapsuleFromIdentityFiles(supabase, callsign);
         }
 
-        try {
-          const capsuleData = JSON.parse(memupData[0].content);
-          console.log(`✅ [CapsuleIntegration] Loaded capsule from Supabase memup: ${memupData[0].filename}`);
+        const memupCapsule = await this._parseCapsuleRow(supabase, memupData[0], 'memup');
+        if (memupCapsule) return memupCapsule;
+        return await this.buildCapsuleFromIdentityFiles(supabase, callsign);
+      }
+
+      const capsuleData = await this._parseCapsuleRow(supabase, data[0], 'primary');
+      if (capsuleData) return capsuleData;
+
+      console.log(`🔄 [CapsuleIntegration] Capsule row had no usable data, building from identity files for ${callsign}`);
+      return await this.buildCapsuleFromIdentityFiles(supabase, callsign);
+    } catch (error) {
+      console.error(`❌ [CapsuleIntegration] Supabase capsule load failed:`, error.message);
+      return null;
+    }
+  }
+
+  async _parseCapsuleRow(supabase, row, source) {
+    try {
+      if (row.content && typeof row.content === 'string') {
+        const capsuleData = JSON.parse(row.content);
+        if (capsuleData && typeof capsuleData === 'object') {
+          console.log(`✅ [CapsuleIntegration] Loaded capsule from Supabase ${source}: ${row.filename}`);
           return capsuleData;
-        } catch (parseErr) {
-          console.error(`❌ [CapsuleIntegration] Failed to parse capsule from Supabase:`, parseErr.message);
-          return null;
         }
       }
 
-      try {
-        const capsuleData = JSON.parse(data[0].content);
-        console.log(`✅ [CapsuleIntegration] Loaded capsule from Supabase: ${data[0].filename}`);
-        return capsuleData;
-      } catch (parseErr) {
-        console.error(`❌ [CapsuleIntegration] Failed to parse capsule from Supabase:`, parseErr.message);
-        return null;
+      if (!row.content && row.storage_path) {
+        console.log(`📥 [CapsuleIntegration] Content null, downloading from Storage: ${row.storage_path}`);
+        const { data: storageData, error: storageError } = await supabase.storage
+          .from('vault-files')
+          .download(row.storage_path);
+
+        if (storageError) {
+          console.error(`❌ [CapsuleIntegration] Storage download failed:`, storageError.message);
+          return null;
+        }
+
+        const text = await storageData.text();
+        const capsuleData = JSON.parse(text);
+        if (capsuleData && typeof capsuleData === 'object') {
+          console.log(`✅ [CapsuleIntegration] Loaded capsule from Supabase Storage: ${row.filename}`);
+          return capsuleData;
+        }
       }
-    } catch (error) {
-      console.error(`❌ [CapsuleIntegration] Supabase capsule load failed:`, error.message);
+
+      console.warn(`⚠️ [CapsuleIntegration] Capsule row found but no valid data: ${row.filename}`);
+      return null;
+    } catch (parseErr) {
+      console.error(`❌ [CapsuleIntegration] Failed to parse capsule: ${row.filename}:`, parseErr.message);
       return null;
     }
   }
@@ -342,8 +369,8 @@ export class CapsuleIntegration {
         .from('vault_files')
         .select('filename, content')
         .eq('construct_id', callsign)
-        .or(`filename.like.%/identity/prompt.json,filename.like.%/identity/conditioning.txt,filename.like.%/config/personality.json`)
-        .limit(5);
+        .or(`filename.like.%/identity/prompt.json,filename.like.%/identity/conditioning.txt,filename.like.%/config/personality.json,filename.eq.prompt.txt,filename.eq.prompt.json,filename.eq.conditioning.txt`)
+        .limit(10);
 
       if (error || !identityFiles || identityFiles.length === 0) {
         console.log(`⚠️ [CapsuleIntegration] No identity files found for ${callsign} in Supabase`);
@@ -357,6 +384,13 @@ export class CapsuleIntegration {
       for (const file of identityFiles) {
         if (file.filename.endsWith('prompt.json')) {
           try { promptData = JSON.parse(file.content); } catch {}
+        } else if (file.filename === 'prompt.txt' || file.filename.endsWith('/prompt.txt')) {
+          try { promptData = JSON.parse(file.content); } catch {
+            if (file.content) {
+              const lines = file.content.split('\n');
+              promptData = { name: lines[0]?.replace(/^#\s*/, '').trim(), instructions: file.content };
+            }
+          }
         } else if (file.filename.endsWith('conditioning.txt')) {
           conditioningText = file.content || '';
         } else if (file.filename.endsWith('personality.json')) {
