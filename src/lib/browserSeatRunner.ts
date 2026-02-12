@@ -56,7 +56,7 @@ interface GenerateOptions {
 }
 
 export async function runSeat(opts: GenerateOptions): Promise<string> {
-  const timeout = opts.timeout ?? 30000; // Default 30s for cloud API
+  const timeout = opts.timeout ?? 60000; // Default 60s for cloud API
   const maxRetries = opts.retries ?? 2;
   
   let lastError: Error | null = null;
@@ -95,7 +95,8 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
             prompt: opts.prompt,
             seat: opts.seat,
             systemPrompt: opts.systemPrompt,
-            constructId: opts.constructId  // Pass for memory injection
+            model: opts.modelOverride,
+            constructId: opts.constructId
           }),
           signal: controller.signal,
         });
