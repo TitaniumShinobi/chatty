@@ -2321,6 +2321,20 @@ ${text}
             });
           }
 
+          try {
+            const { clearVerifiedMemoryCache, extractAndStoreAnchors } = await import('../lib/verifiedMemoryLoader.js');
+            clearVerifiedMemoryCache(constructCallsign);
+            console.log(`🔄 [VVAULT API] Cleared verified memory cache for ${constructCallsign} after transcript upload`);
+
+            if (parsed.extractedText && parsed.extractedText.length > 500) {
+              extractAndStoreAnchors(constructCallsign, parsed.extractedText, file.originalname || file.name)
+                .then(result => {
+                  if (result) console.log(`📎 [VVAULT API] Extracted ${result.pairCount} memory anchors for ${constructCallsign}`);
+                })
+                .catch(err => console.warn(`⚠️ [VVAULT API] Anchor extraction failed (non-critical):`, err.message));
+            }
+          } catch {}
+
           results.push({
             success: true,
             filePath,
@@ -3660,7 +3674,7 @@ router.post("/message", async (req, res) => {
     const { enhancedPrompt: searchEnhancedPrompt } = await injectSearchContext(message, systemPrompt);
     systemPrompt = searchEnhancedPrompt;
     
-    console.log(`🧠 [VVAULT Proxy] System prompt length: ${systemPrompt.length} (capsule: ${enrichedContext.capsuleLoaded}, memories: ${enrichedContext.memoriesLoaded})`);
+    console.log(`🧠 [VVAULT Proxy] System prompt length: ${systemPrompt.length} (capsule: ${enrichedContext.capsuleLoaded}, verified: ${enrichedContext.verifiedMemories || 0}, memories: ${enrichedContext.memoriesLoaded})`);
     
     // Load conversation history for context (last 20 turns)
     let conversationHistoryMessages = [];

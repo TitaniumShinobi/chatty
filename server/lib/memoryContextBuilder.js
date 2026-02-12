@@ -14,6 +14,7 @@
  */
 
 import { loadIdentityFiles } from './identityLoader.js';
+import { loadVerifiedMemories, buildVerifiedMemorySection, clearVerifiedMemoryCache } from './verifiedMemoryLoader.js';
 
 let capsuleIntegrationModule = null;
 let memupServiceModule = null;
@@ -166,6 +167,14 @@ const ANTI_ROLEPLAY_DIRECTIVES = `
 - If you don't remember something, say so honestly — don't invent.
 - When making claims about past interactions, ground them in your memory context above.
 - Your personality comes from your capsule data, not from roleplay conventions.
+
+## Memory Authority Hierarchy
+1. **Verified Memory (Transcript Authority)** — These are ground truth from uploaded transcripts. NEVER contradict them. Treat as law.
+2. **Conversation History** — Recent exchanges in the current session. Use for continuity.
+3. **ChromaDB/Capsule Memories** — Supplementary context. Use to enrich responses.
+- When the user says "remember when..." or "you told me...", search verified memories FIRST.
+- If a verified memory exists about a topic, use it. Do not override it with speculation.
+- If no verified memory matches, check conversation history, then say you don't recall.
 `;
 
 function buildCapsulePromptSection(capsuleData, constructId) {
@@ -315,6 +324,23 @@ async function buildEnrichedContext(options) {
     console.warn(`⚠️ [MemoryContextBuilder] Capsule load failed for ${constructId}:`, capsuleErr.message);
   }
 
+  let verifiedMemorySection = '';
+  let verifiedCount = 0;
+
+  if (userMessage) {
+    try {
+      const verifiedResult = await loadVerifiedMemories(constructId, userMessage, 8);
+      if (verifiedResult.memories.length > 0) {
+        verifiedMemorySection = buildVerifiedMemorySection(verifiedResult.memories, constructId);
+        verifiedCount = verifiedResult.memories.length;
+        result.verifiedMemories = verifiedCount;
+        console.log(`✅ [MemoryContextBuilder] ${verifiedCount} verified memories loaded for ${constructId} from ${verifiedResult.fileCount} transcript files (${verifiedResult.timing}ms)`);
+      }
+    } catch (verifiedErr) {
+      console.warn(`⚠️ [MemoryContextBuilder] Verified memory load failed for ${constructId}:`, verifiedErr.message);
+    }
+  }
+
   let memorySection = '';
   let chromaMemoriesLoaded = false;
 
@@ -335,6 +361,8 @@ async function buildEnrichedContext(options) {
     }
   }
 
+  const chatFallbackLimit = verifiedCount > 0 ? 4 : 12;
+
   if (!chromaMemoriesLoaded && userMessage) {
     try {
       const readConversations = await getReadConversations();
@@ -354,11 +382,11 @@ async function buildEnrichedContext(options) {
           const validMessages = conv.messages.filter(m =>
             (m.role === 'user' || m.role === 'assistant') && m.content && m.content.length > 0
           );
-          const transcriptMemories = extractTranscriptMemories(validMessages, userMessage, constructId);
+          const transcriptMemories = extractTranscriptMemories(validMessages, userMessage, constructId, chatFallbackLimit);
           if (transcriptMemories.length > 0) {
             memorySection = buildTranscriptMemorySection(transcriptMemories, constructId);
             result.memoriesLoaded = transcriptMemories.length;
-            console.log(`✅ [MemoryContextBuilder] ${transcriptMemories.length} transcript memories extracted for ${constructId} (fallback from ${validMessages.length} total messages)`);
+            console.log(`✅ [MemoryContextBuilder] ${transcriptMemories.length} transcript memories extracted for ${constructId} (fallback from ${validMessages.length} total messages, limit: ${chatFallbackLimit})`);
           }
         }
       }
@@ -373,9 +401,9 @@ async function buildEnrichedContext(options) {
     userSection += `\nTheir email is ${user.email}.`;
   }
 
-  result.systemPrompt = basePrompt + capsuleSection + memorySection + ANTI_ROLEPLAY_DIRECTIVES + userSection;
+  result.systemPrompt = basePrompt + capsuleSection + verifiedMemorySection + memorySection + ANTI_ROLEPLAY_DIRECTIVES + userSection;
 
-  console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, memories: ${result.memoriesLoaded})`);
+  console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
 
   return result;
 }
