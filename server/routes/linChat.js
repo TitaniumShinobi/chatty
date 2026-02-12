@@ -57,6 +57,10 @@ function parseModelString(modelString) {
     return { provider: 'openrouter', model: modelString.substring(11) };
   }
   
+  if (modelString.startsWith('openai:')) {
+    return { provider: 'openai', model: modelString.substring(7) };
+  }
+  
   if (modelString.startsWith('ollama:')) {
     return { provider: 'ollama', model: modelString.substring(7) };
   }
