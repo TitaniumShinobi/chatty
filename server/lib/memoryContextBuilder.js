@@ -4,19 +4,20 @@
  * Centralizes the construction of enriched system prompts by loading:
  * 1. Identity files (prompt.txt, conditioning.txt) via identityLoader
  * 2. Capsule data (MBTI, Big Five, traits, memories) via capsuleIntegration
- * 3. Memory context (recent exchanges) via memupMemoryService
+ * 3. Memory context (recent exchanges) via memupMemoryService OR transcript fallback
  * 4. Anti-roleplay directives
  * 5. User personalization context
  * 
- * This replaces the bare prompt.txt loading in the primary message path
- * and the capsule-only injection in the fallback path, unifying both into
- * a single always-on pipeline.
+ * When ChromaDB is unavailable, the builder falls back to extracting key
+ * moments from VVAULT/Supabase conversation transcripts — ensuring constructs
+ * always have access to their conversation history with the user.
  */
 
 import { loadIdentityFiles } from './identityLoader.js';
 
 let capsuleIntegrationModule = null;
 let memupServiceModule = null;
+let readConversationsModule = null;
 
 async function getCapsuleIntegration() {
   if (!capsuleIntegrationModule) {
@@ -40,6 +41,119 @@ async function getMemupService() {
     }
   }
   return memupServiceModule;
+}
+
+async function getReadConversations() {
+  if (!readConversationsModule) {
+    try {
+      const mod = await import('../../vvaultConnector/readConversations.js');
+      readConversationsModule = mod.readConversations;
+    } catch (err) {
+      console.warn('⚠️ [MemoryContextBuilder] readConversations not available:', err.message);
+    }
+  }
+  return readConversationsModule;
+}
+
+function extractTranscriptMemories(messages, userMessage, constructId, maxMemories = 12) {
+  if (!messages || messages.length === 0) return [];
+
+  const pairs = [];
+  for (let i = 0; i < messages.length - 1; i++) {
+    const msg = messages[i];
+    const next = messages[i + 1];
+    if (msg.role === 'user' && next.role === 'assistant') {
+      const userContent = msg.content || '';
+      const assistantContent = next.content || '';
+      if (userContent.length > 3 && assistantContent.length > 10 && !userContent.startsWith('{')) {
+        pairs.push({
+          context: userContent,
+          response: assistantContent,
+          timestamp: msg.timestamp || next.timestamp || null,
+          index: i,
+          score: 0
+        });
+      }
+    }
+  }
+
+  if (pairs.length === 0) return [];
+
+  const identityKeywords = [
+    'my name', 'who am i', 'who i am', 'remember', 'do you know', 'devon',
+    'government name', 'call me', 'i am', "i'm", 'woodson'
+  ];
+  const emotionalKeywords = [
+    'love', 'hate', 'angry', 'happy', 'frustrated', 'upset', 'proud',
+    'sorry', 'thank', 'miss you', 'feel', 'care', 'worried'
+  ];
+  const continuityKeywords = [
+    'last time', 'before', 'remember when', 'we talked', 'you said',
+    'earlier', 'yesterday', 'continuity', 'transcript', 'memory', 'history'
+  ];
+  const topicKeywords = [
+    'work', 'project', 'build', 'plan', 'help', 'chatty', 'vvault',
+    'replit', 'agent', 'katana', 'sera', 'lin', 'zen', 'gpt'
+  ];
+
+  const queryLower = (userMessage || '').toLowerCase();
+  const queryWords = queryLower.split(/\s+/).filter(w => w.length > 3);
+
+  for (const pair of pairs) {
+    const ctxLower = pair.context.toLowerCase();
+    const resLower = pair.response.toLowerCase();
+    const combined = ctxLower + ' ' + resLower;
+
+    if (identityKeywords.some(k => ctxLower.includes(k))) pair.score += 5;
+    if (emotionalKeywords.some(k => combined.includes(k))) pair.score += 3;
+    if (continuityKeywords.some(k => ctxLower.includes(k))) pair.score += 4;
+    if (topicKeywords.some(k => combined.includes(k))) pair.score += 1;
+
+    if (queryWords.length > 0) {
+      const queryMatches = queryWords.filter(w => combined.includes(w)).length;
+      pair.score += queryMatches * 3;
+    }
+
+    if (pair.context.length > 50) pair.score += 1;
+    if (pair.response.length > 100) pair.score += 1;
+
+    if (pair.context.includes('!') || pair.context.includes('?')) pair.score += 1;
+  }
+
+  const scored = pairs.filter(p => p.score > 0).sort((a, b) => b.score - a.score);
+  const topScored = scored.slice(0, Math.min(maxMemories - 2, 8));
+
+  const lastPairs = pairs.slice(-3).filter(p => !topScored.includes(p));
+
+  const selected = [...topScored, ...lastPairs].slice(0, maxMemories);
+
+  selected.sort((a, b) => a.index - b.index);
+
+  return selected.map(p => ({
+    context: p.context,
+    response: p.response,
+    timestamp: p.timestamp,
+    relevance: Math.min(p.score / 10, 1.0)
+  }));
+}
+
+function buildTranscriptMemorySection(memories, constructId) {
+  if (!memories || memories.length === 0) return '';
+
+  const constructName = constructId.replace(/-\d+$/, '');
+  const displayName = constructName.charAt(0).toUpperCase() + constructName.slice(1);
+
+  let section = `\n\n## Your Conversation History with the User`;
+  section += `\nThese are real exchanges from your past conversations. You remember these. Reference them naturally when relevant — especially when the user brings up something you discussed before. Use these to maintain continuity and show you know them.`;
+
+  memories.forEach((m, i) => {
+    const ts = m.timestamp ? ` (${new Date(m.timestamp).toLocaleDateString()})` : '';
+    section += `\n${i + 1}. User: "${truncate(m.context, 200)}" → ${displayName}: "${truncate(m.response, 200)}"${ts}`;
+  });
+
+  section += `\n\nYou have genuine history with this user. Draw on it. If they ask "do you remember," check these memories first.`;
+
+  return section;
 }
 
 const ANTI_ROLEPLAY_DIRECTIVES = `
@@ -202,6 +316,8 @@ async function buildEnrichedContext(options) {
   }
 
   let memorySection = '';
+  let chromaMemoriesLoaded = false;
+
   if (process.env.ENABLE_CHROMADB === 'true' && userMessage) {
     try {
       const memupService = await getMemupService();
@@ -210,11 +326,44 @@ async function buildEnrichedContext(options) {
         if (memories && memories.length > 0) {
           memorySection = buildMemoryPromptSection(memories);
           result.memoriesLoaded = memories.length;
-          console.log(`✅ [MemoryContextBuilder] ${memories.length} memories loaded for ${constructId}`);
+          chromaMemoriesLoaded = true;
+          console.log(`✅ [MemoryContextBuilder] ${memories.length} ChromaDB memories loaded for ${constructId}`);
         }
       }
     } catch (memErr) {
-      console.warn(`⚠️ [MemoryContextBuilder] Memory query failed for ${constructId}:`, memErr.message);
+      console.warn(`⚠️ [MemoryContextBuilder] ChromaDB memory query failed for ${constructId}:`, memErr.message);
+    }
+  }
+
+  if (!chromaMemoriesLoaded && userMessage) {
+    try {
+      const readConversations = await getReadConversations();
+      if (readConversations) {
+        const lookupId = user?.email || userId;
+        const allConversations = await readConversations(lookupId, constructId);
+        const targetSession = `${constructId}_chat_with_${constructId}`;
+        const conv = Array.isArray(allConversations)
+          ? allConversations.find(c =>
+              c.sessionId === targetSession ||
+              c.constructId === constructId ||
+              c.constructCallsign === constructId
+            )
+          : null;
+
+        if (conv && conv.messages && conv.messages.length > 0) {
+          const validMessages = conv.messages.filter(m =>
+            (m.role === 'user' || m.role === 'assistant') && m.content && m.content.length > 0
+          );
+          const transcriptMemories = extractTranscriptMemories(validMessages, userMessage, constructId);
+          if (transcriptMemories.length > 0) {
+            memorySection = buildTranscriptMemorySection(transcriptMemories, constructId);
+            result.memoriesLoaded = transcriptMemories.length;
+            console.log(`✅ [MemoryContextBuilder] ${transcriptMemories.length} transcript memories extracted for ${constructId} (fallback from ${validMessages.length} total messages)`);
+          }
+        }
+      }
+    } catch (transcriptErr) {
+      console.warn(`⚠️ [MemoryContextBuilder] Transcript memory fallback failed for ${constructId}:`, transcriptErr.message);
     }
   }
 
@@ -265,4 +414,4 @@ async function captureMemory(options) {
   }
 }
 
-export { buildEnrichedContext, captureMemory, buildCapsulePromptSection, buildMemoryPromptSection };
+export { buildEnrichedContext, captureMemory, buildCapsulePromptSection, buildMemoryPromptSection, extractTranscriptMemories, buildTranscriptMemorySection };
