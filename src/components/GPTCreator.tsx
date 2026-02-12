@@ -1251,7 +1251,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
     const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB limit for text files
     const MAX_PDF_SIZE = 10 * 1024 * 1024; // 10MB limit for PDFs
-    const MAX_ZIP_SIZE = 100 * 1024 * 1024; // 100MB limit for zip files
+    const MAX_ZIP_SIZE = 500 * 1024 * 1024; // 500MB limit for zip files
 
     setIsUploadingTranscripts(true);
     const newTranscripts: Array<{
@@ -1273,7 +1273,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         // Handle zip files - extract and preserve directory structure
         if (ext === "zip") {
           if (file.size > MAX_ZIP_SIZE) {
-            skippedFiles.push(`${file.name} (exceeds 100MB limit)`);
+            skippedFiles.push(`${file.name} (exceeds 500MB limit)`);
             continue;
           }
           try {
