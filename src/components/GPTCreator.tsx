@@ -133,6 +133,9 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [duplicateFileNames, setDuplicateFileNames] = useState<string[]>([]);
   const [pendingZipEntries, setPendingZipEntries] = useState<Array<{ name: string; file: GPTFile }>>([]);
 
+  // Upload progress tracking
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
+
   // Avatar upload
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
@@ -1082,21 +1085,26 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         });
       }
 
-      // Upload files after GPT creation/update to avoid FOREIGN KEY constraint
-      for (const file of files) {
-        if (file.gptId === "temp" && file._file) {
-          const zipPath =
-            file.filename !== file.originalName ? file.filename : undefined;
-          if (isAIService) {
-            await (service as AIService).uploadFile(
-              gpt.id,
-              file._file,
-              zipPath,
-            );
-          } else {
-            await (service as GPTService).uploadFile(gpt.id, file._file);
-          }
+      const pendingFiles = files.filter(f => f.gptId === "temp" && f._file);
+      if (pendingFiles.length > 0) {
+        const BATCH_SIZE = 10;
+        let uploaded = 0;
+        setUploadProgress({ current: 0, total: pendingFiles.length });
+
+        for (let i = 0; i < pendingFiles.length; i += BATCH_SIZE) {
+          const batch = pendingFiles.slice(i, i + BATCH_SIZE);
+          await Promise.all(batch.map(async (file) => {
+            const zipPath = file.filename !== file.originalName ? file.filename : undefined;
+            if (isAIService) {
+              await (service as AIService).uploadFile(gpt.id, file._file!, zipPath);
+            } else {
+              await (service as GPTService).uploadFile(gpt.id, file._file!);
+            }
+            uploaded++;
+            setUploadProgress({ current: uploaded, total: pendingFiles.length });
+          }));
         }
+        setUploadProgress(null);
       }
 
       // Create actions if any (only for new actions)
@@ -1134,6 +1142,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         );
       }
       setSaveState("error");
+      setUploadProgress(null);
     } finally {
       setIsLoading(false);
     }
@@ -1179,6 +1188,10 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
           for (const entryName of entries) {
             const zipEntry = zip.files[entryName];
             if (zipEntry.dir) continue;
+
+            if (entryName.includes("__MACOSX/") || entryName.split("/").pop()?.startsWith("._") || entryName.endsWith(".DS_Store")) {
+              continue;
+            }
 
             const entryExt = entryName.split(".").pop()?.toLowerCase() || "";
             const isText = ["txt", "md", "json", "csv", "rtf", "html", "xml", "yaml", "yml", "log"].includes(entryExt);
@@ -3154,13 +3167,28 @@ ALWAYS:
                   Saved
                 </span>
               )}
-              {saveState === "saving" && (
-                <span
-                  className="text-sm"
-                  style={{ color: "var(--chatty-text)", opacity: 0.7 }}
-                >
-                  Saving...
-                </span>
+              {(saveState === "saving" || isLoading) && (
+                <div className="flex items-center gap-2">
+                  <span
+                    className="text-sm"
+                    style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+                  >
+                    {uploadProgress
+                      ? `Uploading ${uploadProgress.current} of ${uploadProgress.total} files...`
+                      : "Saving..."}
+                  </span>
+                  {uploadProgress && (
+                    <div className="w-32 h-2 rounded-full overflow-hidden" style={{ backgroundColor: "var(--chatty-border)" }}>
+                      <div
+                        className="h-full rounded-full transition-all duration-300"
+                        style={{
+                          width: `${Math.round((uploadProgress.current / uploadProgress.total) * 100)}%`,
+                          backgroundColor: "var(--chatty-accent)",
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
               )}
               {saveState === "error" && (
                 <span
