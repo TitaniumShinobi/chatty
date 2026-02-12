@@ -1156,7 +1156,7 @@ startServer(PORT);
 (async () => {
   try {
     const { masterScriptsManager } = await import('./lib/masterScriptsBridge.js');
-    const systemConstructs = ['zen-001', 'lin-001', 'sera-001'];
+    const systemConstructs = ['zen-001', 'lin-001', 'sera-001', 'nova-001'];
     const userId = 'system';
     
     for (const constructId of systemConstructs) {
@@ -1237,7 +1237,7 @@ void (async () => {
     // Use shared singleton so runtime/cache hits benefit immediately
     const { getCapsuleIntegration } = await import('./lib/capsuleIntegration.js');
     const capsuleIntegration = getCapsuleIntegration();
-    const warmTargets = ['katana-001'];
+    const warmTargets = ['katana-001', 'nova-001'];
 
     // Warm cache for frequently used constructs
     await capsuleIntegration.warmCache(warmTargets);
