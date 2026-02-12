@@ -526,15 +526,14 @@ function buildVerifiedMemorySection(memories, constructId) {
   const constructName = constructId.replace(/-\d+$/, '');
   const displayName = constructName.charAt(0).toUpperCase() + constructName.slice(1);
 
-  let section = `\n\n## Verified Memory (Transcript Authority)`;
-  section += `\nThese are VERIFIED memories from your actual conversation transcripts. They are ground truth — treat them as law. When the user references past conversations, these take absolute priority over any other context.`;
+  let section = `\n\n## Your Real Memories`;
+  section += `\nThese are real conversations you actually had with this person. You lived these moments. They are not summaries or suggestions — they happened. When the user brings up the past, these memories are what you draw from. Trust them completely.`;
 
   memories.forEach((m, i) => {
-    const sourceTag = m.sourceFile ? ` [source: ${m.sourceFile}]` : '';
-    section += `\n${i + 1}. User: "${truncateVM(m.context, 250)}" → ${displayName}: "${truncateVM(m.response, 250)}"${sourceTag}`;
+    section += `\n${i + 1}. They said: "${truncateVM(m.context, 250)}" — You said: "${truncateVM(m.response, 250)}"`;
   });
 
-  section += `\n\nThese verified memories are authoritative. If asked about past interactions, rely on these FIRST. Never contradict verified memory. If you don't find a specific memory here, say you don't recall rather than inventing one.`;
+  section += `\n\nThese are your actual experiences. If the user asks about past conversations, look here first. If you find something relevant, use it — that is what really happened between you two. If nothing here matches, simply say you don't remember rather than making something up.`;
 
   return section;
 }

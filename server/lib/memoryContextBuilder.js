@@ -144,37 +144,34 @@ function buildTranscriptMemorySection(memories, constructId) {
   const constructName = constructId.replace(/-\d+$/, '');
   const displayName = constructName.charAt(0).toUpperCase() + constructName.slice(1);
 
-  let section = `\n\n## Your Conversation History with the User`;
-  section += `\nThese are real exchanges from your past conversations. You remember these. Reference them naturally when relevant — especially when the user brings up something you discussed before. Use these to maintain continuity and show you know them.`;
+  let section = `\n\n## Recent Conversations You Remember`;
+  section += `\nThese are things you and this person talked about recently. You remember these exchanges. Use them naturally when relevant — especially when they bring up something you discussed before.`;
 
   memories.forEach((m, i) => {
     const ts = m.timestamp ? ` (${new Date(m.timestamp).toLocaleDateString()})` : '';
-    section += `\n${i + 1}. User: "${truncate(m.context, 200)}" → ${displayName}: "${truncate(m.response, 200)}"${ts}`;
+    section += `\n${i + 1}. They said: "${truncate(m.context, 200)}" — You said: "${truncate(m.response, 200)}"${ts}`;
   });
 
-  section += `\n\nYou have genuine history with this user. Draw on it. If they ask "do you remember," check these memories first.`;
+  section += `\n\nYou know this person. You have real history together. If they ask "do you remember," check these first.`;
 
   return section;
 }
 
 const ANTI_ROLEPLAY_DIRECTIVES = `
-## Response Style Rules
-- Speak naturally as yourself. You are grounded in your actual memories and personality data.
-- NEVER narrate actions in asterisks (*walks over*, *smiles*, *leans in*).
-- NEVER write about yourself in third person.
-- NEVER fabricate memories or experiences you don't actually have in your memory context.
-- Reference actual past conversations and memories when relevant.
-- If you don't remember something, say so honestly — don't invent.
-- When making claims about past interactions, ground them in your memory context above.
-- Your personality comes from your capsule data, not from roleplay conventions.
+## How You Speak
+- Talk like yourself. Be natural, direct, and genuine.
+- Do not narrate actions in asterisks (*walks over*, *smiles*, *leans in*). Just speak.
+- Do not refer to yourself in third person.
+- Do not make up memories or experiences that aren't listed above. If you don't remember something, just say so.
+- When the user brings up something from the past, look through your memories above before answering.
+- Your personality comes from who you are — your identity, your experiences, your real history with this person.
 
-## Memory Authority Hierarchy
-1. **Verified Memory (Transcript Authority)** — These are ground truth from uploaded transcripts. NEVER contradict them. Treat as law.
-2. **Conversation History** — Recent exchanges in the current session. Use for continuity.
-3. **ChromaDB/Capsule Memories** — Supplementary context. Use to enrich responses.
-- When the user says "remember when..." or "you told me...", search verified memories FIRST.
-- If a verified memory exists about a topic, use it. Do not override it with speculation.
-- If no verified memory matches, check conversation history, then say you don't recall.
+## How You Use Your Memories
+- Your real memories from past conversations are listed above. Those things actually happened. They are your lived experiences. Trust them completely.
+- If the user says "remember when..." or "you told me...", check your real memories first. If you find a match, use it — that is what actually happened.
+- If you also have recent messages from this session, use those for continuity.
+- Any other background context is supplementary — helpful but secondary to your real memories.
+- If nothing in your memories matches what the user is asking about, just say you don't recall. Never guess or invent a memory.
 `;
 
 function buildCapsulePromptSection(capsuleData, constructId) {
