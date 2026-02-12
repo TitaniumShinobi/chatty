@@ -64,20 +64,26 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('💥 [CRASH] Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-// Construct canonical redirect URI — ALWAYS use production domain for Google OAuth
-// This ensures the redirect_uri matches what's registered in Google Cloud Console,
-// regardless of whether we're accessed from Replit dev, custom domain, or localhost.
 const CANONICAL_DOMAIN = process.env.CANONICAL_DOMAIN || 'chatty.thewreck.org';
 const CALLBACK_PATH = process.env.CALLBACK_PATH || '/api/auth/google/callback';
 const REDIRECT_URI = `https://${CANONICAL_DOMAIN}${CALLBACK_PATH}`;
 const GOOGLE_CALLBACK = REDIRECT_URI;
 
 const REPLIT_DOMAIN = process.env.REPLIT_DEV_DOMAIN || process.env.REPLIT_DOMAINS;
+const REPLIT_REDIRECT_URI = REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}${CALLBACK_PATH}` : null;
 const POST_LOGIN_REDIRECT = REPLIT_DOMAIN
   ? `https://${REPLIT_DOMAIN}`
   : (process.env.POST_LOGIN_REDIRECT || process.env.FRONTEND_URL || "http://localhost:5173");
 
+function isReplitPreview(req) {
+  const host = req.get('x-forwarded-host') || req.get('host') || '';
+  return REPLIT_DOMAIN && (host === REPLIT_DOMAIN || host === `${REPLIT_DOMAIN}:5050`);
+}
+
 function getRedirectUri(req) {
+  if (isReplitPreview(req) && REPLIT_REDIRECT_URI) {
+    return REPLIT_REDIRECT_URI;
+  }
   return REDIRECT_URI;
 }
 
@@ -106,6 +112,7 @@ console.log('--- OAUTH CONFIG DEBUG ---');
 console.log('CANONICAL_DOMAIN:', CANONICAL_DOMAIN);
 console.log('REPLIT_DOMAIN:', REPLIT_DOMAIN);
 console.log('REDIRECT_URI:', REDIRECT_URI);
+console.log('REPLIT_REDIRECT_URI:', REPLIT_REDIRECT_URI || '(not set)');
 console.log('GOOGLE_CALLBACK:', GOOGLE_CALLBACK);
 console.log('---------------------------');
 
@@ -488,10 +495,13 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
       console.warn(`⚠️ [OAuth] Origin not in allowlist: ${originUrl}. Allowed:`, [...ALLOWED_ORIGINS]);
     }
 
+    const dynamicRedirectUri = getRedirectUri(req);
+
     console.log('🔍 [OAuth] Environment check:', {
       has_client_id: !!process.env.GOOGLE_CLIENT_ID,
       has_client_secret: !!process.env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: dynamicRedirectUri,
+      is_replit_preview: isReplitPreview(req),
       origin: originUrl
     });
 
@@ -505,14 +515,14 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
     }
 
     const nonce = cryptoRandom();
-    const stateData = { nonce, origin: originUrl };
+    const stateData = { nonce, origin: originUrl, redirect_uri: dynamicRedirectUri };
     const stateToken = signState(stateData);
 
-    oauthPendingStates.set(nonce, { origin: originUrl, created: Date.now() });
+    oauthPendingStates.set(nonce, { origin: originUrl, redirect_uri: dynamicRedirectUri, created: Date.now() });
 
     const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     url.searchParams.set("client_id", OAUTH.client_id);
-    url.searchParams.set("redirect_uri", REDIRECT_URI);
+    url.searchParams.set("redirect_uri", dynamicRedirectUri);
     url.searchParams.set("response_type", "code");
     url.searchParams.set("scope", "openid email profile");
     url.searchParams.set("include_granted_scopes", "true");
@@ -520,7 +530,7 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
     url.searchParams.set("prompt", "consent");
     url.searchParams.set("state", stateToken);
 
-    console.log('✅ [OAuth] Redirecting to Google with redirect_uri:', REDIRECT_URI, 'origin:', originUrl);
+    console.log('✅ [OAuth] Redirecting to Google with redirect_uri:', dynamicRedirectUri, 'origin:', originUrl);
     res.redirect(url.toString());
   } catch (error) {
     console.error('❌ [OAuth] Unexpected error in /api/auth/google:', error);
@@ -535,6 +545,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
     const { code, error: oauthError, state: stateParam } = req.query;
 
     let originUrl = `https://${CANONICAL_DOMAIN}`;
+    let callbackRedirectUri = REDIRECT_URI;
     let stateValid = false;
 
     if (stateParam) {
@@ -544,7 +555,16 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
         if (pending && pending.origin === stateData.origin) {
           oauthPendingStates.delete(stateData.nonce);
           stateValid = true;
+          const VALID_REDIRECT_URIS = new Set([REDIRECT_URI]);
+          if (REPLIT_REDIRECT_URI) VALID_REDIRECT_URIS.add(REPLIT_REDIRECT_URI);
+          if (pending.redirect_uri && VALID_REDIRECT_URIS.has(pending.redirect_uri)) {
+            callbackRedirectUri = pending.redirect_uri;
+          } else if (pending.redirect_uri) {
+            console.warn(`⚠️ [OAuth Callback] Stored redirect_uri not in allowlist: ${pending.redirect_uri}, using canonical`);
+          }
           if (ALLOWED_ORIGINS.has(stateData.origin)) {
+            originUrl = stateData.origin;
+          } else if (REPLIT_DOMAIN && stateData.origin === `https://${REPLIT_DOMAIN}`) {
             originUrl = stateData.origin;
           } else {
             console.warn(`⚠️ [OAuth Callback] Origin not in allowlist: ${stateData.origin}, using canonical`);
@@ -572,7 +592,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       return res.redirect(`${originUrl}/?error=missing_code`);
     }
 
-    console.log('🔍 [OAuth Callback] Using redirect_uri:', REDIRECT_URI, 'origin:', originUrl);
+    console.log('🔍 [OAuth Callback] Using redirect_uri:', callbackRedirectUri, 'origin:', originUrl);
 
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
@@ -582,7 +602,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
         client_secret: process.env.GOOGLE_CLIENT_SECRET,
         code,
         grant_type: "authorization_code",
-        redirect_uri: REDIRECT_URI,
+        redirect_uri: callbackRedirectUri,
       })
     }).then(r => r.json());
     if (!tokenRes.access_token) {
