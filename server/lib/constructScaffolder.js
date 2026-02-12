@@ -200,7 +200,11 @@ function buildScaffoldFiles(constructCallsign, config) {
   const dirMarkers = [
     { filename: `${base}/assets/.gitkeep`, content: '', file_type: 'system' },
     { filename: `${base}/data/.gitkeep`, content: '', file_type: 'system' },
+    { filename: `${base}/documents/.gitkeep`, content: '', file_type: 'system' },
+    { filename: `${base}/frame/.gitkeep`, content: '', file_type: 'system' },
     { filename: `${base}/memup/.gitkeep`, content: '', file_type: 'system' },
+    { filename: `${base}/simDrive/.gitkeep`, content: '', file_type: 'system' },
+    { filename: `${base}/vxrunner/.gitkeep`, content: '', file_type: 'system' },
     { filename: `${base}/codex/.gitkeep`, content: '', file_type: 'transcript' },
     { filename: `${base}/chatgpt/.gitkeep`, content: '', file_type: 'transcript' },
     { filename: `${base}/character.ai/.gitkeep`, content: '', file_type: 'transcript' },

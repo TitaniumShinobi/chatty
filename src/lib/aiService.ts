@@ -194,9 +194,12 @@ export class AIService {
   }
 
   // File Operations
-  async uploadFile(aiId: string, file: File): Promise<AIFile> {
+  async uploadFile(aiId: string, file: File, zipPath?: string): Promise<AIFile> {
     const formData = new FormData();
     formData.append('file', file);
+    if (zipPath) {
+      formData.append('zipPath', zipPath);
+    }
 
     const response = await fetch(`${this.baseUrl}/${aiId}/files`, {
       method: 'POST',

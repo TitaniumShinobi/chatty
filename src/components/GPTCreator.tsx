@@ -1080,9 +1080,14 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       // Upload files after GPT creation/update to avoid FOREIGN KEY constraint
       for (const file of files) {
         if (file.gptId === "temp" && file._file) {
-          // Upload the file with the GPT ID using the appropriate service
+          const zipPath =
+            file.filename !== file.originalName ? file.filename : undefined;
           if (isAIService) {
-            await (service as AIService).uploadFile(gpt.id, file._file);
+            await (service as AIService).uploadFile(
+              gpt.id,
+              file._file,
+              zipPath,
+            );
           } else {
             await (service as GPTService).uploadFile(gpt.id, file._file);
           }
