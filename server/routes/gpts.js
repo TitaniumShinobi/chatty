@@ -155,18 +155,51 @@ router.post('/', async (req, res) => {
         const constructId = gpt.constructCallsign;
         const supabase = getSupabaseClient();
         
+        let scaffoldUserId = userId;
+        if (supabase && userEmail) {
+          const { data: byEmail } = await supabase
+            .from('users')
+            .select('id')
+            .eq('email', userEmail)
+            .limit(1)
+            .maybeSingle();
+          if (byEmail?.id) {
+            scaffoldUserId = byEmail.id;
+          } else {
+            const { data: byName } = await supabase
+              .from('users')
+              .select('id')
+              .eq('name', userEmail)
+              .limit(1)
+              .maybeSingle();
+            if (byName?.id) {
+              scaffoldUserId = byName.id;
+            }
+          }
+          if (scaffoldUserId !== userId) {
+            console.log(`✅ [GPTs API] Resolved Supabase user: ${userEmail} → ${scaffoldUserId}`);
+          } else {
+            console.warn(`⚠️ [GPTs API] Could not resolve Supabase UUID for ${userEmail}, scaffold may fail`);
+          }
+        }
+        
         console.log(`📦 [GPTs API] Scaffolding instance for new GPT: ${constructId}`);
         
         const result = await scaffoldConstruct(constructId, gpt, {
-          userId,
+          userId: scaffoldUserId,
           userEmail,
           supabase,
         });
         
         console.log(`✅ [GPTs API] Scaffolded instance for ${constructId} via ${result.source || 'unknown'}`);
+        if (result.failed > 0) {
+          console.error(`❌ [GPTs API] Scaffold had ${result.failed} failures for ${constructId}`);
+        }
       } catch (scaffoldError) {
-        console.warn(`⚠️ [GPTs API] Instance scaffold failed for ${gpt.constructCallsign}: ${scaffoldError.message}`);
+        console.error(`❌ [GPTs API] Instance scaffold failed for ${gpt.constructCallsign}: ${scaffoldError.message}`);
       }
+    } else {
+      console.warn(`⚠️ [GPTs API] No constructCallsign for ${gpt.id}, skipping scaffold`);
     }
     
     res.json({ success: true, gpt });

@@ -205,17 +205,50 @@ router.post('/', async (req, res) => {
       const constructCallsign = ai.constructCallsign || ai.id.replace(/^(ai-|gpt-)/, '');
       if (constructCallsign) {
         const supabase = getSupabaseClient();
+        const userEmail = req.user?.email;
+        
+        let scaffoldUserId = userId;
+        if (supabase && userEmail) {
+          const { data: byEmail } = await supabase
+            .from('users')
+            .select('id')
+            .eq('email', userEmail)
+            .limit(1)
+            .maybeSingle();
+          if (byEmail?.id) {
+            scaffoldUserId = byEmail.id;
+          } else {
+            const { data: byName } = await supabase
+              .from('users')
+              .select('id')
+              .eq('name', userEmail)
+              .limit(1)
+              .maybeSingle();
+            if (byName?.id) {
+              scaffoldUserId = byName.id;
+            }
+          }
+          if (scaffoldUserId !== userId) {
+            console.log(`✅ [AIs API] Resolved Supabase user: ${userEmail} → ${scaffoldUserId}`);
+          } else {
+            console.warn(`⚠️ [AIs API] Could not resolve Supabase UUID for ${userEmail}, scaffold may fail`);
+          }
+        }
+        
         const result = await scaffoldConstruct(constructCallsign, ai, {
-          userId,
-          userEmail: req.user?.email,
+          userId: scaffoldUserId,
+          userEmail,
           supabase,
         });
         console.log(`✅ [AIs API] Scaffolded instance for ${ai.id} (${constructCallsign}) via ${result.source || 'unknown'}`);
+        if (result.failed > 0) {
+          console.error(`❌ [AIs API] Scaffold had ${result.failed} failures for ${constructCallsign}`);
+        }
       } else {
         console.warn(`⚠️ [AIs API] No constructCallsign for ${ai.id}, skipping scaffold`);
       }
     } catch (scaffoldError) {
-      console.warn(`⚠️ [AIs API] Instance scaffold failed for ${ai.id}:`, scaffoldError.message);
+      console.error(`❌ [AIs API] Instance scaffold failed for ${ai.id}:`, scaffoldError.message);
     }
     
     // Trigger capsule generation for new GPT
