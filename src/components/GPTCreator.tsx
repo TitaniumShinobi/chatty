@@ -662,9 +662,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
               initialConfig.id!,
             );
           }
-          const knowledgeCategories = ['knowledge', 'config', 'capsule', 'identity', 'other'];
           const knowledgeOnly = (loadedFiles as GPTFile[]).filter(
-            (f: any) => !f.category || knowledgeCategories.includes(f.category)
+            (f: any) => f.category === 'knowledge'
           );
           setFiles(knowledgeOnly);
         } catch (error) {
