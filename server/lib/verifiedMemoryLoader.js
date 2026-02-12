@@ -42,7 +42,8 @@ async function discoverTranscriptFiles(constructId) {
 
   const files = (data || []).filter(f => {
     if (!f.filename) return false;
-    if (f.filename.endsWith('.png') || f.filename.endsWith('.jpg') || f.filename === '.DS_Store') return false;
+    const lowerName = f.filename.toLowerCase();
+    if (lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.pdf') || lowerName.endsWith('.gif') || lowerName.endsWith('.webp') || lowerName.endsWith('.capsule') || f.filename === '.DS_Store') return false;
     if (f.filename === 'chat.log' && (!f.content || f.content.length < 100)) return false;
     return true;
   });
