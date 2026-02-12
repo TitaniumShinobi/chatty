@@ -416,6 +416,110 @@ router.post('/:id/files', upload.single('file'), async (req, res) => {
     };
 
     const file = await aiManager.uploadFile(req.params.id, fileData);
+
+    try {
+      const ai = await aiManager.getAI(req.params.id);
+      const constructCallsign = ai?.constructCallsign || req.params.id.replace(/^(ai-|gpt-)/, '');
+      if (constructCallsign) {
+        const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          const { userId } = await resolveUserId(req);
+          let supabaseUserId = userId;
+          if (supabaseUserId && req.user?.email) {
+            const { data: byEmail } = await supabase
+              .from('users')
+              .select('id')
+              .eq('email', req.user.email)
+              .limit(1)
+              .maybeSingle();
+            if (byEmail?.id) supabaseUserId = byEmail.id;
+          }
+
+          const originalName = req.file.originalname;
+          let rawZipPath = req.body.zipPath || '';
+
+          if (rawZipPath) {
+            rawZipPath = rawZipPath.replace(/\\/g, '/');
+            rawZipPath = rawZipPath.replace(/^\.\//, '');
+            const prefixesToStrip = [
+              `instances/${constructCallsign}/documents/`,
+              `instances/${constructCallsign}/`,
+              `${constructCallsign}/`,
+              'documents/',
+            ];
+            for (const prefix of prefixesToStrip) {
+              if (rawZipPath.startsWith(prefix)) {
+                rawZipPath = rawZipPath.slice(prefix.length);
+                break;
+              }
+            }
+            rawZipPath = rawZipPath.replace(/\.\./g, '').replace(/\/\//g, '/').replace(/^\//, '');
+          }
+
+          const relativePath = rawZipPath || originalName;
+          const vaultPath = `instances/${constructCallsign}/documents/${relativePath}`;
+
+          try {
+            const { assertValidVaultFilename } = await import('../lib/vaultPathGuard.js');
+            assertValidVaultFilename(vaultPath);
+          } catch (pathError) {
+            console.warn(`⚠️ [AIs API] Invalid vault path for knowledge file: ${vaultPath}`, pathError.message);
+            throw new Error(`Invalid file path: ${pathError.message}`);
+          }
+
+          const isTextType = /^text\/|application\/(json|xml|csv)/.test(req.file.mimetype);
+          const contentForVault = isTextType
+            ? req.file.buffer.toString('utf8')
+            : `[binary:${req.file.mimetype}:${req.file.size}]`;
+
+          const { data: existing } = await supabase
+            .from('vault_files')
+            .select('id')
+            .eq('user_id', supabaseUserId)
+            .eq('filename', vaultPath)
+            .maybeSingle();
+
+          if (existing) {
+            await supabase
+              .from('vault_files')
+              .update({
+                content: contentForVault,
+                metadata: {
+                  source: 'chatty-knowledge-upload',
+                  originalName,
+                  mimeType: req.file.mimetype,
+                  size: req.file.size,
+                  updatedAt: new Date().toISOString(),
+                },
+              })
+              .eq('id', existing.id);
+            console.log(`✅ [AIs API] Updated vault_files: ${vaultPath}`);
+          } else {
+            await supabase
+              .from('vault_files')
+              .insert({
+                user_id: supabaseUserId,
+                filename: vaultPath,
+                content: contentForVault,
+                file_type: 'knowledge',
+                construct_id: constructCallsign,
+                metadata: {
+                  source: 'chatty-knowledge-upload',
+                  originalName,
+                  mimeType: req.file.mimetype,
+                  size: req.file.size,
+                  createdAt: new Date().toISOString(),
+                },
+              });
+            console.log(`✅ [AIs API] Created vault_files: ${vaultPath}`);
+          }
+        }
+      }
+    } catch (vaultError) {
+      console.warn(`⚠️ [AIs API] Supabase vault_files write failed for knowledge file:`, vaultError.message);
+    }
+
     res.json({ success: true, file });
   } catch (error) {
     console.error('Error uploading file:', error);
