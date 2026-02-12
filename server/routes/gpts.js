@@ -7,6 +7,79 @@ const router = express.Router();
 
 const gptManager = GPTManager.getInstance();
 
+async function syncPromptJsonToSupabase(gpt, userEmail) {
+  const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+
+  const rawCallsign = gpt.constructCallsign;
+  const callsign = rawCallsign.match(/-\d+$/) ? rawCallsign : `${rawCallsign}-001`;
+  const vaultPath = `instances/${callsign}/identity/prompt.json`;
+
+  const promptData = {
+    name: gpt.name || '',
+    description: gpt.description || '',
+    instructions: gpt.instructions || '',
+    conversationStarters: gpt.conversationStarters || [],
+    createdAt: gpt.createdAt || new Date().toISOString(),
+    source: 'chatty-gpt-creator',
+  };
+  const content = JSON.stringify(promptData, null, 2);
+
+  let userId = null;
+  if (userEmail) {
+    const { data: byEmail } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', userEmail)
+      .limit(1)
+      .maybeSingle();
+    userId = byEmail?.id;
+  }
+  if (!userId) {
+    const { data: byName } = await supabase
+      .from('users')
+      .select('id')
+      .ilike('name', `%${(userEmail || '').split('@')[0]}%`)
+      .limit(1)
+      .maybeSingle();
+    userId = byName?.id;
+  }
+  if (!userId) {
+    console.warn(`⚠️ [GPTs API] prompt.json sync skipped for ${callsign}: could not resolve Supabase user`);
+    return;
+  }
+
+  const { data: existing } = await supabase
+    .from('vault_files')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('filename', vaultPath)
+    .maybeSingle();
+
+  if (existing) {
+    const { error } = await supabase.from('vault_files').update({
+      content,
+      file_type: 'config',
+      updated_at: new Date().toISOString(),
+    }).eq('id', existing.id);
+    if (error) console.warn(`⚠️ [GPTs API] prompt.json update failed for ${callsign}:`, error.message);
+  } else {
+    const { error } = await supabase.from('vault_files').insert({
+      user_id: userId,
+      filename: vaultPath,
+      content,
+      file_type: 'config',
+      construct_id: callsign,
+      metadata: { originalName: 'prompt.json', sha256: null },
+      updated_at: new Date().toISOString(),
+    });
+    if (error) console.warn(`⚠️ [GPTs API] prompt.json insert failed for ${callsign}:`, error.message);
+  }
+
+  console.log(`✅ [GPTs API] Synced prompt.json to Supabase for ${callsign}`);
+}
+
 async function resolveUserId(req) {
   const chattyUserId = req.user?.id || req.user?.uid || req.user?.sub || req.user?.email || null;
   if (!chattyUserId) return { userId: null, chattyUserId: null };
@@ -216,6 +289,12 @@ router.put('/:id', async (req, res) => {
     if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
     const gpt = await gptManager.updateGPT(req.params.id, req.body);
     res.json({ success: true, gpt });
+
+    if (gpt?.constructCallsign) {
+      syncPromptJsonToSupabase(gpt, req.user?.email).catch(err =>
+        console.warn(`⚠️ [GPTs API] prompt.json sync failed for ${gpt.constructCallsign}:`, err.message)
+      );
+    }
   } catch (error) {
     console.error('Error updating GPT:', error);
     res.status(500).json({ success: false, error: error.message });
