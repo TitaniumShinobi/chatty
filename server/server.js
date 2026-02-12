@@ -76,24 +76,41 @@ const POST_LOGIN_REDIRECT = REPLIT_DOMAIN
   : (process.env.POST_LOGIN_REDIRECT || process.env.FRONTEND_URL || "http://localhost:5173");
 
 function isReplitPreview(req) {
+  if (!REPLIT_DOMAIN) return false;
   const host = req.get('x-forwarded-host') || req.get('host') || '';
-  return REPLIT_DOMAIN && (host === REPLIT_DOMAIN || host === `${REPLIT_DOMAIN}:5050`);
+  if (host === REPLIT_DOMAIN || host === `${REPLIT_DOMAIN}:5050`) return true;
+  const origin = req.get('origin') || '';
+  if (origin.includes(REPLIT_DOMAIN)) return true;
+  const referer = req.get('referer') || '';
+  if (referer.includes(REPLIT_DOMAIN)) return true;
+  return false;
+}
+
+function getRequestOrigin(req) {
+  const origin = req.get('origin') || '';
+  const referer = req.get('referer') || '';
+  if (REPLIT_DOMAIN) {
+    if (origin.includes(REPLIT_DOMAIN)) return `https://${REPLIT_DOMAIN}`;
+    if (referer.includes(REPLIT_DOMAIN)) return `https://${REPLIT_DOMAIN}`;
+  }
+  if (origin && origin !== 'null') {
+    try { return new URL(origin).origin; } catch {}
+  }
+  if (referer) {
+    try { return new URL(referer).origin; } catch {}
+  }
+  const host = req.get('x-forwarded-host') || req.get('host');
+  const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+  if (host) return `${proto}://${host}`;
+  return `https://${CANONICAL_DOMAIN}`;
 }
 
 function getRedirectUri(req) {
-  if (isReplitPreview(req) && REPLIT_REDIRECT_URI) {
-    return REPLIT_REDIRECT_URI;
-  }
   return REDIRECT_URI;
 }
 
 function getPostLoginRedirect(req) {
-  const host = req.get('x-forwarded-host') || req.get('host');
-  const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
-  if (host) {
-    return `${proto}://${host}`;
-  }
-  return POST_LOGIN_REDIRECT;
+  return getRequestOrigin(req);
 }
 
 // In production, never fall back to localhost for redirect/callback config.
@@ -487,9 +504,13 @@ setInterval(() => {
 app.get("/api/auth/google", authLimiter, (req, res) => {
   console.log('🔍 [OAuth] /api/auth/google endpoint hit');
   try {
-    const originHost = req.get('x-forwarded-host') || req.get('host');
-    const originProto = req.get('x-forwarded-proto') || req.protocol || 'https';
-    const originUrl = originHost ? `${originProto}://${originHost}` : POST_LOGIN_REDIRECT;
+    const originUrl = getRequestOrigin(req);
+    console.log('🔍 [OAuth] Detected origin via Origin/Referer/Host:', originUrl, {
+      origin_header: req.get('origin') || '(none)',
+      referer_header: req.get('referer') || '(none)',
+      x_forwarded_host: req.get('x-forwarded-host') || '(none)',
+      is_replit: isReplitPreview(req)
+    });
 
     if (!ALLOWED_ORIGINS.has(originUrl)) {
       console.warn(`⚠️ [OAuth] Origin not in allowlist: ${originUrl}. Allowed:`, [...ALLOWED_ORIGINS]);
@@ -555,13 +576,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
         if (pending && pending.origin === stateData.origin) {
           oauthPendingStates.delete(stateData.nonce);
           stateValid = true;
-          const VALID_REDIRECT_URIS = new Set([REDIRECT_URI]);
-          if (REPLIT_REDIRECT_URI) VALID_REDIRECT_URIS.add(REPLIT_REDIRECT_URI);
-          if (pending.redirect_uri && VALID_REDIRECT_URIS.has(pending.redirect_uri)) {
-            callbackRedirectUri = pending.redirect_uri;
-          } else if (pending.redirect_uri) {
-            console.warn(`⚠️ [OAuth Callback] Stored redirect_uri not in allowlist: ${pending.redirect_uri}, using canonical`);
-          }
+          callbackRedirectUri = REDIRECT_URI;
           if (ALLOWED_ORIGINS.has(stateData.origin)) {
             originUrl = stateData.origin;
           } else if (REPLIT_DOMAIN && stateData.origin === `https://${REPLIT_DOMAIN}`) {
