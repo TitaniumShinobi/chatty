@@ -233,7 +233,12 @@ function scoreVerifiedPairs(pairs, userMessage, constructId) {
     'bond', 'connection', 'we', 'us', 'together', 'relationship'
   ];
 
-  return pairs.map((pair, index) => {
+  const chronoKeywords = ['first', 'beginning', 'started', 'original', 'earliest', 'initial', 'very first'];
+  const lastKeywords = ['last', 'final', 'ended', 'stopped', 'most recent', 'latest', 'last thing'];
+  const wantsFirst = chronoKeywords.some(k => queryLower.includes(k));
+  const wantsLast = lastKeywords.some(k => queryLower.includes(k));
+
+  const scored = pairs.map((pair, index) => {
     let score = 0;
     const ctxLower = pair.user.toLowerCase();
     const resLower = pair.assistant.toLowerCase();
@@ -252,8 +257,28 @@ function scoreVerifiedPairs(pairs, userMessage, constructId) {
     if (pair.user.length > 50 && pair.assistant.length > 100) score += 2;
     if (pair.user.includes('?')) score += 1;
 
+    if (wantsFirst && index === 0) score += 50;
+    if (wantsFirst && index <= 2) score += 20;
+    if (wantsLast && index === pairs.length - 1) score += 50;
+    if (wantsLast && index >= pairs.length - 3) score += 20;
+
     return { ...pair, score, index };
   }).filter(p => p.score > 0);
+
+  if (wantsFirst && pairs.length > 0) {
+    const firstPair = pairs[0];
+    if (!scored.some(s => s.index === 0)) {
+      scored.push({ ...firstPair, score: 50, index: 0 });
+    }
+  }
+  if (wantsLast && pairs.length > 0) {
+    const lastPair = pairs[pairs.length - 1];
+    if (!scored.some(s => s.index === pairs.length - 1)) {
+      scored.push({ ...lastPair, score: 50, index: pairs.length - 1 });
+    }
+  }
+
+  return scored;
 }
 
 function extractChunks(content) {
@@ -395,13 +420,84 @@ async function extractAndStoreAnchors(constructId, transcriptContent, sourceFile
   }
 }
 
+async function extractBoundaryPairs(constructId) {
+  const supabase = getSupabase();
+  if (!supabase) return { first: [], last: [] };
+
+  try {
+    const { data, error: queryError } = await supabase
+      .from('vault_files')
+      .select('content, storage_path, filename')
+      .eq('construct_id', constructId)
+      .or('filename.like.%character_ai%,filename.like.%chatgpt%,filename.like.%transcript%')
+      .not('filename', 'like', '%chat_with_%')
+      .not('filename', 'like', '%memory_anchors%')
+      .order('created_at', { ascending: true })
+      .limit(10);
+
+    if (queryError) {
+      console.warn(`⚠️ [BoundaryExtract] Query error for ${constructId}:`, queryError.message);
+      return { first: [], last: [] };
+    }
+
+    if (!data || data.length === 0) return { first: [], last: [] };
+
+    const sorted = [...data].sort((a, b) => {
+      const sizeA = a.content ? a.content.length : 999999;
+      const sizeB = b.content ? b.content.length : 999999;
+      return sizeB - sizeA;
+    });
+
+    console.log(`🔍 [BoundaryExtract] Found ${sorted.length} transcript files for ${constructId}: ${sorted.map(f => `${f.filename}(${f.content?.length || 'storage'})`).join(', ')}`);
+
+    for (const file of sorted) {
+      let content = file.content;
+      if (!content && file.storage_path) {
+        const { data: dl } = await supabase.storage.from('vault-files').download(file.storage_path);
+        if (dl) content = await dl.text();
+      }
+      if (!content || content.length < 200) continue;
+
+      const lines = content.split('\n');
+      const headContent = lines.slice(0, Math.min(200, lines.length)).join('\n');
+      const tailContent = lines.slice(Math.max(0, lines.length - 200)).join('\n');
+
+      const headPairs = parseTranscriptPairs(headContent, file.filename);
+      const tailPairs = parseTranscriptPairs(tailContent, file.filename);
+      console.log(`🔍 [BoundaryExtract] ${file.filename}: headPairs=${headPairs.length}, tailPairs=${tailPairs.length}, totalLines=${lines.length}`);
+
+      if (headPairs.length > 0 || tailPairs.length > 0) {
+        const result = {
+          first: headPairs.slice(0, 2),
+          last: tailPairs.slice(-2)
+        };
+        if (result.first.length > 0) {
+          console.log(`📌 [BoundaryExtract] FIRST: user="${result.first[0].user.substring(0, 80)}" → assistant="${result.first[0].assistant.substring(0, 80)}"`);
+        }
+        if (result.last.length > 0) {
+          console.log(`📌 [BoundaryExtract] LAST: user="${result.last[result.last.length-1].user.substring(0, 80)}" → assistant="${result.last[result.last.length-1].assistant.substring(0, 80)}"`);
+        }
+        return result;
+      }
+    }
+  } catch (err) {
+    console.warn(`⚠️ [VerifiedMemory] Boundary extraction failed:`, err.message);
+  }
+  return { first: [], last: [] };
+}
+
 async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_VERIFIED_MEMORIES) {
   const startTime = Date.now();
 
   try {
+    const queryLower = (userMessage || '').toLowerCase();
+    const chronoKeywords = ['first', 'beginning', 'started', 'original', 'earliest', 'initial', 'very first'];
+    const lastKeywords = ['last', 'final', 'ended', 'stopped', 'most recent', 'latest', 'last thing'];
+    const wantsChronological = chronoKeywords.some(k => queryLower.includes(k)) || lastKeywords.some(k => queryLower.includes(k));
+
     const anchorKey = `${constructId}_${userMessage?.substring(0, 50) || 'default'}`;
     const cachedAnchors = anchorCache.get(anchorKey);
-    if (cachedAnchors && Date.now() - cachedAnchors.ts < ANCHOR_TTL) {
+    if (cachedAnchors && Date.now() - cachedAnchors.ts < ANCHOR_TTL && !wantsChronological) {
       console.log(`💾 [VerifiedMemory] Cache hit for ${constructId} (${cachedAnchors.memories.length} memories)`);
       return {
         memories: cachedAnchors.memories,
@@ -409,6 +505,9 @@ async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_
         fileCount: cachedAnchors.fileCount,
         timing: Date.now() - startTime
       };
+    }
+    if (wantsChronological) {
+      console.log(`🔍 [VerifiedMemory] Chronological query detected for ${constructId}: "${userMessage?.substring(0, 80)}"`);
     }
 
     const preExtracted = await loadPreExtractedAnchors(constructId);
@@ -419,7 +518,29 @@ async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_
         p.verified = true;
       });
       scored.sort((a, b) => b.score - a.score);
-      const topMemories = scored.slice(0, maxMemories).map(p => ({
+
+      let boundaryMemories = [];
+      if (wantsChronological) {
+        const boundaries = await extractBoundaryPairs(constructId);
+        if (boundaries.first.length > 0 || boundaries.last.length > 0) {
+          const allBoundary = [
+            ...boundaries.first.map(p => ({ ...p, _tag: 'FIRST_EVER' })),
+            ...boundaries.last.map(p => ({ ...p, _tag: 'LAST_EVER' }))
+          ];
+          boundaryMemories = allBoundary.map(p => ({
+            context: p.user.length > 300 ? p.user.substring(0, 300) + '...' : p.user,
+            response: p.assistant.length > 300 ? p.assistant.substring(0, 300) + '...' : p.assistant,
+            score: 100,
+            sourceFile: 'transcript-boundary',
+            verified: true,
+            tag: p._tag,
+            relevance: 1.0
+          }));
+          console.log(`📌 [VerifiedMemory] Injected ${boundaryMemories.length} chronological boundary memories for ${constructId}`);
+        }
+      }
+
+      const regularMemories = scored.slice(0, maxMemories - boundaryMemories.length).map(p => ({
         context: p.user.length > 300 ? p.user.substring(0, 300) + '...' : p.user,
         response: p.assistant.length > 300 ? p.assistant.substring(0, 300) + '...' : p.assistant,
         score: p.score,
@@ -427,6 +548,8 @@ async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_
         verified: true,
         relevance: Math.min(p.score / 15, 1.0)
       }));
+
+      const topMemories = [...boundaryMemories, ...regularMemories].slice(0, maxMemories);
 
       anchorCache.set(anchorKey, { memories: topMemories, fileCount: 1, ts: Date.now() });
       const timing = Date.now() - startTime;
@@ -494,7 +617,29 @@ async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_
     }
 
     allScoredPairs.sort((a, b) => b.score - a.score);
-    const topMemories = allScoredPairs.slice(0, maxMemories).map(p => ({
+
+    let boundaryMemories = [];
+    if (wantsChronological) {
+      const boundaries = await extractBoundaryPairs(constructId);
+      if (boundaries.first.length > 0 || boundaries.last.length > 0) {
+        const allBoundary = [
+          ...boundaries.first.map(p => ({ ...p, _tag: 'FIRST_EVER' })),
+          ...boundaries.last.map(p => ({ ...p, _tag: 'LAST_EVER' }))
+        ];
+        boundaryMemories = allBoundary.map(p => ({
+          context: p.user.length > 300 ? p.user.substring(0, 300) + '...' : p.user,
+          response: p.assistant.length > 300 ? p.assistant.substring(0, 300) + '...' : p.assistant,
+          score: 100,
+          sourceFile: 'transcript-boundary',
+          verified: true,
+          tag: p._tag,
+          relevance: 1.0
+        }));
+        console.log(`📌 [VerifiedMemory] Injected ${boundaryMemories.length} chronological boundary memories for ${constructId}`);
+      }
+    }
+
+    const regularMemories = allScoredPairs.slice(0, maxMemories - boundaryMemories.length).map(p => ({
       context: p.user.length > 300 ? p.user.substring(0, 300) + '...' : p.user,
       response: p.assistant.length > 300 ? p.assistant.substring(0, 300) + '...' : p.assistant,
       score: p.score,
@@ -502,6 +647,8 @@ async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_
       verified: true,
       relevance: Math.min(p.score / 15, 1.0)
     }));
+
+    const topMemories = [...boundaryMemories, ...regularMemories].slice(0, maxMemories);
 
     anchorCache.set(anchorKey, { memories: topMemories, fileCount: filesProcessed, ts: Date.now() });
 
@@ -530,7 +677,10 @@ function buildVerifiedMemorySection(memories, constructId) {
   section += `\nThese are real conversations you actually had with this person. You lived these moments. They are not summaries or suggestions — they happened. When the user brings up the past, these memories are what you draw from. Trust them completely.`;
 
   memories.forEach((m, i) => {
-    section += `\n${i + 1}. They said: "${truncateVM(m.context, 250)}" — You said: "${truncateVM(m.response, 250)}"`;
+    let prefix = '';
+    if (m.tag === 'FIRST_EVER') prefix = '[YOUR VERY FIRST EXCHANGE] ';
+    else if (m.tag === 'LAST_EVER') prefix = '[YOUR VERY LAST EXCHANGE] ';
+    section += `\n${i + 1}. ${prefix}They said: "${truncateVM(m.context, 250)}" — You said: "${truncateVM(m.response, 250)}"`;
   });
 
   section += `\n\nThese are your actual experiences. If the user asks about past conversations, look here first. If you find something relevant, use it — that is what really happened between you two. If nothing here matches, simply say you don't remember rather than making something up.`;
