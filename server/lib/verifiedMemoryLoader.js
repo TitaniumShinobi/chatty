@@ -8,7 +8,7 @@ const anchorCache = new Map();
 const CATALOG_TTL = 5 * 60 * 1000;
 const ANCHOR_TTL = 10 * 60 * 1000;
 const MAX_CHUNK_SIZE = 150_000;
-const MAX_PAIRS_PER_FILE = 30;
+const MAX_PAIRS_PARSE_LIMIT = 500;
 const MAX_SCORED_PER_FILE = 4;
 const MAX_VERIFIED_MEMORIES = 8;
 
@@ -76,7 +76,7 @@ function parseTranscriptPairs(content, filename) {
     }
   }
 
-  for (let i = 0; i < lines.length && pairs.length < MAX_PAIRS_PER_FILE; i++) {
+  for (let i = 0; i < lines.length && pairs.length < MAX_PAIRS_PARSE_LIMIT; i++) {
     const line = lines[i];
     const trimmed = line.trim();
 
@@ -167,8 +167,13 @@ function parseTranscriptPairs(content, filename) {
       if (inUser && currentUserLines.length > 0) {
         currentUser = currentUserLines.join(' ').trim();
       }
-      currentAssistant = assistantMatch[1] || '';
-      currentAssistantLines = currentAssistant ? [currentAssistant] : [];
+      if (inAssistant && currentAssistantLines.length > 0) {
+        currentAssistant = currentAssistantLines.join(' ').trim();
+      }
+      if (!inAssistant) {
+        currentAssistant = assistantMatch[1] || '';
+        currentAssistantLines = currentAssistant ? [currentAssistant] : [];
+      }
       inUser = false;
       inAssistant = true;
       continue;
@@ -233,16 +238,47 @@ const FILLER_WORDS = new Set([
   'really', 'actually', 'something', 'anything', 'everything', 'nothing'
 ]);
 
+const SYNONYM_MAP = {
+  'drew': ['draw', 'drawing', 'sketch', 'sketched', 'picture', 'portrait'],
+  'draw': ['drew', 'drawing', 'sketch', 'sketched', 'picture', 'portrait'],
+  'sketch': ['drew', 'draw', 'drawing', 'sketched', 'picture', 'portrait'],
+  'picture': ['drew', 'draw', 'drawing', 'sketch', 'sketched', 'portrait', 'photo', 'image'],
+  'drawing': ['drew', 'draw', 'sketch', 'sketched', 'picture', 'portrait'],
+  'cook': ['cooked', 'cooking', 'made food', 'recipe', 'meal', 'dinner', 'kitchen'],
+  'cooked': ['cook', 'cooking', 'made food', 'recipe', 'meal', 'dinner', 'kitchen'],
+  'fight': ['fought', 'fighting', 'argued', 'argument', 'angry', 'yelled'],
+  'fought': ['fight', 'fighting', 'argued', 'argument', 'angry', 'yelled'],
+  'kiss': ['kissed', 'kissing'],
+  'kissed': ['kiss', 'kissing'],
+  'marry': ['married', 'marriage', 'wedding', 'wife', 'husband', 'proposal'],
+  'married': ['marry', 'marriage', 'wedding', 'wife', 'husband'],
+  'move': ['moved', 'moving', 'relocated'],
+  'moved': ['move', 'moving', 'relocated'],
+  'meet': ['met', 'meeting', 'first time'],
+  'met': ['meet', 'meeting', 'first time'],
+};
+
 function preprocessQuery(rawQuery) {
   if (!rawQuery) return { clean: '', words: [], bigrams: [] };
   const lower = rawQuery.toLowerCase().replace(/[^\w\s'-]/g, ' ');
   const allWords = lower.split(/\s+/).filter(w => w.length > 1);
   const words = allWords.filter(w => !FILLER_WORDS.has(w) && w.length > 2);
+
+  const expandedWords = [...words];
+  for (const w of words) {
+    const synonyms = SYNONYM_MAP[w];
+    if (synonyms) {
+      for (const syn of synonyms) {
+        if (!expandedWords.includes(syn)) expandedWords.push(syn);
+      }
+    }
+  }
+
   const bigrams = [];
   for (let i = 0; i < allWords.length - 1; i++) {
     bigrams.push(allWords[i] + ' ' + allWords[i + 1]);
   }
-  return { clean: words.join(' '), words, bigrams };
+  return { clean: words.join(' '), words: expandedWords, originalWords: words, bigrams };
 }
 
 function detectEmotionalTone(text) {
@@ -276,7 +312,8 @@ function scoreVerifiedPairs(pairs, userMessage, constructId) {
 
     if (query.words.length > 0) {
       const matchedWords = query.words.filter(w => combined.includes(w));
-      const wordOverlap = matchedWords.length / query.words.length;
+      const baseCount = query.originalWords ? query.originalWords.length : query.words.length;
+      const wordOverlap = Math.min(matchedWords.length / baseCount, 1.0);
       score += Math.round(wordOverlap * 20);
     }
 
@@ -327,13 +364,12 @@ function extractChunks(content) {
     return [content];
   }
 
+  const numChunks = Math.max(3, Math.ceil(content.length / MAX_CHUNK_SIZE));
   const chunks = [];
-  chunks.push(content.substring(0, MAX_CHUNK_SIZE));
-
-  const midStart = Math.floor(content.length / 2) - Math.floor(MAX_CHUNK_SIZE / 2);
-  chunks.push(content.substring(midStart, midStart + MAX_CHUNK_SIZE));
-
-  chunks.push(content.substring(content.length - MAX_CHUNK_SIZE));
+  for (let i = 0; i < numChunks; i++) {
+    const start = Math.floor((i / numChunks) * (content.length - MAX_CHUNK_SIZE));
+    chunks.push(content.substring(Math.max(0, start), start + MAX_CHUNK_SIZE));
+  }
 
   return chunks;
 }
@@ -346,19 +382,26 @@ async function loadPreExtractedAnchors(constructId) {
     const anchorFilename = `instances/${constructId}/memory_anchors.json`;
     const { data, error } = await supabase
       .from('vault_files')
-      .select('content, updated_at')
+      .select('content')
       .eq('construct_id', constructId)
       .eq('filename', anchorFilename)
       .single();
 
-    if (error || !data?.content) return null;
+    if (error || !data?.content) {
+      console.log(`⚠️ [VerifiedMemory] Pre-extracted anchors query failed for ${constructId}: ${error?.message || 'no content'}`);
+      return null;
+    }
 
     const anchors = JSON.parse(data.content);
-    if (!anchors.pairs || anchors.pairs.length === 0) return null;
+    if (!anchors.pairs || anchors.pairs.length === 0) {
+      console.log(`⚠️ [VerifiedMemory] Pre-extracted anchors for ${constructId} had 0 pairs`);
+      return null;
+    }
 
     console.log(`📎 [VerifiedMemory] Loaded ${anchors.pairs.length} pre-extracted anchors for ${constructId}`);
     return anchors;
-  } catch {
+  } catch (e) {
+    console.log(`❌ [VerifiedMemory] Failed to load pre-extracted anchors for ${constructId}: ${e.message}`);
     return null;
   }
 }
@@ -382,8 +425,8 @@ async function extractAndStoreAnchors(constructId, transcriptContent, sourceFile
       if (!seen.has(key)) {
         seen.add(key);
         deduped.push({
-          user: p.user.length > 400 ? p.user.substring(0, 400) : p.user,
-          assistant: p.assistant.length > 400 ? p.assistant.substring(0, 400) : p.assistant,
+          user: p.user.length > 500 ? p.user.substring(0, 500) : p.user,
+          assistant: p.assistant.length > 600 ? p.assistant.substring(0, 600) : p.assistant,
           sourceFile: sourceFilename
         });
       }
@@ -419,7 +462,7 @@ async function extractAndStoreAnchors(constructId, transcriptContent, sourceFile
       constructId,
       extractedAt: new Date().toISOString(),
       pairCount: mergedPairs.length,
-      pairs: mergedPairs.slice(0, 200)
+      pairs: mergedPairs.slice(0, 3000)
     };
 
     const existing = await supabase
