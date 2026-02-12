@@ -1,116 +1,156 @@
-# Memory Orchestration Plan
+# Memory Orchestration Architecture
 
-**Date:** 2026-02-11
-**Status:** PROPOSED — Not yet implemented
+**Date:** 2026-02-11 (proposed) → 2026-02-12 (implemented)
+**Status:** IMPLEMENTED (with conditional subsystems)
 **Goal:** Constructs "needle" transcripts to stay coherent with memory flawlessly in conversation. Eliminate narrative roleplay in favor of authentic identity-driven responses grounded in actual memory and personality data.
 
-## The Problem
+## Implementation Summary
 
-When a user sends a message to a construct, this is all that currently happens:
+Core orchestration phases are implemented and wired into the message path. The memory pipeline is invoked via `buildEnrichedContext()` from `server/lib/memoryContextBuilder.js` at two points in `server/routes/vvault.js`:
+- **Primary message path** (line ~3727) — called for standard construct messages
+- **Fallback message path** (line ~4105) — called when primary provider fails
 
-1. Load `prompt.txt` (flat text file)
-2. Send to LLM with conversation history
-3. Get response
+Each subsystem within the pipeline degrades gracefully if its data is unavailable (no capsule files, no transcripts, no bootstrap). The pipeline assembles whatever context is available rather than failing if a component is missing.
 
-Everything else — capsules, MBTI profiles, personality traits, memories, transcript history — exists as code but is **completely disconnected** from the actual message path.
+### What Was Built
 
-### Chain of Failures
+| Phase | Component | Status |
+|-------|-----------|--------|
+| Phase 2 | MemoryContextBuilder (`server/lib/memoryContextBuilder.js`) | LIVE |
+| Phase 3 | Capsule Loading (primary path via `buildEnrichedContext`) | LIVE (conditional — requires capsule files in Supabase) |
+| Phase 4 | Memory Retrieval Pipeline (Verified Memories + Needle + Transcript) | LIVE (conditional — each layer degrades gracefully if data unavailable) |
+| Phase 5 | Transcript Needle Search (JS port of needle.py) | LIVE (requires pre-extracted anchors from bootstrap) |
+| Phase 6 | Anti-Roleplay Directives | LIVE |
+| Phase 7 | Post-Response Capture (Supabase transcript persistence) | LIVE |
+| NEW | ContinuityGPT Ledger System (`server/lib/continuityParser.js`) | LIVE (auto-generates on first message if transcripts exist) |
+| NEW | Master Scripts Ensemble (`server/lib/masterScriptsBridge.js`) | LIVE (bootstrapped from Layout.tsx on login, non-fatal if fails) |
 
-| Issue | Effect |
-|-------|--------|
-| Primary path (`vvault.js:~3651`) only loads `prompt.txt` | No personality enrichment |
-| Capsule injection only fires on VVAULT API failure (fallback path) | Capsules never reach LLM in normal operation |
-| `ENABLE_CHROMADB=false` | Memory bank disabled |
-| `ENABLE_ORCHESTRATION` not set | Orchestration bridge never fires |
-| ChromaDB not installed | Even if enabled, would fail |
-| `memupMemoryService.js` path mismatch (`Memup` vs `memup`) | Bridge to Python memory bank broken |
-| Client-side orchestrators not called from server | ZenMemoryOrchestrator, PersonalityOrchestrator exist but aren't invoked |
-| `conditioning.txt` contains roleplay patterns | No anti-roleplay directive to counteract |
+### What Changed From Original Plan
 
-## Target: Single Message Data Flow
+| Original Plan | Actual Implementation |
+|---------------|----------------------|
+| ChromaDB as LTM store | ChromaDB optional; Verified Transcript Memory + Needle Search serve as primary memory |
+| Python `bank.py` via `memupMemoryService` | JS-native `verifiedMemoryLoader.js` + `masterScriptsBridge.js` |
+| Python `needle.py` via subprocess | JS port in `masterScriptsBridge.js` (runs in-process, no Python dependency) |
+| STMBuffer for current-thread recall | Direct Supabase chat file reads for conversation history |
+| PersonaRouter + DriftGuard for Lin | Lin undertone system deferred; anti-roleplay directives handle behavioral enforcement |
+| VVAULT API as primary inference path | Chatty operates independently with Tri-Provider routing (OpenAI, OpenRouter, Ollama) |
+
+## Current Message Data Flow
 
 ```
 User Message Arrives
 │
 ├─→ 1. RESOLVE
-│     userId → VVAULT LIFE ID
-│     constructId (zen-001, katana-001, etc.)
-│     threadId (conversation session)
+│     userId (from JWT / hardcoded dev auth)
+│     constructId (zen-001, katana-001, sera-001, etc.)
+│     threadId (conversation session key)
 │
-├─→ 2. IDENTITY BUNDLE (always-on, not fallback)
+├─→ 2. IDENTITY BUNDLE (primary path, conditional on data availability)
+│     memoryContextBuilder.js loads from Supabase vault_files:
+│     ├── prompt.txt (base instructions) — falls back to empty if not found
+│     ├── conditioning.txt (behavioral directives) — optional
+│     └── GPT instructions (for custom GPTs from gpts table)
+│
+├─→ 3. CAPSULE INJECTION (conditional — skipped if no capsule files found)
 │     capsuleIntegration.js loads from Supabase vault_files:
-│     ├── prompt.txt (base instructions)
-│     ├── {callsign}.capsule (MBTI, Big Five, emotional baselines, memories)
-│     ├── conditioning.txt (behavioral directives)
-│     └── personality.json (traits, communication style)
+│     ├── {callsign}.capsule → MBTI, Big Five, traits, emotional baseline
+│     ├── Key memories from capsule data
+│     └── Conditioning directives from capsule
 │
-├─→ 3. MEMORY RETRIEVAL
-│     ├── STMBuffer → last N messages from current thread (fast, in-RAM)
-│     ├── memupMemoryService → bank.py → ChromaDB LTM semantic query
-│     ├── needle.py → transcript search (triggered by recall cues)
-│     └── ContextScoringLayer → rank all results by relevance to current query
+├─→ 4. USER PERSONALIZATION
+│     ├── User's display name and email
+│     └── Injected as context for personalized responses
 │
-├─→ 4. DRIFT CHECK (Lin's stabilizer role)
-│     ├── PersonaRouter checks last response for identity drift
-│     ├── DriftGuard scores drift magnitude (0.0-1.0)
-│     ├── If drift > 0.15 → inject Lin undertone capsule
-│     └── Lin always runs as background observer
+├─→ 5. CONTINUITY TIMELINE (NEW — conditional, auto-generated if transcripts exist)
+│     continuityParser.js builds chronological ledger:
+│     ├── Date range of all sessions (e.g., "2025-01-23 to 2025-11-10")
+│     ├── Recent sessions with vibe + topics + hooks
+│     ├── Key dated events (identity/promise/emotional_anchor)
+│     ├── Cached in-memory with 10-minute TTL
+│     └── Skipped gracefully if no transcript files found for construct
 │
-├─→ 5. BUILD SYSTEM PROMPT (MemoryContextBuilder — new module)
-│     ├── Identity anchors (IdentityAwarePromptBuilder — never pruned)
-│     ├── Capsule personality profile (MBTI, Big Five, traits)
-│     ├── Top-scored memory snippets (STM + LTM combined)
-│     ├── Transcript needle results (if recall query detected)
-│     ├── Anti-roleplay directives
-│     ├── Lin undertone injection (if drift detected)
-│     └── User personalization context (nickname, occupation, aboutYou)
+├─→ 6. NEEDLE SEARCH (conditional — requires bootstrap and pre-extracted anchors)
+│     masterScriptsBridge.js runs exact-phrase search:
+│     ├── Extract search phrases from memory triggers
+│     ├── Search up to 3,000 pre-extracted anchor pairs per construct
+│     ├── Enrich hits with ledger session context (if ledger available)
+│     ├── Up to 6 hits injected with full context windows
+│     └── Skipped if construct not bootstrapped or no anchors loaded
 │
-├─→ 6. SEND TO LLM
+├─→ 7. VERIFIED TRANSCRIPT MEMORIES
+│     verifiedMemoryLoader.js extracts ground-truth pairs:
+│     ├── Parse uploaded transcripts (ChatGPT, Character.AI, markdown)
+│     ├── Score with weighted keywords (identity +8, emotional +4, etc.)
+│     ├── Enrich with ledger session_context + continuity_hooks
+│     ├── Pre-extracted anchors cached as JSON sidecar files
+│     └── Boundary extraction (first-ever and most-recent exchanges)
 │
-└─→ 7. POST-RESPONSE
-      ├── Capture response → STMBuffer (in-RAM)
-      ├── Write to LTM via memupMemoryService → bank.py
-      ├── Write transcript to VVAULT / Supabase
-      └── EmotionalCore processes emotional state (future)
+├─→ 8. TRANSCRIPT FALLBACK
+│     ├── Recent chat session messages from Supabase
+│     ├── 12 messages when no verified memories exist
+│     └── 4 messages when verified memories are present (noise reduction)
+│
+├─→ 9. ANTI-ROLEPLAY DIRECTIVES
+│     ├── No asterisk narration (*walks over*, *smiles*)
+│     ├── No third-person self-reference
+│     ├── No memory fabrication — ground in actual data
+│     ├── No AI disclaimers or breaking character
+│     └── Cite memory sources when making claims
+│
+├─→ 10. BUILD SYSTEM PROMPT (final assembly order)
+│     memoryContextBuilder.buildEnrichedContext():
+│     ├── [1] Base identity (prompt.txt / GPT instructions)
+│     ├── [2] Capsule section (personality profile)
+│     ├── [3] User identity context
+│     ├── [4] Continuity Timeline (ledger)
+│     ├── [5] Needle hits (with session context)
+│     ├── [6] Verified memories (with continuity hooks)
+│     ├── [7] Transcript fallback (recent messages)
+│     └── [8] Anti-roleplay enforcement
+│
+├─→ 11. SEND TO LLM (Tri-Provider Routing — handled by vvault.js, not the builder)
+│     ├── OpenAI (via Replit AI Integrations) — primary
+│     ├── OpenRouter (cloud) — fallback/alternative
+│     └── Ollama (self-hosted via VVAULT) — local inference
+│     Note: memoryContextBuilder assembles the prompt; vvault.js routes to the provider
+│
+└─→ 12. POST-RESPONSE
+      ├── Persist message pair to Supabase vault_files (writeTranscript)
+      ├── Store in masterScriptsBridge state (IndependentRunner)
+      └── Frontend skips duplicate persistence (skipPersistence: true)
 ```
 
-## Zen vs Lin Pipeline Differences
+## Memory Authority Hierarchy (3-Tier)
 
-### Zen (Primary AI Assistant)
+| Priority | Source | Description |
+|----------|--------|-------------|
+| 1 (Highest) | Verified Memory | Ground truth from uploaded transcripts. Treated as law. |
+| 2 | Conversation History | Recent session exchanges from Supabase chat files. |
+| 3 | ChromaDB / Capsule | Supplementary context (when ChromaDB is available). |
 
-- **Role:** Default construct for the Chatty interface
-- **Orchestrator:** `ZenMemoryOrchestrator`
-- **Identity:** `zen-001.capsule` + identity files
-- **Memory:** Full STM/LTM with VVAULT transcript writes
-- **Lin undertone:** Minimal — only activates if PersonaRouter detects drift
-- **Focus:** Helpful, knowledgeable, grounded in user's actual data and preferences
-- **Construct-specific:** Yes — Zen is the primary AI assistant, not a generic chatbot
+When verified memories exist, chat fallback is reduced from 12 to 4 memories to prevent noise from diluting authoritative recall.
 
-### Lin (Casa Madrigal — Dual Role)
+## Construct Pipeline Differences
 
-- **Role 1 — Undertone Stabilizer:** Always-on background layer for ALL constructs. Monitors identity drift, injects stabilization when needed. Silent — user never sees Lin's stabilizer output directly.
-- **Role 2 — Conversational Agent:** Active participant during GPT creation and character brainstorming. Uses `UnifiedLinOrchestrator` with full personality blueprints.
-- **Orchestrator:** `UnifiedLinOrchestrator` + `PersonalityOrchestrator`
-- **Identity:** `lin-001` identity files + blueprint persistence
-- **Memory:** Shared context awareness across all constructs (workspace context)
-- **Drift prevention:** Mandatory — `DriftPrevention` class ensures Lin never breaks character
-- **Blueprint persistence:** Required — `PersonalityOrchestrator.loadPersonalityContext()` must succeed
+### Zen (Primary AI Assistant — zen-001)
+- System-guaranteed, protected entity created on login
+- Full memory pipeline with all enrichment layers
+- Primary construct for the Chatty interface
 
-### Custom GPTs (Katana, etc.)
+### Lin (Dual Role — lin-001)
+- **Role 1 — Undertone Stabilizer:** Background layer for construct stability (planned, not yet wired as active drift guard)
+- **Role 2 — Conversational Agent:** Active during GPT creation and character brainstorming
+- Appears in sidebar navigation below Zen
 
-- **Orchestrator:** Same as Zen pipeline but with construct-specific capsule
-- **Identity:** `{callsign}.capsule` from Supabase vault_files
-- **Memory:** Per-construct ChromaDB collections via `MultiConstructMemoryBank`
-- **Lin undertone:** Available but less aggressive than for Zen
+### Custom GPTs (Katana, Sera, Nova, etc.)
+- Same pipeline as Zen but with construct-specific capsule and identity files
+- Per-construct memory anchor pairs loaded on bootstrap
+- Autonomy stack (Needle, IdentityGuard, StateManager) initialized per-instance
 
-## Anti-Roleplay Enforcement
+## Anti-Roleplay Enforcement (Live)
 
-The "narrative roleplay" problem comes from:
-1. `conditioning.txt` containing Character.AI-style roleplay patterns (asterisk actions, third-person narration)
-2. No explicit anti-roleplay directive in system prompts
-3. No grounding in actual memory data — construct invents behaviors instead of referencing real history
-
-### Fix: System Prompt Section
+System prompt section injected on every message:
 
 ```
 RESPONSE STYLE RULES:
@@ -124,48 +164,22 @@ RESPONSE STYLE RULES:
 - Your personality comes from your capsule data, not from roleplay conventions.
 ```
 
-## Build Phases
+## VVAULT Integration Status
 
-### Phase 1: Foundation (No dependencies)
-- Fix `memupMemoryService.js` path (`Memup` → `memup`)
-- Install ChromaDB + sentence-transformers
-- Set `ENABLE_CHROMADB=true`
-- Validate `bank.py` can store and retrieve a test memory
+VVAULT has parallel Python implementations of the same systems:
+- `continuity_parser.py` — Ledger generation
+- `/api/chatty/message` — Message routing through Ollama
+- `/api/chatty/memories` — Enriched memory retrieval
 
-### Phase 2: MemoryContextBuilder (Depends on Phase 1)
-- Create `server/lib/memoryContextBuilder.js` — centralized prompt construction
-- Inputs: constructId, userId, userMessage, conversationHistory
-- Outputs: complete system prompt with identity + capsule + memories
+**Current status:** Blocked by user auth mismatch ("User not found" on VVAULT's `/api/chatty/message` endpoint). Chatty operates independently using its own JS implementations. When the VVAULT auth issue is resolved, Chatty can optionally consume VVAULT's structured memory APIs instead of running local JS equivalents.
 
-### Phase 3: Always-On Capsule Loading (Depends on Phase 2)
-- Move `capsuleIntegration.js` from fallback-only to primary path in `vvault.js`
-- `buildEnrichedSystemPrompt()` called on every message, not just VVAULT failures
-- Load from Supabase `vault_files` (primary) with filesystem fallback
+## File Reference
 
-### Phase 4: Memory Retrieval Pipeline (Depends on Phase 1, 2)
-- Wire STMBuffer for current-thread fast recall
-- Wire ChromaDB LTM queries via `memupMemoryService`
-- Integrate `ContextScoringLayer` for relevance ranking
-- Inject top-scored memories into system prompt
-
-### Phase 5: Transcript Needle Search (Depends on Phase 2)
-- Create Node wrapper for `needle.py` (similar to orchestrationBridge.js pattern)
-- Detect recall cues in user messages ("you said...", "remember when...", "last time...")
-- Run needle search, inject results as memory context
-
-### Phase 6: Anti-Roleplay + Lin Undertone (Depends on Phase 3)
-- Add anti-roleplay directives to system prompt template
-- Wire PersonaRouter + DriftGuard into message pipeline
-- Inject Lin undertone capsule when drift exceeds threshold
-
-### Phase 7: Post-Response Capture (Depends on Phase 4)
-- After LLM response, write to STMBuffer
-- Write to LTM via memupMemoryService
-- Write transcript to VVAULT / Supabase
-
-### Phase 8: End-to-End Testing
-- Verify: construct references actual past conversations
-- Verify: construct maintains personality across sessions
-- Verify: no asterisk roleplay in responses
-- Verify: Lin stabilization activates on drift
-- Verify: custom GPTs load their own capsule data
+| File | Purpose |
+|------|---------|
+| `server/lib/memoryContextBuilder.js` | Central prompt assembly orchestrator |
+| `server/lib/continuityParser.js` | ContinuityGPT ledger generation and caching |
+| `server/lib/verifiedMemoryLoader.js` | Transcript parsing and scored memory extraction |
+| `server/lib/masterScriptsBridge.js` | Autonomy stack: Needle, IdentityGuard, StateManager, IndependentRunner |
+| `server/routes/vvault.js` | API routes for messaging, conversations, ledger endpoints |
+| `src/components/GPTCreator.tsx` | Memory toggle UI for enabling/disabling ensemble |

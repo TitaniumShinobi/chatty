@@ -55,6 +55,11 @@ Chatty is an AI-powered workspace application that provides a thin UI layer for 
 - **Construct Creation & Instance Scaffolding:** New GPTs trigger VVAULT API calls to scaffold folder structures or fall back to writing files directly to Supabase `vault_files` using relative paths, validated by `VaultPathGuard`.
 - **Construct Seeding & Identity Hydration:** Seed constructs are minimal shells, and identity data is hydrated from VVAULT or Supabase, ensuring no fabricated data is injected.
 
+## Architecture Documentation
+- `docs/architecture/MEMORY_ORCHESTRATION_PLAN.md` — Full message data flow, implementation status, memory authority hierarchy
+- `docs/architecture/CONTINUITY_LEDGER_SYSTEM.md` — ContinuityGPT ledger: date estimation, vibe classification, topic extraction, continuity hooks, caching, API endpoints
+- `docs/architecture/MASTER_SCRIPTS_ENSEMBLE.md` — Autonomy stack (Needle, IdentityGuard, StateManager, IndependentRunner), bootstrap flow, Memory toggle, conversation persistence, tri-provider routing
+
 ## External Dependencies
 - **VVAULT API:** Primary API for AI inference, memory management, and conversation transcripts.
 - **Supabase:** Persistent storage for conversations, attachments, and backend data.
