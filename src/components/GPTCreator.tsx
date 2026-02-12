@@ -128,6 +128,11 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [filesPerPage] = useState(20); // Show 20 files per page for 300+ files
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Duplicate file detection
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicateFileNames, setDuplicateFileNames] = useState<string[]>([]);
+  const [pendingZipEntries, setPendingZipEntries] = useState<Array<{ name: string; file: GPTFile }>>([]);
+
   // Avatar upload
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
@@ -1134,103 +1139,154 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     }
   };
 
+  const getFileMatchKey = (f: GPTFile): string => {
+    return (f.originalName || f.filename || '').toLowerCase();
+  };
+
+  const processUploadFiles = (newFiles: GPTFile[]) => {
+    setFiles((prev) => {
+      const result = [...prev];
+      for (const nf of newFiles) {
+        const newName = getFileMatchKey(nf);
+        const existingIdx = result.findIndex(f => getFileMatchKey(f) === newName);
+        if (existingIdx >= 0) {
+          result[existingIdx] = { ...nf, id: result[existingIdx].id };
+        } else {
+          result.push(nf);
+        }
+      }
+      return result;
+    });
+  };
+
+  const prepareFilesForUpload = async (selectedFiles: File[]): Promise<{ newFiles: GPTFile[]; rawFiles: File[] }> => {
+    const MAX_ZIP_SIZE = 750 * 1024 * 1024;
+    const newFiles: GPTFile[] = [];
+    const rawFiles: File[] = [];
+
+    for (const file of selectedFiles) {
+      const ext = file.name.split(".").pop()?.toLowerCase() || "";
+
+      if (ext === "zip") {
+        if (file.size > MAX_ZIP_SIZE) {
+          setError(`${file.name} exceeds 750MB limit`);
+          continue;
+        }
+        try {
+          const zip = await JSZip.loadAsync(file);
+          const entries = Object.keys(zip.files);
+
+          for (const entryName of entries) {
+            const zipEntry = zip.files[entryName];
+            if (zipEntry.dir) continue;
+
+            const entryExt = entryName.split(".").pop()?.toLowerCase() || "";
+            const isText = ["txt", "md", "json", "csv", "rtf", "html", "xml", "yaml", "yml", "log"].includes(entryExt);
+            const isBinary = ["pdf", "doc", "docx", "png", "jpg", "jpeg", "gif", "bmp", "tiff", "svg", "mp4", "avi", "mov"].includes(entryExt);
+
+            if (!isText && !isBinary) continue;
+
+            let content = "";
+            let blobFile: File | undefined;
+
+            if (isText) {
+              content = await zipEntry.async("text");
+            }
+
+            if (isBinary) {
+              const blob = await zipEntry.async("blob");
+              const fileName = entryName.split("/").pop() || entryName;
+              blobFile = new File([blob], fileName, { type: `application/${entryExt}` });
+            }
+
+            const tempFile: GPTFile = {
+              id: `temp-${crypto.randomUUID()}`,
+              gptId: "temp",
+              filename: entryName,
+              originalName: entryName,
+              mimeType: isText ? `text/${entryExt === "md" ? "markdown" : "plain"}` : `application/${entryExt}`,
+              size: isText ? content.length : (blobFile?.size || 0),
+              content: content,
+              uploadedAt: new Date().toISOString(),
+              isActive: true,
+              _file: blobFile || file,
+            };
+            newFiles.push(tempFile);
+            rawFiles.push(blobFile || file);
+          }
+        } catch (zipError: any) {
+          console.error(`Failed to extract ${file.name}:`, zipError);
+          setError(`Failed to extract ${file.name}: ${zipError.message}`);
+        }
+      } else {
+        const tempFile: GPTFile = {
+          id: `temp-${crypto.randomUUID()}`,
+          gptId: "temp",
+          filename: file.name,
+          originalName: file.name,
+          mimeType: file.type,
+          size: file.size,
+          content: "",
+          uploadedAt: new Date().toISOString(),
+          isActive: true,
+          _file: file,
+        };
+        newFiles.push(tempFile);
+        rawFiles.push(file);
+      }
+    }
+
+    return { newFiles, rawFiles };
+  };
+
   const handleFileUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
-    // File upload triggered
     const selectedFiles = event.target.files;
-    if (!selectedFiles || selectedFiles.length === 0) {
-      // No files selected
-      return;
-    }
+    if (!selectedFiles || selectedFiles.length === 0) return;
 
-    // Processing files
     setIsUploading(true);
     setError(null);
 
-    const MAX_ZIP_SIZE = 750 * 1024 * 1024;
-
     try {
-      for (const file of Array.from(selectedFiles)) {
-        const ext = file.name.split(".").pop()?.toLowerCase() || "";
+      const { newFiles, rawFiles } = await prepareFilesForUpload(Array.from(selectedFiles));
 
-        if (ext === "zip") {
-          if (file.size > MAX_ZIP_SIZE) {
-            setError(`${file.name} exceeds 750MB limit`);
-            continue;
-          }
-          try {
-            const zip = await JSZip.loadAsync(file);
-            const entries = Object.keys(zip.files);
-            let extractedCount = 0;
+      const existingNames = files.map(f => getFileMatchKey(f));
+      const duplicates = newFiles
+        .filter(f => existingNames.includes(getFileMatchKey(f)))
+        .map(f => f.originalName || f.filename);
 
-            for (const entryName of entries) {
-              const zipEntry = zip.files[entryName];
-              if (zipEntry.dir) continue;
-
-              const entryExt = entryName.split(".").pop()?.toLowerCase() || "";
-              const isText = ["txt", "md", "json", "csv", "rtf", "html", "xml", "yaml", "yml", "log"].includes(entryExt);
-              const isBinary = ["pdf", "doc", "docx", "png", "jpg", "jpeg", "gif", "bmp", "tiff", "svg", "mp4", "avi", "mov"].includes(entryExt);
-
-              if (!isText && !isBinary) continue;
-
-              let content = "";
-              let blobFile: File | undefined;
-
-              if (isText) {
-                content = await zipEntry.async("text");
-              }
-
-              if (isBinary) {
-                const blob = await zipEntry.async("blob");
-                const fileName = entryName.split("/").pop() || entryName;
-                blobFile = new File([blob], fileName, { type: `application/${entryExt}` });
-              }
-
-              const tempFile: GPTFile = {
-                id: `temp-${crypto.randomUUID()}`,
-                gptId: "temp",
-                filename: entryName,
-                originalName: entryName.split("/").pop() || entryName,
-                mimeType: isText ? `text/${entryExt === "md" ? "markdown" : "plain"}` : `application/${entryExt}`,
-                size: isText ? content.length : (blobFile?.size || 0),
-                content: content,
-                uploadedAt: new Date().toISOString(),
-                isActive: true,
-                _file: blobFile || file,
-              };
-              setFiles((prev) => [...prev, tempFile]);
-              extractedCount++;
-            }
-            console.log(`✅ [Knowledge] Extracted ${extractedCount} files from ${file.name}`);
-          } catch (zipError: any) {
-            console.error(`❌ [Knowledge] Failed to extract ${file.name}:`, zipError);
-            setError(`Failed to extract ${file.name}: ${zipError.message}`);
-          }
-        } else {
-          const tempFile: GPTFile = {
-            id: `temp-${crypto.randomUUID()}`,
-            gptId: "temp",
-            filename: file.name,
-            originalName: file.name,
-            mimeType: file.type,
-            size: file.size,
-            content: "",
-            uploadedAt: new Date().toISOString(),
-            isActive: true,
-            _file: file,
-          };
-          setFiles((prev) => [...prev, tempFile]);
-        }
+      if (duplicates.length > 0) {
+        setDuplicateFileNames([...new Set(duplicates)]);
+        setPendingZipEntries(newFiles.map(f => ({ name: f.originalName || f.filename, file: f })));
+        setShowDuplicateModal(true);
+        setIsUploading(false);
+      } else {
+        processUploadFiles(newFiles);
+        setIsUploading(false);
       }
     } catch (error: any) {
       setError(error.message || "Failed to prepare files");
-    } finally {
       setIsUploading(false);
+    } finally {
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
     }
+  };
+
+  const confirmDuplicateReplace = () => {
+    const newFiles = pendingZipEntries.map(e => e.file);
+    processUploadFiles(newFiles);
+    setShowDuplicateModal(false);
+    setDuplicateFileNames([]);
+    setPendingZipEntries([]);
+  };
+
+  const cancelDuplicateUpload = () => {
+    setShowDuplicateModal(false);
+    setDuplicateFileNames([]);
+    setPendingZipEntries([]);
   };
 
   const handleRemoveFile = (fileId: string) => {
@@ -5341,6 +5397,73 @@ ALWAYS:
             </div>
           </div>
         </>
+      )}
+
+      {showDuplicateModal && (
+        <div
+          className="fixed inset-0 flex items-center justify-center"
+          style={{ zIndex: Z_LAYERS.critical + 10 }}
+        >
+          <div className="absolute inset-0 bg-black bg-opacity-60" />
+          <div
+            className="relative rounded-lg p-6 max-w-md mx-4 shadow-xl"
+            style={{
+              backgroundColor: "var(--chatty-bg-main)",
+              border: "1px solid var(--chatty-border)",
+            }}
+          >
+            <h3
+              className="text-lg font-semibold mb-3"
+              style={{ color: "var(--chatty-text)" }}
+            >
+              Replace Existing Files?
+            </h3>
+            <p
+              className="text-sm mb-3"
+              style={{ color: "var(--chatty-text)", opacity: 0.8 }}
+            >
+              The following {duplicateFileNames.length} file{duplicateFileNames.length !== 1 ? 's' : ''} already exist{duplicateFileNames.length === 1 ? 's' : ''} and will be replaced:
+            </p>
+            <div
+              className="mb-4 max-h-48 overflow-y-auto rounded p-3 text-sm"
+              style={{
+                backgroundColor: "var(--chatty-bg-darker, rgba(0,0,0,0.15))",
+                border: "1px solid var(--chatty-border)",
+                color: "var(--chatty-text)",
+              }}
+            >
+              {duplicateFileNames.map((name, i) => (
+                <div key={i} className="py-1 flex items-center gap-2">
+                  <span style={{ color: "#e5a740" }}>&#8635;</span>
+                  <span className="truncate">{name}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={cancelDuplicateUpload}
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                style={{
+                  backgroundColor: "transparent",
+                  color: "var(--chatty-text)",
+                  border: "1px solid var(--chatty-border)",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDuplicateReplace}
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                style={{
+                  backgroundColor: "#ADA587",
+                  color: "#000110",
+                }}
+              >
+                Replace {duplicateFileNames.length} File{duplicateFileNames.length !== 1 ? 's' : ''}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Exit Confirmation Modal - Save/Discard Preview Conversation */}
