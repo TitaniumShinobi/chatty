@@ -820,8 +820,33 @@ export class GPTManager {
     }
   }
 
+  getGPTConfig(id) {
+    const stmt = this.db.prepare('SELECT * FROM gpts WHERE id = ?');
+    const row = stmt.get(id);
+    if (!row) return null;
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      instructions: row.instructions,
+      conversationStarters: JSON.parse(row.conversation_starters || '[]'),
+      avatar: row.avatar,
+      capabilities: JSON.parse(row.capabilities || '{}'),
+      constructCallsign: row.construct_callsign,
+      modelId: row.model_id,
+      conversationModel: row.conversation_model,
+      creativeModel: row.creative_model,
+      codingModel: row.coding_model,
+      orchestrationMode: row.orchestration_mode || 'lin',
+      isActive: Boolean(row.is_active),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      userId: row.user_id
+    };
+  }
+
   async updateGPT(id, updates) {
-    const existing = await this.getGPT(id);
+    const existing = this.getGPTConfig(id);
     if (!existing) return null;
 
     const nextVersion = this.getNextVersion(id);
@@ -864,10 +889,12 @@ export class GPTManager {
       id
     );
 
-    // Record version snapshot
-    this.recordVersion(id, nextVersion, { ...existing, ...updates });
+    const versionSnapshot = { ...existing, ...updates };
+    delete versionSnapshot.files;
+    delete versionSnapshot.actions;
+    this.recordVersion(id, nextVersion, versionSnapshot);
 
-    return await this.getGPT(id);
+    return this.getGPTConfig(id);
   }
 
   async deleteGPT(id) {
