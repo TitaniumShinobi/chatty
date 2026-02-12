@@ -1036,7 +1036,27 @@ if (isProduction) {
 }
 
 const PORT = process.env.PORT || 5050;
-app.listen(PORT, '0.0.0.0', () => console.log(`API on :${PORT}`));
+
+function startServer(port, retryCount = 0) {
+  const srv = app.listen(port, '0.0.0.0', () => console.log(`API on :${port}`));
+  srv.on('error', (err) => {
+    if (err.code === 'EADDRINUSE' && retryCount === 0) {
+      console.warn(`⚠️ [Server] Port ${port} in use — killing stale process and retrying...`);
+      const { execSync } = require('child_process');
+      try {
+        execSync(`lsof -ti:${port} | xargs -r kill -9`, { stdio: 'ignore' });
+      } catch (_) {}
+      setTimeout(() => startServer(port, 1), 1000);
+    } else if (err.code === 'EADDRINUSE') {
+      console.error(`❌ [Server] Port ${port} still in use after cleanup. Server cannot start.`);
+      console.error(`❌ [Server] Please manually kill the process using port ${port} and restart.`);
+    } else {
+      console.error(`❌ [Server] Failed to start:`, err.message);
+    }
+  });
+}
+
+startServer(PORT);
 
 // Initialize Supabase Realtime subscription for cross-app sync
 (async () => {

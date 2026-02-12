@@ -2601,14 +2601,16 @@ export default function Layout() {
     } catch (error) {
       console.error("❌ [Layout.tsx] Error in sendMessage:", error);
       const errorDetail = error instanceof Error ? error.message : "Unknown error";
+      const errorText = `⚠️ Unable to get a response. ${errorDetail !== "Unknown error" ? errorDetail : "Please try again."}`;
       const errorMsg: Message = {
         id: typingMsg.id,
         role: "assistant",
+        text: errorText,
         packets: [
           {
-            op: "error.v1",
+            op: "answer.v1",
             payload: {
-              message: `Model error: ${errorDetail}`,
+              content: errorText,
             },
           },
         ],
@@ -2616,6 +2618,7 @@ export default function Layout() {
         thinkingLog: thinkingLog.filter((step) => step.trim()),
         metadata: {
           thinkingLog: thinkingLog.filter((step) => step.trim()),
+          isError: true,
         },
       };
 

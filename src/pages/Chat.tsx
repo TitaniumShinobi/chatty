@@ -1798,6 +1798,18 @@ export default function Chat() {
                       >
                         [Message Removed]
                       </div>
+                    ) : (m as any).metadata?.isError ? (
+                      <div
+                        className="whitespace-normal w-full rounded-lg px-3 py-2"
+                        style={{
+                          color: "#f59e0b",
+                          backgroundColor: "rgba(245, 158, 11, 0.08)",
+                          border: "1px solid rgba(245, 158, 11, 0.2)",
+                          fontSize: "0.9em",
+                        }}
+                      >
+                        {(m as any).text || "Unable to get a response. Please try again."}
+                      </div>
                     ) : (
                       <div
                         className="whitespace-normal w-full assistant-code-scope chat-markdown"
@@ -1828,7 +1840,7 @@ export default function Chat() {
                                   op: "answer.v1",
                                   payload: {
                                     content:
-                                      prepareMessageContent((m as any).text) || "Legacy message",
+                                      prepareMessageContent((m as any).text) || "⚠️ Unable to load this response. Please try sending your message again.",
                                   },
                                 },
                               ]
