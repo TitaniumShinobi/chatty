@@ -106,6 +106,9 @@ function getRequestOrigin(req) {
 }
 
 function getRedirectUri(req) {
+  if (isReplitPreview(req) && REPLIT_REDIRECT_URI) {
+    return REPLIT_REDIRECT_URI;
+  }
   return REDIRECT_URI;
 }
 
@@ -576,7 +579,11 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
         if (pending && pending.origin === stateData.origin) {
           oauthPendingStates.delete(stateData.nonce);
           stateValid = true;
-          callbackRedirectUri = REDIRECT_URI;
+          const VALID_REDIRECT_URIS = new Set([REDIRECT_URI]);
+          if (REPLIT_REDIRECT_URI) VALID_REDIRECT_URIS.add(REPLIT_REDIRECT_URI);
+          if (pending.redirect_uri && VALID_REDIRECT_URIS.has(pending.redirect_uri)) {
+            callbackRedirectUri = pending.redirect_uri;
+          }
           if (ALLOWED_ORIGINS.has(stateData.origin)) {
             originUrl = stateData.origin;
           } else if (REPLIT_DOMAIN && stateData.origin === `https://${REPLIT_DOMAIN}`) {
