@@ -39,6 +39,7 @@ Chatty is an AI-powered workspace application that provides a thin UI layer for 
 **Key Features:**
 - **Dynamic Address Book:** Automatically includes custom GPTs, with Zen sorted first.
 - **GPT Creation Workflow:** Integrated workflow for creating GPTs via Lin's conversation, triggering a GPTCreator UI with pre-filled information.
+- **Knowledge Files Rule:** Knowledge Files are ONLY files under `instances/{constructCallsign}/assets/` and `instances/{constructCallsign}/documents/`. Nothing from identity/, config/, logs/, memup/, or any other VSI folder appears in the Knowledge panel. See `docs/rubrics/KNOWLEDGE_FILES_RUBRIC.md`. NO EXCEPTIONS.
 - **Identity Loading:** Prioritizes Supabase `vault_files` for construct identity data (avatars, knowledge files, prompt/conditioning), with fallbacks for local placeholders.
 - **Robust Transcript Parsing & Upload:** Handles various VVAULT and Chatty transcript formats, supporting multi-platform uploads and automatic parsing of Character.AI JSON imports.
 - **Fresh Canvas Chat UX:** Provides a clean chat interface on load, with auto-scroll activating only after the user's first message.
@@ -59,6 +60,9 @@ Chatty is an AI-powered workspace application that provides a thin UI layer for 
 - `docs/architecture/MEMORY_ORCHESTRATION_PLAN.md` — Full message data flow, implementation status, memory authority hierarchy
 - `docs/architecture/CONTINUITY_LEDGER_SYSTEM.md` — ContinuityGPT ledger: date estimation, vibe classification, topic extraction, continuity hooks, caching, API endpoints
 - `docs/architecture/MASTER_SCRIPTS_ENSEMBLE.md` — Autonomy stack (Needle, IdentityGuard, StateManager, IndependentRunner), bootstrap flow, Memory toggle, conversation persistence, tri-provider routing
+
+## Rubrics
+- `docs/rubrics/KNOWLEDGE_FILES_RUBRIC.md` — Knowledge Files are ONLY from assets/ and documents/ folders. Nothing else in Knowledge panel. Hard rule.
 
 ## Implementation Plans
 - `docs/plans/GPT_CREATION_THROUGH_LIN.md` — Full construct creation flow: Lin conversation → GPTCreator UI → Supabase scaffolding → autonomy stack bootstrap
