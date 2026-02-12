@@ -774,11 +774,13 @@ function buildVerifiedMemorySection(memories, constructId) {
     const source = m.sourceFile ? ` (from: ${m.sourceFile})` : '';
 
     section += `\n### ${label}${source}`;
+    if (m.context_hint) section += `\n- When: ${m.context_hint}`;
+    if (m.session_context) section += `\n- Session: "${m.session_context.title}" (${m.session_context.estimatedDate}, ${m.session_context.vibe})`;
     section += `\n- Emotional tone: ${tone}`;
     section += `\n- They said: "${truncateVM(m.context, 800)}"`;
     section += `\n- You replied: "${truncateVM(m.response, 800)}"`;
     if (m.summary) section += `\n- Summary: ${m.summary}`;
-    section += ``;
+    if (m.continuity_hooks && m.continuity_hooks.length > 0) section += `\n- Continuity threads: ${m.continuity_hooks.join(', ')}`;
   });
 
   section += `\n\n### MEMORY USAGE RULES`;

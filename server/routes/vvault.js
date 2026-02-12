@@ -749,6 +749,58 @@ router.post("/conversations/:sessionId/messages", async (req, res) => {
   }
 });
 
+router.post("/construct/:constructId/ledger/generate", async (req, res) => {
+  const userId = validateUser(res, req.user);
+  if (!userId) return;
+
+  const { constructId } = req.params;
+  if (!constructId) return res.status(400).json({ ok: false, error: "Missing constructId" });
+
+  try {
+    const { generateLedger, storeLedger } = await import('../lib/continuityParser.js');
+    const ledger = await generateLedger(constructId);
+    if (ledger.error) {
+      return res.status(404).json({ ok: false, error: ledger.error });
+    }
+
+    await storeLedger(constructId, ledger);
+
+    res.json({
+      ok: true,
+      constructId,
+      sessionCount: ledger.sessionCount,
+      dateRange: ledger.dateRange,
+      continuityHooks: ledger.continuityHooks,
+      generationTimeMs: ledger.generationTimeMs,
+      sessions: ledger.sessions
+    });
+  } catch (error) {
+    console.error(`❌ [Ledger] Generation failed for ${constructId}:`, error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+router.get("/construct/:constructId/ledger", async (req, res) => {
+  const userId = validateUser(res, req.user);
+  if (!userId) return;
+
+  const { constructId } = req.params;
+  if (!constructId) return res.status(400).json({ ok: false, error: "Missing constructId" });
+
+  try {
+    const { loadLedger } = await import('../lib/continuityParser.js');
+    const ledger = await loadLedger(constructId);
+    if (!ledger) {
+      return res.status(404).json({ ok: false, error: `No ledger found for ${constructId}. Generate one first.` });
+    }
+
+    res.json({ ok: true, ...ledger });
+  } catch (error) {
+    console.error(`❌ [Ledger] Load failed for ${constructId}:`, error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 router.get("/identity/query", async (req, res) => {
   const userId = validateUser(res, req.user);
   if (!userId) return;
