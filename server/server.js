@@ -16,7 +16,8 @@ import { Store } from "./store.js";
 import { requireAuth } from "./middleware/auth.js";
 import convRoutes from "./routes/conversations.js";
 import aiRoutes from "./routes/ais.js";
-import { randomBytes } from "node:crypto";
+import crypto from "node:crypto";
+const { randomBytes } = crypto;
 import vvaultRoutes from "./routes/vvault.js";
 import previewRoutes from "./routes/preview.js";
 import awarenessRoutes from "./routes/awareness.js";
@@ -63,24 +64,20 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('💥 [CRASH] Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-// Construct canonical redirect URI with normalization
-const REPLIT_DOMAIN = process.env.REPLIT_DEV_DOMAIN || process.env.REPLIT_DOMAINS;
-const PUBLIC_CALLBACK_BASE = REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : (process.env.PUBLIC_CALLBACK_BASE || 'http://localhost:5050');
+// Construct canonical redirect URI — ALWAYS use production domain for Google OAuth
+// This ensures the redirect_uri matches what's registered in Google Cloud Console,
+// regardless of whether we're accessed from Replit dev, custom domain, or localhost.
+const CANONICAL_DOMAIN = process.env.CANONICAL_DOMAIN || 'chatty.thewreck.org';
 const CALLBACK_PATH = process.env.CALLBACK_PATH || '/api/auth/google/callback';
-const REDIRECT_URI = `${PUBLIC_CALLBACK_BASE.replace(/\/$/, '')}${CALLBACK_PATH}`;
-
-// IMPORTANT: Override for Google Callback
+const REDIRECT_URI = `https://${CANONICAL_DOMAIN}${CALLBACK_PATH}`;
 const GOOGLE_CALLBACK = REDIRECT_URI;
+
+const REPLIT_DOMAIN = process.env.REPLIT_DEV_DOMAIN || process.env.REPLIT_DOMAINS;
 const POST_LOGIN_REDIRECT = REPLIT_DOMAIN
   ? `https://${REPLIT_DOMAIN}`
   : (process.env.POST_LOGIN_REDIRECT || process.env.FRONTEND_URL || "http://localhost:5173");
 
 function getRedirectUri(req) {
-  const host = req.get('x-forwarded-host') || req.get('host');
-  const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
-  if (host) {
-    return `${proto}://${host}${CALLBACK_PATH}`;
-  }
   return REDIRECT_URI;
 }
 
@@ -106,8 +103,8 @@ if (process.env.NODE_ENV === 'production' && !REPLIT_DOMAIN) {
 }
 
 console.log('--- OAUTH CONFIG DEBUG ---');
+console.log('CANONICAL_DOMAIN:', CANONICAL_DOMAIN);
 console.log('REPLIT_DOMAIN:', REPLIT_DOMAIN);
-console.log('PUBLIC_CALLBACK_BASE:', PUBLIC_CALLBACK_BASE);
 console.log('REDIRECT_URI:', REDIRECT_URI);
 console.log('GOOGLE_CALLBACK:', GOOGLE_CALLBACK);
 console.log('---------------------------');
@@ -436,15 +433,66 @@ app.post("/api/auth/dev-login", async (req, res) => {
   }
 });
 
+// --- OAuth security helpers ---
+const oauthPendingStates = new Map();
+const oauthExchangeCodes = new Map();
+const OAUTH_STATE_TTL = 10 * 60 * 1000;
+const EXCHANGE_CODE_TTL = 2 * 60 * 1000;
+
+function buildAllowedOrigins() {
+  const origins = new Set([`https://${CANONICAL_DOMAIN}`]);
+  if (REPLIT_DOMAIN) origins.add(`https://${REPLIT_DOMAIN}`);
+  if (POST_LOGIN_REDIRECT && POST_LOGIN_REDIRECT !== 'http://localhost:5173') origins.add(POST_LOGIN_REDIRECT);
+  origins.add('http://localhost:5173');
+  origins.add('http://localhost:5000');
+  return origins;
+}
+const ALLOWED_ORIGINS = buildAllowedOrigins();
+
+function signState(data) {
+  const payload = Buffer.from(JSON.stringify(data)).toString('base64url');
+  const sig = crypto.createHmac('sha256', JWT_SECRET).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+
+function verifyState(stateStr) {
+  const parts = stateStr.split('.');
+  if (parts.length !== 2) return null;
+  const [payload, sig] = parts;
+  const expectedSig = crypto.createHmac('sha256', JWT_SECRET).update(payload).digest('base64url');
+  if (sig !== expectedSig) return null;
+  try {
+    return JSON.parse(Buffer.from(payload, 'base64url').toString());
+  } catch { return null; }
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of oauthPendingStates) {
+    if (now - val.created > OAUTH_STATE_TTL) oauthPendingStates.delete(key);
+  }
+  for (const [key, val] of oauthExchangeCodes) {
+    if (now - val.created > EXCHANGE_CODE_TTL) oauthExchangeCodes.delete(key);
+  }
+}, 60 * 1000);
+
 // start OAuth (front-end should hit this)
 app.get("/api/auth/google", authLimiter, (req, res) => {
   console.log('🔍 [OAuth] /api/auth/google endpoint hit');
   try {
-    const dynamicRedirectUri = getRedirectUri(req);
+    const originHost = req.get('x-forwarded-host') || req.get('host');
+    const originProto = req.get('x-forwarded-proto') || req.protocol || 'https';
+    const originUrl = originHost ? `${originProto}://${originHost}` : POST_LOGIN_REDIRECT;
+
+    if (!ALLOWED_ORIGINS.has(originUrl)) {
+      console.warn(`⚠️ [OAuth] Origin not in allowlist: ${originUrl}. Allowed:`, [...ALLOWED_ORIGINS]);
+    }
+
     console.log('🔍 [OAuth] Environment check:', {
       has_client_id: !!process.env.GOOGLE_CLIENT_ID,
       has_client_secret: !!process.env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: dynamicRedirectUri
+      redirect_uri: REDIRECT_URI,
+      origin: originUrl
     });
 
     if (!OAUTH.client_id) {
@@ -456,21 +504,23 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
       return res.status(500).json({ error: "OAuth configuration missing: GOOGLE_CLIENT_SECRET" });
     }
 
-    console.log('🔍 [OAuth] Generating state and building OAuth URL');
-    const state = cryptoRandom();
-    req.app.locals = req.app.locals || {};
-    req.app.locals[`oauth_redirect_${state}`] = dynamicRedirectUri;
+    const nonce = cryptoRandom();
+    const stateData = { nonce, origin: originUrl };
+    const stateToken = signState(stateData);
+
+    oauthPendingStates.set(nonce, { origin: originUrl, created: Date.now() });
+
     const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     url.searchParams.set("client_id", OAUTH.client_id);
-    url.searchParams.set("redirect_uri", dynamicRedirectUri);
+    url.searchParams.set("redirect_uri", REDIRECT_URI);
     url.searchParams.set("response_type", "code");
     url.searchParams.set("scope", "openid email profile");
     url.searchParams.set("include_granted_scopes", "true");
     url.searchParams.set("access_type", "offline");
     url.searchParams.set("prompt", "consent");
-    url.searchParams.set("state", state);
+    url.searchParams.set("state", stateToken);
 
-    console.log('✅ [OAuth] Redirecting to Google OAuth URL with redirect_uri:', dynamicRedirectUri);
+    console.log('✅ [OAuth] Redirecting to Google with redirect_uri:', REDIRECT_URI, 'origin:', originUrl);
     res.redirect(url.toString());
   } catch (error) {
     console.error('❌ [OAuth] Unexpected error in /api/auth/google:', error);
@@ -482,33 +532,48 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
 // OAuth callback → exchange code → set cookie → redirect home
 app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
   try {
-    const { code, error } = req.query;
+    const { code, error: oauthError, state: stateParam } = req.query;
 
-    const dynamicRedirectUri = getRedirectUri(req);
-    const dynamicPostLogin = getPostLoginRedirect(req);
+    let originUrl = `https://${CANONICAL_DOMAIN}`;
+    let stateValid = false;
 
-    // Handle OAuth errors from Google
-    if (error) {
-      console.error('OAuth error from Google:', error);
-      return res.redirect(`${dynamicPostLogin}/?error=${encodeURIComponent(error)}`);
+    if (stateParam) {
+      const stateData = verifyState(stateParam);
+      if (stateData && stateData.nonce && stateData.origin) {
+        const pending = oauthPendingStates.get(stateData.nonce);
+        if (pending && pending.origin === stateData.origin) {
+          oauthPendingStates.delete(stateData.nonce);
+          stateValid = true;
+          if (ALLOWED_ORIGINS.has(stateData.origin)) {
+            originUrl = stateData.origin;
+          } else {
+            console.warn(`⚠️ [OAuth Callback] Origin not in allowlist: ${stateData.origin}, using canonical`);
+          }
+        } else {
+          console.warn('⚠️ [OAuth Callback] State nonce not found or origin mismatch (possible replay)');
+        }
+      } else {
+        console.warn('⚠️ [OAuth Callback] Invalid state signature');
+      }
+    }
+
+    if (!stateValid) {
+      console.error('❌ [OAuth Callback] CSRF check failed — state invalid or missing');
+      return res.redirect(`${originUrl}/?error=invalid_state`);
+    }
+
+    if (oauthError) {
+      console.error('OAuth error from Google:', oauthError);
+      return res.redirect(`${originUrl}/?error=${encodeURIComponent(oauthError)}`);
     }
 
     if (!code) {
       console.error('OAuth callback missing code parameter');
-      return res.redirect(`${dynamicPostLogin}/?error=missing_code`);
+      return res.redirect(`${originUrl}/?error=missing_code`);
     }
 
-    // Try to retrieve the stored redirect URI from the state parameter
-    const { state } = req.query;
-    const storedRedirectUri = state && req.app.locals?.[`oauth_redirect_${state}`];
-    const tokenRedirectUri = storedRedirectUri || dynamicRedirectUri;
-    if (storedRedirectUri && state) {
-      delete req.app.locals[`oauth_redirect_${state}`];
-    }
+    console.log('🔍 [OAuth Callback] Using redirect_uri:', REDIRECT_URI, 'origin:', originUrl);
 
-    console.log('🔍 [OAuth Callback] Using redirect_uri:', tokenRedirectUri);
-
-    // exchange code for tokens
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -517,25 +582,17 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
         client_secret: process.env.GOOGLE_CLIENT_SECRET,
         code,
         grant_type: "authorization_code",
-        redirect_uri: tokenRedirectUri,
+        redirect_uri: REDIRECT_URI,
       })
     }).then(r => r.json());
     if (!tokenRes.access_token) {
       console.error("OAuth token exchange failed:", tokenRes);
-      console.error("Request details:", {
-        redirect_uri: tokenRedirectUri,
-        has_client_id: !!process.env.GOOGLE_CLIENT_ID,
-        has_client_secret: !!process.env.GOOGLE_CLIENT_SECRET,
-        code_length: code?.length
-      });
-      return res.redirect(`${dynamicPostLogin}/?error=oauth_token_exchange_failed&details=${encodeURIComponent(JSON.stringify(tokenRes))}`);
+      return res.redirect(`${originUrl}/?error=oauth_token_exchange_failed`);
     }
 
-    // 2) fetch user info
     const user = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
       headers: { Authorization: `Bearer ${tokenRes.access_token}` }
     }).then(r => r.json());
-    // Google returns: {sub, email, name, picture, given_name, family_name, locale, email_verified}
     console.log('🖼️ [OAuth] Google user info received:', {
       email: user.email,
       name: user.name,
@@ -543,7 +600,6 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       hasPicture: !!user.picture
     });
 
-    // 3) persist user to DB and issue session
     const profile = {
       sub: user.sub,
       name: user.name,
@@ -562,16 +618,14 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       email: profile.email,
       picture: profile.picture,
       locale: profile.locale,
-      emailVerified: profile.email_verified !== undefined ? profile.email_verified : true // Default to true for OAuth users
+      emailVerified: profile.email_verified !== undefined ? profile.email_verified : true
     });
 
-    // CRITICAL: Use LIFE format user ID (same as VVAULT) instead of MongoDB _id
-    // Register user in Chatty user registry (generates LIFE format ID)
     let userId;
     try {
       const { getOrCreateUser } = await import('./lib/userRegistry.js');
       const userProfile = await getOrCreateUser(doc._id.toString?.() ?? doc._id, profile.email, profile.name);
-      userId = userProfile.user_id; // LIFE format: devon_woodson_1762969514958
+      userId = userProfile.user_id;
       console.log(`✅ [User Registry] Registered user: ${userId} (${profile.email})`);
 
       try {
@@ -588,8 +642,8 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
     }
 
     const payload = {
-      id: userId, // LIFE format user ID
-      uid: profile.sub, // Google sub (for OAuth)
+      id: userId,
+      uid: profile.sub,
       name: profile.name,
       given_name: profile.given_name,
       family_name: profile.family_name,
@@ -598,38 +652,64 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       locale: profile.locale
     };
 
-    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: "30d" });
+    const sessionToken = jwt.sign(payload, JWT_SECRET, { expiresIn: "30d" });
 
-    const domain = req.hostname && req.hostname.includes('thewreck.org') ? '.thewreck.org' : undefined;
-    const cookieOptions = {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 1000 * 60 * 60 * 24 * 30,
-      ...(domain ? { domain } : {})
-    };
-    console.log('[COOKIE SET]', {
-      name: COOKIE_NAME,
-      secure: cookieOptions.secure,
-      sameSite: cookieOptions.sameSite,
-      domain: cookieOptions.domain,
-      maxAge: cookieOptions.maxAge
-    });
+    const originIsCanonical = originUrl.includes('thewreck.org');
 
-    res.cookie(COOKIE_NAME, token, cookieOptions);
+    if (originIsCanonical) {
+      const cookieOptions = {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 1000 * 60 * 60 * 24 * 30,
+        domain: '.thewreck.org'
+      };
+      console.log('[COOKIE SET] Setting cookie on canonical domain');
+      res.cookie(COOKIE_NAME, sessionToken, cookieOptions);
+      console.log(`✅ OAuth success! Redirecting to ${originUrl}/app`);
+      return res.redirect(`${originUrl}/app`);
+    }
 
-    // 4) redirect back to app (to /app route which shows Home)
-    console.log(`✅ OAuth success! Redirecting to ${dynamicPostLogin}/app`);
-    res.redirect(`${dynamicPostLogin}/app`);
+    const exchangeCode = cryptoRandom();
+    oauthExchangeCodes.set(exchangeCode, { token: sessionToken, created: Date.now() });
+    console.log(`✅ OAuth success! Redirecting to origin with exchange code: ${originUrl}`);
+    res.redirect(`${originUrl}/api/auth/set-session?code=${encodeURIComponent(exchangeCode)}`);
   } catch (e) {
     console.error('OAuth callback error:', e);
-    const fallbackRedirect = getPostLoginRedirect(req);
-    res.redirect(`${fallbackRedirect}/?error=auth_failed`);
+    res.redirect(`https://${CANONICAL_DOMAIN}/?error=auth_failed`);
   }
 });
 
-  // session probe
+app.get("/api/auth/set-session", (req, res) => {
+  const { code } = req.query;
+  if (!code) {
+    return res.redirect('/?error=missing_code');
+  }
+  const entry = oauthExchangeCodes.get(code);
+  if (!entry) {
+    console.error('❌ [set-session] Invalid or expired exchange code');
+    return res.redirect('/?error=invalid_or_expired_code');
+  }
+  oauthExchangeCodes.delete(code);
+
+  if (Date.now() - entry.created > EXCHANGE_CODE_TTL) {
+    console.error('❌ [set-session] Exchange code expired');
+    return res.redirect('/?error=expired_code');
+  }
+
+  const cookieOptions = {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 1000 * 60 * 60 * 24 * 30,
+  };
+  console.log('[COOKIE SET] Setting cookie on origin domain via set-session');
+  res.cookie(COOKIE_NAME, entry.token, cookieOptions);
+  return res.redirect('/app');
+});
+
 app.get("/api/me", (req, res) => {
   const raw = req.cookies?.[COOKIE_NAME];
   if (!raw) return res.status(401).json({ ok: false });
