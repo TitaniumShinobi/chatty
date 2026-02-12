@@ -16,6 +16,7 @@
 import { loadIdentityFiles } from './identityLoader.js';
 import { loadVerifiedMemories, buildVerifiedMemorySection, clearVerifiedMemoryCache } from './verifiedMemoryLoader.js';
 import { masterScriptsManager, Needle } from './masterScriptsBridge.js';
+import { loadLedger, enrichMemoryWithLedger, buildLedgerContextSection, generateLedger, storeLedger } from './continuityParser.js';
 
 let capsuleIntegrationModule = null;
 let memupServiceModule = null;
@@ -150,6 +151,12 @@ function buildNeedleMemorySection(needleHits, constructId) {
 
   needleHits.forEach((hit, i) => {
     section += `\n### Transcript Match ${i + 1} (index ${hit.index})`;
+    if (hit.context_hint) {
+      section += `\n- Context: ${hit.context_hint}`;
+    }
+    if (hit.session_context) {
+      section += `\n- Session: "${hit.session_context.title}" (${hit.session_context.estimatedDate}, vibe: ${hit.session_context.vibe})`;
+    }
     section += `\n- They said: "${hit.user}"`;
     section += `\n- You replied: "${hit.assistant}"`;
     if (hit.contextWindow && hit.contextWindow.length > 1) {
@@ -436,6 +443,27 @@ async function buildEnrichedContext(options) {
   let verifiedCount = 0;
   let needleSection = '';
   let needleCount = 0;
+  let ledgerSection = '';
+
+  let ledger = null;
+  try {
+    ledger = await loadLedger(constructId);
+    if (!ledger) {
+      console.log(`📋 [MemoryContextBuilder] No ledger for ${constructId}, auto-generating...`);
+      ledger = await generateLedger(constructId);
+      if (ledger && ledger.sessions && ledger.sessions.length > 0) {
+        await storeLedger(constructId, ledger);
+        console.log(`✅ [MemoryContextBuilder] Auto-generated and stored ledger for ${constructId}: ${ledger.sessions.length} sessions`);
+      }
+    }
+    if (ledger && ledger.sessions && ledger.sessions.length > 0) {
+      ledgerSection = buildLedgerContextSection(ledger);
+      result.ledgerSessions = ledger.sessions.length;
+      console.log(`📋 [MemoryContextBuilder] Ledger loaded for ${constructId}: ${ledger.sessions.length} sessions, hooks: ${ledger.continuityHooks.join(', ')}`);
+    }
+  } catch (ledgerErr) {
+    console.warn(`⚠️ [MemoryContextBuilder] Ledger load failed for ${constructId}:`, ledgerErr.message);
+  }
 
   if (userMessage) {
     const [verifiedResult, needleHits] = await Promise.all([
@@ -447,6 +475,9 @@ async function buildEnrichedContext(options) {
     ]);
 
     if (verifiedResult.memories.length > 0) {
+      if (ledger) {
+        verifiedResult.memories = verifiedResult.memories.map(m => enrichMemoryWithLedger(m, ledger));
+      }
       verifiedMemorySection = buildVerifiedMemorySection(verifiedResult.memories, constructId);
       verifiedCount = verifiedResult.memories.length;
       result.verifiedMemories = verifiedCount;
@@ -454,6 +485,13 @@ async function buildEnrichedContext(options) {
     }
 
     if (needleHits.length > 0) {
+      if (ledger) {
+        for (const hit of needleHits) {
+          const enriched = enrichMemoryWithLedger({ context: hit.user, response: hit.assistant }, ledger);
+          if (enriched.context_hint) hit.context_hint = enriched.context_hint;
+          if (enriched.session_context) hit.session_context = enriched.session_context;
+        }
+      }
       needleSection = buildNeedleMemorySection(needleHits, constructId);
       needleCount = needleHits.length;
       result.needleHits = needleCount;
@@ -509,9 +547,9 @@ async function buildEnrichedContext(options) {
     userSection += `\nTheir email is ${user.email}.`;
   }
 
-  result.systemPrompt = basePrompt + capsuleSection + userSection + needleSection + verifiedMemorySection + memorySection + ANTI_ROLEPLAY_DIRECTIVES;
+  result.systemPrompt = basePrompt + capsuleSection + userSection + ledgerSection + needleSection + verifiedMemorySection + memorySection + ANTI_ROLEPLAY_DIRECTIVES;
 
-  console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, needle: ${needleCount}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
+  console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, ledger: ${ledger ? ledger.sessions.length : 0}, needle: ${needleCount}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
 
   return result;
 }
