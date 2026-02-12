@@ -3600,7 +3600,7 @@ router.post("/message", async (req, res) => {
   const userId = validateUser(res, req.user);
   if (!userId) return;
 
-  const { constructId, message, threadId, sessionId, attachments, systemPromptOverride } = req.body || {};
+  const { constructId, message, threadId, sessionId, attachments, systemPromptOverride, skipPersistence } = req.body || {};
 
   if (!constructId) {
     return res.status(400).json({ success: false, error: "Missing constructId" });
@@ -3891,14 +3891,16 @@ router.post("/message", async (req, res) => {
       
       console.log(`✅ [VVAULT Proxy] ${effectiveProvider} successful for ${constructId}, response length: ${aiResponse.length}`);
       
-      captureMemory({
-        userId,
-        constructId,
-        userMessage: message,
-        aiResponse,
-        sessionId: sessionId || threadId || `${constructId}_chat_with_${constructId}`,
-        email: req.user?.email
-      }).catch(err => console.warn('⚠️ [VVAULT Proxy] Background memory capture failed:', err.message));
+      if (!skipPersistence) {
+        captureMemory({
+          userId,
+          constructId,
+          userMessage: message,
+          aiResponse,
+          sessionId: sessionId || threadId || `${constructId}_chat_with_${constructId}`,
+          email: req.user?.email
+        }).catch(err => console.warn('⚠️ [VVAULT Proxy] Background memory capture failed:', err.message));
+      }
 
       return res.json({
         success: true,
@@ -4802,6 +4804,73 @@ router.get("/files/read", async (req, res) => {
     return res.json({ ok: true, file: data });
   } catch (error) {
     console.error(`❌ [VVAULT Files] Read failed:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+router.post("/continuity-test/:constructId", requireAuth, async (req, res) => {
+  try {
+    const { constructId } = req.params;
+    const { maxTests = 5 } = req.body || {};
+
+    console.log(`🧪 [ContinuityTest] API request for ${constructId} (maxTests: ${maxTests})`);
+
+    const authToken = req.headers.authorization || null;
+    const { runFullContinuityTest } = await import('../lib/continuityTestEngine.js');
+    const result = await runFullContinuityTest(constructId, Math.min(maxTests, 10), authToken);
+
+    if (result.error) {
+      return res.status(400).json({ ok: false, error: result.error });
+    }
+
+    return res.json({
+      ok: true,
+      constructId: result.constructId,
+      summary: result.summary,
+      results: result.results.map(r => ({
+        testId: r.testId,
+        name: r.name,
+        prompt: r.prompt,
+        grade: r.grade,
+        sourceFile: r.sourceFile,
+        responsePreview: r.response ? r.response.substring(0, 300) : null,
+        error: r.error
+      })),
+      elapsed: result.elapsed
+    });
+  } catch (error) {
+    console.error(`❌ [ContinuityTest] Failed:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+router.post("/continuity-test/:constructId/generate", requireAuth, async (req, res) => {
+  try {
+    const { constructId } = req.params;
+    const { maxTests = 5 } = req.body || {};
+
+    const { generateTestsFromTranscripts } = await import('../lib/continuityTestEngine.js');
+    const result = await generateTestsFromTranscripts(constructId, Math.min(maxTests, 10));
+
+    if (result.error) {
+      return res.status(400).json({ ok: false, error: result.error });
+    }
+
+    return res.json({
+      ok: true,
+      tests: result.tests.map(t => ({
+        id: t.id,
+        name: t.name,
+        prompt: t.prompt,
+        criteriaCount: t.criteria.length,
+        sourceFile: t.sourceFile,
+        verbatimKeywords: [...new Set(t.verbatimKeywords || [])].slice(0, 15)
+      })),
+      exchangeCount: result.exchangeCount,
+      fileCount: result.fileCount
+    });
+  } catch (error) {
+    console.error(`❌ [ContinuityTest] Generate failed:`, error);
     return res.status(500).json({ ok: false, error: error.message });
   }
 });
