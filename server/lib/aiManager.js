@@ -668,26 +668,6 @@ export class AIManager {
       }
     }
 
-    // Fallback for seed constructs stored with user_id='all_users'
-    if (!row) {
-      try {
-        const seedAisStmt = this.db.prepare('SELECT * FROM ais WHERE construct_callsign = ? AND user_id = ?');
-        row = seedAisStmt.get(constructCallsign, 'all_users');
-        if (row) {
-          console.log(`📊 [AIManager] Found seed AI with callsign ${constructCallsign} in ais table (all_users)`);
-        }
-      } catch (error) {}
-      if (!row) {
-        try {
-          const seedGptsStmt = this.db.prepare('SELECT * FROM gpts WHERE construct_callsign = ? AND user_id = ?');
-          row = seedGptsStmt.get(constructCallsign, 'all_users');
-          if (row) {
-            fromGPTsTable = true;
-            console.log(`📊 [AIManager] Found seed AI with callsign ${constructCallsign} in gpts table (all_users)`);
-          }
-        } catch (error) {}
-      }
-    }
 
     if (!row) {
       return null;
@@ -770,11 +750,10 @@ export class AIManager {
       const userIds = [userId];
       if (originalUserId && originalUserId !== userId) userIds.push(originalUserId);
 
-      // Collect from ais table
       for (const uid of userIds) {
         try {
-          const stmt = this.db.prepare('SELECT * FROM ais WHERE user_id = ? OR user_id = ? ORDER BY updated_at DESC');
-          const found = stmt.all(uid, 'all_users');
+          const stmt = this.db.prepare('SELECT * FROM ais WHERE user_id = ? ORDER BY updated_at DESC');
+          const found = stmt.all(uid);
           if (found.length > 0) {
             aisRows.push(...found);
             console.log(`📊 [AIManager] Found ${found.length} AIs from ais table for user: ${uid}`);
@@ -784,11 +763,10 @@ export class AIManager {
         }
       }
 
-      // Collect from gpts table (seed GPTs like Katana live here)
       for (const uid of userIds) {
         try {
-          const stmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? OR user_id = ? ORDER BY updated_at DESC');
-          const found = stmt.all(uid, 'all_users');
+          const stmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? ORDER BY updated_at DESC');
+          const found = stmt.all(uid);
           if (found.length > 0) {
             gptsRows.push(...found);
             console.log(`📊 [AIManager] Found ${found.length} GPTs from gpts table for user: ${uid}`);

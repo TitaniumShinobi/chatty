@@ -572,9 +572,17 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       const userProfile = await getOrCreateUser(doc._id.toString?.() ?? doc._id, profile.email, profile.name);
       userId = userProfile.user_id; // LIFE format: devon_woodson_1762969514958
       console.log(`✅ [User Registry] Registered user: ${userId} (${profile.email})`);
+
+      try {
+        const { GPTManager } = await import('./lib/gptManager.js');
+        const gptManager = GPTManager.getInstance();
+        gptManager.provisionUserConstructs(userId);
+        console.log(`✅ [User Provisioning] System constructs provisioned for: ${userId}`);
+      } catch (provisionError) {
+        console.error('⚠️ [User Provisioning] Failed to provision constructs (non-critical):', provisionError);
+      }
     } catch (regError) {
       console.error('⚠️ [User Registry] Failed to register user (non-critical):', regError);
-      // Use the LIFE ID from the profile if we have it, or fallback to MongoDB ID
       userId = profile.id || (doc._id.toString ? doc._id.toString() : doc._id);
     }
 
