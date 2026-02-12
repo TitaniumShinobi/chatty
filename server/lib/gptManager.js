@@ -165,11 +165,10 @@ export class GPTManager {
     }
   }
 
-  seedDefaultGPTs() {
-    const defaultConstructs = [
+  static getSystemConstructTemplates() {
+    return [
       {
         callsign: 'zen-001',
-        id: 'gpt-zen-001-seed',
         name: 'Zen',
         description: '',
         instructions: '',
@@ -180,20 +179,7 @@ export class GPTManager {
         codingModel: 'openrouter:deepseek/deepseek-chat',
       },
       {
-        callsign: 'katana-001',
-        id: 'gpt-katana-001-seed',
-        name: 'Katana',
-        description: '',
-        instructions: '',
-        starters: [],
-        orchestrationMode: 'lin',
-        model: 'openrouter:meta-llama/llama-3.3-70b-instruct',
-        creativeModel: 'openrouter:mistralai/mistral-7b-instruct',
-        codingModel: 'openrouter:deepseek/deepseek-coder-33b-instruct',
-      },
-      {
         callsign: 'lin-001',
-        id: 'gpt-lin-001-seed',
         name: 'Lin',
         description: '',
         instructions: '',
@@ -205,7 +191,20 @@ export class GPTManager {
         roleMetadata: JSON.stringify({ role: 'undertone', context: 'gpt_creator_create_tab', is_system: true }),
       },
     ];
+  }
 
+  seedDefaultGPTs() {
+    this.autoGenerateMissingAvatars();
+    this.hydrateFromVVAULT();
+  }
+
+  provisionUserConstructs(userId) {
+    if (!userId || userId === 'anonymous') {
+      console.warn('⚠️ [GPTManager] Cannot provision constructs for anonymous user');
+      return;
+    }
+
+    const templates = GPTManager.getSystemConstructTemplates();
     const insertStmt = this.db.prepare(`
       INSERT INTO gpts (
         id, name, description, instructions, conversation_starters, avatar, capabilities, construct_callsign, 
@@ -215,42 +214,38 @@ export class GPTManager {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    for (const construct of defaultConstructs) {
+    for (const template of templates) {
       const exists = this.db.prepare(
-        `SELECT id, user_id FROM gpts WHERE construct_callsign = ?`
-      ).get(construct.callsign);
+        `SELECT id FROM gpts WHERE construct_callsign = ? AND user_id = ?`
+      ).get(template.callsign, userId);
 
       if (!exists) {
-        console.log(`🌱 [GPTManager] Seeding ${construct.name} GPT (shell only, identity from VVAULT)...`);
+        const gptId = `gpt-${template.callsign}-${userId.substring(0, 8)}`;
+        console.log(`🌱 [GPTManager] Provisioning ${template.name} for user ${userId}...`);
         const now = new Date().toISOString();
         insertStmt.run(
-          construct.id,
-          construct.name,
-          construct.description,
-          construct.instructions,
-          JSON.stringify(construct.starters),
+          gptId,
+          template.name,
+          template.description,
+          template.instructions,
+          JSON.stringify(template.starters),
           null,
           JSON.stringify({ webBrowsing: false, imageGeneration: false, codeInterpreter: true }),
-          construct.callsign,
-          construct.model,
-          construct.model,
-          construct.creativeModel,
-          construct.codingModel,
-          construct.orchestrationMode,
+          template.callsign,
+          template.model,
+          template.model,
+          template.creativeModel,
+          template.codingModel,
+          template.orchestrationMode,
           1,
           now,
           now,
-          'all_users'
+          userId
         );
-        console.log(`✅ [GPTManager] ${construct.name} GPT shell seeded — awaiting VVAULT identity hydration`);
-      } else if (exists.user_id !== 'all_users') {
-        console.log(`🔄 [GPTManager] Updating ${construct.name} GPT to be shared for all users...`);
-        this.db.prepare(`UPDATE gpts SET user_id = ? WHERE construct_callsign = ?`).run('all_users', construct.callsign);
-        console.log(`✅ [GPTManager] ${construct.name} GPT updated to all_users`);
+        console.log(`✅ [GPTManager] ${template.name} provisioned for user ${userId}`);
       }
     }
     
-    this.autoGenerateMissingAvatars();
     this.hydrateFromVVAULT();
   }
 
@@ -744,22 +739,19 @@ export class GPTManager {
         return [];
       }
 
-      // Get user-specific GPTs and shared/global GPTs (user_id = 'all_users')
-      const stmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? OR user_id = ? ORDER BY updated_at DESC');
-      let rows = stmt.all(userId, 'all_users');
+      const stmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? ORDER BY updated_at DESC');
+      let rows = stmt.all(userId);
 
-      // Fallback: if none found and we have an original user ID (email/ObjectId), try that too
       if ((!rows || rows.length === 0) && originalUserId && originalUserId !== userId) {
         console.log(`🔄 [GPTManager] Trying fallback query with original user ID: ${originalUserId}`);
-        const fallbackStmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? OR user_id = ? ORDER BY updated_at DESC');
-        rows = fallbackStmt.all(originalUserId, 'all_users');
+        const fallbackStmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? ORDER BY updated_at DESC');
+        rows = fallbackStmt.all(originalUserId);
       }
 
-      // Last resort: if still none found, try email-based lookup (for backward compatibility)
       if ((!rows || rows.length === 0) && originalUserId && originalUserId.includes('@')) {
         console.log(`🔄 [GPTManager] Trying email-based lookup: ${originalUserId}`);
-        const emailStmt = this.db.prepare('SELECT * FROM gpts WHERE user_id LIKE ? OR user_id = ? ORDER BY updated_at DESC');
-        rows = emailStmt.all(`%${originalUserId}%`, 'all_users');
+        const emailStmt = this.db.prepare('SELECT * FROM gpts WHERE user_id LIKE ? ORDER BY updated_at DESC');
+        rows = emailStmt.all(`%${originalUserId}%`);
       }
 
       console.log(`📊 [GPTManager] Found ${rows?.length || 0} GPTs for user: ${userId}${originalUserId && originalUserId !== userId ? ` (original: ${originalUserId})` : ''}`);
