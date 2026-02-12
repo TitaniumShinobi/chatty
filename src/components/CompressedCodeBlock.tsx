@@ -49,6 +49,7 @@ export const CompressedCodeBlock: React.FC<CompressedCodeBlockProps> = ({ code, 
                 width: '100%',
                 maxWidth: '100%',
                 backgroundColor: '#1e1e1e',
+                color: '#d4d4d4',
                 boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
                 isolation: 'isolate'
             }}
@@ -81,15 +82,18 @@ export const CompressedCodeBlock: React.FC<CompressedCodeBlockProps> = ({ code, 
                             style={vscDarkPlus as any}
                             language={language}
                             PreTag="div"
+                            useInlineStyles={true}
                             customStyle={{
                                 ...baseStyle,
                                 width: 'max-content',
                                 minWidth: '100%',
                                 background: '#1e1e1e',
+                                color: '#d4d4d4',
                             }}
                             codeTagProps={{
                                 style: {
                                     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                                    color: '#d4d4d4',
                                 }
                             }}
                         >
