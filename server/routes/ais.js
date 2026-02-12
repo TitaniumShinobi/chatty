@@ -661,10 +661,10 @@ router.get('/:id/files', async (req, res) => {
                   if (category === 'other' && f.file_type) {
                     const ft = f.file_type.toLowerCase();
                     if (ft === 'identity') category = 'identity';
-                    else if (ft === 'knowledge') category = 'knowledge';
+                    else if (ft === 'knowledge' || ft === 'assets' || ft === 'documents') category = 'knowledge';
                     else if (ft === 'config' || ft === 'enforcement_config') category = 'config';
-                    else if (ft === 'ledger' || ft === 'log') category = 'log';
-                    else if (ft === 'binary' || ft === 'text' || ft === 'application/json') category = 'knowledge';
+                    else if (ft === 'ledger' || ft === 'log' || ft === 'logs') category = 'log';
+                    else if (ft === 'memup' || ft === 'capsule') category = 'capsule';
                   }
 
                   const isImage = /\.(png|jpg|jpeg|svg|gif|webp)$/i.test(f.filename || '');
