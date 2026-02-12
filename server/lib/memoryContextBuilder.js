@@ -335,33 +335,10 @@ async function buildEnrichedContext(options) {
   }
 
   let memorySection = '';
-  let chromaMemoriesLoaded = false;
-
-  if (process.env.ENABLE_CHROMADB === 'true' && userMessage) {
-    try {
-      const memupService = await getMemupService();
-      if (memupService) {
-        const CHROMADB_TIMEOUT_MS = 5000;
-        const memoriesPromise = memupService.queryMemories(userId, constructId, userMessage, 8);
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error(`ChromaDB query timed out after ${CHROMADB_TIMEOUT_MS}ms`)), CHROMADB_TIMEOUT_MS)
-        );
-        const memories = await Promise.race([memoriesPromise, timeoutPromise]);
-        if (memories && memories.length > 0) {
-          memorySection = buildMemoryPromptSection(memories);
-          result.memoriesLoaded = memories.length;
-          chromaMemoriesLoaded = true;
-          console.log(`✅ [MemoryContextBuilder] ${memories.length} ChromaDB memories loaded for ${constructId}`);
-        }
-      }
-    } catch (memErr) {
-      console.warn(`⚠️ [MemoryContextBuilder] ChromaDB memory query failed for ${constructId}:`, memErr.message);
-    }
-  }
 
   const chatFallbackLimit = verifiedCount > 0 ? 4 : 12;
 
-  if (!chromaMemoriesLoaded && userMessage) {
+  if (userMessage) {
     try {
       const readConversations = await getReadConversations();
       if (readConversations) {
@@ -418,26 +395,7 @@ async function buildEnrichedContext(options) {
  * @param {string} [options.email] - User email for VVAULT ID resolution
  */
 async function captureMemory(options) {
-  const { userId, constructId, userMessage, aiResponse, sessionId, email } = options;
-
-  if (process.env.ENABLE_CHROMADB !== 'true') {
-    return;
-  }
-
-  try {
-    const memupService = await getMemupService();
-    if (memupService) {
-      await memupService.addMemory(userId, constructId, userMessage, aiResponse, {
-        sessionId: sessionId || `${constructId}_${Date.now()}`,
-        email,
-        memoryType: 'short-term',
-        timestamp: new Date().toISOString()
-      });
-      console.log(`💾 [MemoryContextBuilder] Memory captured for ${constructId}`);
-    }
-  } catch (err) {
-    console.warn(`⚠️ [MemoryContextBuilder] Memory capture failed:`, err.message);
-  }
+  return;
 }
 
 export { buildEnrichedContext, captureMemory, buildCapsulePromptSection, buildMemoryPromptSection, extractTranscriptMemories, buildTranscriptMemorySection };
