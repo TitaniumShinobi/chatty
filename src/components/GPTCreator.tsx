@@ -1143,24 +1143,80 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     setIsUploading(true);
     setError(null);
 
+    const MAX_ZIP_SIZE = 750 * 1024 * 1024;
+
     try {
-      // Store files in local state instead of uploading to database
-      // Files will be uploaded after GPT creation in handleSave
       for (const file of Array.from(selectedFiles)) {
-        const tempFile: GPTFile = {
-          id: `temp-${crypto.randomUUID()}`,
-          gptId: "temp",
-          filename: file.name,
-          originalName: file.name,
-          mimeType: file.type,
-          size: file.size,
-          content: "", // Will be populated during actual upload
-          uploadedAt: new Date().toISOString(),
-          isActive: true,
-          // Store the actual File object for later processing
-          _file: file,
-        };
-        setFiles((prev) => [...prev, tempFile]);
+        const ext = file.name.split(".").pop()?.toLowerCase() || "";
+
+        if (ext === "zip") {
+          if (file.size > MAX_ZIP_SIZE) {
+            setError(`${file.name} exceeds 750MB limit`);
+            continue;
+          }
+          try {
+            const zip = await JSZip.loadAsync(file);
+            const entries = Object.keys(zip.files);
+            let extractedCount = 0;
+
+            for (const entryName of entries) {
+              const zipEntry = zip.files[entryName];
+              if (zipEntry.dir) continue;
+
+              const entryExt = entryName.split(".").pop()?.toLowerCase() || "";
+              const isText = ["txt", "md", "json", "csv", "rtf", "html", "xml", "yaml", "yml", "log"].includes(entryExt);
+              const isBinary = ["pdf", "doc", "docx", "png", "jpg", "jpeg", "gif", "bmp", "tiff", "svg", "mp4", "avi", "mov"].includes(entryExt);
+
+              if (!isText && !isBinary) continue;
+
+              let content = "";
+              let blobFile: File | undefined;
+
+              if (isText) {
+                content = await zipEntry.async("text");
+              }
+
+              if (isBinary) {
+                const blob = await zipEntry.async("blob");
+                const fileName = entryName.split("/").pop() || entryName;
+                blobFile = new File([blob], fileName, { type: `application/${entryExt}` });
+              }
+
+              const tempFile: GPTFile = {
+                id: `temp-${crypto.randomUUID()}`,
+                gptId: "temp",
+                filename: entryName,
+                originalName: entryName.split("/").pop() || entryName,
+                mimeType: isText ? `text/${entryExt === "md" ? "markdown" : "plain"}` : `application/${entryExt}`,
+                size: isText ? content.length : (blobFile?.size || 0),
+                content: content,
+                uploadedAt: new Date().toISOString(),
+                isActive: true,
+                _file: blobFile || file,
+              };
+              setFiles((prev) => [...prev, tempFile]);
+              extractedCount++;
+            }
+            console.log(`✅ [Knowledge] Extracted ${extractedCount} files from ${file.name}`);
+          } catch (zipError: any) {
+            console.error(`❌ [Knowledge] Failed to extract ${file.name}:`, zipError);
+            setError(`Failed to extract ${file.name}: ${zipError.message}`);
+          }
+        } else {
+          const tempFile: GPTFile = {
+            id: `temp-${crypto.randomUUID()}`,
+            gptId: "temp",
+            filename: file.name,
+            originalName: file.name,
+            mimeType: file.type,
+            size: file.size,
+            content: "",
+            uploadedAt: new Date().toISOString(),
+            isActive: true,
+            _file: file,
+          };
+          setFiles((prev) => [...prev, tempFile]);
+        }
       }
     } catch (error: any) {
       setError(error.message || "Failed to prepare files");
@@ -1251,7 +1307,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
     const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB limit for text files
     const MAX_PDF_SIZE = 10 * 1024 * 1024; // 10MB limit for PDFs
-    const MAX_ZIP_SIZE = 500 * 1024 * 1024; // 500MB limit for zip files
+    const MAX_ZIP_SIZE = 750 * 1024 * 1024; // 750MB limit for zip files
 
     setIsUploadingTranscripts(true);
     const newTranscripts: Array<{
@@ -1273,7 +1329,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         // Handle zip files - extract and preserve directory structure
         if (ext === "zip") {
           if (file.size > MAX_ZIP_SIZE) {
-            skippedFiles.push(`${file.name} (exceeds 500MB limit)`);
+            skippedFiles.push(`${file.name} (exceeds 750MB limit)`);
             continue;
           }
           try {
@@ -2973,7 +3029,7 @@ ALWAYS:
           multiple
           onChange={handleFileUpload}
           className="hidden"
-          accept=".txt,.md,.pdf,.json,.csv,.doc,.docx,.mp4,.avi,.mov,.mkv,.webm,.flv,.wmv,.m4v,.3gp,.ogv,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.svg"
+          accept=".txt,.md,.pdf,.json,.csv,.doc,.docx,.mp4,.avi,.mov,.mkv,.webm,.flv,.wmv,.m4v,.3gp,.ogv,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.svg,.zip"
         />
 
         {/* Modal Content - stops propagation, uses critical + 1 */}
