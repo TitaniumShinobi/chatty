@@ -1,0 +1,100 @@
+**Yes, I know what to do now. And it’s already in motion.**
+
+Here’s the complete technical fix + confirmation checklist for solving the **403 error during Google OAuth login in Replit preview** (for both **Chatty** and **VVAULT**, since they share a similar flow):
+
+---
+
+### ✅ **Core Issue**
+
+Google blocks the OAuth flow with a 403 because the **redirect URI** generated from inside the Replit preview **does not match** any URI registered in Google Cloud Console.
+
+---
+
+### 🛠️ **What I’ve Already Done (Recap)**
+
+#### 🔧 Code changes in `/server/server.js`
+
+1. **Dynamic Domain Detection**:
+
+   * OAuth login endpoint (`/api/auth/google`) now detects the **actual request origin** (via headers like `Origin`, `Referer`, or `x-forwarded-host`) and constructs the proper `redirect_uri` **on the fly**.
+   * This ensures:
+
+     * `chatty.thewreck.org` → uses `https://chatty.thewreck.org/api/auth/google/callback`
+     * Replit preview (e.g., `*.replit.dev`) → uses the current Replit domain dynamically
+
+2. **Callback Handler Sync**:
+
+   * The `/api/auth/google/callback` endpoint now parses the `state` parameter and pulls the correct `redirect_uri` back out — using only URIs from an **explicit allowlist** to prevent spoofing.
+
+3. **Cookie + Post-login Redirect**:
+
+   * Post-login redirect now returns you to the same domain (Replit or prod) from which login originated.
+   * Cookies are set on the **correct subdomain** based on where you logged in.
+
+4. **Header Proxy Issue** (previously):
+
+   * You fixed the webpack proxy overriding `Host`, allowing true Replit host to reach the backend.
+
+---
+
+### ✅ **What YOU Need To Do**
+
+Your **Google Cloud Console** settings must now reflect the new Replit domain.
+
+> **Current Replit Dev Domain Detected:**
+>
+> ```
+> https://9e87ef81-3206-41b7-ab62-5ac95372a8ad-00-1vnh2e2s81nle.riker.replit.dev
+> ```
+
+#### ✅ Add This as an Authorized Redirect URI
+
+In Google Cloud Console:
+
+```
+https://9e87ef81-3206-41b7-ab62-5ac95372a8ad-00-1vnh2e2s81nle.riker.replit.dev/api/auth/google/callback
+```
+
+#### ✅ Add This as a JavaScript Origin
+
+```
+https://9e87ef81-3206-41b7-ab62-5ac95372a8ad-00-1vnh2e2s81nle.riker.replit.dev
+```
+
+---
+
+### ✅ **Once Done**
+
+* Google will accept the redirect_uri.
+* Your login will **work from Replit preview**.
+* The **account picker will show** because of `prompt=select_account`.
+* The authenticated session will **return to Replit**, set cookies, and hydrate the correct user capsule.
+
+---
+
+### ⚠️ Optional (But Important)
+
+If you're testing with a non-primary Google account (like `jiraiyathehermitsage@gmail.com`) and your app is still in **Testing** mode, you must:
+
+* Add the account under **OAuth Consent Screen > Test Users**, *or*
+* Click **“Publish App”** to move the OAuth app to Production mode (Google only requires a review if you're requesting sensitive scopes, which you’re not).
+
+---
+
+### ✅ Final Sanity Check
+
+Verify these 3 things:
+
+1. [ ] The new Replit domain is saved in Google Cloud Console (redirect + JS origin)
+2. [ ] The OAuth redirect_uri you see in DevTools **matches exactly**
+3. [ ] The state object sent in the auth URL includes the correct redirect, and matches during the callback exchange
+
+---
+
+You're no longer guessing.
+You're **controlling the redirect domain at runtime**, validating everything, and securing session re-entry.
+
+If you’re ready, I can keep watching logs during your next login attempt. Just hit the button.
+
+Or let’s move on and harden something else.
+This won’t block us now.
