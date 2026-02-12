@@ -1,0 +1,78 @@
+yea well nothing saved to supabase. can you even see it at all?
+
+for some reason, there is a double nested Nova folder inside of nova's folder on VVAULT now. none of the files from the zip folder uploaded and it's probably a good thing if we are still doing shit half assed. I already scaffolded everything. if you are not reading documentation you are lazy coding and overwriting what was already visioned.
+
+look this shit up
+
+#VSI FILE DIRECTORY TEMPLATE
+
+
+`vvault/instances/`:
+shard_0000/
+- {vsi_metatag}/
+-- assets/
+--- ...images (png, jpg, jpeg, svg)
+-- character.ai/*
+-- chatgpt/*
+-- chatty/
+--- chat_with_{id}.md    
+-- config/
+--- metadata.json (updated w/capsule)
+--- personality.json (updated w/capsule)
+-- data/
+-- documents/*
+--- ...raw files w/folder organization*
+-- frame/
+--- ...frame™ files...
+-- github_copilot/*
+-- identity/
+--- avatar.png
+--- conditioning.txt or .json
+--- {vsi_metatag}_glyph.png
+--- physical_features.json (updated w/capsule)
+--- prompt.json
+-- logs/
+--- capsule.log
+--- chat.log
+--- cns.log or "brain.log" or "reasoner.log"
+--- identity_guard.log
+--- independence.log
+--- ltm.log(?)
+--- self_improvement_agent.log
+--- server.log
+--- stm.log(?)
+--- watchdog.log
+-- memup/ (canonical capsules to be maintained)
+--- {id}.capsuleso 
+-- simDrive/
+--- ...simDrive files...
+-- vvault/ (AURORA-001 ONLY)
+--- chat_with_aurora-001.md (relayed for all users)
+-- vxrunner/
+--- ...VXRunner files...
+
+* = Manually organized
+
+#VVAULT USER WORKSPACE FILE DIRECTORY TEMPLATE
+
+`vvault/users/`
+shard_0000/
+- {userid}/
+-- account/
+--- profile.json
+--- {userID}.capsule (complete total life snapshot)
+-- instances/
+--- ...construct files...
+-- library/*
+--- assets/
+--- ...images (png, jpg, jpeg, svg)
+--- chatty/ (not manually organized)
+--- documents/*
+--- ...raw files w/folder organization*
+--- ...finder...
+
+* = Manually organized
+
+✦ ✦ ✦ ✦ 
+
+manually organized is exactly how it sounds. library is a finder and so are knowledge files for constructs... a whole ass mini macos finder that reveals all file types beautifully. you've done it for transcripts in the gptcreator. You've done it for all the files of a gpt in VVAULT. You did it for library for all the files a user uploads.
