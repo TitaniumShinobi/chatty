@@ -5,8 +5,43 @@ import { GPTManager } from '../lib/gptManager.js';
 
 const router = express.Router();
 
-// Initialize GPT Manager
 const gptManager = GPTManager.getInstance();
+
+async function resolveUserId(req) {
+  const chattyUserId = req.user?.id || req.user?.uid || req.user?.sub || req.user?.email || null;
+  if (!chattyUserId) return { userId: null, chattyUserId: null };
+  let userId = chattyUserId;
+  try {
+    const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
+    const vvaultUserId = await resolveVVAULTUserId(chattyUserId, req.user?.email);
+    if (vvaultUserId) userId = vvaultUserId;
+  } catch {}
+  return { userId, chattyUserId };
+}
+
+async function verifyFileOwnership(req, fileId) {
+  const gptId = gptManager.getFileGPTId(fileId);
+  if (!gptId) return { allowed: false, gptId: null };
+  return verifyGPTOwnership(req, gptId);
+}
+
+async function verifyActionOwnership(req, actionId) {
+  const gptId = gptManager.getActionGPTId(actionId);
+  if (!gptId) return { allowed: false, gptId: null };
+  return verifyGPTOwnership(req, gptId);
+}
+
+async function verifyGPTOwnership(req, gptId) {
+  const { userId, chattyUserId } = await resolveUserId(req);
+  if (!userId) return { allowed: false, gpt: null, userId: null };
+  const gpt = await gptManager.getGPT(gptId);
+  if (!gpt) return { allowed: false, gpt: null, userId };
+  const ownerMatch = gpt.userId === userId || gpt.userId === chattyUserId;
+  if (!ownerMatch) {
+    console.warn(`🔒 [GPTs API] Ownership denied: user ${userId} tried to access GPT ${gptId} owned by ${gpt.userId}`);
+  }
+  return { allowed: ownerMatch, gpt, userId };
+}
 
 // Configure multer for file uploads
 const upload = multer({
@@ -53,25 +88,11 @@ const upload = multer({
 
 router.get('/', async (req, res) => {
   try {
-    // Prefer stable identifiers; fall back to email, sub, uid
-    const chattyUserId = req.user?.id || req.user?.uid || req.user?.sub || req.user?.email || 'anonymous';
-    console.log(`📋 [GPTs API] GET /api/gpts - User: ${chattyUserId}`);
-    
-    // Resolve to VVAULT user ID format for database queries
-    let userId = chattyUserId;
-    try {
-      const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
-      const vvaultUserId = await resolveVVAULTUserId(chattyUserId, req.user?.email);
-      if (vvaultUserId) {
-        userId = vvaultUserId;
-        console.log(`✅ [GPTs API] Resolved user ID: ${chattyUserId} → ${vvaultUserId}`);
-      } else {
-        console.warn(`⚠️ [GPTs API] Could not resolve VVAULT user ID for: ${chattyUserId}, using as-is`);
-      }
-    } catch (error) {
-      console.warn(`⚠️ [GPTs API] User ID resolution failed: ${error.message}, using original ID`);
-      console.warn(`⚠️ [GPTs API] Resolution error stack:`, error.stack);
+    const { userId, chattyUserId } = await resolveUserId(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
     }
+    console.log(`📋 [GPTs API] GET /api/gpts - User: ${userId}`);
     
     const gpts = await gptManager.getAllGPTs(userId, chattyUserId);
     console.log(`✅ [GPTs API] Returning ${gpts?.length || 0} GPTs`);
@@ -97,13 +118,11 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get a specific GPT
 router.get('/:id', async (req, res) => {
   try {
-    const gpt = await gptManager.getGPT(req.params.id);
-    if (!gpt) {
-      return res.status(404).json({ success: false, error: 'GPT not found' });
-    }
+    const { allowed, gpt } = await verifyGPTOwnership(req, req.params.id);
+    if (!gpt) return res.status(404).json({ success: false, error: 'GPT not found' });
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
     res.json({ success: true, gpt });
   } catch (error) {
     console.error('Error fetching GPT:', error);
@@ -111,24 +130,14 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Create a new GPT
 router.post('/', async (req, res) => {
   try {
-    const chattyUserId = req.user?.id || req.user?.uid || req.user?.sub || req.user?.email || 'anonymous';
+    const { userId, chattyUserId } = await resolveUserId(req);
     const userEmail = req.user?.email;
-    
-    // Resolve to VVAULT user ID format for database storage
-    let userId = chattyUserId;
-    try {
-      const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
-      const vvaultUserId = await resolveVVAULTUserId(chattyUserId, userEmail);
-      if (vvaultUserId) {
-        userId = vvaultUserId;
-        console.log(`✅ [GPTs API] Resolved user ID for creation: ${chattyUserId} → ${vvaultUserId}`);
-      }
-    } catch (error) {
-      console.warn(`⚠️ [GPTs API] User ID resolution failed during creation: ${error.message}`);
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
     }
+    console.log(`➕ [GPTs API] Creating GPT for user: ${userId}`);
     
     const gptData = {
       ...req.body,
@@ -167,13 +176,12 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Update a GPT
 router.put('/:id', async (req, res) => {
   try {
+    const { allowed, gpt: existing } = await verifyGPTOwnership(req, req.params.id);
+    if (!existing) return res.status(404).json({ success: false, error: 'GPT not found' });
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
     const gpt = await gptManager.updateGPT(req.params.id, req.body);
-    if (!gpt) {
-      return res.status(404).json({ success: false, error: 'GPT not found' });
-    }
     res.json({ success: true, gpt });
   } catch (error) {
     console.error('Error updating GPT:', error);
@@ -181,13 +189,12 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Delete a GPT
 router.delete('/:id', async (req, res) => {
   try {
+    const { allowed, gpt } = await verifyGPTOwnership(req, req.params.id);
+    if (!gpt) return res.status(404).json({ success: false, error: 'GPT not found' });
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
     const success = await gptManager.deleteGPT(req.params.id);
-    if (!success) {
-      return res.status(404).json({ success: false, error: 'GPT not found' });
-    }
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting GPT:', error);
@@ -195,9 +202,11 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// Upload file to GPT
 router.post('/:id/files', upload.single('file'), async (req, res) => {
   try {
+    const { allowed, gpt } = await verifyGPTOwnership(req, req.params.id);
+    if (!gpt) return res.status(404).json({ success: false, error: 'GPT not found' });
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'No file uploaded' });
     }
@@ -217,13 +226,14 @@ router.post('/:id/files', upload.single('file'), async (req, res) => {
   }
 });
 
-// Get files for a GPT (local DB + Supabase fallback)
 router.get('/:id/files', async (req, res) => {
   try {
+    const { allowed, gpt } = await verifyGPTOwnership(req, req.params.id);
+    if (!gpt) return res.status(404).json({ success: false, error: 'GPT not found' });
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
     const localFiles = await gptManager.getGPTFiles(req.params.id);
     let supabaseFiles = [];
 
-    const gpt = await gptManager.getGPT(req.params.id);
     const constructCallsign = gpt?.constructCallsign;
 
     if (constructCallsign) {
@@ -304,6 +314,8 @@ router.get('/:id/files', async (req, res) => {
 // Delete a file
 router.delete('/files/:fileId', async (req, res) => {
   try {
+    const { allowed } = await verifyFileOwnership(req, req.params.fileId);
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
     const success = await gptManager.deleteFile(req.params.fileId);
     if (!success) {
       return res.status(404).json({ success: false, error: 'File not found' });
@@ -315,10 +327,13 @@ router.delete('/files/:fileId', async (req, res) => {
   }
 });
 
-// Update file's GPT ID (for reassociating temp files)
 router.put('/files/:fileId/gpt', async (req, res) => {
   try {
+    const { allowed } = await verifyFileOwnership(req, req.params.fileId);
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
     const { gptId } = req.body;
+    const { allowed: targetAllowed } = await verifyGPTOwnership(req, gptId);
+    if (!targetAllowed) return res.status(403).json({ success: false, error: 'Access denied to target GPT' });
     const success = await gptManager.updateFileGPTId(req.params.fileId, gptId);
     if (!success) {
       return res.status(404).json({ success: false, error: 'File not found' });
@@ -330,9 +345,11 @@ router.put('/files/:fileId/gpt', async (req, res) => {
   }
 });
 
-// Create an action for a GPT
 router.post('/:id/actions', async (req, res) => {
   try {
+    const { allowed, gpt } = await verifyGPTOwnership(req, req.params.id);
+    if (!gpt) return res.status(404).json({ success: false, error: 'GPT not found' });
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
     const action = await gptManager.createAction(req.params.id, req.body);
     res.json({ success: true, action });
   } catch (error) {
@@ -341,9 +358,11 @@ router.post('/:id/actions', async (req, res) => {
   }
 });
 
-// Get actions for a GPT
 router.get('/:id/actions', async (req, res) => {
   try {
+    const { allowed, gpt } = await verifyGPTOwnership(req, req.params.id);
+    if (!gpt) return res.status(404).json({ success: false, error: 'GPT not found' });
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
     const actions = await gptManager.getGPTActions(req.params.id);
     res.json({ success: true, actions });
   } catch (error) {
@@ -352,9 +371,10 @@ router.get('/:id/actions', async (req, res) => {
   }
 });
 
-// Delete an action
 router.delete('/actions/:actionId', async (req, res) => {
   try {
+    const { allowed } = await verifyActionOwnership(req, req.params.actionId);
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
     const success = await gptManager.deleteAction(req.params.actionId);
     if (!success) {
       return res.status(404).json({ success: false, error: 'Action not found' });
@@ -366,9 +386,10 @@ router.delete('/actions/:actionId', async (req, res) => {
   }
 });
 
-// Execute an action
 router.post('/actions/:actionId/execute', async (req, res) => {
   try {
+    const { allowed } = await verifyActionOwnership(req, req.params.actionId);
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
     const result = await gptManager.executeAction(req.params.actionId, req.body);
     res.json({ success: true, result });
   } catch (error) {
@@ -377,9 +398,11 @@ router.post('/actions/:actionId/execute', async (req, res) => {
   }
 });
 
-// Generate avatar for GPT
 router.post('/:id/avatar', async (req, res) => {
   try {
+    const { allowed, gpt } = await verifyGPTOwnership(req, req.params.id);
+    if (!gpt) return res.status(404).json({ success: false, error: 'GPT not found' });
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
     const { name, description } = req.body;
     const avatar = gptManager.generateAvatar(name, description);
     res.json({ success: true, avatar });
@@ -389,9 +412,11 @@ router.post('/:id/avatar', async (req, res) => {
   }
 });
 
-// Get GPT context for runtime
 router.get('/:id/context', async (req, res) => {
   try {
+    const { allowed, gpt } = await verifyGPTOwnership(req, req.params.id);
+    if (!gpt) return res.status(404).json({ success: false, error: 'GPT not found' });
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
     const context = await gptManager.getGPTContext(req.params.id);
     res.json({ success: true, context });
   } catch (error) {
@@ -400,9 +425,11 @@ router.get('/:id/context', async (req, res) => {
   }
 });
 
-// Update GPT context
 router.put('/:id/context', async (req, res) => {
   try {
+    const { allowed, gpt } = await verifyGPTOwnership(req, req.params.id);
+    if (!gpt) return res.status(404).json({ success: false, error: 'GPT not found' });
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
     const { context } = req.body;
     await gptManager.updateGPTContext(req.params.id, context);
     res.json({ success: true });
@@ -412,13 +439,12 @@ router.put('/:id/context', async (req, res) => {
   }
 });
 
-// Load GPT for runtime
 router.post('/:id/load', async (req, res) => {
   try {
+    const { allowed, gpt } = await verifyGPTOwnership(req, req.params.id);
+    if (!gpt) return res.status(404).json({ success: false, error: 'GPT not found' });
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
     const runtime = await gptManager.loadGPTForRuntime(req.params.id);
-    if (!runtime) {
-      return res.status(404).json({ success: false, error: 'GPT not found' });
-    }
     res.json({ success: true, runtime });
   } catch (error) {
     console.error('Error loading GPT for runtime:', error);

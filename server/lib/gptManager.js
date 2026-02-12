@@ -964,6 +964,16 @@ export class GPTManager {
     }));
   }
 
+  getFileGPTId(fileId) {
+    const row = this.db.prepare('SELECT gpt_id FROM gpt_files WHERE id = ?').get(fileId);
+    return row?.gpt_id || null;
+  }
+
+  getActionGPTId(actionId) {
+    const row = this.db.prepare('SELECT gpt_id FROM gpt_actions WHERE id = ?').get(actionId);
+    return row?.gpt_id || null;
+  }
+
   async deleteFile(fileId) {
     const stmt = this.db.prepare('UPDATE gpt_files SET is_active = 0 WHERE id = ?');
     const result = stmt.run(fileId);
