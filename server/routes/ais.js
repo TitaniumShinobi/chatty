@@ -6,9 +6,24 @@ import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import JSZip from 'jszip';
+import pdfParse from 'pdf-parse';
 import { AIManager } from '../lib/aiManager.js';
 import { getGPTSaveHook } from '../lib/gptSaveHook.js';
 import { normalizeModelString } from '../lib/modelResolver.js';
+
+async function extractPdfText(buffer) {
+  try {
+    const data = await pdfParse(buffer);
+    const text = (data.text || '').trim();
+    if (text.length > 0) {
+      return text;
+    }
+    return null;
+  } catch (err) {
+    console.warn(`⚠️ [PDF Extract] Failed to parse PDF: ${err.message}`);
+    return null;
+  }
+}
 
 const router = express.Router();
 
@@ -506,9 +521,17 @@ router.post('/:id/files', upload.single('file'), async (req, res) => {
             }
 
             const isTextType = /^text\/|application\/(json|xml|csv)/.test(req.file.mimetype);
-            const contentForVault = isTextType
-              ? req.file.buffer.toString('utf8')
-              : `[binary:${req.file.mimetype}:${req.file.size}]`;
+            const isPdf = req.file.mimetype === 'application/pdf';
+            let contentForVault;
+            if (isTextType) {
+              contentForVault = req.file.buffer.toString('utf8');
+            } else if (isPdf) {
+              const pdfText = await extractPdfText(req.file.buffer);
+              contentForVault = pdfText || `[binary:${req.file.mimetype}:${req.file.size}]`;
+              if (pdfText) console.log(`📄 [AIs API] Extracted ${pdfText.length} chars from PDF: ${originalName}`);
+            } else {
+              contentForVault = `[binary:${req.file.mimetype}:${req.file.size}]`;
+            }
 
             const fileType = resolvedFolder || 'knowledge';
 
@@ -701,9 +724,17 @@ router.post('/:id/upload-zip', zipUpload.single('file'), async (req, res) => {
 
           const ext = path.extname(entryName).toLowerCase();
           const isText = ['.txt', '.md', '.json', '.csv', '.xml', '.yaml', '.yml', '.js', '.ts', '.py', '.html', '.css', '.log', '.capsule', '.capsuleso'].includes(ext);
-          const contentForVault = isText
-            ? fileBuffer.toString('utf8')
-            : `[binary:${mimeForExt(ext)}:${fileBuffer.length}]`;
+          const isPdfFile = ext === '.pdf';
+          let contentForVault;
+          if (isText) {
+            contentForVault = fileBuffer.toString('utf8');
+          } else if (isPdfFile) {
+            const pdfText = await extractPdfText(fileBuffer);
+            contentForVault = pdfText || `[binary:${mimeForExt(ext)}:${fileBuffer.length}]`;
+            if (pdfText) console.log(`📄 [ZIP Upload] Extracted ${pdfText.length} chars from PDF: ${entryName}`);
+          } else {
+            contentForVault = `[binary:${mimeForExt(ext)}:${fileBuffer.length}]`;
+          }
 
           const sha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
           const originalName = path.basename(entryName);
@@ -780,6 +811,98 @@ router.post('/:id/upload-zip', zipUpload.single('file'), async (req, res) => {
     if (tmpFilePath) {
       try { fs.unlinkSync(tmpFilePath); } catch {}
     }
+  }
+});
+
+router.post('/:id/backfill-pdfs', async (req, res) => {
+  try {
+    const ai = await aiManager.getAI(req.params.id);
+    if (!ai) return res.status(404).json({ success: false, error: 'AI not found' });
+
+    const constructCallsign = ai.constructCallsign || req.params.id.replace(/^(ai-|gpt-)/, '');
+    const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+    const supabase = getSupabaseClient();
+    if (!supabase) return res.status(500).json({ success: false, error: 'Supabase not available' });
+
+    const { userId } = await resolveUserId(req);
+    if (!userId) return res.status(401).json({ success: false, error: 'Authentication required' });
+
+    const docsPath = `instances/${constructCallsign}/documents/`;
+    const assetsPath = `instances/${constructCallsign}/assets/`;
+
+    const { data: pdfRows, error } = await supabase
+      .from('vault_files')
+      .select('id, filename, content')
+      .eq('user_id', userId)
+      .or(`filename.like.${docsPath}%,filename.like.${assetsPath}%`)
+      .like('filename', '%.pdf');
+
+    if (error) throw error;
+
+    const binaryPdfs = (pdfRows || []).filter(r => r.content && r.content.startsWith('[binary:'));
+    console.log(`📄 [Backfill] Found ${binaryPdfs.length} PDFs with binary placeholders for ${constructCallsign}`);
+
+    if (binaryPdfs.length === 0) {
+      return res.json({ success: true, message: 'No PDFs need backfilling', processed: 0 });
+    }
+
+    let processed = 0;
+    let failed = 0;
+    const errors = [];
+
+    for (const row of binaryPdfs) {
+      try {
+        const storagePath = `knowledge/${userId}/${row.filename}`;
+        const { data: fileData, error: dlError } = await supabase.storage
+          .from('vault-files')
+          .download(storagePath);
+
+        if (dlError || !fileData) {
+          errors.push({ file: row.filename, error: dlError?.message || 'Download failed' });
+          failed++;
+          continue;
+        }
+
+        const buffer = Buffer.from(await fileData.arrayBuffer());
+        const pdfText = await extractPdfText(buffer);
+
+        if (pdfText) {
+          const { error: updateErr } = await supabase
+            .from('vault_files')
+            .update({
+              content: pdfText,
+              metadata: {
+                source: 'chatty-pdf-backfill',
+                extractedAt: new Date().toISOString(),
+                extractedChars: pdfText.length,
+              }
+            })
+            .eq('id', row.id);
+
+          if (updateErr) throw updateErr;
+          console.log(`✅ [Backfill] Extracted ${pdfText.length} chars from ${row.filename}`);
+          processed++;
+        } else {
+          errors.push({ file: row.filename, error: 'PDF text extraction returned empty' });
+          failed++;
+        }
+      } catch (fileErr) {
+        errors.push({ file: row.filename, error: fileErr.message });
+        failed++;
+      }
+    }
+
+    res.json({
+      success: true,
+      constructCallsign,
+      totalPdfs: binaryPdfs.length,
+      processed,
+      failed,
+      errors: errors.slice(0, 20),
+    });
+  } catch (error) {
+    console.error('❌ [Backfill] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

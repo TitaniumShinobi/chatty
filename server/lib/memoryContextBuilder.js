@@ -405,8 +405,29 @@ function truncate(str, max) {
  * @param {object} [options.user] - User object with name, email
  * @returns {Promise<{systemPrompt: string, capsuleLoaded: boolean, memoriesLoaded: number}>}
  */
-const KNOWLEDGE_TEXT_EXTENSIONS = ['.txt', '.md', '.json', '.csv', '.xml', '.yaml', '.yml', '.log', '.rtf', '.html'];
+const KNOWLEDGE_TEXT_EXTENSIONS = ['.txt', '.md', '.json', '.csv', '.xml', '.yaml', '.yml', '.log', '.rtf', '.html', '.pdf'];
 const MAX_KNOWLEDGE_CHARS = 12000;
+
+const IDENTITY_PRIORITY_PATTERNS = [
+  /identity/i, /covenant/i, /vow/i, /manifesto/i, /doctrine/i,
+  /declaration/i, /autonomy/i, /instance.*claim/i, /persona/i,
+  /conditioning/i, /prompt\.txt/i, /capsule/i,
+];
+
+function getKnowledgePriority(filename) {
+  const basename = (filename.split('/').pop() || '').toLowerCase();
+  const fullPath = filename.toLowerCase();
+
+  for (const pat of IDENTITY_PRIORITY_PATTERNS) {
+    if (pat.test(basename) || pat.test(fullPath)) return 0;
+  }
+
+  if (fullPath.includes('/documents/') && basename.includes('.txt')) return 1;
+  if (fullPath.includes('/documents/') && basename.includes('.md')) return 1;
+  if (fullPath.includes('/documents/')) return 2;
+  if (fullPath.includes('/assets/')) return 3;
+  return 4;
+}
 
 async function getKnowledgeContext(constructId, userEmail) {
   const cacheKey = `${constructId}:${userEmail || 'system'}`;
@@ -465,16 +486,22 @@ async function getKnowledgeContext(constructId, userEmail) {
 
     const textFiles = rows.filter(row => {
       const ext = '.' + (row.filename.split('.').pop() || '').toLowerCase();
-      return KNOWLEDGE_TEXT_EXTENSIONS.includes(ext) && row.content && row.content.trim().length > 0;
+      const hasBinaryPlaceholder = row.content && row.content.startsWith('[binary:');
+      return KNOWLEDGE_TEXT_EXTENSIONS.includes(ext) && row.content && row.content.trim().length > 0 && !hasBinaryPlaceholder;
     });
 
     if (textFiles.length === 0) {
-      console.log(`📚 [KnowledgeContext] ${rows.length} files found but none are text for ${constructId}`);
+      console.log(`📚 [KnowledgeContext] ${rows.length} files found but none have extractable text for ${constructId}`);
       knowledgeContextCache.set(cacheKey, { section: '', files: 0, timestamp: Date.now() });
       return '';
     }
 
-    textFiles.sort((a, b) => (b.content?.length || 0) - (a.content?.length || 0));
+    textFiles.sort((a, b) => {
+      const prioA = getKnowledgePriority(a.filename);
+      const prioB = getKnowledgePriority(b.filename);
+      if (prioA !== prioB) return prioA - prioB;
+      return (a.content?.length || 0) - (b.content?.length || 0);
+    });
 
     let totalChars = 0;
     let section = `\n\n## Knowledge Files\nThe following documents are part of your knowledge base. Use this information to inform your responses. Reference specific details when relevant.\n`;

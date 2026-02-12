@@ -172,6 +172,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     }>
   >([]);
   const [isUploadingTranscripts, setIsUploadingTranscripts] = useState(false);
+  const [isBackfillingPdfs, setIsBackfillingPdfs] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<string | null>(null);
   const [isLoadingExistingTranscripts, setIsLoadingExistingTranscripts] =
     useState(false);
   const [isAutoOrganizing, setIsAutoOrganizing] = useState(false);
@@ -1346,6 +1348,32 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
+    }
+  };
+
+  const handleBackfillPdfs = async () => {
+    if (!editingId) return;
+    setIsBackfillingPdfs(true);
+    setBackfillResult(null);
+    try {
+      const response = await fetch(`/api/ais/${editingId}/backfill-pdfs`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (data.success) {
+        if (data.processed > 0) {
+          setBackfillResult(`Extracted text from ${data.processed} PDF${data.processed !== 1 ? 's' : ''}${data.failed > 0 ? ` (${data.failed} failed)` : ''}`);
+        } else {
+          setBackfillResult(data.message || 'No PDFs need processing');
+        }
+      } else {
+        setBackfillResult(`Error: ${data.error}`);
+      }
+    } catch (err: any) {
+      setBackfillResult(`Failed: ${err.message}`);
+    } finally {
+      setIsBackfillingPdfs(false);
     }
   };
 
@@ -4113,14 +4141,31 @@ ALWAYS:
                         information
                       </p>
 
-                      <button
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isUploading}
-                        className="px-4 py-2 border var(--chatty-line) rounded-lg hover:bg-app-button-400 flex items-center gap-2 text-app-text-900 disabled:opacity-50"
-                      >
-                        <Upload size={16} />
-                        {isUploading ? "Uploading..." : "Upload Files"}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={isUploading}
+                          className="px-4 py-2 border var(--chatty-line) rounded-lg hover:bg-app-button-400 flex items-center gap-2 text-app-text-900 disabled:opacity-50"
+                        >
+                          <Upload size={16} />
+                          {isUploading ? "Uploading..." : "Upload Files"}
+                        </button>
+                        {files.some(f => f.originalName?.toLowerCase().endsWith('.pdf') || f.filename?.toLowerCase().endsWith('.pdf')) && (
+                          <button
+                            onClick={handleBackfillPdfs}
+                            disabled={isBackfillingPdfs}
+                            className="px-4 py-2 border var(--chatty-line) rounded-lg hover:bg-app-button-400 flex items-center gap-2 text-app-text-900 disabled:opacity-50 text-sm"
+                          >
+                            <FileText size={16} />
+                            {isBackfillingPdfs ? "Processing..." : "Extract PDF Text"}
+                          </button>
+                        )}
+                      </div>
+                      {backfillResult && (
+                        <p className="text-xs mt-1" style={{ color: backfillResult.startsWith('Error') || backfillResult.startsWith('Failed') ? 'var(--chatty-status-error)' : 'var(--chatty-status-success)' }}>
+                          {backfillResult}
+                        </p>
+                      )}
 
                       {/* File List with Pagination */}
                       {files.length > 0 && (
