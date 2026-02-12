@@ -776,17 +776,8 @@ export class AIManager {
         }
       }
 
-      // Email-based fallback if still empty
-      if (aisRows.length === 0 && gptsRows.length === 0 && originalUserId && originalUserId.includes('@')) {
-        console.log(`🔄 [AIManager] Trying email-based lookup: ${originalUserId}`);
-        try {
-          const found = this.db.prepare('SELECT * FROM ais WHERE user_id LIKE ? ORDER BY updated_at DESC').all(`%${originalUserId}%`);
-          aisRows.push(...found);
-        } catch (e) { /* ignore */ }
-        try {
-          const found = this.db.prepare('SELECT * FROM gpts WHERE user_id LIKE ? ORDER BY updated_at DESC').all(`%${originalUserId}%`);
-          gptsRows.push(...found);
-        } catch (e) { /* ignore */ }
+      if (aisRows.length === 0 && gptsRows.length === 0) {
+        console.log(`ℹ️ [AIManager] No AIs/GPTs found for user: ${userId}${originalUserId && originalUserId !== userId ? ` (original: ${originalUserId})` : ''} — returning empty (strict isolation)`);
       }
 
       // Merge: ais table rows take priority, then add gpts rows that don't overlap by construct_callsign

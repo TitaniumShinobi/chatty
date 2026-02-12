@@ -748,10 +748,8 @@ export class GPTManager {
         rows = fallbackStmt.all(originalUserId);
       }
 
-      if ((!rows || rows.length === 0) && originalUserId && originalUserId.includes('@')) {
-        console.log(`🔄 [GPTManager] Trying email-based lookup: ${originalUserId}`);
-        const emailStmt = this.db.prepare('SELECT * FROM gpts WHERE user_id LIKE ? ORDER BY updated_at DESC');
-        rows = emailStmt.all(`%${originalUserId}%`);
+      if (!rows || rows.length === 0) {
+        console.log(`ℹ️ [GPTManager] No GPTs found for user: ${userId} — returning empty (strict isolation)`);
       }
 
       console.log(`📊 [GPTManager] Found ${rows?.length || 0} GPTs for user: ${userId}${originalUserId && originalUserId !== userId ? ` (original: ${originalUserId})` : ''}`);

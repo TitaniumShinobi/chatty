@@ -8,8 +8,28 @@ import { normalizeModelString } from '../lib/modelResolver.js';
 
 const router = express.Router();
 
-// Initialize AI Manager
 const aiManager = AIManager.getInstance();
+
+async function resolveUserId(req) {
+  const chattyUserId = req.user?.id || req.user?.uid || req.user?.sub || req.user?.email || null;
+  if (!chattyUserId) return { userId: null, chattyUserId: null };
+  let userId = chattyUserId;
+  try {
+    const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
+    const vvaultUserId = await resolveVVAULTUserId(chattyUserId, req.user?.email);
+    if (vvaultUserId) userId = vvaultUserId;
+  } catch {}
+  return { userId, chattyUserId };
+}
+
+async function verifyAIOwnership(req, aiId) {
+  const { userId, chattyUserId } = await resolveUserId(req);
+  if (!userId) return { allowed: false, ai: null, userId: null };
+  const ai = await aiManager.getAI(aiId);
+  if (!ai) return { allowed: false, ai: null, userId };
+  const ownerMatch = ai.userId === userId || ai.userId === chattyUserId;
+  return { allowed: ownerMatch, ai, userId, chattyUserId };
+}
 
 function normalizeModelFields(payload) {
   if (!payload || typeof payload !== 'object') return payload;
@@ -72,53 +92,20 @@ const upload = multer({
 
 router.get('/', async (req, res) => {
   try {
-    // Prefer stable identifiers; fall back to email, sub, uid
-    const chattyUserId = req.user?.id || req.user?.uid || req.user?.sub || req.user?.email || 'anonymous';
-    console.log(`📋 [AIs API] GET /api/ais - User: ${chattyUserId}`);
-    console.log(`🔍 [AIs API] req.user details:`, req.user ? { id: req.user.id, sub: req.user.sub, email: req.user.email } : 'none');
-    
-    // Resolve to VVAULT user ID format for database queries
-    let userId = chattyUserId;
-    try {
-      const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
-      const vvaultUserId = await resolveVVAULTUserId(chattyUserId, req.user?.email, true, req.user?.name); // Auto-create if needed
-      if (vvaultUserId) {
-        userId = vvaultUserId;
-        console.log(`✅ [AIs API] Resolved user ID: ${chattyUserId} → ${vvaultUserId}`);
-      } else {
-        console.warn(`⚠️ [AIs API] Could not resolve VVAULT user ID for: ${chattyUserId}, using as-is`);
-      }
-    } catch (error) {
-      console.warn(`⚠️ [AIs API] User ID resolution failed: ${error.message}, using original ID`);
-      console.warn(`⚠️ [AIs API] Resolution error stack:`, error.stack);
+    const { userId, chattyUserId } = await resolveUserId(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
     }
+    console.log(`📋 [AIs API] GET /api/ais - User: ${userId} (chatty: ${chattyUserId})`);
     
-    console.log(`🔍 [AIs API] Querying with userId: ${userId}, originalUserId: ${chattyUserId}`);
     const ais = await aiManager.getAllAIs(userId, chattyUserId);
-    console.log(`✅ [AIs API] Found ${ais?.length || 0} AIs`);
-    if (ais && ais.length > 0) {
-      console.log(`📊 [AIs API] AI names:`, ais.map(a => ({ id: a.id, name: a.name, constructCallsign: a.constructCallsign })));
-    } else {
-      console.log(`⚠️ [AIs API] No AIs found - checking if this is expected`);
-    }
+    console.log(`✅ [AIs API] Found ${ais?.length || 0} AIs for user ${userId}`);
     
-    // Ensure response is valid JSON
-    if (!res.headersSent) {
-      res.json({ success: true, ais: ais || [] });
-    }
+    res.json({ success: true, ais: ais || [] });
   } catch (error) {
     console.error('❌ [AIs API] Error fetching AIs:', error);
-    console.error('❌ [AIs API] Error stack:', error.stack);
-    
-    // Ensure we always return valid JSON, even on error
     if (!res.headersSent) {
-      res.status(500).json({ 
-        success: false, 
-        error: error.message || 'Internal server error',
-        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-      });
-    } else {
-      console.error('❌ [AIs API] Response already sent, cannot send error response');
+      res.status(500).json({ success: false, error: error.message || 'Internal server error' });
     }
   }
 });
@@ -134,23 +121,11 @@ router.get('/store', async (req, res) => {try {
 // Sync GPTs from VVAULT file system to database
 router.post('/sync-from-vvault', async (req, res) => {
   try {
-    const chattyUserId = req.user?.id || req.user?.uid || req.user?.sub || req.user?.email || 'anonymous';
-    console.log(`🔄 [AIs API] Sync request from user: ${chattyUserId}`);
-    
-    // Resolve to VVAULT user ID format
-    let userId = chattyUserId;
-    try {
-      const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
-      const vvaultUserId = await resolveVVAULTUserId(chattyUserId, req.user?.email, true, req.user?.name);
-      if (vvaultUserId) {
-        userId = vvaultUserId;
-        console.log(`✅ [AIs API] Resolved user ID for sync: ${chattyUserId} → ${vvaultUserId}`);
-      } else {
-        console.warn(`⚠️ [AIs API] Could not resolve VVAULT user ID for: ${chattyUserId}, using as-is`);
-      }
-    } catch (error) {
-      console.warn(`⚠️ [AIs API] User ID resolution failed during sync: ${error.message}`);
+    const { userId, chattyUserId } = await resolveUserId(req);
+    if (!userId || !chattyUserId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
     }
+    console.log(`🔄 [AIs API] Sync request from user: ${userId} (chatty: ${chattyUserId})`);
     
     // Import and run sync function
     const { syncGPTsToDatabase } = await import('../scripts/syncGPTsFromVVAULT.js');
@@ -178,23 +153,18 @@ router.post('/sync-from-vvault', async (req, res) => {
   }
 });
 
-// Get a specific AI
 router.get('/:id', async (req, res) => {
   try {
-    let ai = await aiManager.getAI(req.params.id);
+    const { allowed, ai } = await verifyAIOwnership(req, req.params.id);
     if (!ai) {
-      const chattyUserId = req.user?.id || req.user?.uid || req.user?.sub || req.user?.email || 'anonymous';
-      let userId = chattyUserId;
-      try {
-        const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
-        const vvaultUserId = await resolveVVAULTUserId(chattyUserId, req.user?.email, false);
-        if (vvaultUserId) userId = vvaultUserId;
-      } catch (e) {}
-      ai = await aiManager.getAIByCallsign(req.params.id, userId);
+      const { userId } = await resolveUserId(req);
+      const byCallsign = await aiManager.getAIByCallsign(req.params.id, userId);
+      if (!byCallsign) return res.status(404).json({ success: false, error: 'AI not found' });
+      const ownerMatch = byCallsign.userId === userId;
+      if (!ownerMatch) return res.status(403).json({ success: false, error: 'Access denied' });
+      return res.json({ success: true, ai: byCallsign });
     }
-    if (!ai) {
-      return res.status(404).json({ success: false, error: 'AI not found' });
-    }
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
     res.json({ success: true, ai });
   } catch (error) {
     console.error('Error fetching AI:', error);
@@ -295,24 +265,17 @@ router.post('/:id/clone', async (req, res) => {
 // Update an AI
 router.put('/:id', async (req, res) => {
   try {
+    const ownership = await verifyAIOwnership(req, req.params.id);
+    if (!ownership.ai) return res.status(404).json({ success: false, error: 'AI not found' });
+    if (!ownership.allowed) return res.status(403).json({ success: false, error: 'Access denied' });
+
     const ai = await aiManager.updateAI(req.params.id, normalizeModelFields(req.body));
     if (!ai) {
       return res.status(404).json({ success: false, error: 'AI not found' });
     }
     
-    // Ensure all required files are still present in VVAULT (in case constructCallsign changed)
     try {
-      const chattyUserId = req.user?.id || req.user?.uid || req.user?.sub || req.user?.email || 'anonymous';
-      let userId = chattyUserId;
-      try {
-        const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
-        const vvaultUserId = await resolveVVAULTUserId(chattyUserId, req.user?.email);
-        if (vvaultUserId) {
-          userId = vvaultUserId;
-        }
-      } catch (error) {
-        console.warn(`⚠️ [AIs API] User ID resolution failed during update: ${error.message}`);
-      }
+      const userId = ownership.userId;
       
       const { FileManagementAutomation } = await import('../lib/fileManagementAutomation.js');
       const constructCallsign = ai.constructCallsign || req.params.id.replace(/^(ai-|gpt-)/, '');
@@ -350,12 +313,11 @@ router.put('/:id', async (req, res) => {
 // Delete an AI
 router.delete('/:id', async (req, res) => {
   try {
-    // Get AI info before deleting (to get constructCallsign and userId)
-    const ai = await aiManager.getAI(req.params.id);
-    if (!ai) {
-      return res.status(404).json({ success: false, error: 'AI not found' });
-    }
+    const ownership = await verifyAIOwnership(req, req.params.id);
+    if (!ownership.ai) return res.status(404).json({ success: false, error: 'AI not found' });
+    if (!ownership.allowed) return res.status(403).json({ success: false, error: 'Access denied' });
 
+    const ai = ownership.ai;
     const constructCallsign = ai.constructCallsign;
     const userId = ai.userId;
 
