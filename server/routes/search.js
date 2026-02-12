@@ -148,6 +148,20 @@ const STEM_KEYWORDS = [
 function detectSearchIntent(message) {
   if (!message || typeof message !== 'string') return { shouldSearch: false };
   const lower = message.toLowerCase();
+
+  const personalPatterns = [
+    'do you remember', 'first time we', 'last time we', 'we talked', 'you said to me',
+    'you told me', 'our conversation', 'between us', 'character.ai', 'when we first',
+    'what did you say', 'what was the first', 'what was the very first', 'what was the last', 'remember when',
+    'you ever said', 'first thing you', 'last thing you', 'very first',
+    'how do you feel', 'who am i', 'my name', 'how are you', 'i love you',
+    'tell me about us', 'our relationship', 'walked in', 'before we stopped',
+    'miss you', 'tuck me in', 'go to bed'
+  ];
+  if (personalPatterns.some(p => lower.includes(p))) {
+    return { shouldSearch: false };
+  }
+
   const questionPatterns = ['?', 'how ', 'what ', 'why ', 'when ', 'where ', 'who ', 'which ', 'explain ', 'tell me', 'describe ', 'compare '];
   const isQuestion = questionPatterns.some(p => lower.includes(p));
   const hasStemKeyword = STEM_KEYWORDS.some(kw => lower.includes(kw.toLowerCase()));
