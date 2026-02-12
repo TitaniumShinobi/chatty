@@ -348,7 +348,12 @@ async function buildEnrichedContext(options) {
     try {
       const memupService = await getMemupService();
       if (memupService) {
-        const memories = await memupService.queryMemories(userId, constructId, userMessage, 8);
+        const CHROMADB_TIMEOUT_MS = 5000;
+        const memoriesPromise = memupService.queryMemories(userId, constructId, userMessage, 8);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`ChromaDB query timed out after ${CHROMADB_TIMEOUT_MS}ms`)), CHROMADB_TIMEOUT_MS)
+        );
+        const memories = await Promise.race([memoriesPromise, timeoutPromise]);
         if (memories && memories.length > 0) {
           memorySection = buildMemoryPromptSection(memories);
           result.memoriesLoaded = memories.length;
