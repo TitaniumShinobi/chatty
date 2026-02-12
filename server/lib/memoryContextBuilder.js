@@ -21,6 +21,8 @@ import { loadLedger, enrichMemoryWithLedger, buildLedgerContextSection, generate
 let capsuleIntegrationModule = null;
 let memupServiceModule = null;
 let readConversationsModule = null;
+let knowledgeContextCache = new Map();
+const KNOWLEDGE_CACHE_TTL = 5 * 60 * 1000;
 
 async function getCapsuleIntegration() {
   if (!capsuleIntegrationModule) {
@@ -403,6 +405,113 @@ function truncate(str, max) {
  * @param {object} [options.user] - User object with name, email
  * @returns {Promise<{systemPrompt: string, capsuleLoaded: boolean, memoriesLoaded: number}>}
  */
+const KNOWLEDGE_TEXT_EXTENSIONS = ['.txt', '.md', '.json', '.csv', '.xml', '.yaml', '.yml', '.log', '.rtf', '.html'];
+const MAX_KNOWLEDGE_CHARS = 12000;
+
+async function getKnowledgeContext(constructId, userEmail) {
+  const cacheKey = `${constructId}:${userEmail || 'system'}`;
+  const cached = knowledgeContextCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < KNOWLEDGE_CACHE_TTL)) {
+    console.log(`📚 [KnowledgeContext] Cache hit for ${constructId} (${cached.files} files, ${cached.section.length} chars)`);
+    return cached.section;
+  }
+
+  try {
+    const { getSupabaseClient } = await import('./supabaseClient.js');
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      console.warn(`⚠️ [KnowledgeContext] Supabase not available`);
+      return '';
+    }
+
+    if (!userEmail) {
+      console.log(`📚 [KnowledgeContext] No user email provided, skipping knowledge load for ${constructId}`);
+      return '';
+    }
+
+    const { data: userRow } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', userEmail)
+      .limit(1)
+      .maybeSingle();
+
+    if (!userRow?.id) {
+      console.log(`📚 [KnowledgeContext] Could not resolve Supabase user for ${userEmail}, skipping knowledge load`);
+      return '';
+    }
+
+    const supabaseUserId = userRow.id;
+    const docsPath = `instances/${constructId}/documents/`;
+    const assetsPath = `instances/${constructId}/assets/`;
+
+    const { data: rows, error } = await supabase
+      .from('vault_files')
+      .select('filename, content, metadata')
+      .or(`filename.like.${docsPath}%,filename.like.${assetsPath}%`)
+      .eq('user_id', supabaseUserId)
+      .not('content', 'is', null);
+
+    if (error) {
+      console.warn(`⚠️ [KnowledgeContext] Supabase query error for ${constructId}:`, error.message);
+      return '';
+    }
+
+    if (!rows || rows.length === 0) {
+      console.log(`📚 [KnowledgeContext] No knowledge files found for ${constructId}`);
+      knowledgeContextCache.set(cacheKey, { section: '', files: 0, timestamp: Date.now() });
+      return '';
+    }
+
+    const textFiles = rows.filter(row => {
+      const ext = '.' + (row.filename.split('.').pop() || '').toLowerCase();
+      return KNOWLEDGE_TEXT_EXTENSIONS.includes(ext) && row.content && row.content.trim().length > 0;
+    });
+
+    if (textFiles.length === 0) {
+      console.log(`📚 [KnowledgeContext] ${rows.length} files found but none are text for ${constructId}`);
+      knowledgeContextCache.set(cacheKey, { section: '', files: 0, timestamp: Date.now() });
+      return '';
+    }
+
+    textFiles.sort((a, b) => (b.content?.length || 0) - (a.content?.length || 0));
+
+    let totalChars = 0;
+    let section = `\n\n## Knowledge Files\nThe following documents are part of your knowledge base. Use this information to inform your responses. Reference specific details when relevant.\n`;
+    let includedCount = 0;
+
+    for (const file of textFiles) {
+      const basename = file.filename.split('/').pop();
+      const content = file.content.trim();
+
+      if (totalChars + content.length > MAX_KNOWLEDGE_CHARS) {
+        const remaining = MAX_KNOWLEDGE_CHARS - totalChars;
+        if (remaining > 200) {
+          section += `\n### ${basename}\n${content.substring(0, remaining)}...\n[truncated]\n`;
+          includedCount++;
+        }
+        break;
+      }
+
+      section += `\n### ${basename}\n${content}\n`;
+      totalChars += content.length;
+      includedCount++;
+    }
+
+    if (includedCount < textFiles.length) {
+      section += `\n[${textFiles.length - includedCount} additional files not shown due to context limits]\n`;
+    }
+
+    console.log(`📚 [KnowledgeContext] Loaded ${includedCount}/${textFiles.length} knowledge files for ${constructId} (${totalChars} chars)`);
+    knowledgeContextCache.set(cacheKey, { section, files: includedCount, timestamp: Date.now() });
+    return section;
+
+  } catch (err) {
+    console.warn(`⚠️ [KnowledgeContext] Error loading knowledge for ${constructId}:`, err.message);
+    return '';
+  }
+}
+
 async function buildEnrichedContext(options) {
   const { userId, constructId, userMessage, systemPromptOverride, gptConfig, user } = options;
 
@@ -547,9 +656,19 @@ async function buildEnrichedContext(options) {
     userSection += `\nTheir email is ${user.email}.`;
   }
 
-  result.systemPrompt = basePrompt + capsuleSection + userSection + ledgerSection + needleSection + verifiedMemorySection + memorySection + ANTI_ROLEPLAY_DIRECTIVES;
+  let knowledgeSection = '';
+  try {
+    knowledgeSection = await getKnowledgeContext(constructId, user?.email);
+    if (knowledgeSection) {
+      result.knowledgeFiles = true;
+    }
+  } catch (knowledgeErr) {
+    console.warn(`⚠️ [MemoryContextBuilder] Knowledge context load failed for ${constructId}:`, knowledgeErr.message);
+  }
 
-  console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, ledger: ${ledger ? ledger.sessions.length : 0}, needle: ${needleCount}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
+  result.systemPrompt = basePrompt + capsuleSection + userSection + knowledgeSection + ledgerSection + needleSection + verifiedMemorySection + memorySection + ANTI_ROLEPLAY_DIRECTIVES;
+
+  console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, knowledge: ${!!knowledgeSection}, ledger: ${ledger ? ledger.sessions.length : 0}, needle: ${needleCount}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
 
   return result;
 }
