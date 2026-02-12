@@ -2471,6 +2471,7 @@ export default function Layout() {
             const aiMsg: Message = {
               id: typingMsg.id,
               role: "assistant",
+              text: assistantContent,
               packets: finalPackets,
               ts: Date.now() + 2,
               timestamp: new Date(Date.now() + 2).toISOString(),
