@@ -1,6 +1,6 @@
 import React, { useRef, useMemo } from 'react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 
 interface CompressedCodeBlockProps {
     code: string
@@ -44,39 +44,33 @@ export const CompressedCodeBlock: React.FC<CompressedCodeBlockProps> = ({ code, 
 
     return (
         <div
-            className={`relative group my-3 ${className || ''}`}
+            className={`relative group my-3 rounded-lg overflow-hidden ${className || ''}`}
             style={{
                 width: '100%',
                 maxWidth: '100%',
-                overflow: 'hidden',
+                backgroundColor: '#1e1e1e',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
                 isolation: 'isolate'
             }}
             ref={containerRef}
         >
-            {/* Copy Button */}
-            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+            <div className="flex items-center justify-between px-4 py-2" style={{ backgroundColor: '#2d2d2d', borderBottom: '1px solid #404040' }}>
+                <span className="text-xs font-mono" style={{ color: '#cccccc' }}>{language || 'code'}</span>
                 <button
                     onClick={copyToClipboard}
-                    className="px-2 py-1 rounded text-xs transition-colors shadow-sm"
-                    style={{
-                        backgroundColor: 'var(--chatty-button)',
-                        color: 'var(--chatty-text-inverse, #fffff0)'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--chatty-hover)'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--chatty-button)'}
+                    className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors"
+                    style={{ color: '#cccccc' }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = '#ffffff'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = '#cccccc'}
                     title="Copy code"
                 >
-                    Copy
+                    Copy code
                 </button>
             </div>
 
-            {/* Code Container - now with horizontal scroll instead of scaling */}
             <div
-                className="rounded-lg"
                 style={{
                     width: '100%',
-                    backgroundColor: '#000000',
-                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
                     overflowX: 'auto',
                     overflowY: 'hidden',
                 }}
@@ -84,13 +78,14 @@ export const CompressedCodeBlock: React.FC<CompressedCodeBlockProps> = ({ code, 
                 <div ref={contentRef}>
                     {language ? (
                         <SyntaxHighlighter
-                            style={oneDark as any}
+                            style={vscDarkPlus as any}
                             language={language}
                             PreTag="div"
                             customStyle={{
                                 ...baseStyle,
                                 width: 'max-content',
                                 minWidth: '100%',
+                                background: '#1e1e1e',
                             }}
                             codeTagProps={{
                                 style: {

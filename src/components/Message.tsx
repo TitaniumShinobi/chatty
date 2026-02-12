@@ -6,7 +6,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import {
   Copy,
   Check,
@@ -188,30 +188,36 @@ const MessageComponent: React.FC<MessageProps> = ({ message }) => {
 
                   if (!inline && match) {
                     const { ref: _unusedRef, node, ...rest } = props as any;
+                    const lang = match[1];
                     return (
-                      <div className="relative group">
-                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="relative group my-3 rounded-lg overflow-hidden" style={{ backgroundColor: '#1e1e1e' }}>
+                        <div className="flex items-center justify-between px-4 py-2" style={{ backgroundColor: '#2d2d2d', borderBottom: '1px solid #404040' }}>
+                          <span className="text-xs font-mono" style={{ color: '#cccccc' }}>{lang}</span>
                           <button
                             onClick={() => copyToClipboard(code)}
-                            className="p-1 bg-app-orange-600 rounded hover:bg-app-orange-500 transition-colors"
+                            className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors"
+                            style={{ color: '#cccccc' }}
+                            onMouseEnter={(e) => e.currentTarget.style.color = '#ffffff'}
+                            onMouseLeave={(e) => e.currentTarget.style.color = '#cccccc'}
                             title="Copy code"
                           >
                             {copiedCode === code ? (
-                              <Check size={14} className="text-green-400" />
+                              <><Check size={14} className="text-green-400" /> Copied!</>
                             ) : (
-                              <Copy size={14} />
+                              <><Copy size={14} /> Copy code</>
                             )}
                           </button>
                         </div>
                         <SyntaxHighlighter
-                          style={oneDark as any}
-                          language={match[1]}
+                          style={vscDarkPlus as any}
+                          language={lang}
                           PreTag="div"
-                          className="rounded-lg"
                           customStyle={{
                             margin: 0,
                             fontSize: "14px",
                             lineHeight: "1.5",
+                            background: '#1e1e1e',
+                            padding: '1rem',
                           }}
                           {...rest}
                         >
