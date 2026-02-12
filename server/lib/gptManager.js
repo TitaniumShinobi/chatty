@@ -915,12 +915,25 @@ export class GPTManager {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
+    const extMimeMap = {
+      txt: 'text/plain', md: 'text/markdown', json: 'application/json',
+      csv: 'text/csv', rtf: 'text/rtf', html: 'text/html',
+      xml: 'text/xml', yaml: 'text/yaml', yml: 'text/yaml', log: 'text/plain',
+      pdf: 'application/pdf', doc: 'application/msword',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+      gif: 'image/gif', bmp: 'image/bmp', tiff: 'image/tiff', svg: 'image/svg+xml',
+      mp4: 'video/mp4', avi: 'video/x-msvideo', mov: 'video/quicktime',
+    };
+    const fileExt = (file.name || '').split('.').pop()?.toLowerCase() || '';
+    const resolvedMimeType = file.type || extMimeMap[fileExt] || 'application/octet-stream';
+
     stmt.run(
       id, 
       gptId, 
       filename, 
       file.name, 
-      file.type, 
+      resolvedMimeType, 
       file.size, 
       parsedContent.content, 
       parsedContent.extractedText,
