@@ -455,12 +455,19 @@ export class VVAULTConversationManager {
       const mapped = convs.map(conv => ({
         id: conv.sessionId,
         title: conv.title || 'Zen',
-        messages: conv.messages.map(m => ({
-          id: m.id,
-          role: m.role,
-          content: m.content,
-          timestamp: new Date(m.timestamp).getTime()
-        })),
+        messages: conv.messages.map(m => {
+          const base: any = {
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            text: m.content,
+            timestamp: new Date(m.timestamp).getTime()
+          };
+          if (m.role === 'assistant' && m.content) {
+            base.packets = (m as any).packets || [{ op: 'answer.v1', payload: { content: m.content } }];
+          }
+          return base;
+        }),
         createdAt: conv.messages.length ? new Date(conv.messages[0].timestamp).getTime() : Date.now(),
         updatedAt: conv.messages.length ? new Date(conv.messages[conv.messages.length - 1].timestamp).getTime() : Date.now(),
         archived: false
