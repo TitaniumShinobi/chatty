@@ -328,21 +328,23 @@ async function storeLedger(constructId, ledger) {
   const supabase = getSupabase();
   if (!supabase) return false;
 
-  const filename = `${constructId}_continuity_ledger.json`;
+  const filename = `instances/${constructId}/logs/${constructId}_continuity_ledger.json`;
+  const legacyFilename = `${constructId}_continuity_ledger.json`;
   const content = JSON.stringify(ledger, null, 2);
 
   const { data: existing } = await supabase
     .from('vault_files')
     .select('id')
     .eq('construct_id', constructId)
-    .eq('filename', filename)
-    .single();
+    .or(`filename.eq.${filename},filename.eq.${legacyFilename}`)
+    .limit(1)
+    .maybeSingle();
 
   let error;
   if (existing) {
     const result = await supabase
       .from('vault_files')
-      .update({ content })
+      .update({ content, filename })
       .eq('id', existing.id);
     error = result.error;
   } else {
@@ -352,7 +354,7 @@ async function storeLedger(constructId, ledger) {
         construct_id: constructId,
         filename,
         content,
-        file_type: 'application/json'
+        file_type: 'ledger'
       });
     error = result.error;
   }
@@ -376,14 +378,16 @@ async function loadLedger(constructId) {
   const supabase = getSupabase();
   if (!supabase) return null;
 
-  const filename = `${constructId}_continuity_ledger.json`;
+  const filename = `instances/${constructId}/logs/${constructId}_continuity_ledger.json`;
+  const legacyFilename = `${constructId}_continuity_ledger.json`;
 
   const { data, error } = await supabase
     .from('vault_files')
     .select('content')
     .eq('construct_id', constructId)
-    .eq('filename', filename)
-    .single();
+    .or(`filename.eq.${filename},filename.eq.${legacyFilename}`)
+    .limit(1)
+    .maybeSingle();
 
   if (error || !data?.content) return null;
 
