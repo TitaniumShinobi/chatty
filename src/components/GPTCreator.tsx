@@ -1036,12 +1036,23 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
       let gpt: GPTConfig | AIConfig;
 
-      // Prepare the payload - ensure avatar is included if it exists
-      const payload: any = { ...config };
+      const payload: any = {
+        name: config.name,
+        description: config.description,
+        instructions: config.instructions,
+        conversationStarters: config.conversationStarters,
+        capabilities: config.capabilities,
+        constructCallsign: config.constructCallsign,
+        modelId: config.modelId,
+        conversationModel: config.conversationModel,
+        creativeModel: config.creativeModel,
+        codingModel: config.codingModel,
+        orchestrationMode: config.orchestrationMode,
+        isActive: config.isActive,
+        hasPersistentMemory: config.hasPersistentMemory,
+      };
 
-      // Ensure avatar is explicitly included in the payload if it exists
-      // The backend expects either a data URL (for new uploads) or a filesystem path (for existing)
-      if (config.avatar) {
+      if (config.avatar && config.avatar.startsWith('data:')) {
         payload.avatar = config.avatar;
       }
 
