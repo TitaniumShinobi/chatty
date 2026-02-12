@@ -74,6 +74,24 @@ const POST_LOGIN_REDIRECT = REPLIT_DOMAIN
   ? `https://${REPLIT_DOMAIN}`
   : (process.env.POST_LOGIN_REDIRECT || process.env.FRONTEND_URL || "http://localhost:5173");
 
+function getRedirectUri(req) {
+  const host = req.get('x-forwarded-host') || req.get('host');
+  const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+  if (host) {
+    return `${proto}://${host}${CALLBACK_PATH}`;
+  }
+  return REDIRECT_URI;
+}
+
+function getPostLoginRedirect(req) {
+  const host = req.get('x-forwarded-host') || req.get('host');
+  const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+  if (host) {
+    return `${proto}://${host}`;
+  }
+  return POST_LOGIN_REDIRECT;
+}
+
 // In production, never fall back to localhost for redirect/callback config.
 if (process.env.NODE_ENV === 'production' && !REPLIT_DOMAIN) {
   const missing = [];
@@ -393,7 +411,7 @@ app.post("/api/auth/dev-login", async (req, res) => {
     const domain = req.hostname && req.hostname.includes('thewreck.org') ? '.thewreck.org' : undefined;
     const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'lax',
       path: '/',
       maxAge: 1000 * 60 * 60 * 24 * 30,
@@ -421,33 +439,29 @@ app.post("/api/auth/dev-login", async (req, res) => {
 app.get("/api/auth/google", authLimiter, (req, res) => {
   console.log('🔍 [OAuth] /api/auth/google endpoint hit');
   try {
+    const dynamicRedirectUri = getRedirectUri(req);
     console.log('🔍 [OAuth] Environment check:', {
       has_client_id: !!process.env.GOOGLE_CLIENT_ID,
       has_client_secret: !!process.env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: REDIRECT_URI,
-      oauth_object: {
-        client_id: !!OAUTH.client_id,
-        client_secret: !!OAUTH.client_secret,
-        redirect_uri: OAUTH.redirect_uri
-      }
+      redirect_uri: dynamicRedirectUri
     });
 
     if (!OAUTH.client_id) {
       console.error("❌ [OAuth] GOOGLE_CLIENT_ID is not set in environment variables");
-      console.error("❌ [OAuth] OAUTH object:", OAUTH);
       return res.status(500).json({ error: "OAuth configuration missing: GOOGLE_CLIENT_ID" });
     }
     if (!OAUTH.client_secret) {
       console.error("❌ [OAuth] GOOGLE_CLIENT_SECRET is not set in environment variables");
-      console.error("❌ [OAuth] OAUTH object:", OAUTH);
       return res.status(500).json({ error: "OAuth configuration missing: GOOGLE_CLIENT_SECRET" });
     }
 
     console.log('🔍 [OAuth] Generating state and building OAuth URL');
     const state = cryptoRandom();
+    req.app.locals = req.app.locals || {};
+    req.app.locals[`oauth_redirect_${state}`] = dynamicRedirectUri;
     const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     url.searchParams.set("client_id", OAUTH.client_id);
-    url.searchParams.set("redirect_uri", OAUTH.redirect_uri);
+    url.searchParams.set("redirect_uri", dynamicRedirectUri);
     url.searchParams.set("response_type", "code");
     url.searchParams.set("scope", "openid email profile");
     url.searchParams.set("include_granted_scopes", "true");
@@ -455,7 +469,7 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
     url.searchParams.set("prompt", "consent");
     url.searchParams.set("state", state);
 
-    console.log('✅ [OAuth] Redirecting to Google OAuth URL:', url.toString().substring(0, 100) + '...');
+    console.log('✅ [OAuth] Redirecting to Google OAuth URL with redirect_uri:', dynamicRedirectUri);
     res.redirect(url.toString());
   } catch (error) {
     console.error('❌ [OAuth] Unexpected error in /api/auth/google:', error);
@@ -469,16 +483,29 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
   try {
     const { code, error } = req.query;
 
+    const dynamicRedirectUri = getRedirectUri(req);
+    const dynamicPostLogin = getPostLoginRedirect(req);
+
     // Handle OAuth errors from Google
     if (error) {
       console.error('OAuth error from Google:', error);
-      return res.redirect(`${POST_LOGIN_REDIRECT}/?error=${encodeURIComponent(error)}`);
+      return res.redirect(`${dynamicPostLogin}/?error=${encodeURIComponent(error)}`);
     }
 
     if (!code) {
       console.error('OAuth callback missing code parameter');
-      return res.redirect(`${POST_LOGIN_REDIRECT}/?error=missing_code`);
+      return res.redirect(`${dynamicPostLogin}/?error=missing_code`);
     }
+
+    // Try to retrieve the stored redirect URI from the state parameter
+    const { state } = req.query;
+    const storedRedirectUri = state && req.app.locals?.[`oauth_redirect_${state}`];
+    const tokenRedirectUri = storedRedirectUri || dynamicRedirectUri;
+    if (storedRedirectUri && state) {
+      delete req.app.locals[`oauth_redirect_${state}`];
+    }
+
+    console.log('🔍 [OAuth Callback] Using redirect_uri:', tokenRedirectUri);
 
     // exchange code for tokens
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
@@ -489,18 +516,18 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
         client_secret: process.env.GOOGLE_CLIENT_SECRET,
         code,
         grant_type: "authorization_code",
-        redirect_uri: REDIRECT_URI, // IMPORTANT: must match initial redirect_uri
+        redirect_uri: tokenRedirectUri,
       })
     }).then(r => r.json());
     if (!tokenRes.access_token) {
       console.error("OAuth token exchange failed:", tokenRes);
       console.error("Request details:", {
-        redirect_uri: REDIRECT_URI,
+        redirect_uri: tokenRedirectUri,
         has_client_id: !!process.env.GOOGLE_CLIENT_ID,
         has_client_secret: !!process.env.GOOGLE_CLIENT_SECRET,
         code_length: code?.length
       });
-      return res.redirect(`${POST_LOGIN_REDIRECT}/?error=oauth_token_exchange_failed&details=${encodeURIComponent(JSON.stringify(tokenRes))}`);
+      return res.redirect(`${dynamicPostLogin}/?error=oauth_token_exchange_failed&details=${encodeURIComponent(JSON.stringify(tokenRes))}`);
     }
 
     // 2) fetch user info
@@ -567,7 +594,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
     const domain = req.hostname && req.hostname.includes('thewreck.org') ? '.thewreck.org' : undefined;
     const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'lax',
       path: '/',
       maxAge: 1000 * 60 * 60 * 24 * 30,
@@ -584,11 +611,12 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
     res.cookie(COOKIE_NAME, token, cookieOptions);
 
     // 4) redirect back to app (to /app route which shows Home)
-    console.log(`✅ OAuth success! Redirecting to ${POST_LOGIN_REDIRECT}/app`);
-    res.redirect(`${POST_LOGIN_REDIRECT}/app`);
+    console.log(`✅ OAuth success! Redirecting to ${dynamicPostLogin}/app`);
+    res.redirect(`${dynamicPostLogin}/app`);
   } catch (e) {
     console.error('OAuth callback error:', e);
-    res.redirect(`${POST_LOGIN_REDIRECT}/?error=auth_failed`);
+    const fallbackRedirect = getPostLoginRedirect(req);
+    res.redirect(`${fallbackRedirect}/?error=auth_failed`);
   }
 });
 
