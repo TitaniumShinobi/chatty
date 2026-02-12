@@ -16,7 +16,7 @@ const __dirname = path.dirname(__filename);
 
 // Path to Frame's Memup system
 const FRAME_ROOT = path.resolve(__dirname, '../../../frame');
-const MEMUP_BANK_SCRIPT = path.join(FRAME_ROOT, 'Terminal', 'Memup', 'bank.py');
+const MEMUP_BANK_SCRIPT = path.join(FRAME_ROOT, 'Terminal', 'memup', 'bank.py');
 
 class MemupMemoryService {
   constructor() {

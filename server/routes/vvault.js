@@ -9,6 +9,7 @@ import OpenAI from "openai";
 import { loadIdentityFiles } from "../lib/identityLoader.js";
 import { GPTManager } from "../lib/gptManager.js";
 import { performSearch, injectSearchContext } from "./search.js";
+import { buildEnrichedContext, captureMemory } from "../lib/memoryContextBuilder.js";
 
 // Timestamp all console output from this module
 const patchConsoleWithTimestamp = () => {
@@ -3648,20 +3649,21 @@ router.post("/message", async (req, res) => {
       }
     }
     
-    // Load identity/system prompt (allow override from GPTCreator preview)
-    const identity = await loadIdentityFiles(userId, constructId);
-    let systemPrompt = systemPromptOverride || identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
-    
-    const directUserName = req.user?.name || req.user?.given_name || 'the user';
-    systemPrompt += `\n\n## User Identity\nThe user you are speaking with is named "${directUserName}". Address them by name when appropriate. Remember their name throughout the conversation.`;
-    if (req.user?.email) {
-      systemPrompt += `\nTheir email is ${req.user.email}.`;
-    }
+    // Load enriched system prompt: identity + capsule + memories + anti-roleplay directives
+    const enrichedContext = await buildEnrichedContext({
+      userId,
+      constructId,
+      userMessage: message,
+      systemPromptOverride,
+      gptConfig,
+      user: req.user
+    });
+    let systemPrompt = enrichedContext.systemPrompt;
 
     const { enhancedPrompt: searchEnhancedPrompt } = await injectSearchContext(message, systemPrompt);
     systemPrompt = searchEnhancedPrompt;
     
-    console.log(`🧠 [VVAULT Proxy] System prompt length: ${systemPrompt.length}`);
+    console.log(`🧠 [VVAULT Proxy] System prompt length: ${systemPrompt.length} (capsule: ${enrichedContext.capsuleLoaded}, memories: ${enrichedContext.memoriesLoaded})`);
     
     // Load conversation history for context (last 20 turns)
     let conversationHistoryMessages = [];
@@ -3878,6 +3880,15 @@ router.post("/message", async (req, res) => {
       
       console.log(`✅ [VVAULT Proxy] ${effectiveProvider} successful for ${constructId}, response length: ${aiResponse.length}`);
       
+      captureMemory({
+        userId,
+        constructId,
+        userMessage: message,
+        aiResponse,
+        sessionId: sessionId || threadId || `${constructId}_chat_with_${constructId}`,
+        email: req.user?.email
+      }).catch(err => console.warn('⚠️ [VVAULT Proxy] Background memory capture failed:', err.message));
+
       return res.json({
         success: true,
         response: aiResponse,

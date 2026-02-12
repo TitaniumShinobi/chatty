@@ -48,6 +48,10 @@ externalPort = 3002
 localPort = 5173
 externalPort = 5173
 
+[[ports]]
+localPort = 8000
+externalPort = 8000
+
 [deployment]
 deploymentTarget = "autoscale"
 run = ["npm", "run", "start:prod"]
@@ -65,3 +69,4 @@ AI_INTEGRATIONS_OPENAI_API_KEY = "_DUMMY_API_KEY_"
 FXSHINOBI_API_BASE_URL = "https://e0a21a10-a007-4328-8b26-4be3a2eb056b-00-1u4qswx5jl1f0.janeway.replit.dev"
 OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct"
 OPENROUTER_API_KEY = "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"
+ENABLE_CHROMADB = "true"
