@@ -6,6 +6,7 @@
  * navigation, folder monitoring, and self-correction.
  * 
  * Python Scripts Mapped:
+ * - needle.py → Needle class (fast transcript search — MVP)
  * - identity_guard.py → IdentityGuard class
  * - state_manager.py → StateManager class
  * - aviator.py → Aviator class (scout advisor)
@@ -13,13 +14,198 @@
  * - folder_monitor.py → FolderMonitor class
  * - unstuck_helper.py → UnstuckHelper class
  * - independence.py → IndependentRunner class
+ * - construct_logger.py → ConstructLogger class
  */
 
 import { promises as fs } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { createClient } from '@supabase/supabase-js';
 
 const VVAULT_BASE = process.env.VVAULT_ROOT_PATH || '/tmp/vvault';
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+
+function getSupabase() {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return null;
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+}
+
+/**
+ * Needle — Fast transcript search (MVP)
+ * Port of vvault_scripts/master/needle.py
+ * 
+ * Searches pre-extracted anchor pairs in Supabase for exact phrase matches.
+ * Returns FULL context — no truncation. This is the ground truth finder.
+ */
+class Needle {
+  constructor(constructId) {
+    this.constructId = constructId;
+    this.anchorCache = null;
+    this.cacheTimestamp = null;
+    this.CACHE_TTL = 10 * 60 * 1000;
+  }
+
+  async loadAnchors() {
+    if (this.anchorCache && this.cacheTimestamp && Date.now() - this.cacheTimestamp < this.CACHE_TTL) {
+      return this.anchorCache;
+    }
+
+    const supabase = getSupabase();
+    if (!supabase) return [];
+
+    try {
+      const anchorFilename = `instances/${this.constructId}/memory_anchors.json`;
+      const { data, error } = await supabase
+        .from('vault_files')
+        .select('content')
+        .eq('construct_id', this.constructId)
+        .eq('filename', anchorFilename)
+        .single();
+
+      if (error || !data?.content) return [];
+
+      const anchors = JSON.parse(data.content);
+      this.anchorCache = anchors.pairs || [];
+      this.cacheTimestamp = Date.now();
+      console.log(`🔍 [Needle] Loaded ${this.anchorCache.length} anchor pairs for ${this.constructId}`);
+      return this.anchorCache;
+    } catch (e) {
+      console.warn(`⚠️ [Needle] Failed to load anchors for ${this.constructId}:`, e.message);
+      return [];
+    }
+  }
+
+  async search(query, options = {}) {
+    const {
+      caseSensitive = false,
+      maxHits = 20,
+      around = 2,
+      mode = 'exact'
+    } = options;
+
+    const pairs = await this.loadAnchors();
+    if (pairs.length === 0) return { matches: [], count: 0, elapsed_ms: 0 };
+
+    const startTime = Date.now();
+    const queryNorm = caseSensitive ? query : query.toLowerCase();
+    const matches = [];
+
+    for (let i = 0; i < pairs.length && matches.length < maxHits; i++) {
+      const pair = pairs[i];
+      const userText = pair.user || '';
+      const assistantText = pair.assistant || '';
+      const combined = caseSensitive
+        ? userText + ' ' + assistantText
+        : (userText + ' ' + assistantText).toLowerCase();
+
+      let isMatch = false;
+
+      if (mode === 'exact') {
+        isMatch = combined.includes(queryNorm);
+      } else if (mode === 'fuzzy') {
+        const words = queryNorm.split(/\s+/).filter(w => w.length > 2);
+        const matchCount = words.filter(w => combined.includes(w)).length;
+        isMatch = words.length > 0 && matchCount >= Math.ceil(words.length * 0.6);
+      }
+
+      if (isMatch) {
+        const contextWindow = [];
+        const start = Math.max(0, i - around);
+        const end = Math.min(pairs.length - 1, i + around);
+        for (let j = start; j <= end; j++) {
+          contextWindow.push({
+            index: j,
+            user: pairs[j].user,
+            assistant: pairs[j].assistant,
+            isMatch: j === i
+          });
+        }
+
+        matches.push({
+          index: i,
+          user: userText,
+          assistant: assistantText,
+          sourceFile: pair.sourceFile || 'pre-extracted',
+          contextWindow,
+          score: mode === 'exact' ? 100 : 80
+        });
+      }
+    }
+
+    const elapsed_ms = Date.now() - startTime;
+    console.log(`🔍 [Needle] "${query}" → ${matches.length} match(es) in ${elapsed_ms}ms across ${pairs.length} pairs for ${this.constructId}`);
+
+    return {
+      needle: query,
+      constructId: this.constructId,
+      count: matches.length,
+      elapsed_ms,
+      matches
+    };
+  }
+
+  async searchMulti(queries, options = {}) {
+    const allMatches = [];
+    const seen = new Set();
+
+    for (const query of queries) {
+      const result = await this.search(query, options);
+      for (const match of result.matches) {
+        if (!seen.has(match.index)) {
+          seen.add(match.index);
+          allMatches.push(match);
+        }
+      }
+    }
+
+    allMatches.sort((a, b) => b.score - a.score);
+    return allMatches;
+  }
+
+  clearCache() {
+    this.anchorCache = null;
+    this.cacheTimestamp = null;
+  }
+}
+
+/**
+ * Construct Logger — Construct-aware logging
+ * Port of vvault_scripts/master/construct_logger.py
+ */
+class ConstructLogger {
+  constructor(constructId, scriptName = 'chatty') {
+    this.constructId = constructId;
+    this.scriptName = scriptName;
+    this.logs = [];
+    this.maxLogs = 500;
+  }
+
+  log(level, message, details = {}) {
+    const entry = {
+      timestamp: new Date().toISOString(),
+      construct: this.constructId,
+      script: this.scriptName,
+      level,
+      message,
+      details
+    };
+    this.logs.push(entry);
+    if (this.logs.length > this.maxLogs) {
+      this.logs = this.logs.slice(-Math.floor(this.maxLogs / 2));
+    }
+    console.log(`[${entry.timestamp}] [CONSTRUCT: ${this.constructId}] [${this.scriptName}] [${level}] ${message}`);
+    return entry;
+  }
+
+  info(message, details) { return this.log('INFO', message, details); }
+  warn(message, details) { return this.log('WARN', message, details); }
+  error(message, details) { return this.log('ERROR', message, details); }
+
+  getRecentLogs(count = 20) {
+    return this.logs.slice(-count);
+  }
+}
 const USER_SHARD = 'shard_0000';
 
 // Autonomy modes for independent operation
@@ -518,12 +704,14 @@ class MasterScriptsManager {
     const construct = {
       id: constructId,
       userId,
+      needle: new Needle(constructId),
       identityGuard: new IdentityGuard(constructId, userId),
       stateManager: new StateManager(constructId, userId),
       aviator: new Aviator(userId, constructId),
       navigator: new Navigator(userId, constructId),
       unstuckHelper: new UnstuckHelper(constructId),
       independentRunner: new IndependentRunner(constructId, userId),
+      logger: new ConstructLogger(constructId),
       initializedAt: Date.now()
     };
     
@@ -533,12 +721,19 @@ class MasterScriptsManager {
     // Load persisted state
     await construct.stateManager.load();
     
+    // Pre-warm needle cache
+    construct.needle.loadAnchors().catch(() => {});
+    
     // Initial directory scan
     await construct.aviator.scanDirectory(`instances/${constructId}`);
     
+    construct.logger.info('Autonomy stack initialized', {
+      capabilities: ['needle', 'identityGuard', 'stateManager', 'aviator', 'navigator', 'unstuckHelper', 'independentRunner']
+    });
+    
     this.constructs.set(constructId, construct);
     
-    console.log(`✅ [MasterScripts] ${constructId} fully initialized with autonomy stack`);
+    console.log(`✅ [MasterScripts] ${constructId} fully initialized with autonomy stack (needle ready)`);
     
     return construct;
   }
@@ -575,11 +770,13 @@ const masterScriptsManager = new MasterScriptsManager();
 export {
   MasterScriptsManager,
   masterScriptsManager,
+  Needle,
   IdentityGuard,
   StateManager,
   Aviator,
   Navigator,
   UnstuckHelper,
   IndependentRunner,
+  ConstructLogger,
   AutonomyMode
 };

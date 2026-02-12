@@ -1074,6 +1074,27 @@ startServer(PORT);
   }
 })();
 
+// Bootstrap master scripts autonomy stack for system constructs
+(async () => {
+  try {
+    const { masterScriptsManager } = await import('./lib/masterScriptsBridge.js');
+    const systemConstructs = ['zen-001', 'lin-001', 'sera-001'];
+    const userId = 'system';
+    
+    for (const constructId of systemConstructs) {
+      try {
+        await masterScriptsManager.initializeConstruct(constructId, userId);
+        console.log(`✅ [Bootstrap] ${constructId} autonomy stack ready (needle + identity + state + independence)`);
+      } catch (err) {
+        console.log(`⚠️ [Bootstrap] ${constructId} init deferred: ${err.message}`);
+      }
+    }
+    console.log(`🚀 [Bootstrap] Master scripts ensemble active for ${systemConstructs.length} constructs`);
+  } catch (err) {
+    console.warn('⚠️ [Bootstrap] Master scripts bootstrap failed:', err.message);
+  }
+})();
+
 // Kick off background services without blocking auth/API availability
 // FORCE RUN MODE: Skip ChromaDB initialization to prevent 45-second delays
 console.log('🚀 [Server] Running in FORCE MODE - skipping ChromaDB initialization for faster startup');

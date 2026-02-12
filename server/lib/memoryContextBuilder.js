@@ -15,6 +15,7 @@
 
 import { loadIdentityFiles } from './identityLoader.js';
 import { loadVerifiedMemories, buildVerifiedMemorySection, clearVerifiedMemoryCache } from './verifiedMemoryLoader.js';
+import { masterScriptsManager, Needle } from './masterScriptsBridge.js';
 
 let capsuleIntegrationModule = null;
 let memupServiceModule = null;
@@ -54,6 +55,120 @@ async function getReadConversations() {
     }
   }
   return readConversationsModule;
+}
+
+const needleInstances = new Map();
+
+function getNeedle(constructId) {
+  let needle = needleInstances.get(constructId);
+  if (!needle) {
+    const construct = masterScriptsManager.getConstruct(constructId);
+    if (construct?.needle) {
+      needle = construct.needle;
+    } else {
+      needle = new Needle(constructId);
+    }
+    needleInstances.set(constructId, needle);
+  }
+  return needle;
+}
+
+function extractNeedlePhrases(userMessage) {
+  if (!userMessage || userMessage.length < 5) return [];
+  const lower = userMessage.toLowerCase();
+
+  const phrases = [];
+
+  const memoryTriggers = [
+    /(?:remember|recall|when|time)\s+(?:you|we|i)\s+(.{5,60})/gi,
+    /(?:do you remember)\s+(.{5,60})/gi,
+    /(?:what about)\s+(.{5,60})/gi,
+    /(?:tell me about)\s+(.{5,60})/gi
+  ];
+
+  for (const regex of memoryTriggers) {
+    const matches = userMessage.matchAll(regex);
+    for (const m of matches) {
+      const phrase = m[1].replace(/[?.!,]+$/, '').trim();
+      if (phrase.length >= 4) phrases.push(phrase);
+    }
+  }
+
+  const coreWords = lower
+    .replace(/[^\w\s'-]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 3 && !CHAT_FILLER_WORDS.has(w));
+
+  if (coreWords.length >= 2 && coreWords.length <= 6) {
+    phrases.push(coreWords.join(' '));
+  }
+
+  for (const w of coreWords) {
+    if (w.length >= 5 && !['about', 'think', 'really', 'something'].includes(w)) {
+      phrases.push(w);
+    }
+  }
+
+  return [...new Set(phrases)];
+}
+
+async function runNeedleSearch(constructId, userMessage) {
+  try {
+    const needle = getNeedle(constructId);
+    const phrases = extractNeedlePhrases(userMessage);
+    if (phrases.length === 0) return [];
+
+    const results = await needle.searchMulti(phrases, { maxHits: 5, around: 1, mode: 'fuzzy' });
+
+    const exactPhrases = phrases.filter(p => p.split(/\s+/).length >= 2);
+    if (exactPhrases.length > 0) {
+      const exactResults = await needle.searchMulti(exactPhrases, { maxHits: 5, around: 1, mode: 'exact' });
+      for (const r of exactResults) {
+        if (!results.some(existing => existing.index === r.index)) {
+          r.score = 120;
+          results.push(r);
+        }
+      }
+    }
+
+    results.sort((a, b) => b.score - a.score);
+    return results.slice(0, 6);
+  } catch (err) {
+    console.warn(`⚠️ [MemoryContextBuilder] Needle search failed for ${constructId}:`, err.message);
+    return [];
+  }
+}
+
+function buildNeedleMemorySection(needleHits, constructId) {
+  if (!needleHits || needleHits.length === 0) return '';
+
+  const constructName = constructId.replace(/-\d+$/, '');
+  const displayName = constructName.charAt(0).toUpperCase() + constructName.slice(1);
+
+  let section = `\n\n## NEEDLE HITS — EXACT TRANSCRIPT MATCHES`;
+  section += `\nThese are EXACT matches found in your conversation transcripts. These are the most precise memories available. Quote the specific details when responding.\n`;
+
+  needleHits.forEach((hit, i) => {
+    section += `\n### Transcript Match ${i + 1} (index ${hit.index})`;
+    section += `\n- They said: "${hit.user}"`;
+    section += `\n- You replied: "${hit.assistant}"`;
+    if (hit.contextWindow && hit.contextWindow.length > 1) {
+      const surrounding = hit.contextWindow.filter(c => !c.isMatch);
+      if (surrounding.length > 0) {
+        section += `\n- Surrounding context:`;
+        for (const ctx of surrounding) {
+          section += `\n  - [${ctx.index}] "${ctx.user?.substring(0, 150)}" → "${ctx.assistant?.substring(0, 150)}"`;
+        }
+      }
+    }
+  });
+
+  section += `\n\n### NEEDLE MATCH RULES`;
+  section += `\n- These are EXACT quotes from your real conversations. They are indisputable facts.`;
+  section += `\n- When asked about these topics, cite the SPECIFIC details: exact words, timeframes, descriptions.`;
+  section += `\n- Do NOT paraphrase vaguely. Use the actual content above.`;
+
+  return section;
 }
 
 const CHAT_FILLER_WORDS = new Set([
@@ -319,18 +434,36 @@ async function buildEnrichedContext(options) {
 
   let verifiedMemorySection = '';
   let verifiedCount = 0;
+  let needleSection = '';
+  let needleCount = 0;
 
   if (userMessage) {
-    try {
-      const verifiedResult = await loadVerifiedMemories(constructId, userMessage, 8);
-      if (verifiedResult.memories.length > 0) {
-        verifiedMemorySection = buildVerifiedMemorySection(verifiedResult.memories, constructId);
-        verifiedCount = verifiedResult.memories.length;
-        result.verifiedMemories = verifiedCount;
-        console.log(`✅ [MemoryContextBuilder] ${verifiedCount} verified memories loaded for ${constructId} from ${verifiedResult.fileCount} transcript files (${verifiedResult.timing}ms)`);
+    const [verifiedResult, needleHits] = await Promise.all([
+      loadVerifiedMemories(constructId, userMessage, 8).catch(err => {
+        console.warn(`⚠️ [MemoryContextBuilder] Verified memory load failed for ${constructId}:`, err.message);
+        return { memories: [], fileCount: 0, timing: 0 };
+      }),
+      runNeedleSearch(constructId, userMessage)
+    ]);
+
+    if (verifiedResult.memories.length > 0) {
+      verifiedMemorySection = buildVerifiedMemorySection(verifiedResult.memories, constructId);
+      verifiedCount = verifiedResult.memories.length;
+      result.verifiedMemories = verifiedCount;
+      console.log(`✅ [MemoryContextBuilder] ${verifiedCount} verified memories loaded for ${constructId} from ${verifiedResult.fileCount} transcript files (${verifiedResult.timing}ms)`);
+    }
+
+    if (needleHits.length > 0) {
+      needleSection = buildNeedleMemorySection(needleHits, constructId);
+      needleCount = needleHits.length;
+      result.needleHits = needleCount;
+      console.log(`🔍 [MemoryContextBuilder] ${needleCount} needle hits for ${constructId}`);
+
+      const construct = masterScriptsManager.getConstruct(constructId);
+      if (construct) {
+        construct.stateManager.addMemory(`Needle search: "${userMessage}" → ${needleCount} hits`, 0.8);
+        construct.independentRunner.recordUserActivity();
       }
-    } catch (verifiedErr) {
-      console.warn(`⚠️ [MemoryContextBuilder] Verified memory load failed for ${constructId}:`, verifiedErr.message);
     }
   }
 
@@ -376,9 +509,9 @@ async function buildEnrichedContext(options) {
     userSection += `\nTheir email is ${user.email}.`;
   }
 
-  result.systemPrompt = basePrompt + capsuleSection + userSection + verifiedMemorySection + memorySection + ANTI_ROLEPLAY_DIRECTIVES;
+  result.systemPrompt = basePrompt + capsuleSection + userSection + needleSection + verifiedMemorySection + memorySection + ANTI_ROLEPLAY_DIRECTIVES;
 
-  console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
+  console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, needle: ${needleCount}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
 
   return result;
 }
