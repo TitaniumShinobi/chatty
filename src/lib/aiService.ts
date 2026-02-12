@@ -524,6 +524,7 @@ export class AIService {
                   threadId: threadId,
                   sessionId: threadId,
                   attachments: options?.attachments || [],
+                  skipPersistence: true,
                 }),
               });
               
@@ -571,6 +572,7 @@ export class AIService {
           threadId: threadId,
           sessionId: threadId,
           attachments: options?.attachments || [],
+          skipPersistence: true,
         }),
       });
 
