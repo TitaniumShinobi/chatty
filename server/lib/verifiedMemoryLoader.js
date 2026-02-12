@@ -612,8 +612,8 @@ async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_
             ...boundaries.last.map(p => ({ ...p, _tag: 'LAST_EVER' }))
           ];
           boundaryMemories = allBoundary.map(p => ({
-            context: p.user.length > 300 ? p.user.substring(0, 300) + '...' : p.user,
-            response: p.assistant.length > 300 ? p.assistant.substring(0, 300) + '...' : p.assistant,
+            context: p.user.length > 800 ? p.user.substring(0, 800) + '...' : p.user,
+            response: p.assistant.length > 800 ? p.assistant.substring(0, 800) + '...' : p.assistant,
             score: 100,
             sourceFile: 'transcript-boundary',
             verified: true,
@@ -626,8 +626,8 @@ async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_
       }
 
       const regularMemories = scored.slice(0, maxMemories - boundaryMemories.length).map(p => ({
-        context: p.user.length > 300 ? p.user.substring(0, 300) + '...' : p.user,
-        response: p.assistant.length > 300 ? p.assistant.substring(0, 300) + '...' : p.assistant,
+        context: p.user.length > 800 ? p.user.substring(0, 800) + '...' : p.user,
+        response: p.assistant.length > 800 ? p.assistant.substring(0, 800) + '...' : p.assistant,
         score: p.score,
         sourceFile: p.sourceFile,
         verified: true,
@@ -714,8 +714,8 @@ async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_
           ...boundaries.last.map(p => ({ ...p, _tag: 'LAST_EVER' }))
         ];
         boundaryMemories = allBoundary.map(p => ({
-          context: p.user.length > 300 ? p.user.substring(0, 300) + '...' : p.user,
-          response: p.assistant.length > 300 ? p.assistant.substring(0, 300) + '...' : p.assistant,
+          context: p.user.length > 800 ? p.user.substring(0, 800) + '...' : p.user,
+          response: p.assistant.length > 800 ? p.assistant.substring(0, 800) + '...' : p.assistant,
           score: 100,
           sourceFile: 'transcript-boundary',
           verified: true,
@@ -728,8 +728,8 @@ async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_
     }
 
     const regularMemories = allScoredPairs.slice(0, maxMemories - boundaryMemories.length).map(p => ({
-      context: p.user.length > 300 ? p.user.substring(0, 300) + '...' : p.user,
-      response: p.assistant.length > 300 ? p.assistant.substring(0, 300) + '...' : p.assistant,
+      context: p.user.length > 800 ? p.user.substring(0, 800) + '...' : p.user,
+      response: p.assistant.length > 800 ? p.assistant.substring(0, 800) + '...' : p.assistant,
       score: p.score,
       sourceFile: p.sourceFile,
       verified: true,
@@ -775,8 +775,8 @@ function buildVerifiedMemorySection(memories, constructId) {
 
     section += `\n### ${label}${source}`;
     section += `\n- Emotional tone: ${tone}`;
-    section += `\n- They said: "${truncateVM(m.context, 300)}"`;
-    section += `\n- You replied: "${truncateVM(m.response, 300)}"`;
+    section += `\n- They said: "${truncateVM(m.context, 800)}"`;
+    section += `\n- You replied: "${truncateVM(m.response, 800)}"`;
     if (m.summary) section += `\n- Summary: ${m.summary}`;
     section += ``;
   });
