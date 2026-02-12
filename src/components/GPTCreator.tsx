@@ -1085,29 +1085,6 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         });
       }
 
-      const pendingFiles = files.filter(f => f.gptId === "temp" && f._file && f._file.type !== "application/zip");
-      if (pendingFiles.length > 0) {
-        const BATCH_SIZE = 10;
-        let uploaded = 0;
-        setUploadProgress({ current: 0, total: pendingFiles.length });
-
-        for (let i = 0; i < pendingFiles.length; i += BATCH_SIZE) {
-          const batch = pendingFiles.slice(i, i + BATCH_SIZE);
-          await Promise.all(batch.map(async (file) => {
-            const hasSubdir = file.filename && file.filename.includes('/');
-            const zipPath = hasSubdir ? file.filename : undefined;
-            if (isAIService) {
-              await (service as AIService).uploadFile(gpt.id, file._file!, zipPath);
-            } else {
-              await (service as GPTService).uploadFile(gpt.id, file._file!);
-            }
-            uploaded++;
-            setUploadProgress({ current: uploaded, total: pendingFiles.length });
-          }));
-        }
-        setUploadProgress(null);
-      }
-
       // Create actions if any (only for new actions)
       for (const action of actions) {
         if (action.name && action.url && !action.id) {
@@ -1153,7 +1130,71 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     return (f.originalName || f.filename || '').toLowerCase();
   };
 
-  const processUploadFiles = (newFiles: GPTFile[]) => {
+  const draftCreationRef = useRef<Promise<string> | null>(null);
+
+  const ensureGptId = async (): Promise<string> => {
+    if (config.id) return config.id;
+
+    if (draftCreationRef.current) return draftCreationRef.current;
+
+    const createDraft = async (): Promise<string> => {
+      const draftPayload: any = {
+        name: config.name || "Untitled GPT",
+        description: config.description || "",
+        instructions: config.instructions || "",
+        conversationStarters: config.conversationStarters || [""],
+        modelId: config.modelId || "openrouter:meta-llama/llama-3.3-70b-instruct",
+        conversationModel: config.conversationModel || config.modelId || "openrouter:meta-llama/llama-3.3-70b-instruct",
+        creativeModel: config.creativeModel || "openrouter:mistralai/mistral-7b-instruct",
+        codingModel: config.codingModel || "openrouter:deepseek/deepseek-coder-33b-instruct",
+        capabilities: config.capabilities || { webSearch: false, canvas: false, imageGeneration: false, codeInterpreter: true },
+      };
+
+      const gpt = await aiService.createAI(draftPayload);
+      const newId = gpt.id;
+
+      setConfig((prev) => ({
+        ...prev,
+        ...gpt,
+        id: newId,
+        avatar: gpt.avatar || prev.avatar,
+      }));
+
+      draftCreationRef.current = null;
+      return newId;
+    };
+
+    draftCreationRef.current = createDraft();
+    return draftCreationRef.current;
+  };
+
+  const uploadFilesToBackend = async (filesToUpload: GPTFile[], gptId: string) => {
+    const validFiles = filesToUpload.filter(f => f._file && f._file.type !== "application/zip");
+    if (validFiles.length === 0) return;
+
+    const { service, isAIService } = getServiceForGPT(gptId);
+    const BATCH_SIZE = 10;
+    let uploaded = 0;
+    setUploadProgress({ current: 0, total: validFiles.length });
+
+    for (let i = 0; i < validFiles.length; i += BATCH_SIZE) {
+      const batch = validFiles.slice(i, i + BATCH_SIZE);
+      await Promise.all(batch.map(async (file) => {
+        const hasSubdir = file.filename && file.filename.includes('/');
+        const zipPath = hasSubdir ? file.filename : undefined;
+        if (isAIService) {
+          await (service as AIService).uploadFile(gptId, file._file!, zipPath);
+        } else {
+          await (service as GPTService).uploadFile(gptId, file._file!);
+        }
+        uploaded++;
+        setUploadProgress({ current: uploaded, total: validFiles.length });
+      }));
+    }
+    setUploadProgress(null);
+  };
+
+  const processUploadFiles = async (newFiles: GPTFile[]) => {
     setFiles((prev) => {
       const result = [...prev];
       for (const nf of newFiles) {
@@ -1167,6 +1208,27 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       }
       return result;
     });
+
+    try {
+      const gptId = await ensureGptId();
+      await uploadFilesToBackend(newFiles, gptId);
+
+      const { service, isAIService } = getServiceForGPT(gptId);
+      let loadedFiles: GPTFile[] | any[];
+      if (isAIService) {
+        loadedFiles = await (service as AIService).getFiles(gptId);
+      } else {
+        loadedFiles = await (service as GPTService).getFiles(gptId);
+      }
+      const knowledgeOnly = (loadedFiles as GPTFile[]).filter(
+        (f: any) => f.category === 'knowledge'
+      );
+      setFiles(knowledgeOnly);
+    } catch (err: any) {
+      console.error("[GPTCreator] Immediate upload failed:", err);
+      setError(`File upload failed: ${err.message}`);
+      setUploadProgress(null);
+    }
   };
 
   const prepareFilesForUpload = async (selectedFiles: File[]): Promise<{ newFiles: GPTFile[]; rawFiles: File[] }> => {
@@ -1288,7 +1350,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         setShowDuplicateModal(true);
         setIsUploading(false);
       } else {
-        processUploadFiles(newFiles);
+        await processUploadFiles(newFiles);
         setIsUploading(false);
       }
     } catch (error: any) {
@@ -1301,9 +1363,9 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     }
   };
 
-  const confirmDuplicateReplace = () => {
+  const confirmDuplicateReplace = async () => {
     const newFiles = pendingZipEntries.map(e => e.file);
-    processUploadFiles(newFiles);
+    await processUploadFiles(newFiles);
     setShowDuplicateModal(false);
     setDuplicateFileNames([]);
     setPendingZipEntries([]);
