@@ -455,17 +455,6 @@
 
 }
 
-/* Prevent theme text color from overriding syntax highlighter inline styles */
-.text-app-text-900 [class*="language-"],
-.text-app-text-900 [class*="language-"] span,
-.text-app-text-900 [class*="language-"] code,
-.text-app-text-800 [class*="language-"],
-.text-app-text-800 [class*="language-"] span,
-.prose [class*="language-"],
-.prose [class*="language-"] span,
-.prose [class*="language-"] code {
-  color: unset !important;
-}
 
 /* Chat markdown paragraph spacing */
 .chat-markdown p,

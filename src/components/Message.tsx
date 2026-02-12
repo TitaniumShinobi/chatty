@@ -190,7 +190,7 @@ const MessageComponent: React.FC<MessageProps> = ({ message }) => {
                     const { ref: _unusedRef, node, ...rest } = props as any;
                     const lang = match[1];
                     return (
-                      <div className="relative group my-3 rounded-lg overflow-hidden" style={{ backgroundColor: '#1e1e1e' }}>
+                      <div className="relative group my-3 rounded-lg overflow-hidden" style={{ backgroundColor: '#1e1e1e', color: '#d4d4d4' }}>
                         <div className="flex items-center justify-between px-4 py-2" style={{ backgroundColor: '#2d2d2d', borderBottom: '1px solid #404040' }}>
                           <span className="text-xs font-mono" style={{ color: '#cccccc' }}>{lang}</span>
                           <button
@@ -212,14 +212,15 @@ const MessageComponent: React.FC<MessageProps> = ({ message }) => {
                           style={vscDarkPlus as any}
                           language={lang}
                           PreTag="div"
+                          useInlineStyles={true}
                           customStyle={{
                             margin: 0,
                             fontSize: "14px",
                             lineHeight: "1.5",
                             background: '#1e1e1e',
                             padding: '1rem',
+                            color: '#d4d4d4',
                           }}
-                          {...rest}
                         >
                           {code}
                         </SyntaxHighlighter>
