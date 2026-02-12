@@ -7,6 +7,7 @@ import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
+import { execSync } from "child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -998,7 +999,6 @@ function startServer(port, retryCount = 0) {
   srv.on('error', (err) => {
     if (err.code === 'EADDRINUSE' && retryCount === 0) {
       console.warn(`⚠️ [Server] Port ${port} in use — killing stale process and retrying...`);
-      const { execSync } = require('child_process');
       try {
         execSync(`lsof -ti:${port} | xargs -r kill -9`, { stdio: 'ignore' });
       } catch (_) {}
