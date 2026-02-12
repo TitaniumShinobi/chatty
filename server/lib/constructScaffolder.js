@@ -26,11 +26,14 @@
  *     server.log
  *   memup/                           - Capsule memory storage
  * 
+ * Platform transcript directories (always created):
+ *   codex/                           - Codex agent transcripts
+ *   chatgpt/                         - ChatGPT transcripts
+ *   character.ai/                    - Character.AI transcripts
+ *   github_copilot/                  - GitHub Copilot transcripts
+ * 
  * Optional directories (created only if user enables them):
- *   character.ai/                    - Manually organized
- *   chatgpt/                         - Manually organized
  *   documents/                       - Raw files with folder organization
- *   github_copilot/                  - Manually organized
  * 
  * All filenames are RELATIVE paths. The user_id and construct_id columns
  * handle user/construct association. NEVER use full internal VVAULT paths.
@@ -198,6 +201,10 @@ function buildScaffoldFiles(constructCallsign, config) {
     { filename: `${base}/assets/.gitkeep`, content: '', file_type: 'system' },
     { filename: `${base}/data/.gitkeep`, content: '', file_type: 'system' },
     { filename: `${base}/memup/.gitkeep`, content: '', file_type: 'system' },
+    { filename: `${base}/codex/.gitkeep`, content: '', file_type: 'transcript' },
+    { filename: `${base}/chatgpt/.gitkeep`, content: '', file_type: 'transcript' },
+    { filename: `${base}/character.ai/.gitkeep`, content: '', file_type: 'transcript' },
+    { filename: `${base}/github_copilot/.gitkeep`, content: '', file_type: 'transcript' },
   ];
 
   return [...files, ...dirMarkers];
