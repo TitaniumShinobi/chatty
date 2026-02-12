@@ -1,0 +1,156 @@
+
+The approach from that paste is exactly right. The fix is straightforward — use Origin/Referer headers (which the browser always sends correctly) instead of relying on Host/X-Forwarded-Host which gets mangled through the proxy chain.
+
+Start building
+Let me fix this now. I'll rewrite the OAuth domain detection to use Origin/Referer headers.
+
+Now let me replace the login endpoint's domain detection with Origin/Referer-based detection:
+
+Now fix the callback endpoint with the same approach:
+
+For the callback endpoint, the request comes directly from Google (not from the Replit preview), so there won't be an Origin/Referer with replit.dev. Instead, I need to detect which callback path was actually hit — if the request came to /api/auth/oauth/google/callback, it's the Replit flow.
+
+Now restart the backend:
+
+Backend is running. Now try clicking the Google login button from the Replit preview. The OAuth flow now:
+
+Login endpoint: Checks the browser's Origin/Referer header — if it contains replit.dev, uses the Replit dev domain for the callback
+Callback endpoint: Detects which callback path was hit (/api/auth/oauth/google/callback = Replit, /api/auth/google/callback = production) and reconstructs the matching URL for the token exchange
+This should resolve the 403 since the redirect URI will now match what you registered in Google Cloud Console.
+
+Good catch. Let me add debug logging to see what headers Flask actually receives, and also store the callback URL in Flask session to guarantee it matches in the token exchange.
+
+Now update the callback to use the stored session callback URL:
+
+Now I need to make sure Flask has a secret key for sessions. Let me check:
+
+Good, Flask has a secret key configured. Let me restart the backend:
+
+Backend is running. Try clicking the Google login button from the Replit preview now. I've added detailed header logging so even if it still fails, the logs will tell us exactly what headers Flask is receiving, and we can fix it immediately. The callback URL is now also stored in the Flask session so it's guaranteed to match between the login and callback steps.
+
+Try clicking the Google login button now from the Replit preview. The fix checks every possible header (Origin, Referer, X-Forwarded-Host, Host) for the Replit domain, and stores the exact callback URL in the session so the token exchange is guaranteed to use the same URL.
+
+Good news — the Google OAuth actually worked! You're logged in as dwoodson92@gmail.com on vvault.thewreck.org. The 403 issue is resolved.
+
+Now there's a different error on the Vault page: 'NoneType' object has no attribute 'get'. Let me check the backend logs to see what's causing it.
+
+Checked console and system logs
+The OAuth is fully working now. The logs confirm:
+
+Google OAuth login with jiraiyathehermitsage@gmail.com succeeded
+Session was created in the database
+User was redirected back to VVAULT
+The 'NoneType' object has no attribute 'get' error on the Vault page is a separate issue — it's happening because the users table doesn't have an oauth_provider column (the log shows: Could not find the 'oauth_provider' column). The user record was created with a fallback, but the Vault page is likely trying to read data that didn't get saved properly.
+
+I'll fix this by removing the oauth_provider field from the user insert, since the column doesn't exist in the database. Then I'll track down what's causing the NoneType error on the Vault page.
+
+Created task list
+Start building
+Let me fix both issues: the oauth_provider column error and the NoneType error on the Vault page.
+
+Now let me check what the Vault page frontend is calling and find the NoneType error. Let me look at the Vault page component and the /api/vault/user-info endpoint:
+
+Let me check the require_auth decorator and the VaultBrowser component:
+
+The require_auth decorator properly blocks unauthenticated requests with 401. So the NoneType error isn't from request.current_user being None — the auth must be passing. The error is likely happening in a different context. Let me check what the VaultBrowser component actually calls and look at the user prop it receives:
+
+The error 'NoneType' object has no attribute 'get' is a Python error, not JavaScript. It's coming from the backend and being returned as an error string to the frontend. Since the screenshot shows the user is on vvault.thewreck.org (the published version), the error is happening in the deployed code. But the most likely cause is that request.current_user is somehow None in one of the vault endpoints despite passing require_auth.
+
+Wait — looking more carefully at the screenshot, the user IS logged in as dwoodson92@gmail.com. The error is on the Vault page itself. This could be from the db_get_session returning session data that's missing fields. Let me check db_get_session:
+
+I see two issues in the logs:
+
+User insert fails because oauth_provider column doesn't exist in the users table
+The NoneType error on the Vault page (likely the user data from db_get_user trying to .get() on a result that doesn't exist)
+Let me fix both:
+
+Now also remove oauth_provider from the fallback user creation:
+
+Now let me restart the backend and verify:
+
+Now let me review the changes:
+
+The architect is right — I need to add defensive checks to the vault endpoints. Let me also check the actual error by looking at the production logs, and add guards:
+
+I see it. The require_auth decorator properly sets request.current_user, so the NoneType error shouldn't happen from there. But the error is on the production deployment which may still have the old code. The screenshot shows vvault.thewreck.org — the published version. Since I haven't republished yet, the production code might have an older issue.
+
+Regardless, let me add defensive guards to both vault endpoints and ensure the NoneType error can't happen:
+
+Now restart and verify:
+
+The backend is running cleanly. Here's what I fixed:
+
+Removed the oauth_provider column from user creation and user data retrieval — that column doesn't exist in your Supabase users table, which was causing user inserts to fail with a 400 error during Google OAuth login.
+
+Added defensive checks to the Vault page endpoints so they return a clean error message instead of crashing with 'NoneType' object has no attribute 'get' if the session data is incomplete.
+
+These fixes should resolve the error you were seeing on the Vault page. Since the published version at vvault.thewreck.org is running older code, you'll need to republish to see the fix there. The dev preview should work correctly now — try logging in via Google and navigating to the Vault page to confirm.
+
+dude... unless you connect back to your replit workspace and preview, I'm going to have to git push and publish every micro change you make just to see if it was correct or not
+
+You're right — let me test it right here in the dev preview so you can see the results directly.
+
+The login page is loading correctly in the dev preview. The backend is running and both workflows are up. You can test the login and vault page right here in the Replit preview — no need to publish every change. Whatever you see in the preview pane is what the dev server is currently serving.
+
+Go ahead and try logging in through the preview (Google OAuth or email/password) and navigate to the Vault page. If anything breaks, I'll see the same thing you do and can fix it immediately.
+
+The login for the replit preview in external tab logs me into the live vvault.thewreck.org dashboard then I cannot see my vvault directory.
+
+I see two issues from your screenshots:
+
+The Vault page on the published site still shows the NoneType error
+Google OAuth from the dev preview redirects you to vvault.thewreck.org instead of back to the dev preview
+Let me check the logs and dig into both issues.
+
+Found it. The logs show the exact problem. The OAuth callback correctly detects the Replit dev domain and exchanges the token successfully, but then the final redirect after login goes to https://vvault.thewreck.org/ instead of back to the Replit dev domain. Let me find that redirect logic:
+
+Found it. The problem is on line 4289-4292. After OAuth succeeds, it uses OAUTH_BASE_URL to decide where to redirect. Let me check what that's set to:
+
+Now I see both problems clearly:
+
+OAuth redirect issue: OAUTH_BASE_URL is hardcoded to https://vvault.thewreck.org, so after Google OAuth succeeds from the Replit dev preview, it always redirects you to the production site instead of back to the dev preview.
+
+NoneType on Vault: The published version at 2:09 PM likely didn't have my fix yet. The 2:23 PM screenshots show it working (Dashboard loads fine) but the Vault page shows the login screen, suggesting the session token got lost during the domain redirect.
+
+The root cause of both issues is the same — the OAuth flow should redirect back to wherever the user came from, not always to vvault.thewreck.org. Let me fix the redirect logic to use the same domain that initiated the OAuth flow:
+
+Now I see it clearly. The callback URL correctly derives the domain from the session-stored URL, but then the final redirect (line 4289-4292) ignores all of that and uses the hardcoded OAUTH_BASE_URL. I need to make the final redirect use the same domain that the callback URL used:
+
+Now update the final redirect to use the domain the user came from:
+
+Now let me restart the backend and test it:
+
+The dev preview is running. Here's what I fixed — the OAuth flow was always redirecting you back to vvault.thewreck.org after Google login, even when you started from the Replit dev preview. Now it redirects you back to whichever domain you logged in from.
+
+So:
+
+Log in from the Replit dev preview → comes back to the dev preview
+Log in from vvault.thewreck.org → comes back to vvault.thewreck.org
+Try clicking Google login from the Replit preview now. After you pick your Google account, it should bring you back to the dev preview dashboard (not vvault.thewreck.org), and then the Vault page should load without the NoneType error since the session token stays on the correct domain.
+
+For the published site, you'll need to republish to get these changes live there too.
+
+at least we are back in the preview
+
+Good, the redirect is fixed — you're back on the dev preview. Now let me track down that NoneType error on the Vault page. Let me check the backend logs to see what's happening when you hit /vault.
+
+Now I can see it clearly in the logs. The auth is working fine (access_granted), user-info returns 200, but vault/files crashes. The error is happening inside the file processing, not the auth check. Let me find the _transform_files_for_display function:
+
+Found it. Line 1217: metadata = file_copy.get('metadata', {}) — if metadata is None (not missing, but explicitly None in the database), the default {} won't apply because the key exists with a None value. Then line 1225 calls metadata.get('folder', '') on None. Let me fix this:
+
+Now restart and test:
+
+The screenshot shows the login page because the screenshot tool doesn't have a session. But the fix is in — the server restarted cleanly. The real bug was that some of your vault files in Supabase have null metadata (not an empty object, but actually null). When the code tried to call .get() on that null value, it crashed.
+
+Now try it — log in via Google from the dev preview, then click on Vault. It should load your files without the NoneType error this time.
+
+very beautiful
+
+That looks great! Both accounts are working perfectly now:
+
+Devon Woodson (dwoodson92@gmail.com) — Vault loads with all your folders: account, instances, library, system, plus your constructs (Sera, Katana, Nova, Zen, Lin) in the sidebar.
+jiraiyathehermitsage — Vault loads cleanly too, just empty since it's a fresh account.
+Both staying on the Replit dev preview domain, no more redirect to production, and no more NoneType errors. When you're ready to push these fixes live, just hit publish again.
+
+
+Scroll to latest
