@@ -60,6 +60,11 @@ Chatty is an AI-powered workspace application that provides a thin UI layer for 
 - `docs/architecture/CONTINUITY_LEDGER_SYSTEM.md` — ContinuityGPT ledger: date estimation, vibe classification, topic extraction, continuity hooks, caching, API endpoints
 - `docs/architecture/MASTER_SCRIPTS_ENSEMBLE.md` — Autonomy stack (Needle, IdentityGuard, StateManager, IndependentRunner), bootstrap flow, Memory toggle, conversation persistence, tri-provider routing
 
+## Implementation Plans
+- `docs/plans/GPT_CREATION_THROUGH_LIN.md` — Full construct creation flow: Lin conversation → GPTCreator UI → Supabase scaffolding → autonomy stack bootstrap
+- `docs/plans/GPT_DELETION_SUPABASE_CLEANUP.md` — Cascade GPT deletion to Supabase vault_files, clear in-memory caches, cross-table cleanup
+- `docs/plans/MULTI_USER_ISOLATION.md` — Remove hardcoded dev auth, per-user data isolation, new user provisioning (fresh Zen/Lin), VVAULT connection isolation, RLS policies
+
 ## External Dependencies
 - **VVAULT API:** Primary API for AI inference, memory management, and conversation transcripts.
 - **Supabase:** Persistent storage for conversations, attachments, and backend data.
