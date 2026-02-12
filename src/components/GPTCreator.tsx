@@ -1240,72 +1240,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       const ext = file.name.split(".").pop()?.toLowerCase() || "";
 
       if (ext === "zip") {
-        if (file.size > MAX_ZIP_SIZE) {
-          setError(`${file.name} exceeds 750MB limit`);
-          continue;
-        }
-        try {
-          const zip = await JSZip.loadAsync(file);
-          const entries = Object.keys(zip.files);
-
-          for (const entryName of entries) {
-            const zipEntry = zip.files[entryName];
-            if (zipEntry.dir) continue;
-
-            if (entryName.includes("__MACOSX/") || entryName.split("/").pop()?.startsWith("._") || entryName.endsWith(".DS_Store")) {
-              continue;
-            }
-
-            const entryExt = entryName.split(".").pop()?.toLowerCase() || "";
-            const isText = ["txt", "md", "json", "csv", "rtf", "html", "xml", "yaml", "yml", "log"].includes(entryExt);
-            const isBinary = ["pdf", "doc", "docx", "png", "jpg", "jpeg", "gif", "bmp", "tiff", "svg", "mp4", "avi", "mov"].includes(entryExt);
-
-            if (!isText && !isBinary) continue;
-
-            let content = "";
-            let blobFile: File;
-            const fileName = entryName.split("/").pop() || entryName;
-
-            const mimeMap: Record<string, string> = {
-              txt: "text/plain", md: "text/markdown", json: "application/json",
-              csv: "text/csv", rtf: "text/rtf", html: "text/html",
-              xml: "text/xml", yaml: "text/yaml", yml: "text/yaml", log: "text/plain",
-              pdf: "application/pdf", doc: "application/msword",
-              docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-              png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
-              gif: "image/gif", bmp: "image/bmp", tiff: "image/tiff", svg: "image/svg+xml",
-              mp4: "video/mp4", avi: "video/x-msvideo", mov: "video/quicktime",
-            };
-            const mimeType = mimeMap[entryExt] || "application/octet-stream";
-
-            if (isText) {
-              content = await zipEntry.async("text");
-              const textBlob = new Blob([content], { type: mimeType });
-              blobFile = new File([textBlob], fileName, { type: mimeType });
-            } else {
-              const blob = await zipEntry.async("blob");
-              blobFile = new File([blob], fileName, { type: mimeType });
-            }
-
-            const tempFile: GPTFile = {
-              id: `temp-${crypto.randomUUID()}`,
-              gptId: "temp",
-              filename: entryName,
-              originalName: entryName,
-              mimeType,
-              size: isText ? content.length : blobFile.size,
-              content: content,
-              uploadedAt: new Date().toISOString(),
-              isActive: true,
-              _file: blobFile,
-            };
-            newFiles.push(tempFile);
-            rawFiles.push(blobFile);
-          }
-        } catch (zipError: any) {
-          console.error(`Failed to extract ${file.name}:`, zipError);
-          setError(`Failed to extract ${file.name}: ${zipError.message}`);
-        }
+        continue;
       } else {
         const tempFile: GPTFile = {
           id: `temp-${crypto.randomUUID()}`,
@@ -1327,6 +1262,39 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     return { newFiles, rawFiles };
   };
 
+  const uploadZipServerSide = async (zipFile: File) => {
+    try {
+      const gptId = await ensureGptId();
+      setUploadProgress({ current: 0, total: 1 });
+
+      const result = await aiService.uploadZip(gptId, zipFile);
+
+      setUploadProgress(null);
+      console.log(`[GPTCreator] ZIP upload complete: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped, ${result.failed} failed`);
+
+      if (result.errors && result.errors.length > 0) {
+        console.warn('[GPTCreator] ZIP upload errors:', result.errors);
+      }
+
+      const { service, isAIService } = getServiceForGPT(gptId);
+      let loadedFiles: GPTFile[] | any[];
+      if (isAIService) {
+        loadedFiles = await (service as AIService).getFiles(gptId);
+      } else {
+        loadedFiles = await (service as GPTService).getFiles(gptId);
+      }
+      const knowledgeOnly = (loadedFiles as GPTFile[]).filter(
+        (f: any) => f.category === 'knowledge'
+      );
+      setFiles(knowledgeOnly);
+
+      return result;
+    } catch (err: any) {
+      setUploadProgress(null);
+      throw err;
+    }
+  };
+
   const handleFileUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
@@ -1337,22 +1305,40 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     setError(null);
 
     try {
-      const { newFiles, rawFiles } = await prepareFilesForUpload(Array.from(selectedFiles));
+      const fileArray = Array.from(selectedFiles);
+      const zipFiles = fileArray.filter(f => f.name.toLowerCase().endsWith('.zip'));
+      const nonZipFiles = fileArray.filter(f => !f.name.toLowerCase().endsWith('.zip'));
 
-      const existingNames = files.map(f => getFileMatchKey(f));
-      const duplicates = newFiles
-        .filter(f => existingNames.includes(getFileMatchKey(f)))
-        .map(f => f.originalName || f.filename);
-
-      if (duplicates.length > 0) {
-        setDuplicateFileNames([...new Set(duplicates)]);
-        setPendingZipEntries(newFiles.map(f => ({ name: f.originalName || f.filename, file: f })));
-        setShowDuplicateModal(true);
-        setIsUploading(false);
-      } else {
-        await processUploadFiles(newFiles);
-        setIsUploading(false);
+      for (const zipFile of zipFiles) {
+        if (zipFile.size > 500 * 1024 * 1024) {
+          setError(`${zipFile.name} exceeds 500MB limit`);
+          continue;
+        }
+        try {
+          await uploadZipServerSide(zipFile);
+        } catch (err: any) {
+          setError(`Failed to upload ${zipFile.name}: ${err.message}`);
+        }
       }
+
+      if (nonZipFiles.length > 0) {
+        const { newFiles } = await prepareFilesForUpload(nonZipFiles);
+
+        const existingNames = files.map(f => getFileMatchKey(f));
+        const duplicates = newFiles
+          .filter(f => existingNames.includes(getFileMatchKey(f)))
+          .map(f => f.originalName || f.filename);
+
+        if (duplicates.length > 0) {
+          setDuplicateFileNames([...new Set(duplicates)]);
+          setPendingZipEntries(newFiles.map(f => ({ name: f.originalName || f.filename, file: f })));
+          setShowDuplicateModal(true);
+        } else {
+          await processUploadFiles(newFiles);
+        }
+      }
+
+      setIsUploading(false);
     } catch (error: any) {
       setError(error.message || "Failed to prepare files");
       setIsUploading(false);

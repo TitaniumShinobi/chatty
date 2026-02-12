@@ -2,6 +2,10 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
+import crypto from 'crypto';
+import fs from 'fs';
+import os from 'os';
+import JSZip from 'jszip';
 import { AIManager } from '../lib/aiManager.js';
 import { getGPTSaveHook } from '../lib/gptSaveHook.js';
 import { normalizeModelString } from '../lib/modelResolver.js';
@@ -566,6 +570,235 @@ router.post('/:id/files', upload.single('file'), async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+const zipUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const tmpDir = path.join(os.tmpdir(), 'chatty-zip-uploads');
+      fs.mkdirSync(tmpDir, { recursive: true });
+      cb(null, tmpDir);
+    },
+    filename: (req, file, cb) => {
+      cb(null, `zip-${Date.now()}-${Math.random().toString(36).slice(2)}.zip`);
+    },
+  }),
+  limits: {
+    fileSize: 500 * 1024 * 1024,
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/zip' || file.mimetype === 'application/x-zip-compressed' ||
+        file.originalname.toLowerCase().endsWith('.zip')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only .zip files are accepted'), false);
+    }
+  },
+});
+
+router.post('/:id/upload-zip', zipUpload.single('file'), async (req, res) => {
+  let tmpFilePath = null;
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No ZIP file uploaded' });
+    }
+    tmpFilePath = req.file.path;
+
+    const { allowed, ai, userId: ownerUserId } = await verifyAIOwnership(req, req.params.id);
+    if (!allowed) {
+      return res.status(403).json({ success: false, error: 'Not authorized to upload files to this AI' });
+    }
+
+    const constructCallsign = ai?.constructCallsign || req.params.id.replace(/^(ai-|gpt-)/, '').replace(/-seed$/, '');
+    if (!constructCallsign) {
+      return res.status(400).json({ success: false, error: 'Could not determine construct callsign' });
+    }
+
+    const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return res.status(500).json({ success: false, error: 'Supabase client not available' });
+    }
+
+    let supabaseUserId = ownerUserId;
+    if (supabaseUserId && req.user?.email) {
+      const { data: byEmail } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', req.user.email)
+        .limit(1)
+        .maybeSingle();
+      if (byEmail?.id) supabaseUserId = byEmail.id;
+    }
+    if (!supabaseUserId) {
+      return res.status(400).json({ success: false, error: 'Could not resolve user ID' });
+    }
+
+    const { assertValidVaultFilename } = await import('../lib/vaultPathGuard.js');
+
+    console.log(`📦 [ZIP Upload] Processing ZIP (${(req.file.size / 1024 / 1024).toFixed(1)}MB) for ${constructCallsign}`);
+
+    const zipBuffer = fs.readFileSync(tmpFilePath);
+    const zip = await JSZip.loadAsync(zipBuffer);
+    const entries = Object.entries(zip.files).filter(([name, entry]) => {
+      if (entry.dir) return false;
+      const basename = path.basename(name);
+      if (basename.startsWith('.') || basename === '__MACOSX' || name.includes('__MACOSX/')) return false;
+      if (basename === 'Thumbs.db' || basename === 'desktop.ini') return false;
+      return true;
+    });
+
+    console.log(`📦 [ZIP Upload] Found ${entries.length} files to process`);
+
+    const results = { created: 0, updated: 0, skipped: 0, failed: 0, errors: [] };
+    const MAX_INDIVIDUAL_FILE_SIZE = 50 * 1024 * 1024;
+    const BATCH_SIZE = 5;
+
+    for (let i = 0; i < entries.length; i += BATCH_SIZE) {
+      const batch = entries.slice(i, i + BATCH_SIZE);
+      await Promise.all(batch.map(async ([entryName, entry]) => {
+        try {
+          const fileBuffer = await entry.async('nodebuffer');
+
+          if (fileBuffer.length > MAX_INDIVIDUAL_FILE_SIZE) {
+            results.skipped++;
+            results.errors.push({ file: entryName, error: `Exceeds ${MAX_INDIVIDUAL_FILE_SIZE / 1024 / 1024}MB limit` });
+            return;
+          }
+
+          let relativePath = entryName.replace(/\\/g, '/').replace(/^\.\//, '');
+          const instancePrefixes = [
+            `instances/${constructCallsign}/`,
+            `${constructCallsign}/`,
+          ];
+          for (const prefix of instancePrefixes) {
+            if (relativePath.startsWith(prefix)) {
+              relativePath = relativePath.slice(prefix.length);
+              break;
+            }
+          }
+          relativePath = relativePath.replace(/\.\./g, '').replace(/\/\//g, '/').replace(/^\//, '');
+
+          const knownVsiFolders = ['identity/', 'memup/', 'chatty/', 'logs/', 'config/', 'assets/', 'documents/', 'data/', 'frame/', 'simDrive/', 'vxrunner/', 'codex/', 'chatgpt/', 'character.ai/', 'github_copilot/'];
+          const alreadyHasVsiFolder = knownVsiFolders.some(f => relativePath.startsWith(f));
+
+          let vaultPath;
+          let resolvedFolder;
+          if (alreadyHasVsiFolder) {
+            vaultPath = `instances/${constructCallsign}/${relativePath}`;
+            resolvedFolder = relativePath.split('/')[0];
+          } else {
+            resolvedFolder = mapToVsiFolder(relativePath).replace(/\/$/, '');
+            vaultPath = `instances/${constructCallsign}/${resolvedFolder}/${relativePath}`;
+          }
+
+          try {
+            assertValidVaultFilename(vaultPath);
+          } catch (pathError) {
+            results.skipped++;
+            results.errors.push({ file: entryName, error: `Invalid path: ${pathError.message}` });
+            return;
+          }
+
+          const ext = path.extname(entryName).toLowerCase();
+          const isText = ['.txt', '.md', '.json', '.csv', '.xml', '.yaml', '.yml', '.js', '.ts', '.py', '.html', '.css', '.log', '.capsule', '.capsuleso'].includes(ext);
+          const contentForVault = isText
+            ? fileBuffer.toString('utf8')
+            : `[binary:${mimeForExt(ext)}:${fileBuffer.length}]`;
+
+          const sha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+          const originalName = path.basename(entryName);
+          const fileType = resolvedFolder || 'knowledge';
+
+          const { data: existing } = await supabase
+            .from('vault_files')
+            .select('id')
+            .eq('user_id', supabaseUserId)
+            .eq('filename', vaultPath)
+            .maybeSingle();
+
+          const metadata = {
+            source: 'chatty-zip-upload',
+            originalName,
+            mimeType: mimeForExt(ext),
+            size: fileBuffer.length,
+            sha256,
+          };
+
+          if (existing) {
+            metadata.updatedAt = new Date().toISOString();
+            const { error: updateErr } = await supabase
+              .from('vault_files')
+              .update({ content: contentForVault, metadata })
+              .eq('id', existing.id);
+            if (updateErr) throw updateErr;
+            results.updated++;
+          } else {
+            metadata.createdAt = new Date().toISOString();
+            const { error: insertErr } = await supabase
+              .from('vault_files')
+              .insert({
+                user_id: supabaseUserId,
+                filename: vaultPath,
+                content: contentForVault,
+                file_type: fileType,
+                construct_id: constructCallsign,
+                metadata,
+              });
+            if (insertErr) throw insertErr;
+            results.created++;
+          }
+
+          if (!isText) {
+            const storagePath = `knowledge/${supabaseUserId}/${vaultPath}`;
+            await supabase.storage
+              .from('vault-files')
+              .upload(storagePath, fileBuffer, {
+                contentType: mimeForExt(ext),
+                upsert: true,
+              });
+          }
+        } catch (fileErr) {
+          results.failed++;
+          results.errors.push({ file: entryName, error: fileErr.message });
+        }
+      }));
+    }
+
+    console.log(`✅ [ZIP Upload] Complete for ${constructCallsign}: ${results.created} created, ${results.updated} updated, ${results.skipped} skipped, ${results.failed} failed`);
+
+    res.json({
+      success: true,
+      constructCallsign,
+      totalFiles: entries.length,
+      ...results,
+      errors: results.errors.slice(0, 20),
+    });
+  } catch (error) {
+    console.error('❌ [ZIP Upload] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  } finally {
+    if (tmpFilePath) {
+      try { fs.unlinkSync(tmpFilePath); } catch {}
+    }
+  }
+});
+
+function mimeForExt(ext) {
+  const map = {
+    '.txt': 'text/plain', '.md': 'text/markdown', '.json': 'application/json',
+    '.csv': 'text/csv', '.xml': 'application/xml', '.yaml': 'text/yaml', '.yml': 'text/yaml',
+    '.pdf': 'application/pdf',
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+    '.svg': 'image/svg+xml', '.webp': 'image/webp', '.bmp': 'image/bmp',
+    '.mp4': 'video/mp4', '.webm': 'video/webm', '.avi': 'video/avi',
+    '.js': 'text/javascript', '.ts': 'text/typescript', '.py': 'text/x-python',
+    '.html': 'text/html', '.css': 'text/css',
+    '.log': 'text/plain', '.capsule': 'text/plain', '.capsuleso': 'text/plain',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  };
+  return map[ext] || 'application/octet-stream';
+}
 
 // Get files for an AI (local DB + Supabase identity files fallback)
 router.get('/:id/files', async (req, res) => {

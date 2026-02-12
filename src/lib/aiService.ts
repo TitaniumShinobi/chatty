@@ -194,6 +194,32 @@ export class AIService {
   }
 
   // File Operations
+  async uploadZip(aiId: string, zipFile: File): Promise<{
+    success: boolean;
+    totalFiles: number;
+    created: number;
+    updated: number;
+    skipped: number;
+    failed: number;
+    errors: Array<{ file: string; error: string }>;
+  }> {
+    const formData = new FormData();
+    formData.append('file', zipFile);
+
+    const response = await fetch(`${this.baseUrl}/${aiId}/upload-zip`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to upload ZIP file');
+    }
+
+    return data;
+  }
+
   async uploadFile(aiId: string, file: File, zipPath?: string): Promise<AIFile> {
     const formData = new FormData();
     formData.append('file', file);
