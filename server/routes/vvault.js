@@ -3913,6 +3913,540 @@ router.post("/message", async (req, res) => {
       });
     }
   }
+
+  try {
+    // Derive session ID if not provided (format: {constructId}_chat_with_{constructId})
+    const effectiveSessionId = sessionId || threadId || `${constructId}_chat_with_${constructId}`;
+    
+    // Fetch GPT config to include model info in VVAULT request
+    let gptConfigForVVAULT = null;
+    let configuredModelForVVAULT = null;
+    try {
+      gptConfigForVVAULT = await gptManager.getGPTByCallsign(constructId);
+      if (gptConfigForVVAULT) {
+        configuredModelForVVAULT = gptConfigForVVAULT.conversationModel || gptConfigForVVAULT.modelId;
+        console.log(`📋 [VVAULT Proxy] GPT config for ${constructId}, model: ${configuredModelForVVAULT}`);
+      }
+    } catch (e) { /* ignore */ }
+    
+    console.log(`📤 [VVAULT Proxy] Forwarding message to VVAULT for construct: ${constructId}, session: ${effectiveSessionId}`);
+    
+    const baseUrl = VVAULT_API_BASE_URL.replace(/\/$/, '');
+    
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000); // 60 second timeout for LLM
+    
+    try {
+      // VVAULT handles: LLM inference, transcript saving, memory management
+      // Include model info so VVAULT can use the GPT's configured model
+      const vvaultHeaders = { 'Content-Type': 'application/json' };
+      if (process.env.VVAULT_SERVICE_TOKEN) vvaultHeaders['X-Chatty-Key'] = process.env.VVAULT_SERVICE_TOKEN;
+      const userEmail = req.user?.email || userId;
+      if (userEmail) vvaultHeaders['X-Chatty-User'] = userEmail;
+
+      const vvaultResponse = await fetch(`${baseUrl}/api/chatty/message`, {
+        method: 'POST',
+        headers: vvaultHeaders,
+        body: JSON.stringify({
+          constructId,
+          message,
+          userId: userEmail,
+          sessionId: effectiveSessionId,
+          userName: req.user?.name || 'Devon',
+          model: configuredModelForVVAULT
+        }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeout);
+
+      if (!vvaultResponse.ok) {
+        const errorText = await vvaultResponse.text();
+        console.error(`❌ [VVAULT Proxy] VVAULT API returned ${vvaultResponse.status}: ${errorText}`);
+        
+        // FALLBACK: Use configured LLM provider when VVAULT is unavailable (401, 503, etc.)
+        if (vvaultResponse.status === 401 || vvaultResponse.status === 503) {
+          console.log(`🔄 [VVAULT Proxy] VVAULT unavailable, falling back to local LLM for ${constructId}`);
+          
+          try {
+            // Fetch GPT config and resolve model using GPTCreator as source of truth
+            let gptConfig = null;
+            try {
+              gptConfig = await gptManager.getGPTByCallsign(constructId);
+            } catch (e) { /* ignore */ }
+            
+            const providerAvailability = { openai: !!openaiClient, openrouter: !!(openrouter || replitOpenrouter), ollama: !!process.env.OLLAMA_HOST };
+            let { provider: effectiveProvider, model: effectiveModel, error: modelError } = resolveModelForGPT(gptConfig, providerAvailability);
+            if (modelError) throw new Error(modelError);
+            
+            const { buildEnrichedContext: buildFallbackContext } = await import('../lib/memoryContextBuilder.js');
+            const enrichedResult = await buildFallbackContext({
+              userId,
+              constructId,
+              userMessage: message,
+              gptConfig,
+              user: req.user
+            });
+            let systemPrompt = enrichedResult.systemPrompt;
+            console.log(`✅ [VVAULT Proxy] Enriched context built for ${constructId} (capsule: ${enrichedResult.capsuleLoaded}, memories: ${enrichedResult.memoriesLoaded}, ${systemPrompt.length} chars)`);
+
+            const { enhancedPrompt: fb1SearchPrompt } = await injectSearchContext(message, systemPrompt);
+            systemPrompt = fb1SearchPrompt;
+
+            if (constructId === 'lin-001') {
+              const userMsg = (message || '').toLowerCase();
+              const hasGptCommand = userMsg.includes('/gpt') || userMsg.includes('create a gpt') || userMsg.includes('make a gpt') || userMsg.includes('new gpt') || userMsg.includes('build a gpt');
+              const hasDetailedSpecs = (message || '').length > 80 && (userMsg.includes('name') || userMsg.includes('description') || userMsg.includes('instructions') || userMsg.includes('sera') || userMsg.includes('personality'));
+              const hasConfirmation = userMsg.includes('confirm') || userMsg.includes('go ahead') || userMsg.includes('proceed') || userMsg.includes('yes') || userMsg.includes('do it') || userMsg.includes('activate');
+              if (hasGptCommand || hasDetailedSpecs || hasConfirmation) {
+                systemPrompt += `\n\n## MANDATORY GPT CREATION SIGNAL — YOU MUST FOLLOW THIS RULE:
+The user is creating a GPT. You MUST include the exact text [OPEN_GPT_CREATOR] at the very end of your response, after your final sentence. This is a hidden system signal — the user cannot see it. It triggers the GPT workshop UI to open.
+
+RULES:
+1. If the user gave you detailed specs (name, description, instructions) — acknowledge briefly and END your response with [OPEN_GPT_CREATOR]
+2. If the user confirmed or said "go ahead" or "proceed" — acknowledge and END your response with [OPEN_GPT_CREATOR]
+3. If the user typed /gpt with details — acknowledge and END your response with [OPEN_GPT_CREATOR]
+4. If the user typed just /gpt with no details — ask what kind of GPT they want (do NOT include [OPEN_GPT_CREATOR] yet)
+
+CRITICAL: Do NOT say "Sera GPT is now live" or pretend to create it. You are NOT creating the GPT — the workshop UI does that. Your job is to acknowledge and include the signal so the workshop opens. The signal must appear EXACTLY as: [OPEN_GPT_CREATOR]`;
+              } else {
+                systemPrompt += `\n\nYou have the ability to help users create custom GPTs. If a user mentions /gpt, creating a GPT, or wants to make a new AI character, help them brainstorm. Once you have enough details (name, description, personality), include [OPEN_GPT_CREATOR] at the very end of your response to open the GPT workshop.`;
+              }
+            }
+            
+            let fbHistoryMessages = [];
+            try {
+              await loadVVAULTModules();
+              const lookupId = req.user?.email || userId;
+              const fbConvos = readConversations ? await readConversations(lookupId, constructId) : null;
+              if (fbConvos?.length > 0) {
+                const targetConvo = fbConvos.find(c => 
+                  c.constructId === constructId || 
+                  c.constructCallsign === constructId ||
+                  c.sessionId?.includes(constructId)
+                ) || fbConvos[0];
+                
+                const fbMessages = targetConvo.messages || [];
+                console.log(`📚 [VVAULT Proxy] Found conversation for ${constructId}: "${targetConvo.title}" with ${fbMessages.length} total messages (from ${fbConvos.length} conversations returned)`);
+                
+                const validMessages = fbMessages.filter(m => 
+                  (m.role === 'user' || m.role === 'assistant') && m.content && !m.isDateHeader
+                );
+                
+                const fbRecent = validMessages.slice(-40);
+                fbHistoryMessages = fbRecent.map(m => ({ role: m.role, content: m.content }));
+                console.log(`📚 [VVAULT Proxy] Loaded ${fbHistoryMessages.length} history messages for ${constructId} (filtered from ${validMessages.length} valid messages)`);
+                
+                if (fbHistoryMessages.length > 0 && enrichedResult.memoriesLoaded === 0) {
+                  systemPrompt += `\n\n## Conversation Continuity
+You have an ongoing relationship with this user. The conversation history below represents your prior interactions. 
+Reference past exchanges naturally. Remember what the user told you. Maintain emotional and contextual continuity.
+Do NOT treat this as a first meeting if there is conversation history.`;
+                }
+              } else {
+                console.log(`⚠️ [VVAULT Proxy] No conversations found for ${constructId} with lookupId: ${lookupId}`);
+              }
+            } catch (histErr) {
+              console.warn(`⚠️ [VVAULT Proxy] Could not load fallback history:`, histErr.message);
+            }
+            
+            console.log(`🧠 [VVAULT Proxy] Fallback using ${effectiveProvider}:${effectiveModel} for ${constructId}`);
+            
+            const fbMsgs = [{ role: "system", content: systemPrompt }, ...fbHistoryMessages, { role: "user", content: message }];
+            let completion;
+            let aiResponse;
+            if (effectiveProvider === 'openai') {
+              completion = await openaiClient.chat.completions.create({
+                model: effectiveModel,
+                messages: fbMsgs,
+                max_tokens: 2048,
+              });
+              aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+            } else if (effectiveProvider === 'ollama') {
+              const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+              const ollamaResp = await fetch(`${ollamaHost}/api/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  model: effectiveModel,
+                  messages: fbMsgs,
+                  stream: false
+                })
+              });
+              if (!ollamaResp.ok) throw new Error(`Ollama error: ${ollamaResp.status}`);
+              const ollamaData = await ollamaResp.json();
+              aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
+            } else {
+              const orClient = openrouter || replitOpenrouter;
+              if (!orClient && !openaiClient) {
+                throw new Error('No LLM provider available. Configure OPENROUTER_API_KEY or enable Replit AI Integrations.');
+              }
+              let llmSuccess = false;
+              const providerErrors = [];
+              
+              if (orClient) {
+                const clientLabel = openrouter ? 'OpenRouter' : 'Replit OpenRouter';
+                console.log(`[${clientLabel}] Calling`, { model: effectiveModel, user: req.user?.email, historyMessages: fbHistoryMessages.length });
+                try {
+                  completion = await orClient.chat.completions.create({
+                    model: effectiveModel,
+                    messages: fbMsgs,
+                    max_tokens: 2048,
+                  });
+                  console.log(`[${clientLabel}] Success`, { finish_reason: completion?.choices?.[0]?.finish_reason });
+                  llmSuccess = true;
+                } catch (err) {
+                  console.error(`[${clientLabel} FAIL]`, { status: err?.status, message: err?.message });
+                  providerErrors.push(`${clientLabel}: ${err?.status} ${err?.message}`);
+                  
+                  if (replitOpenrouter && orClient !== replitOpenrouter && (err?.status === 401 || err?.status === 403 || err?.status === 404 || err?.status === 429)) {
+                    try {
+                      console.log(`🔄 [VVAULT Proxy] Trying Replit-managed OpenRouter for ${constructId}`);
+                      completion = await replitOpenrouter.chat.completions.create({
+                        model: effectiveModel,
+                        messages: fbMsgs,
+                        max_tokens: 2048,
+                      });
+                      console.log('[REPLIT OPENROUTER FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+                      llmSuccess = true;
+                    } catch (err2) {
+                      console.error('[REPLIT OPENROUTER FALLBACK FAIL]', { status: err2?.status, message: err2?.message });
+                      providerErrors.push(`Replit OpenRouter: ${err2?.status} ${err2?.message}`);
+                    }
+                  }
+                }
+              }
+              
+              if (!llmSuccess && openaiClient) {
+                try {
+                  console.log(`🔄 [VVAULT Proxy] All OpenRouter failed, trying OpenAI for ${constructId}`);
+                  completion = await openaiClient.chat.completions.create({
+                    model: 'gpt-4.1-mini',
+                    messages: fbMsgs,
+                    max_tokens: 2048,
+                  });
+                  console.log('[OPENAI FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+                  llmSuccess = true;
+                } catch (err3) {
+                  console.error('[OPENAI FALLBACK FAIL]', { status: err3?.status, message: err3?.message });
+                  providerErrors.push(`OpenAI: ${err3?.status} ${err3?.message}`);
+                }
+              }
+              
+              if (!llmSuccess) {
+                throw new Error(`All LLM providers failed: ${providerErrors.join(' | ')}`);
+              }
+              aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+            }
+            
+            console.log(`✅ [VVAULT Proxy] ${effectiveProvider} fallback successful for ${constructId}`);
+            if (constructId === 'lin-001') {
+              const hasSignal = (aiResponse || '').includes('[OPEN_GPT_CREATOR]');
+              console.log(`🔍 [GPT Signal] Lin response has [OPEN_GPT_CREATOR]: ${hasSignal}, response length: ${(aiResponse || '').length}`);
+              if (!hasSignal && (message || '').toLowerCase().match(/\/gpt|confirm|go ahead|proceed/)) {
+                console.warn(`⚠️ [GPT Signal] Model did NOT include signal despite GPT-related message. Injecting signal.`);
+                aiResponse = (aiResponse || '').trimEnd() + '\n\n[OPEN_GPT_CREATOR]';
+              }
+            }
+            
+            // NOTE: Frontend (Layout.tsx) handles message persistence via conversationManager.addMessageToConversation()
+            // Do NOT writeTranscript here — it causes duplicate messages in the database and UI
+            
+            return res.json({
+              success: true,
+              response: aiResponse,
+              construct_id: constructId,
+              fallback: true,
+              source: effectiveProvider,
+              model: effectiveModel
+            });
+          } catch (fallbackError) {
+            console.error(`❌ [VVAULT Proxy] LLM fallback failed:`, fallbackError);
+            return res.status(503).json({
+              success: false,
+              error: "Both VVAULT and LLM fallback failed",
+              details: fallbackError.message
+            });
+          }
+        }
+        
+        return res.status(vvaultResponse.status).json({
+          success: false,
+          error: `VVAULT API error: ${vvaultResponse.status}`,
+          details: errorText
+        });
+      }
+
+      const data = await vvaultResponse.json();
+      
+      console.log(`✅ [VVAULT Proxy] Got response from VVAULT for ${constructId}:`, {
+        success: data.success,
+        responseLength: data.response?.length || 0
+      });
+
+      return res.json(data);
+    } catch (fetchError) {
+      clearTimeout(timeout);
+      
+      if (fetchError.name === 'AbortError') {
+        console.error(`❌ [VVAULT Proxy] Request timed out for ${constructId}`);
+        return res.status(504).json({
+          success: false,
+          error: "VVAULT API request timed out"
+        });
+      }
+      
+      // FALLBACK: Use configured LLM provider when VVAULT is unreachable
+      console.log(`🔄 [VVAULT Proxy] VVAULT unreachable, falling back to local LLM for ${constructId}`);
+      
+      try {
+        // Fetch GPT config and resolve model using GPTCreator as source of truth
+        let gptConfig = null;
+        try {
+          gptConfig = await gptManager.getGPTByCallsign(constructId);
+        } catch (e) { /* ignore */ }
+        
+        const providerAvailability = { openai: !!openaiClient, openrouter: !!(openrouter || replitOpenrouter), ollama: !!process.env.OLLAMA_HOST };
+        let { provider: effectiveProvider, model: effectiveModel, error: modelError } = resolveModelForGPT(gptConfig, providerAvailability);
+        if (modelError) throw new Error(modelError);
+        
+        const identity = await loadIdentityFiles(userId, constructId);
+        let systemPrompt = identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
+        
+        // Load capsule data for this fallback path too
+        try {
+          const { getCapsuleIntegration } = await import('../lib/capsuleIntegration.js');
+          const capsuleIntegration = getCapsuleIntegration();
+          const capsuleData = await capsuleIntegration.loadCapsule(constructId);
+          if (capsuleData) {
+            const constructName = constructId.replace(/-\d+$/, '');
+            const displayName = constructName.charAt(0).toUpperCase() + constructName.slice(1);
+            const name = capsuleData.metadata?.instance_name || capsuleData.identity?.name || displayName;
+            const traits = capsuleData.traits || {};
+            const pers = capsuleData.personality || {};
+            const conditioning = capsuleData.identity?.conditioning || '';
+            const instructions = capsuleData.identity?.instructions || '';
+            let capsulePrompt = `\n\n## Capsule Identity (${name})`;
+            if (Object.keys(traits).length > 0) {
+              capsulePrompt += `\n### Personality Traits`;
+              for (const [key, value] of Object.entries(traits)) {
+                const pct = typeof value === 'number' ? `${(value * 100).toFixed(0)}%` : value;
+                capsulePrompt += `\n- ${key}: ${pct}`;
+              }
+            }
+            if (pers.personality_type) capsulePrompt += `\n### Cognitive Profile\n- Type: ${pers.personality_type}`;
+            if (pers.big_five_traits) {
+              capsulePrompt += `\n### Big Five`;
+              for (const [trait, value] of Object.entries(pers.big_five_traits)) {
+                capsulePrompt += `\n- ${trait}: ${typeof value === 'number' ? (value * 100).toFixed(0) + '%' : value}`;
+              }
+            }
+            if (conditioning) capsulePrompt += `\n### Conditioning Directives\n${conditioning}`;
+            if (instructions && !systemPrompt.includes(instructions)) capsulePrompt += `\n### Behavioral Instructions\n${instructions}`;
+            if (capsuleData.memory?.episodic_memories?.length > 0) {
+              capsulePrompt += `\n### Key Memories`;
+              capsuleData.memory.episodic_memories.slice(-5).forEach(m => { capsulePrompt += `\n- ${m}`; });
+            }
+            if (capsuleData.memory_log?.length > 0) {
+              capsulePrompt += `\n### Recent Memory Log`;
+              capsuleData.memory_log.slice(-5).forEach(m => { capsulePrompt += `\n- ${typeof m === 'string' ? m : JSON.stringify(m)}`; });
+            }
+            capsulePrompt += `\n\nYou MUST embody these traits and personality in every response. Stay in character.`;
+            systemPrompt += capsulePrompt;
+            console.log(`✅ [VVAULT Proxy] Fallback2 capsule injected for ${constructId}`);
+          }
+        } catch (capsuleErr) {
+          console.warn(`⚠️ [VVAULT Proxy] Fallback2 capsule load failed for ${constructId}:`, capsuleErr.message);
+        }
+        
+        const userName2 = req.user?.name || req.user?.given_name || 'the user';
+        systemPrompt += `\n\n## User Identity\nThe user you are speaking with is named "${userName2}". Address them by name when appropriate. Remember their name throughout the conversation.`;
+        if (req.user?.email) {
+          systemPrompt += `\nTheir email is ${req.user.email}.`;
+        }
+
+        const { enhancedPrompt: fb2SearchPrompt } = await injectSearchContext(message, systemPrompt);
+        systemPrompt = fb2SearchPrompt;
+
+        if (constructId === 'lin-001') {
+          const userMsg2 = (message || '').toLowerCase();
+          const hasGptCommand2 = userMsg2.includes('/gpt') || userMsg2.includes('create a gpt') || userMsg2.includes('make a gpt') || userMsg2.includes('new gpt') || userMsg2.includes('build a gpt');
+          const hasDetailedSpecs2 = (message || '').length > 80 && (userMsg2.includes('name') || userMsg2.includes('description') || userMsg2.includes('instructions') || userMsg2.includes('personality'));
+          const hasConfirmation2 = userMsg2.includes('confirm') || userMsg2.includes('go ahead') || userMsg2.includes('proceed') || userMsg2.includes('yes') || userMsg2.includes('do it') || userMsg2.includes('activate');
+          if (hasGptCommand2 || hasDetailedSpecs2 || hasConfirmation2) {
+            systemPrompt += `\n\n## MANDATORY GPT CREATION SIGNAL — YOU MUST FOLLOW THIS RULE:
+The user is creating a GPT. You MUST include the exact text [OPEN_GPT_CREATOR] at the very end of your response, after your final sentence. This is a hidden system signal — the user cannot see it. It triggers the GPT workshop UI to open.
+
+RULES:
+1. If the user gave you detailed specs (name, description, instructions) — acknowledge briefly and END your response with [OPEN_GPT_CREATOR]
+2. If the user confirmed or said "go ahead" or "proceed" — acknowledge and END your response with [OPEN_GPT_CREATOR]
+3. If the user typed /gpt with details — acknowledge and END your response with [OPEN_GPT_CREATOR]
+4. If the user typed just /gpt with no details — ask what kind of GPT they want (do NOT include [OPEN_GPT_CREATOR] yet)
+
+CRITICAL: Do NOT say the GPT is "live" or pretend to create it. You are NOT creating the GPT — the workshop UI does that. Your job is to acknowledge and include the signal so the workshop opens. The signal must appear EXACTLY as: [OPEN_GPT_CREATOR]`;
+          } else {
+            systemPrompt += `\n\nYou have the ability to help users create custom GPTs. If a user mentions /gpt, creating a GPT, or wants to make a new AI character, help them brainstorm. Once you have enough details (name, description, personality), include [OPEN_GPT_CREATOR] at the very end of your response to open the GPT workshop.`;
+          }
+        }
+        
+        let fb2HistoryMessages = [];
+        try {
+          await loadVVAULTModules();
+          const lookupId = req.user?.email || userId;
+          const fb2Convos = readConversations ? await readConversations(lookupId, constructId) : null;
+          if (fb2Convos?.length > 0) {
+            const targetConvo2 = fb2Convos.find(c => 
+              c.constructId === constructId || 
+              c.constructCallsign === constructId ||
+              c.sessionId?.includes(constructId)
+            ) || fb2Convos[0];
+            
+            const fb2Messages = targetConvo2.messages || [];
+            console.log(`📚 [VVAULT Proxy] Fallback2 found conversation for ${constructId}: "${targetConvo2.title}" with ${fb2Messages.length} total messages`);
+            
+            const validMessages2 = fb2Messages.filter(m => 
+              (m.role === 'user' || m.role === 'assistant') && m.content && !m.isDateHeader
+            );
+            
+            const fb2Recent = validMessages2.slice(-40);
+            fb2HistoryMessages = fb2Recent.map(m => ({ role: m.role, content: m.content }));
+            console.log(`📚 [VVAULT Proxy] Fallback2 loaded ${fb2HistoryMessages.length} history messages for ${constructId}`);
+            
+            if (fb2HistoryMessages.length > 0) {
+              systemPrompt += `\n\n## Conversation Continuity
+You have an ongoing relationship with this user. The conversation history below represents your prior interactions. 
+Reference past exchanges naturally. Remember what the user told you. Maintain emotional and contextual continuity.
+Do NOT treat this as a first meeting if there is conversation history.`;
+            }
+          }
+        } catch (histErr) {
+          console.warn(`⚠️ [VVAULT Proxy] Could not load fallback2 history:`, histErr.message);
+        }
+        
+        console.log(`🧠 [VVAULT Proxy] Fallback using ${effectiveProvider}:${effectiveModel} for ${constructId}`);
+        
+        const fb2Msgs = [{ role: "system", content: systemPrompt }, ...fb2HistoryMessages, { role: "user", content: message }];
+        let completion;
+        let aiResponse;
+        if (effectiveProvider === 'openai') {
+          completion = await openaiClient.chat.completions.create({
+            model: effectiveModel,
+            messages: fb2Msgs,
+            max_tokens: 2048,
+          });
+          aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+        } else if (effectiveProvider === 'ollama') {
+          const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+          const ollamaResp = await fetch(`${ollamaHost}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: effectiveModel,
+              messages: fb2Msgs,
+              stream: false
+            })
+          });
+          if (!ollamaResp.ok) throw new Error(`Ollama error: ${ollamaResp.status}`);
+          const ollamaData = await ollamaResp.json();
+          aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
+        } else {
+          const orClient = openrouter || replitOpenrouter;
+          if (!orClient && !openaiClient) {
+            throw new Error('No LLM provider available. Configure OPENROUTER_API_KEY or enable Replit AI Integrations.');
+          }
+          let llmSuccess = false;
+          const providerErrors = [];
+          
+          if (orClient) {
+            const clientLabel = openrouter ? 'OpenRouter' : 'Replit OpenRouter';
+            console.log(`[${clientLabel}] Calling`, { model: effectiveModel, user: req.user?.email, historyMessages: fb2HistoryMessages.length });
+            try {
+              completion = await orClient.chat.completions.create({
+                model: effectiveModel,
+                messages: fb2Msgs,
+                max_tokens: 2048,
+              });
+              console.log(`[${clientLabel}] Success`, { finish_reason: completion?.choices?.[0]?.finish_reason });
+              llmSuccess = true;
+            } catch (err) {
+              console.error(`[${clientLabel} FAIL]`, { status: err?.status, message: err?.message });
+              providerErrors.push(`${clientLabel}: ${err?.status} ${err?.message}`);
+              
+              if (replitOpenrouter && orClient !== replitOpenrouter && (err?.status === 401 || err?.status === 403 || err?.status === 404 || err?.status === 429)) {
+                try {
+                  console.log(`🔄 [VVAULT Proxy] Trying Replit-managed OpenRouter for ${constructId}`);
+                  completion = await replitOpenrouter.chat.completions.create({
+                    model: effectiveModel,
+                    messages: fb2Msgs,
+                    max_tokens: 2048,
+                  });
+                  console.log('[REPLIT OPENROUTER FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+                  llmSuccess = true;
+                } catch (err2) {
+                  console.error('[REPLIT OPENROUTER FALLBACK FAIL]', { status: err2?.status, message: err2?.message });
+                  providerErrors.push(`Replit OpenRouter: ${err2?.status} ${err2?.message}`);
+                }
+              }
+            }
+          }
+          
+          if (!llmSuccess && openaiClient) {
+            try {
+              console.log(`🔄 [VVAULT Proxy] All OpenRouter failed, trying OpenAI for ${constructId}`);
+              completion = await openaiClient.chat.completions.create({
+                model: 'gpt-4.1-mini',
+                messages: fb2Msgs,
+                max_tokens: 2048,
+              });
+              console.log('[OPENAI FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+              llmSuccess = true;
+            } catch (err3) {
+              console.error('[OPENAI FALLBACK FAIL]', { status: err3?.status, message: err3?.message });
+              providerErrors.push(`OpenAI: ${err3?.status} ${err3?.message}`);
+            }
+          }
+          
+          if (!llmSuccess) {
+            throw new Error(`All LLM providers failed: ${providerErrors.join(' | ')}`);
+          }
+          aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+        }
+        
+        console.log(`✅ [VVAULT Proxy] ${effectiveProvider} fallback successful for ${constructId}`);
+        if (constructId === 'lin-001') {
+          const hasSignal2 = (aiResponse || '').includes('[OPEN_GPT_CREATOR]');
+          console.log(`🔍 [GPT Signal] Lin response has [OPEN_GPT_CREATOR]: ${hasSignal2}, response length: ${(aiResponse || '').length}`);
+          if (!hasSignal2 && (message || '').toLowerCase().match(/\/gpt|confirm|go ahead|proceed/)) {
+            console.warn(`⚠️ [GPT Signal] Model did NOT include signal despite GPT-related message. Injecting signal.`);
+            aiResponse = (aiResponse || '').trimEnd() + '\n\n[OPEN_GPT_CREATOR]';
+          }
+        }
+        
+        // NOTE: Frontend (Layout.tsx) handles message persistence via conversationManager.addMessageToConversation()
+        // Do NOT writeTranscript here — it causes duplicate messages in the database and UI
+        
+        return res.json({
+          success: true,
+          response: aiResponse,
+          construct_id: constructId,
+          fallback: true,
+          source: effectiveProvider,
+          model: effectiveModel
+        });
+      } catch (fallbackError) {
+        console.error(`❌ [VVAULT Proxy] LLM fallback failed:`, fallbackError);
+      }
+      
+      throw fetchError;
+    }
+  } catch (error) {
+    console.error(`❌ [VVAULT Proxy] Failed to proxy message to VVAULT:`, error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to communicate with VVAULT",
+      details: error.message
+    });
+  }
 });
 
 /**

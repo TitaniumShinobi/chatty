@@ -102,14 +102,12 @@ class MemupMemoryService {
    */
   async executeDirectChromaDB(command, args) {
     try {
-      // Try to import chromadb (may not be installed)
       const { ChromaClient } = await import('chromadb').catch(() => {
         throw new Error('ChromaDB client not available. Install chromadb package or ensure Frame Python scripts are accessible.');
       });
 
-      const client = new ChromaClient({
-        path: path.join(VVAULT_ROOT, 'nova-001', 'Memories', 'chroma_db')
-      });
+      const chromaUrl = process.env.CHROMA_SERVER_URL || 'http://localhost:8000';
+      const client = new ChromaClient({ path: chromaUrl });
 
       // Construct-specific collection name
       const constructCallsign = args.constructCallsign || 'zen-001';
