@@ -74,3 +74,4 @@ ENABLE_CHROMADB = "true"
 
 [userenv.production]
 GOOGLE_CALLBACK = "https://chatty.thewreck.org/api/auth/google/callback"
+NODE_ENV = "production"

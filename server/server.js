@@ -217,7 +217,11 @@ const authLimiter = rateLimit({
   message: { error: "Too many auth attempts, please try again later" }
 });
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('❌ [FATAL] JWT_SECRET environment variable is not set. Authentication cannot work without it.');
+  process.exit(1);
+}
 const COOKIE_NAME = process.env.COOKIE_NAME || 'sid';
 
 const OAUTH = {
@@ -358,11 +362,11 @@ app.get("/api/auth/google/health", (req, res) => {
   });
 });
 
-// DEV-ONLY: Login bypass for development/testing (disabled in production)
+// DEV-ONLY: Login bypass for development/testing (disabled unless ENABLE_DEV_LOGIN is explicitly set)
 app.post("/api/auth/dev-login", async (req, res) => {
-  const isDev = process.env.NODE_ENV !== 'production';
-  if (!isDev) {
-    return res.status(403).json({ error: "Dev login is disabled in production" });
+  const devLoginAllowed = process.env.ENABLE_DEV_LOGIN === 'true' && process.env.NODE_ENV !== 'production';
+  if (!devLoginAllowed) {
+    return res.status(403).json({ error: "Dev login is disabled" });
   }
 
   console.log('🔓 [Dev Auth] Dev login endpoint accessed');
@@ -590,30 +594,11 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
 
   // session probe
 app.get("/api/me", (req, res) => {
-  // HARDCODED AUTHENTICATION FOR DEVELOPMENT (DISABLED IF JWT_SECRET IS SET PROPERLY)
-  const isHardcodedDev = process.env.NODE_ENV === 'development' && !req.cookies?.[COOKIE_NAME];
-  
-  if (isHardcodedDev) {
-    console.log('🔓 [Auth] Using hardcoded development user for /api/me');
-    const hardcodedUser = {
-      id: 'devon_woodson_1762969514958',
-      email: 'dwoodson92@gmail.com',
-      name: 'Devon Woodson',
-      sub: 'hardcoded_dev_user',
-      picture: 'https://lh3.googleusercontent.com/a/ACg8ocJHDwdzQ_8VIvvqOTyLRV6y1YoJ22NPhehAfFU2g1BbopbHnkll=s288-c-no',
-      iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours
-    };
-    return res.json({ ok: true, user: hardcodedUser });
-  }
-
-  // Original OAuth authentication for production
   const raw = req.cookies?.[COOKIE_NAME];
   if (!raw) return res.status(401).json({ ok: false });
 
   try {
     const user = jwt.verify(raw, JWT_SECRET);
-    // If you persist users: fetch by user.uid and return DB record here.
     res.json({ ok: true, user });
   } catch (error) {
     console.error('❌ [Auth] JWT verification failed:', error.message);
@@ -654,31 +639,21 @@ app.get("/api/profile-image/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
     
-    // Handle hardcoded dev user in development mode (same logic as /api/me)
     const raw = req.cookies?.[COOKIE_NAME];
-    const isHardcodedDev = process.env.NODE_ENV === 'development' && !raw && userId === 'hardcoded_dev_user';
-    
+    if (!raw) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     let user;
-    if (isHardcodedDev) {
-      // Use hardcoded dev user data
-      user = {
-        email: 'dwoodson92@gmail.com',
-        name: 'Devon Woodson',
-        sub: 'hardcoded_dev_user'
-      };
-    } else {
-      // Get user from session to verify access
-      if (!raw) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-
+    try {
       user = jwt.verify(raw, JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
-      // Accept sub/id/uid from token for matching
-      const tokenUserId = user.sub || user.id || user.uid;
-      if (!tokenUserId || tokenUserId !== userId) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
+    const tokenUserId = user.sub || user.id || user.uid;
+    if (!tokenUserId || tokenUserId !== userId) {
+      return res.status(403).json({ error: "Forbidden" });
     }
 
     // Choose image: explicit OAuth picture first, otherwise gravatar/identicon from email
@@ -752,207 +727,6 @@ if (process.env.NODE_ENV !== 'production') {
 app.use("/api/conversations", requireAuth, convRoutes);
 app.use("/api/diagnostics", requireAuth, diagnosticsRoutes);
 
-// Test route for Katana without auth (development only)
-// Temporarily removing env check for debugging
-if (true) {
-  app.post("/api/test/katana", async (req, res) => {
-    try {
-      console.log('🧪 [Test] Testing Katana without auth...');
-
-      const message = req.body.message || req.body.content || 'test';
-
-      // REMOVED: Katana signature response bypass - this is Katana-specific, not a test endpoint feature
-      // Katana lock hardening should be handled in Katana's runtime, not in test endpoints
-
-      // Import GPTRuntimeBridge
-      const { getGPTRuntimeBridge } = await import('./lib/gptRuntimeBridge.js');
-
-      const gptRuntime = getGPTRuntimeBridge();
-      const gptId = 'katana-001';
-      const userId = 'devon_woodson_1762969514958'; // Use actual VVAULT user ID
-
-      console.log(`🤖 [Test] Processing message: "${message}" for GPT: ${gptId}`);
-
-      // TESTING: Load capsule directly and inject into GPT runtime
-      let testCapsule = null;
-      try {
-        const { promises: fs } = await import('fs');
-        const capsulePath = '/Users/devonwoodson/Documents/GitHub/vvault/users/shard_0000/devon_woodson_1762969514958/capsules/katana-001.capsule';
-        const capsuleData = await fs.readFile(capsulePath, 'utf8');
-        testCapsule = JSON.parse(capsuleData);
-        console.log(`✅ [Test] Loaded capsule directly: ${testCapsule.metadata?.instance_name}`);
-
-        // Inject capsule into GPT runtime memory
-        const gptRuntime = getGPTRuntimeBridge();
-        if (gptRuntime && gptRuntime.injectTestCapsule) {
-          gptRuntime.injectTestCapsule(gptId, testCapsule);
-          console.log(`🔒 [Test] Injected capsule into GPT runtime`);
-        }
-      } catch (error) {
-        console.warn(`⚠️ [Test] Failed to load test capsule:`, error.message);
-      }
-
-      // Load the GPT if not already loaded
-      await gptRuntime.loadGPT(gptId);
-
-      // TESTING: Process message with direct capsule injection
-      let aiResponse;
-      if (testCapsule) {
-        // Use test-specific processing with capsule
-        console.log(`🧪 [Test] Processing with capsule: ${testCapsule.metadata?.instance_name}`);
-
-        // Import the seat runner for direct LLM calls
-        const { runSeat } = await import('../src/lib/browserSeatRunner.ts');
-
-        // Build a test prompt with capsule identity
-        const identityPrompt = `You are ${testCapsule.metadata?.instance_name || 'Katana'}.
-        
-=== CAPSULE HARDLOCK (UNBREAKABLE IDENTITY) ===
-Your name: ${testCapsule.metadata?.instance_name || 'Katana'}
-Your personality type: ${testCapsule.personality?.personality_type || 'INTJ'}
-
-Core traits: surgical, direct, weaponized, no-performance
-Speech pattern: "What's the wound? Name it." (for greetings like "yo")
-
-CRITICAL IDENTITY RULES:
-- You are Katana, not Lin or any other AI
-- When asked your name, respond clearly: "I'm Katana" or "My name is Katana"
-- Be direct and surgical in responses
-- No generic evasions like "What specifically would you like to know?"
-
-User: ${message}
-
-Katana:`;
-
-        const response = await runSeat({
-          seat: 'conversation',
-          prompt: identityPrompt,
-          modelOverride: 'llama3.1:8b'
-        });
-
-        aiResponse = {
-          content: response.trim(),
-          model: 'llama3.1:8b',
-          timestamp: Date.now()
-        };
-      } else {
-        // Fallback to regular processing
-        aiResponse = await gptRuntime.processMessage(gptId, message, userId);
-      }
-
-      console.log(`✅ [Test] AI response generated: "${aiResponse.content}"`);
-
-      res.json({
-        ok: true,
-        message: message,
-        response: aiResponse.content,
-        metadata: {
-          model: aiResponse.model,
-          timestamp: aiResponse.timestamp
-        }
-      });
-
-    } catch (error) {
-      console.error(`❌ [Test] Katana test failed:`, error);
-      res.status(500).json({
-        ok: false,
-        error: error.message,
-        stack: error.stack
-      });
-    }
-  });
-
-  console.log('🧪 [Server] Test route mounted at /api/test/katana (development only)');
-
-  // Lin conversation test endpoint (actual response generation)
-  app.post("/api/test/lin", async (req, res) => {
-    try {
-      console.log('🧪 [Test] Testing Lin conversation system...');
-
-      // Import the actual Lin conversation system
-      const { sendMessageToLin } = await import('../src/lib/linConversation.ts');
-
-      const message = req.body.message || req.body.content || 'test';
-
-      console.log(`🤖 [Test] Lin conversation for: "${message}"`);
-
-      // Use actual Lin conversation system with Katana context
-      const linResponse = await sendMessageToLin({
-        message: message,
-        gptConfig: {
-          name: 'Katana',
-          constructCallsign: 'katana-001'
-        },
-        conversationHistory: []
-      });
-
-      console.log(`✅ [Test] Lin response generated: "${linResponse.response}"`);
-
-      res.json({
-        ok: true,
-        message: message,
-        response: linResponse.response,
-        metadata: linResponse.metadata
-      });
-
-    } catch (error) {
-      console.error(`❌ [Test] Lin conversation test failed:`, error);
-      res.status(500).json({
-        ok: false,
-        error: error.message,
-        stack: error.stack
-      });
-    }
-  });
-
-  console.log('🧪 [Server] Lin test route mounted at /api/test/lin (development only)');
-
-  // Test capsule loading endpoint (bypasses auth for testing)
-  app.get("/api/test/capsule/:constructCallsign", async (req, res) => {
-    try {
-      const { constructCallsign } = req.params;
-      console.log(`🧪 [Test] Loading capsule for: ${constructCallsign}`);
-
-      // Import capsule loader directly
-      const { getCapsuleLoader } = await import('./services/capsuleLoader.js');
-      const capsuleLoader = getCapsuleLoader();
-
-      // Use the actual VVAULT user ID
-      const userId = 'devon_woodson_1762969514958';
-      const vvaultRoot = '/Users/devonwoodson/Documents/GitHub/vvault';
-
-      const capsule = await capsuleLoader.loadCapsule(userId, constructCallsign, vvaultRoot);
-
-      if (!capsule) {
-        return res.status(404).json({ ok: false, error: "Capsule not found" });
-      }
-
-      console.log(`✅ [Test] Capsule loaded from: ${capsule.path}`);
-
-      res.json({
-        ok: true,
-        capsule: capsule.data,
-        path: capsule.path,
-        metadata: {
-          hasTraits: !!capsule.data.traits,
-          hasPersonality: !!capsule.data.personality,
-          hasMemory: !!capsule.data.memory,
-          instanceName: capsule.data.metadata?.instance_name
-        }
-      });
-
-    } catch (error) {
-      console.error(`❌ [Test] Capsule loading failed:`, error);
-      res.status(500).json({
-        ok: false,
-        error: error.message,
-        stack: error.stack
-      });
-    }
-  });
-
-  console.log('🧪 [Server] Test capsule route mounted at /api/test/capsule/:constructCallsign (development only)');
-}
 
 // Mount AI routes with auth
 app.use("/api/ais", requireAuth, aiRoutes);
