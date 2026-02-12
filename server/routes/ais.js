@@ -10,6 +10,20 @@ const router = express.Router();
 
 const aiManager = AIManager.getInstance();
 
+function mapToVsiFolder(filename) {
+  const lower = filename.toLowerCase();
+  const baseName = lower.split('/').pop() || lower;
+  if (baseName.endsWith('.capsule') || baseName.endsWith('.capsuleso')) return 'memup/';
+  if (baseName.startsWith('chat_with_') && baseName.endsWith('.md')) return 'chatty/';
+  if (baseName === 'prompt.json' || baseName === 'prompt.txt') return 'identity/';
+  if (baseName === 'personality.json' || baseName === 'conditioning.txt') return 'identity/';
+  if (baseName === 'avatar.png' || baseName === 'avatar.jpg' || baseName === 'avatar.jpeg') return 'identity/';
+  if (baseName === 'metadata.json' || baseName === 'tone_profile.json' || baseName === 'voice.md') return 'config/';
+  if (baseName.endsWith('.log')) return 'logs/';
+  if (/\.(png|jpg|jpeg|svg|gif|webp)$/i.test(baseName)) return 'assets/';
+  return 'documents/';
+}
+
 async function resolveUserId(req) {
   const chattyUserId = req.user?.id || req.user?.uid || req.user?.sub || req.user?.email || null;
   if (!chattyUserId) return { userId: null, chattyUserId: null };
@@ -417,13 +431,18 @@ router.post('/:id/files', upload.single('file'), async (req, res) => {
 
     const file = await aiManager.uploadFile(req.params.id, fileData);
 
+    let supabaseSaved = false;
+    let supabaseError = null;
     try {
       const ai = await aiManager.getAI(req.params.id);
       const constructCallsign = ai?.constructCallsign || req.params.id.replace(/^(ai-|gpt-)/, '');
       if (constructCallsign) {
         const { getSupabaseClient } = await import('../lib/supabaseClient.js');
         const supabase = getSupabaseClient();
-        if (supabase) {
+        if (!supabase) {
+          supabaseError = 'Supabase client not available';
+          console.error(`❌ [AIs API] ${supabaseError} — knowledge file NOT persisted`);
+        } else {
           const { userId } = await resolveUserId(req);
           let supabaseUserId = userId;
           if (supabaseUserId && req.user?.email) {
@@ -436,91 +455,112 @@ router.post('/:id/files', upload.single('file'), async (req, res) => {
             if (byEmail?.id) supabaseUserId = byEmail.id;
           }
 
-          const originalName = req.file.originalname;
-          let rawZipPath = req.body.zipPath || '';
-
-          if (rawZipPath) {
-            rawZipPath = rawZipPath.replace(/\\/g, '/');
-            rawZipPath = rawZipPath.replace(/^\.\//, '');
-            const prefixesToStrip = [
-              `instances/${constructCallsign}/documents/`,
-              `instances/${constructCallsign}/`,
-              `${constructCallsign}/`,
-              'documents/',
-            ];
-            for (const prefix of prefixesToStrip) {
-              if (rawZipPath.startsWith(prefix)) {
-                rawZipPath = rawZipPath.slice(prefix.length);
-                break;
-              }
-            }
-            rawZipPath = rawZipPath.replace(/\.\./g, '').replace(/\/\//g, '/').replace(/^\//, '');
-          }
-
-          const relativePath = rawZipPath || originalName;
-          const vaultPath = `instances/${constructCallsign}/documents/${relativePath}`;
-
-          try {
-            const { assertValidVaultFilename } = await import('../lib/vaultPathGuard.js');
-            assertValidVaultFilename(vaultPath);
-          } catch (pathError) {
-            console.warn(`⚠️ [AIs API] Invalid vault path for knowledge file: ${vaultPath}`, pathError.message);
-            throw new Error(`Invalid file path: ${pathError.message}`);
-          }
-
-          const isTextType = /^text\/|application\/(json|xml|csv)/.test(req.file.mimetype);
-          const contentForVault = isTextType
-            ? req.file.buffer.toString('utf8')
-            : `[binary:${req.file.mimetype}:${req.file.size}]`;
-
-          const { data: existing } = await supabase
-            .from('vault_files')
-            .select('id')
-            .eq('user_id', supabaseUserId)
-            .eq('filename', vaultPath)
-            .maybeSingle();
-
-          if (existing) {
-            await supabase
-              .from('vault_files')
-              .update({
-                content: contentForVault,
-                metadata: {
-                  source: 'chatty-knowledge-upload',
-                  originalName,
-                  mimeType: req.file.mimetype,
-                  size: req.file.size,
-                  updatedAt: new Date().toISOString(),
-                },
-              })
-              .eq('id', existing.id);
-            console.log(`✅ [AIs API] Updated vault_files: ${vaultPath}`);
+          if (!supabaseUserId) {
+            supabaseError = `Could not resolve Supabase user_id for ${req.user?.email || 'unknown email'}`;
+            console.error(`❌ [AIs API] ${supabaseError} — knowledge file NOT persisted to Supabase`);
           } else {
-            await supabase
+            const originalName = req.file.originalname;
+            let rawZipPath = req.body.zipPath || '';
+
+            if (rawZipPath) {
+              rawZipPath = rawZipPath.replace(/\\/g, '/');
+              rawZipPath = rawZipPath.replace(/^\.\//, '');
+              const instancePrefixes = [
+                `instances/${constructCallsign}/`,
+                `${constructCallsign}/`,
+              ];
+              for (const prefix of instancePrefixes) {
+                if (rawZipPath.startsWith(prefix)) {
+                  rawZipPath = rawZipPath.slice(prefix.length);
+                  break;
+                }
+              }
+              rawZipPath = rawZipPath.replace(/\.\./g, '').replace(/\/\//g, '/').replace(/^\//, '');
+            }
+
+            let relativePath = rawZipPath || originalName;
+
+            const knownVsiFolders = ['identity/', 'memup/', 'chatty/', 'logs/', 'config/', 'assets/', 'documents/', 'data/', 'frame/', 'simDrive/', 'vxrunner/', 'codex/', 'chatgpt/', 'character.ai/', 'github_copilot/'];
+            const alreadyHasVsiFolder = knownVsiFolders.some(f => relativePath.startsWith(f));
+
+            let vaultPath;
+            let resolvedFolder;
+            if (alreadyHasVsiFolder) {
+              vaultPath = `instances/${constructCallsign}/${relativePath}`;
+              resolvedFolder = relativePath.split('/')[0];
+            } else {
+              resolvedFolder = mapToVsiFolder(relativePath).replace(/\/$/, '');
+              vaultPath = `instances/${constructCallsign}/${resolvedFolder}/${relativePath}`;
+            }
+
+            try {
+              const { assertValidVaultFilename } = await import('../lib/vaultPathGuard.js');
+              assertValidVaultFilename(vaultPath);
+            } catch (pathError) {
+              console.warn(`⚠️ [AIs API] Invalid vault path for knowledge file: ${vaultPath}`, pathError.message);
+              throw new Error(`Invalid file path: ${pathError.message}`);
+            }
+
+            const isTextType = /^text\/|application\/(json|xml|csv)/.test(req.file.mimetype);
+            const contentForVault = isTextType
+              ? req.file.buffer.toString('utf8')
+              : `[binary:${req.file.mimetype}:${req.file.size}]`;
+
+            const fileType = resolvedFolder || 'knowledge';
+
+            const { data: existing } = await supabase
               .from('vault_files')
-              .insert({
-                user_id: supabaseUserId,
-                filename: vaultPath,
-                content: contentForVault,
-                file_type: 'knowledge',
-                construct_id: constructCallsign,
-                metadata: {
-                  source: 'chatty-knowledge-upload',
-                  originalName,
-                  mimeType: req.file.mimetype,
-                  size: req.file.size,
-                  createdAt: new Date().toISOString(),
-                },
-              });
-            console.log(`✅ [AIs API] Created vault_files: ${vaultPath}`);
+              .select('id')
+              .eq('user_id', supabaseUserId)
+              .eq('filename', vaultPath)
+              .maybeSingle();
+
+            if (existing) {
+              const { error: updateErr } = await supabase
+                .from('vault_files')
+                .update({
+                  content: contentForVault,
+                  metadata: {
+                    source: 'chatty-knowledge-upload',
+                    originalName,
+                    mimeType: req.file.mimetype,
+                    size: req.file.size,
+                    updatedAt: new Date().toISOString(),
+                  },
+                })
+                .eq('id', existing.id);
+              if (updateErr) throw updateErr;
+              console.log(`✅ [AIs API] Updated vault_files: ${vaultPath}`);
+            } else {
+              const { error: insertErr } = await supabase
+                .from('vault_files')
+                .insert({
+                  user_id: supabaseUserId,
+                  filename: vaultPath,
+                  content: contentForVault,
+                  file_type: fileType,
+                  construct_id: constructCallsign,
+                  metadata: {
+                    source: 'chatty-knowledge-upload',
+                    originalName,
+                    mimeType: req.file.mimetype,
+                    size: req.file.size,
+                    createdAt: new Date().toISOString(),
+                  },
+                });
+              if (insertErr) throw insertErr;
+              console.log(`✅ [AIs API] Created vault_files: ${vaultPath} (folder: ${vsiFolder})`);
+            }
+            supabaseSaved = true;
           }
         }
       }
     } catch (vaultError) {
-      console.warn(`⚠️ [AIs API] Supabase vault_files write failed for knowledge file:`, vaultError.message);
+      supabaseError = vaultError.message || 'Unknown Supabase write error';
+      console.error(`❌ [AIs API] Supabase vault_files write FAILED for knowledge file:`, supabaseError);
     }
 
-    res.json({ success: true, file });
+    res.json({ success: true, file, supabaseSaved, supabaseError });
   } catch (error) {
     console.error('Error uploading file:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -602,18 +642,30 @@ router.get('/:id/files', async (req, res) => {
               if (!error && data && data.length > 0) {
                 const mapped = data.map(f => {
                   const meta = typeof f.metadata === 'string' ? JSON.parse(f.metadata || '{}') : (f.metadata || {});
-                  const storagePath = f.storage_path || '';
-                  const pathParts = storagePath.split('/');
+                  const fullPath = f.filename || f.storage_path || '';
+                  const pathParts = fullPath.split('/');
                   const constructIdx = pathParts.findIndex(p => /^[a-z]+-\d{3}$/.test(p));
                   const subdir = constructIdx >= 0 && pathParts[constructIdx + 1] ? pathParts[constructIdx + 1] : '';
 
-                  const transcriptPlatforms = ['chatty', 'chatgpt', 'gemini', 'claude', 'openrouter', 'ollama'];
+                  const transcriptPlatforms = ['chatty', 'chatgpt', 'gemini', 'claude', 'openrouter', 'ollama', 'character.ai', 'codex', 'github_copilot'];
                   let category = 'other';
                   if (subdir === 'identity') category = 'identity';
                   else if (subdir === 'assets' || subdir === 'documents') category = 'knowledge';
                   else if (transcriptPlatforms.includes(subdir)) category = 'transcript';
                   else if (subdir === 'tests') category = 'test';
                   else if (subdir === 'lin') category = 'orchestration';
+                  else if (subdir === 'memup') category = 'capsule';
+                  else if (subdir === 'config') category = 'config';
+                  else if (subdir === 'logs') category = 'log';
+
+                  if (category === 'other' && f.file_type) {
+                    const ft = f.file_type.toLowerCase();
+                    if (ft === 'identity') category = 'identity';
+                    else if (ft === 'knowledge') category = 'knowledge';
+                    else if (ft === 'config' || ft === 'enforcement_config') category = 'config';
+                    else if (ft === 'ledger' || ft === 'log') category = 'log';
+                    else if (ft === 'binary' || ft === 'text' || ft === 'application/json') category = 'knowledge';
+                  }
 
                   const isImage = /\.(png|jpg|jpeg|svg|gif|webp)$/i.test(f.filename || '');
                   const mimeType = isImage
