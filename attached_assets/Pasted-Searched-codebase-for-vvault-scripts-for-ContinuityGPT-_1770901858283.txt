@@ -1,0 +1,100 @@
+Searched codebase for "vvault scripts for ContinuityGPT constructs transcripts navigation", 21 results
+
+To set up ContinuityGPT as the default memory system for constructs in a Replit environment, here are the key points and considerations:
+
+### Overview of ContinuityGPT
+ContinuityGPT is a forensic timeline reconstruction tool that processes transcripts to:
+- Extract timestamps and session start dates.
+- Reconstruct conversation timelines.
+- Generate continuity ledgers in formats like SQL/JSON.
+- Cross-reference and merge overlapping sessions.
+
+It is not a runtime construction agent but complements systems like Lin by providing chronological memory reconstruction.
+
+---
+
+### Key Scripts in VVAULT for Constructs
+1. **`CONTINUITYGPT_Scoring.py`**:
+   - Processes transcripts to generate continuity ledgers and reports.
+   - Outputs include:
+     - `ContinuityLedger_<year>.json`
+     - `CONTINUITYGPT_REPORT_<year>.json`
+     - `ContinuityChangelog_<year>.json`
+   - Handles evidence validation and scoring based on hypotheses.
+
+2. **memory_context.py**:
+   - Builds memory contexts from transcripts for LLM inference.
+   - Functions include:
+     - `_find_transcript`: Locates transcript files for constructs.
+     - `_parse_transcript`: Parses markdown transcripts into memory entries.
+     - `build_context`: Constructs memory contexts for conversations.
+
+3. **continuity_bridge.py**:
+   - Links ChatGPT constructs to Chatty via VVAULT.
+   - Ensures construct continuity across platforms.
+   - Key functions:
+     - `register_chatgpt_gpt`: Registers ChatGPT constructs in VVAULT.
+     - `import_chatgpt_memories_to_construct`: Imports ChatGPT memories into constructs.
+
+4. **Transcript Navigation**:
+   - Scripts like transcripts.js and supabaseStore.js manage transcript storage and retrieval.
+   - Hierarchical paths in VVAULT:
+     ```
+     /vvault/users/shard_0000/{userId}/instances/{constructId}/transcripts/{filename}
+     ```
+
+---
+
+### Steps for Integration
+1. **Set Up VVAULT**:
+   - Ensure the VVAULT directory structure is initialized:
+     ```
+     /vvault/users/shard_XX/{user_id}/constructs/{construct_id}/chatty/
+     ```
+
+2. **Run ContinuityGPT Scripts**:
+   - Use `CONTINUITYGPT_Scoring.py` to process transcripts and generate continuity ledgers.
+   - Ensure Python 3.6+ is installed and required directories are created.
+
+3. **Enable Continuity**:
+   - Use `continuity_bridge.py` to link constructs across platforms.
+   - Example:
+     ```python
+     vvault_connector.enable_continuity(
+         vvault_user_id="user123",
+         neat_user_id="neat456",
+         continuity_types=["cognitive_state", "character_advancement"]
+     )
+     ```
+
+4. **Integrate with Constructs**:
+   - Use `memory_context.py` to build memory contexts for constructs.
+   - Example:
+     ```python
+     context_builder = MemoryContextBuilder(vvault_root="/vvault")
+     memory_context = context_builder.build_context(construct_id="katana-001")
+     ```
+
+5. **Test and Validate**:
+   - Verify that transcripts are correctly parsed and continuity ledgers are generated.
+   - Ensure constructs can retrieve and use memory contexts.
+
+---
+
+### Additional Notes
+- ContinuityGPT complements Lin but does not replace it. Lin handles personality synthesis, while ContinuityGPT focuses on memory reconstruction.
+- Ensure proper error handling in scripts to manage missing or invalid transcripts.
+- Use the hierarchical VVAULT path structure to maintain consistency across constructs.
+
+Would you like assistance with setting up any specific script or debugging the integration?5. **Test and Validate**:
+   - Verify that transcripts are correctly parsed and continuity ledgers are generated.
+   - Ensure constructs can retrieve and use memory contexts.
+
+---
+
+### Additional Notes
+- ContinuityGPT complements Lin but does not replace it. Lin handles personality synthesis, while ContinuityGPT focuses on memory reconstruction.
+- Ensure proper error handling in scripts to manage missing or invalid transcripts.
+- Use the hierarchical VVAULT path structure to maintain consistency across constructs.
+
+Would you like assistance with setting up any specific script or debugging the integration?
