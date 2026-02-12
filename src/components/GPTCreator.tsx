@@ -1056,46 +1056,33 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         payload.avatar = config.avatar;
       }
 
-      // Check if we're updating an existing GPT or creating a new one
       if (config.id) {
-        // Update existing GPT - use the appropriate service based on ID
         if (isAIService) {
           gpt = await (service as AIService).updateAI(config.id, payload);
         } else {
           gpt = await (service as GPTService).updateGPT(config.id, payload);
         }
-        // Update local config with the returned GPT data (which may have updated avatar path)
-        // Convert to GPTConfig format (AIConfig and GPTConfig are compatible except for file/action types)
-        setConfig((prev) => {
-          const configUpdate: Partial<GPTConfig> = {
-            ...gpt,
-            avatar: gpt.avatar || prev.avatar,
-            // Ensure files and actions are in the correct format
-            files: (gpt as any).files || prev.files || [],
-            actions: (gpt as any).actions || prev.actions || [],
-          };
-          return { ...prev, ...configUpdate };
-        });
+        setConfig((prev) => ({
+          ...prev,
+          ...gpt,
+          avatar: gpt.avatar || prev.avatar,
+          files: prev.files || [],
+          actions: prev.actions || [],
+        }));
       } else {
-        // Create new GPT - use AIService by default to match GPTsPage
         if (isAIService) {
           gpt = await (service as AIService).createAI(payload);
         } else {
           gpt = await (service as GPTService).createGPT(payload);
         }
-        // Update local config with the new ID and any transformed avatar path
-        // Convert to GPTConfig format (AIConfig and GPTConfig are compatible except for file/action types)
-        setConfig((prev) => {
-          const configUpdate: Partial<GPTConfig> = {
-            ...gpt,
-            id: gpt.id,
-            avatar: gpt.avatar || prev.avatar,
-            // Ensure files and actions are in the correct format
-            files: (gpt as any).files || prev.files || [],
-            actions: (gpt as any).actions || prev.actions || [],
-          };
-          return { ...prev, ...configUpdate };
-        });
+        setConfig((prev) => ({
+          ...prev,
+          ...gpt,
+          id: gpt.id,
+          avatar: gpt.avatar || prev.avatar,
+          files: prev.files || [],
+          actions: prev.actions || [],
+        }));
       }
 
       // Create actions if any (only for new actions)

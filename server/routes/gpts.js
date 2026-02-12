@@ -34,7 +34,7 @@ async function verifyActionOwnership(req, actionId) {
 async function verifyGPTOwnership(req, gptId) {
   const { userId, chattyUserId } = await resolveUserId(req);
   if (!userId) return { allowed: false, gpt: null, userId: null };
-  const gpt = await gptManager.getGPT(gptId);
+  const gpt = gptManager.getGPTConfig ? gptManager.getGPTConfig(gptId) : await gptManager.getGPT(gptId);
   if (!gpt) return { allowed: false, gpt: null, userId };
   const ownerMatch = gpt.userId === userId || gpt.userId === chattyUserId;
   if (!ownerMatch) {
