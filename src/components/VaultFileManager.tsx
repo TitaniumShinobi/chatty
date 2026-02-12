@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Save, FolderOpen, FileText, Plus, RefreshCw, CheckCircle, AlertCircle, Upload, Edit3, X } from 'lucide-react';
+import { Save, FolderOpen, FileText, Plus, RefreshCw, CheckCircle, AlertCircle, Upload, Edit3, X, Archive, UploadCloud } from 'lucide-react';
 
 interface GPT {
   id: string;
@@ -15,6 +15,15 @@ interface VaultFile {
   metadata: any;
   content_length: number;
   updated_at?: string;
+}
+
+interface UploadResult {
+  totalFiles: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  errors: Array<{ file: string; error: string }>;
 }
 
 const FOLDER_OPTIONS = [
@@ -40,7 +49,11 @@ export function VaultFileManager() {
   const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [editingFile, setEditingFile] = useState<string | null>(null);
   const [showNewFile, setShowNewFile] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const zipInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchConstructs();
@@ -93,6 +106,105 @@ export function VaultFileManager() {
       console.error('Failed to fetch files:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const getConstructId = (): string | null => {
+    const construct = constructs.find(c => c.constructCallsign === selectedConstruct);
+    return construct?.id || null;
+  };
+
+  const handleZipUpload = async (file: File) => {
+    const constructId = getConstructId();
+    if (!constructId || !selectedConstruct) {
+      setStatus({ type: 'error', message: 'Please select a construct first.' });
+      return;
+    }
+
+    if (file.size > 500 * 1024 * 1024) {
+      setStatus({ type: 'error', message: `${file.name} exceeds 500MB limit.` });
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadResult(null);
+    setStatus({ type: 'info', message: `Uploading ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)... This may take a minute.` });
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`/api/ais/${constructId}/upload-zip`, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Upload failed');
+      }
+
+      const result: UploadResult = {
+        totalFiles: data.totalFiles || (data.created + data.updated + data.skipped + data.failed),
+        created: data.created || 0,
+        updated: data.updated || 0,
+        skipped: data.skipped || 0,
+        failed: data.failed || 0,
+        errors: data.errors || [],
+      };
+
+      setUploadResult(result);
+      setStatus({
+        type: result.failed > 0 ? 'error' : 'success',
+        message: `Upload complete: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped${result.failed > 0 ? `, ${result.failed} failed` : ''}`
+      });
+
+      fetchFiles();
+      window.dispatchEvent(new Event('vault-files-changed'));
+    } catch (error: any) {
+      setStatus({ type: 'error', message: error.message || 'ZIP upload failed' });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleZipFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleZipUpload(file);
+    }
+    if (zipInputRef.current) zipInputRef.current.value = '';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isUploading && selectedConstruct) {
+      setIsDragOver(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    if (isUploading || !selectedConstruct) return;
+
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    const zipFile = droppedFiles.find(f => f.name.toLowerCase().endsWith('.zip'));
+    if (zipFile) {
+      handleZipUpload(zipFile);
+    } else {
+      setStatus({ type: 'error', message: 'Please drop a .zip file.' });
     }
   };
 
@@ -251,6 +363,23 @@ export function VaultFileManager() {
             <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
           </button>
           <button
+            onClick={() => zipInputRef.current?.click()}
+            disabled={!selectedConstruct || isUploading}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors hover:opacity-80 disabled:opacity-40"
+            style={{ backgroundColor: 'var(--chatty-accent, #6366f1)', color: '#fff' }}
+            title="Upload ZIP archive to Supabase"
+          >
+            <Archive size={16} />
+            {isUploading ? 'Uploading...' : 'Upload ZIP'}
+          </button>
+          <input
+            ref={zipInputRef}
+            type="file"
+            accept=".zip"
+            onChange={handleZipFileSelect}
+            className="hidden"
+          />
+          <button
             onClick={handleNewFile}
             disabled={!selectedConstruct}
             className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors hover:opacity-80"
@@ -281,16 +410,80 @@ export function VaultFileManager() {
         </select>
       </div>
 
+      {selectedConstruct && !isEditing && (
+        <div
+          className={`border-2 border-dashed rounded-lg p-6 mb-4 text-center transition-colors ${isDragOver ? 'border-[var(--chatty-accent,#6366f1)]' : 'border-[var(--chatty-line)]'}`}
+          style={{ backgroundColor: isDragOver ? 'rgba(99,102,241,0.05)' : 'transparent' }}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {isUploading ? (
+            <div className="flex flex-col items-center gap-2">
+              <RefreshCw size={24} className="animate-spin" style={{ color: 'var(--chatty-accent, #6366f1)' }} />
+              <span className="text-sm" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
+                Processing archive server-side... PDFs will be extracted automatically.
+              </span>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2">
+              <UploadCloud size={24} style={{ color: 'var(--chatty-text)', opacity: 0.4 }} />
+              <span className="text-sm" style={{ color: 'var(--chatty-text)', opacity: 0.5 }}>
+                Drop a .zip file here or use the Upload ZIP button
+              </span>
+              <span className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.3 }}>
+                Up to 500MB — files are extracted, checksummed, and stored in Supabase
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {status && (
-        <div className={`flex items-center gap-2 p-3 rounded-md mb-4 text-sm ${
+        <div className={`flex items-start gap-2 p-3 rounded-md mb-4 text-sm ${
           status.type === 'success' ? 'border border-green-500/50' :
           status.type === 'error' ? 'border border-red-500/50' :
           'border border-blue-500/50'
         }`} style={{ backgroundColor: 'var(--chatty-bg-main)' }}>
-          {status.type === 'success' ? <CheckCircle size={16} className="text-green-500 flex-shrink-0" /> :
-           status.type === 'error' ? <AlertCircle size={16} className="text-red-500 flex-shrink-0" /> :
-           <AlertCircle size={16} className="text-blue-500 flex-shrink-0" />}
+          {status.type === 'success' ? <CheckCircle size={16} className="text-green-500 flex-shrink-0 mt-0.5" /> :
+           status.type === 'error' ? <AlertCircle size={16} className="text-red-500 flex-shrink-0 mt-0.5" /> :
+           <RefreshCw size={16} className="text-blue-500 flex-shrink-0 mt-0.5 animate-spin" />}
           <span style={{ color: 'var(--chatty-text)' }}>{status.message}</span>
+        </div>
+      )}
+
+      {uploadResult && (
+        <div className="border border-[var(--chatty-line)] rounded-lg p-4 mb-4 font-mono text-xs" style={{ backgroundColor: 'var(--chatty-bg-main)', color: 'var(--chatty-text)' }}>
+          <div className="mb-2 font-semibold text-sm" style={{ opacity: 0.8 }}>Upload Results</div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1" style={{ opacity: 0.7 }}>
+            <span>Total files:</span><span>{uploadResult.totalFiles}</span>
+            <span className="text-green-500">Created:</span><span className="text-green-500">{uploadResult.created}</span>
+            <span className="text-blue-500">Updated:</span><span className="text-blue-500">{uploadResult.updated}</span>
+            <span>Skipped:</span><span>{uploadResult.skipped}</span>
+            {uploadResult.failed > 0 && (
+              <><span className="text-red-500">Failed:</span><span className="text-red-500">{uploadResult.failed}</span></>
+            )}
+          </div>
+          {uploadResult.errors.length > 0 && (
+            <div className="mt-3 pt-2 border-t border-[var(--chatty-line)]">
+              <div className="text-red-400 mb-1">Errors:</div>
+              <div className="max-h-32 overflow-y-auto space-y-1">
+                {uploadResult.errors.slice(0, 10).map((err, i) => (
+                  <div key={i} style={{ opacity: 0.6 }}>{err.file}: {err.error}</div>
+                ))}
+                {uploadResult.errors.length > 10 && (
+                  <div style={{ opacity: 0.4 }}>...and {uploadResult.errors.length - 10} more</div>
+                )}
+              </div>
+            </div>
+          )}
+          <button
+            onClick={() => setUploadResult(null)}
+            className="mt-3 text-xs px-2 py-1 rounded hover:opacity-80"
+            style={{ backgroundColor: 'var(--chatty-button)', color: 'var(--chatty-text)' }}
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -409,12 +602,17 @@ export function VaultFileManager() {
             </div>
           ) : (
             <div>
+              <div className="px-4 py-2 text-xs border-b border-[var(--chatty-line)] flex justify-between"
+                   style={{ backgroundColor: 'var(--chatty-bg-sidebar)', color: 'var(--chatty-text)', opacity: 0.5 }}>
+                <span>{files.length} files</span>
+                <span>{Object.keys(groupedFiles).length} folders</span>
+              </div>
               {Object.entries(groupedFiles).sort(([a], [b]) => a.localeCompare(b)).map(([folder, folderFiles]) => (
                 <div key={folder}>
                   <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wider border-b border-[var(--chatty-line)]"
                        style={{ backgroundColor: 'var(--chatty-bg-sidebar)', color: 'var(--chatty-text)', opacity: 0.6 }}>
                     <FolderOpen size={12} className="inline mr-1.5" style={{ opacity: 1 }} />
-                    {folder}
+                    {folder} ({folderFiles.length})
                   </div>
                   {folderFiles.map(file => (
                     <div
