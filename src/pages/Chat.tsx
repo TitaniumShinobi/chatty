@@ -1798,6 +1798,15 @@ export default function Chat() {
                       >
                         [Message Removed]
                       </div>
+                    ) : (m as any).typing && !Array.isArray((m as any).packets) && !(m as any).text ? (
+                      <div
+                        className="whitespace-normal w-full flex items-center gap-1"
+                        style={{ color: "var(--chatty-text)", opacity: 0.5 }}
+                      >
+                        <span className="animate-pulse">●</span>
+                        <span className="animate-pulse" style={{ animationDelay: "0.2s" }}>●</span>
+                        <span className="animate-pulse" style={{ animationDelay: "0.4s" }}>●</span>
+                      </div>
                     ) : (m as any).metadata?.isError ? (
                       <div
                         className="whitespace-normal w-full rounded-lg px-3 py-2"
@@ -1826,7 +1835,7 @@ export default function Chat() {
                         />
                         <R
                           packets={
-                            Array.isArray((m as any).packets)
+                            Array.isArray((m as any).packets) && (m as any).packets.length > 0
                               ? (m as any).packets.map((p: any) => ({
                                 ...p,
                                 payload: p.payload ? {
@@ -1835,12 +1844,11 @@ export default function Chat() {
                                 } : p.payload
                               }))
                               : [
-                                // fallback for legacy/invalid assistant messages
                                 {
                                   op: "answer.v1",
                                   payload: {
                                     content:
-                                      prepareMessageContent((m as any).text) || "⚠️ Unable to load this response. Please try sending your message again.",
+                                      prepareMessageContent((m as any).text) || "…",
                                   },
                                 },
                               ]
