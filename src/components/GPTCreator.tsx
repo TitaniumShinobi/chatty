@@ -1085,7 +1085,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         });
       }
 
-      const pendingFiles = files.filter(f => f.gptId === "temp" && f._file);
+      const pendingFiles = files.filter(f => f.gptId === "temp" && f._file && f._file.type !== "application/zip");
       if (pendingFiles.length > 0) {
         const BATCH_SIZE = 10;
         let uploaded = 0;
@@ -1094,7 +1094,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         for (let i = 0; i < pendingFiles.length; i += BATCH_SIZE) {
           const batch = pendingFiles.slice(i, i + BATCH_SIZE);
           await Promise.all(batch.map(async (file) => {
-            const zipPath = file.filename !== file.originalName ? file.filename : undefined;
+            const hasSubdir = file.filename && file.filename.includes('/');
+            const zipPath = hasSubdir ? file.filename : undefined;
             if (isAIService) {
               await (service as AIService).uploadFile(gpt.id, file._file!, zipPath);
             } else {
@@ -1200,16 +1201,28 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
             if (!isText && !isBinary) continue;
 
             let content = "";
-            let blobFile: File | undefined;
+            let blobFile: File;
+            const fileName = entryName.split("/").pop() || entryName;
+
+            const mimeMap: Record<string, string> = {
+              txt: "text/plain", md: "text/markdown", json: "application/json",
+              csv: "text/csv", rtf: "text/rtf", html: "text/html",
+              xml: "text/xml", yaml: "text/yaml", yml: "text/yaml", log: "text/plain",
+              pdf: "application/pdf", doc: "application/msword",
+              docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+              gif: "image/gif", bmp: "image/bmp", tiff: "image/tiff", svg: "image/svg+xml",
+              mp4: "video/mp4", avi: "video/x-msvideo", mov: "video/quicktime",
+            };
+            const mimeType = mimeMap[entryExt] || "application/octet-stream";
 
             if (isText) {
               content = await zipEntry.async("text");
-            }
-
-            if (isBinary) {
+              const textBlob = new Blob([content], { type: mimeType });
+              blobFile = new File([textBlob], fileName, { type: mimeType });
+            } else {
               const blob = await zipEntry.async("blob");
-              const fileName = entryName.split("/").pop() || entryName;
-              blobFile = new File([blob], fileName, { type: `application/${entryExt}` });
+              blobFile = new File([blob], fileName, { type: mimeType });
             }
 
             const tempFile: GPTFile = {
@@ -1217,15 +1230,15 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
               gptId: "temp",
               filename: entryName,
               originalName: entryName,
-              mimeType: isText ? `text/${entryExt === "md" ? "markdown" : "plain"}` : `application/${entryExt}`,
-              size: isText ? content.length : (blobFile?.size || 0),
+              mimeType,
+              size: isText ? content.length : blobFile.size,
               content: content,
               uploadedAt: new Date().toISOString(),
               isActive: true,
-              _file: blobFile || file,
+              _file: blobFile,
             };
             newFiles.push(tempFile);
-            rawFiles.push(blobFile || file);
+            rawFiles.push(blobFile);
           }
         } catch (zipError: any) {
           console.error(`Failed to extract ${file.name}:`, zipError);
