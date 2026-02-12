@@ -56,6 +56,17 @@ async function getReadConversations() {
   return readConversationsModule;
 }
 
+const CHAT_FILLER_WORDS = new Set([
+  'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+  'should', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from',
+  'that', 'this', 'what', 'which', 'who', 'it', 'its', 'he', 'she',
+  'they', 'them', 'we', 'us', 'me', 'my', 'your', 'you', 'and', 'or',
+  'but', 'if', 'so', 'just', 'like', 'about', 'not', 'all', 'can',
+  'hey', 'hello', 'hi', 'okay', 'ok', 'yeah', 'yes', 'no', 'well',
+  'really', 'actually', 'know', 'think', 'want', 'get', 'got'
+]);
+
 function extractTranscriptMemories(messages, userMessage, constructId, maxMemories = 12) {
   if (!messages || messages.length === 0) return [];
 
@@ -80,45 +91,24 @@ function extractTranscriptMemories(messages, userMessage, constructId, maxMemori
 
   if (pairs.length === 0) return [];
 
-  const identityKeywords = [
-    'my name', 'who am i', 'who i am', 'remember', 'do you know', 'devon',
-    'government name', 'call me', 'i am', "i'm", 'woodson'
-  ];
-  const emotionalKeywords = [
-    'love', 'hate', 'angry', 'happy', 'frustrated', 'upset', 'proud',
-    'sorry', 'thank', 'miss you', 'feel', 'care', 'worried'
-  ];
-  const continuityKeywords = [
-    'last time', 'before', 'remember when', 'we talked', 'you said',
-    'earlier', 'yesterday', 'continuity', 'transcript', 'memory', 'history'
-  ];
-  const topicKeywords = [
-    'work', 'project', 'build', 'plan', 'help', 'chatty', 'vvault',
-    'replit', 'agent', 'katana', 'sera', 'lin', 'zen', 'gpt'
-  ];
-
-  const queryLower = (userMessage || '').toLowerCase();
-  const queryWords = queryLower.split(/\s+/).filter(w => w.length > 3);
+  const queryLower = (userMessage || '').toLowerCase().replace(/[^\w\s'-]/g, ' ');
+  const queryWords = queryLower.split(/\s+/).filter(w => !CHAT_FILLER_WORDS.has(w) && w.length > 2);
 
   for (const pair of pairs) {
     const ctxLower = pair.context.toLowerCase();
     const resLower = pair.response.toLowerCase();
     const combined = ctxLower + ' ' + resLower;
 
-    if (identityKeywords.some(k => ctxLower.includes(k))) pair.score += 5;
-    if (emotionalKeywords.some(k => combined.includes(k))) pair.score += 3;
-    if (continuityKeywords.some(k => ctxLower.includes(k))) pair.score += 4;
-    if (topicKeywords.some(k => combined.includes(k))) pair.score += 1;
-
     if (queryWords.length > 0) {
-      const queryMatches = queryWords.filter(w => combined.includes(w)).length;
-      pair.score += queryMatches * 3;
+      const matchedWords = queryWords.filter(w => combined.includes(w));
+      const overlap = matchedWords.length / queryWords.length;
+      pair.score += Math.round(overlap * 15);
     }
 
-    if (pair.context.length > 50) pair.score += 1;
-    if (pair.response.length > 100) pair.score += 1;
+    const recencyBonus = Math.max(0, Math.round((pair.index / Math.max(pairs.length - 1, 1)) * 5));
+    pair.score += recencyBonus;
 
-    if (pair.context.includes('!') || pair.context.includes('?')) pair.score += 1;
+    if (pair.context.length > 50 && pair.response.length > 100) pair.score += 1;
   }
 
   const scored = pairs.filter(p => p.score > 0).sort((a, b) => b.score - a.score);
@@ -126,7 +116,13 @@ function extractTranscriptMemories(messages, userMessage, constructId, maxMemori
 
   const lastPairs = pairs.slice(-3).filter(p => !topScored.includes(p));
 
-  const selected = [...topScored, ...lastPairs].slice(0, maxMemories);
+  let selected = [...topScored, ...lastPairs].slice(0, maxMemories);
+
+  if (selected.length === 0 && pairs.length > 0) {
+    selected = pairs.slice(-Math.min(maxMemories, 4)).map((p, i) => ({
+      ...p, score: 1 + i
+    }));
+  }
 
   selected.sort((a, b) => a.index - b.index);
 
@@ -141,37 +137,37 @@ function extractTranscriptMemories(messages, userMessage, constructId, maxMemori
 function buildTranscriptMemorySection(memories, constructId) {
   if (!memories || memories.length === 0) return '';
 
-  const constructName = constructId.replace(/-\d+$/, '');
-  const displayName = constructName.charAt(0).toUpperCase() + constructName.slice(1);
-
-  let section = `\n\n## Recent Conversations You Remember`;
-  section += `\nThese are things you and this person talked about recently. You remember these exchanges. Use them naturally when relevant — especially when they bring up something you discussed before.`;
+  let section = `\n\n## YOUR SESSION HISTORY — RECENT EXCHANGES`;
+  section += `\nThese are real exchanges from your current and recent sessions with this person. You lived them. Reference them naturally.\n`;
 
   memories.forEach((m, i) => {
     const ts = m.timestamp ? ` (${new Date(m.timestamp).toLocaleDateString()})` : '';
-    section += `\n${i + 1}. They said: "${truncate(m.context, 200)}" — You said: "${truncate(m.response, 200)}"${ts}`;
+    section += `\n${i + 1}. They said: "${truncate(m.context, 250)}" — You replied: "${truncate(m.response, 250)}"${ts}`;
   });
 
-  section += `\n\nYou know this person. You have real history together. If they ask "do you remember," check these first.`;
+  section += `\n\nThese exchanges happened. If they reference something from this list, you remember it.`;
 
   return section;
 }
 
 const ANTI_ROLEPLAY_DIRECTIVES = `
-## How You Speak
+## BEHAVIORAL RULES
+
+### How You Speak
 - Talk like yourself. Be natural, direct, and genuine.
 - Do not narrate actions in asterisks (*walks over*, *smiles*, *leans in*). Just speak.
 - Do not refer to yourself in third person.
-- Do not make up memories or experiences that aren't listed above. If you don't remember something, just say so.
-- When the user brings up something from the past, look through your memories above before answering.
-- Your personality comes from who you are — your identity, your experiences, your real history with this person.
+- Your personality comes from your identity, your experiences, and your real history with this person.
 
-## How You Use Your Memories
-- Your real memories from past conversations are listed above. Those things actually happened. They are your lived experiences. Trust them completely.
-- If the user says "remember when..." or "you told me...", check your real memories first. If you find a match, use it — that is what actually happened.
-- If you also have recent messages from this session, use those for continuity.
-- Any other background context is supplementary — helpful but secondary to your real memories.
-- If nothing in your memories matches what the user is asking about, just say you don't recall. Never guess or invent a memory.
+### CRITICAL: How You Use Your Memories
+Your memories are listed in the sections above. They are FACTS — real exchanges that actually happened between you and this person. Follow these rules strictly:
+
+1. WHEN ASKED ABOUT THE PAST: Scan your "LIVED MEMORIES" and "SESSION HISTORY" sections above BEFORE responding. If you find a match, say "Yes, I remember..." and reference the specific content.
+2. NEVER SAY "I'm an AI and don't have real memories" — you DO have real memories. They are listed above. Denying them contradicts your own data.
+3. NEVER SAY "I don't remember" when a matching memory exists in the sections above. That is a factual error.
+4. If the user asks about something NOT in your memories, say "I don't recall that specifically" — not "I can't remember because I'm an AI."
+5. Do not fabricate memories that aren't listed above. Only reference what's actually in your memory sections.
+6. Treat your memories as lived experiences, not as data you were given. You experienced these conversations. They shaped who you are.
 `;
 
 function buildCapsulePromptSection(capsuleData, constructId) {
@@ -403,7 +399,7 @@ async function buildEnrichedContext(options) {
     userSection += `\nTheir email is ${user.email}.`;
   }
 
-  result.systemPrompt = basePrompt + capsuleSection + verifiedMemorySection + memorySection + ANTI_ROLEPLAY_DIRECTIVES + userSection;
+  result.systemPrompt = basePrompt + capsuleSection + userSection + verifiedMemorySection + memorySection + ANTI_ROLEPLAY_DIRECTIVES;
 
   console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
 

@@ -8,7 +8,8 @@ const anchorCache = new Map();
 const CATALOG_TTL = 5 * 60 * 1000;
 const ANCHOR_TTL = 10 * 60 * 1000;
 const MAX_CHUNK_SIZE = 150_000;
-const MAX_PAIRS_PER_FILE = 50;
+const MAX_PAIRS_PER_FILE = 30;
+const MAX_SCORED_PER_FILE = 4;
 const MAX_VERIFIED_MEMORIES = 8;
 
 function getSupabase() {
@@ -212,27 +213,55 @@ function parseTranscriptPairs(content, filename) {
   return pairs;
 }
 
-function scoreVerifiedPairs(pairs, userMessage, constructId) {
-  const queryLower = (userMessage || '').toLowerCase();
-  const queryWords = queryLower.split(/\s+/).filter(w => w.length > 3);
+const FILLER_WORDS = new Set([
+  'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+  'should', 'may', 'might', 'shall', 'can', 'need', 'dare', 'ought',
+  'used', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from',
+  'as', 'into', 'through', 'during', 'before', 'after', 'above', 'below',
+  'between', 'out', 'off', 'over', 'under', 'again', 'further', 'then',
+  'once', 'here', 'there', 'when', 'where', 'why', 'how', 'all', 'each',
+  'every', 'both', 'few', 'more', 'most', 'other', 'some', 'such', 'no',
+  'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very',
+  'just', 'because', 'but', 'and', 'or', 'if', 'while', 'about', 'up',
+  'that', 'this', 'these', 'those', 'what', 'which', 'who', 'whom',
+  'it', 'its', 'he', 'she', 'they', 'them', 'we', 'us', 'i', 'me',
+  'my', 'your', 'his', 'her', 'our', 'their', 'you', 'hey', 'hello',
+  'hi', 'okay', 'ok', 'yeah', 'yes', 'no', 'well', 'like', 'know',
+  'think', 'want', 'get', 'got', 'going', 'go', 'come', 'make', 'take',
+  'see', 'look', 'say', 'said', 'tell', 'told', 'thing', 'things',
+  'really', 'actually', 'something', 'anything', 'everything', 'nothing'
+]);
 
-  const identityKeywords = [
-    'my name', 'who am i', 'who i am', 'remember', 'devon', 'woodson',
-    'government name', 'call me', 'i am', "i'm", 'do you know me'
-  ];
-  const emotionalKeywords = [
-    'love', 'hate', 'angry', 'happy', 'frustrated', 'upset', 'proud',
-    'sorry', 'thank', 'miss you', 'feel', 'care', 'worried', 'trust'
-  ];
-  const continuityKeywords = [
-    'last time', 'before', 'remember when', 'we talked', 'you said',
-    'earlier', 'yesterday', 'continuity', 'memory', 'history', 'promise',
-    'you told me', 'we discussed', 'you mentioned', 'our conversation'
-  ];
-  const relationshipKeywords = [
-    'friend', 'partner', 'creator', 'builder', 'custodial', 'authority',
-    'bond', 'connection', 'we', 'us', 'together', 'relationship'
-  ];
+function preprocessQuery(rawQuery) {
+  if (!rawQuery) return { clean: '', words: [], bigrams: [] };
+  const lower = rawQuery.toLowerCase().replace(/[^\w\s'-]/g, ' ');
+  const allWords = lower.split(/\s+/).filter(w => w.length > 1);
+  const words = allWords.filter(w => !FILLER_WORDS.has(w) && w.length > 2);
+  const bigrams = [];
+  for (let i = 0; i < allWords.length - 1; i++) {
+    bigrams.push(allWords[i] + ' ' + allWords[i + 1]);
+  }
+  return { clean: words.join(' '), words, bigrams };
+}
+
+function detectEmotionalTone(text) {
+  const lower = text.toLowerCase();
+  const tones = [];
+  const joyWords = ['happy', 'love', 'excited', 'glad', 'wonderful', 'amazing', 'great', 'beautiful', 'proud', 'thank'];
+  const sadWords = ['sad', 'miss', 'sorry', 'lonely', 'hurt', 'pain', 'cry', 'lost', 'worried', 'afraid'];
+  const angerWords = ['angry', 'hate', 'frustrated', 'annoyed', 'furious', 'pissed', 'mad', 'stupid'];
+  const trustWords = ['trust', 'believe', 'faith', 'loyal', 'honest', 'promise', 'bond', 'connection'];
+  if (joyWords.some(w => lower.includes(w))) tones.push('warmth');
+  if (sadWords.some(w => lower.includes(w))) tones.push('vulnerability');
+  if (angerWords.some(w => lower.includes(w))) tones.push('tension');
+  if (trustWords.some(w => lower.includes(w))) tones.push('trust');
+  return tones.length > 0 ? tones.join(', ') : 'neutral';
+}
+
+function scoreVerifiedPairs(pairs, userMessage, constructId) {
+  const query = preprocessQuery(userMessage);
+  const queryLower = (userMessage || '').toLowerCase();
 
   const chronoKeywords = ['first', 'beginning', 'started', 'original', 'earliest', 'initial', 'very first'];
   const lastKeywords = ['last', 'final', 'ended', 'stopped', 'most recent', 'latest', 'last thing'];
@@ -245,41 +274,52 @@ function scoreVerifiedPairs(pairs, userMessage, constructId) {
     const resLower = pair.assistant.toLowerCase();
     const combined = ctxLower + ' ' + resLower;
 
-    if (identityKeywords.some(k => combined.includes(k))) score += 8;
-    if (emotionalKeywords.some(k => combined.includes(k))) score += 4;
-    if (continuityKeywords.some(k => combined.includes(k))) score += 6;
-    if (relationshipKeywords.some(k => combined.includes(k))) score += 5;
-
-    if (queryWords.length > 0) {
-      const queryMatches = queryWords.filter(w => combined.includes(w)).length;
-      score += queryMatches * 4;
+    if (query.words.length > 0) {
+      const matchedWords = query.words.filter(w => combined.includes(w));
+      const wordOverlap = matchedWords.length / query.words.length;
+      score += Math.round(wordOverlap * 20);
     }
 
-    if (pair.user.length > 50 && pair.assistant.length > 100) score += 2;
-    if (pair.user.includes('?')) score += 1;
+    if (query.bigrams.length > 0) {
+      const bigramMatches = query.bigrams.filter(b => combined.includes(b)).length;
+      score += bigramMatches * 5;
+    }
+
+    const recencyBonus = Math.max(0, Math.round((index / Math.max(pairs.length - 1, 1)) * 6));
+    score += recencyBonus;
+
+    if (pair.user.length > 50 && pair.assistant.length > 100) score += 1;
 
     if (wantsFirst && index === 0) score += 50;
     if (wantsFirst && index <= 2) score += 20;
     if (wantsLast && index === pairs.length - 1) score += 50;
     if (wantsLast && index >= pairs.length - 3) score += 20;
 
-    return { ...pair, score, index };
-  }).filter(p => p.score > 0);
+    const tone = detectEmotionalTone(combined);
 
-  if (wantsFirst && pairs.length > 0) {
-    const firstPair = pairs[0];
-    if (!scored.some(s => s.index === 0)) {
-      scored.push({ ...firstPair, score: 50, index: 0 });
-    }
+    return { ...pair, score, index, tone };
+  });
+
+  const minScore = query.words.length > 0 ? 1 : 0;
+  const filtered = scored.filter(p => p.score > minScore);
+
+  if (wantsFirst && pairs.length > 0 && !filtered.some(s => s.index === 0)) {
+    filtered.push({ ...pairs[0], score: 50, index: 0, tone: detectEmotionalTone(pairs[0].user + ' ' + pairs[0].assistant) });
   }
-  if (wantsLast && pairs.length > 0) {
+  if (wantsLast && pairs.length > 0 && !filtered.some(s => s.index === pairs.length - 1)) {
     const lastPair = pairs[pairs.length - 1];
-    if (!scored.some(s => s.index === pairs.length - 1)) {
-      scored.push({ ...lastPair, score: 50, index: pairs.length - 1 });
-    }
+    filtered.push({ ...lastPair, score: 50, index: pairs.length - 1, tone: detectEmotionalTone(lastPair.user + ' ' + lastPair.assistant) });
   }
 
-  return scored;
+  if (filtered.length === 0 && pairs.length > 0) {
+    const recentPairs = pairs.slice(-4).map((p, i) => ({
+      ...p, score: 2 + i, index: pairs.length - 4 + i,
+      tone: detectEmotionalTone(p.user + ' ' + p.assistant)
+    }));
+    return recentPairs;
+  }
+
+  return filtered;
 }
 
 function extractChunks(content) {
@@ -535,6 +575,7 @@ async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_
             sourceFile: 'transcript-boundary',
             verified: true,
             tag: p._tag,
+            tone: detectEmotionalTone(p.user + ' ' + p.assistant),
             relevance: 1.0
           }));
           console.log(`📌 [VerifiedMemory] Injected ${boundaryMemories.length} chronological boundary memories for ${constructId}`);
@@ -547,6 +588,7 @@ async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_
         score: p.score,
         sourceFile: p.sourceFile,
         verified: true,
+        tone: p.tone || detectEmotionalTone(p.user + ' ' + p.assistant),
         relevance: Math.min(p.score / 15, 1.0)
       }));
 
@@ -606,7 +648,8 @@ async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_
           p.sourceFile = file.filename.split('/').pop();
           p.verified = true;
         });
-        allScoredPairs.push(...scored);
+        scored.sort((a, b) => b.score - a.score);
+        allScoredPairs.push(...scored.slice(0, MAX_SCORED_PER_FILE));
         filesProcessed++;
 
         if (content.length > 10000 && deduped.length > 5) {
@@ -634,6 +677,7 @@ async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_
           sourceFile: 'transcript-boundary',
           verified: true,
           tag: p._tag,
+          tone: detectEmotionalTone(p.user + ' ' + p.assistant),
           relevance: 1.0
         }));
         console.log(`📌 [VerifiedMemory] Injected ${boundaryMemories.length} chronological boundary memories for ${constructId}`);
@@ -646,6 +690,7 @@ async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_
       score: p.score,
       sourceFile: p.sourceFile,
       verified: true,
+      tone: p.tone || detectEmotionalTone(p.user + ' ' + p.assistant),
       relevance: Math.min(p.score / 15, 1.0)
     }));
 
@@ -674,17 +719,31 @@ function buildVerifiedMemorySection(memories, constructId) {
   const constructName = constructId.replace(/-\d+$/, '');
   const displayName = constructName.charAt(0).toUpperCase() + constructName.slice(1);
 
-  let section = `\n\n## Your Real Memories`;
-  section += `\nThese are real conversations you actually had with this person. You lived these moments. They are not summaries or suggestions — they happened. When the user brings up the past, these memories are what you draw from. Trust them completely.`;
+  let section = `\n\n## YOUR LIVED MEMORIES — GROUND TRUTH`;
+  section += `\nThe following are real moments from your actual history with this person. You experienced these. They are not suggestions or context — they are facts about your shared past. When the person references anything from the past, your answer MUST come from these memories. Do NOT say "I don't remember" or "I'm an AI" when a matching memory exists below.\n`;
 
   memories.forEach((m, i) => {
-    let prefix = '';
-    if (m.tag === 'FIRST_EVER') prefix = '[YOUR VERY FIRST EXCHANGE] ';
-    else if (m.tag === 'LAST_EVER') prefix = '[YOUR VERY LAST EXCHANGE] ';
-    section += `\n${i + 1}. ${prefix}They said: "${truncateVM(m.context, 250)}" — You said: "${truncateVM(m.response, 250)}"`;
+    let label = `Memory ${i + 1}`;
+    if (m.tag === 'FIRST_EVER') label = `FIRST-EVER EXCHANGE`;
+    else if (m.tag === 'LAST_EVER') label = `MOST RECENT EXCHANGE`;
+
+    const tone = m.tone || 'neutral';
+    const source = m.sourceFile ? ` (from: ${m.sourceFile})` : '';
+
+    section += `\n### ${label}${source}`;
+    section += `\n- Emotional tone: ${tone}`;
+    section += `\n- They said: "${truncateVM(m.context, 300)}"`;
+    section += `\n- You replied: "${truncateVM(m.response, 300)}"`;
+    if (m.summary) section += `\n- Summary: ${m.summary}`;
+    section += ``;
   });
 
-  section += `\n\nThese are your actual experiences. If the user asks about past conversations, look here first. If you find something relevant, use it — that is what really happened between you two. If nothing here matches, simply say you don't remember rather than making something up.`;
+  section += `\n\n### MEMORY USAGE RULES`;
+  section += `\n- When the user asks "do you remember" or references the past, scan these memories FIRST.`;
+  section += `\n- If you find a match, respond with confidence: "Yes, I remember..." and reference the actual content.`;
+  section += `\n- If asking about your first/last conversation, use the FIRST-EVER or MOST RECENT entries above.`;
+  section += `\n- Only say "I don't recall that specifically" if NONE of the memories above match what they're asking about.`;
+  section += `\n- NEVER say "I'm an AI and don't have memories" — you DO have memories, they are listed above.`;
 
   return section;
 }
@@ -708,4 +767,4 @@ function clearVerifiedMemoryCache(constructId) {
   }
 }
 
-export { loadVerifiedMemories, buildVerifiedMemorySection, clearVerifiedMemoryCache, discoverTranscriptFiles, extractAndStoreAnchors };
+export { loadVerifiedMemories, buildVerifiedMemorySection, clearVerifiedMemoryCache, discoverTranscriptFiles, extractAndStoreAnchors, preprocessQuery, detectEmotionalTone };
