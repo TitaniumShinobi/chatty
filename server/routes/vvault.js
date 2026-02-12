@@ -3903,12 +3903,48 @@ router.post("/message", async (req, res) => {
       console.log(`✅ [VVAULT Proxy] ${effectiveProvider} successful for ${constructId}, response length: ${aiResponse.length}`);
       
       if (!skipPersistence) {
+        const effectiveSession = sessionId || threadId || `${constructId}_chat_with_${constructId}`;
+        const constructName = constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase());
+        try {
+          await loadVVAULTModules();
+          if (writeTranscript) {
+            const now = new Date();
+            await writeTranscript({
+              userId,
+              userEmail: req.user?.email,
+              sessionId: effectiveSession,
+              timestamp: new Date(now.getTime()).toISOString(),
+              role: 'user',
+              content: message,
+              title: constructName,
+              constructId,
+              constructName,
+              constructCallsign: constructId
+            });
+            await writeTranscript({
+              userId,
+              userEmail: req.user?.email,
+              sessionId: effectiveSession,
+              timestamp: new Date(now.getTime() + 2).toISOString(),
+              role: 'assistant',
+              content: aiResponse,
+              title: constructName,
+              constructId,
+              constructName,
+              constructCallsign: constructId
+            });
+            console.log(`💾 [VVAULT Proxy] Transcript persisted for ${constructId} (user + assistant)`);
+          }
+        } catch (persistErr) {
+          console.warn('⚠️ [VVAULT Proxy] Transcript persistence failed:', persistErr.message);
+        }
+
         captureMemory({
           userId,
           constructId,
           userMessage: message,
           aiResponse,
-          sessionId: sessionId || threadId || `${constructId}_chat_with_${constructId}`,
+          sessionId: effectiveSession,
           email: req.user?.email
         }).catch(err => console.warn('⚠️ [VVAULT Proxy] Background memory capture failed:', err.message));
       }
