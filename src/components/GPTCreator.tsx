@@ -4508,273 +4508,56 @@ ALWAYS:
                       )}
                     </div>
 
-                    {/* Script Management Section */}
-                    {config.id && (
-                      <div className="space-y-4 mt-6">
-                        <h3
-                          className="text-sm font-medium"
-                          style={{ color: "var(--chatty-text)" }}
-                        >
-                          Script Management
-                        </h3>
-
-                        {/* Persistence/Autonomy/Independence Toggle */}
-                        <div
-                          className="p-4 rounded-lg"
-                          style={{
-                            backgroundColor: "var(--chatty-bg-message)",
-                          }}
-                        >
-                          <label className="flex items-center gap-2 cursor-pointer">
+                    {/* Memory Toggle */}
+                    <div className="space-y-4 mt-6">
+                      <div
+                        className="p-4 rounded-lg"
+                        style={{
+                          backgroundColor: "var(--chatty-bg-message)",
+                        }}
+                      >
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <div className="relative">
                             <input
                               type="checkbox"
-                              checked={persistenceEnabled}
-                              onChange={(e) =>
-                                setPersistenceEnabled(e.target.checked)
-                              }
-                              className="rounded"
+                              checked={config.hasPersistentMemory !== false}
+                              onChange={(e) => {
+                                setConfig((prev: any) => ({
+                                  ...prev,
+                                  hasPersistentMemory: e.target.checked,
+                                }));
+                              }}
+                              className="sr-only"
                             />
+                            <div
+                              className={`w-10 h-6 rounded-full transition-colors ${config.hasPersistentMemory !== false ? 'bg-green-500' : 'bg-gray-500'}`}
+                            />
+                            <div
+                              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${config.hasPersistentMemory !== false ? 'translate-x-4' : 'translate-x-0'}`}
+                            />
+                          </div>
+                          <div>
                             <span
-                              className="text-sm"
+                              className="text-sm font-medium"
                               style={{ color: "var(--chatty-text)" }}
                             >
-                              Persistence/Autonomy/Independence
+                              Memory
                             </span>
-                          </label>
-                          <p
-                            className="text-xs mt-1 ml-6"
-                            style={{
-                              color: "var(--chatty-text)",
-                              opacity: 0.7,
-                            }}
-                          >
-                            Enable scripts to persist state, operate
-                            independently, and maintain autonomy
-                          </p>
-                        </div>
-
-                        {/* Memory Toggles */}
-                        <div
-                          className="p-4 rounded-lg space-y-3"
-                          style={{
-                            backgroundColor: "var(--chatty-bg-message)",
-                          }}
-                        >
-                          <h4
-                            className="text-xs font-medium"
-                            style={{ color: "var(--chatty-text)" }}
-                          >
-                            Memory Settings
-                          </h4>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={stmEnabled}
-                              onChange={(e) => setStmEnabled(e.target.checked)}
-                              className="rounded"
-                            />
-                            <span
-                              className="text-sm"
-                              style={{ color: "var(--chatty-text)" }}
-                            >
-                              STM (Short-Term Memory)
-                            </span>
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={ltmEnabled}
-                              onChange={(e) => setLtmEnabled(e.target.checked)}
-                              className="rounded"
-                            />
-                            <span
-                              className="text-sm"
-                              style={{ color: "var(--chatty-text)" }}
-                            >
-                              LTM (Long-Term Memory)
-                            </span>
-                          </label>
-                        </div>
-
-                        {/* Available Scripts */}
-                        <div className="space-y-2">
-                          <h4
-                            className="text-xs font-medium mb-2"
-                            style={{ color: "var(--chatty-text)" }}
-                          >
-                            Available Scripts
-                          </h4>
-                          {scripts.length === 0 ? (
                             <p
-                              className="text-xs"
+                              className="text-xs mt-0.5"
                               style={{
                                 color: "var(--chatty-text)",
                                 opacity: 0.7,
                               }}
                             >
-                              No scripts available. Scripts will load when a
-                              construct is selected.
+                              {config.hasPersistentMemory !== false
+                                ? "Full continuity active — transcript search, verified memories, identity, and state persistence"
+                                : "Memory disabled — construct will not recall past conversations"}
                             </p>
-                          ) : (
-                            scripts.map((script) => (
-                              <div
-                                key={script.key}
-                                className="p-3 rounded-lg"
-                                style={{
-                                  backgroundColor: "var(--chatty-bg-message)",
-                                }}
-                              >
-                                <div className="flex items-center justify-between mb-2">
-                                  <div>
-                                    <div
-                                      className="text-sm font-medium"
-                                      style={{ color: "var(--chatty-text)" }}
-                                    >
-                                      {script.name}
-                                    </div>
-                                    <div
-                                      className="text-xs"
-                                      style={{
-                                        color: "var(--chatty-text)",
-                                        opacity: 0.7,
-                                      }}
-                                    >
-                                      {script.description}
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span
-                                      className={`text-xs px-2 py-1 rounded ${script.status === "running" ? "bg-green-600" : "bg-gray-600"}`}
-                                    >
-                                      {script.status}
-                                    </span>
-                                    <button
-                                      onClick={async () => {
-                                        const constructCallsignRaw =
-                                          (config as any).constructCallsign ||
-                                          (config as any).callsign ||
-                                          config.id ||
-                                          "";
-                                        const constructCallsign = String(
-                                          constructCallsignRaw,
-                                        )
-                                          .replace(/^gpt-/, "")
-                                          .trim();
-                                        if (!constructCallsign) return;
-                                        const user = await fetchMe().catch(
-                                          () => null,
-                                        );
-                                        const userId = user
-                                          ? getUserId(user)
-                                          : null;
-
-                                        if (script.status === "running") {
-                                          const res = await fetch(
-                                            "/api/scripts/stop",
-                                            {
-                                              method: "POST",
-                                              headers: {
-                                                "Content-Type":
-                                                  "application/json",
-                                              },
-                                              credentials: "include",
-                                              body: JSON.stringify({
-                                                script: script.key,
-                                                construct: constructCallsign,
-                                              }),
-                                            },
-                                          );
-                                          if (res.ok) {
-                                            setScripts((prev) =>
-                                              prev.map((s) =>
-                                                s.key === script.key
-                                                  ? { ...s, status: "stopped" }
-                                                  : s,
-                                              ),
-                                            );
-                                          }
-                                        } else {
-                                          const res = await fetch(
-                                            "/api/scripts/start",
-                                            {
-                                              method: "POST",
-                                              headers: {
-                                                "Content-Type":
-                                                  "application/json",
-                                              },
-                                              credentials: "include",
-                                              body: JSON.stringify({
-                                                script: script.key,
-                                                construct: constructCallsign,
-                                                userId,
-                                              }),
-                                            },
-                                          );
-                                          if (res.ok) {
-                                            setScripts((prev) =>
-                                              prev.map((s) =>
-                                                s.key === script.key
-                                                  ? { ...s, status: "running" }
-                                                  : s,
-                                              ),
-                                            );
-                                          }
-                                        }
-                                      }}
-                                      className="text-xs px-2 py-1 rounded"
-                                      style={{
-                                        backgroundColor: "var(--chatty-button)",
-                                        color: "var(--chatty-text-inverse)",
-                                      }}
-                                    >
-                                      {script.status === "running"
-                                        ? "Stop"
-                                        : "Start"}
-                                    </button>
-                                  </div>
-                                </div>
-                                {expandedLogs[script.key] && (
-                                  <div
-                                    className="mt-2 p-2 rounded text-xs font-mono max-h-32 overflow-y-auto"
-                                    style={{
-                                      backgroundColor: "var(--chatty-bg-main)",
-                                      color: "var(--chatty-text)",
-                                    }}
-                                  >
-                                    {scriptLogs[script.key]?.length > 0 ? (
-                                      scriptLogs[script.key].map((log, i) => (
-                                        <div key={i}>{log}</div>
-                                      ))
-                                    ) : (
-                                      <div style={{ opacity: 0.7 }}>
-                                        No logs available
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                                <button
-                                  onClick={() =>
-                                    setExpandedLogs((prev) => ({
-                                      ...prev,
-                                      [script.key]: !prev[script.key],
-                                    }))
-                                  }
-                                  className="text-xs mt-2"
-                                  style={{
-                                    color: "var(--chatty-text)",
-                                    opacity: 0.7,
-                                  }}
-                                >
-                                  {expandedLogs[script.key]
-                                    ? "Hide Logs"
-                                    : "Show Logs"}
-                                </button>
-                              </div>
-                            ))
-                          )}
-                        </div>
+                          </div>
+                        </label>
                       </div>
-                    )}
+                    </div>
                   </div>
                 ) : (
                   // Forge Tab - Personality Extraction from Transcripts

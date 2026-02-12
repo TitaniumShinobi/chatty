@@ -3660,6 +3660,17 @@ router.post("/message", async (req, res) => {
       }
     }
     
+    // Auto-initialize construct's memory stack if not already active
+    try {
+      const { masterScriptsManager } = await import('../lib/masterScriptsBridge.js');
+      if (!masterScriptsManager.getConstruct(constructId)) {
+        await masterScriptsManager.initializeConstruct(constructId, userId);
+        console.log(`🔧 [VVAULT Proxy] Auto-initialized memory stack for ${constructId}`);
+      }
+    } catch (msErr) {
+      console.warn(`⚠️ [VVAULT Proxy] Memory stack init deferred for ${constructId}:`, msErr.message);
+    }
+
     // Load enriched system prompt: identity + capsule + memories + anti-roleplay directives
     const enrichedContext = await buildEnrichedContext({
       userId,
@@ -3995,6 +4006,14 @@ router.post("/message", async (req, res) => {
             let { provider: effectiveProvider, model: effectiveModel, error: modelError } = resolveModelForGPT(gptConfig, providerAvailability);
             if (modelError) throw new Error(modelError);
             
+            // Auto-initialize construct's memory stack for fallback path
+            try {
+              const { masterScriptsManager: msFallback } = await import('../lib/masterScriptsBridge.js');
+              if (!msFallback.getConstruct(constructId)) {
+                await msFallback.initializeConstruct(constructId, userId);
+              }
+            } catch (_msErr) {}
+
             const { buildEnrichedContext: buildFallbackContext } = await import('../lib/memoryContextBuilder.js');
             const enrichedResult = await buildFallbackContext({
               userId,
