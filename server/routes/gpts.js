@@ -75,6 +75,32 @@ async function syncPromptJsonToSupabase(gpt, userEmail) {
   }
 
   console.log(`✅ [GPTs API] Synced prompt.json to Supabase for ${callsign}`);
+
+  const bakPath = `instances/${callsign}/identity/identity.bak.json`;
+  const bakContent = JSON.stringify({ ...promptData, backupTimestamp: new Date().toISOString(), backupSource: 'save-gpt' }, null, 2);
+
+  const { data: existingBak } = await supabase
+    .from('vault_files')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('filename', bakPath)
+    .maybeSingle();
+
+  if (existingBak) {
+    const { error: bakErr } = await supabase.from('vault_files').update({ content: bakContent }).eq('id', existingBak.id);
+    if (bakErr) console.warn(`⚠️ [GPTs API] identity.bak.json update failed for ${callsign}:`, bakErr.message);
+  } else {
+    const { error: bakErr } = await supabase.from('vault_files').insert({
+      user_id: userId,
+      filename: bakPath,
+      content: bakContent,
+      file_type: 'identity',
+      construct_id: callsign,
+      metadata: { originalName: 'identity.bak.json', sha256: null },
+    });
+    if (bakErr) console.warn(`⚠️ [GPTs API] identity.bak.json insert failed for ${callsign}:`, bakErr.message);
+  }
+  console.log(`🔒 [GPTs API] Identity backup saved to identity.bak.json for ${callsign}`);
 }
 
 async function resolveUserId(req) {
@@ -294,6 +320,55 @@ router.put('/:id', async (req, res) => {
     }
   } catch (error) {
     console.error('Error updating GPT:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/:id/restore-from-supabase', async (req, res) => {
+  try {
+    const { allowed, gpt: existing } = await verifyGPTOwnership(req, req.params.id);
+    if (!existing) return res.status(404).json({ success: false, error: 'GPT not found' });
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
+
+    const callsign = existing.constructCallsign || existing.construct_callsign;
+    if (!callsign) return res.status(400).json({ success: false, error: 'No construct callsign' });
+
+    const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+    const supabase = getSupabaseClient();
+    if (!supabase) return res.status(503).json({ success: false, error: 'Supabase not configured' });
+
+    const fullCallsign = callsign.match(/-\d+$/) ? callsign : `${callsign}-001`;
+    const vaultPath = `instances/${fullCallsign}/identity/prompt.json`;
+
+    const { data: files } = await supabase
+      .from('vault_files')
+      .select('content')
+      .eq('filename', vaultPath)
+      .limit(1)
+      .maybeSingle();
+
+    if (!files?.content) {
+      return res.status(404).json({ success: false, error: 'No prompt.json found in Supabase for this construct' });
+    }
+
+    let parsed;
+    try {
+      parsed = typeof files.content === 'string' ? JSON.parse(files.content) : files.content;
+    } catch {
+      return res.status(422).json({ success: false, error: 'Supabase prompt.json contains invalid JSON' });
+    }
+
+    const updates = {};
+    if (parsed.name) updates.name = parsed.name;
+    if (parsed.description) updates.description = parsed.description;
+    if (parsed.instructions) updates.instructions = parsed.instructions;
+    if (parsed.conversationStarters) updates.conversationStarters = parsed.conversationStarters;
+
+    const gpt = await gptManager.updateGPT(req.params.id, updates);
+    console.log(`🔄 [GPTs API] Restored ${fullCallsign} identity from Supabase prompt.json (user-initiated)`);
+    res.json({ success: true, gpt, restoredFields: Object.keys(updates) });
+  } catch (error) {
+    console.error('Error restoring from Supabase:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
