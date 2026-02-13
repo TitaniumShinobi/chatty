@@ -10,8 +10,6 @@ import {
   Image,
   Code,
   Save,
-  // Trash2,
-  // Settings,
   FileText,
   Link,
   Play,
@@ -19,6 +17,7 @@ import {
   Paperclip,
   Crop,
   ImageOff,
+  RotateCcw,
 } from "lucide-react";
 import JSZip from "jszip";
 import { GPTService, GPTConfig, GPTFile, GPTAction } from "../lib/gptService";
@@ -63,6 +62,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     "idle" | "saving" | "saved" | "error"
   >("idle");
   const [lastSaveTime, setLastSaveTime] = useState<string | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [lastPreviewModel, setLastPreviewModel] = useState<string | null>(null);
   const [orchestrationMode, setOrchestrationMode] = useState<"lin" | "custom">(
     "lin",
   ); // Tone & Orchestration mode
@@ -1123,6 +1124,38 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       setUploadProgress(null);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleRestoreFromSupabase = async () => {
+    if (!config.id) return;
+    if (!window.confirm('This will overwrite your current description, instructions, and conversation starters with the version stored in Supabase. Continue?')) return;
+    try {
+      setIsRestoring(true);
+      setError(null);
+      const { service, isAIService } = getServiceForGPT(config.id);
+      const response = await fetch(`/api/gpts/${config.id}/restore-from-supabase`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Restore failed');
+      if (data.gpt) {
+        setConfig(prev => ({
+          ...prev,
+          name: data.gpt.name || prev.name,
+          description: data.gpt.description || prev.description,
+          instructions: data.gpt.instructions || prev.instructions,
+          conversationStarters: data.gpt.conversationStarters || prev.conversationStarters,
+        }));
+      }
+      setSaveState('saved');
+      setTimeout(() => setSaveState('idle'), 2000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to restore from Supabase');
+    } finally {
+      setIsRestoring(false);
     }
   };
 
@@ -2382,11 +2415,11 @@ Assistant:`;
         }
       }
 
-      // Process with the selected conversation model (use explicit checks to avoid empty string fallthrough)
       const selectedModel =
         (config.conversationModel && config.conversationModel.trim()) ||
         (config.modelId && config.modelId.trim()) ||
         "openrouter:meta-llama/llama-3.3-70b-instruct";
+      setLastPreviewModel(selectedModel);
 
       const constructIdForMemory =
         config.constructCallsign || initialConfig?.constructCallsign;
@@ -3284,6 +3317,32 @@ ALWAYS:
                 >
                   Error
                 </span>
+              )}
+              {config.id && (
+                <button
+                  onClick={handleRestoreFromSupabase}
+                  disabled={isRestoring}
+                  className="px-3 py-2 text-xs rounded-lg flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    backgroundColor: "transparent",
+                    color: "var(--chatty-text)",
+                    opacity: 0.7,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!e.currentTarget.disabled) {
+                      e.currentTarget.style.opacity = "1";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = e.currentTarget.disabled
+                      ? "0.5"
+                      : "0.7";
+                  }}
+                  title="Restore identity fields from Supabase backup"
+                >
+                  <RotateCcw size={12} />
+                  {isRestoring ? "Restoring..." : "Restore"}
+                </button>
               )}
               <button
                 onClick={handleSave}
@@ -5058,7 +5117,25 @@ ALWAYS:
                           ✓ Configured as: {config.name}
                         </p>
                       )}
-                      {(config.conversationModel ||
+                      {lastPreviewModel && (
+                        <div
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs mt-1"
+                          style={{
+                            backgroundColor: "var(--chatty-button)",
+                            color: "var(--chatty-text)",
+                            opacity: 0.9,
+                          }}
+                        >
+                          <Bot size={10} />
+                          {(() => {
+                            const [provider, ...modelParts] = lastPreviewModel.split(':');
+                            const modelName = modelParts.join(':');
+                            const shortModel = modelName.includes('/') ? modelName.split('/').pop() : modelName;
+                            return `${shortModel || modelName} via ${provider === 'openai' ? 'OpenAI' : provider === 'openrouter' ? 'OpenRouter' : provider === 'ollama' ? 'Ollama' : provider}`;
+                          })()}
+                        </div>
+                      )}
+                      {!lastPreviewModel && (config.conversationModel ||
                         config.creativeModel ||
                         config.codingModel) && (
                         <div className="text-xs mt-2">
