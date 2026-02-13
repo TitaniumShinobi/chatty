@@ -364,7 +364,7 @@ export class GPTManager {
   }
 
   _isStubValue(value, fieldName, constructName) {
-    if (!value || value.trim() === '') return true;
+    if (!value || value.trim() === '') return { isStub: true, reason: 'empty or null' };
     const v = value.trim().toLowerCase();
     const name = (constructName || '').toLowerCase();
     const stubPatterns = [
@@ -376,15 +376,31 @@ export class GPTManager {
       'instructions here',
       'enter description',
       'enter instructions',
+      'default description',
+      'default instructions',
+      'tbd',
+      'todo',
+      'placeholder',
     ];
-    if (stubPatterns.some(p => v === p)) return true;
+    const matchedPattern = stubPatterns.find(p => v === p);
+    if (matchedPattern) return { isStub: true, reason: `matches placeholder pattern: "${matchedPattern}"` };
     if (fieldName === 'instructions') {
-      if (/^you are \w+\.?$/i.test(v)) return true;
-      if (name && v === `you are ${name}.`) return true;
-      if (name && v === `you are ${name}`) return true;
+      if (/^you are \w+\.?$/i.test(v)) return { isStub: true, reason: `matches generic template: "You are {Name}."` };
+      if (name && (v === `you are ${name}.` || v === `you are ${name}`)) return { isStub: true, reason: `matches construct-name template` };
     }
-    if (fieldName === 'description' && v.length < 20) return true;
-    return false;
+    if (fieldName === 'description' && v.length < 50) return { isStub: true, reason: `description too short (${v.length} chars < 50 threshold)` };
+    if (fieldName === 'instructions' && v.length < 50) return { isStub: true, reason: `instructions too short (${v.length} chars < 50 threshold)` };
+    return { isStub: false, reason: 'authored content detected' };
+  }
+
+  _isStubStarters(starters) {
+    if (!starters || starters.length === 0) return { isStub: true, reason: 'empty starters array' };
+    if (starters.length === 1 && !starters[0]) return { isStub: true, reason: 'single empty starter' };
+    const defaultPatterns = ['hello', 'hi', 'hey', 'tell me about yourself', 'what can you do'];
+    if (starters.length <= 2 && starters.every(s => defaultPatterns.includes((s || '').trim().toLowerCase()))) {
+      return { isStub: true, reason: 'only generic default starters' };
+    }
+    return { isStub: false, reason: 'authored starters detected' };
   }
 
   _applyIdentityUpdate(gpt, content, source) {
@@ -403,42 +419,55 @@ export class GPTManager {
         parsed = content;
       }
 
-      const gatedFields = [];
+      const auditLog = [];
       const updates = {};
       if (parsed.name && parsed.name !== gpt.name) updates.name = parsed.name;
 
       if (parsed.description && parsed.description !== gpt.description) {
-        if (this._isStubValue(gpt.description, 'description', gpt.name)) {
+        const check = this._isStubValue(gpt.description, 'description', gpt.name);
+        if (check.isStub) {
           updates.description = parsed.description;
+          auditLog.push({ field: 'description', action: 'hydrated', reason: check.reason });
         } else {
-          gatedFields.push('description');
+          auditLog.push({ field: 'description', action: 'write-protected', reason: check.reason });
         }
       }
 
       if (parsed.instructions && parsed.instructions !== gpt.instructions) {
-        if (this._isStubValue(gpt.instructions, 'instructions', gpt.name)) {
+        const check = this._isStubValue(gpt.instructions, 'instructions', gpt.name);
+        if (check.isStub) {
           updates.instructions = parsed.instructions;
+          auditLog.push({ field: 'instructions', action: 'hydrated', reason: check.reason });
         } else {
-          gatedFields.push('instructions');
+          auditLog.push({ field: 'instructions', action: 'write-protected', reason: check.reason });
         }
       }
 
-      let startersUpdated = false;
       if (parsed.conversationStarters && parsed.conversationStarters.length > 0) {
         const existingStarters = JSON.parse(gpt.conversation_starters || '[]');
         const newJson = JSON.stringify(parsed.conversationStarters);
         if (newJson !== JSON.stringify(existingStarters)) {
-          if (existingStarters.length === 0 || (existingStarters.length === 1 && !existingStarters[0])) {
+          const check = this._isStubStarters(existingStarters);
+          if (check.isStub) {
             updates.conversation_starters = newJson;
-            startersUpdated = true;
+            auditLog.push({ field: 'conversationStarters', action: 'hydrated', reason: check.reason });
           } else {
-            gatedFields.push('conversationStarters');
+            auditLog.push({ field: 'conversationStarters', action: 'write-protected', reason: check.reason });
           }
         }
       }
 
+      const gatedFields = auditLog.filter(e => e.action === 'write-protected');
       if (gatedFields.length > 0) {
-        console.log(`🔒 [GPTManager] Hydration skipped for ${gpt.construct_callsign} — identity already set: ${gatedFields.join(', ')} (source: ${source})`);
+        for (const entry of gatedFields) {
+          console.log(`🔒 [GPTManager] ${gpt.construct_callsign}.${entry.field}: WRITE-PROTECTED — ${entry.reason} (source: ${source})`);
+        }
+      }
+      const hydratedFields = auditLog.filter(e => e.action === 'hydrated');
+      if (hydratedFields.length > 0) {
+        for (const entry of hydratedFields) {
+          console.log(`📥 [GPTManager] ${gpt.construct_callsign}.${entry.field}: hydrated — was ${entry.reason} (source: ${source})`);
+        }
       }
 
       if (Object.keys(updates).length > 0) {

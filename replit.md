@@ -56,7 +56,7 @@ Chatty is an AI-powered workspace application that provides a thin UI layer for 
 - **Anti-Roleplay Enforcement:** System prompt directives prevent asterisk narration, third-person self-reference, and memory fabrication. Constructs must ground responses in actual capsule data, verified transcript memories, and memory context.
 - **Construct Naming Convention:** Uses a "Name" (display label, e.g., "Katana") and "Callsign" (unique instance identifier, e.g., `katana-001`) system. File paths and APIs must use the callsign.
 - **Construct Creation & Instance Scaffolding:** New GPTs trigger VVAULT API calls to scaffold folder structures or fall back to writing files directly to Supabase `vault_files` using relative paths, validated by `VaultPathGuard`. Scaffold resolves Supabase UUID via `users` table lookup (email → UUID) before writing to `vault_files`. Platform transcript directories (codex/, chatgpt/, character.ai/, github_copilot/) are always created as standard, not optional.
-- **Construct Seeding & Identity Hydration:** Seed constructs are minimal shells, and identity data is hydrated from VVAULT or Supabase, ensuring no fabricated data is injected.
+- **Construct Seeding & Identity Hydration:** Seed constructs are minimal shells, and identity data is hydrated from VVAULT or Supabase, ensuring no fabricated data is injected. Hydration is gated by stub detection — user-authored fields (description, instructions, conversationStarters) are write-protected from automatic sync overwrites. See `docs/rubrics/HYDRATION_GATING_PROTOCOL_RUBRIC.md`.
 
 ## Architecture Documentation
 - `docs/architecture/MEMORY_ORCHESTRATION_PLAN.md` — Full message data flow, implementation status, memory authority hierarchy
@@ -65,6 +65,7 @@ Chatty is an AI-powered workspace application that provides a thin UI layer for 
 
 ## Rubrics
 - `docs/rubrics/KNOWLEDGE_FILES_RUBRIC.md` — Knowledge Files are ONLY from assets/ and documents/ folders. Nothing else in Knowledge panel. Hard rule.
+- `docs/rubrics/HYDRATION_GATING_PROTOCOL_RUBRIC.md` — User-authored identity fields (description, instructions, conversationStarters) are write-protected from automatic hydration overwrites. Stub detection, per-field audit logging, field locking policy. NO EXCEPTIONS.
 
 ## Implementation Plans
 - `docs/plans/GPT_CREATION_THROUGH_LIN.md` — Full construct creation flow: Lin conversation → GPTCreator UI → Supabase scaffolding → autonomy stack bootstrap
