@@ -26,6 +26,7 @@ interface TreeNode {
 const FOLDER_META: Record<string, { label: string; icon: string }> = {
   assets: { label: "Assets", icon: "🎨" },
   documents: { label: "Documents", icon: "📄" },
+  "character.ai": { label: "Character.AI", icon: "💬" },
 };
 
 function buildKnowledgeTree(files: KnowledgeFile[]): TreeNode[] {
@@ -38,7 +39,7 @@ function buildKnowledgeTree(files: KnowledgeFile[]): TreeNode[] {
 
     if (instancesIdx >= 0 && pathParts.length > instancesIdx + 2) {
       const topFolder = pathParts[instancesIdx + 2];
-      if (topFolder === 'assets' || topFolder === 'documents') {
+      if (topFolder === 'assets' || topFolder === 'documents' || topFolder === 'character.ai') {
         const subParts = pathParts.slice(instancesIdx + 3, -1);
         const subFolder = subParts.length > 0 ? subParts.join('/') : '__root__';
 
@@ -55,7 +56,7 @@ function buildKnowledgeTree(files: KnowledgeFile[]): TreeNode[] {
 
   const tree: TreeNode[] = [];
 
-  for (const folder of ['documents', 'assets']) {
+  for (const folder of ['documents', 'assets', 'character.ai']) {
     const subs = folderMap[folder];
     if (!subs) {
       tree.push({

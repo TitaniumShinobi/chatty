@@ -44,6 +44,7 @@ function mapToVsiFolder(filename) {
   if (baseName === 'metadata.json' || baseName === 'tone_profile.json' || baseName === 'voice.md') return 'config/';
   if (baseName.endsWith('.log')) return 'logs/';
   if (/\.(png|jpg|jpeg|svg|gif|webp)$/i.test(baseName)) return 'assets/';
+  if (/character[._\-]?ai/i.test(lower)) return 'character.ai/';
   return 'documents/';
 }
 
