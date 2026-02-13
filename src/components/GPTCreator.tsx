@@ -708,6 +708,27 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         loadFiles();
         loadActions();
 
+        const loadIdentityFields = async () => {
+          try {
+            const res = await fetch(`/api/ais/${initialConfig.id}/identity-fields`, {
+              credentials: 'include',
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.success) {
+                setConfig(prev => ({
+                  ...prev,
+                  conditioning: data.conditioning || prev.conditioning || '',
+                  physicalFeatures: data.physicalFeatures || prev.physicalFeatures || '',
+                }));
+              }
+            }
+          } catch (err) {
+            console.error('Failed to load identity fields:', err);
+          }
+        };
+        loadIdentityFields();
+
         // Load scripts for this construct
         const loadScripts = async () => {
           try {
@@ -1052,6 +1073,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         orchestrationMode: config.orchestrationMode,
         isActive: config.isActive,
         hasPersistentMemory: config.hasPersistentMemory,
+        conditioning: config.conditioning,
+        physicalFeatures: config.physicalFeatures,
       };
 
       if (config.avatar && config.avatar.startsWith('data:')) {
@@ -1085,6 +1108,23 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
           files: prev.files || [],
           actions: prev.actions || [],
         }));
+      }
+
+      if (config.conditioning !== undefined || config.physicalFeatures !== undefined) {
+        try {
+          const gptId = gpt.id || config.id;
+          await fetch(`/api/ais/${gptId}/identity-fields`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              conditioning: config.conditioning,
+              physicalFeatures: config.physicalFeatures,
+            }),
+          });
+        } catch (err) {
+          console.error('Failed to save identity fields:', err);
+        }
       }
 
       // Create actions if any (only for new actions)
@@ -3879,6 +3919,40 @@ ALWAYS:
                       />
                     </div>
 
+                    {/* Conditioning */}
+                    <div>
+                      <label
+                        className="block text-sm font-medium mb-2"
+                        style={{ color: "var(--chatty-text)" }}
+                      >
+                        Conditioning
+                      </label>
+                      <p
+                        className="text-xs mb-2"
+                        style={{ color: "var(--chatty-text)", opacity: 0.5 }}
+                      >
+                        Refines tone, personality, and interaction style
+                      </p>
+                      <textarea
+                        value={config.conditioning || ""}
+                        onChange={(e) =>
+                          setConfig((prev) => ({
+                            ...prev,
+                            conditioning: e.target.value,
+                          }))
+                        }
+                        placeholder="Conditioning guidelines for this construct..."
+                        rows={6}
+                        className="w-full p-3 rounded-lg focus:outline-none resize-none chatty-placeholder"
+                        style={{
+                          border: "none",
+                          backgroundColor: "var(--chatty-bg-message)",
+                          color: "var(--chatty-text)",
+                          caretColor: "var(--chatty-text)",
+                        }}
+                      />
+                    </div>
+
                     {/* Tone & Orchestration */}
                     <div className="space-y-4">
                       <div>
@@ -4901,6 +4975,40 @@ ALWAYS:
                         }
                       }}
                     />
+
+                    {/* Physical Features */}
+                    <div className="mt-6 pt-6" style={{ borderTop: "1px solid var(--chatty-line)" }}>
+                      <h3
+                        className="text-sm font-semibold mb-2"
+                        style={{ color: "var(--chatty-text)" }}
+                      >
+                        Physical Features
+                      </h3>
+                      <p
+                        className="text-xs mb-3"
+                        style={{ color: "var(--chatty-text)", opacity: 0.5 }}
+                      >
+                        Visual characteristics for avatar generation and identity consistency
+                      </p>
+                      <textarea
+                        value={config.physicalFeatures || ""}
+                        onChange={(e) =>
+                          setConfig((prev) => ({
+                            ...prev,
+                            physicalFeatures: e.target.value,
+                          }))
+                        }
+                        placeholder="Physical features for this construct..."
+                        rows={8}
+                        className="w-full p-3 rounded-lg focus:outline-none resize-none chatty-placeholder"
+                        style={{
+                          border: "none",
+                          backgroundColor: "var(--chatty-bg-message)",
+                          color: "var(--chatty-text)",
+                          caretColor: "var(--chatty-text)",
+                        }}
+                      />
+                    </div>
                   </div>
                 )}
               </div>

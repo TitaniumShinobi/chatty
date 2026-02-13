@@ -448,6 +448,147 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+router.get('/:id/identity-fields', async (req, res) => {
+  try {
+    const { allowed, ai } = await verifyAIOwnership(req, req.params.id);
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
+    
+    const constructCallsign = ai?.constructCallsign;
+    if (!constructCallsign) {
+      return res.json({ success: true, conditioning: null, physicalFeatures: null });
+    }
+
+    let conditioning = null;
+    let physicalFeatures = null;
+
+    try {
+      const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        const { data: condData } = await supabase
+          .from('vault_files')
+          .select('content')
+          .eq('construct_id', constructCallsign)
+          .like('filename', '%conditioning.txt')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (condData?.content) conditioning = condData.content;
+
+        const { data: physData } = await supabase
+          .from('vault_files')
+          .select('content')
+          .eq('construct_id', constructCallsign)
+          .like('filename', '%physical_features.json')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (physData?.content) {
+          try {
+            const parsed = JSON.parse(physData.content);
+            physicalFeatures = Object.entries(parsed)
+              .map(([key, value]) => `${key}: ${value}`)
+              .join('\n');
+          } catch {
+            physicalFeatures = physData.content;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`⚠️ [AIs API] Identity fields load failed for ${constructCallsign}:`, err.message);
+    }
+
+    res.json({ success: true, conditioning, physicalFeatures });
+  } catch (error) {
+    console.error('Error loading identity fields:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.put('/:id/identity-fields', async (req, res) => {
+  try {
+    const { allowed, ai } = await verifyAIOwnership(req, req.params.id);
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
+    
+    const constructCallsign = ai?.constructCallsign;
+    if (!constructCallsign) {
+      return res.status(400).json({ success: false, error: 'No construct callsign' });
+    }
+
+    const { conditioning, physicalFeatures } = req.body;
+    const userId = ai?.userId;
+
+    try {
+      const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+      const supabase = getSupabaseClient();
+      if (!supabase) throw new Error('Supabase not available');
+
+      const upsertVaultFile = async (filename, fileType, content) => {
+        const { data: existing } = await supabase
+          .from('vault_files')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('filename', filename)
+          .maybeSingle();
+
+        if (existing) {
+          await supabase
+            .from('vault_files')
+            .update({ content, file_type: fileType })
+            .eq('id', existing.id);
+        } else {
+          await supabase
+            .from('vault_files')
+            .insert({
+              user_id: userId,
+              construct_id: constructCallsign,
+              filename,
+              file_type: fileType,
+              content,
+            });
+        }
+      };
+
+      if (conditioning !== undefined) {
+        const filePath = `instances/${constructCallsign}/identity/conditioning.txt`;
+        await upsertVaultFile(filePath, 'identity', conditioning);
+        console.log(`✅ [AIs API] Saved conditioning.txt for ${constructCallsign}`);
+      }
+
+      if (physicalFeatures !== undefined) {
+        let jsonContent = physicalFeatures;
+        try {
+          const lines = physicalFeatures.split('\n').filter(l => l.trim());
+          const obj = {};
+          for (const line of lines) {
+            const colonIdx = line.indexOf(':');
+            if (colonIdx > 0) {
+              const key = line.substring(0, colonIdx).trim();
+              const value = line.substring(colonIdx + 1).trim();
+              obj[key] = value;
+            }
+          }
+          if (Object.keys(obj).length > 0) {
+            jsonContent = JSON.stringify(obj, null, 2);
+          }
+        } catch {}
+
+        const filePath = `instances/${constructCallsign}/identity/physical_features.json`;
+        await upsertVaultFile(filePath, 'identity', jsonContent);
+        console.log(`✅ [AIs API] Saved physical_features.json for ${constructCallsign}`);
+      }
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error(`❌ [AIs API] Identity fields save failed for ${constructCallsign}:`, err.message);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  } catch (error) {
+    console.error('Error saving identity fields:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Upload file to AI
 router.post('/:id/files', upload.single('file'), async (req, res) => {
   try {
