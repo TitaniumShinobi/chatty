@@ -1191,7 +1191,7 @@ router.get('/:id/files', async (req, res) => {
                   return {
                     id: f.id,
                     aiId: req.params.id,
-                    filename: displayName,
+                    filename: fullPath,
                     originalName: displayName,
                     mimeType,
                     size: meta.size || 0,

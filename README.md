@@ -5,6 +5,7 @@
 <div align="left">
   <img src="assets/logo/collapseToggle/chatty_collapsed.png" alt="Collapsed Chatty Logo" width="200">
 </div>
+The Worlds Fastest Productivity Blackbox
 
 # Chatty Documentation Index
 
