@@ -2,7 +2,7 @@
   "name": "api",
   "type": "module",
   "scripts": {
-    "dev": "npx tsx server.js",
+    "dev": "NODE_OPTIONS='--max-old-space-size=4096' npx tsx server.js",
     "cli": "npx tsx cli-server.ts",
     "start": "npx tsx cli-server.ts",
     "prestart": "node -e \"const fs=require('fs');const path=require('path');const distPath=path.join(__dirname,'dist/engine/optimizedZen.js');if(process.env.NODE_ENV==='production'&&!fs.existsSync(distPath)){console.error('ERROR: Build artifacts missing in production. Run: npm run build');process.exit(1);}\"",

@@ -571,13 +571,12 @@ export class AIManager {
     const files = fromGPTsTable ? await this.getAIFilesFromGPTsTable(id) : await this.getAIFiles(id);
     const actions = fromGPTsTable ? await this.getAIActionsFromGPTsTable(id) : await this.getAIActions(id);
 
-    // Process avatar: if it's a filesystem path (not data URL), return API URL
     let avatarUrl = row.avatar;
-    if (avatarUrl && !avatarUrl.startsWith('data:image/') && avatarUrl.startsWith('instances/')) {
-      // It's a filesystem path, return API URL
+    if (avatarUrl && avatarUrl.startsWith('instances/')) {
+      avatarUrl = `/api/ais/${id}/avatar`;
+    } else if (avatarUrl && avatarUrl.startsWith('data:image/') && avatarUrl.length > 1024) {
       avatarUrl = `/api/ais/${id}/avatar`;
     }
-    // If it's a data URL (legacy) or null, return as-is
 
     // Get privacy field, default to 'private' if not set, or derive from isActive for backward compatibility
     let privacy = row.privacy;
@@ -857,12 +856,12 @@ export class AIManager {
             hasValue: !!avatarValue
           });
 
-          // Process avatar: for constructs with callsigns, always use the API URL
-          // so the avatar endpoint can check Supabase for real avatars
           let avatarUrl = row.avatar;
           if (row.construct_callsign) {
             avatarUrl = `/api/ais/${row.id}/avatar`;
-          } else if (avatarUrl && !avatarUrl.startsWith('data:image/') && avatarUrl.startsWith('instances/')) {
+          } else if (avatarUrl && avatarUrl.startsWith('instances/')) {
+            avatarUrl = `/api/ais/${row.id}/avatar`;
+          } else if (avatarUrl && avatarUrl.startsWith('data:image/') && avatarUrl.length > 1024) {
             avatarUrl = `/api/ais/${row.id}/avatar`;
           }
 
