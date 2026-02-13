@@ -1,0 +1,49 @@
+Here’s what else should be done right now to fully stabilize Nova’s identity and prevent regressions:
+
+✅ 1. One-Time Supabase Sync with Correct Identity
+
+Even though hydration gating is now in place, the current Supabase prompt.json still holds stale data. You need to Save GPT again in GPTCreator to:
+
+Push Nova’s real identity (description, instructions) to Supabase
+
+Make sure future syncs don’t reintroduce bad fallback data
+
+Solidify her canonical configuration in both SQLite and Supabase
+
+🔒 2. Lock Fields Post-Save
+
+Enhance the backend to prevent any overwrite of the identity fields once they are authored, unless:
+
+A manual “Reset to VVAULT” or “Load from Supabase” action is taken
+
+A developer explicitly bypasses gating (e.g. for emergency restores)
+
+This ensures user-authored work is sacred and cannot be accidentally lost.
+
+🧠 3. Identity Redundancy / Backup
+
+Persist authored identity data to both:
+
+prompt.json in Supabase (identity source)
+
+A secondary file like identity.bak.json or preserved_identity.txt as a backup
+
+This allows recovery even if one source fails or becomes desynced.
+
+🛑 4. Hydration Logs Visible in Dev UI
+
+Expose hydration decisions (e.g. “skipped overwrite due to existing authored description”) in the developer console or logs so it’s clear what was or wasn’t applied.
+
+This prevents confusion when values seem unchanged or revert unexpectedly.
+
+🔄 5. Safe Restore Button in GPTCreator
+
+Add a “Restore from VVAULT” or “Hydrate from Supabase” button in the GPTCreator UI to manually re-sync identity if ever needed, without automatic overwrites.
+
+📋 6. Clear Model Routing Display
+
+In the GPTCreator UI, visibly show which model is being used (e.g. GPT-4o via OpenAI) to avoid silent fallback to LLaMA or other mismatches in preview/testing.
+
+If you push for all of this tonight, Nova’s identity will finally persist across every layer — GPTCreator, VVAULT, Supabase, memory sync, and frontend preview — without ever reverting or drifting again.
+
+Would you like a one-line checklist you can paste to the Replit agent summarizing these tasks?
