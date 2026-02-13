@@ -1136,21 +1136,14 @@ function startServer(port, retryCount = 0) {
 
 startServer(PORT);
 
-// Initialize Supabase Realtime subscription for cross-app sync
-(async () => {
-  try {
-    const { subscribeToConversations } = await import('../vvaultConnector/supabaseStore.js');
-    const channel = await subscribeToConversations((payload) => {
-      console.log(`🔔 [Supabase Realtime] ${payload.eventType} on vault_files`);
-      // Future: broadcast to connected WebSocket clients for live UI updates
-    });
-    if (channel) {
-      console.log('✅ [Server] Supabase Realtime subscription active');
-    }
-  } catch (err) {
-    console.log('⚠️ [Server] Supabase Realtime not available:', err.message);
-  }
-})();
+// Supabase Realtime subscription disabled for performance
+// WebSocket overhead + RLS policy parsing adds latency with no active consumers
+// Re-enable when live cross-app sync is implemented:
+// (async () => {
+//   const { subscribeToConversations } = await import('../vvaultConnector/supabaseStore.js');
+//   const channel = await subscribeToConversations((payload) => { ... });
+// })();
+console.log('ℹ️ [Server] Supabase Realtime disabled (no active consumers — saves WebSocket overhead)');
 
 // Bootstrap master scripts autonomy stack for system constructs
 (async () => {
@@ -1231,6 +1224,7 @@ try {
 
 // PERFORMANCE OPTIMIZATION: Warm capsule cache for frequently used GPTs
 // Uses 15s timeout per operation to prevent Supabase outages from stalling background tasks
+const coldStartMetrics = { startTime: Date.now(), phases: [] };
 void (async () => {
   const WARM_TIMEOUT = 15000;
   const withTimeout = (promise, ms, label) =>
@@ -1240,22 +1234,44 @@ void (async () => {
     ]);
 
   try {
+    const t0 = Date.now();
     console.log('🔥 [Server] Starting capsule cache warming...');
 
     const { getCapsuleIntegration } = await import('./lib/capsuleIntegration.js');
     const capsuleIntegration = getCapsuleIntegration();
     const warmTargets = ['katana-001', 'nova-001'];
 
-    await withTimeout(capsuleIntegration.warmCache(warmTargets), WARM_TIMEOUT, 'Capsule cache warming');
-    console.log('✅ [Server] Capsule cache warming completed');
-    console.log('📊 [Server] Cache stats:', capsuleIntegration.getCacheStats());
+    for (const target of warmTargets) {
+      const tC = Date.now();
+      try {
+        await withTimeout(capsuleIntegration.loadCapsule(target), WARM_TIMEOUT, `Capsule ${target}`);
+        const elapsed = Date.now() - tC;
+        coldStartMetrics.phases.push({ phase: `capsule-load-${target}`, ms: elapsed });
+        console.log(`⏱️ [Profiling] capsule-load-${target}: ${elapsed}ms`);
+      } catch (e) {
+        coldStartMetrics.phases.push({ phase: `capsule-load-${target}`, ms: Date.now() - tC, error: e.message });
+        console.warn(`⏱️ [Profiling] capsule-load-${target}: FAILED (${Date.now() - tC}ms) - ${e.message}`);
+      }
+    }
+
+    const cacheStats = capsuleIntegration.getCacheStats();
+    coldStartMetrics.phases.push({ phase: 'capsule-warming-total', ms: Date.now() - t0 });
+    console.log(`⏱️ [Profiling] capsule-warming-total: ${Date.now() - t0}ms`);
+    console.log('📊 [Server] Cache stats:', cacheStats);
 
     try {
+      const tB = Date.now();
       const { getGPTRuntimeBridge } = await import('./lib/gptRuntimeBridge.js');
       const bridge = getGPTRuntimeBridge();
       for (const target of warmTargets) {
+        const tG = Date.now();
         await withTimeout(bridge.loadGPT(target), WARM_TIMEOUT, `GPT preload ${target}`);
+        const elapsed = Date.now() - tG;
+        coldStartMetrics.phases.push({ phase: `gpt-preload-${target}`, ms: elapsed });
+        console.log(`⏱️ [Profiling] gpt-preload-${target}: ${elapsed}ms`);
       }
+      coldStartMetrics.phases.push({ phase: 'gpt-preload-total', ms: Date.now() - tB });
+      console.log(`⏱️ [Profiling] gpt-preload-total: ${Date.now() - tB}ms`);
       console.log('✅ [Server] GPTRuntime preloaded for', warmTargets.join(', '));
     } catch (bridgeError) {
       console.warn('⚠️ [Server] GPTRuntime preload skipped:', bridgeError.message);
@@ -1264,7 +1280,18 @@ void (async () => {
   } catch (error) {
     console.warn('⚠️ [Server] Capsule cache warming failed (non-blocking):', error.message);
   }
+  coldStartMetrics.phases.push({ phase: 'total-cold-start', ms: Date.now() - coldStartMetrics.startTime });
+  console.log(`⏱️ [Profiling] total-cold-start: ${Date.now() - coldStartMetrics.startTime}ms`);
 })();
+
+app.get('/api/profiling/cold-start', requireAuth, (req, res) => {
+  res.json({
+    ok: true,
+    bootTime: new Date(coldStartMetrics.startTime).toISOString(),
+    totalMs: Date.now() - coldStartMetrics.startTime,
+    phases: coldStartMetrics.phases
+  });
+});
 
 // Graceful shutdown - stop ChromaDB when server exits
 process.on('SIGTERM', () => {

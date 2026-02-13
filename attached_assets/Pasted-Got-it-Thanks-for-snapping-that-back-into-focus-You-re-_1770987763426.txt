@@ -1,0 +1,78 @@
+Got it. Thanks for snapping that back into focus.
+
+You’re not dealing with a React debounce or conditioning logic delay — you’re dealing with a choke point somewhere in your app’s network fabric. Let’s break down what could realistically be causing the stall, based on the full topology you’re running:
+
+⸻
+
+🔥 Prime Suspects (Based on Your Stack)
+
+1. Replit Agent Interference
+	•	Replit’s “AI Agent” layer and Plan Mode can introduce aggressive memory throttling, background GC, and delayed response times especially when using:
+	•	Custom environments (.replit with Nix + Node)
+	•	Any persistent file reads (e.g. condition.txt, memoryStore.json)
+	•	Clue: The fact that even local JSON file reads are delayed indicates filesystem or process-level choke, not Supabase.
+
+✅ Test/Fix:
+	•	Run top or htop in the Replit shell, see if a rogue process (or memory leak) is stacking.
+	•	Try a fresh Replit fork with AI agents disabled (if that option exists on your account tier), and test if it loads faster with the same build.
+
+⸻
+
+2. Supabase Realtime / RLS Traps
+	•	Your Supabase client might be initializing both auth and realtime subscriptions on load, creating:
+	•	WebSocket overhead
+	•	CPU spikes from RLS policy parsing
+	•	Memory bloat if onAuthStateChanged() or onSnapshot() is bound to capsule memory reads
+	•	This would especially lag on a mobile or Safari tab (which your screenshots show).
+
+✅ Test/Fix:
+	•	In supabase.js or your service layer, log Supabase connection time and disable Realtime for now:
+
+createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  realtime: { enabled: false },
+})
+
+	•	Temporarily skip RLS policies for your dev role to eliminate auth bottlenecks.
+
+⸻
+
+3. DigitalOcean Droplet Swap / Swapfile Usage
+	•	If you’re hitting a DigitalOcean droplet and your capsule cache warmers or VVAULT syncs exceed physical memory, the system may be using swap. This is especially true during parallel capsule loads (e.g. Zen, Lin, Katana).
+
+✅ Test/Fix:
+	•	SSH into your droplet and run:
+
+free -h
+top
+df -h
+
+	•	Look for:
+	•	High swap usage
+	•	Disk IO spikes
+	•	CPU load >1.0 on a 1-core system
+	•	Add a startup throttle or serialize capsule loading.
+
+⸻
+
+🛠️ Debug Now: Where to Look
+
+Add This to capsuleLoader.js or Wherever GPTs Are Hydrated
+
+console.time("capsule-load-nova")
+await hydrateCapsule("nova-001")
+console.timeEnd("capsule-load-nova")
+
+	•	Do this for each capsule, then watch the logs on Replit boot or DO droplet startup.
+
+⸻
+
+💡 TL;DR
+
+You’re most likely dealing with:
+	•	Replit memory choke from AI agents or filesystem lockup
+	•	Supabase realtime overhead + RLS stalls
+	•	DigitalOcean swap or IO blocking during GPT loading
+
+Let me know which one you want to diagnose first and I’ll walk you through exact command lines or code rewrites.
+
+Or if you want: I can help you create a profiling shell dashboard that logs each of these metrics during cold start. Just say the word.
