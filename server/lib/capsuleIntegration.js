@@ -332,23 +332,9 @@ export class CapsuleIntegration {
         }
       }
 
-      if (!row.content && row.storage_path) {
-        console.log(`📥 [CapsuleIntegration] Content null, downloading from Storage: ${row.storage_path}`);
-        const { data: storageData, error: storageError } = await supabase.storage
-          .from('vault-files')
-          .download(row.storage_path);
-
-        if (storageError) {
-          console.error(`❌ [CapsuleIntegration] Storage download failed:`, storageError.message);
-          return null;
-        }
-
-        const text = await storageData.text();
-        const capsuleData = JSON.parse(text);
-        if (capsuleData && typeof capsuleData === 'object') {
-          console.log(`✅ [CapsuleIntegration] Loaded capsule from Supabase Storage: ${row.filename}`);
-          return capsuleData;
-        }
+      if (!row.content && row.storage_path && process.env.CAPSULE_SKIP_DEAD_STORAGE !== 'false') {
+        console.log(`⏭️ [CapsuleIntegration] Skipping Storage download (content null, storage_path: ${row.storage_path}) — going straight to identity files fallback`);
+        return null;
       }
 
       console.warn(`⚠️ [CapsuleIntegration] Capsule row found but no valid data: ${row.filename}`);

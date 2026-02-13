@@ -672,6 +672,8 @@ async function getKnowledgeContext(constructId, userEmail, userMessage) {
 
 async function buildEnrichedContext(options) {
   const { userId, constructId, userMessage, systemPromptOverride, gptConfig, user } = options;
+  const t0 = Date.now();
+  const phaseTiming = {};
 
   const result = {
     systemPrompt: '',
@@ -682,28 +684,36 @@ async function buildEnrichedContext(options) {
   const identityCacheKey = `${userId}:${constructId}`;
   const cachedIdentity = identityCache.get(identityCacheKey);
   let identity = null;
+  const tIdentity = Date.now();
   if (cachedIdentity && Date.now() - cachedIdentity.ts < IDENTITY_CACHE_TTL) {
     identity = cachedIdentity.data;
+    phaseTiming.identity = { ms: Date.now() - tIdentity, source: 'cache' };
     console.log(`💾 [MemoryContextBuilder] Identity cache hit for ${constructId}`);
   } else {
     try {
       identity = await loadIdentityFiles(userId, constructId);
       identityCache.set(identityCacheKey, { data: identity, ts: Date.now() });
+      phaseTiming.identity = { ms: Date.now() - tIdentity, source: 'loaded' };
     } catch (identityErr) {
+      phaseTiming.identity = { ms: Date.now() - tIdentity, source: 'error', error: identityErr.message };
       console.warn(`⚠️ [MemoryContextBuilder] Identity load failed for ${constructId}:`, identityErr.message);
     }
   }
+  console.log(`⏱️ [MemoryContextBuilder] identity: ${phaseTiming.identity.ms}ms (${phaseTiming.identity.source})`);
   let basePrompt = systemPromptOverride || identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
 
   if (identity?.conditioning && !basePrompt.includes(identity.conditioning)) {
     basePrompt += `\n\n## Conditioning\n${identity.conditioning}`;
+    phaseTiming.conditioningInjected = true;
   }
 
   const cachedPhys = physicalFeaturesCache.get(constructId);
   let physicalAppearanceSection = '';
+  const tPhys = Date.now();
   if (cachedPhys && Date.now() - cachedPhys.ts < IDENTITY_CACHE_TTL) {
     physicalAppearanceSection = cachedPhys.section;
     if (physicalAppearanceSection) result.physicalFeatures = true;
+    phaseTiming.physicalFeatures = { ms: 0, source: 'cache' };
     console.log(`💾 [MemoryContextBuilder] Physical features cache hit for ${constructId}`);
   } else {
     try {
@@ -743,13 +753,17 @@ async function buildEnrichedContext(options) {
     } catch (physErr) {
       console.warn(`⚠️ [MemoryContextBuilder] Physical features load failed for ${constructId}:`, physErr.message);
     }
+    phaseTiming.physicalFeatures = { ms: Date.now() - tPhys, source: 'loaded' };
   }
+  console.log(`⏱️ [MemoryContextBuilder] physicalFeatures: ${phaseTiming.physicalFeatures.ms}ms (${phaseTiming.physicalFeatures.source})`);
 
   const cachedCapsule = capsuleCache.get(constructId);
   let capsuleSection = '';
+  const tCapsule = Date.now();
   if (cachedCapsule && Date.now() - cachedCapsule.ts < IDENTITY_CACHE_TTL) {
     capsuleSection = cachedCapsule.section;
     if (capsuleSection) result.capsuleLoaded = true;
+    phaseTiming.capsule = { ms: 0, source: 'cache' };
     console.log(`💾 [MemoryContextBuilder] Capsule cache hit for ${constructId}`);
   } else {
     try {
@@ -766,7 +780,10 @@ async function buildEnrichedContext(options) {
     } catch (capsuleErr) {
       console.warn(`⚠️ [MemoryContextBuilder] Capsule load failed for ${constructId}:`, capsuleErr.message);
     }
+    phaseTiming.capsule = { ms: Date.now() - tCapsule, source: 'loaded' };
   }
+  console.log(`⏱️ [MemoryContextBuilder] capsule: ${phaseTiming.capsule.ms}ms (${phaseTiming.capsule.source})`);
+
 
   let verifiedMemorySection = '';
   let verifiedCount = 0;
@@ -775,6 +792,7 @@ async function buildEnrichedContext(options) {
   let ledgerSection = '';
 
   let ledger = null;
+  const tLedger = Date.now();
   try {
     ledger = await loadLedger(constructId);
     if (!ledger) {
@@ -793,7 +811,10 @@ async function buildEnrichedContext(options) {
   } catch (ledgerErr) {
     console.warn(`⚠️ [MemoryContextBuilder] Ledger load failed for ${constructId}:`, ledgerErr.message);
   }
+  phaseTiming.ledger = { ms: Date.now() - tLedger, sessions: ledger?.sessions?.length || 0 };
+  console.log(`⏱️ [MemoryContextBuilder] ledger: ${phaseTiming.ledger.ms}ms (${phaseTiming.ledger.sessions} sessions)`);
 
+  const tMemory = Date.now();
   if (userMessage) {
     const [verifiedResult, needleHits] = await Promise.all([
       loadVerifiedMemories(constructId, userMessage, 8).catch(err => {
@@ -833,6 +854,9 @@ async function buildEnrichedContext(options) {
       }
     }
   }
+
+  phaseTiming.memorySearch = { ms: Date.now() - tMemory, verified: verifiedCount, needle: needleCount };
+  console.log(`⏱️ [MemoryContextBuilder] memorySearch: ${phaseTiming.memorySearch.ms}ms (verified: ${verifiedCount}, needle: ${needleCount})`);
 
   let memorySection = '';
 
@@ -886,6 +910,7 @@ async function buildEnrichedContext(options) {
   let knowledgeSection = '';
   let knowledgeMatchedFiles = [];
   let hasRelevantDocs = false;
+  const tKnowledge = Date.now();
   try {
     const knowledgeResult = await getKnowledgeContext(constructId, user?.email, userMessage);
     knowledgeSection = knowledgeResult.section;
@@ -898,6 +923,8 @@ async function buildEnrichedContext(options) {
   } catch (knowledgeErr) {
     console.warn(`⚠️ [MemoryContextBuilder] Knowledge context load failed for ${constructId}:`, knowledgeErr.message);
   }
+  phaseTiming.knowledge = { ms: Date.now() - tKnowledge, files: knowledgeMatchedFiles.length, relevant: hasRelevantDocs };
+  console.log(`⏱️ [MemoryContextBuilder] knowledge: ${phaseTiming.knowledge.ms}ms (${knowledgeMatchedFiles.length} files, relevant: ${hasRelevantDocs})`);
 
   if (hasRelevantDocs && memoryGapSection) {
     memoryGapSection = `\n\n## DOCUMENT-BASED EVIDENCE AVAILABLE
@@ -933,6 +960,9 @@ When answering:
 
   result.systemPrompt = basePrompt + physicalAppearanceSection + capsuleSection + userSection + knowledgeSection + citationDirective + ledgerSection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + ANTI_ROLEPLAY_DIRECTIVES;
 
+  phaseTiming.totalMs = Date.now() - t0;
+  result.phaseTiming = phaseTiming;
+  console.log(`⏱️ [MemoryContextBuilder] TOTAL: ${phaseTiming.totalMs}ms | identity: ${phaseTiming.identity?.ms}ms | phys: ${phaseTiming.physicalFeatures?.ms}ms | capsule: ${phaseTiming.capsule?.ms}ms | ledger: ${phaseTiming.ledger?.ms}ms | memory: ${phaseTiming.memorySearch?.ms || 0}ms | knowledge: ${phaseTiming.knowledge?.ms}ms`);
   console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, physicalFeatures: ${!!physicalAppearanceSection}, knowledge: ${!!knowledgeSection}, knowledgeRelevant: ${knowledgeMatchedFiles.length}, ledger: ${ledger ? ledger.sessions.length : 0}, needle: ${needleCount}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
 
   return result;

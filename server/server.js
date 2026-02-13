@@ -1241,7 +1241,7 @@ void (async () => {
     const capsuleIntegration = getCapsuleIntegration();
     const warmTargets = ['katana-001', 'nova-001'];
 
-    for (const target of warmTargets) {
+    await Promise.all(warmTargets.map(async (target) => {
       const tC = Date.now();
       try {
         await withTimeout(capsuleIntegration.loadCapsule(target), WARM_TIMEOUT, `Capsule ${target}`);
@@ -1252,7 +1252,7 @@ void (async () => {
         coldStartMetrics.phases.push({ phase: `capsule-load-${target}`, ms: Date.now() - tC, error: e.message });
         console.warn(`⏱️ [Profiling] capsule-load-${target}: FAILED (${Date.now() - tC}ms) - ${e.message}`);
       }
-    }
+    }));
 
     const cacheStats = capsuleIntegration.getCacheStats();
     coldStartMetrics.phases.push({ phase: 'capsule-warming-total', ms: Date.now() - t0 });
@@ -1291,6 +1291,70 @@ app.get('/api/profiling/cold-start', requireAuth, (req, res) => {
     totalMs: Date.now() - coldStartMetrics.startTime,
     phases: coldStartMetrics.phases
   });
+});
+
+app.get('/api/diagnostics/conditioning-ping', requireAuth, async (req, res) => {
+  const constructId = req.query.constructId || 'nova-001';
+  const timings = {};
+  const t0 = Date.now();
+
+  try {
+    const { getSupabaseClient } = await import('./lib/supabaseClient.js');
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return res.json({ ok: false, error: 'Supabase not available', timings });
+    }
+
+    const tQuery = Date.now();
+    const { data, error } = await supabase
+      .from('vault_files')
+      .select('filename, content')
+      .eq('construct_id', constructId)
+      .ilike('filename', '%conditioning%')
+      .limit(5);
+    timings.supabaseQueryMs = Date.now() - tQuery;
+
+    if (error) {
+      return res.json({ ok: false, error: error.message, timings });
+    }
+
+    const conditioningFile = data?.find(f => f.filename?.includes('conditioning'));
+    timings.totalMs = Date.now() - t0;
+
+    const { loadIdentityFiles } = await import('./lib/identityLoader.js');
+    const tIdentity = Date.now();
+    let identity = null;
+    try {
+      identity = await loadIdentityFiles(req.user?.sub || req.user?.id || 'system', constructId);
+    } catch (e) {
+      identity = { error: e.message };
+    }
+    timings.identityLoadMs = Date.now() - tIdentity;
+    timings.totalMs = Date.now() - t0;
+
+    res.json({
+      ok: true,
+      constructId,
+      conditioning: {
+        found: !!conditioningFile,
+        filename: conditioningFile?.filename || null,
+        contentLength: conditioningFile?.content?.length || 0,
+        preview: conditioningFile?.content?.substring(0, 200) || null,
+        allFiles: data?.map(f => ({ filename: f.filename, contentLength: f.content?.length || 0 })) || []
+      },
+      identity: {
+        hasPrompt: !!identity?.prompt,
+        promptLength: identity?.prompt?.length || 0,
+        hasConditioning: !!identity?.conditioning,
+        conditioningLength: identity?.conditioning?.length || 0,
+        error: identity?.error || null
+      },
+      timings
+    });
+  } catch (err) {
+    timings.totalMs = Date.now() - t0;
+    res.status(500).json({ ok: false, error: err.message, timings });
+  }
 });
 
 // Graceful shutdown - stop ChromaDB when server exits
