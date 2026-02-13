@@ -17,7 +17,7 @@ interface TranscriptFile {
 interface TranscriptFolderTreeProps {
   transcripts: TranscriptFile[];
   onFileClick?: (file: TranscriptFile) => void;
-  onMoveFile?: (file: TranscriptFile, year: string | null, month: string | null) => void;
+  onMoveFile?: (file: TranscriptFile, year: string | null, month: string | null, source?: string) => void;
 }
 
 interface FolderNode {
@@ -26,6 +26,8 @@ interface FolderNode {
   children?: FolderNode[];
   file?: TranscriptFile;
   count?: number;
+  icon?: string;
+  folderKind?: "source" | "year" | "month" | "unsorted";
 }
 
 const MONTHS = [
@@ -33,83 +35,160 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December"
 ];
 
+const SOURCE_META: Record<string, { label: string; icon: string }> = {
+  chatgpt: { label: "ChatGPT", icon: "🤖" },
+  gemini: { label: "Gemini", icon: "✨" },
+  grok: { label: "Grok", icon: "🔮" },
+  copilot: { label: "Copilot", icon: "🪁" },
+  claude: { label: "Claude", icon: "🎭" },
+  chai: { label: "Chai", icon: "🍵" },
+  "character.ai": { label: "Character.AI", icon: "👤" },
+  deepseek: { label: "DeepSeek", icon: "🔍" },
+  codex: { label: "Codex", icon: "💻" },
+  github_copilot: { label: "GitHub Copilot", icon: "🐙" },
+  other: { label: "Other", icon: "📝" },
+  documents: { label: "Documents", icon: "📄" },
+  transcripts: { label: "Transcripts", icon: "📝" },
+  unknown: { label: "Unsorted", icon: "📁" },
+};
+
+const SCAFFOLD_SOURCES = ["chatgpt", "character.ai", "codex", "github_copilot"];
+
 function buildFolderTree(transcripts: TranscriptFile[]): FolderNode[] {
-  const yearMap: Record<string, Record<string, TranscriptFile[]>> = {};
+  const sourceMap: Record<string, Record<string, Record<string, TranscriptFile[]>>> = {};
   const unsorted: TranscriptFile[] = [];
 
   for (const t of transcripts) {
+    const src = t.source || "unknown";
+    if (!sourceMap[src]) sourceMap[src] = {};
+
     if (t.year) {
-      if (!yearMap[t.year]) yearMap[t.year] = {};
+      if (!sourceMap[src][t.year]) sourceMap[src][t.year] = {};
       const monthKey = t.month || "Unknown";
-      if (!yearMap[t.year][monthKey]) yearMap[t.year][monthKey] = [];
-      yearMap[t.year][monthKey].push(t);
+      if (!sourceMap[src][t.year][monthKey]) sourceMap[src][t.year][monthKey] = [];
+      sourceMap[src][t.year][monthKey].push(t);
     } else {
+      if (!sourceMap[src]["__unsorted__"]) sourceMap[src]["__unsorted__"] = { __files__: [] as unknown as TranscriptFile[] };
+      (sourceMap[src]["__unsorted__"] as unknown as Record<string, TranscriptFile[]>).__files__ = 
+        (sourceMap[src]["__unsorted__"] as unknown as Record<string, TranscriptFile[]>).__files__ || [];
       unsorted.push(t);
+      if (!sourceMap[src]["__unsorted__"]["Unsorted"]) sourceMap[src]["__unsorted__"]["Unsorted"] = [];
+      sourceMap[src]["__unsorted__"]["Unsorted"].push(t);
+    }
+  }
+
+  for (const scaffoldSource of SCAFFOLD_SOURCES) {
+    if (!sourceMap[scaffoldSource]) {
+      sourceMap[scaffoldSource] = {};
     }
   }
 
   const tree: FolderNode[] = [];
 
-  const sortedYears = Object.keys(yearMap).sort((a, b) => parseInt(b) - parseInt(a));
-  
-  for (const year of sortedYears) {
-    const months = yearMap[year];
-    const monthOrder = [...MONTHS, "Unknown"];
-    
-    const sortedMonths = Object.keys(months).sort((a, b) => {
-      return monthOrder.indexOf(a) - monthOrder.indexOf(b);
-    });
+  const sourceOrder = Object.keys(sourceMap).sort((a, b) => {
+    const aFiles = countSourceFiles(sourceMap[a]);
+    const bFiles = countSourceFiles(sourceMap[b]);
+    if (aFiles !== bFiles) return bFiles - aFiles;
+    return a.localeCompare(b);
+  });
 
-    const monthNodes: FolderNode[] = sortedMonths.map(month => ({
-      name: month,
-      type: "folder" as const,
-      count: months[month].length,
-      children: months[month].map(f => ({
-        name: f.name,
-        type: "file" as const,
-        file: f,
-      })),
-    }));
+  for (const source of sourceOrder) {
+    const years = sourceMap[source];
+    const meta = SOURCE_META[source] || { label: source, icon: "📁" };
+    const totalFiles = countSourceFiles(years);
 
-    const totalFiles = Object.values(months).reduce((sum, arr) => sum + arr.length, 0);
-    
+    const yearNodes: FolderNode[] = [];
+
+    const sortedYears = Object.keys(years)
+      .filter(y => y !== "__unsorted__")
+      .sort((a, b) => parseInt(b) - parseInt(a));
+
+    for (const year of sortedYears) {
+      const months = years[year];
+      const monthOrder = [...MONTHS, "Unknown"];
+
+      const sortedMonths = Object.keys(months).sort((a, b) => {
+        return monthOrder.indexOf(a) - monthOrder.indexOf(b);
+      });
+
+      const monthNodes: FolderNode[] = sortedMonths.map(month => ({
+        name: month,
+        type: "folder" as const,
+        count: months[month].length,
+        folderKind: "month" as const,
+        children: months[month].map(f => ({
+          name: f.name,
+          type: "file" as const,
+          file: f,
+        })),
+      }));
+
+      const yearTotal = Object.values(months).reduce((sum, arr) => sum + arr.length, 0);
+
+      yearNodes.push({
+        name: year,
+        type: "folder",
+        count: yearTotal,
+        folderKind: "year",
+        children: monthNodes,
+      });
+    }
+
+    if (years["__unsorted__"]) {
+      const unsortedFiles = years["__unsorted__"]["Unsorted"] || [];
+      if (unsortedFiles.length > 0) {
+        yearNodes.push({
+          name: "Unsorted",
+          type: "folder",
+          count: unsortedFiles.length,
+          folderKind: "unsorted",
+          children: unsortedFiles.map(f => ({
+            name: f.name,
+            type: "file",
+            file: f,
+          })),
+        });
+      }
+    }
+
     tree.push({
-      name: year,
+      name: `${meta.icon} ${meta.label}`,
       type: "folder",
       count: totalFiles,
-      children: monthNodes,
-    });
-  }
-
-  if (unsorted.length > 0) {
-    tree.push({
-      name: "Unsorted",
-      type: "folder",
-      count: unsorted.length,
-      children: unsorted.map(f => ({
-        name: f.name,
-        type: "file",
-        file: f,
-      })),
+      folderKind: "source",
+      children: yearNodes,
     });
   }
 
   return tree;
 }
 
+function countSourceFiles(years: Record<string, Record<string, TranscriptFile[]>>): number {
+  let count = 0;
+  for (const year of Object.keys(years)) {
+    for (const month of Object.keys(years[year])) {
+      count += years[year][month].length;
+    }
+  }
+  return count;
+}
+
 function MoveDialog({
   file,
   existingYears,
+  existingSources,
   onMove,
   onClose,
 }: {
   file: TranscriptFile;
   existingYears: string[];
-  onMove: (file: TranscriptFile, year: string | null, month: string | null) => void;
+  existingSources: string[];
+  onMove: (file: TranscriptFile, year: string | null, month: string | null, source?: string) => void;
   onClose: () => void;
 }) {
   const [year, setYear] = useState(file.year || "");
   const [month, setMonth] = useState(file.month || "");
+  const [source, setSource] = useState(file.source || "");
   const [customYear, setCustomYear] = useState("");
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -126,11 +205,13 @@ function MoveDialog({
   const finalYear = year === "__custom__" ? customYear : year;
 
   const handleSubmit = () => {
-    onMove(file, finalYear || null, month || null);
+    onMove(file, finalYear || null, month || null, source || undefined);
     onClose();
   };
 
   const yearOptions = [...new Set([...existingYears, ...(file.year ? [file.year] : [])])].sort((a, b) => parseInt(b) - parseInt(a));
+
+  const allSources = [...new Set([...existingSources, ...Object.keys(SOURCE_META)])].filter(s => s !== "unknown" && s !== "transcripts");
 
   return (
     <div
@@ -156,16 +237,35 @@ function MoveDialog({
       </div>
 
       <div>
-        <label className="text-[10px] block mb-0.5" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>Year</label>
+        <label className="text-[10px] block mb-0.5" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>Platform</label>
         <select
-          value={year}
-          onChange={(e) => setYear(e.target.value)}
+          value={source}
+          onChange={e => setSource(e.target.value)}
           className="w-full p-1.5 rounded text-xs"
           style={{
             backgroundColor: "var(--chatty-bg-main)",
-            borderColor: "var(--chatty-line)",
-            color: "var(--chatty-text)",
             border: "1px solid var(--chatty-line)",
+            color: "var(--chatty-text)",
+          }}
+        >
+          <option value="">Keep current</option>
+          {allSources.map(s => {
+            const meta = SOURCE_META[s] || { label: s, icon: "📁" };
+            return <option key={s} value={s}>{meta.icon} {meta.label}</option>;
+          })}
+        </select>
+      </div>
+
+      <div>
+        <label className="text-[10px] block mb-0.5" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>Year</label>
+        <select
+          value={year}
+          onChange={e => setYear(e.target.value)}
+          className="w-full p-1.5 rounded text-xs"
+          style={{
+            backgroundColor: "var(--chatty-bg-main)",
+            border: "1px solid var(--chatty-line)",
+            color: "var(--chatty-text)",
           }}
         >
           <option value="">Unsorted</option>
@@ -174,29 +274,31 @@ function MoveDialog({
           ))}
           <option value="__custom__">Custom year...</option>
         </select>
-        {year === "__custom__" && (
+      </div>
+
+      {year === "__custom__" && (
+        <div>
           <input
             type="text"
             placeholder="e.g. 2024"
             value={customYear}
-            onChange={(e) => setCustomYear(e.target.value.replace(/\D/g, "").slice(0, 4))}
-            className="w-full p-1.5 rounded text-xs mt-1"
+            onChange={e => setCustomYear(e.target.value.replace(/\D/g, "").slice(0, 4))}
+            className="w-full p-1.5 rounded text-xs"
             style={{
               backgroundColor: "var(--chatty-bg-main)",
               border: "1px solid var(--chatty-line)",
               color: "var(--chatty-text)",
             }}
-            autoFocus
           />
-        )}
-      </div>
+        </div>
+      )}
 
-      {(finalYear) && (
+      {(finalYear || year) && (
         <div>
           <label className="text-[10px] block mb-0.5" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>Month</label>
           <select
             value={month}
-            onChange={(e) => setMonth(e.target.value)}
+            onChange={e => setMonth(e.target.value)}
             className="w-full p-1.5 rounded text-xs"
             style={{
               backgroundColor: "var(--chatty-bg-main)",
@@ -233,14 +335,16 @@ function FolderItem({
   onFileClick,
   onMoveFile,
   existingYears,
+  existingSources,
 }: {
   node: FolderNode;
   depth: number;
   onFileClick?: (file: TranscriptFile) => void;
-  onMoveFile?: (file: TranscriptFile, year: string | null, month: string | null) => void;
+  onMoveFile?: (file: TranscriptFile, year: string | null, month: string | null, source?: string) => void;
   existingYears: string[];
+  existingSources: string[];
 }) {
-  const [isOpen, setIsOpen] = useState(depth === 0);
+  const [isOpen, setIsOpen] = useState(node.folderKind === "source" && (node.count || 0) > 0);
   const [showMoveDialog, setShowMoveDialog] = useState(false);
 
   if (node.type === "file") {
@@ -293,6 +397,7 @@ function FolderItem({
           <MoveDialog
             file={node.file}
             existingYears={existingYears}
+            existingSources={existingSources}
             onMove={onMoveFile}
             onClose={() => setShowMoveDialog(false)}
           />
@@ -301,28 +406,40 @@ function FolderItem({
     );
   }
 
-  const isYear = /^\d{4}$/.test(node.name);
-  const isUnsorted = node.name === "Unsorted";
+  const isSource = node.folderKind === "source";
+  const isYear = node.folderKind === "year" || /^\d{4}$/.test(node.name);
+  const isUnsorted = node.folderKind === "unsorted" || node.name === "Unsorted";
+  const isEmpty = (node.count || 0) === 0;
+
+  const folderColor = isSource
+    ? "var(--chatty-accent)"
+    : isYear
+      ? "#f59e0b"
+      : isUnsorted
+        ? "#94a3b8"
+        : "var(--chatty-accent)";
 
   return (
     <div>
       <div
         className="flex items-center gap-2 py-1.5 px-2 rounded cursor-pointer hover:bg-white/10 transition-colors"
-        style={{ paddingLeft: `${depth * 12}px` }}
-        onClick={() => setIsOpen(!isOpen)}
+        style={{ paddingLeft: `${depth * 12}px`, opacity: isEmpty ? 0.5 : 1 }}
+        onClick={() => !isEmpty && setIsOpen(!isOpen)}
       >
-        {isOpen ? (
+        {isEmpty ? (
+          <ChevronRight size={14} style={{ color: "var(--chatty-text)", opacity: 0.3 }} />
+        ) : isOpen ? (
           <ChevronDown size={14} style={{ color: "var(--chatty-text)", opacity: 0.6 }} />
         ) : (
           <ChevronRight size={14} style={{ color: "var(--chatty-text)", opacity: 0.6 }} />
         )}
-        {isOpen ? (
-          <FolderOpen size={14} style={{ color: isYear ? "#f59e0b" : isUnsorted ? "#94a3b8" : "var(--chatty-accent)" }} />
+        {isOpen && !isEmpty ? (
+          <FolderOpen size={14} style={{ color: folderColor }} />
         ) : (
-          <Folder size={14} style={{ color: isYear ? "#f59e0b" : isUnsorted ? "#94a3b8" : "var(--chatty-accent)" }} />
+          <Folder size={14} style={{ color: folderColor }} />
         )}
         <span
-          className="text-sm font-medium flex-1"
+          className={`text-sm flex-1 ${isSource ? "font-semibold" : "font-medium"}`}
           style={{ color: "var(--chatty-text)" }}
         >
           {node.name}
@@ -332,13 +449,13 @@ function FolderItem({
           style={{
             backgroundColor: "var(--chatty-bg-message)",
             color: "var(--chatty-text)",
-            opacity: 0.7,
+            opacity: isEmpty ? 0.4 : 0.7,
           }}
         >
-          {node.count}
+          {node.count || 0}
         </span>
       </div>
-      {isOpen && node.children && (
+      {isOpen && !isEmpty && node.children && (
         <div>
           {node.children.map((child, idx) => (
             <FolderItem
@@ -348,6 +465,7 @@ function FolderItem({
               onFileClick={onFileClick}
               onMoveFile={onMoveFile}
               existingYears={existingYears}
+              existingSources={existingSources}
             />
           ))}
         </div>
@@ -367,14 +485,43 @@ export function TranscriptFolderTree({ transcripts, onFileClick, onMoveFile }: T
     return Array.from(years).sort((a, b) => parseInt(b) - parseInt(a));
   }, [transcripts]);
 
+  const existingSources = useMemo(() => {
+    const sources = new Set<string>();
+    for (const t of transcripts) {
+      if (t.source) sources.add(t.source);
+    }
+    return Array.from(sources);
+  }, [transcripts]);
+
   if (transcripts.length === 0) {
     return (
-      <div
-        className="text-center py-4"
-        style={{ color: "var(--chatty-text)", opacity: 0.5 }}
-      >
-        <FileText size={24} className="mx-auto mb-2 opacity-50" />
-        <p className="text-xs">No transcripts stored</p>
+      <div className="space-y-0.5">
+        {SCAFFOLD_SOURCES.map(source => {
+          const meta = SOURCE_META[source];
+          return (
+            <div
+              key={source}
+              className="flex items-center gap-2 py-1.5 px-2 rounded"
+              style={{ opacity: 0.5 }}
+            >
+              <ChevronRight size={14} style={{ color: "var(--chatty-text)", opacity: 0.3 }} />
+              <Folder size={14} style={{ color: "var(--chatty-accent)" }} />
+              <span className="text-sm font-semibold" style={{ color: "var(--chatty-text)" }}>
+                {meta.icon} {meta.label}
+              </span>
+              <span
+                className="text-xs px-1.5 py-0.5 rounded"
+                style={{
+                  backgroundColor: "var(--chatty-bg-message)",
+                  color: "var(--chatty-text)",
+                  opacity: 0.4,
+                }}
+              >
+                0
+              </span>
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -389,6 +536,7 @@ export function TranscriptFolderTree({ transcripts, onFileClick, onMoveFile }: T
           onFileClick={onFileClick}
           onMoveFile={onMoveFile}
           existingYears={existingYears}
+          existingSources={existingSources}
         />
       ))}
     </div>

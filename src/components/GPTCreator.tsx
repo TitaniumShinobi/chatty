@@ -29,6 +29,7 @@ import { useSettings } from "../context/SettingsContext";
 import Cropper from "react-easy-crop";
 import { Z_LAYERS } from "../lib/zLayers";
 import { TranscriptFolderTree } from "./TranscriptFolderTree";
+import { KnowledgeFileTree } from "./KnowledgeFileTree";
 import PersonalityForge from "./PersonalityForge";
 import {
   getUserFriendlyErrorMessage,
@@ -4535,67 +4536,17 @@ ALWAYS:
                         </p>
                       )}
 
-                      {/* File List with Pagination */}
-                      {files.length > 0 && (
-                        <div className="mt-3 space-y-2">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm text-app-text-800">
-                              {files.length} file{files.length !== 1 ? "s" : ""}{" "}
-                              uploaded
-                            </span>
-                            {totalFilePages > 1 && (
-                              <span className="text-xs text-app-text-800">
-                                Page {filePage} of {totalFilePages}
-                              </span>
-                            )}
-                          </div>
-
-                          {currentFiles.map((file) => (
-                            <div
-                              key={file.id}
-                              className="flex items-center justify-between p-2 var(--chatty-highlight) rounded"
-                            >
-                              <div className="flex items-center gap-2">
-                                <FileText
-                                  size={16}
-                                  className="text-app-text-800"
-                                />
-                                <span className="text-sm text-app-text-900">
-                                  {file.originalName}
-                                </span>
-                                <span className="text-xs text-app-text-800">
-                                  ({gptService.formatFileSize(file.size)})
-                                </span>
-                              </div>
-                              <button
-                                onClick={() => handleRemoveFile(file.id)}
-                                className="p-1 hover:bg-app-button-600 rounded text-app-text-800 hover:text-app-text-900"
-                              >
-                                <X size={14} />
-                              </button>
-                            </div>
-                          ))}
-
-                          {totalFilePages > 1 && (
-                            <div className="flex items-center justify-center gap-2 pt-2 border-t var(--chatty-line)">
-                              <button
-                                onClick={() => goToFilePage(filePage - 1)}
-                                disabled={filePage === 1}
-                                className="px-3 py-1 text-xs bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600 disabled:opacity-50"
-                              >
-                                ← Previous
-                              </button>
-                              <button
-                                onClick={() => goToFilePage(filePage + 1)}
-                                disabled={filePage === totalFilePages}
-                                className="px-3 py-1 text-xs bg-app-button-500 text-app-text-900 rounded hover:bg-app-button-600 disabled:opacity-50"
-                              >
-                                Next →
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      {/* Knowledge File Tree */}
+                      <div
+                        className="mt-3 rounded-lg p-2"
+                        style={{ backgroundColor: "var(--chatty-bg-message)" }}
+                      >
+                        <KnowledgeFileTree
+                          files={files}
+                          onRemoveFile={handleRemoveFile}
+                          formatFileSize={gptService.formatFileSize}
+                        />
+                      </div>
                     </div>
 
                     {/* Memories / Transcripts */}

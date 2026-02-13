@@ -703,7 +703,7 @@ router.post('/auto-organize/:constructCallsign', async (req, res) => {
 
 router.post('/move', async (req, res) => {
   try {
-    const { fileId, year, month } = req.body;
+    const { fileId, year, month, source } = req.body;
 
     if (!fileId) {
       return res.status(400).json({ success: false, error: 'fileId is required' });
@@ -717,11 +717,11 @@ router.post('/move', async (req, res) => {
     const userEmail = req.user?.email || 'anonymous';
     const userId = await resolveSupabaseUserId(supabase, userEmail);
 
-    console.log(`📦 [Transcripts] Moving file ${fileId} → ${year || 'Unsorted'}/${month || ''}`);
+    console.log(`📦 [Transcripts] Moving file ${fileId} → ${source || '?'}/${year || 'Unsorted'}/${month || ''}`);
 
     const { data: file, error: fetchError } = await supabase
       .from('vault_files')
-      .select('id, metadata, user_id, filename')
+      .select('id, metadata, user_id, filename, construct_id')
       .eq('id', fileId)
       .eq('file_type', 'transcript')
       .single();
@@ -742,9 +742,30 @@ router.post('/move', async (req, res) => {
       movedAt: new Date().toISOString(),
     };
 
+    let newFilename = file.filename;
+
+    if (source && source !== file.metadata?.source) {
+      updatedMetadata.source = source;
+      updatedMetadata.previousSource = file.metadata?.source || null;
+      const oldSource = file.metadata?.source || 'documents';
+      const constructId = file.construct_id || file.metadata?.constructCallsign;
+      if (constructId) {
+        const candidate = file.filename.replace(
+          new RegExp(`(instances/${constructId}/)${oldSource}/`),
+          `$1${source}/`
+        );
+        try {
+          assertValidVaultFilename(candidate);
+          newFilename = candidate;
+        } catch (e) {
+          console.warn(`⚠️ [Transcripts] Invalid filename after source move, keeping original path`);
+        }
+      }
+    }
+
     const { error: updateError } = await supabase
       .from('vault_files')
-      .update({ metadata: updatedMetadata })
+      .update({ filename: newFilename, metadata: updatedMetadata })
       .eq('id', file.id);
 
     if (updateError) {
@@ -753,10 +774,103 @@ router.post('/move', async (req, res) => {
     }
 
     const displayName = file.filename?.split('/').pop() || fileId;
-    console.log(`✅ [Transcripts] Moved ${displayName} → ${year || 'Unsorted'}/${month || ''}`);
-    res.json({ success: true, year: year || null, month: month || null });
+    console.log(`✅ [Transcripts] Moved ${displayName} → ${source || '?'}/${year || 'Unsorted'}/${month || ''}`);
+    res.json({ success: true, year: year || null, month: month || null, source: source || null });
   } catch (error) {
     console.error('❌ [Transcripts] Move error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/relocate-source', async (req, res) => {
+  try {
+    const { constructCallsign, fromSource, toSource } = req.body;
+
+    if (!constructCallsign || !fromSource || !toSource) {
+      return res.status(400).json({ success: false, error: 'constructCallsign, fromSource, and toSource are all required' });
+    }
+
+    if (fromSource === toSource) {
+      return res.json({ success: true, moved: 0, message: 'Source and destination are the same' });
+    }
+
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return res.status(500).json({ success: false, error: 'Supabase not configured' });
+    }
+
+    const userEmail = req.user?.email || 'anonymous';
+    const userId = await resolveSupabaseUserId(supabase, userEmail);
+    if (!userId) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    console.log(`📦 [Transcripts] Relocating ${constructCallsign} files: ${fromSource} → ${toSource}`);
+
+    const { data: files, error: fetchError } = await supabase
+      .from('vault_files')
+      .select('id, filename, metadata')
+      .eq('user_id', userId)
+      .eq('construct_id', constructCallsign)
+      .eq('file_type', 'transcript')
+      .like('filename', `%/${fromSource}/%`);
+
+    if (fetchError) {
+      return res.status(500).json({ success: false, error: fetchError.message });
+    }
+
+    if (!files || files.length === 0) {
+      return res.json({ success: true, moved: 0, message: 'No files found to relocate' });
+    }
+
+    let moved = 0;
+    let skipped = 0;
+    for (const file of files) {
+      const sourcePattern = `instances/${constructCallsign}/${fromSource}/`;
+      if (!file.filename.includes(sourcePattern)) {
+        skipped++;
+        continue;
+      }
+
+      const newFilename = file.filename.replace(sourcePattern, `instances/${constructCallsign}/${toSource}/`);
+
+      if (newFilename === file.filename) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        assertValidVaultFilename(newFilename);
+      } catch (e) {
+        console.warn(`⚠️ [Transcripts] Invalid new filename, skipping: ${newFilename}`);
+        skipped++;
+        continue;
+      }
+
+      const currentSource = file.metadata?.source || fromSource;
+      const updatedMetadata = {
+        ...file.metadata,
+        source: toSource,
+        previousSource: currentSource,
+        relocatedAt: new Date().toISOString(),
+      };
+
+      const { error: updateError } = await supabase
+        .from('vault_files')
+        .update({ filename: newFilename, metadata: updatedMetadata })
+        .eq('id', file.id);
+
+      if (!updateError) {
+        moved++;
+      } else {
+        console.error(`❌ [Transcripts] Failed to relocate ${file.filename}:`, updateError);
+      }
+    }
+
+    console.log(`✅ [Transcripts] Relocated ${moved}/${files.length} files to ${toSource}/ (${skipped} skipped)`);
+    res.json({ success: true, moved, skipped, total: files.length });
+  } catch (error) {
+    console.error('❌ [Transcripts] Relocate error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
