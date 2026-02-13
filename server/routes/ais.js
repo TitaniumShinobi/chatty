@@ -123,6 +123,19 @@ const upload = multer({
   }
 });
 
+function stripHeavyFields(ai) {
+  if (!ai) return ai;
+  const stripped = { ...ai };
+  if (stripped.files && Array.isArray(stripped.files)) {
+    stripped.files = stripped.files.map(f => ({
+      ...f,
+      content: undefined,
+      extractedText: undefined,
+    }));
+  }
+  return stripped;
+}
+
 router.get('/', async (req, res) => {
   try {
     const { userId, chattyUserId } = await resolveUserId(req);
@@ -134,7 +147,8 @@ router.get('/', async (req, res) => {
     const ais = await aiManager.getAllAIs(userId, chattyUserId);
     console.log(`✅ [AIs API] Found ${ais?.length || 0} AIs for user ${userId}`);
     
-    res.json({ success: true, ais: ais || [] });
+    const lightAIs = (ais || []).map(stripHeavyFields);
+    res.json({ success: true, ais: lightAIs });
   } catch (error) {
     console.error('❌ [AIs API] Error fetching AIs:', error);
     if (!res.headersSent) {
@@ -195,10 +209,10 @@ router.get('/:id', async (req, res) => {
       if (!byCallsign) return res.status(404).json({ success: false, error: 'AI not found' });
       const ownerMatch = byCallsign.userId === userId;
       if (!ownerMatch) return res.status(403).json({ success: false, error: 'Access denied' });
-      return res.json({ success: true, ai: byCallsign });
+      return res.json({ success: true, ai: stripHeavyFields(byCallsign) });
     }
     if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
-    res.json({ success: true, ai });
+    res.json({ success: true, ai: stripHeavyFields(ai) });
   } catch (error) {
     console.error('Error fetching AI:', error);
     res.status(500).json({ success: false, error: error.message });
