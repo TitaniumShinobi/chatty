@@ -482,12 +482,67 @@ function getKnowledgePriority(filename) {
   return 4;
 }
 
-async function getKnowledgeContext(constructId, userEmail) {
-  const cacheKey = `${constructId}:${userEmail || 'system'}`;
+const KNOWLEDGE_FILLER_WORDS = new Set([
+  'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+  'should', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from',
+  'that', 'this', 'what', 'which', 'who', 'it', 'its', 'he', 'she',
+  'they', 'them', 'we', 'us', 'me', 'my', 'your', 'you', 'and', 'or',
+  'but', 'if', 'so', 'just', 'like', 'about', 'not', 'all', 'can',
+  'hey', 'hello', 'hi', 'okay', 'ok', 'yeah', 'yes', 'no', 'well',
+  'really', 'actually', 'know', 'think', 'want', 'get', 'got', 'i',
+  'tell', 'please', 'need', 'remember', 'happened', 'what'
+]);
+
+function scoreKnowledgeFileRelevance(content, filename, queryWords, queryBigrams) {
+  if (!queryWords || queryWords.length === 0) return 0;
+  const contentLower = (content || '').toLowerCase();
+  const filenameLower = (filename || '').toLowerCase();
+  let score = 0;
+
+  const matchedWords = queryWords.filter(w => contentLower.includes(w) || filenameLower.includes(w));
+  if (matchedWords.length > 0) {
+    score += Math.round((matchedWords.length / queryWords.length) * 30);
+  }
+
+  if (queryBigrams && queryBigrams.length > 0) {
+    const bigramMatches = queryBigrams.filter(b => contentLower.includes(b) || filenameLower.includes(b)).length;
+    score += bigramMatches * 10;
+  }
+
+  const fnMatches = queryWords.filter(w => filenameLower.includes(w)).length;
+  if (fnMatches > 0) score += fnMatches * 5;
+
+  return score;
+}
+
+function extractQueryTerms(userMessage) {
+  if (!userMessage) return { words: [], bigrams: [] };
+  const lower = userMessage.toLowerCase().replace(/[^\w\s'-]/g, ' ');
+  const allWords = lower.split(/\s+/).filter(w => w.length > 1);
+  const words = allWords.filter(w => !KNOWLEDGE_FILLER_WORDS.has(w) && w.length > 2);
+
+  const bigrams = [];
+  for (let i = 0; i < allWords.length - 1; i++) {
+    bigrams.push(allWords[i] + ' ' + allWords[i + 1]);
+  }
+  return { words, bigrams };
+}
+
+async function getKnowledgeContext(constructId, userEmail, userMessage) {
+  const queryTerms = extractQueryTerms(userMessage);
+  const hasQuery = queryTerms.words.length > 0;
+
+  const normalizedQuery = hasQuery ? queryTerms.words.sort().join('_') : 'static';
+  const cacheKey = `${constructId}:${userEmail || 'system'}:${normalizedQuery}`;
   const cached = knowledgeContextCache.get(cacheKey);
   if (cached && (Date.now() - cached.timestamp < KNOWLEDGE_CACHE_TTL)) {
-    console.log(`📚 [KnowledgeContext] Cache hit for ${constructId} (${cached.files} files, ${cached.section.length} chars)`);
-    return cached.section;
+    const cachedMatched = cached.matchedFiles || [];
+    console.log(`📚 [KnowledgeContext] Cache hit for ${constructId} (${cached.files} files, ${cached.section.length} chars, ${cachedMatched.length} query-relevant)`);
+    if (cachedMatched.length > 0) {
+      console.log(`📚 [KnowledgeContext] Cached matched files: ${cachedMatched.map(f => `${f.filename}(score:${f.score})`).join(', ')}`);
+    }
+    return { section: cached.section, matchedFiles: cachedMatched, hasRelevantDocs: cached.hasRelevantDocs || false };
   }
 
   try {
@@ -495,12 +550,12 @@ async function getKnowledgeContext(constructId, userEmail) {
     const supabase = getSupabaseClient();
     if (!supabase) {
       console.warn(`⚠️ [KnowledgeContext] Supabase not available`);
-      return '';
+      return { section: '', matchedFiles: [], hasRelevantDocs: false };
     }
 
     if (!userEmail) {
       console.log(`📚 [KnowledgeContext] No user email provided, skipping knowledge load for ${constructId}`);
-      return '';
+      return { section: '', matchedFiles: [], hasRelevantDocs: false };
     }
 
     const { data: userRow } = await supabase
@@ -512,7 +567,7 @@ async function getKnowledgeContext(constructId, userEmail) {
 
     if (!userRow?.id) {
       console.log(`📚 [KnowledgeContext] Could not resolve Supabase user for ${userEmail}, skipping knowledge load`);
-      return '';
+      return { section: '', matchedFiles: [], hasRelevantDocs: false };
     }
 
     const supabaseUserId = userRow.id;
@@ -528,13 +583,13 @@ async function getKnowledgeContext(constructId, userEmail) {
 
     if (error) {
       console.warn(`⚠️ [KnowledgeContext] Supabase query error for ${constructId}:`, error.message);
-      return '';
+      return { section: '', matchedFiles: [], hasRelevantDocs: false };
     }
 
     if (!rows || rows.length === 0) {
       console.log(`📚 [KnowledgeContext] No knowledge files found for ${constructId}`);
-      knowledgeContextCache.set(cacheKey, { section: '', files: 0, timestamp: Date.now() });
-      return '';
+      knowledgeContextCache.set(cacheKey, { section: '', files: 0, matchedFiles: [], hasRelevantDocs: false, timestamp: Date.now() });
+      return { section: '', matchedFiles: [], hasRelevantDocs: false };
     }
 
     const textFiles = rows.filter(row => {
@@ -545,35 +600,55 @@ async function getKnowledgeContext(constructId, userEmail) {
 
     if (textFiles.length === 0) {
       console.log(`📚 [KnowledgeContext] ${rows.length} files found but none have extractable text for ${constructId}`);
-      knowledgeContextCache.set(cacheKey, { section: '', files: 0, timestamp: Date.now() });
-      return '';
+      knowledgeContextCache.set(cacheKey, { section: '', files: 0, matchedFiles: [], hasRelevantDocs: false, timestamp: Date.now() });
+      return { section: '', matchedFiles: [], hasRelevantDocs: false };
     }
 
-    textFiles.sort((a, b) => {
-      const prioA = getKnowledgePriority(a.filename);
-      const prioB = getKnowledgePriority(b.filename);
-      if (prioA !== prioB) return prioA - prioB;
+    const scored = textFiles.map(file => {
+      const staticPrio = getKnowledgePriority(file.filename);
+      const queryScore = hasQuery ? scoreKnowledgeFileRelevance(file.content, file.filename, queryTerms.words, queryTerms.bigrams) : 0;
+      return { ...file, staticPrio, queryScore };
+    });
+
+    scored.sort((a, b) => {
+      if (a.staticPrio === 0 && b.staticPrio !== 0) return -1;
+      if (b.staticPrio === 0 && a.staticPrio !== 0) return 1;
+
+      if (hasQuery) {
+        if (a.queryScore !== b.queryScore) return b.queryScore - a.queryScore;
+      }
+
+      if (a.staticPrio !== b.staticPrio) return a.staticPrio - b.staticPrio;
       return (a.content?.length || 0) - (b.content?.length || 0);
     });
 
+    const matchedFiles = scored.filter(f => f.queryScore > 0).map(f => ({
+      filename: f.filename.split('/').pop(),
+      score: f.queryScore,
+      chars: f.content?.length || 0
+    }));
+
+    const hasRelevantDocs = matchedFiles.length > 0;
+
     let totalChars = 0;
-    let section = `\n\n## Knowledge Files\nThe following documents are part of your knowledge base. Use this information to inform your responses. Reference specific details when relevant.\n`;
+    let section = `\n\n## Knowledge Files\nThe following documents are part of your knowledge base. These are REAL documents you possess. When the user asks about topics covered in these documents, you MUST cite them by name and quote their content directly. Do not paraphrase from imagination when a document contains the answer.\n`;
     let includedCount = 0;
 
-    for (const file of textFiles) {
+    for (const file of scored) {
       const basename = file.filename.split('/').pop();
       const content = file.content.trim();
+      const relevanceTag = file.queryScore > 0 ? ` [RELEVANT TO CURRENT QUERY — score: ${file.queryScore}]` : '';
 
       if (totalChars + content.length > MAX_KNOWLEDGE_CHARS) {
         const remaining = MAX_KNOWLEDGE_CHARS - totalChars;
         if (remaining > 200) {
-          section += `\n### ${basename}\n${content.substring(0, remaining)}...\n[truncated]\n`;
+          section += `\n### ${basename}${relevanceTag}\n${content.substring(0, remaining)}...\n[truncated]\n`;
           includedCount++;
         }
         break;
       }
 
-      section += `\n### ${basename}\n${content}\n`;
+      section += `\n### ${basename}${relevanceTag}\n${content}\n`;
       totalChars += content.length;
       includedCount++;
     }
@@ -582,13 +657,16 @@ async function getKnowledgeContext(constructId, userEmail) {
       section += `\n[${textFiles.length - includedCount} additional files not shown due to context limits]\n`;
     }
 
-    console.log(`📚 [KnowledgeContext] Loaded ${includedCount}/${textFiles.length} knowledge files for ${constructId} (${totalChars} chars)`);
-    knowledgeContextCache.set(cacheKey, { section, files: includedCount, timestamp: Date.now() });
-    return section;
+    if (matchedFiles.length > 0) {
+      console.log(`📚 [KnowledgeContext] QUERY-MATCHED ${matchedFiles.length} files for "${queryTerms.words.slice(0, 5).join(', ')}": ${matchedFiles.map(f => `${f.filename}(score:${f.score})`).join(', ')}`);
+    }
+    console.log(`📚 [KnowledgeContext] Loaded ${includedCount}/${textFiles.length} knowledge files for ${constructId} (${totalChars} chars, ${matchedFiles.length} query-relevant)`);
+    knowledgeContextCache.set(cacheKey, { section, files: includedCount, matchedFiles, hasRelevantDocs, timestamp: Date.now() });
+    return { section, matchedFiles, hasRelevantDocs };
 
   } catch (err) {
     console.warn(`⚠️ [KnowledgeContext] Error loading knowledge for ${constructId}:`, err.message);
-    return '';
+    return { section: '', matchedFiles: [], hasRelevantDocs: false };
   }
 }
 
@@ -806,18 +884,56 @@ async function buildEnrichedContext(options) {
   }
 
   let knowledgeSection = '';
+  let knowledgeMatchedFiles = [];
+  let hasRelevantDocs = false;
   try {
-    knowledgeSection = await getKnowledgeContext(constructId, user?.email);
+    const knowledgeResult = await getKnowledgeContext(constructId, user?.email, userMessage);
+    knowledgeSection = knowledgeResult.section;
+    knowledgeMatchedFiles = knowledgeResult.matchedFiles || [];
+    hasRelevantDocs = knowledgeResult.hasRelevantDocs || false;
     if (knowledgeSection) {
       result.knowledgeFiles = true;
+      result.knowledgeMatchedFiles = knowledgeMatchedFiles;
     }
   } catch (knowledgeErr) {
     console.warn(`⚠️ [MemoryContextBuilder] Knowledge context load failed for ${constructId}:`, knowledgeErr.message);
   }
 
-  result.systemPrompt = basePrompt + physicalAppearanceSection + capsuleSection + userSection + knowledgeSection + ledgerSection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + ANTI_ROLEPLAY_DIRECTIVES;
+  if (hasRelevantDocs && memoryGapSection) {
+    memoryGapSection = `\n\n## DOCUMENT-BASED EVIDENCE AVAILABLE
+The user is asking about a past event or topic. While no specific transcript memories were found for this exact query, you DO have relevant documents in your Knowledge Files section above.
 
-  console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, physicalFeatures: ${!!physicalAppearanceSection}, knowledge: ${!!knowledgeSection}, ledger: ${ledger ? ledger.sessions.length : 0}, needle: ${needleCount}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
+### MANDATORY RESPONSE PROTOCOL:
+- SCAN your Knowledge Files section above for documents marked [RELEVANT TO CURRENT QUERY].
+- CITE those documents by filename: "According to [filename]..."
+- QUOTE specific passages from those documents rather than paraphrasing from imagination.
+- If the documents contain factual details about the topic, present those facts.
+- You MUST NOT invent details, dates, or events that are not explicitly stated in your documents.
+- You MUST NOT embellish or dramatize the document content with fictional narrative.
+- If documents provide partial information, state what they contain and acknowledge what they don't cover.
+`;
+    result.memoryGapInjected = false;
+    result.documentEvidenceInjected = true;
+    console.log(`📄 [MemoryContextBuilder] Document evidence directive injected for ${constructId} — ${knowledgeMatchedFiles.length} relevant docs found instead of memory gap`);
+  }
+
+  let citationDirective = '';
+  if (hasRelevantDocs) {
+    const relevantNames = knowledgeMatchedFiles.slice(0, 5).map(f => f.filename).join(', ');
+    citationDirective = `\n\n## DOCUMENT CITATION RULES
+You have ${knowledgeMatchedFiles.length} document(s) relevant to the user's current question: ${relevantNames}.
+When answering:
+1. CITE the document by name: "In [filename], it states..."
+2. QUOTE specific content from the document rather than summarizing from imagination.
+3. If the document contains dates, names, or specific facts, use those EXACT details.
+4. Do NOT generate elaborate narrative around document content. Present the facts as documented.
+5. If you're uncertain about details not in your documents, say so clearly.
+`;
+  }
+
+  result.systemPrompt = basePrompt + physicalAppearanceSection + capsuleSection + userSection + knowledgeSection + citationDirective + ledgerSection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + ANTI_ROLEPLAY_DIRECTIVES;
+
+  console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, physicalFeatures: ${!!physicalAppearanceSection}, knowledge: ${!!knowledgeSection}, knowledgeRelevant: ${knowledgeMatchedFiles.length}, ledger: ${ledger ? ledger.sessions.length : 0}, needle: ${needleCount}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
 
   return result;
 }
