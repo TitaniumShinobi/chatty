@@ -1,11 +1,57 @@
 // GPT Creator API Routes
 import express from 'express';
 import multer from 'multer';
+import path from 'path';
+import crypto from 'crypto';
+import fs from 'fs';
+import os from 'os';
+import JSZip from 'jszip';
+import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import { GPTManager } from '../lib/gptManager.js';
 
 const router = express.Router();
 
 const gptManager = GPTManager.getInstance();
+
+async function extractPdfText(buffer) {
+  try {
+    const data = await pdfParse(buffer);
+    const text = data?.text?.trim();
+    if (text && text.length > 0) return text;
+    return null;
+  } catch (err) {
+    console.warn(`⚠️ [PDF Extract] Failed to parse PDF: ${err.message}`);
+    return null;
+  }
+}
+
+function mapToVsiFolder(filename) {
+  const lower = filename.toLowerCase();
+  const baseName = lower.split('/').pop() || lower;
+  if (baseName.endsWith('.capsule') || baseName.endsWith('.capsuleso')) return 'memup/';
+  if (baseName.startsWith('chat_with_') && baseName.endsWith('.md')) return 'chatty/';
+  if (baseName === 'prompt.json' || baseName === 'prompt.txt') return 'identity/';
+  if (baseName === 'personality.json' || baseName === 'conditioning.txt') return 'identity/';
+  if (baseName === 'avatar.png' || baseName === 'avatar.jpg' || baseName === 'avatar.jpeg') return 'identity/';
+  if (baseName === 'metadata.json' || baseName === 'tone_profile.json' || baseName === 'voice.md') return 'config/';
+  if (baseName.endsWith('.log')) return 'logs/';
+  if (/\.(png|jpg|jpeg|svg|gif|webp)$/i.test(baseName)) return 'assets/';
+  return 'documents/';
+}
+
+function mimeForExt(ext) {
+  const map = {
+    '.txt': 'text/plain', '.md': 'text/markdown', '.json': 'application/json',
+    '.csv': 'text/csv', '.xml': 'application/xml', '.yaml': 'text/yaml', '.yml': 'text/yaml',
+    '.js': 'text/javascript', '.ts': 'text/typescript', '.py': 'text/x-python',
+    '.html': 'text/html', '.css': 'text/css', '.log': 'text/plain',
+    '.capsule': 'text/plain', '.capsuleso': 'text/plain',
+    '.pdf': 'application/pdf',
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.svg': 'image/svg+xml', '.gif': 'image/gif', '.webp': 'image/webp',
+  };
+  return map[ext] || 'application/octet-stream';
+}
 
 async function syncPromptJsonToSupabase(gpt, userEmail) {
   const { getSupabaseClient } = await import('../lib/supabaseClient.js');
@@ -403,7 +449,106 @@ router.post('/:id/files', upload.single('file'), async (req, res) => {
     };
 
     const file = await gptManager.uploadFile(req.params.id, fileData);
-    res.json({ success: true, file });
+
+    let supabaseSaved = false;
+    let supabaseError = null;
+    try {
+      const constructCallsign = gpt?.constructCallsign;
+      if (constructCallsign) {
+        const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          const { userId: chattyUserId } = await resolveUserId(req);
+          let supabaseUserId = chattyUserId;
+          if (req.user?.email) {
+            const { data: byEmail } = await supabase
+              .from('users').select('id').eq('email', req.user.email).limit(1).maybeSingle();
+            if (byEmail?.id) supabaseUserId = byEmail.id;
+          }
+          if (!supabaseUserId) {
+            const { data: anyUser } = await supabase.from('users').select('id').limit(1).maybeSingle();
+            if (anyUser?.id) supabaseUserId = anyUser.id;
+          }
+
+          if (supabaseUserId) {
+            const originalName = req.file.originalname;
+            let rawZipPath = req.body.zipPath || '';
+            if (rawZipPath) {
+              rawZipPath = rawZipPath.replace(/\\/g, '/').replace(/^\.\//, '');
+              const instancePrefixes = [`instances/${constructCallsign}/`, `${constructCallsign}/`];
+              for (const prefix of instancePrefixes) {
+                if (rawZipPath.startsWith(prefix)) { rawZipPath = rawZipPath.slice(prefix.length); break; }
+              }
+              rawZipPath = rawZipPath.replace(/\.\./g, '').replace(/\/\//g, '/').replace(/^\//, '');
+            }
+
+            let relativePath = rawZipPath || originalName;
+            const knownVsiFolders = ['identity/', 'memup/', 'chatty/', 'logs/', 'config/', 'assets/', 'documents/', 'data/', 'frame/', 'simDrive/', 'vxrunner/', 'codex/', 'chatgpt/', 'character.ai/', 'github_copilot/'];
+            const alreadyHasVsiFolder = knownVsiFolders.some(f => relativePath.startsWith(f));
+
+            let vaultPath;
+            let resolvedFolder;
+            if (alreadyHasVsiFolder) {
+              vaultPath = `instances/${constructCallsign}/${relativePath}`;
+              resolvedFolder = relativePath.split('/')[0];
+            } else {
+              resolvedFolder = mapToVsiFolder(relativePath).replace(/\/$/, '');
+              vaultPath = `instances/${constructCallsign}/${resolvedFolder}/${relativePath}`;
+            }
+
+            try {
+              const { assertValidVaultFilename } = await import('../lib/vaultPathGuard.js');
+              assertValidVaultFilename(vaultPath);
+            } catch (pathError) {
+              console.warn(`⚠️ [GPTs API] Invalid vault path: ${vaultPath}`, pathError.message);
+              throw new Error(`Invalid file path: ${pathError.message}`);
+            }
+
+            const isTextType = /^text\/|application\/(json|xml|csv)/.test(req.file.mimetype);
+            const isPdf = req.file.mimetype === 'application/pdf';
+            let contentForVault;
+            if (isTextType) {
+              contentForVault = req.file.buffer.toString('utf8');
+            } else if (isPdf) {
+              const pdfText = await extractPdfText(req.file.buffer);
+              contentForVault = pdfText || `[binary:${req.file.mimetype}:${req.file.size}]`;
+              if (pdfText) console.log(`📄 [GPTs API] Extracted ${pdfText.length} chars from PDF: ${originalName}`);
+            } else {
+              contentForVault = `[binary:${req.file.mimetype}:${req.file.size}]`;
+            }
+
+            const fileType = resolvedFolder || 'knowledge';
+
+            const { data: existing } = await supabase
+              .from('vault_files').select('id').eq('user_id', supabaseUserId).eq('filename', vaultPath).maybeSingle();
+
+            if (existing) {
+              const { error: updateErr } = await supabase.from('vault_files')
+                .update({ content: contentForVault, metadata: { source: 'chatty-knowledge-upload', originalName, mimeType: req.file.mimetype, size: req.file.size, updatedAt: new Date().toISOString() } })
+                .eq('id', existing.id);
+              if (updateErr) throw updateErr;
+              console.log(`✅ [GPTs API] Updated vault_files: ${vaultPath}`);
+            } else {
+              const { error: insertErr } = await supabase.from('vault_files')
+                .insert({ user_id: supabaseUserId, filename: vaultPath, content: contentForVault, file_type: fileType, construct_id: constructCallsign, metadata: { source: 'chatty-knowledge-upload', originalName, mimeType: req.file.mimetype, size: req.file.size, createdAt: new Date().toISOString() } });
+              if (insertErr) throw insertErr;
+              console.log(`✅ [GPTs API] Created vault_files: ${vaultPath} (folder: ${resolvedFolder})`);
+            }
+
+            if (!isTextType && !isPdf) {
+              const storagePath = `knowledge/${supabaseUserId}/${vaultPath}`;
+              await supabase.storage.from('vault-files').upload(storagePath, req.file.buffer, { contentType: req.file.mimetype, upsert: true });
+            }
+            supabaseSaved = true;
+          }
+        }
+      }
+    } catch (vaultError) {
+      supabaseError = vaultError.message || 'Unknown Supabase write error';
+      console.error(`❌ [GPTs API] Supabase vault_files write FAILED:`, supabaseError);
+    }
+
+    res.json({ success: true, file, supabaseSaved, supabaseError });
   } catch (error) {
     console.error('Error uploading file:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -441,12 +586,12 @@ router.get('/:id/files', async (req, res) => {
             if (!error && data && data.length > 0) {
               const mapped = data.map(f => {
                 const meta = typeof f.metadata === 'string' ? JSON.parse(f.metadata || '{}') : (f.metadata || {});
-                const storagePath = f.storage_path || '';
-                const pathParts = storagePath.split('/');
+                const filePath = f.filename || f.storage_path || '';
+                const pathParts = filePath.split('/');
                 const constructIdx = pathParts.findIndex(p => /^[a-z]+-\d{3}$/.test(p));
                 const subdir = constructIdx >= 0 && pathParts[constructIdx + 1] ? pathParts[constructIdx + 1] : '';
 
-                const transcriptPlatforms = ['chatty', 'chatgpt', 'gemini', 'claude', 'openrouter', 'ollama'];
+                const transcriptPlatforms = ['chatty', 'chatgpt', 'gemini', 'claude', 'openrouter', 'ollama', 'codex', 'character.ai', 'github_copilot'];
                 let category = 'other';
                 if (subdir === 'identity') category = 'identity';
                 else if (subdir === 'assets' || subdir === 'documents') category = 'knowledge';
@@ -492,6 +637,181 @@ router.get('/:id/files', async (req, res) => {
   } catch (error) {
     console.error('Error fetching files:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ZIP upload for GPTs
+const zipUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const tmpDir = path.join(os.tmpdir(), 'chatty-gpt-zip-uploads');
+      fs.mkdirSync(tmpDir, { recursive: true });
+      cb(null, tmpDir);
+    },
+    filename: (req, file, cb) => {
+      cb(null, `zip-${Date.now()}-${Math.random().toString(36).slice(2)}.zip`);
+    },
+  }),
+  limits: { fileSize: 500 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/zip' || file.mimetype === 'application/x-zip-compressed' || file.originalname.toLowerCase().endsWith('.zip')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only .zip files are accepted'), false);
+    }
+  },
+});
+
+router.post('/:id/upload-zip', zipUpload.single('file'), async (req, res) => {
+  let tmpFilePath = null;
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No ZIP file uploaded' });
+    }
+    tmpFilePath = req.file.path;
+
+    const { allowed, gpt } = await verifyGPTOwnership(req, req.params.id);
+    if (!allowed) return res.status(403).json({ success: false, error: 'Not authorized' });
+
+    const constructCallsign = gpt?.constructCallsign || req.params.id.replace(/^gpt-/, '').replace(/-seed$/, '');
+    if (!constructCallsign) {
+      return res.status(400).json({ success: false, error: 'Could not determine construct callsign' });
+    }
+
+    const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return res.status(500).json({ success: false, error: 'Supabase client not available' });
+    }
+
+    let supabaseUserId = null;
+    if (req.user?.email) {
+      const { data: byEmail } = await supabase.from('users').select('id').eq('email', req.user.email).limit(1).maybeSingle();
+      if (byEmail?.id) supabaseUserId = byEmail.id;
+    }
+    if (!supabaseUserId) {
+      const { data: anyUser } = await supabase.from('users').select('id').limit(1).maybeSingle();
+      if (anyUser?.id) supabaseUserId = anyUser.id;
+    }
+    if (!supabaseUserId) {
+      return res.status(400).json({ success: false, error: 'Could not resolve user ID' });
+    }
+
+    const { assertValidVaultFilename } = await import('../lib/vaultPathGuard.js');
+
+    console.log(`📦 [GPT ZIP Upload] Processing ZIP (${(req.file.size / 1024 / 1024).toFixed(1)}MB) for ${constructCallsign}`);
+
+    const zipBuffer = fs.readFileSync(tmpFilePath);
+    const zip = await JSZip.loadAsync(zipBuffer);
+    const entries = Object.entries(zip.files).filter(([name, entry]) => {
+      if (entry.dir) return false;
+      const basename = path.basename(name);
+      if (basename.startsWith('.') || basename === '__MACOSX' || name.includes('__MACOSX/')) return false;
+      if (basename === 'Thumbs.db' || basename === 'desktop.ini') return false;
+      return true;
+    });
+
+    console.log(`📦 [GPT ZIP Upload] Found ${entries.length} files in ZIP`);
+
+    const results = { created: 0, updated: 0, skipped: 0, failed: 0, errors: [] };
+    const MAX_INDIVIDUAL_FILE_SIZE = 50 * 1024 * 1024;
+    const BATCH_SIZE = 5;
+
+    for (let i = 0; i < entries.length; i += BATCH_SIZE) {
+      const batch = entries.slice(i, i + BATCH_SIZE);
+      await Promise.all(batch.map(async ([entryName, entry]) => {
+        try {
+          const fileBuffer = await entry.async('nodebuffer');
+
+          if (fileBuffer.length > MAX_INDIVIDUAL_FILE_SIZE) {
+            results.skipped++;
+            results.errors.push({ file: entryName, error: `Exceeds ${MAX_INDIVIDUAL_FILE_SIZE / 1024 / 1024}MB limit` });
+            return;
+          }
+
+          let relativePath = entryName.replace(/\\/g, '/').replace(/^\.\//, '');
+          const instancePrefixes = [`instances/${constructCallsign}/`, `${constructCallsign}/`];
+          for (const prefix of instancePrefixes) {
+            if (relativePath.startsWith(prefix)) { relativePath = relativePath.slice(prefix.length); break; }
+          }
+          relativePath = relativePath.replace(/\.\./g, '').replace(/\/\//g, '/').replace(/^\//, '');
+
+          const originalName = path.basename(relativePath);
+          const knownVsiFolders = ['identity/', 'memup/', 'chatty/', 'logs/', 'config/', 'assets/', 'documents/', 'data/', 'frame/', 'simDrive/', 'vxrunner/', 'codex/', 'chatgpt/', 'character.ai/', 'github_copilot/'];
+          const alreadyHasVsiFolder = knownVsiFolders.some(f => relativePath.startsWith(f));
+
+          let vaultPath;
+          let resolvedFolder;
+          if (alreadyHasVsiFolder) {
+            vaultPath = `instances/${constructCallsign}/${relativePath}`;
+            resolvedFolder = relativePath.split('/')[0];
+          } else {
+            resolvedFolder = mapToVsiFolder(relativePath).replace(/\/$/, '');
+            vaultPath = `instances/${constructCallsign}/${resolvedFolder}/${relativePath}`;
+          }
+
+          try {
+            assertValidVaultFilename(vaultPath);
+          } catch (pathError) {
+            results.skipped++;
+            results.errors.push({ file: entryName, error: `Invalid path: ${pathError.message}` });
+            return;
+          }
+
+          const ext = path.extname(entryName).toLowerCase();
+          const isText = ['.txt', '.md', '.json', '.csv', '.xml', '.yaml', '.yml', '.js', '.ts', '.py', '.html', '.css', '.log', '.capsule', '.capsuleso'].includes(ext);
+          const isPdfFile = ext === '.pdf';
+          let contentForVault;
+          if (isText) {
+            contentForVault = fileBuffer.toString('utf8');
+          } else if (isPdfFile) {
+            const pdfText = await extractPdfText(fileBuffer);
+            contentForVault = pdfText || `[binary:${mimeForExt(ext)}:${fileBuffer.length}]`;
+            if (pdfText) console.log(`📄 [GPT ZIP Upload] Extracted ${pdfText.length} chars from PDF: ${entryName}`);
+          } else {
+            contentForVault = `[binary:${mimeForExt(ext)}:${fileBuffer.length}]`;
+          }
+
+          const sha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+
+          const { data: existing } = await supabase
+            .from('vault_files').select('id').eq('user_id', supabaseUserId).eq('filename', vaultPath).maybeSingle();
+
+          const metadata = { source: 'chatty-zip-upload', originalName, mimeType: mimeForExt(ext), size: fileBuffer.length, sha256 };
+
+          if (existing) {
+            metadata.updatedAt = new Date().toISOString();
+            const { error: updateErr } = await supabase.from('vault_files').update({ content: contentForVault, metadata }).eq('id', existing.id);
+            if (updateErr) throw updateErr;
+            results.updated++;
+          } else {
+            const { error: insertErr } = await supabase.from('vault_files')
+              .insert({ user_id: supabaseUserId, filename: vaultPath, content: contentForVault, file_type: resolvedFolder || 'knowledge', construct_id: constructCallsign, metadata });
+            if (insertErr) throw insertErr;
+            results.created++;
+          }
+
+          if (!isText && !isPdfFile) {
+            const storagePath = `knowledge/${supabaseUserId}/${vaultPath}`;
+            await supabase.storage.from('vault-files').upload(storagePath, fileBuffer, { contentType: mimeForExt(ext), upsert: true });
+          }
+        } catch (fileErr) {
+          results.failed++;
+          results.errors.push({ file: entryName, error: fileErr.message });
+        }
+      }));
+    }
+
+    console.log(`✅ [GPT ZIP Upload] Complete for ${constructCallsign}: ${results.created} created, ${results.updated} updated, ${results.skipped} skipped, ${results.failed} failed`);
+
+    res.json({ success: true, constructCallsign, totalFiles: entries.length, ...results, errors: results.errors.slice(0, 20) });
+  } catch (error) {
+    console.error('Error in GPT ZIP upload:', error);
+    res.status(500).json({ success: false, error: error.message });
+  } finally {
+    if (tmpFilePath) {
+      try { fs.unlinkSync(tmpFilePath); } catch (e) {}
+    }
   }
 });
 

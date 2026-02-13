@@ -1218,7 +1218,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         if (isAIService) {
           await (service as AIService).uploadFile(gptId, file._file!, zipPath);
         } else {
-          await (service as GPTService).uploadFile(gptId, file._file!);
+          await (service as GPTService).uploadFile(gptId, file._file!, zipPath);
         }
         uploaded++;
         setUploadProgress({ current: uploaded, total: validFiles.length });
@@ -1300,7 +1300,10 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       const gptId = await ensureGptId();
       setUploadProgress({ current: 0, total: 1 });
 
-      const result = await aiService.uploadZip(gptId, zipFile);
+      const { service, isAIService } = getServiceForGPT(gptId);
+      const result = isAIService
+        ? await (service as AIService).uploadZip(gptId, zipFile)
+        : await (service as GPTService).uploadZip(gptId, zipFile);
 
       setUploadProgress(null);
       console.log(`[GPTCreator] ZIP upload complete: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped, ${result.failed} failed`);
@@ -1309,7 +1312,6 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         console.warn('[GPTCreator] ZIP upload errors:', result.errors);
       }
 
-      const { service, isAIService } = getServiceForGPT(gptId);
       let loadedFiles: GPTFile[] | any[];
       if (isAIService) {
         loadedFiles = await (service as AIService).getFiles(gptId);

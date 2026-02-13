@@ -150,9 +150,12 @@ export class GPTService {
   }
 
   // File Operations
-  async uploadFile(gptId: string, file: File): Promise<GPTFile> {
+  async uploadFile(gptId: string, file: File, zipPath?: string): Promise<GPTFile> {
     const formData = new FormData();
     formData.append('file', file);
+    if (zipPath) {
+      formData.append('zipPath', zipPath);
+    }
 
     const response = await fetch(`${this.baseUrl}/${gptId}/files`, {
       method: 'POST',
@@ -166,6 +169,32 @@ export class GPTService {
     }
     
     return data.file;
+  }
+
+  async uploadZip(gptId: string, zipFile: File): Promise<{
+    success: boolean;
+    totalFiles: number;
+    created: number;
+    updated: number;
+    skipped: number;
+    failed: number;
+    errors: Array<{ file: string; error: string }>;
+  }> {
+    const formData = new FormData();
+    formData.append('file', zipFile);
+
+    const response = await fetch(`${this.baseUrl}/${gptId}/upload-zip`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to upload ZIP');
+    }
+
+    return data;
   }
 
   async getFiles(gptId: string): Promise<GPTFile[]> {
