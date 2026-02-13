@@ -560,7 +560,12 @@ router.get('/:id/files', async (req, res) => {
     const { allowed, gpt } = await verifyGPTOwnership(req, req.params.id);
     if (!gpt) return res.status(404).json({ success: false, error: 'GPT not found' });
     if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
-    const localFiles = await gptManager.getGPTFiles(req.params.id);
+    const rawLocalFiles = await gptManager.getGPTFiles(req.params.id);
+    const localFiles = rawLocalFiles.map(f => ({
+      ...f,
+      content: '',
+      extractedText: undefined,
+    }));
     let supabaseFiles = [];
 
     const constructCallsign = gpt?.constructCallsign;

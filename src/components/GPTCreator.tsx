@@ -133,6 +133,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [duplicateFileNames, setDuplicateFileNames] = useState<string[]>([]);
   const [pendingZipEntries, setPendingZipEntries] = useState<Array<{ name: string; file: GPTFile }>>([]);
+  const [isReplacingFiles, setIsReplacingFiles] = useState(false);
 
   // Upload progress tracking
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
@@ -1411,11 +1412,19 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   };
 
   const confirmDuplicateReplace = async () => {
-    const newFiles = pendingZipEntries.map(e => e.file);
-    await processUploadFiles(newFiles);
-    setShowDuplicateModal(false);
-    setDuplicateFileNames([]);
-    setPendingZipEntries([]);
+    setIsReplacingFiles(true);
+    try {
+      const newFiles = pendingZipEntries.map(e => e.file);
+      await processUploadFiles(newFiles);
+    } catch (err: any) {
+      console.error("[GPTCreator] Replace files failed:", err);
+      setError(`Replace failed: ${err.message}`);
+    } finally {
+      setIsReplacingFiles(false);
+      setShowDuplicateModal(false);
+      setDuplicateFileNames([]);
+      setPendingZipEntries([]);
+    }
   };
 
   const cancelDuplicateUpload = () => {
@@ -5653,24 +5662,32 @@ ALWAYS:
             <div className="flex gap-3 justify-end">
               <button
                 onClick={cancelDuplicateUpload}
+                disabled={isReplacingFiles}
                 className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
                 style={{
                   backgroundColor: "transparent",
                   color: "var(--chatty-text)",
                   border: "1px solid var(--chatty-border)",
+                  opacity: isReplacingFiles ? 0.5 : 1,
+                  cursor: isReplacingFiles ? "not-allowed" : "pointer",
                 }}
               >
                 Cancel
               </button>
               <button
                 onClick={confirmDuplicateReplace}
+                disabled={isReplacingFiles}
                 className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
                 style={{
                   backgroundColor: "#ADA587",
                   color: "#000110",
+                  opacity: isReplacingFiles ? 0.7 : 1,
+                  cursor: isReplacingFiles ? "not-allowed" : "pointer",
                 }}
               >
-                Replace {duplicateFileNames.length} File{duplicateFileNames.length !== 1 ? 's' : ''}
+                {isReplacingFiles
+                  ? `Replacing... ${uploadProgress ? `(${uploadProgress.current}/${uploadProgress.total})` : ''}`
+                  : `Replace ${duplicateFileNames.length} File${duplicateFileNames.length !== 1 ? 's' : ''}`}
               </button>
             </div>
           </div>
