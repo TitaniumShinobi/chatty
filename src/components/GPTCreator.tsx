@@ -18,6 +18,7 @@ import {
   Crop,
   ImageOff,
   RotateCcw,
+  FolderOpen,
 } from "lucide-react";
 import JSZip from "jszip";
 import { GPTService, GPTConfig, GPTFile, GPTAction } from "../lib/gptService";
@@ -145,6 +146,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
   // Transcript upload
   const transcriptInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const [folderUploadProgress, setFolderUploadProgress] = useState<{ current: number; total: number; phase: string } | null>(null);
   const [transcripts, setTranscripts] = useState<
     Array<{
       id: string;
@@ -1762,6 +1765,229 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       setIsUploadingTranscripts(false);
       if (transcriptInputRef.current) {
         transcriptInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleFolderUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = e.target.files;
+    if (!selectedFiles || selectedFiles.length === 0) return;
+
+    const MAX_FOLDER_SIZE = 1000 * 1024 * 1024;
+    const MAX_TEXT_FILE_SIZE = 50 * 1024 * 1024;
+    const MAX_PDF_SIZE = 10 * 1024 * 1024;
+    const BATCH_SIZE = 20;
+    const PDF_CONCURRENCY = 3;
+    const TEXT_EXTENSIONS = ["md", "txt", "rtf", "json"];
+    const ALL_EXTENSIONS = [...TEXT_EXTENSIONS, "pdf"];
+
+    setIsUploadingTranscripts(true);
+    setError(null);
+
+    try {
+      const allFiles = Array.from(selectedFiles);
+      const validFiles = allFiles.filter((f) => {
+        const ext = f.name.split(".").pop()?.toLowerCase() || "";
+        return ALL_EXTENSIONS.includes(ext) && !f.name.startsWith(".");
+      });
+
+      if (validFiles.length === 0) {
+        setError("No supported files found in folder (.md, .txt, .rtf, .pdf, .json)");
+        setIsUploadingTranscripts(false);
+        return;
+      }
+
+      const totalSize = validFiles.reduce((sum, f) => sum + f.size, 0);
+      if (totalSize > MAX_FOLDER_SIZE) {
+        setError(`Folder contents exceed 1000MB limit (${(totalSize / (1024 * 1024)).toFixed(1)}MB)`);
+        setIsUploadingTranscripts(false);
+        return;
+      }
+
+      const constructId = config.constructCallsign || initialConfig?.constructCallsign;
+      if (!constructId) {
+        setError("No construct selected. Please configure your GPT first.");
+        setIsUploadingTranscripts(false);
+        return;
+      }
+
+      setFolderUploadProgress({ current: 0, total: validFiles.length, phase: "Processing files..." });
+
+      const textFiles = validFiles.filter((f) => {
+        const ext = f.name.split(".").pop()?.toLowerCase() || "";
+        return TEXT_EXTENSIONS.includes(ext);
+      });
+      const pdfFiles = validFiles.filter((f) =>
+        f.name.toLowerCase().endsWith(".pdf")
+      );
+
+      let totalProcessed = 0;
+      let savedTotal = 0;
+      let failedTotal = 0;
+      const skippedFiles: string[] = [];
+      const savedTranscriptIds: Array<{ id: string; name: string; content: string; type: string; source?: string }> = [];
+
+      const saveBatch = async (batch: Array<any>) => {
+        try {
+          const saveResponse = await fetch("/api/transcripts/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              constructCallsign: constructId,
+              transcripts: batch,
+            }),
+          });
+          if (saveResponse.ok) {
+            const saveResult = await saveResponse.json();
+            savedTotal += saveResult.saved || batch.length;
+            if (saveResult.failed) failedTotal += saveResult.failed.length;
+            savedTranscriptIds.push(...batch.filter((_: any, i: number) =>
+              !saveResult.failed?.some((f: any) => f.name === batch[i].name)
+            ));
+          } else {
+            failedTotal += batch.length;
+          }
+        } catch {
+          failedTotal += batch.length;
+        }
+      };
+
+      let currentBatch: Array<any> = [];
+
+      for (const file of textFiles) {
+        if (file.size > MAX_TEXT_FILE_SIZE) {
+          skippedFiles.push(`${file.name} (exceeds 50MB)`);
+          totalProcessed++;
+          continue;
+        }
+        try {
+          const content = await file.text();
+          const relativePath = (file as any).webkitRelativePath || file.name;
+          const parsed = parseZipPath(relativePath);
+          const ext = file.name.split(".").pop()?.toLowerCase() || "txt";
+
+          currentBatch.push({
+            id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            name: parsed.filename || file.name,
+            content,
+            type: ext,
+            source: parsed.source || transcriptSource || "transcripts",
+            year: parsed.year || transcriptYear || undefined,
+            month: parsed.month || transcriptMonth || undefined,
+            path: relativePath,
+          });
+
+          if (currentBatch.length >= BATCH_SIZE) {
+            setFolderUploadProgress({ current: totalProcessed, total: validFiles.length, phase: "Saving batch..." });
+            await saveBatch(currentBatch);
+            currentBatch = [];
+          }
+        } catch {
+          skippedFiles.push(`${file.name} (read failed)`);
+        }
+        totalProcessed++;
+        if (totalProcessed % 10 === 0) {
+          setFolderUploadProgress({ current: totalProcessed, total: validFiles.length, phase: "Reading files..." });
+        }
+      }
+
+      if (currentBatch.length > 0) {
+        setFolderUploadProgress({ current: totalProcessed, total: validFiles.length, phase: "Saving batch..." });
+        await saveBatch(currentBatch);
+        currentBatch = [];
+      }
+
+      for (let pi = 0; pi < pdfFiles.length; pi += PDF_CONCURRENCY) {
+        const pdfBatch = pdfFiles.slice(pi, pi + PDF_CONCURRENCY);
+        const pdfResults = await Promise.allSettled(
+          pdfBatch.map(async (file) => {
+            if (file.size > MAX_PDF_SIZE) {
+              skippedFiles.push(`${file.name} (exceeds 10MB)`);
+              return null;
+            }
+            const relativePath = (file as any).webkitRelativePath || file.name;
+            const parsed = parseZipPath(relativePath);
+
+            try {
+              const formData = new FormData();
+              formData.append("file", file);
+              formData.append("constructCallsign", constructId);
+              const response = await fetch("/api/transcripts/extract-pdf", {
+                method: "POST",
+                body: formData,
+                signal: AbortSignal.timeout(30000),
+              });
+
+              let pdfContent: string;
+              if (response.ok) {
+                const result = await response.json();
+                pdfContent = result.content;
+              } else {
+                pdfContent = `[PDF content from ${file.name} - extraction pending]`;
+              }
+
+              return {
+                id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                name: parsed.filename || file.name,
+                content: pdfContent,
+                type: "pdf",
+                source: parsed.source || transcriptSource || "transcripts",
+                year: parsed.year || transcriptYear || undefined,
+                month: parsed.month || transcriptMonth || undefined,
+                path: relativePath,
+              };
+            } catch {
+              skippedFiles.push(`${file.name} (PDF extraction timeout/failed)`);
+              return null;
+            }
+          })
+        );
+
+        const pdfTranscripts = pdfResults
+          .filter((r): r is PromiseFulfilledResult<any> => r.status === "fulfilled" && r.value !== null)
+          .map((r) => r.value);
+
+        if (pdfTranscripts.length > 0) {
+          await saveBatch(pdfTranscripts);
+        }
+
+        totalProcessed += pdfBatch.length;
+        setFolderUploadProgress({ current: totalProcessed, total: validFiles.length, phase: "Extracting PDFs..." });
+      }
+
+      setTranscripts((prev) => [...prev, ...savedTranscriptIds]);
+
+      try {
+        const transcriptsResponse = await fetch(`/api/transcripts/${constructId}/list`);
+        if (transcriptsResponse.ok) {
+          const data = await transcriptsResponse.json();
+          if (data.transcripts) {
+            setAllTranscripts(data.transcripts);
+          }
+        }
+      } catch (refreshErr) {
+        console.warn("[GPTCreator] Failed to refresh transcript list after folder upload:", refreshErr);
+      }
+
+      console.log(`[GPTCreator] Folder upload complete: ${savedTotal} saved, ${failedTotal} failed, ${skippedFiles.length} skipped`);
+
+      setFolderUploadProgress(null);
+
+      const messages: string[] = [];
+      if (savedTotal > 0) messages.push(`Uploaded ${savedTotal} transcripts`);
+      if (failedTotal > 0) messages.push(`${failedTotal} failed`);
+      if (skippedFiles.length > 0) messages.push(`Skipped: ${skippedFiles.slice(0, 5).join(", ")}${skippedFiles.length > 5 ? ` +${skippedFiles.length - 5} more` : ""}`);
+      if (failedTotal > 0 || skippedFiles.length > 0) {
+        setError(messages.join(". "));
+      }
+    } catch (error: any) {
+      console.error("Folder upload error:", error);
+      setError(error.message || "Failed to upload folder");
+      setFolderUploadProgress(null);
+    } finally {
+      setIsUploadingTranscripts(false);
+      if (folderInputRef.current) {
+        folderInputRef.current.value = "";
       }
     }
   };
@@ -4496,9 +4722,16 @@ ALWAYS:
                         multiple
                         className="hidden"
                       />
+                      <input
+                        type="file"
+                        ref={folderInputRef}
+                        onChange={handleFolderUpload}
+                        className="hidden"
+                        {...({ webkitdirectory: "", directory: "", mozdirectory: "" } as any)}
+                      />
 
                       {/* Upload buttons - individual files or zip */}
-                      <div className="flex items-center gap-3">
+                      <div className="flex flex-wrap items-center gap-3">
                         <button
                           onClick={() => transcriptInputRef.current?.click()}
                           disabled={isUploadingTranscripts}
@@ -4522,9 +4755,37 @@ ALWAYS:
                           title="Upload individual files (.md, .txt, .rtf, .pdf) or a zip file to preserve directory structure"
                         >
                           <Upload size={16} />
-                          {isUploadingTranscripts
+                          {isUploadingTranscripts && !folderUploadProgress
                             ? "Uploading..."
                             : "Upload Files"}
+                        </button>
+
+                        <button
+                          onClick={() => folderInputRef.current?.click()}
+                          disabled={isUploadingTranscripts}
+                          className="px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                          style={{
+                            border: "none",
+                            backgroundColor: "var(--chatty-bg-message)",
+                            color: "var(--chatty-text)",
+                            opacity: isUploadingTranscripts ? 0.5 : 1,
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!isUploadingTranscripts) {
+                              e.currentTarget.style.backgroundColor =
+                                "var(--chatty-highlight)";
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor =
+                              "var(--chatty-bg-message)";
+                          }}
+                          title="Upload an entire folder (up to 1000MB). Preserves directory structure."
+                        >
+                          <FolderOpen size={16} />
+                          {folderUploadProgress
+                            ? folderUploadProgress.phase
+                            : "Upload Folder"}
                         </button>
 
                         {/* Dynamic transcript count badge - shows total staged + existing files for this construct */}
@@ -4574,6 +4835,30 @@ ALWAYS:
                           return null;
                         })()}
                       </div>
+
+                      {folderUploadProgress && (
+                        <div className="mt-3 p-3 rounded-lg" style={{ backgroundColor: "var(--chatty-bg-message)" }}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium" style={{ color: "var(--chatty-text)" }}>
+                              {folderUploadProgress.phase}
+                            </span>
+                            <span className="text-xs" style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
+                              {folderUploadProgress.phase === "Compressing..."
+                                ? `${folderUploadProgress.current}%`
+                                : `${folderUploadProgress.current} / ${folderUploadProgress.total}`}
+                            </span>
+                          </div>
+                          <div className="w-full rounded-full h-1.5" style={{ backgroundColor: "var(--chatty-border)" }}>
+                            <div
+                              className="h-1.5 rounded-full transition-all duration-300"
+                              style={{
+                                backgroundColor: "var(--chatty-accent)",
+                                width: `${folderUploadProgress.total > 0 ? (folderUploadProgress.current / folderUploadProgress.total) * 100 : 0}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
 
                       {/* Show newly uploaded transcripts (this session) */}
                       {transcripts.length > 0 && (

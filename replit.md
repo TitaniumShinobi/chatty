@@ -41,7 +41,9 @@ Chatty is an AI-powered workspace application that provides a thin UI layer for 
 - **GPT Creation Workflow:** Integrated workflow for creating GPTs via Lin's conversation, triggering a GPTCreator UI with pre-filled information.
 - **Knowledge Files Rule:** Knowledge Files are ONLY files under `instances/{constructCallsign}/assets/` and `instances/{constructCallsign}/documents/`. Nothing from identity/, config/, logs/, memup/, or any other VSI folder appears in the Knowledge panel. See `docs/rubrics/KNOWLEDGE_FILES_RUBRIC.md`. NO EXCEPTIONS.
 - **Identity Loading:** Prioritizes Supabase `vault_files` for construct identity data (avatars, knowledge files, prompt/conditioning), with fallbacks for local placeholders.
-- **Robust Transcript Parsing & Upload:** Handles various VVAULT and Chatty transcript formats, supporting multi-platform uploads and automatic parsing of Character.AI JSON imports.
+- **Robust Transcript Parsing & Upload:** Handles various VVAULT and Chatty transcript formats, supporting multi-platform uploads and automatic parsing of Character.AI JSON imports. Includes "Upload Folder" button for batch-uploading entire directories (up to 1000MB) through the transcript pipeline with batched saves, concurrent PDF extraction, and phased progress display.
+- **Physical Features Injection:** `memoryContextBuilder.js` loads `physical_features.json` from Supabase `vault_files` and injects as `## Physical Appearance` section into system prompts before capsule section.
+- **Conditioning Fallback:** `identityLoader.js` has 3-tier conditioning fallback: VVAULT API → embedded system constructs → Supabase `vault_files`.
 - **Fresh Canvas Chat UX:** Provides a clean chat interface on load, with auto-scroll activating only after the user's first message.
 - **Finance Tab Architecture:** A first-class section with a plugin architecture for finance applications, including FXShinobi integration, TradingView charts, prediction markets, and AI insights.
 - **Image/Vision Upload Support:** Full support for image and document uploads, with persistence to Supabase Storage and integration with AI vision APIs (OpenAI GPT-4o, OpenRouter Qwen 2.5 VL 72B).
