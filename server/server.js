@@ -1230,26 +1230,31 @@ try {
 }
 
 // PERFORMANCE OPTIMIZATION: Warm capsule cache for frequently used GPTs
+// Uses 15s timeout per operation to prevent Supabase outages from stalling background tasks
 void (async () => {
+  const WARM_TIMEOUT = 15000;
+  const withTimeout = (promise, ms, label) =>
+    Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms))
+    ]);
+
   try {
     console.log('🔥 [Server] Starting capsule cache warming...');
 
-    // Use shared singleton so runtime/cache hits benefit immediately
     const { getCapsuleIntegration } = await import('./lib/capsuleIntegration.js');
     const capsuleIntegration = getCapsuleIntegration();
     const warmTargets = ['katana-001', 'nova-001'];
 
-    // Warm cache for frequently used constructs
-    await capsuleIntegration.warmCache(warmTargets);
+    await withTimeout(capsuleIntegration.warmCache(warmTargets), WARM_TIMEOUT, 'Capsule cache warming');
     console.log('✅ [Server] Capsule cache warming completed');
     console.log('📊 [Server] Cache stats:', capsuleIntegration.getCacheStats());
 
-    // Preload runtime so first request does not block on GPT load
     try {
       const { getGPTRuntimeBridge } = await import('./lib/gptRuntimeBridge.js');
       const bridge = getGPTRuntimeBridge();
       for (const target of warmTargets) {
-        await bridge.loadGPT(target);
+        await withTimeout(bridge.loadGPT(target), WARM_TIMEOUT, `GPT preload ${target}`);
       }
       console.log('✅ [Server] GPTRuntime preloaded for', warmTargets.join(', '));
     } catch (bridgeError) {
