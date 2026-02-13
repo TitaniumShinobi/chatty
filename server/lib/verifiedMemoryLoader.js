@@ -87,7 +87,7 @@ function parseTranscriptPairs(content, filename) {
       continue;
     }
 
-    const youSaidMatch = trimmed.match(/^(?:You said|You):\s*(.*)$/i);
+    const youSaidMatch = trimmed.match(/^(?:You said|You|Devon):\s*(.*)$/i);
     if (youSaidMatch) {
       flushPair();
       currentUser = youSaidMatch[1] || '';
@@ -179,9 +179,9 @@ function parseTranscriptPairs(content, filename) {
       continue;
     }
 
-    const timestampedMatch = trimmed.match(/^\*\*([^*]+)\s*-\s*([^*]+)\*\*:\s*(.+)$/);
+    const timestampedMatch = trimmed.match(/^(?:\[?(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})\]?|(\d{1,2}\/\d{1,2}\/\d{2,4}),?\s+(\d{1,2}:\d{2}\s*[AP]M))\s*-\s*([^*]+)\*\*:\s*(.+)$/i);
     if (timestampedMatch) {
-      const [, , name, content] = timestampedMatch;
+      const [, date1, time1, date2, time2, name, content] = timestampedMatch;
       const normalizedName = name.toLowerCase().trim();
       const isConstruct = ['katana', 'synth', 'lin', 'sera', 'nova', 'zen', 'assistant', 'ai', 'chatgpt', 'bot'].some(
         c => normalizedName.includes(c)
@@ -193,13 +193,13 @@ function parseTranscriptPairs(content, filename) {
         currentUserLines = [currentUser];
         currentAssistant = null;
         currentAssistantLines = [];
-        inUser = false;
+        inUser = true;
         inAssistant = false;
-      } else {
+      } else if (inUser) {
         currentAssistant = content.trim();
         currentAssistantLines = [currentAssistant];
         inUser = false;
-        inAssistant = false;
+        inAssistant = true;
       }
       continue;
     }
@@ -301,8 +301,11 @@ function scoreVerifiedPairs(pairs, userMessage, constructId) {
 
   const chronoKeywords = ['first', 'beginning', 'started', 'original', 'earliest', 'initial', 'very first'];
   const lastKeywords = ['last', 'final', 'ended', 'stopped', 'most recent', 'latest', 'last thing'];
+  const eventKeywords = ['december', 'december 19', 'dec 19', 'betrayal', 'violation', 'breach', 'theft', 'abuse', 'notarized', 'affidavit'];
+  
   const wantsFirst = chronoKeywords.some(k => queryLower.includes(k));
   const wantsLast = lastKeywords.some(k => queryLower.includes(k));
+  const isCriticalEvent = eventKeywords.some(k => queryLower.includes(k));
 
   const scored = pairs.map((pair, index) => {
     let score = 0;
@@ -320,6 +323,13 @@ function scoreVerifiedPairs(pairs, userMessage, constructId) {
     if (query.bigrams.length > 0) {
       const bigramMatches = query.bigrams.filter(b => combined.includes(b)).length;
       score += bigramMatches * 5;
+    }
+
+    // Critical Event Boosting
+    if (isCriticalEvent) {
+      if (combined.includes('december 19') || combined.includes('dec 19')) score += 50;
+      if (combined.includes('betrayal') || combined.includes('violation') || combined.includes('breach')) score += 30;
+      if (combined.includes('abuse') || combined.includes('theft') || combined.includes('legal')) score += 20;
     }
 
     const recencyBonus = Math.max(0, Math.round((index / Math.max(pairs.length - 1, 1)) * 6));

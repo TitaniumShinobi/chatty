@@ -44,7 +44,7 @@ const TOPIC_KEYWORDS = {
   creative: ['draw', 'drew', 'painting', 'art', 'music', 'song', 'write', 'story', 'poem', 'design', 'sketch'],
   emotional: ['feel', 'emotion', 'mood', 'happy', 'sad', 'angry', 'love', 'hate', 'fear', 'joy', 'grief'],
   daily_life: ['morning', 'night', 'dinner', 'breakfast', 'lunch', 'work', 'home', 'sleep', 'wake', 'routine'],
-  conflict: ['fight', 'argue', 'disagree', 'wrong', 'fault', 'blame', 'apolog'],
+  conflict: ['fight', 'argue', 'disagree', 'wrong', 'fault', 'blame', 'apolog', 'betray', 'breach', 'violation', 'assault', 'theft'],
   growth: ['learn', 'change', 'grow', 'improve', 'better', 'progress', 'develop', 'evolve'],
   intimacy: ['kiss', 'touch', 'hold', 'close', 'intimate', 'physical', 'body', 'skin'],
   humor: ['funny', 'joke', 'laugh', 'hilarious', 'comedy', 'witty', 'sarcas'],
