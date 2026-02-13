@@ -28,7 +28,11 @@ const openrouter = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || 'dummy',
 });
 
-// Direct OpenAI client as fallback
+// OpenAI client: prefer Replit AI Integrations proxy, fallback to direct API key
+const openaiIntegration = (process.env.AI_INTEGRATIONS_OPENAI_BASE_URL && process.env.AI_INTEGRATIONS_OPENAI_API_KEY) ? new OpenAI({
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+}) : null;
 const DIRECT_OPENAI_KEY = process.env.OPENAI_API_KEY;
 const openaiDirect = DIRECT_OPENAI_KEY ? new OpenAI({
   baseURL: 'https://api.openai.com/v1',
@@ -385,14 +389,17 @@ router.post('/generate', async (req, res) => {
     const linUserName = req.user?.name || req.user?.given_name || 'the user';
     const userIdentityBlock = `## User Identity\nThe user you are speaking with is named "${linUserName}". Address them by name when appropriate. Remember their name throughout the conversation.${req.user?.email ? `\nTheir email is ${req.user.email}.` : ''}`;
     enhancedSystemPrompt = enhancedSystemPrompt ? `${enhancedSystemPrompt}\n\n${userIdentityBlock}` : userIdentityBlock;
-    try {
-      const { injectSearchContext } = await import('./search.js');
-      if (injectSearchContext) {
-        const { enhancedPrompt } = await injectSearchContext(prompt, enhancedSystemPrompt);
-        enhancedSystemPrompt = enhancedPrompt;
+    const isShortMessage = prompt.length < 100 && !/\b(search|find|look up|what is|who is|how to)\b/i.test(prompt);
+    if (!isShortMessage) {
+      try {
+        const { injectSearchContext } = await import('./search.js');
+        if (injectSearchContext) {
+          const { enhancedPrompt } = await injectSearchContext(prompt, enhancedSystemPrompt);
+          enhancedSystemPrompt = enhancedPrompt;
+        }
+      } catch (searchErr) {
+        console.warn('⚠️ [LinChat] Search injection skipped:', searchErr.message);
       }
-    } catch (searchErr) {
-      console.warn('⚠️ [LinChat] Search injection skipped:', searchErr.message);
     }
     if (memoryContext) {
       enhancedSystemPrompt = enhancedSystemPrompt ? `${enhancedSystemPrompt}\n\n${memoryContext}` : memoryContext;
@@ -449,15 +456,30 @@ router.post('/generate', async (req, res) => {
         }
       }
     } else if (provider === 'openai') {
-      if (!openaiDirect) {
-        return res.status(503).json({ error: 'OpenAI not configured', details: 'Set OPENAI_API_KEY environment variable.' });
+      const openaiClient = openaiIntegration || openaiDirect;
+      if (!openaiClient) {
+        return res.status(503).json({ error: 'OpenAI not configured', details: 'No OpenAI integration or API key available.' });
       }
-      const completion = await openaiDirect.chat.completions.create({
-        model: model || 'gpt-4.1-mini',
-        messages,
-        max_tokens: 2048,
-      });
-      response = completion.choices[0]?.message?.content || '';
+      try {
+        const completion = await openaiClient.chat.completions.create({
+          model: model || 'gpt-4.1-mini',
+          messages,
+          max_tokens: 2048,
+        });
+        response = completion.choices[0]?.message?.content || '';
+      } catch (oaiErr) {
+        if (openaiDirect && openaiClient !== openaiDirect) {
+          console.warn(`⚠️ [Lin Chat] OpenAI integration failed, trying direct: ${oaiErr.message}`);
+          const completion = await openaiDirect.chat.completions.create({
+            model: model || 'gpt-4.1-mini',
+            messages,
+            max_tokens: 2048,
+          });
+          response = completion.choices[0]?.message?.content || '';
+        } else {
+          throw oaiErr;
+        }
+      }
     } else if (provider === 'ollama') {
       if (!process.env.OLLAMA_HOST) {
         return res.status(503).json({

@@ -2337,8 +2337,8 @@ ${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : "
 
 Assistant:`;
 
-      // Safety check: Truncate prompt if it exceeds reasonable limit (6000 chars)
-      const MAX_PREVIEW_PROMPT_CHARS = 6000;
+      // Safety check: Truncate prompt if it exceeds reasonable limit (12000 chars for constructs with rich identity)
+      const MAX_PREVIEW_PROMPT_CHARS = 12000;
       if (fullPrompt.length > MAX_PREVIEW_PROMPT_CHARS) {
         console.warn(
           `⚠️ [GPTCreator] Preview prompt too long (${fullPrompt.length} chars), applying truncation...`,
@@ -2382,10 +2382,10 @@ Assistant:`;
         }
       }
 
-      // Process with the selected conversation model
+      // Process with the selected conversation model (use explicit checks to avoid empty string fallthrough)
       const selectedModel =
-        config.conversationModel ||
-        config.modelId ||
+        (config.conversationModel && config.conversationModel.trim()) ||
+        (config.modelId && config.modelId.trim()) ||
         "openrouter:meta-llama/llama-3.3-70b-instruct";
 
       const constructIdForMemory =
