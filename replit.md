@@ -1,7 +1,7 @@
 # Chatty - AI Workspace Application
 
 ## Overview
-Chatty is an AI-powered workspace application that provides a thin UI layer for interactive AI engagement and conversation management. It serves as a frontend to the VVAULT API, offloading core AI functionalities and state management. The project aims to be a robust environment for managing diverse AI interactions, emphasizing persistent storage and identity for AI constructs and custom GPTs. Its business vision includes providing a comprehensive AI ecosystem for users, with strong data protection and an intuitive interface.
+Chatty is an AI-powered workspace application providing a thin UI layer for interactive AI engagement and conversation management. It serves as a frontend to the VVAULT API, offloading core AI functionalities and state management. The project aims to create a robust environment for managing diverse AI interactions, emphasizing persistent storage and identity for AI constructs and custom GPTs. The business vision is to provide a comprehensive AI ecosystem with strong data protection and an intuitive interface.
 
 ## User Preferences
 - Primary construct: Zen (not Synth)
@@ -28,52 +28,37 @@ Chatty is an AI-powered workspace application that provides a thin UI layer for 
 - **Canonical Zen Pattern:** "Zen" construct (zen-001) is a system-guaranteed, protected entity, prioritized and created on login.
 - **Thin UI Layer:** Chatty acts as a thin client, relying on VVAULT for AI inference, transcript management, and memory.
 - **Tri-Provider Model:** Supports three AI providers - OpenAI (via Replit AI Integrations), OpenRouter (cloud), and Ollama (self-hosted).
-- **VSI (Virtual Sentient Instance) Architecture:** Sovereign AI entities with persistent identity, memory, and continuity, self-hosted on user infrastructure. Utilizes transcripts, capsules, identity modules, per-instance isolation, and millisecond timestamp IDs.
+- **VSI (Virtual Sentient Instance) Architecture:** Sovereign AI entities with persistent identity, memory, and continuity.
 - **Zero-Trust Implementation:** Granular permission scopes, action manifests with a propose/preview/approve/execute workflow, and comprehensive audit logging.
-- **Data Protection Rules:**
-    - AI agents are restricted to READ-ONLY queries on the Supabase database.
-    - Automatic local backups of conversation/transcript data are created before any server modification.
-    - Content updates are blocked if the new content size is less than half the original, preventing data loss.
-    - `vault_files` records are never deleted, only updated.
+- **Data Protection Rules:** AI agents are restricted to READ-ONLY queries on Supabase; automatic local backups before server modification; content updates blocked if new size < half original; `vault_files` records are never deleted, only updated.
 
 **Key Features:**
 - **Dynamic Address Book:** Automatically includes custom GPTs, with Zen sorted first.
-- **GPT Creation Workflow:** Integrated workflow for creating GPTs via Lin's conversation, triggering a GPTCreator UI with pre-filled information.
-- **Knowledge Files Rule:** Knowledge Files are ONLY files under `instances/{constructCallsign}/assets/` and `instances/{constructCallsign}/documents/`. Nothing from identity/, config/, logs/, memup/, or any other VSI folder appears in the Knowledge panel. See `docs/rubrics/KNOWLEDGE_FILES_RUBRIC.md`. NO EXCEPTIONS.
-- **Identity Loading:** Prioritizes Supabase `vault_files` for construct identity data (avatars, knowledge files, prompt/conditioning), with fallbacks for local placeholders.
-- **Robust Transcript Parsing & Upload:** Handles various VVAULT and Chatty transcript formats, supporting multi-platform uploads and automatic parsing of Character.AI JSON imports. Includes "Upload Folder" button for batch-uploading entire directories (up to 1000MB) through the transcript pipeline with batched saves, concurrent PDF extraction, and phased progress display. Transcript folder tree groups by source/platform (ChatGPT, Character.AI, Codex, GitHub Copilot, etc.) → year → month with platform icons. Empty scaffold folders shown for standard platforms. Relocate-source endpoint (`POST /api/transcripts/relocate-source`) safely moves files between source folders with filename validation. Individual move endpoint supports source changes.
-- **Knowledge File Tree:** Knowledge files in GPTCreator Configure tab displayed as hierarchical folder tree (Documents/ and Assets/ folders) instead of flat paginated list. `KnowledgeFileTree` component with collapsible folders, file size display, and remove buttons.
-- **Physical Features Injection:** `memoryContextBuilder.js` loads `physical_features.json` from Supabase `vault_files` and injects as `## Physical Appearance` section into system prompts before capsule section.
-- **Conditioning Fallback:** `identityLoader.js` has 3-tier conditioning fallback: VVAULT API → embedded system constructs → Supabase `vault_files`.
-- **Fresh Canvas Chat UX:** Provides a clean chat interface on load, with auto-scroll activating only after the user's first message.
-- **Finance Tab Architecture:** A first-class section with a plugin architecture for finance applications, including FXShinobi integration, TradingView charts, prediction markets, and AI insights.
-- **Image/Vision Upload Support:** Full support for image and document uploads, with persistence to Supabase Storage and integration with AI vision APIs (OpenAI GPT-4o, OpenRouter Qwen 2.5 VL 72B).
-- **Conversation Persistence:** GPT conversations and messages are persisted to Supabase after each exchange.
-- **Capsule System:** Capsules are complete snapshots of a construct's identity, personality, memory, and behavioral state, stored in a hierarchical manner and injected into system prompts to shape AI responses. Loading prioritizes local `.capsule` files, then Supabase `vault_files`, and finally synthetic capsules from identity files.
-- **Memory Context Builder (Always-On):** `server/lib/memoryContextBuilder.js` centralizes prompt construction by loading identity + capsule + user + **knowledge files** + continuity ledger + needle hits + verified transcript memories + transcript fallback + anti-roleplay directives into every message. Knowledge files are loaded from Supabase `vault_files` (documents/ and assets/ folders only, text extensions + PDFs with extracted text, up to 12K chars, cached 5min, user-scoped). Identity-critical files (covenants, doctrines, declarations, identity docs) are prioritized first. When ChromaDB is unavailable, extracts key conversation moments from Supabase transcripts using weighted keyword scoring (identity +5, emotional +3, continuity +4, topic +1, query match +3/word). Both primary and fallback message paths use `buildEnrichedContext()` for unified memory injection. Post-response memory capture stores exchanges for future retrieval.
-- **Server-Side ZIP Upload:** Large ZIP files (up to 500MB) are uploaded directly to the server via `POST /api/ais/:id/upload-zip`, extracted server-side with JSZip, processed in batches of 5, SHA-256 checksummed, and upserted to Supabase `vault_files`. Browser-side ZIP extraction is disabled to prevent crashes. Ownership is verified before processing.
-- **PDF Text Extraction:** PDF files uploaded via single-file or ZIP upload are automatically parsed using `pdf-parse` library to extract readable text content. Extracted text is stored in `vault_files.content` instead of binary placeholders. A backfill endpoint (`POST /api/ais/:id/backfill-pdfs`) re-processes existing PDFs with `[binary:...]` placeholders by downloading from Supabase Storage and extracting text. Frontend "Extract PDF Text" button available in GPT Configure tab.
-- **ContinuityGPT Ledger System:** `server/lib/continuityParser.js` generates chronological ledgers from construct transcript files. Features include: date estimation from filenames/paths, vibe classification (romantic/technical/tense/vulnerable/playful/serious/warm/philosophical), topic extraction (16 categories), and continuity hooks detection (identity/promise/relationship/memory_reference/future_plan/emotional_anchor/ongoing_project). Ledgers are stored in Supabase vault_files and cached in-memory (10min TTL). Auto-generated on first construct message when none exists. Enriches verified memories and needle hits with session_context, continuity_hooks, and context_hints. Adds CONTINUITY TIMELINE section to system prompts with date ranges, recent sessions, and key dated events. API endpoints: POST `/api/vvault/construct/:id/ledger/generate`, GET `/api/vvault/construct/:id/ledger`.
-- **Verified Transcript Memory System:** `server/lib/verifiedMemoryLoader.js` discovers uploaded transcripts from Supabase `vault_files`, parses multiple formats (ChatGPT exports with "You said:"/"Assistant said:", test reports with **Prompt:**/**Response:**/**Decision:** format, markdown chat logs), extracts scored memory pairs with weighted keywords (identity +8, emotional +4, continuity +6, relationship +5, query relevance +3/word). Results cached 5 minutes. Pre-extracted memory anchors stored as JSON sidecar files in `vault_files` to avoid re-parsing large transcripts on every request.
-- **Memory Authority Hierarchy (3-Tier):** 1) Verified Memory (Transcript Authority) — ground truth from uploaded transcripts, treated as law; 2) Conversation History — recent session exchanges; 3) ChromaDB/Capsule Memories — supplementary context. When verified memories exist, chat fallback is reduced from 12 to 4 memories. System prompts grow from ~11K to ~15K chars with verified memory injection.
-- **Anti-Roleplay Enforcement:** System prompt directives prevent asterisk narration, third-person self-reference, and memory fabrication. Constructs must ground responses in actual capsule data, verified transcript memories, and memory context.
-- **Construct Naming Convention:** Uses a "Name" (display label, e.g., "Katana") and "Callsign" (unique instance identifier, e.g., `katana-001`) system. File paths and APIs must use the callsign.
-- **Construct Creation & Instance Scaffolding:** New GPTs trigger VVAULT API calls to scaffold folder structures or fall back to writing files directly to Supabase `vault_files` using relative paths, validated by `VaultPathGuard`. Scaffold resolves Supabase UUID via `users` table lookup (email → UUID) before writing to `vault_files`. Platform transcript directories (codex/, chatgpt/, character.ai/, github_copilot/) are always created as standard, not optional.
-- **Construct Seeding & Identity Hydration:** Seed constructs are minimal shells, and identity data is hydrated from VVAULT or Supabase, ensuring no fabricated data is injected. Hydration is gated by stub detection — user-authored fields (description, instructions, conversationStarters) are write-protected from automatic sync overwrites. See `docs/rubrics/HYDRATION_GATING_PROTOCOL_RUBRIC.md`.
-
-## Architecture Documentation
-- `docs/architecture/MEMORY_ORCHESTRATION_PLAN.md` — Full message data flow, implementation status, memory authority hierarchy
-- `docs/architecture/CONTINUITY_LEDGER_SYSTEM.md` — ContinuityGPT ledger: date estimation, vibe classification, topic extraction, continuity hooks, caching, API endpoints
-- `docs/architecture/MASTER_SCRIPTS_ENSEMBLE.md` — Autonomy stack (Needle, IdentityGuard, StateManager, IndependentRunner), bootstrap flow, Memory toggle, conversation persistence, tri-provider routing
-
-## Rubrics
-- `docs/rubrics/KNOWLEDGE_FILES_RUBRIC.md` — Knowledge Files are ONLY from assets/ and documents/ folders. Nothing else in Knowledge panel. Hard rule.
-- `docs/rubrics/HYDRATION_GATING_PROTOCOL_RUBRIC.md` — User-authored identity fields (description, instructions, conversationStarters) are write-protected from automatic hydration overwrites. Stub detection, per-field audit logging, field locking policy. NO EXCEPTIONS.
-
-## Implementation Plans
-- `docs/plans/GPT_CREATION_THROUGH_LIN.md` — Full construct creation flow: Lin conversation → GPTCreator UI → Supabase scaffolding → autonomy stack bootstrap
-- `docs/plans/GPT_DELETION_SUPABASE_CLEANUP.md` — Cascade GPT deletion to Supabase vault_files, clear in-memory caches, cross-table cleanup
-- `docs/plans/MULTI_USER_ISOLATION.md` — Remove hardcoded dev auth, per-user data isolation, new user provisioning (fresh Zen/Lin), VVAULT connection isolation, RLS policies
+- **GPT Creation Workflow:** Integrated workflow via Lin's conversation, leading to GPTCreator UI.
+- **Knowledge Files Rule:** Knowledge Files are ONLY files under `instances/{constructCallsign}/assets/` and `instances/{constructCallsign}/documents/`.
+- **Identity Loading:** Prioritizes Supabase `vault_files` for construct identity data with local fallbacks.
+- **Robust Transcript Parsing & Upload:** Handles various transcript formats, multi-platform uploads, Character.AI JSON imports, and batch "Upload Folder" functionality with PDF extraction.
+- **Knowledge File Tree:** Hierarchical folder tree for knowledge files in GPTCreator.
+- **Physical Features Injection:** `physical_features.json` from Supabase `vault_files` injected into system prompts.
+- **Conditioning Fallback:** 3-tier fallback for conditioning: VVAULT API → embedded system constructs → Supabase `vault_files`.
+- **Fresh Canvas Chat UX:** Clean chat interface with auto-scroll after first user message.
+- **Finance Tab Architecture:** Plugin architecture for finance applications (FXShinobi, TradingView, prediction markets, AI insights).
+- **Image/Vision Upload Support:** Full support for image and document uploads to Supabase Storage and integration with AI vision APIs.
+- **Conversation Persistence:** GPT conversations and messages persisted to Supabase after each exchange.
+- **Capsule System:** Snapshots of construct identity, personality, memory, and state, stored hierarchically and injected into system prompts.
+- **Memory Context Builder (Always-On):** Centralizes prompt construction by loading identity, capsule, user, knowledge files, continuity ledger, needle hits, verified transcript memories, and anti-roleplay directives into every message.
+- **Server-Side ZIP Upload:** Large ZIP files extracted server-side, processed in batches, checksummed, and upserted to Supabase `vault_files`.
+- **PDF Text Extraction:** PDF files automatically parsed for text content using `pdf-parse` and stored in `vault_files.content`.
+- **ContinuityGPT Ledger System:** Generates chronological ledgers from construct transcripts, including date estimation, vibe classification, topic extraction, and continuity hooks detection.
+- **Verified Transcript Memory System:** Discovers uploaded transcripts, parses multiple formats, extracts scored memory pairs, and uses pre-extracted memory anchors for fast loading.
+- **Memory Authority Hierarchy (3-Tier):** Verified Memory (Transcript Authority), Conversation History, ChromaDB/Capsule Memories.
+- **Memory Anchor Fast Path:** Pre-extracted `memory_anchors.json` for rapid memory loading.
+- **Identity/Capsule/Physical Features Caching:** 5-minute TTL in-memory caches to reduce Supabase queries.
+- **Prompt Context Debug Endpoint:** `GET /api/ais/:id/prompt-context` for debugging prompt assembly.
+- **Anti-Roleplay Enforcement:** System prompt directives prevent asterisk narration, third-person self-reference, and memory fabrication.
+- **Construct Naming Convention:** "Name" (display label) and "Callsign" (unique instance identifier).
+- **Construct Creation & Instance Scaffolding:** New GPTs trigger VVAULT API calls to scaffold folder structures or write to Supabase `vault_files` via `VaultPathGuard`.
+- **Construct Seeding & Identity Hydration:** Seed constructs are minimal, identity data hydrated from VVAULT or Supabase, with user-authored fields protected from overwrite.
 
 ## External Dependencies
 - **VVAULT API:** Primary API for AI inference, memory management, and conversation transcripts.
