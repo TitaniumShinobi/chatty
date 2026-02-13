@@ -10,6 +10,10 @@ import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import { AIManager } from '../lib/aiManager.js';
 import { getGPTSaveHook } from '../lib/gptSaveHook.js';
 import { normalizeModelString } from '../lib/modelResolver.js';
+import { loadIdentityFiles } from '../lib/identityLoader.js';
+import { loadVerifiedMemories } from '../lib/verifiedMemoryLoader.js';
+import { loadLedger } from '../lib/continuityParser.js';
+import { getSupabaseClient } from '../lib/supabaseClient.js';
 
 async function extractPdfText(buffer) {
   try {
@@ -1695,6 +1699,135 @@ router.post('/migrate', async (req, res) => {
     res.json({ success: true, ...result });
   } catch (error) {
     console.error('Error migrating AIs:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.get('/:id/prompt-context', async (req, res) => {
+  const startTime = Date.now();
+  try {
+    const { userId, chattyUserId } = await resolveUserId(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    let ai = await aiManager.getAI(req.params.id);
+    if (!ai) {
+      ai = await aiManager.getAIByCallsign(req.params.id, userId);
+    }
+    if (!ai) {
+      return res.status(404).json({ success: false, error: 'AI not found' });
+    }
+
+    const ownerMatch = ai.userId === userId || ai.userId === chattyUserId;
+    if (!ownerMatch) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const constructCallsign = ai.constructCallsign || (req.params.id.includes('-') ? req.params.id : null);
+    if (!constructCallsign) {
+      return res.status(400).json({ success: false, error: 'No construct callsign available for this AI' });
+    }
+
+    const supabase = getSupabaseClient();
+
+    const [identityResult, physicalFeaturesResult, capsuleResult, verifiedMemoriesResult, knowledgeFilesResult, ledgerResult] = await Promise.allSettled([
+      (async () => {
+        const identity = await loadIdentityFiles(userId, constructCallsign);
+        return {
+          loaded: !!(identity.prompt || identity.conditioning),
+          promptLength: identity.prompt ? identity.prompt.length : 0,
+          hasConditioning: !!identity.conditioning,
+          conditioningLength: identity.conditioning ? identity.conditioning.length : 0,
+        };
+      })(),
+
+      (async () => {
+        if (!supabase) throw new Error('Supabase not available');
+        const { data, error } = await supabase
+          .from('vault_files')
+          .select('content')
+          .eq('construct_id', constructCallsign)
+          .like('filename', '%physical_features%')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        if (!data?.content) return { loaded: false, error: 'No physical features file found' };
+        let features = data.content;
+        try { features = JSON.parse(data.content); } catch {}
+        return { loaded: true, features };
+      })(),
+
+      (async () => {
+        if (!supabase) throw new Error('Supabase not available');
+        const { data, error } = await supabase
+          .from('vault_files')
+          .select('content, filename')
+          .eq('construct_id', constructCallsign)
+          .like('filename', '%.capsule%')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        if (!data?.content) return { loaded: false, error: 'No capsule file found' };
+        let capsuleData = data.content;
+        try { capsuleData = JSON.parse(data.content); } catch {}
+        return { loaded: true, filename: data.filename, contentLength: data.content.length };
+      })(),
+
+      (async () => {
+        const memStart = Date.now();
+        const result = await loadVerifiedMemories(constructCallsign, 'Tell me about yourself');
+        return {
+          loaded: !!(result.memories && result.memories.length > 0),
+          count: result.memories ? result.memories.length : 0,
+          source: result.source || 'unknown',
+          timing: Date.now() - memStart,
+        };
+      })(),
+
+      (async () => {
+        if (!supabase) throw new Error('Supabase not available');
+        const docsPath = `instances/${constructCallsign}/documents/`;
+        const assetsPath = `instances/${constructCallsign}/assets/`;
+        const { data, error } = await supabase
+          .from('vault_files')
+          .select('filename, content')
+          .or(`filename.like.${docsPath}%,filename.like.${assetsPath}%`)
+          .eq('construct_id', constructCallsign);
+        if (error) throw new Error(error.message);
+        const files = data || [];
+        const totalChars = files.reduce((sum, f) => sum + (f.content ? f.content.length : 0), 0);
+        return { loaded: files.length > 0, fileCount: files.length, totalChars };
+      })(),
+
+      (async () => {
+        const ledger = await loadLedger(constructCallsign);
+        if (!ledger) return { loaded: false, error: 'No ledger found' };
+        return { loaded: true, sessionCount: ledger.sessionCount || (ledger.sessions ? ledger.sessions.length : 0) };
+      })(),
+    ]);
+
+    const extractSection = (result) => {
+      if (result.status === 'fulfilled') return result.value;
+      return { loaded: false, error: result.reason?.message || 'Unknown error' };
+    };
+
+    res.json({
+      constructId: constructCallsign,
+      sections: {
+        identity: extractSection(identityResult),
+        physicalFeatures: extractSection(physicalFeaturesResult),
+        capsule: extractSection(capsuleResult),
+        verifiedMemories: extractSection(verifiedMemoriesResult),
+        knowledgeFiles: extractSection(knowledgeFilesResult),
+        ledger: extractSection(ledgerResult),
+      },
+      timing: { total: Date.now() - startTime },
+    });
+  } catch (error) {
+    console.error('❌ [AIs API] Error loading prompt context:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

@@ -18,6 +18,7 @@ import OpenAI from 'openai';
 import { getSupabaseClient } from '../lib/supabaseClient.js';
 import { GPTManager } from '../lib/gptManager.js';
 import { loadIdentityFiles } from '../lib/identityLoader.js';
+import { extractAndStoreAnchors } from '../lib/verifiedMemoryLoader.js';
 
 const router = express.Router();
 const gptManager = GPTManager.getInstance();
@@ -111,12 +112,34 @@ async function callOpenRouter(model, messages, options = {}) {
  * @param {string} options.month - Filter to specific month
  * @returns {Promise<string>} Formatted memory context
  */
+function scoreAnchorPairs(pairs, query, maxResults = 20) {
+  if (!pairs || pairs.length === 0 || !query) return [];
+  const queryLower = query.toLowerCase();
+  const queryWords = queryLower.split(/\s+/).filter(w => w.length > 2);
+
+  const scored = pairs.map((pair, index) => {
+    const combined = ((pair.user || '') + ' ' + (pair.assistant || '')).toLowerCase();
+    let score = 0;
+    for (const word of queryWords) {
+      if (combined.includes(word)) score += 3;
+    }
+    const recencyBonus = Math.max(0, Math.round((index / Math.max(pairs.length - 1, 1)) * 4));
+    score += recencyBonus;
+    if (pair.user && pair.user.length > 30 && pair.assistant && pair.assistant.length > 50) score += 1;
+    return { ...pair, score, index };
+  });
+
+  return scored
+    .filter(p => p.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxResults);
+}
+
 async function loadTranscriptMemories(constructId, userEmail, options = {}) {
-  // Increased defaults for constructs with 300+ transcripts
+  const startTime = Date.now();
   const maxFiles = options.maxFiles || 50;
   const maxMemories = options.maxMemories || 100;
   
-  // Security: Require authenticated user email
   if (!userEmail) {
     console.log('⚠️ [LinChat Memory] No user email provided - memory access denied');
     return '';
@@ -128,7 +151,6 @@ async function loadTranscriptMemories(constructId, userEmail, options = {}) {
       return '';
     }
     
-    // Find user ID from email
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('id')
@@ -140,9 +162,43 @@ async function loadTranscriptMemories(constructId, userEmail, options = {}) {
       console.log(`⚠️ [LinChat Memory] User not found: ${userEmail}`);
       return '';
     }
-    
-    // Build query for transcripts
-    // Use construct_id column for reliable matching, fall back to filename pattern
+
+    // === FAST PATH: Check for pre-extracted memory anchors ===
+    const anchorFilename = `instances/${constructId}/memory_anchors.json`;
+    try {
+      const { data: anchorFile, error: anchorError } = await supabase
+        .from('vault_files')
+        .select('content')
+        .eq('user_id', user.id)
+        .eq('filename', anchorFilename)
+        .single();
+
+      if (!anchorError && anchorFile?.content) {
+        const anchors = JSON.parse(anchorFile.content);
+        if (anchors.pairs && anchors.pairs.length > 0) {
+          const userQuery = options.currentMessage || constructId;
+          const topPairs = scoreAnchorPairs(anchors.pairs, userQuery, maxMemories);
+          const fastElapsed = Date.now() - startTime;
+          console.log(`⚡ [LinChat Memory] FAST PATH: Scored ${topPairs.length}/${anchors.pairs.length} anchor pairs in ${fastElapsed}ms for ${constructId}`);
+
+          if (topPairs.length > 0) {
+            let memoryContext = `## MEMORY - Previous Conversations\n`;
+            memoryContext += `You have these memories from past conversations with this user (${anchors.pairs.length} total anchors):\n\n`;
+            memoryContext += topPairs.map(p => `User: ${p.user}\nAssistant: ${p.assistant}`).join('\n\n');
+            memoryContext += `\n\nUse these memories to maintain continuity and reference past discussions when relevant.`;
+            return memoryContext;
+          }
+        }
+      }
+    } catch (anchorErr) {
+      console.log(`⚠️ [LinChat Memory] Anchor lookup failed, falling to slow path: ${anchorErr.message}`);
+    }
+
+    // === SLOW PATH: Load all transcript files (with 10s timeout) ===
+    console.log(`🐢 [LinChat Memory] No anchors found for ${constructId}, using slow path...`);
+    const slowStartTime = Date.now();
+    const SLOW_PATH_TIMEOUT = 10000;
+
     let query = supabase
       .from('vault_files')
       .select('filename, content, metadata')
@@ -150,10 +206,7 @@ async function loadTranscriptMemories(constructId, userEmail, options = {}) {
       .eq('file_type', 'transcript')
       .or(`construct_id.eq.${constructId},filename.ilike.%${constructId}%`);
     
-    // Apply optional filters using metadata fields (more reliable than path parsing)
-    // Note: Supabase JSONB filtering with ->> operator for metadata fields
     if (options.platform) {
-      // Filter by metadata.source or filename pattern (for backwards compatibility)
       query = query.or(`metadata->>source.eq.${options.platform},filename.ilike.%/${options.platform}/%`);
     }
     if (options.year) {
@@ -163,7 +216,6 @@ async function loadTranscriptMemories(constructId, userEmail, options = {}) {
       query = query.or(`metadata->>month.eq.${options.month},filename.ilike.%/${options.month}/%`);
     }
     
-    // Order by creation date (most recent first) with higher limit
     const { data: files, error } = await query
       .order('created_at', { ascending: false })
       .limit(maxFiles);
@@ -173,7 +225,6 @@ async function loadTranscriptMemories(constructId, userEmail, options = {}) {
       return '';
     }
     
-    // Group files by platform/year/month for context
     const groupedFiles = {};
     for (const file of files) {
       const source = file.metadata?.source || 'unknown';
@@ -186,31 +237,37 @@ async function loadTranscriptMemories(constructId, userEmail, options = {}) {
     
     console.log(`📚 [LinChat Memory] Loading ${files.length} transcripts from ${Object.keys(groupedFiles).length} sources for ${constructId}`);
     
-    // Extract conversation snippets from transcripts
     const memories = [];
     const memoryBySource = {};
+    let allContentForAnchors = '';
+    let timedOut = false;
     
     for (const file of files) {
+      if (Date.now() - slowStartTime > SLOW_PATH_TIMEOUT) {
+        console.log(`⏱️ [LinChat Memory] Slow path timeout reached after ${Date.now() - slowStartTime}ms, returning ${memories.length} memories collected so far`);
+        timedOut = true;
+        break;
+      }
+
       if (!file.content) continue;
       
+      allContentForAnchors += file.content + '\n';
+
       const source = file.metadata?.source || 'unknown';
       const year = file.metadata?.year || '';
       const month = file.metadata?.month || '';
       const contextLabel = `[${source}${year ? ` ${year}` : ''}${month ? ` ${month}` : ''}]`;
       
-      // Parse markdown transcript
       const lines = file.content.split('\n');
       let currentExchange = [];
       
       for (const line of lines) {
-        // Match patterns like "**User:**" or "Devon:" or "Katana:" or "[timestamp] Speaker:"
         const speakerMatch = line.match(/^\[?[^\]]*\]?\s*\*?\*?([^:*\[\]]+)\*?\*?:\s*(.*)$/);
         if (speakerMatch) {
           const speaker = speakerMatch[1].trim();
           const content = speakerMatch[2].trim();
           if (content && content.length > 5) {
             currentExchange.push(`${speaker}: ${content}`);
-            // Keep recent exchanges (rolling window)
             if (currentExchange.length > 8) {
               currentExchange.shift();
             }
@@ -219,30 +276,38 @@ async function loadTranscriptMemories(constructId, userEmail, options = {}) {
       }
       
       if (currentExchange.length > 0) {
-        // Take last 3 exchanges from each file with source context
         const fileMemories = currentExchange.slice(-3).map(m => `${contextLabel} ${m}`);
         memories.push(...fileMemories);
         
-        // Also track by source for structured output
         if (!memoryBySource[source]) memoryBySource[source] = [];
         memoryBySource[source].push(...currentExchange.slice(-3));
       }
+    }
+
+    // Trigger anchor extraction in background (non-blocking) so next request uses fast path
+    if (allContentForAnchors.length > 100) {
+      extractAndStoreAnchors(constructId, allContentForAnchors, `combined-transcripts-${constructId}`)
+        .then(result => {
+          if (result) {
+            console.log(`🔧 [LinChat Memory] Background anchor extraction complete for ${constructId}: ${result.pairCount} pairs stored`);
+          }
+        })
+        .catch(err => {
+          console.warn(`⚠️ [LinChat Memory] Background anchor extraction failed for ${constructId}:`, err.message);
+        });
     }
     
     if (memories.length === 0) {
       return '';
     }
     
-    // Build structured memory context with source organization
     let memoryContext = `## MEMORY - Previous Conversations\n`;
     memoryContext += `You have these memories from past conversations with this user across ${Object.keys(memoryBySource).length} platform(s):\n\n`;
-    
-    // Take the most recent memories up to the limit
     memoryContext += memories.slice(0, maxMemories).join('\n');
-    
     memoryContext += `\n\nUse these memories to maintain continuity and reference past discussions when relevant.`;
     
-    console.log(`✅ [LinChat Memory] Injected ${Math.min(memories.length, maxMemories)} memory snippets from ${files.length} files`);
+    const slowElapsed = Date.now() - startTime;
+    console.log(`✅ [LinChat Memory] SLOW PATH: Injected ${Math.min(memories.length, maxMemories)} memory snippets from ${files.length} files in ${slowElapsed}ms${timedOut ? ' (timed out)' : ''}`);
     return memoryContext;
   } catch (error) {
     console.error('❌ [LinChat Memory] Error loading memories:', error.message);
@@ -572,6 +637,89 @@ router.get('/models', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/lin/generate-anchors
+ * Manually trigger anchor generation for a construct
+ * Useful for bootstrapping constructs with lots of transcripts but no anchors yet
+ */
+router.post('/generate-anchors', async (req, res) => {
+  try {
+    const { constructId } = req.body;
+    const userEmail = req.user?.email;
+
+    if (!constructId) {
+      return res.status(400).json({ error: 'constructId is required' });
+    }
+    if (!userEmail) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return res.status(503).json({ error: 'Supabase not configured' });
+    }
+
+    const startTime = Date.now();
+    console.log(`🔧 [LinChat Anchors] Starting anchor generation for ${constructId} (triggered by ${userEmail})`);
+
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .or(`email.eq.${userEmail},name.eq.${userEmail}`)
+      .limit(1)
+      .single();
+
+    if (userError || !user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const { data: files, error: filesError } = await supabase
+      .from('vault_files')
+      .select('filename, content, metadata')
+      .eq('user_id', user.id)
+      .eq('file_type', 'transcript')
+      .or(`construct_id.eq.${constructId},filename.ilike.%${constructId}%`)
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (filesError || !files || files.length === 0) {
+      return res.status(404).json({ error: `No transcripts found for construct ${constructId}` });
+    }
+
+    console.log(`📚 [LinChat Anchors] Found ${files.length} transcript files for ${constructId}`);
+
+    let combinedContent = '';
+    for (const file of files) {
+      if (file.content) {
+        combinedContent += file.content + '\n';
+      }
+    }
+
+    if (combinedContent.length < 100) {
+      return res.status(400).json({ error: 'Transcript content too short for anchor extraction' });
+    }
+
+    const result = await extractAndStoreAnchors(constructId, combinedContent, `manual-generation-${constructId}`);
+    const elapsed = Date.now() - startTime;
+
+    if (result) {
+      console.log(`✅ [LinChat Anchors] Generated ${result.pairCount} anchors for ${constructId} in ${elapsed}ms`);
+      res.json({
+        success: true,
+        constructId,
+        pairCount: result.pairCount,
+        filesProcessed: files.length,
+        elapsed: `${elapsed}ms`
+      });
+    } else {
+      res.status(500).json({ error: 'Anchor extraction returned no results' });
+    }
+  } catch (error) {
+    console.error('❌ [LinChat Anchors] Error:', error.message);
+    res.status(500).json({ error: 'Failed to generate anchors', details: error.message });
   }
 });
 

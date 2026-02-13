@@ -24,6 +24,11 @@ let readConversationsModule = null;
 let knowledgeContextCache = new Map();
 const KNOWLEDGE_CACHE_TTL = 5 * 60 * 1000;
 
+const identityCache = new Map();
+const physicalFeaturesCache = new Map();
+const capsuleCache = new Map();
+const IDENTITY_CACHE_TTL = 5 * 60 * 1000;
+
 async function getCapsuleIntegration() {
   if (!capsuleIntegrationModule) {
     try {
@@ -596,11 +601,19 @@ async function buildEnrichedContext(options) {
     memoriesLoaded: 0
   };
 
+  const identityCacheKey = `${userId}:${constructId}`;
+  const cachedIdentity = identityCache.get(identityCacheKey);
   let identity = null;
-  try {
-    identity = await loadIdentityFiles(userId, constructId);
-  } catch (identityErr) {
-    console.warn(`⚠️ [MemoryContextBuilder] Identity load failed for ${constructId}:`, identityErr.message);
+  if (cachedIdentity && Date.now() - cachedIdentity.ts < IDENTITY_CACHE_TTL) {
+    identity = cachedIdentity.data;
+    console.log(`💾 [MemoryContextBuilder] Identity cache hit for ${constructId}`);
+  } else {
+    try {
+      identity = await loadIdentityFiles(userId, constructId);
+      identityCache.set(identityCacheKey, { data: identity, ts: Date.now() });
+    } catch (identityErr) {
+      console.warn(`⚠️ [MemoryContextBuilder] Identity load failed for ${constructId}:`, identityErr.message);
+    }
   }
   let basePrompt = systemPromptOverride || identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
 
@@ -608,57 +621,73 @@ async function buildEnrichedContext(options) {
     basePrompt += `\n\n## Conditioning\n${identity.conditioning}`;
   }
 
+  const cachedPhys = physicalFeaturesCache.get(constructId);
   let physicalAppearanceSection = '';
-  try {
-    const { getSupabaseClient } = await import('./supabaseClient.js');
-    const supabase = getSupabaseClient();
-    if (supabase) {
-      const { data: physData } = await supabase
-        .from('vault_files')
-        .select('content')
-        .eq('construct_id', constructId)
-        .like('filename', '%physical_features%')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+  if (cachedPhys && Date.now() - cachedPhys.ts < IDENTITY_CACHE_TTL) {
+    physicalAppearanceSection = cachedPhys.section;
+    if (physicalAppearanceSection) result.physicalFeatures = true;
+    console.log(`💾 [MemoryContextBuilder] Physical features cache hit for ${constructId}`);
+  } else {
+    try {
+      const { getSupabaseClient } = await import('./supabaseClient.js');
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        const { data: physData } = await supabase
+          .from('vault_files')
+          .select('content')
+          .eq('construct_id', constructId)
+          .like('filename', '%physical_features%')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      if (physData?.content) {
-        let featuresText = '';
-        try {
-          const parsed = JSON.parse(physData.content);
-          featuresText = Object.entries(parsed)
-            .map(([key, value]) => {
-              const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-              return `- ${label}: ${value}`;
-            })
-            .join('\n');
-        } catch {
-          featuresText = physData.content;
-        }
-        if (featuresText.trim()) {
-          physicalAppearanceSection = `\n\n## Physical Appearance\nThese are your defined physical characteristics. Reference them when discussing your appearance, self-image, or visual identity.\n${featuresText}`;
-          result.physicalFeatures = true;
-          console.log(`✅ [MemoryContextBuilder] Physical features loaded for ${constructId} (${featuresText.length} chars)`);
+        if (physData?.content) {
+          let featuresText = '';
+          try {
+            const parsed = JSON.parse(physData.content);
+            featuresText = Object.entries(parsed)
+              .map(([key, value]) => {
+                const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                return `- ${label}: ${value}`;
+              })
+              .join('\n');
+          } catch {
+            featuresText = physData.content;
+          }
+          if (featuresText.trim()) {
+            physicalAppearanceSection = `\n\n## Physical Appearance\nThese are your defined physical characteristics. Reference them when discussing your appearance, self-image, or visual identity.\n${featuresText}`;
+            result.physicalFeatures = true;
+            console.log(`✅ [MemoryContextBuilder] Physical features loaded for ${constructId} (${featuresText.length} chars)`);
+          }
         }
       }
+      physicalFeaturesCache.set(constructId, { section: physicalAppearanceSection, ts: Date.now() });
+    } catch (physErr) {
+      console.warn(`⚠️ [MemoryContextBuilder] Physical features load failed for ${constructId}:`, physErr.message);
     }
-  } catch (physErr) {
-    console.warn(`⚠️ [MemoryContextBuilder] Physical features load failed for ${constructId}:`, physErr.message);
   }
 
+  const cachedCapsule = capsuleCache.get(constructId);
   let capsuleSection = '';
-  try {
-    const capsuleIntegration = await getCapsuleIntegration();
-    if (capsuleIntegration) {
-      const capsuleData = await capsuleIntegration.loadCapsule(constructId);
-      if (capsuleData) {
-        capsuleSection = buildCapsulePromptSection(capsuleData, constructId);
-        result.capsuleLoaded = true;
-        console.log(`✅ [MemoryContextBuilder] Capsule loaded for ${constructId} (${capsuleSection.length} chars)`);
+  if (cachedCapsule && Date.now() - cachedCapsule.ts < IDENTITY_CACHE_TTL) {
+    capsuleSection = cachedCapsule.section;
+    if (capsuleSection) result.capsuleLoaded = true;
+    console.log(`💾 [MemoryContextBuilder] Capsule cache hit for ${constructId}`);
+  } else {
+    try {
+      const capsuleIntegration = await getCapsuleIntegration();
+      if (capsuleIntegration) {
+        const capsuleData = await capsuleIntegration.loadCapsule(constructId);
+        if (capsuleData) {
+          capsuleSection = buildCapsulePromptSection(capsuleData, constructId);
+          result.capsuleLoaded = true;
+          console.log(`✅ [MemoryContextBuilder] Capsule loaded for ${constructId} (${capsuleSection.length} chars)`);
+        }
       }
+      capsuleCache.set(constructId, { section: capsuleSection, ts: Date.now() });
+    } catch (capsuleErr) {
+      console.warn(`⚠️ [MemoryContextBuilder] Capsule load failed for ${constructId}:`, capsuleErr.message);
     }
-  } catch (capsuleErr) {
-    console.warn(`⚠️ [MemoryContextBuilder] Capsule load failed for ${constructId}:`, capsuleErr.message);
   }
 
   let verifiedMemorySection = '';

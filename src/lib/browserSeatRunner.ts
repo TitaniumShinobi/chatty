@@ -56,7 +56,7 @@ interface GenerateOptions {
 }
 
 export async function runSeat(opts: GenerateOptions): Promise<string> {
-  const timeout = opts.timeout ?? 60000; // Default 60s for cloud API
+  const timeout = opts.timeout ?? 120000; // Default 120s - safety net for slow path when anchors don't exist yet
   const maxRetries = opts.retries ?? 2;
   
   let lastError: Error | null = null;
