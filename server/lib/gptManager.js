@@ -363,6 +363,30 @@ export class GPTManager {
     console.log('✅ [GPTManager] VVAULT identity hydration complete');
   }
 
+  _isStubValue(value, fieldName, constructName) {
+    if (!value || value.trim() === '') return true;
+    const v = value.trim().toLowerCase();
+    const name = (constructName || '').toLowerCase();
+    const stubPatterns = [
+      'a custom gpt',
+      'a custom ai',
+      'no description',
+      'no instructions',
+      'description here',
+      'instructions here',
+      'enter description',
+      'enter instructions',
+    ];
+    if (stubPatterns.some(p => v === p)) return true;
+    if (fieldName === 'instructions') {
+      if (/^you are \w+\.?$/i.test(v)) return true;
+      if (name && v === `you are ${name}.`) return true;
+      if (name && v === `you are ${name}`) return true;
+    }
+    if (fieldName === 'description' && v.length < 20) return true;
+    return false;
+  }
+
   _applyIdentityUpdate(gpt, content, source) {
     try {
       let parsed = {};
@@ -379,19 +403,42 @@ export class GPTManager {
         parsed = content;
       }
 
+      const gatedFields = [];
       const updates = {};
       if (parsed.name && parsed.name !== gpt.name) updates.name = parsed.name;
-      if (parsed.description && parsed.description !== gpt.description) updates.description = parsed.description;
-      if (parsed.instructions && parsed.instructions !== gpt.instructions) updates.instructions = parsed.instructions;
+
+      if (parsed.description && parsed.description !== gpt.description) {
+        if (this._isStubValue(gpt.description, 'description', gpt.name)) {
+          updates.description = parsed.description;
+        } else {
+          gatedFields.push('description');
+        }
+      }
+
+      if (parsed.instructions && parsed.instructions !== gpt.instructions) {
+        if (this._isStubValue(gpt.instructions, 'instructions', gpt.name)) {
+          updates.instructions = parsed.instructions;
+        } else {
+          gatedFields.push('instructions');
+        }
+      }
 
       let startersUpdated = false;
       if (parsed.conversationStarters && parsed.conversationStarters.length > 0) {
         const existingStarters = JSON.parse(gpt.conversation_starters || '[]');
         const newJson = JSON.stringify(parsed.conversationStarters);
         if (newJson !== JSON.stringify(existingStarters)) {
-          updates.conversation_starters = newJson;
-          startersUpdated = true;
+          if (existingStarters.length === 0 || (existingStarters.length === 1 && !existingStarters[0])) {
+            updates.conversation_starters = newJson;
+            startersUpdated = true;
+          } else {
+            gatedFields.push('conversationStarters');
+          }
         }
+      }
+
+      if (gatedFields.length > 0) {
+        console.log(`🔒 [GPTManager] Hydration skipped for ${gpt.construct_callsign} — identity already set: ${gatedFields.join(', ')} (source: ${source})`);
       }
 
       if (Object.keys(updates).length > 0) {
@@ -872,10 +919,10 @@ export class GPTManager {
     `);
 
     stmt.run(
-      updates.name || existing.name,
-      updates.description || existing.description,
-      updates.instructions || existing.instructions,
-      JSON.stringify(updates.conversationStarters || existing.conversationStarters),
+      updates.name !== undefined ? updates.name : existing.name,
+      updates.description !== undefined ? updates.description : existing.description,
+      updates.instructions !== undefined ? updates.instructions : existing.instructions,
+      JSON.stringify(updates.conversationStarters !== undefined ? updates.conversationStarters : existing.conversationStarters),
       updates.avatar !== undefined ? updates.avatar : existing.avatar,
       JSON.stringify(updates.capabilities || existing.capabilities),
       updates.constructCallsign !== undefined ? updates.constructCallsign : existing.constructCallsign,

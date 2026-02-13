@@ -60,7 +60,6 @@ async function syncPromptJsonToSupabase(gpt, userEmail) {
   if (existing) {
     const { error } = await supabase.from('vault_files').update({
       content,
-      file_type: 'config',
     }).eq('id', existing.id);
     if (error) console.warn(`⚠️ [GPTs API] prompt.json update failed for ${callsign}:`, error.message);
   } else {
@@ -68,7 +67,7 @@ async function syncPromptJsonToSupabase(gpt, userEmail) {
       user_id: userId,
       filename: vaultPath,
       content,
-      file_type: 'config',
+      file_type: 'identity',
       construct_id: callsign,
       metadata: { originalName: 'prompt.json', sha256: null },
     });
