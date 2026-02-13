@@ -713,7 +713,8 @@ export default function Layout() {
 
     let cancelled = false;
 
-    // Safety timeout: ensure loading state is cleared after 10 seconds max
+    // Safety timeout: ensure loading state is cleared after 30 seconds max
+    // (VVAULT + Supabase avatar resolution can take 15-20s under load)
     const safetyTimeout = setTimeout(() => {
       if (!cancelled) {
         console.warn(
@@ -721,7 +722,7 @@ export default function Layout() {
         );
         setIsLoading(false);
       }
-    }, 10000);
+    }, 30000);
 
     (async () => {
       try {
@@ -746,20 +747,27 @@ export default function Layout() {
 
         setUser(me);
 
-        // Load user's custom GPTs for Address Book contact cards (using AIService for correct avatars)
+        // Load user's custom GPTs for Address Book (decoupled - updates UI independently)
         console.log("🤖 [Layout.tsx] Loading user GPTs for Address Book...");
         let gpts: AIConfig[] = [];
-        try {
-          const aiService = AIService.getInstance();
-          gpts = await aiService.getAllAIs();
-          setUserGPTs(gpts);
-          console.log(`✅ [Layout.tsx] Loaded ${gpts.length} custom GPTs:`, gpts.map(g => g.name));
-        } catch (gptError) {
-          console.warn("⚠️ [Layout.tsx] Failed to load GPTs (non-fatal):", gptError);
-        }
+        const gptsPromise = (async () => {
+          try {
+            const aiService = AIService.getInstance();
+            const loaded = await aiService.getAllAIs();
+            if (!cancelled) {
+              setUserGPTs(loaded);
+              console.log(`✅ [Layout.tsx] Loaded ${loaded.length} custom GPTs:`, loaded.map(g => g.name));
+            }
+            return loaded;
+          } catch (gptError) {
+            console.warn("⚠️ [Layout.tsx] Failed to load GPTs (non-fatal):", gptError);
+            return [];
+          }
+        })();
 
         // Bootstrap constructs with master scripts (autonomy stack)
         try {
+          gpts = await gptsPromise;
           const constructIds = ["zen-001", "lin-001", ...gpts.map((g: AIConfig) => g.constructCallsign || `${g.name.toLowerCase()}-001`)];
           console.log("🚀 [Layout.tsx] Bootstrapping constructs:", constructIds);
           const bootstrapResult = await bootstrapConstructs(constructIds);

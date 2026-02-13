@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 interface Suggestion {
   text: string;
@@ -22,19 +22,33 @@ const DEFAULT_SUGGESTIONS: Suggestion[] = [
   { text: "Focus on a specific goal" },
 ];
 
+const FETCH_TIMEOUT_MS = 3000;
+
 export function useDynamicSuggestions() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>(DEFAULT_SUGGESTIONS);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const fetchSuggestions = useCallback(async () => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setIsLoading(true);
     setError(null);
+
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
     try {
       const response = await fetch("/api/suggestions", {
         credentials: "include",
+        signal: controller.signal,
       });
+
+      clearTimeout(timeout);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch suggestions: ${response.status}`);
@@ -48,9 +62,14 @@ export function useDynamicSuggestions() {
         setSuggestions(DEFAULT_SUGGESTIONS);
       }
     } catch (err) {
-      console.warn("[useDynamicSuggestions] Failed to fetch:", err);
-      setError(err instanceof Error ? err.message : "Failed to fetch suggestions");
+      clearTimeout(timeout);
       setSuggestions(DEFAULT_SUGGESTIONS);
+      if (err instanceof DOMException && err.name === "AbortError") {
+        console.warn("[useDynamicSuggestions] Fetch timed out, using defaults");
+      } else {
+        console.warn("[useDynamicSuggestions] Failed to fetch:", err);
+        setError(err instanceof Error ? err.message : "Failed to fetch suggestions");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -58,6 +77,9 @@ export function useDynamicSuggestions() {
 
   useEffect(() => {
     fetchSuggestions();
+    return () => {
+      if (abortRef.current) abortRef.current.abort();
+    };
   }, [fetchSuggestions]);
 
   return {

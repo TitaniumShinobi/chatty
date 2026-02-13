@@ -558,54 +558,42 @@ export default function Home() {
         </div>
       </form>
 
-      {/* Suggested Prompts */}
+      {/* Suggested Prompts - always visible, silently upgraded when AI suggestions arrive */}
       <div className="w-full max-w-2xl space-y-2">
-        {suggestionsLoading ? (
-          <div className="flex items-center justify-center py-4">
-            <RefreshCw
-              size={20}
-              className="animate-spin"
-              style={{ color: "var(--chatty-text)", opacity: 0.5 }}
-            />
-          </div>
-        ) : (
-          <>
-            {suggestedPrompts.map((prompt, index) => (
-              <button
-                key={index}
-                onClick={() => dispatchPrompt(prompt.text)}
-                className="flex items-center gap-3 w-full text-left px-1 py-2 rounded-md transition-colors"
-                style={{ color: "var(--chatty-text)" }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "transparent";
-                }}
-              >
-                <Layers size={18} />
-                <span className="text-sm md:text-base">{prompt.text}</span>
-              </button>
-            ))}
-            <button
-              onClick={refreshSuggestions}
-              className="flex items-center gap-2 mx-auto mt-3 px-3 py-1.5 rounded-full transition-colors text-sm"
-              style={{ color: "var(--chatty-text)", opacity: 0.6 }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
-                e.currentTarget.style.opacity = "1";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "transparent";
-                e.currentTarget.style.opacity = "0.6";
-              }}
-              title="Get new suggestions"
-            >
-              <RefreshCw size={14} />
-              <span>New ideas</span>
-            </button>
-          </>
-        )}
+        {suggestedPrompts.map((prompt, index) => (
+          <button
+            key={index}
+            onClick={() => dispatchPrompt(prompt.text)}
+            className="flex items-center gap-3 w-full text-left px-1 py-2 rounded-md transition-colors"
+            style={{ color: "var(--chatty-text)" }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "transparent";
+            }}
+          >
+            <Layers size={18} />
+            <span className="text-sm md:text-base">{prompt.text}</span>
+          </button>
+        ))}
+        <button
+          onClick={refreshSuggestions}
+          className="flex items-center gap-2 mx-auto mt-3 px-3 py-1.5 rounded-full transition-colors text-sm"
+          style={{ color: "var(--chatty-text)", opacity: 0.6 }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
+            e.currentTarget.style.opacity = "1";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "transparent";
+            e.currentTarget.style.opacity = "0.6";
+          }}
+          title="Get new suggestions"
+        >
+          <RefreshCw size={14} className={suggestionsLoading ? "animate-spin" : ""} />
+          <span>New ideas</span>
+        </button>
       </div>
     </div>
   );
