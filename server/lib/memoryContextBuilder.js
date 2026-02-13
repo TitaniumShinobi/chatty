@@ -608,6 +608,44 @@ async function buildEnrichedContext(options) {
     basePrompt += `\n\n## Conditioning\n${identity.conditioning}`;
   }
 
+  let physicalAppearanceSection = '';
+  try {
+    const { getSupabaseClient } = await import('./supabaseClient.js');
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { data: physData } = await supabase
+        .from('vault_files')
+        .select('content')
+        .eq('construct_id', constructId)
+        .like('filename', '%physical_features%')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (physData?.content) {
+        let featuresText = '';
+        try {
+          const parsed = JSON.parse(physData.content);
+          featuresText = Object.entries(parsed)
+            .map(([key, value]) => {
+              const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+              return `- ${label}: ${value}`;
+            })
+            .join('\n');
+        } catch {
+          featuresText = physData.content;
+        }
+        if (featuresText.trim()) {
+          physicalAppearanceSection = `\n\n## Physical Appearance\nThese are your defined physical characteristics. Reference them when discussing your appearance, self-image, or visual identity.\n${featuresText}`;
+          result.physicalFeatures = true;
+          console.log(`✅ [MemoryContextBuilder] Physical features loaded for ${constructId} (${featuresText.length} chars)`);
+        }
+      }
+    }
+  } catch (physErr) {
+    console.warn(`⚠️ [MemoryContextBuilder] Physical features load failed for ${constructId}:`, physErr.message);
+  }
+
   let capsuleSection = '';
   try {
     const capsuleIntegration = await getCapsuleIntegration();
@@ -748,9 +786,9 @@ async function buildEnrichedContext(options) {
     console.warn(`⚠️ [MemoryContextBuilder] Knowledge context load failed for ${constructId}:`, knowledgeErr.message);
   }
 
-  result.systemPrompt = basePrompt + capsuleSection + userSection + knowledgeSection + ledgerSection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + ANTI_ROLEPLAY_DIRECTIVES;
+  result.systemPrompt = basePrompt + physicalAppearanceSection + capsuleSection + userSection + knowledgeSection + ledgerSection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + ANTI_ROLEPLAY_DIRECTIVES;
 
-  console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, knowledge: ${!!knowledgeSection}, ledger: ${ledger ? ledger.sessions.length : 0}, needle: ${needleCount}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
+  console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, physicalFeatures: ${!!physicalAppearanceSection}, knowledge: ${!!knowledgeSection}, ledger: ${ledger ? ledger.sessions.length : 0}, needle: ${needleCount}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
 
   return result;
 }

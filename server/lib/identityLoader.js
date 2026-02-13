@@ -269,7 +269,28 @@ async function loadConditioningTxt(userId, constructId) {
     return systemIdentity.conditioning;
   }
   
-  // User-created GPTs: no embedded fallback
+  try {
+    const { getSupabaseClient } = await import('./supabaseClient.js');
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { data } = await supabase
+        .from('vault_files')
+        .select('content')
+        .eq('construct_id', constructId)
+        .like('filename', '%conditioning.txt')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data?.content) {
+        console.log(`✅ [IdentityLoader] Loaded conditioning.txt from Supabase for ${constructId} (${data.content.length} chars)`);
+        return data.content;
+      }
+    }
+  } catch (sbErr) {
+    console.warn(`⚠️ [IdentityLoader] Supabase conditioning fallback failed for ${constructId}:`, sbErr.message);
+  }
+
   return null;
 }
 
