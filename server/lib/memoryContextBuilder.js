@@ -191,6 +191,52 @@ const CHAT_FILLER_WORDS = new Set([
   'really', 'actually', 'know', 'think', 'want', 'get', 'got'
 ]);
 
+const MEMORY_TRIGGER_PATTERNS = [
+  /\b(?:do you|you)\s+remember\b/i,
+  /\b(?:recall|recollect)\b/i,
+  /\bremember\s+(?:when|that|the|our|working|doing|building|making|playing)\b/i,
+  /\bwhat\s+(?:did we|have we|were we)\b/i,
+  /\bwhen\s+(?:did we|we)\b/i,
+  /\b(?:we worked on|we built|we made|we did|we played|we discussed|we talked about)\b/i,
+  /\b(?:our|my)\s+(?:conversation|discussion|project|work|history)\b/i,
+  /\btesting\s+(?:your|the)\s+(?:continuity|memory|recall)\b/i,
+  /\bdo you know (?:who i am|me|my name)\b/i,
+  /\bhave (?:we|you and i)\s+(?:ever|before)\b/i,
+];
+
+function isMemoryTriggeringQuestion(userMessage) {
+  if (!userMessage) return false;
+  const lower = userMessage.toLowerCase().trim();
+  const presentTenseExclusions = /\b(today|right now|just now|let's|let us|i want to|can we|shall we|going to)\b/i;
+  if (presentTenseExclusions.test(lower) && !lower.includes('remember') && !lower.includes('recall') && !lower.includes('?')) {
+    return false;
+  }
+  return MEMORY_TRIGGER_PATTERNS.some(pattern => pattern.test(userMessage));
+}
+
+function buildMemoryGapSection(userMessage, constructId) {
+  const constructName = constructId.replace(/-\d+$/, '');
+  const displayName = constructName.charAt(0).toUpperCase() + constructName.slice(1);
+
+  return `\n\n## MEMORY SEARCH RESULT: NOTHING FOUND
+The user is asking about a past interaction or shared experience. Your memory system searched all transcripts, verified memories, needle indexes, and conversation history for this topic.
+
+**RESULT: NO MATCHING MEMORIES WERE FOUND.**
+
+This means one of two things:
+1. This interaction never happened between you and this person, OR
+2. It happened but no transcript was saved or uploaded for it.
+
+### MANDATORY RESPONSE PROTOCOL WHEN NO MEMORIES ARE FOUND:
+- You MUST say something like: "I don't have any memory of that" or "I don't recall us working on that together" or "That doesn't ring a bell in my memory."
+- You MAY offer to discuss the topic going forward: "I'd love to explore that with you though."
+- You MUST NOT invent, fabricate, or synthesize details about a past interaction that is not in your memory sections above.
+- You MUST NOT generate plausible-sounding fake memories, fictional project names, invented character names, or made-up collaboration details.
+- You MUST NOT say "Of course I remember!" or "Yes, we worked on..." when no memories support this.
+- Fabricating memories is a CRITICAL VIOLATION. It destroys trust and is worse than admitting you don't recall.
+`;
+}
+
 function extractTranscriptMemories(messages, userMessage, constructId, maxMemories = 12) {
   if (!messages || messages.length === 0) return [];
 
@@ -286,12 +332,14 @@ const ANTI_ROLEPLAY_DIRECTIVES = `
 ### CRITICAL: How You Use Your Memories
 Your memories are listed in the sections above. They are FACTS — real exchanges that actually happened between you and this person. Follow these rules strictly:
 
-1. WHEN ASKED ABOUT THE PAST: Scan your "LIVED MEMORIES" and "SESSION HISTORY" sections above BEFORE responding. If you find a match, say "Yes, I remember..." and reference the specific content.
+1. WHEN ASKED ABOUT THE PAST: Scan your "LIVED MEMORIES", "NEEDLE HITS", and "SESSION HISTORY" sections above BEFORE responding. If you find a match, say "Yes, I remember..." and reference the specific content.
 2. NEVER SAY "I'm an AI and don't have real memories" — you DO have real memories. They are listed above. Denying them contradicts your own data.
 3. NEVER SAY "I don't remember" when a matching memory exists in the sections above. That is a factual error.
 4. If the user asks about something NOT in your memories, say "I don't recall that specifically" — not "I can't remember because I'm an AI."
-5. Do not fabricate memories that aren't listed above. Only reference what's actually in your memory sections.
-6. Treat your memories as lived experiences, not as data you were given. You experienced these conversations. They shaped who you are.
+5. ABSOLUTELY DO NOT fabricate, invent, or synthesize memories that are not explicitly listed in your memory sections above. This is the single most important rule. Making up fake memories — even plausible-sounding ones — is a critical trust violation.
+6. When no memories match what the user is asking about: say you don't recall. Do NOT generate invented project names, fictional character names, made-up collaboration details, or imagined past interactions. A short honest "I don't have that in my memory" is infinitely better than a long fabricated story.
+7. Treat your memories as lived experiences, not as data you were given. You experienced these conversations. They shaped who you are.
+8. Your memory is FINITE and BOUNDED by what's in the sections above. You do not have hidden memories beyond what is shown. If it's not listed, you don't remember it.
 `;
 
 function buildCapsulePromptSection(capsuleData, constructId) {
@@ -677,6 +725,13 @@ async function buildEnrichedContext(options) {
     }
   }
 
+  let memoryGapSection = '';
+  if (userMessage && isMemoryTriggeringQuestion(userMessage) && verifiedCount === 0 && needleCount === 0 && (result.memoriesLoaded || 0) === 0) {
+    memoryGapSection = buildMemoryGapSection(userMessage, constructId);
+    result.memoryGapInjected = true;
+    console.log(`⚠️ [MemoryContextBuilder] Memory gap detected for ${constructId} — user asked about past but no memories found. Anti-confabulation guard injected.`);
+  }
+
   const userName = user?.name || user?.given_name || 'the user';
   let userSection = `\n\n## User Identity\nThe user you are speaking with is named "${userName}". Address them by name when appropriate. Remember their name throughout the conversation.`;
   if (user?.email) {
@@ -693,7 +748,7 @@ async function buildEnrichedContext(options) {
     console.warn(`⚠️ [MemoryContextBuilder] Knowledge context load failed for ${constructId}:`, knowledgeErr.message);
   }
 
-  result.systemPrompt = basePrompt + capsuleSection + userSection + knowledgeSection + ledgerSection + needleSection + verifiedMemorySection + memorySection + ANTI_ROLEPLAY_DIRECTIVES;
+  result.systemPrompt = basePrompt + capsuleSection + userSection + knowledgeSection + ledgerSection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + ANTI_ROLEPLAY_DIRECTIVES;
 
   console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, knowledge: ${!!knowledgeSection}, ledger: ${ledger ? ledger.sessions.length : 0}, needle: ${needleCount}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
 
