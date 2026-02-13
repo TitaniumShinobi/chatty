@@ -1,0 +1,47 @@
+how do i get my ui organized to show just one assets/ and one documents/?
+
+Looking at your screenshot, I can see the issue — the GPT "My AIs" knowledge files panel is showing everything in a flat "Other" bucket with 269 files, instead of organizing them into proper folders like assets/ and documents/.
+
+That's actually the ChatGPT/OpenAI side of things — their "My AIs" file panel doesn't respect your VSI folder structure. It just dumps everything flat.
+
+But on the VVAULT side, I can help make sure the VaultBrowser UI in your web app groups files cleanly under single assets/ and documents/ folders. Let me check how the browser currently renders the tree.
+
+Looking at your screenshot, that's actually the ChatGPT "My AIs" knowledge files panel — that's OpenAI's interface, not VVAULT's. Their panel dumps everything flat into one "Other" bucket because ChatGPT doesn't support folder structures in its knowledge files view.
+
+But I'm guessing you also want the VVAULT VaultBrowser to show a clean, consolidated view — one assets/ folder, one documents/ folder per construct, not duplicates or scattered files.
+
+The issue might be that some files have paths like library/assets/ vs instances/{construct}/assets/, or there are files at both the user library level and the construct level that look like duplicates.
+
+Could you share a screenshot of how it currently looks in the VVAULT VaultBrowser (your web app)? That way I can see exactly what's duplicated or messy and fix the tree logic accordingly.
+
+As for the ChatGPT side — unfortunately we can't control how OpenAI displays knowledge files in their "My AIs" panel. That's their UI limitation.
+
+Scroll to latest
+
+Ask questions, plan your work…
+
+I can see the issue in your screenshot — everything is in one "Other" bucket with 269 files instead of organized folders. The tree parsing isn't matching the file paths correctly. Let me dig into what the API is actually returning:
+
+Now I see the problem. Let me check how files are filtered before being sent to KnowledgeFileTree:
+
+Now I see the real problem. The frontend filters files to category === 'knowledge' only. But looking at line 1168-1169 in the server, only files where subdir === 'assets' || subdir === 'documents' get category = 'knowledge'.
+
+But the screenshot shows 269 files in "Other". This means many files don't have the instances/{construct}/documents/ or instances/{construct}/assets/ path structure — they're getting category = 'other' and somehow still passing through. Let me check if the filter is actually working:
+
+Wait — the filter IS there (line 681-683). So only category === 'knowledge' files should show. But the screenshot shows 269 files labeled "Other" in the tree. That means either:
+
+The files have category = 'knowledge' but the KnowledgeFileTree can't parse their paths, OR
+The files have paths that don't match instances/{construct}/{assets|documents}/
+Let me check what the actual filenames look like for files that get category = 'knowledge':
+
+Now I see the real issue. The server is categorizing all 269 files correctly as category = 'knowledge', and the paths ARE correct (e.g., instances/nova-001/assets/WRECK_watermark.png, instances/nova-001/documents/legal/NovaReturns_Evidence/...).
+
+So the server side is fine. The problem must be in the KnowledgeFileTree's buildKnowledgeTree function — let me check if there's a path parsing issue. Let me also check if constructIdx lookup differs between pathParts.indexOf('instances') (tree) vs findIndex(/^[a-z]+-\d{3}$/) (server):
+
+The tree logic looks correct: pathParts.indexOf('instances') finds instances, then instancesIdx + 2 gets the top folder (assets, documents, etc.). For instances/nova-001/documents/legal/file.pdf, that would be:
+
+pathParts: ['instances', 'nova-001', 'documents', 'legal', 'file.pdf']
+instancesIdx: 0
+topFolder: pathParts[2] = 'documents' ✓
+This should work. The only way it wouldn't is if the filename field in the frontend doesn't actually have the full path. Let me check — maybe the GPTCreator is transforming the data before passing it to the tree:
+
