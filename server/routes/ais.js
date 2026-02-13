@@ -6,7 +6,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import JSZip from 'jszip';
-import pdfParse from 'pdf-parse';
+import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import { AIManager } from '../lib/aiManager.js';
 import { getGPTSaveHook } from '../lib/gptSaveHook.js';
 import { normalizeModelString } from '../lib/modelResolver.js';
