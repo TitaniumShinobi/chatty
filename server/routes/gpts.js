@@ -657,7 +657,7 @@ const zipUpload = multer({
       cb(null, `zip-${Date.now()}-${Math.random().toString(36).slice(2)}.zip`);
     },
   }),
-  limits: { fileSize: 500 * 1024 * 1024 },
+  limits: { fileSize: 1024 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/zip' || file.mimetype === 'application/x-zip-compressed' || file.originalname.toLowerCase().endsWith('.zip')) {
       cb(null, true);

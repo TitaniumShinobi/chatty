@@ -121,8 +121,8 @@ export function VaultFileManager() {
       return;
     }
 
-    if (file.size > 500 * 1024 * 1024) {
-      setStatus({ type: 'error', message: `${file.name} exceeds 500MB limit.` });
+    if (file.size > 1024 * 1024 * 1024) {
+      setStatus({ type: 'error', message: `${file.name} exceeds 1GB limit.` });
       return;
     }
 
@@ -432,7 +432,7 @@ export function VaultFileManager() {
                 Drop a .zip file here or use the Upload ZIP button
               </span>
               <span className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.3 }}>
-                Up to 500MB — files are extracted, checksummed, and stored in Supabase
+                Up to 1GB — files are extracted, checksummed, and stored in Supabase
               </span>
             </div>
           )}

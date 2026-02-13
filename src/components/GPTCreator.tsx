@@ -1346,8 +1346,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       const nonZipFiles = fileArray.filter(f => !f.name.toLowerCase().endsWith('.zip'));
 
       for (const zipFile of zipFiles) {
-        if (zipFile.size > 500 * 1024 * 1024) {
-          setError(`${zipFile.name} exceeds 500MB limit`);
+        if (zipFile.size > 1024 * 1024 * 1024) {
+          setError(`${zipFile.name} exceeds 1GB limit`);
           continue;
         }
         try {

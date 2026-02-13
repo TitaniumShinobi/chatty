@@ -620,7 +620,7 @@ const zipUpload = multer({
     },
   }),
   limits: {
-    fileSize: 500 * 1024 * 1024,
+    fileSize: 1024 * 1024 * 1024,
   },
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/zip' || file.mimetype === 'application/x-zip-compressed' ||
