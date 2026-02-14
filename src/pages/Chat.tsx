@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import type { Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import rehypeRaw from "rehype-raw";
@@ -118,7 +118,7 @@ const userMessageMarkdownComponents: Components = {
               width: "100%",
               maxWidth: "min(90vw, 520px)",
               minWidth: 0,
-              backgroundColor: "#000000",
+              backgroundColor: "#0f0f12",
               boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
               overflowX: "auto",
               overflowY: "hidden",
@@ -126,7 +126,7 @@ const userMessageMarkdownComponents: Components = {
             }}
           >
             <SyntaxHighlighter
-              style={oneDark as any}
+              style={vscDarkPlus as any}
               language={match[1]}
               PreTag="div"
               className="rounded-lg"
@@ -139,6 +139,8 @@ const userMessageMarkdownComponents: Components = {
                 whiteSpace: "pre",
                 minWidth: 0,
                 width: "100%",
+                backgroundColor: "#0f0f12",
+                color: "#d4d4d4",
               }}
               {...props}
             >
@@ -200,7 +202,7 @@ const userMessageMarkdownComponents: Components = {
               width: "100%",
               maxWidth: "min(90vw, 520px)",
               minWidth: 0,
-              backgroundColor: "#000000",
+              backgroundColor: "#0f0f12",
               boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
               overflowX: "auto",
               overflowY: "hidden",
@@ -214,7 +216,7 @@ const userMessageMarkdownComponents: Components = {
                 padding: "1rem",
                 fontSize: "14px",
                 lineHeight: "1.5",
-                color: "var(--chatty-text)",
+                color: "#d4d4d4",
                 whiteSpace: "pre",
                 overflowX: "auto",
                 overflowY: "auto",
