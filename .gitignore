@@ -165,4 +165,6 @@ __pycache__/
 
 # Database files
 chatty.db
+chatty.db.bak.*
 *.db
+*.db.bak.*
