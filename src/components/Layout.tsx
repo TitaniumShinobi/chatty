@@ -2348,11 +2348,12 @@ export default function Layout() {
           };
 
       if (personaContextLock && !personaSystemPrompt) {
-        console.error(
-          "❌ [Layout.tsx] Persona lock active but system prompt missing; aborting send",
+        console.warn(
+          "⚠️ [Layout.tsx] Persona lock active but system prompt missing; proceeding without persona prompt",
         );
-        return;
-      }const raw = await aiService.processMessage(
+      }
+
+      const raw = await aiService.processMessage(
         input,
         docFiles, // Only pass document files for parsing
         {
