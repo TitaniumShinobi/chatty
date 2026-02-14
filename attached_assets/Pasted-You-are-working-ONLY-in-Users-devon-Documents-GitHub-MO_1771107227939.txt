@@ -1,0 +1,77 @@
+You are working ONLY in: /Users/devon/Documents/GitHub/MOCR-Service
+
+Objective:
+Finalize MOCR batch-mode reliability and produce hard evidence for go/no-go.
+Do NOT touch Chatty code.
+
+Rules:
+- Minimal targeted fixes only.
+- No broad refactor.
+- Keep API shape stable.
+- Do not claim success without raw payload evidence.
+
+Step 1 — Validation first (no edits)
+1) Start service:
+   npm install
+   npm run dev
+2) Verify:
+   GET /health => 200
+
+Run this test matrix and capture raw outputs:
+
+A) Text-heavy clip (authoritative pass case)
+- POST /jobs with: video=@<file>.mp4;type=video/mp4
+- Poll /jobs/:id to terminal
+Pass if:
+- job.status = "completed"
+- job.result.success = true
+- job.result.error empty/null
+- job.result.contentSummary.description non-empty
+- job.result.mocrAnalysis.textContent.length > 0
+
+B) No-text control clip
+Pass if:
+- completed + success=true
+- low/empty OCR acceptable
+- no crash
+
+C) Invalid MIME
+- Upload text/plain
+Pass if:
+- HTTP 400 (not 500), clear error
+
+D) Forced processing failure
+- Upload corrupted file with mime video/mp4
+Pass if:
+- terminal status = "failed"
+- job.error populated
+- result.success false (or equivalent failure envelope)
+
+E) Concurrency
+- Launch 2 valid uploads in parallel
+Pass if:
+- both complete independently
+- no temp-file collision/cross-job contamination
+
+Step 2 — Patch only if a gate fails
+- Apply smallest possible fix.
+- Re-run only failed tests, then full matrix.
+- No unrelated edits.
+
+Step 3 — Deliverables
+Return:
+1) Exact files changed
+2) Minimal diff summary per file
+3) Evidence:
+   - raw POST + final GET for text-heavy
+   - final GET summary for no-text
+   - invalid MIME response/status
+   - forced-failure final payload
+   - concurrency results
+4) PASS/FAIL line for every gate
+5) Remaining known limitations explicitly labeled:
+   - ASR mocked/non-authoritative
+   - OCR is text extraction, not action-scene understanding
+
+Important:
+If environment blocks execution, report exact blocker and stop (no speculative “pass”).
