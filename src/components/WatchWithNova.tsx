@@ -127,7 +127,9 @@ const WatchWithNova: React.FC<WatchWithNovaProps> = ({
     setStatus("ocr...");
 
     try {
-      await reportToolEvents([{ tool: "screen_capture", detail: "frame captured" }]);
+      if (writeAccess) {
+        await reportToolEvents([{ tool: "screen_capture", detail: "frame captured" }]);
+      }
 
       const {
         data: { text },
@@ -148,7 +150,9 @@ const WatchWithNova: React.FC<WatchWithNovaProps> = ({
       setLastOcrText(trimmed);
       setCaptureCount((c) => c + 1);
 
-      await reportToolEvents([{ tool: "ocr", detail: `${trimmed.length} chars extracted` }]);
+      if (writeAccess) {
+        await reportToolEvents([{ tool: "ocr", detail: `${trimmed.length} chars extracted` }]);
+      }
 
       if (writeAccess) {
         const timestamp = new Date().toLocaleTimeString("en-US", { hour12: false });

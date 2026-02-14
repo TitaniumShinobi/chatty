@@ -44,19 +44,7 @@ function drainToolEvents(sessionId) {
   return events;
 }
 
-// POST /tool-events — client reports tool usage for server-authored trace
-router.post('/tool-events', (req, res) => {
-  const { sessionId, events } = req.body;
-  if (!sessionId || !Array.isArray(events)) {
-    return res.status(400).json({ error: 'sessionId and events[] required' });
-  }
-  for (const evt of events) {
-    if (evt.tool && typeof evt.tool === 'string') {
-      recordToolEvent(sessionId, evt.tool, evt.detail || null);
-    }
-  }
-  res.json({ ok: true, queued: events.length });
-});
+// tool-events route defined AFTER requireAuth below
 
 // OpenRouter client for fallback when VVAULT API is unavailable
 // Primary: user's own OpenRouter key; Fallback: Replit AI Integrations (managed, billed to credits)
@@ -421,6 +409,49 @@ async function seedFixturesForCallsign(identityService, userId, constructCallsig
 
 router.use(requireAuth);
 console.log('✅ [VVAULT Routes] requireAuth middleware applied to all routes');
+
+const ALLOWED_TOOL_NAMES = new Set(['screen_capture', 'ocr']);
+
+router.post('/tool-events', (req, res) => {
+  const body = req.body;
+  if (!body || typeof body !== 'object') {
+    return res.status(400).json({ error: 'Request body must be a JSON object' });
+  }
+  const allowedTopKeys = new Set(['sessionId', 'events']);
+  for (const key of Object.keys(body)) {
+    if (!allowedTopKeys.has(key)) {
+      return res.status(400).json({ error: `Unknown field: ${key}` });
+    }
+  }
+  const { sessionId, events } = body;
+  if (typeof sessionId !== 'string' || sessionId.length === 0 || sessionId.length > 200) {
+    return res.status(400).json({ error: 'sessionId must be a non-empty string (max 200 chars)' });
+  }
+  if (!Array.isArray(events) || events.length === 0 || events.length > 10) {
+    return res.status(400).json({ error: 'events must be a non-empty array (max 10 items)' });
+  }
+  const allowedEvtKeys = new Set(['tool', 'detail']);
+  let queued = 0;
+  for (const evt of events) {
+    if (!evt || typeof evt !== 'object' || Array.isArray(evt)) {
+      return res.status(400).json({ error: 'Each event must be a plain object' });
+    }
+    for (const key of Object.keys(evt)) {
+      if (!allowedEvtKeys.has(key)) {
+        return res.status(400).json({ error: `Unknown event field: ${key}` });
+      }
+    }
+    if (!evt.tool || typeof evt.tool !== 'string') {
+      return res.status(400).json({ error: 'Each event must have a string tool field' });
+    }
+    if (!ALLOWED_TOOL_NAMES.has(evt.tool)) {
+      return res.status(400).json({ error: `Unknown tool: ${evt.tool}. Allowed: ${[...ALLOWED_TOOL_NAMES].join(', ')}` });
+    }
+    recordToolEvent(sessionId, evt.tool, typeof evt.detail === 'string' ? evt.detail.slice(0, 500) : null);
+    queued++;
+  }
+  res.json({ ok: true, queued });
+});
 
 router.get("/conversations", async (req, res) => {
   const userId = validateUser(res, req.user);
