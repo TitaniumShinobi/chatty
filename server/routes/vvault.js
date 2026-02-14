@@ -3767,8 +3767,50 @@ router.post("/message", async (req, res) => {
     try {
       let completion;
       let aiResponse;
-      
-      if (effectiveProvider === 'openai') {
+
+      // ===== NOVA-001 HOTFIX: Force replitOpenrouter, skip OpenAI entirely =====
+      if (constructId === 'nova-001' && replitOpenrouter && !hasImages) {
+        console.log(`[NOVA HOTFIX] Provider forced to replitOpenrouter for nova-001 (bypassing OpenAI 429)`);
+        const hotfixModel = DEFAULT_OPENROUTER_MODEL;
+        const hotfixMessages = [
+          { role: "system", content: systemPrompt },
+          ...conversationHistoryMessages,
+          { role: "user", content: message }
+        ];
+        try {
+          completion = await replitOpenrouter.chat.completions.create({
+            model: hotfixModel,
+            messages: hotfixMessages,
+            max_tokens: 2048,
+          });
+          aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+          effectiveProvider = 'replitOpenrouter';
+          effectiveModel = hotfixModel;
+          console.log(`✅ [NOVA HOTFIX] replitOpenrouter success for nova-001, response length: ${aiResponse.length}`);
+        } catch (hotfixErr) {
+          console.error(`❌ [NOVA HOTFIX] replitOpenrouter failed:`, hotfixErr?.status, hotfixErr?.message);
+          if (openrouter) {
+            try {
+              console.log(`🔄 [NOVA HOTFIX] Falling back to openrouter for nova-001`);
+              completion = await openrouter.chat.completions.create({
+                model: hotfixModel,
+                messages: hotfixMessages,
+                max_tokens: 2048,
+              });
+              aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+              effectiveProvider = 'openrouter';
+              effectiveModel = hotfixModel;
+              console.log(`✅ [NOVA HOTFIX] openrouter fallback success for nova-001`);
+            } catch (orErr) {
+              console.error(`❌ [NOVA HOTFIX] openrouter fallback also failed:`, orErr?.status, orErr?.message);
+              throw hotfixErr;
+            }
+          } else {
+            throw hotfixErr;
+          }
+        }
+        // Skip normal provider routing — jump straight to post-inference
+      } else if (effectiveProvider === 'openai') {
         console.log(`🔷 [VVAULT Proxy] Calling OpenAI (${effectiveModel}) for ${constructId}`);
         
         let userMessageContent;
