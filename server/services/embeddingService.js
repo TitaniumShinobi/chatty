@@ -120,6 +120,30 @@ export async function storeEmbedding({ userId, constructId, sourceFile, content,
   return data?.id;
 }
 
+export async function storeEmbeddingBatch(rows) {
+  const supabase = getSupabaseClient();
+  if (!supabase) return 0;
+
+  const formatted = rows.map(r => ({
+    user_id: r.userId,
+    construct_id: r.constructId,
+    source_file: r.sourceFile,
+    content: r.content,
+    embedding: JSON.stringify(r.embedding),
+  }));
+
+  const { error } = await supabase
+    .from('memory_embeddings')
+    .insert(formatted);
+
+  if (error) {
+    console.warn(`⚠️ [EmbeddingService] Batch store failed:`, error.message);
+    return 0;
+  }
+
+  return formatted.length;
+}
+
 export async function getEmbeddingCount(userId, constructId) {
   const supabase = getSupabaseClient();
   if (!supabase) return 0;
