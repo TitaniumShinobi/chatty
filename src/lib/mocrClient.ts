@@ -233,6 +233,7 @@ export class ChattyMOCRClient {
       const response = await fetch(url, {
         ...options,
         signal: controller.signal,
+        credentials: 'include',
         headers: {
           ...options.headers,
           ...(this.config.apiKey && { 'X-API-Key': this.config.apiKey })
@@ -255,25 +256,8 @@ export class ChattyMOCRClient {
   }
 }
 
-function getDevServiceOrigin(port: number): string {
-  // Avoid hardcoding "localhost" in the bundle; use the current hostname instead.
-  const loc = (globalThis as any).location as Location | undefined
-  if (!loc?.origin) return ''
-  const u = new URL(loc.origin)
-  u.protocol = 'http:'
-  u.port = String(port)
-  u.pathname = ''
-  u.search = ''
-  u.hash = ''
-  return u.origin
-}
-
-// Create default client instance
 const defaultMOCRClient = new ChattyMOCRClient({
-  baseUrl:
-    (import.meta.env.VITE_MOCR_SERVICE_URL as string | undefined) ||
-    (import.meta.env.DEV ? getDevServiceOrigin(3001) : ''),
-  apiKey: import.meta.env.VITE_MOCR_API_KEY
+  baseUrl: '/api/mocr'
 });
 
 export default defaultMOCRClient;

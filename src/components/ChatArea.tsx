@@ -238,8 +238,17 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                 ocrLanguage: 'eng',
                 asrLanguage: 'en'
               });
+              if (!mocrResult.success) {
+                throw new Error(mocrResult.error || 'MOCR analysis failed');
+              }
+              const ocrChars = mocrResult.mocrAnalysis?.textExtracted ?? 0;
+              const asrWords = mocrResult.asrAnalysis?.wordsTranscribed ?? 0;
+              const desc = mocrResult.contentSummary?.description ?? 'No description';
+              const topics = mocrResult.contentSummary?.keyTopics?.join(', ') ?? '';
+              const ocrTexts = (mocrResult.mocrAnalysis?.textContent || [])
+                .map((t: any) => `[${t.timestamp}s] ${t.text}`).join('\n');
               parsedContent = {
-                extractedText: `MOCR Analysis Complete:\n${mocrResult.contentSummary.description}\n\nKey Topics: ${mocrResult.contentSummary.keyTopics.join(', ')}\n\nVisual Text: ${mocrResult.mocrAnalysis.textExtracted} characters\nAudio Text: ${mocrResult.asrAnalysis.wordsTranscribed} words`,
+                extractedText: `MOCR Analysis Complete:\n${desc}\n\nKey Topics: ${topics}\n\nVisual Text: ${ocrChars} characters\nAudio Text: ${asrWords} words\n\nExtracted OCR Content:\n${ocrTexts}`,
                 metadata: { action: 'mocr-video', processingTime: mocrResult.processingTime }
               };
             } else {

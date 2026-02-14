@@ -63,11 +63,16 @@ Chatty is an AI-powered workspace application providing a thin UI layer for inte
 - **Construct Creation & Instance Scaffolding:** New GPTs trigger VVAULT API calls to scaffold folder structures or write to Supabase `vault_files` via `VaultPathGuard`.
 - **Construct Seeding & Identity Hydration:** Seed constructs are minimal, identity data hydrated from VVAULT or Supabase, with user-authored fields protected from overwrite.
 
+- **MOCR Video Analysis Integration:** Standalone MOCR-Service (port 3001) provides video OCR/ASR. Chatty proxies via `/api/mocr` (requireAuth). Frontend `mocrClient.ts` uses proxy path. ActionMenu `+ -> MOCR Video Analysis` triggers upload, job creation, polling, and success-gated context injection. Only injects context when `job.result.success === true`.
+- **Tool Transparency System:** Server-authored `tool_trace` field on assistant messages prevents false tool usage claims. Green pill UI in Message.tsx. `POST /api/vvault/tool-events` endpoint with strict validation (auth required, tool whitelist: screen_capture/ocr, unknown fields rejected 400).
+- **Watch with Nova:** Screen capture + OCR for nova-001 sessions. Write Access toggle controls server reporting and context injection. When Write Access OFF, capture runs locally but no events reach server (no pills).
+
 ## External Dependencies
 - **VVAULT API:** Primary API for AI inference, memory management, and conversation transcripts.
 - **Supabase:** Persistent storage for conversations, attachments, and backend data.
 - **OpenAI (via Replit AI Integrations):** AI model access.
 - **OpenRouter:** Cloud-based AI model provider.
 - **Ollama:** Self-hosted AI model provider.
+- **MOCR-Service:** Standalone microservice (port 3001) for Motion OCR video analysis. Cloned from `TitaniumShinobi/MOCR-Service`. Uses ffmpeg-static, tesseract.js. Proxied through Chatty backend at `/api/mocr`.
 - **Google OAuth:** User authentication.
 - **`suncalc` library:** Used for calculating sunrise/sunset times for "Auto" theme.
