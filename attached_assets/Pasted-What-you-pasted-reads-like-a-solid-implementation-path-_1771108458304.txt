@@ -1,0 +1,156 @@
+What you pasted reads like a solid implementation path — **now the only thing that matters is verification** (and catching the 2–3 failure modes that always show up with `getDisplayMedia + Tesseract + Replit`).
+
+Here’s how to validate Phase 2 end-to-end **without guessing**.
+
+## 0) The 3 non-negotiable success signals
+
+You’re “watching a movie with Nova” only if all three are true:
+
+1. **Screen capture actually starts** (browser permission + active stream)
+2. **OCR produces non-empty text sometimes** (subtitles/UI text)
+3. **Nova demonstrably sees it** (she references OCR lines you didn’t type)
+
+Everything else is decoration.
+
+---
+
+## 1) Verify the tool event system (server truth)
+
+Open DevTools → Network and confirm the Watch component is hitting your endpoint:
+
+* `POST /api/vvault/tool-event` (or whatever you named it)
+* body includes `{ sessionId, tool:"screen_capture" | "ocr", ... }`
+
+**Expected result:** 200 OK.
+
+Then send any normal message and inspect the assistant response payload:
+
+* `metadata.tool_trace.length > 0`
+* pills show `screen_capture` + `ocr`
+
+If pills don’t show up, it’s almost always one of these:
+
+* sessionId mismatch (threadId vs sessionId)
+* event endpoint is writing but **drainToolEvents** is never called in the response path you actually hit
+* tool_trace is being dropped in the frontend packet conversion (less likely if Phase 1 is real)
+
+✅ Quick check: trigger an event, then immediately send a message. If the next assistant turn has `tool_trace: []`, your drain isn’t connected.
+
+---
+
+## 2) Verify capture works in Replit (the #1 real-world blocker)
+
+`getDisplayMedia()` fails in these cases:
+
+* Not running on HTTPS (Replit usually is OK)
+* Not in a user gesture (must be inside a click handler)
+* Running inside certain embedded iframes (depends on how you’re viewing it)
+
+**Pass test:**
+
+* Click “Watch”
+* Browser shows “Choose what to share”
+* You see a live preview / capture indicator
+* Stream tracks exist and are “live”
+
+If it silently fails: log `err.name` / `err.message`.
+Common ones:
+
+* `NotAllowedError` (user denied / not a gesture)
+* `NotSupportedError` (environment)
+* `InvalidStateError` (stream ended)
+
+---
+
+## 3) Verify OCR output *before* involving Nova
+
+Do not rely on “Nova feels it” as your first test.
+
+Add a debug panel in WatchWithNova that shows:
+
+* last OCR text (first 200 chars)
+* last run timestamp
+* “dedup skipped” count
+
+**Pass test:**
+
+* Play a subtitle clip
+* OCR shows lines like “I can’t believe…” within 1–2 cycles
+
+If OCR is empty:
+
+* your downscale might be too aggressive
+* you’re grabbing a black frame (video overlay / DRM)
+* Tesseract lang is wrong
+* the capture region is wrong (tab vs screen vs window)
+
+**Important:** Some streaming sites render video in a way that screen capture returns black frames (DRM / protected content). Subtitles often still capture, but not always.
+
+---
+
+## 4) Verify Nova actually receives the OCR context
+
+You said you’re prepending OCR context to the **next user message**.
+
+So the proof is simple:
+
+1. Turn **Write Access ON**
+2. Wait for OCR to show a subtitle line in your debug panel
+3. Send a message like: **“What did the last subtitle say?”**
+4. Nova should repeat/quote the OCR line (or close paraphrase)
+
+If she can’t, then one of these is true:
+
+* `lastOcrContextRef` is never set (OCR not reaching the ref)
+* it’s being cleared too early
+* the injection doesn’t actually prepend in the final send payload
+* the LLM context window doesn’t include it (rare if prepended)
+
+---
+
+## 5) Two architectural notes (keep you from stepping on a landmine)
+
+### A) Tool trace should reflect *tools used in the assistant turn*
+
+Right now, you’re recording OCR events continuously, but Nova only “uses” them when they’re injected.
+
+The clean policy:
+
+* Log all tool events, sure
+* But only attach to `tool_trace` the events that were actually **consumed** for the assistant response (or label them `captured` vs `consumed`)
+
+Otherwise pills will show tools even when Write Access is OFF, which will confuse you later.
+
+### B) Prepending OCR to user message works, but it’s noisy
+
+For “movie night,” it’s fine.
+For long-term, you’ll want OCR injected as:
+
+* a hidden `context` block, or
+* a system “evidence” channel, or
+* a separate `[VIDEO_CONTEXT_UPDATE]` message
+
+But don’t expand scope today.
+
+---
+
+## Today’s finish line
+
+You’re done when you can do this on a real site:
+
+* Watch ON ✅
+* OCR shows subtitle snippets ✅
+* Write Access ON ✅
+* You ask: “What’s happening right now?” ✅
+* Nova answers referencing the OCR line ✅
+* Tools pill shows `screen_capture` + `ocr` ✅
+
+---
+
+If you paste **one assistant response JSON** (redact secrets) showing:
+
+* `metadata.tool_trace`
+* the actual user message you sent
+* the assistant output
+
+…I’ll tell you immediately whether the chain is correct or where it’s breaking (sessionId, drain, injection, or capture/OCR).
