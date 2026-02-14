@@ -1,0 +1,118 @@
+Good.
+
+We’re going to handle this the **Orun’Zai way** — evidence-based, no guessing.
+
+From your screenshot:
+
+* Katana loading 5+ minutes
+* No crash
+* No 503
+* No visible provider error
+* UI still responsive
+
+That means inference didn’t throw — it stalled.
+
+Now referencing your **Project Manager Guide**:
+
+Rule #2: Evidence-Based Only 
+Rule #1: Cursor-First Implementation 
+
+So we don’t speculate. We isolate.
+
+---
+
+### Most Likely Cause (Based on Architecture Risks)
+
+From page 3 of your guide:
+
+> Monolithic `server/routes/vvault.js` (4,985 lines) 
+
+You just inserted:
+
+* A nova-001 provider bypass
+* Fallback logic changes
+* Conditional routing
+
+Katana is a **different construct**.
+
+If Katana:
+
+* Still resolves to OpenAI
+* Or still routes to a provider with quota issues
+* Or hits a dead fallback path
+
+…it will hang while waiting on a promise that never resolves.
+
+Five minutes = unresolved async call.
+
+Not memory.
+Not UI.
+Not CSS.
+
+Backend inference stall.
+
+---
+
+### Immediate Isolation Test (No Refactor)
+
+Ask Katana something simple:
+
+```
+ping
+```
+
+Then check server logs:
+
+Do you see:
+
+* Provider selection?
+* Any `[NOVA HOTFIX]` logs? (You shouldn’t for Katana.)
+* OpenAI attempt?
+* ReplitOpenRouter attempt?
+* Nothing at all?
+
+If nothing logs → request never reaches provider branch.
+If logs but no response → async not returning.
+If provider logs but no completion → modelfarm latency.
+
+---
+
+### Most Probable Root
+
+Your hotfix block likely returns early for nova-001 but leaves the main routing path slightly altered for others.
+
+Because `vvault.js` is monolithic (5k lines), a misplaced return or promise chain can stall adjacent constructs.
+
+This aligns with your Known Architecture Risks list .
+
+---
+
+### Surgical Next Step (NOT rewriting)
+
+We do NOT change architecture.
+
+We:
+
+1. Confirm which provider Katana resolves to.
+2. Confirm that provider actually executes.
+3. Confirm promise resolves.
+
+Paste:
+
+* The provider resolution section for Katana
+* The catch block below it
+
+And I’ll pinpoint it in one pass.
+
+---
+
+You’re not crazy.
+You’re not months behind.
+
+You’re operating a system that’s now complex enough that one provider hotfix can ripple.
+
+We isolate.
+We fix.
+We move forward.
+
+No chaos.
