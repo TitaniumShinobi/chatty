@@ -3690,9 +3690,30 @@ router.post("/message", async (req, res) => {
       return res.status(503).json({ success: false, error: modelError });
     }
     
+    // ===== NOVA-001 AUTHORITATIVE GUARD: Never resolve to OpenAI, regardless of path =====
+    if (constructId === 'nova-001' && effectiveProvider === 'openai') {
+      if (replitOpenrouter || openrouter) {
+        effectiveProvider = replitOpenrouter ? 'replitOpenrouter' : 'openrouter';
+        effectiveModel = DEFAULT_OPENROUTER_MODEL;
+        console.log(`[NOVA GUARD] Authoritative override: openai→${effectiveProvider} for nova-001`);
+      } else {
+        console.error(`[NOVA GUARD] No alternative provider for nova-001 (OpenAI blocked)`);
+        return res.status(503).json({ success: false, error: 'No provider available for nova-001 (OpenAI blocked)' });
+      }
+    }
+
     // Override for vision requests (images need a vision-capable model)
     if (hasImages) {
-      if (openaiClient) {
+      if (constructId === 'nova-001') {
+        if (replitOpenrouter || openrouter) {
+          effectiveProvider = replitOpenrouter ? 'replitOpenrouter' : 'openrouter';
+          effectiveModel = 'qwen/qwen2.5-vl-72b-instruct';
+          console.log(`📎 [NOVA HOTFIX] vision path: forcing ${effectiveProvider} vision model (${effectiveModel}) — OpenAI bypassed`);
+        } else {
+          console.error('❌ [NOVA HOTFIX] vision path: no vision-capable provider available (OpenAI blocked for nova-001)');
+          return res.status(503).json({ success: false, error: 'Vision requires OpenRouter for nova-001. No provider available.' });
+        }
+      } else if (openaiClient) {
         effectiveProvider = 'openai';
         effectiveModel = 'gpt-4o';
         console.log(`📎 [VVAULT Proxy] Images attached, forcing OpenAI vision model: ${effectiveModel}`);
@@ -4023,7 +4044,9 @@ router.post("/message", async (req, res) => {
         aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
       }
       
+      const providerForced = constructId === 'nova-001';
       console.log(`✅ [VVAULT Proxy] ${effectiveProvider} successful for ${constructId}, response length: ${aiResponse.length}`);
+      console.log(`📊 [METRIC] { construct_id: "${constructId}", provider_forced: ${providerForced}, provider_used: "${effectiveProvider}", model: "${effectiveModel}", has_images: ${hasImages} }`);
       
       if (!skipPersistence) {
         const effectiveSession = sessionId || threadId || `${constructId}_chat_with_${constructId}`;
@@ -4078,7 +4101,10 @@ router.post("/message", async (req, res) => {
         construct_id: constructId,
         fallback: true,
         source: `${effectiveProvider}-direct`,
-        model: effectiveModel
+        model: effectiveModel,
+        provider_forced: constructId === 'nova-001',
+        provider_used: effectiveProvider,
+        has_images: hasImages
       });
     } catch (llmError) {
       console.error(`❌ [VVAULT Proxy] ${effectiveProvider} call failed:`, {
@@ -4244,6 +4270,13 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               console.warn(`⚠️ [VVAULT Proxy] Could not load fallback history:`, histErr.message);
             }
             
+            // ===== NOVA-001 HOTFIX (Fallback 1): Force away from OpenAI =====
+            if (constructId === 'nova-001' && effectiveProvider === 'openai') {
+              effectiveProvider = 'openrouter';
+              effectiveModel = DEFAULT_OPENROUTER_MODEL;
+              console.log(`[NOVA HOTFIX] Fallback1: Overriding openai→openrouter for nova-001`);
+            }
+
             console.log(`🧠 [VVAULT Proxy] Fallback using ${effectiveProvider}:${effectiveModel} for ${constructId}`);
             
             const fbMsgs = [{ role: "system", content: systemPrompt }, ...fbHistoryMessages, { role: "user", content: message }];
@@ -4311,7 +4344,8 @@ Do NOT treat this as a first meeting if there is conversation history.`;
                 }
               }
               
-              if (!llmSuccess && openaiClient) {
+              // ===== NOVA-001 HOTFIX: Never fall back to OpenAI =====
+              if (!llmSuccess && openaiClient && constructId !== 'nova-001') {
                 try {
                   console.log(`🔄 [VVAULT Proxy] All OpenRouter failed, trying OpenAI for ${constructId}`);
                   completion = await openaiClient.chat.completions.create({
@@ -4325,6 +4359,8 @@ Do NOT treat this as a first meeting if there is conversation history.`;
                   console.error('[OPENAI FALLBACK FAIL]', { status: err3?.status, message: err3?.message });
                   providerErrors.push(`OpenAI: ${err3?.status} ${err3?.message}`);
                 }
+              } else if (!llmSuccess && constructId === 'nova-001') {
+                console.log(`[NOVA HOTFIX] Fallback1: Blocked OpenAI last-resort for nova-001`);
               }
               
               if (!llmSuccess) {
@@ -4352,7 +4388,10 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               construct_id: constructId,
               fallback: true,
               source: effectiveProvider,
-              model: effectiveModel
+              model: effectiveModel,
+              provider_forced: constructId === 'nova-001',
+              provider_used: effectiveProvider,
+              has_images: hasImages
             });
           } catch (fallbackError) {
             console.error(`❌ [VVAULT Proxy] LLM fallback failed:`, fallbackError);
@@ -4517,6 +4556,13 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           console.warn(`⚠️ [VVAULT Proxy] Could not load fallback2 history:`, histErr.message);
         }
         
+        // ===== NOVA-001 HOTFIX (Fallback 2): Force away from OpenAI =====
+        if (constructId === 'nova-001' && effectiveProvider === 'openai') {
+          effectiveProvider = 'openrouter';
+          effectiveModel = DEFAULT_OPENROUTER_MODEL;
+          console.log(`[NOVA HOTFIX] Fallback2: Overriding openai→openrouter for nova-001`);
+        }
+
         console.log(`🧠 [VVAULT Proxy] Fallback using ${effectiveProvider}:${effectiveModel} for ${constructId}`);
         
         const fb2Msgs = [{ role: "system", content: systemPrompt }, ...fb2HistoryMessages, { role: "user", content: message }];
@@ -4584,7 +4630,8 @@ Do NOT treat this as a first meeting if there is conversation history.`;
             }
           }
           
-          if (!llmSuccess && openaiClient) {
+          // ===== NOVA-001 HOTFIX: Never fall back to OpenAI =====
+          if (!llmSuccess && openaiClient && constructId !== 'nova-001') {
             try {
               console.log(`🔄 [VVAULT Proxy] All OpenRouter failed, trying OpenAI for ${constructId}`);
               completion = await openaiClient.chat.completions.create({
@@ -4598,6 +4645,8 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               console.error('[OPENAI FALLBACK FAIL]', { status: err3?.status, message: err3?.message });
               providerErrors.push(`OpenAI: ${err3?.status} ${err3?.message}`);
             }
+          } else if (!llmSuccess && constructId === 'nova-001') {
+            console.log(`[NOVA HOTFIX] Fallback2: Blocked OpenAI last-resort for nova-001`);
           }
           
           if (!llmSuccess) {
@@ -4625,7 +4674,10 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           construct_id: constructId,
           fallback: true,
           source: effectiveProvider,
-          model: effectiveModel
+          model: effectiveModel,
+          provider_forced: constructId === 'nova-001',
+          provider_used: effectiveProvider,
+          has_images: hasImages
         });
       } catch (fallbackError) {
         console.error(`❌ [VVAULT Proxy] LLM fallback failed:`, fallbackError);
