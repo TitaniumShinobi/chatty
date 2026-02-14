@@ -1030,7 +1030,7 @@ When answering:
   phaseTiming.totalMs = Date.now() - t0;
   result.phaseTiming = phaseTiming;
   console.log(`⏱️ [MemoryContextBuilder] TOTAL: ${phaseTiming.totalMs}ms | identity: ${phaseTiming.identity?.ms}ms | phys: ${phaseTiming.physicalFeatures?.ms}ms | capsule: ${phaseTiming.capsule?.ms}ms | ledger: ${phaseTiming.ledger?.ms}ms | vector: ${phaseTiming.vectorSearch?.ms || 0}ms | memory: ${phaseTiming.memorySearch?.ms || 0}ms | knowledge: ${phaseTiming.knowledge?.ms}ms`);
-  console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, physicalFeatures: ${!!physicalAppearanceSection}, knowledge: ${!!knowledgeSection}, knowledgeRelevant: ${knowledgeMatchedFiles.length}, ledger: ${ledger ? ledger.sessions.length : 0}, vector: ${vectorCount}, needle: ${needleCount}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
+  console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, physicalFeatures: ${!!physicalAppearanceSection}, knowledge: ${!!knowledgeSection}, knowledgeRelevant: ${knowledgeMatchedFiles.length}, ledger: ${ledger?.sessions?.length || 0}, vector: ${vectorCount}, needle: ${needleCount}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
 
   return result;
 }
