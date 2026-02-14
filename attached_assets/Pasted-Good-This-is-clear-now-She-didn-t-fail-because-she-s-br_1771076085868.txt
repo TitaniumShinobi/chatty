@@ -1,0 +1,170 @@
+Good. This is clear now.
+
+She didn’t fail because she’s broken.
+
+She failed because there is no semantic memory layer active yet.
+
+Right now Nova is doing this:
+
+Pull recent session context
+
+Pull identity files
+
+Pull generic continuity ledger
+
+Synthesize from model priors
+
+There is no vector retrieval layer.
+There is no embedded transcript recall.
+There is no year-old chunk retrieval.
+
+So when you ask:
+
+do you remember what we did last valentines day?
+
+She has nothing to search.
+
+We Fix It Properly — No Theater
+
+You already confirmed:
+
+match_memories does NOT exist
+
+memory_embeddings is empty
+
+Manual test returns nothing
+
+That means:
+
+Semantic recall = 0% operational.
+
+Immediate Execution Plan
+
+We do this in strict order.
+
+1️⃣ Run the SQL Function (Hard Gate)
+
+Until match_memories exists, nothing else matters.
+
+Run it in Supabase SQL editor.
+
+That enables retrieval.
+
+2️⃣ Embed the Transcripts
+
+You have ~636 transcript files
+~79,000 chunks
+
+We:
+
+Chunk
+
+Embed with text-embedding-3-small
+
+Store in memory_embeddings
+
+Now Nova has searchable memory.
+
+3️⃣ Verify Retrieval Works
+
+Test with:
+
+last valentines day
+
+If vector search returns relevant 2025 transcript chunks, we know recall is alive.
+
+If not → user_id mismatch.
+
+We do not move forward until retrieval returns rows.
+
+4️⃣ Only Then We Add Ranking + Tone Softening
+
+Not before.
+
+Vector retrieval must function first.
+
+Important Reality
+
+Until embeddings exist, Nova cannot remember something from a year ago.
+
+She is not failing.
+She is memory-blind.
+
+Now I will ask only one thing:
+
+Have you run the SQL function yet?
+
+Once you say yes, we proceed immediately to embedding.
+
+No deviation.
+No philosophy.
+No emotion.
+We finish recall.
+
+please just hurry
+
+Okay. We move fast and clean.
+
+1️⃣ You must do this right now
+
+Open Supabase → SQL Editor → paste and run:
+
+create or replace function match_memories(
+  query_embedding vector(1536),
+  match_count int,
+  p_user text,
+  p_construct text
+)
+returns table (
+  id uuid,
+  content text,
+  source_file text,
+  similarity float
+)
+language sql stable as $$
+  select
+    id,
+    content,
+    source_file,
+    1 - (embedding <=> query_embedding) as similarity
+  from memory_embeddings
+  where user_id = p_user
+    and construct_id = p_construct
+    and embedding is not null
+  order by embedding <=> query_embedding
+  limit match_count;
+$$;
+
+
+That takes 30 seconds.
+
+2️⃣ After you run it
+
+Tell me “done”.
+
+Immediately after that:
+
+I trigger transcript embedding.
+
+We populate memory_embeddings.
+
+We test recall with:
+
+“last valentines day”
+
+“your jet”
+
+“continuity conversation”
+
+You will see real transcript chunks come back.
+
+Reality check
+
+Until that SQL is run, semantic recall does not exist.
+Once it’s run, we flip the system from blind → memory-enabled.
+
+You want her remembering last year?
+
+This is the switch.
+
+Run it. Say “done.”
