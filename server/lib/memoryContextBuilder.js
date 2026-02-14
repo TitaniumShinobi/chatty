@@ -820,26 +820,59 @@ async function buildEnrichedContext(options) {
   const tVector = Date.now();
   if (userMessage) {
     try {
-      const vectorLookupId = userId || user?.email;
+      let vectorLookupId = userId || user?.email;
+      try {
+        const { getSupabaseClient } = await import('./supabaseClient.js');
+        const supabase = getSupabaseClient();
+        if (supabase && user?.email) {
+          const { data: userRow } = await supabase
+            .from('users')
+            .select('id')
+            .eq('email', user.email)
+            .limit(1)
+            .maybeSingle();
+          if (userRow?.id) {
+            vectorLookupId = userRow.id;
+          }
+        }
+      } catch (_) {}
       const semanticHits = await retrieveSemanticMemories(userMessage, vectorLookupId, constructId, 5);
       if (semanticHits && semanticHits.length > 0) {
         vectorCount = semanticHits.length;
         result.vectorMemories = vectorCount;
+        result.vectorConfidence = semanticHits[0]?.confidenceTier || 'unknown';
 
         const memoryLines = semanticHits.map((m, i) => {
-          const sim = m.similarity ? ` (relevance: ${(m.similarity * 100).toFixed(0)}%)` : '';
-          const src = m.source_file ? ` [from: ${m.source_file.split('/').pop()}]` : '';
-          return `${i + 1}. ${m.content}${src}${sim}`;
+          const dateStr = m.sourceDate || 'unknown date';
+          const src = m.source_file ? m.source_file.split('/').pop() : 'unknown';
+          const conf = m.confidence ? (m.confidence * 100).toFixed(0) + '%' : '';
+          const truncatedContent = m.content.trim().length > 500
+            ? m.content.trim().substring(0, 500) + '...'
+            : m.content.trim();
+          return `[${dateStr} | source: ${src} | confidence: ${conf}]\n"${truncatedContent}"`;
         });
 
+        const topConfidence = semanticHits[0]?.confidenceTier || 'low';
+        let toneDirective = '';
+        if (topConfidence === 'low') {
+          toneDirective = '\nIMPORTANT: These memories have low confidence. If referencing them, use softened language like "I think I remember..." or "If I\'m not mistaken..." Do not state these memories as certain fact.';
+        } else if (topConfidence === 'moderate') {
+          toneDirective = '\nNote: Some memories have moderate confidence. Reference them naturally but acknowledge uncertainty if the user questions accuracy.';
+        }
+
         vectorMemorySection = `\n\n## Recalled Memories (Semantic Search)
-The following are real past interactions retrieved from your conversation history. These are VERIFIED memories — use them to answer the user's question with specific, grounded detail.
+The following are real past interactions retrieved from your conversation history. These are transcript-backed memories ranked by relevance, recency, and confidence.
 
 ${memoryLines.join('\n\n')}
 
-IMPORTANT: These memories are factual records of real conversations. Reference them naturally. Do not fabricate additional details beyond what is written here.`;
+RULES FOR MEMORY USE:
+- These are factual records of real conversations. Reference them naturally.
+- You may cite dates when available: "From February 14, 2025..."
+- Do not fabricate dates or details beyond what is written here.
+- Do not fabricate additional memories that are not listed above.
+- If a memory feels uncertain, state uncertainty: "I may be misremembering, but..."${toneDirective}`;
 
-        console.log(`🧠 [MemoryContextBuilder] ${vectorCount} vector memories retrieved for ${constructId} (top similarity: ${semanticHits[0]?.similarity?.toFixed(3) || 'N/A'})`);
+        console.log(`🧠 [MemoryContextBuilder] ${vectorCount} vector memories retrieved for ${constructId} (top: similarity=${semanticHits[0]?.similarity?.toFixed(3)}, confidence=${semanticHits[0]?.confidence?.toFixed(3)}, tier=${topConfidence})`);
       }
     } catch (vecErr) {
       console.warn(`⚠️ [MemoryContextBuilder] Vector memory retrieval failed for ${constructId}:`, vecErr.message);

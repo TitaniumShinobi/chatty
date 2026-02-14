@@ -69,6 +69,78 @@ export async function embedBatch(texts) {
   return allEmbeddings;
 }
 
+const recentlyInjectedIds = new Map();
+const RECENTLY_INJECTED_MAX = 20;
+
+function extractDateFromSource(sourceFile) {
+  if (!sourceFile) return null;
+  const patterns = [
+    /(\d{4})-(\d{2})-(\d{2})/,
+    /(\d{2})-(\d{2})-(\d{4})/,
+    /(\d{2})_(\d{2})_(\d{4})/,
+  ];
+  for (const p of patterns) {
+    const m = sourceFile.match(p);
+    if (m) {
+      if (m[3] && m[3].length === 4) return new Date(`${m[3]}-${m[1]}-${m[2]}`);
+      if (m[1] && m[1].length === 4) return new Date(`${m[1]}-${m[2]}-${m[3]}`);
+    }
+  }
+  return null;
+}
+
+function computeRankedScore(hit, activeConstructId) {
+  const semanticSim = hit.similarity || 0;
+
+  const sourceDate = extractDateFromSource(hit.source_file);
+  let recencyWeight = 0.5;
+  if (sourceDate && !isNaN(sourceDate.getTime())) {
+    const daysSince = (Date.now() - sourceDate.getTime()) / (1000 * 60 * 60 * 24);
+    recencyWeight = Math.exp(-daysSince / 365);
+  }
+
+  const constructWeight = 1.0;
+
+  let antiRepeatPenalty = 0;
+  if (hit.id && recentlyInjectedIds.has(hit.id)) {
+    antiRepeatPenalty = -0.1;
+  }
+
+  const finalScore =
+    (semanticSim * 0.60) +
+    (recencyWeight * 0.20) +
+    (constructWeight * 0.10) +
+    (antiRepeatPenalty * 0.05) +
+    (0 * 0.05);
+
+  const confidence =
+    (semanticSim * 0.7) +
+    (recencyWeight * 0.2) +
+    0.1;
+
+  let confidenceTier = 'low';
+  if (confidence >= 0.80) confidenceTier = 'high';
+  else if (confidence >= 0.60) confidenceTier = 'moderate';
+
+  return {
+    ...hit,
+    finalScore,
+    confidence,
+    confidenceTier,
+    recencyWeight,
+    sourceDate: sourceDate ? sourceDate.toISOString().split('T')[0] : null,
+  };
+}
+
+function trackInjectedMemory(id) {
+  if (!id) return;
+  recentlyInjectedIds.set(id, Date.now());
+  if (recentlyInjectedIds.size > RECENTLY_INJECTED_MAX) {
+    const oldest = [...recentlyInjectedIds.entries()].sort((a, b) => a[1] - b[1])[0];
+    if (oldest) recentlyInjectedIds.delete(oldest[0]);
+  }
+}
+
 export async function retrieveSemanticMemories(query, userId, constructId, matchCount = 5) {
   const supabase = getSupabaseClient();
   if (!supabase) return [];
@@ -77,9 +149,10 @@ export async function retrieveSemanticMemories(query, userId, constructId, match
   if (!embedding) return [];
 
   try {
+    const candidateCount = Math.max(matchCount * 5, 25);
     const { data, error } = await supabase.rpc('match_memories', {
       query_embedding: JSON.stringify(embedding),
-      match_count: matchCount,
+      match_count: candidateCount,
       p_user: userId,
       p_construct: constructId,
     });
@@ -89,7 +162,26 @@ export async function retrieveSemanticMemories(query, userId, constructId, match
       return [];
     }
 
-    return data || [];
+    if (!data || data.length === 0) return [];
+
+    let ranked = data
+      .map(hit => computeRankedScore(hit, constructId))
+      .sort((a, b) => b.finalScore - a.finalScore);
+
+    let filtered = ranked.filter(hit => hit.confidence >= 0.40);
+
+    if (filtered.length === 0 && ranked.length > 0) {
+      filtered = ranked.slice(0, Math.min(3, matchCount));
+      console.log(`⚠️ [EmbeddingService] No hits above confidence 0.40, using top ${filtered.length} by score (adaptive fallback)`);
+    }
+
+    const selected = filtered.slice(0, matchCount);
+
+    for (const r of selected) {
+      trackInjectedMemory(r.id);
+    }
+
+    return selected;
   } catch (err) {
     console.warn(`⚠️ [EmbeddingService] Semantic retrieval error:`, err.message);
     return [];

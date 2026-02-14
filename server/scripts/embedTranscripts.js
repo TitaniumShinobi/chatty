@@ -230,10 +230,28 @@ async function embedTranscriptsForConstruct(constructId, userId, options = {}) {
 
   let embedded = 0;
   let failed = 0;
+  let skipped = 0;
   let filesProcessed = 0;
   const startTime = Date.now();
 
+  let alreadyEmbeddedFiles = new Set();
+  if (!clearExisting) {
+    const { data: existingFiles } = await supabase
+      .from('memory_embeddings')
+      .select('source_file')
+      .eq('construct_id', constructId);
+    if (existingFiles) {
+      alreadyEmbeddedFiles = new Set(existingFiles.map(f => f.source_file));
+      console.log(`   📋 ${alreadyEmbeddedFiles.size} files already embedded, will skip duplicates`);
+    }
+  }
+
   for (const fl of fileList) {
+    if (alreadyEmbeddedFiles.has(fl.filename)) {
+      skipped++;
+      continue;
+    }
+
     const file = await loadFileContent(supabase, constructId, fl.filename);
     if (!file) continue;
 
