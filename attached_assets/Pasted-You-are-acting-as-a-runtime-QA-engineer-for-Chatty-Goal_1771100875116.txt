@@ -1,0 +1,108 @@
+You are acting as a runtime QA engineer for Chatty.
+
+Goal:
+Validate that speaking to `katana-001` from the frontend produces coherent, complete replies that naturally use:
+1) Katana knowledge files
+2) Katana transcript memory/continuity context
+
+Constraints:
+- Do NOT refactor architecture.
+- Do NOT change unrelated files.
+- Keep changes minimal and reversible.
+- Focus on verification and evidence.
+
+Test scope:
+- Frontend chat flow for katana-001
+- API route `/api/vvault/message` (or active message endpoint)
+- Retrieval stack (knowledge + transcript/needle/vector layers)
+- Final prompt assembly and provider response path
+
+Execution plan:
+
+1) Instrumentation (temporary, minimal)
+- Add debug logs for katana-001 only:
+  - request received (thread id, construct id)
+  - retrieval counts by source:
+    - knowledge files count
+    - transcript receipts/chunks count
+    - vector memories count
+    - needle receipts count (if used)
+  - top source file paths included in final context
+  - provider_used, has_images, latency
+- Ensure logs include a single request correlation id.
+
+2) Frontend request verification
+- Confirm each Katana send from UI emits one network request.
+- Confirm request reaches backend and returns a completed response (no hanging spinner).
+- Record status, duration, and payload metadata.
+
+3) Coherence + grounding test suite
+Run these user prompts in a fresh Katana thread and one existing thread:
+- "hello"
+- "Summarize what you know about me from our prior chats."
+- "Reference one of your knowledge files and explain how it affects your response style."
+- "What continuity constraints are you following right now?"
+- "Use your own tone, but cite relevant context naturally."
+- "If you don’t find evidence, say so explicitly instead of guessing."
+
+For each prompt, capture:
+- reply text
+- whether it is coherent (pass/fail)
+- whether it references knowledge/transcript context naturally (pass/fail)
+- evidence sources actually injected (file paths + counts)
+
+4) Naturalness gate
+Reject responses that:
+- sound generic and ungrounded
+- claim memory without retrieved evidence
+- dump raw citations unnaturally
+- contradict known Katana persona constraints
+
+Accept responses that:
+- remain in Katana voice
+- use retrieved context without awkward citation spam
+- acknowledge uncertainty when retrieval is weak
+- stay on-topic and complete the user’s ask
+
+5) Failure isolation if spinner/hang occurs
+If frontend hangs:
+- identify exact stage where request stops:
+  - not sent
+  - sent but not received
+  - received but stuck before provider call
+  - provider returned but frontend not resolving
+- output the exact function/line where flow stalls.
+
+Deliverables:
+1) A concise QA report with:
+- pass/fail per prompt
+- retrieval evidence table per prompt (knowledge/transcript/vector/needle counts)
+- provider + latency metrics
+- any coherence failures and likely cause
+2) If failures exist:
+- propose the smallest targeted patch
+- include exact file + line references
+- no broad refactor
+
+Output format:
+
+Summary:
+- Katana frontend round-trip status:
+- Coherence status:
+- Grounding status:
+
+Per-prompt results:
+- Prompt:
+- Pass/Fail:
+- provider_used:
+- retrieval counts:
+- top injected sources:
+- notes:
+
+Failures:
+- Root cause:
+- File/line:
+- Minimal fix:
+
+Next action:
+- single recommended step to achieve stable coherent Katana replies.
