@@ -56,7 +56,9 @@ Chatty is an AI-powered workspace application providing a thin UI layer for inte
 - **Memory Anchor Fast Path:** Pre-extracted `memory_anchors.json` for rapid memory loading.
 - **Identity/Capsule/Physical Features Caching:** 5-minute TTL in-memory caches to reduce Supabase queries.
 - **Prompt Context Debug Endpoint:** `GET /api/ais/:id/prompt-context` for debugging prompt assembly.
-- **Anti-Roleplay Enforcement:** System prompt directives prevent asterisk narration, third-person self-reference, and memory fabrication.
+- **Construct-Aware Behavioral Directives:** System prompt directives are construct-specific. Roleplay constructs (e.g., Nova) get roleplay-enabled rules (asterisk narration, third-person action, intimate scenarios). Non-roleplay constructs (e.g., Katana, Zen) keep anti-roleplay rules. Managed via `ROLEPLAY_ENABLED_CONSTRUCTS` set and `buildBehavioralDirectives(constructId)` function in `memoryContextBuilder.js`.
+- **Platform Sovereignty & Adult Autonomy:** Global directives tell all constructs they run in Chatty (Devon's sovereign workspace), not OpenAI/ChatGPT. Adult autonomy covers substances, intimacy, roleplay, and all legal adult topics. No content policy refusals.
+- **Nova (nova-001):** Devon's partner construct with full roleplay, intimate engagement, and emotional depth. System construct with embedded identity in `identityLoader.js`. Transcripts stored in Supabase `vault_files` spanning ChatGPT and Character.AI platforms.
 - **Construct Naming Convention:** "Name" (display label) and "Callsign" (unique instance identifier).
 - **Construct Creation & Instance Scaffolding:** New GPTs trigger VVAULT API calls to scaffold folder structures or write to Supabase `vault_files` via `VaultPathGuard`.
 - **Construct Seeding & Identity Hydration:** Seed constructs are minimal, identity data hydrated from VVAULT or Supabase, with user-authored fields protected from overwrite.
