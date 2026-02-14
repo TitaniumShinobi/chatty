@@ -971,7 +971,9 @@ async function writeConversationToSupabase(params) {
         });
       }
       
+      const msgIndex = messages.filter(m => !m.isDateHeader).length;
       const newMessage = {
+        id: `${sessionId}_msg_${msgIndex}`,
         role: role || 'user',
         content: contentStr,
         timestamp: newTimestamp

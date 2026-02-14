@@ -631,13 +631,7 @@ export default function Chat() {
   useEffect(() => {
     if (!thread || !threadId || !reloadThreadMessages) return;
 
-    // Check if this is a brand new singleton conversation (bootstrapped with no real messages)
-    const isNewSingletonConversation = thread.id.includes('_chat_with_') ||
-      thread.id.startsWith('session_');
-
-    // If thread has no messages, attempt to reload (only once per threadId)
-    // Skip reload for new singleton conversations - they're genuinely empty
-    if (thread.messages.length === 0 && !isReloading && !reloadAttempted && !isNewSingletonConversation) {
+    if (thread.messages.length === 0 && !isReloading && !reloadAttempted) {
       console.log("⚠️ [Chat] Thread has no messages, attempting reload...", {
         threadId: thread.id,
         urlThreadId: threadId,

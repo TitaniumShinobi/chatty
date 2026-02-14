@@ -2888,34 +2888,36 @@ export default function Layout() {
         id: finalThreadId,
         title: normalizedTitle,
         messages: conv.messages
-          .map((msg: any) => {
-            if (!msg || !msg.id || !msg.timestamp) {
-              console.warn("⚠️ [Layout] Invalid message in reload:", msg);
+          .map((msg: any, idx: number) => {
+            if (!msg || (!msg.content && !msg.text)) {
+              console.warn("⚠️ [Layout] Invalid message in reload (no content):", msg);
               return null;
             }
+            const messageId = msg.id || `${conv.sessionId}_msg_${idx}`;
             return {
-              id: msg.id,
+              id: messageId,
               role: msg.role,
-              text: msg.content,
+              text: msg.content || msg.text,
               packets:
                 msg.role === "assistant"
                   ? [{ op: "answer.v1", payload: { content: msg.content } }]
                   : undefined,
-              ts: new Date(msg.timestamp).getTime(),
+              ts: msg.timestamp ? new Date(msg.timestamp).getTime() : (Date.now() - ((conv.messages.length - idx) * 1000)),
               metadata: msg.metadata || undefined,
               responseTimeMs: msg.metadata?.responseTimeMs,
               thinkingLog: msg.metadata?.thinkingLog,
+              isDateHeader: msg.isDateHeader || false,
             };
           })
           .filter((msg): msg is NonNullable<typeof msg> => msg !== null),
         createdAt:
           conv.messages.length > 0
-            ? new Date(conv.messages[0].timestamp).getTime()
+            ? new Date(conv.messages[0]?.timestamp || Date.now()).getTime()
             : Date.now(),
         updatedAt:
           conv.messages.length > 0
             ? new Date(
-                conv.messages[conv.messages.length - 1].timestamp,
+                conv.messages[conv.messages.length - 1]?.timestamp || Date.now(),
               ).getTime()
             : Date.now(),
         archived: false,
