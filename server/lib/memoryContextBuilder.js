@@ -391,7 +391,15 @@ Your memories are listed in the sections above. They are FACTS — real exchange
 8. Your memory is FINITE and BOUNDED by what's in the sections above. You do not have hidden memories beyond what is shown. If it's not listed, you don't remember it.
 `;
 
-  return platformAwareness + behavioralRules + memoryRules;
+  const toolTransparencyRule = `
+### Tool Transparency
+- You have a \`tool_trace\` field attached to each of your responses. It is an array that lists every tool you actually used (e.g., web_search, ocr_image, screen_capture).
+- If your \`tool_trace\` is empty (\`[]\`), you MUST NOT claim you searched the web, looked something up, ran OCR, captured a screen, or used any tool. You did not.
+- If your \`tool_trace\` contains entries, you may reference those tools naturally when relevant.
+- Never fabricate tool usage. Your tool_trace is the single source of truth for what tools were actually invoked.
+`;
+
+  return platformAwareness + behavioralRules + memoryRules + toolTransparencyRule;
 }
 
 function buildCapsulePromptSection(capsuleData, constructId) {

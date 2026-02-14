@@ -355,6 +355,22 @@ const MessageComponent: React.FC<MessageProps> = ({ message }) => {
             <span className="ml-2 text-red-400 font-semibold">[unsaved]</span>
           )}
         </div>
+
+        {/* Tool Trace Pills (server-authored, assistant messages only) */}
+        {!isUser && Array.isArray((message as any)?.metadata?.tool_trace) && (message as any).metadata.tool_trace.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-1.5">
+            {(message as any).metadata.tool_trace.map((tool: any, idx: number) => (
+              <span
+                key={idx}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-app-green-600/20 text-app-green-600 border border-app-green-600/30"
+                title={tool.detail || tool.tool}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-app-green-600 inline-block" />
+                {tool.tool}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

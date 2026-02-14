@@ -566,13 +566,14 @@ export class AIService {
               return {
                 agent_id: agentId,
                 response: data.response || '',
+                tool_trace: data.tool_trace || [],
                 status: 'success' as const
               };
             }
           );
           
           // If orchestration returned a response, use it
-          if (orchestrationResult.status !== 'error' && orchestrationResult.response) {const packets = [{ op: 'answer.v1', payload: { content: orchestrationResult.response } }];
+          if (orchestrationResult.status !== 'error' && orchestrationResult.response) {const packets = [{ op: 'answer.v1', payload: { content: orchestrationResult.response, tool_trace: orchestrationResult.tool_trace || [] } }];
             
             if (callbacks?.onFinalUpdate) {
               const callbackResult = callbacks.onFinalUpdate(packets);
@@ -615,8 +616,8 @@ export class AIService {
       // Extract AI response content from VVAULT response
       const aiContent = data.response || '';
       
-      // Convert response to packets format
-      const packets = [{ op: 'answer.v1', payload: { content: aiContent } }];
+      // Convert response to packets format, threading tool_trace through
+      const packets = [{ op: 'answer.v1', payload: { content: aiContent, tool_trace: data.tool_trace || [] } }];
       
       // Call final update callback if provided
       // CRITICAL: Await callback to ensure save completes before returning

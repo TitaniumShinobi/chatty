@@ -125,6 +125,14 @@ type Message = {
     responseTimeMs?: number;
     thinkingLog?: string[];
     unsaved?: boolean;
+    tool_trace?: Array<{
+      tool: string;
+      provider: string;
+      input: string;
+      ts: string;
+      success: boolean;
+      result_ref?: string;
+    }>;
   };
 };
 type Thread = {
@@ -2410,6 +2418,12 @@ export default function Layout() {
           ) => {const responseTimeMs = Date.now() - responseStart;
             const filteredThinking: string[] = [];
 
+            // Extract tool_trace from packets (server-authored)
+            const toolTrace = finalPackets
+              .map((p: any) => p?.payload?.tool_trace)
+              .filter(Boolean)
+              .flat();
+
             // Extract content from packets before saving
             const assistantContent = finalPackets
               .map((packet) => {
@@ -2505,6 +2519,7 @@ export default function Layout() {
                 responseTimeMs,
                 thinkingLog: filteredThinking,
                 unsaved: assistantUnsaved,
+                tool_trace: toolTrace.length > 0 ? toolTrace : [],
               },
             };
 

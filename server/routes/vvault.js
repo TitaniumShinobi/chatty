@@ -4104,7 +4104,8 @@ router.post("/message", async (req, res) => {
         model: effectiveModel,
         provider_forced: constructId === 'nova-001',
         provider_used: effectiveProvider,
-        has_images: hasImages
+        has_images: hasImages,
+        tool_trace: []
       });
     } catch (llmError) {
       console.error(`❌ [VVAULT Proxy] ${effectiveProvider} call failed:`, {
@@ -4391,7 +4392,8 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               model: effectiveModel,
               provider_forced: constructId === 'nova-001',
               provider_used: effectiveProvider,
-              has_images: hasImages
+              has_images: hasImages,
+              tool_trace: []
             });
           } catch (fallbackError) {
             console.error(`❌ [VVAULT Proxy] LLM fallback failed:`, fallbackError);
@@ -4417,6 +4419,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
         responseLength: data.response?.length || 0
       });
 
+      if (!data.tool_trace) data.tool_trace = [];
       return res.json(data);
     } catch (fetchError) {
       clearTimeout(timeout);
@@ -4677,7 +4680,8 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           model: effectiveModel,
           provider_forced: constructId === 'nova-001',
           provider_used: effectiveProvider,
-          has_images: hasImages
+          has_images: hasImages,
+          tool_trace: []
         });
       } catch (fallbackError) {
         console.error(`❌ [VVAULT Proxy] LLM fallback failed:`, fallbackError);
