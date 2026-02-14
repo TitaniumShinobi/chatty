@@ -54,9 +54,13 @@ async function resolveUserId(req) {
   let userId = chattyUserId;
   try {
     const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
+    console.log(`🔍 [resolveUserId] Calling resolveVVAULTUserId with chattyUserId=${chattyUserId}, email=${req.user?.email}`);
     const vvaultUserId = await resolveVVAULTUserId(chattyUserId, req.user?.email);
+    console.log(`🔍 [resolveUserId] resolveVVAULTUserId returned: ${vvaultUserId} (chatty was: ${chattyUserId})`);
     if (vvaultUserId) userId = vvaultUserId;
-  } catch {}
+  } catch (err) {
+    console.error(`❌ [resolveUserId] resolveVVAULTUserId FAILED:`, err.message);
+  }
   return { userId, chattyUserId };
 }
 

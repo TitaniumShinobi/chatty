@@ -776,11 +776,85 @@ export class AIManager {
         }
       }
 
-      if (aisRows.length === 0 && gptsRows.length === 0) {
+      console.log(`📊 [AIManager] SQLite query results: ais=${aisRows.length}, gpts=${gptsRows.length} for userIds=[${userIds.join(', ')}]`);
+
+      // SUPABASE MERGE: Fetch GPTs from Supabase vault_files and merge with SQLite results
+      const supabaseRows = [];
+      try {
+        const { getSupabaseClient } = await import('./supabaseClient.js');
+        const { resolveSupabaseUserId } = await import('../../vvaultConnector/supabaseStore.js');
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          const lookupId = email || userId;
+          console.log(`🔍 [AIManager] Supabase init for userId: ${userId}, lookupId: ${lookupId}`);
+          const supabaseUserId = await resolveSupabaseUserId(lookupId);
+          console.log(`🔍 [AIManager] resolveSupabaseUserId returned: ${supabaseUserId}`);
+          if (supabaseUserId) {
+            const { data: identityFiles, error: sbError } = await supabase
+              .from('vault_files')
+              .select('id, filename, content, metadata, construct_id, user_id, created_at, updated_at')
+              .eq('user_id', supabaseUserId)
+              .like('filename', 'instances/%/identity/prompt.txt')
+              .order('updated_at', { ascending: false });
+
+            if (sbError) {
+              console.warn(`⚠️ [AIManager] Supabase vault_files query failed:`, sbError.message);
+            } else if (identityFiles && identityFiles.length > 0) {
+              console.log(`📊 [AIManager] Supabase found ${identityFiles.length} identity files:`, identityFiles.map(f => f.construct_id || f.filename));
+              const existingCallsigns = new Set([
+                ...aisRows.map(r => r.construct_callsign),
+                ...gptsRows.map(r => r.construct_callsign),
+              ].filter(Boolean));
+
+              for (const file of identityFiles) {
+                const callsign = file.construct_id || file.filename?.match(/instances\/([^/]+)\//)?.[1];
+                if (!callsign || existingCallsigns.has(callsign)) continue;
+
+                let name = callsign;
+                let description = '';
+                let instructions = '';
+                if (file.content) {
+                  const nameMatch = file.content.match(/^Name:\s*(.+)/m);
+                  const descMatch = file.content.match(/^Description:\s*(.+)/m);
+                  const instrStart = file.content.indexOf('Instructions:');
+                  if (nameMatch) name = nameMatch[1].trim();
+                  if (descMatch) description = descMatch[1].trim();
+                  if (instrStart > -1) instructions = file.content.substring(instrStart + 13).trim();
+                }
+
+                supabaseRows.push({
+                  id: `supabase-${callsign}`,
+                  name,
+                  description,
+                  instructions,
+                  avatar: null,
+                  capabilities: '{}',
+                  conversation_starters: '[]',
+                  construct_callsign: callsign,
+                  model_id: null,
+                  is_active: 1,
+                  privacy: 'private',
+                  created_at: file.created_at,
+                  updated_at: file.updated_at,
+                  user_id: userId,
+                });
+                existingCallsigns.add(callsign);
+                console.log(`✅ [AIManager] Merged Supabase GPT: ${name} (${callsign})`);
+              }
+            } else {
+              console.log(`ℹ️ [AIManager] Supabase: no identity files found for user ${supabaseUserId}`);
+            }
+          }
+        }
+      } catch (sbErr) {
+        console.warn(`⚠️ [AIManager] Supabase merge step failed:`, sbErr.message);
+      }
+
+      if (aisRows.length === 0 && gptsRows.length === 0 && supabaseRows.length === 0) {
         console.log(`ℹ️ [AIManager] No AIs/GPTs found for user: ${userId}${originalUserId && originalUserId !== userId ? ` (original: ${originalUserId})` : ''} — returning empty (strict isolation)`);
       }
 
-      // Merge: ais table rows take priority, then add gpts rows that don't overlap by construct_callsign
+      // Merge: ais table rows take priority, then gpts, then Supabase rows
       const seenCallsigns = new Set();
       const seenIds = new Set();
       const mergedRows = [];
@@ -804,16 +878,31 @@ export class AIManager {
           rowSourceMap.set(row.id, 'gpts');
         }
       }
+      for (const row of supabaseRows) {
+        const key = row.construct_callsign || row.id;
+        if (!seenIds.has(row.id) && !seenCallsigns.has(key)) {
+          seenIds.add(row.id);
+          seenCallsigns.add(key);
+          mergedRows.push(row);
+          rowSourceMap.set(row.id, 'supabase');
+        }
+      }
 
       const rows = mergedRows;
-      console.log(`📊 [AIManager] Total found: ${rows.length} AIs (${aisRows.length} from ais, ${gptsRows.length} from gpts, merged to ${rows.length}) for user: ${userId}`);
+      console.log(`📊 [AIManager] Total found: ${rows.length} AIs (${aisRows.length} from ais, ${gptsRows.length} from gpts, ${supabaseRows.length} from Supabase, merged to ${rows.length}) for user: ${userId}`);
 
       const ais = [];
       for (const row of rows) {
         try {
-          const fromGPTsTable = rowSourceMap.get(row.id) === 'gpts';
-          const files = fromGPTsTable ? await this.getAIFilesFromGPTsTable(row.id) : await this.getAIFiles(row.id);
-          const actions = fromGPTsTable ? await this.getAIActionsFromGPTsTable(row.id) : await this.getAIActions(row.id);
+          const rowSource = rowSourceMap.get(row.id);
+          const fromGPTsTable = rowSource === 'gpts';
+          const fromSupabase = rowSource === 'supabase';
+          let files = [];
+          let actions = [];
+          if (!fromSupabase) {
+            files = fromGPTsTable ? await this.getAIFilesFromGPTsTable(row.id) : await this.getAIFiles(row.id);
+            actions = fromGPTsTable ? await this.getAIActionsFromGPTsTable(row.id) : await this.getAIActions(row.id);
+          }
 
           // Parse JSON fields with error handling
           let conversationStarters = [];

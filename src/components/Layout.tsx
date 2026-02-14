@@ -317,9 +317,22 @@ export default function Layout() {
     // Create contact cards for GPTs that don't have a conversation thread yet
     // Also exclude system constructs (Zen, Lin, Synth) - they're nav items, not address book contacts
     const existingConstructIds = new Set(conversationThreads.map(t => t.constructId));
-    const gptContactCards: Thread[] = userGPTs
-      .filter(gpt => gpt.constructCallsign && !existingConstructIds.has(gpt.constructCallsign) && !EXCLUDED_CONSTRUCTS.includes(gpt.constructCallsign))
-      .map(gpt => ({
+    const gptContactCards: Thread[] = [];
+    for (const gpt of userGPTs) {
+      if (!gpt.constructCallsign) {
+        console.log(`⏭️ [Layout] Skipping GPT (no callsign):`, gpt.name, gpt.id);
+        continue;
+      }
+      if (EXCLUDED_CONSTRUCTS.includes(gpt.constructCallsign)) {
+        console.log(`⏭️ [Layout] Skipping system construct: ${gpt.name} (${gpt.constructCallsign})`);
+        continue;
+      }
+      if (existingConstructIds.has(gpt.constructCallsign)) {
+        console.log(`⏭️ [Layout] Skipping (already has thread): ${gpt.name} (${gpt.constructCallsign})`);
+        continue;
+      }
+      console.log(`✅ [Layout] Force-including GPT contact card: ${gpt.name} (${gpt.constructCallsign})`);
+      gptContactCards.push({
         id: `${gpt.constructCallsign}_contact`,
         title: gpt.name,
         messages: [],
@@ -330,7 +343,8 @@ export default function Layout() {
         runtimeId: gpt.constructCallsign || gpt.id,
         isPrimary: false,
         avatar: gpt.avatar,
-      }));
+      });
+    }
     
     const allContacts = [...conversationThreads, ...gptContactCards];
     
