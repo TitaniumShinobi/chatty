@@ -6,6 +6,7 @@ const CHUNK_OVERLAP_TOKENS = 50;
 const CHARS_PER_TOKEN = 4;
 const TARGET_CHUNK_CHARS = TARGET_CHUNK_TOKENS * CHARS_PER_TOKEN;
 const OVERLAP_CHARS = CHUNK_OVERLAP_TOKENS * CHARS_PER_TOKEN;
+const DEFAULT_BATCH_SIZE = 25;
 
 function chunkTranscript(content, sourceFile) {
   if (!content || content.length < 50) return [];
@@ -191,8 +192,39 @@ async function loadFileContent(supabase, constructId, filename) {
   return data;
 }
 
+async function getProcessedFiles(supabase, userId, constructId) {
+  const allFiles = new Set();
+  let offset = 0;
+  const pageSize = 1000;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('memory_embeddings')
+      .select('source_file')
+      .eq('user_id', userId)
+      .eq('construct_id', constructId)
+      .range(offset, offset + pageSize - 1);
+
+    if (error) {
+      console.warn(`  ⚠️ Could not fetch processed files (offset ${offset}):`, error.message);
+      break;
+    }
+
+    if (!data || data.length === 0) break;
+
+    for (const d of data) {
+      allFiles.add(d.source_file);
+    }
+
+    if (data.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  return allFiles;
+}
+
 async function embedTranscriptsForConstruct(constructId, userId, options = {}) {
-  const { clearExisting = true, dryRun = false } = options;
+  const { clearExisting = false, dryRun = false, batchMode = false, batchSize = DEFAULT_BATCH_SIZE } = options;
   const supabase = getSupabaseClient();
   if (!supabase) {
     console.error('❌ No Supabase client');
@@ -201,6 +233,7 @@ async function embedTranscriptsForConstruct(constructId, userId, options = {}) {
 
   console.log(`\n🧠 Embedding transcripts for construct: ${constructId}`);
   console.log(`   User: ${userId}`);
+  if (batchMode) console.log(`   📦 Batch mode: processing up to ${batchSize} files per run`);
 
   const fileList = await discoverTranscriptFilenames(supabase, constructId);
   console.log(`   📁 Discovered ${fileList.length} transcript files`);
@@ -210,22 +243,37 @@ async function embedTranscriptsForConstruct(constructId, userId, options = {}) {
     return { success: true, filesProcessed: 0, chunksEmbedded: 0 };
   }
 
-  if (dryRun) {
-    let totalChunks = 0;
-    for (const fl of fileList) {
-      const file = await loadFileContent(supabase, constructId, fl.filename);
-      if (!file) continue;
-      const processed = parseTranscriptPairsToText(file.content);
-      totalChunks += chunkTranscript(processed, file.filename).length;
-    }
-    console.log(`   📦 Total chunks to embed: ${totalChunks}`);
-    console.log('   🏁 Dry run — stopping before embedding');
-    return { success: true, filesProcessed: fileList.length, chunksToEmbed: totalChunks, dryRun: true };
-  }
-
   if (clearExisting) {
     console.log('   🗑️ Clearing existing embeddings...');
     await clearExistingEmbeddings(supabase, userId, constructId);
+  }
+
+  const processed = clearExisting ? new Set() : await getProcessedFiles(supabase, userId, constructId);
+  const unprocessed = fileList.filter(f => !processed.has(f.filename));
+  console.log(`   ✅ Already processed: ${processed.size} files`);
+  console.log(`   📋 Remaining: ${unprocessed.length} files`);
+
+  if (unprocessed.length === 0) {
+    console.log('   🎉 All files already processed!');
+    const totalCount = await getEmbeddingCount(userId, constructId);
+    console.log(`   📊 Total embeddings for ${constructId}: ${totalCount}`);
+    return { success: true, filesProcessed: 0, chunksEmbedded: 0, totalEmbeddings: totalCount, allDone: true };
+  }
+
+  const filesToProcess = batchMode ? unprocessed.slice(0, batchSize) : unprocessed;
+  console.log(`   🎯 Processing ${filesToProcess.length} files this run`);
+
+  if (dryRun) {
+    let totalChunks = 0;
+    for (const fl of filesToProcess) {
+      const file = await loadFileContent(supabase, constructId, fl.filename);
+      if (!file) continue;
+      const processedContent = parseTranscriptPairsToText(file.content);
+      totalChunks += chunkTranscript(processedContent, file.filename).length;
+    }
+    console.log(`   📦 Total chunks to embed: ${totalChunks}`);
+    console.log('   🏁 Dry run — stopping before embedding');
+    return { success: true, filesToProcess: filesToProcess.length, chunksToEmbed: totalChunks, remaining: unprocessed.length - filesToProcess.length, dryRun: true };
   }
 
   let embedded = 0;
@@ -234,35 +282,25 @@ async function embedTranscriptsForConstruct(constructId, userId, options = {}) {
   let filesProcessed = 0;
   const startTime = Date.now();
 
-  let alreadyEmbeddedFiles = new Set();
-  if (!clearExisting) {
-    const { data: existingFiles } = await supabase
-      .from('memory_embeddings')
-      .select('source_file')
-      .eq('construct_id', constructId);
-    if (existingFiles) {
-      alreadyEmbeddedFiles = new Set(existingFiles.map(f => f.source_file));
-      console.log(`   📋 ${alreadyEmbeddedFiles.size} files already embedded, will skip duplicates`);
-    }
-  }
+  for (const fl of filesToProcess) {
+    const file = await loadFileContent(supabase, constructId, fl.filename);
+    if (!file) { skipped++; continue; }
 
-  for (const fl of fileList) {
-    if (alreadyEmbeddedFiles.has(fl.filename)) {
+    if (file.content.length > 200000) {
+      console.log(`   ⏭️ ${fl.filename.split('/').pop()} too large (${(file.content.length/1000).toFixed(0)}KB) — skipping`);
       skipped++;
       continue;
     }
 
-    const file = await loadFileContent(supabase, constructId, fl.filename);
-    if (!file) continue;
-
     const processedContent = parseTranscriptPairsToText(file.content);
     const chunks = chunkTranscript(processedContent, file.filename);
-    if (chunks.length === 0) continue;
+    if (chunks.length === 0) { skipped++; continue; }
 
-    filesProcessed++;
     const fileUserId = file.user_id || userId;
+    let fileEmbedded = 0;
+    let fileFailed = 0;
 
-    const embedBatchSize = 50;
+    const embedBatchSize = 25;
     for (let i = 0; i < chunks.length; i += embedBatchSize) {
       const batch = chunks.slice(i, i + embedBatchSize);
       const texts = batch.map(c => c.content);
@@ -272,7 +310,7 @@ async function embedTranscriptsForConstruct(constructId, userId, options = {}) {
 
         const toStore = [];
         for (let j = 0; j < embeddings.length; j++) {
-          if (!embeddings[j]) { failed++; continue; }
+          if (!embeddings[j]) { fileFailed++; continue; }
           toStore.push({
             userId: fileUserId,
             constructId,
@@ -285,16 +323,20 @@ async function embedTranscriptsForConstruct(constructId, userId, options = {}) {
         if (toStore.length > 0) {
           const stored = await storeEmbeddingBatch(toStore);
           if (stored > 0) {
-            embedded += stored;
+            fileEmbedded += stored;
           } else {
-            failed += toStore.length;
+            fileFailed += toStore.length;
           }
         }
       } catch (err) {
         console.warn(`\n   ❌ Batch failed for ${file.filename}:`, err.message);
-        failed += batch.length;
+        fileFailed += batch.length;
 
         if (err.message?.includes('429') || err.message?.includes('rate')) {
+          if (err.message?.includes('quota')) {
+            console.log('   🛑 API quota exceeded — stopping. Resume later.');
+            return { success: false, error: 'quota_exceeded', filesProcessed, chunksEmbedded: embedded, chunksFailed: failed, filesSkipped: skipped };
+          }
           console.log('   ⏸️ Rate limited — waiting 30s...');
           await new Promise(r => setTimeout(r, 30000));
           i -= embedBatchSize;
@@ -302,17 +344,31 @@ async function embedTranscriptsForConstruct(constructId, userId, options = {}) {
       }
     }
 
+    embedded += fileEmbedded;
+    failed += fileFailed;
+    filesProcessed++;
+
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
     const rate = (embedded / (elapsed || 1)).toFixed(1);
-    console.log(`   📄 ${filesProcessed}/${fileList.length} | ${file.filename.split('/').pop()} → ${chunks.length} chunks | total: ${embedded} embedded | ${elapsed}s | ${rate}/s`);
+    const remaining = filesToProcess.length - filesProcessed - skipped;
+    console.log(`   📄 ${filesProcessed}/${filesToProcess.length} | ${file.filename.split('/').pop()} → ${chunks.length} chunks (${fileEmbedded} ok, ${fileFailed} fail) | total: ${embedded} | ${elapsed}s | ${rate}/s | ${remaining} remaining`);
   }
 
-  console.log(`\n   ✅ Embedding complete: ${embedded} stored, ${failed} failed`);
+  console.log(`\n   ✅ Batch complete: ${embedded} stored, ${failed} failed, ${skipped} skipped`);
 
   const totalCount = await getEmbeddingCount(userId, constructId);
+  const totalProcessed = processed.size + filesProcessed + skipped;
+  const totalRemaining = fileList.length - totalProcessed;
   console.log(`   📊 Total embeddings for ${constructId}: ${totalCount}`);
+  console.log(`   📊 Progress: ${totalProcessed}/${fileList.length} files (${totalRemaining} remaining)`);
 
-  return { success: true, filesProcessed, chunksEmbedded: embedded, chunksFailed: failed, totalEmbeddings: totalCount };
+  if (totalRemaining > 0) {
+    console.log(`\n   💡 Run again to process next batch of ${Math.min(batchSize, totalRemaining)} files`);
+  } else {
+    console.log(`\n   🎉 All files processed!`);
+  }
+
+  return { success: true, filesProcessed, chunksEmbedded: embedded, chunksFailed: failed, filesSkipped: skipped, totalEmbeddings: totalCount, totalFilesProcessed: totalProcessed, totalFiles: fileList.length, remaining: totalRemaining };
 }
 
 const args = process.argv.slice(2);
@@ -321,20 +377,32 @@ const userId = args[1];
 
 if (!constructId || !userId) {
   console.log(`
-Usage: node server/scripts/embedTranscripts.js <construct_id> <user_id> [--dry-run] [--no-clear]
+Usage: node server/scripts/embedTranscripts.js <construct_id> <user_id> [options]
+
+Options:
+  --batch          Process files in batches (default: 25 per run)
+  --batch-size=N   Set batch size (e.g., --batch-size=10)
+  --dry-run        Show what would be embedded without doing it
+  --clear          Clear all existing embeddings first (destructive)
 
 Examples:
-  node server/scripts/embedTranscripts.js nova-001 devon@example.com
-  node server/scripts/embedTranscripts.js nova-001 devon@example.com --dry-run
-  node server/scripts/embedTranscripts.js sera-001 devon@example.com --no-clear
+  node server/scripts/embedTranscripts.js nova-001 7e34f6b8-... --batch
+  node server/scripts/embedTranscripts.js nova-001 7e34f6b8-... --batch --batch-size=10
+  node server/scripts/embedTranscripts.js nova-001 7e34f6b8-... --dry-run
   `);
   process.exit(1);
 }
 
 const dryRun = args.includes('--dry-run');
-const clearExisting = !args.includes('--no-clear');
+const batchMode = args.includes('--batch') || args.some(a => a.startsWith('--batch-size'));
+const clearExisting = args.includes('--clear');
+let batchSize = DEFAULT_BATCH_SIZE;
+const batchSizeArg = args.find(a => a.startsWith('--batch-size='));
+if (batchSizeArg) {
+  batchSize = parseInt(batchSizeArg.split('=')[1], 10) || DEFAULT_BATCH_SIZE;
+}
 
-embedTranscriptsForConstruct(constructId, userId, { clearExisting, dryRun })
+embedTranscriptsForConstruct(constructId, userId, { clearExisting, dryRun, batchMode, batchSize })
   .then(result => {
     console.log('\n📋 Result:', JSON.stringify(result, null, 2));
     process.exit(0);
