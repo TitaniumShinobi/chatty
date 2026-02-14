@@ -10,6 +10,8 @@ import pg from 'pg';
 import { writeConversationToSupabase } from './supabaseStore.js';
 
 let pool = null;
+const _vvaultUserIdCache = new Map();
+const VVAULT_USER_CACHE_TTL = 5 * 60 * 1000;
 
 function getPool() {
   if (!pool && process.env.DATABASE_URL) {
@@ -167,6 +169,15 @@ async function writeTranscript(params) {
 }
 
 async function resolveVVAULTUserId(userId, email, autoCreate = false) {
+  const cacheKey = email || userId;
+  if (cacheKey) {
+    const cached = _vvaultUserIdCache.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < VVAULT_USER_CACHE_TTL) {
+      console.log(`⚡ [resolveVVAULTUserId] Cache hit for ${cacheKey} → ${cached.id}`);
+      return cached.id;
+    }
+  }
+
   try {
     const { getSupabaseClient } = await import('../server/lib/supabaseClient.js');
     const supabase = getSupabaseClient();
@@ -181,6 +192,7 @@ async function resolveVVAULTUserId(userId, email, autoCreate = false) {
       if (!error && data) {
         const vvaultId = data.name || data.id;
         console.log(`✅ [resolveVVAULTUserId] Supabase resolved ${email} → ${vvaultId}`);
+        _vvaultUserIdCache.set(cacheKey, { id: vvaultId, ts: Date.now() });
         return vvaultId;
       }
 
@@ -194,6 +206,7 @@ async function resolveVVAULTUserId(userId, email, autoCreate = false) {
       if (!shardError && shardUser) {
         const vvaultId = shardUser.name || shardUser.id;
         console.log(`✅ [resolveVVAULTUserId] Supabase shard fallback for ${email} → ${vvaultId}`);
+        _vvaultUserIdCache.set(cacheKey, { id: vvaultId, ts: Date.now() });
         return vvaultId;
       }
     }

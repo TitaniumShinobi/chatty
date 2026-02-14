@@ -792,10 +792,10 @@ export class AIManager {
           if (supabaseUserId) {
             const { data: identityFiles, error: sbError } = await supabase
               .from('vault_files')
-              .select('id, filename, content, metadata, construct_id, user_id, created_at, updated_at')
+              .select('id, filename, content, metadata, construct_id, user_id, created_at')
               .eq('user_id', supabaseUserId)
               .like('filename', 'instances/%/identity/prompt.txt')
-              .order('updated_at', { ascending: false });
+              .order('created_at', { ascending: false });
 
             if (sbError) {
               console.warn(`⚠️ [AIManager] Supabase vault_files query failed:`, sbError.message);
@@ -835,7 +835,7 @@ export class AIManager {
                   is_active: 1,
                   privacy: 'private',
                   created_at: file.created_at,
-                  updated_at: file.updated_at,
+                  updated_at: file.created_at,
                   user_id: userId,
                 });
                 existingCallsigns.add(callsign);

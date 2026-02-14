@@ -22,6 +22,9 @@ function sha256(content) {
   return crypto.createHash('sha256').update(content || '').digest('hex');
 }
 
+const _supabaseUserIdCache = new Map();
+const SUPABASE_USER_CACHE_TTL = 5 * 60 * 1000;
+
 function formatMarkdownTranscript(title, messages) {
   let md = `# ${title || 'Conversation'}\n\n`;
   for (const msg of messages || []) {
@@ -492,11 +495,16 @@ function parseMarkdownTranscript(content, debugPath = null) {
 }
 
 async function resolveSupabaseUserId(emailOrId) {
+  const cached = _supabaseUserIdCache.get(emailOrId);
+  if (cached && (Date.now() - cached.ts) < SUPABASE_USER_CACHE_TTL) {
+    console.log(`⚡ [SupabaseStore] Cache hit for user: ${emailOrId} -> ${cached.id}`);
+    return cached.id;
+  }
+
   const supabase = getSupabaseClient();
   if (!supabase) return null;
 
   try {
-    // First try to find by email or name
     const { data, error } = await supabase
       .from('users')
       .select('id')
@@ -506,10 +514,10 @@ async function resolveSupabaseUserId(emailOrId) {
 
     if (!error && data) {
       console.log(`✅ [SupabaseStore] Found user by email/name: ${emailOrId} -> ${data.id}`);
+      _supabaseUserIdCache.set(emailOrId, { id: data.id, ts: Date.now() });
       return data.id;
     }
 
-    // Fall back to default shard user (VVAULT uses sharding)
     const { data: shardUser, error: shardError } = await supabase
       .from('users')
       .select('id')
@@ -519,6 +527,7 @@ async function resolveSupabaseUserId(emailOrId) {
 
     if (!shardError && shardUser) {
       console.log(`✅ [SupabaseStore] Using shard_0000 user for: ${emailOrId} -> ${shardUser.id}`);
+      _supabaseUserIdCache.set(emailOrId, { id: shardUser.id, ts: Date.now() });
       return shardUser.id;
     }
 
