@@ -51,7 +51,8 @@ Chatty is an AI-powered workspace application providing a thin UI layer for inte
 - **PDF Text Extraction:** PDF files automatically parsed for text content using `pdf-parse` and stored in `vault_files.content`.
 - **ContinuityGPT Ledger System:** Generates chronological ledgers from construct transcripts, including date estimation, vibe classification, topic extraction, and continuity hooks detection.
 - **Verified Transcript Memory System:** Discovers uploaded transcripts, parses multiple formats, extracts scored memory pairs, and uses pre-extracted memory anchors for fast loading.
-- **Memory Authority Hierarchy (3-Tier):** Verified Memory (Transcript Authority), Conversation History, ChromaDB/Capsule Memories.
+- **Vector Memory System (Supabase pgvector):** Semantic memory retrieval using OpenAI `text-embedding-3-small` embeddings stored in `memory_embeddings` table. User messages are embedded at query time and matched against pre-embedded transcript chunks via cosine similarity (`match_memories` RPC). Vector search is Layer 1; Needle and VerifiedMemory are fallback layers. Live exchanges are embedded in real-time via `captureMemory()`. Bulk embedding via `server/scripts/embedTranscripts.js`.
+- **Memory Authority Hierarchy (4-Tier):** Vector Memory (Semantic, Layer 1), Verified Memory (Transcript Authority, Layer 2), Needle (Keyword Fallback, Layer 3), Conversation History (Session, Layer 4).
 - **Memory Anchor Fast Path:** Pre-extracted `memory_anchors.json` for rapid memory loading.
 - **Identity/Capsule/Physical Features Caching:** 5-minute TTL in-memory caches to reduce Supabase queries.
 - **Prompt Context Debug Endpoint:** `GET /api/ais/:id/prompt-context` for debugging prompt assembly.

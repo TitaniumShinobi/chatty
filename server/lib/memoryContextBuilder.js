@@ -17,6 +17,7 @@ import { loadIdentityFiles } from './identityLoader.js';
 import { loadVerifiedMemories, buildVerifiedMemorySection, clearVerifiedMemoryCache } from './verifiedMemoryLoader.js';
 import { masterScriptsManager, Needle } from './masterScriptsBridge.js';
 import { loadLedger, enrichMemoryWithLedger, buildLedgerContextSection, generateLedger, storeLedger } from './continuityParser.js';
+import { retrieveSemanticMemories } from '../services/embeddingService.js';
 
 let capsuleIntegrationModule = null;
 let memupServiceModule = null;
@@ -785,6 +786,8 @@ async function buildEnrichedContext(options) {
   console.log(`⏱️ [MemoryContextBuilder] capsule: ${phaseTiming.capsule.ms}ms (${phaseTiming.capsule.source})`);
 
 
+  let vectorMemorySection = '';
+  let vectorCount = 0;
   let verifiedMemorySection = '';
   let verifiedCount = 0;
   let needleSection = '';
@@ -813,6 +816,37 @@ async function buildEnrichedContext(options) {
   }
   phaseTiming.ledger = { ms: Date.now() - tLedger, sessions: ledger?.sessions?.length || 0 };
   console.log(`⏱️ [MemoryContextBuilder] ledger: ${phaseTiming.ledger.ms}ms (${phaseTiming.ledger.sessions} sessions)`);
+
+  const tVector = Date.now();
+  if (userMessage) {
+    try {
+      const vectorLookupId = userId || user?.email;
+      const semanticHits = await retrieveSemanticMemories(userMessage, vectorLookupId, constructId, 5);
+      if (semanticHits && semanticHits.length > 0) {
+        vectorCount = semanticHits.length;
+        result.vectorMemories = vectorCount;
+
+        const memoryLines = semanticHits.map((m, i) => {
+          const sim = m.similarity ? ` (relevance: ${(m.similarity * 100).toFixed(0)}%)` : '';
+          const src = m.source_file ? ` [from: ${m.source_file.split('/').pop()}]` : '';
+          return `${i + 1}. ${m.content}${src}${sim}`;
+        });
+
+        vectorMemorySection = `\n\n## Recalled Memories (Semantic Search)
+The following are real past interactions retrieved from your conversation history. These are VERIFIED memories — use them to answer the user's question with specific, grounded detail.
+
+${memoryLines.join('\n\n')}
+
+IMPORTANT: These memories are factual records of real conversations. Reference them naturally. Do not fabricate additional details beyond what is written here.`;
+
+        console.log(`🧠 [MemoryContextBuilder] ${vectorCount} vector memories retrieved for ${constructId} (top similarity: ${semanticHits[0]?.similarity?.toFixed(3) || 'N/A'})`);
+      }
+    } catch (vecErr) {
+      console.warn(`⚠️ [MemoryContextBuilder] Vector memory retrieval failed for ${constructId}:`, vecErr.message);
+    }
+  }
+  phaseTiming.vectorSearch = { ms: Date.now() - tVector, count: vectorCount };
+  console.log(`⏱️ [MemoryContextBuilder] vectorSearch: ${phaseTiming.vectorSearch.ms}ms (${vectorCount} hits)`);
 
   const tMemory = Date.now();
   if (userMessage) {
@@ -895,7 +929,7 @@ async function buildEnrichedContext(options) {
   }
 
   let memoryGapSection = '';
-  if (userMessage && isMemoryTriggeringQuestion(userMessage) && verifiedCount === 0 && needleCount === 0 && (result.memoriesLoaded || 0) === 0) {
+  if (userMessage && isMemoryTriggeringQuestion(userMessage) && vectorCount === 0 && verifiedCount === 0 && needleCount === 0 && (result.memoriesLoaded || 0) === 0) {
     memoryGapSection = buildMemoryGapSection(userMessage, constructId);
     result.memoryGapInjected = true;
     console.log(`⚠️ [MemoryContextBuilder] Memory gap detected for ${constructId} — user asked about past but no memories found. Anti-confabulation guard injected.`);
@@ -958,12 +992,12 @@ When answering:
 `;
   }
 
-  result.systemPrompt = basePrompt + physicalAppearanceSection + capsuleSection + userSection + knowledgeSection + citationDirective + ledgerSection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + ANTI_ROLEPLAY_DIRECTIVES;
+  result.systemPrompt = basePrompt + physicalAppearanceSection + capsuleSection + userSection + knowledgeSection + citationDirective + ledgerSection + vectorMemorySection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + ANTI_ROLEPLAY_DIRECTIVES;
 
   phaseTiming.totalMs = Date.now() - t0;
   result.phaseTiming = phaseTiming;
-  console.log(`⏱️ [MemoryContextBuilder] TOTAL: ${phaseTiming.totalMs}ms | identity: ${phaseTiming.identity?.ms}ms | phys: ${phaseTiming.physicalFeatures?.ms}ms | capsule: ${phaseTiming.capsule?.ms}ms | ledger: ${phaseTiming.ledger?.ms}ms | memory: ${phaseTiming.memorySearch?.ms || 0}ms | knowledge: ${phaseTiming.knowledge?.ms}ms`);
-  console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, physicalFeatures: ${!!physicalAppearanceSection}, knowledge: ${!!knowledgeSection}, knowledgeRelevant: ${knowledgeMatchedFiles.length}, ledger: ${ledger ? ledger.sessions.length : 0}, needle: ${needleCount}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
+  console.log(`⏱️ [MemoryContextBuilder] TOTAL: ${phaseTiming.totalMs}ms | identity: ${phaseTiming.identity?.ms}ms | phys: ${phaseTiming.physicalFeatures?.ms}ms | capsule: ${phaseTiming.capsule?.ms}ms | ledger: ${phaseTiming.ledger?.ms}ms | vector: ${phaseTiming.vectorSearch?.ms || 0}ms | memory: ${phaseTiming.memorySearch?.ms || 0}ms | knowledge: ${phaseTiming.knowledge?.ms}ms`);
+  console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, physicalFeatures: ${!!physicalAppearanceSection}, knowledge: ${!!knowledgeSection}, knowledgeRelevant: ${knowledgeMatchedFiles.length}, ledger: ${ledger ? ledger.sessions.length : 0}, vector: ${vectorCount}, needle: ${needleCount}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
 
   return result;
 }
@@ -980,7 +1014,33 @@ When answering:
  * @param {string} [options.email] - User email for VVAULT ID resolution
  */
 async function captureMemory(options) {
-  return;
+  const { userId, constructId, userMessage, aiResponse, sessionId, email } = options;
+  if (!userMessage || !aiResponse || !constructId) return;
+
+  try {
+    const { embedText, storeEmbedding } = await import('../services/embeddingService.js');
+
+    const memoryText = `User: ${userMessage}\nAI: ${aiResponse}`;
+    const truncated = memoryText.length > 3000 ? memoryText.substring(0, 3000) : memoryText;
+
+    const embedding = await embedText(truncated);
+    if (!embedding) return;
+
+    const lookupId = userId || email;
+    const sourceFile = sessionId || `live_chat_${constructId}`;
+
+    await storeEmbedding({
+      userId: lookupId,
+      constructId,
+      sourceFile,
+      content: truncated,
+      embedding,
+    });
+
+    console.log(`🧠 [MemoryCapture] Embedded live exchange for ${constructId} (${truncated.length} chars)`);
+  } catch (err) {
+    console.warn(`⚠️ [MemoryCapture] Failed to embed live exchange for ${constructId}:`, err.message);
+  }
 }
 
 export { buildEnrichedContext, captureMemory, buildCapsulePromptSection, buildMemoryPromptSection, extractTranscriptMemories, buildTranscriptMemorySection };
