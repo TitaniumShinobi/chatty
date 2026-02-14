@@ -119,8 +119,8 @@ function computeRankedScore(hit, activeConstructId) {
     0.1;
 
   let confidenceTier = 'low';
-  if (confidence >= 0.80) confidenceTier = 'high';
-  else if (confidence >= 0.60) confidenceTier = 'moderate';
+  if (confidence >= 0.70) confidenceTier = 'high';
+  else if (confidence >= 0.50) confidenceTier = 'moderate';
 
   return {
     ...hit,
