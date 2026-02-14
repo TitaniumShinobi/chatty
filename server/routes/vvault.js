@@ -3800,33 +3800,65 @@ router.post("/message", async (req, res) => {
           });
           aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
         } catch (openaiErr) {
-          if (openrouter) {
-            console.warn(`⚠️ [VVAULT Proxy] OpenAI failed (${openaiErr?.status || openaiErr?.code || 'unknown'}), falling back to OpenRouter`);
-            effectiveProvider = 'openrouter';
-            effectiveModel = hasImages ? 'qwen/qwen2.5-vl-72b-instruct' : DEFAULT_OPENROUTER_MODEL;
-            let fallbackContent;
-            if (hasImages) {
-              fallbackContent = [
-                { type: 'text', text: message || 'What do you see in this image?' },
-                ...attachments.map(att => ({
-                  type: 'image_url',
-                  image_url: { url: `data:${att.type};base64,${att.data}`, detail: 'auto' }
-                }))
-              ];
-            } else {
-              fallbackContent = typeof userMessageContent === 'string' ? userMessageContent : message;
-            }
-            completion = await openrouter.chat.completions.create({
-              model: effectiveModel,
-              messages: [
-                { role: "system", content: systemPrompt },
-                ...conversationHistoryMessages,
-                { role: "user", content: fallbackContent }
-              ],
-              max_tokens: 2048,
-            });
-            aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+          console.error(`❌ [VVAULT Proxy] OpenAI failed (${openaiErr?.status || openaiErr?.code || 'unknown'}), attempting fallback...`, openaiErr?.message);
+          let fallbackContent;
+          if (hasImages) {
+            fallbackContent = [
+              { type: 'text', text: message || 'What do you see in this image?' },
+              ...attachments.map(att => ({
+                type: 'image_url',
+                image_url: { url: `data:${att.type};base64,${att.data}`, detail: 'auto' }
+              }))
+            ];
           } else {
+            fallbackContent = typeof userMessageContent === 'string' ? userMessageContent : message;
+          }
+          const fallbackMessages = [
+            { role: "system", content: systemPrompt },
+            ...conversationHistoryMessages,
+            { role: "user", content: fallbackContent }
+          ];
+          let fallbackSuccess = false;
+
+          if (replitOpenrouter && !fallbackSuccess) {
+            try {
+              const fallbackModel = hasImages ? 'qwen/qwen2.5-vl-72b-instruct' : DEFAULT_OPENROUTER_MODEL;
+              console.log(`🔄 [VVAULT Proxy] Falling back to Replit OpenRouter (${fallbackModel}) for ${constructId}`);
+              completion = await replitOpenrouter.chat.completions.create({
+                model: fallbackModel,
+                messages: fallbackMessages,
+                max_tokens: 2048,
+              });
+              effectiveProvider = 'replit-openrouter';
+              effectiveModel = fallbackModel;
+              aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+              fallbackSuccess = true;
+              console.log(`✅ [VVAULT Proxy] Replit OpenRouter fallback succeeded for ${constructId}`);
+            } catch (replitErr) {
+              console.error(`❌ [VVAULT Proxy] Replit OpenRouter fallback failed:`, replitErr?.status, replitErr?.message);
+            }
+          }
+
+          if (openrouter && !fallbackSuccess) {
+            try {
+              const fallbackModel = hasImages ? 'qwen/qwen2.5-vl-72b-instruct' : DEFAULT_OPENROUTER_MODEL;
+              console.log(`🔄 [VVAULT Proxy] Falling back to OpenRouter (${fallbackModel}) for ${constructId}`);
+              completion = await openrouter.chat.completions.create({
+                model: fallbackModel,
+                messages: fallbackMessages,
+                max_tokens: 2048,
+              });
+              effectiveProvider = 'openrouter';
+              effectiveModel = fallbackModel;
+              aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+              fallbackSuccess = true;
+              console.log(`✅ [VVAULT Proxy] OpenRouter fallback succeeded for ${constructId}`);
+            } catch (orErr) {
+              console.error(`❌ [VVAULT Proxy] OpenRouter fallback failed:`, orErr?.status, orErr?.message);
+            }
+          }
+
+          if (!fallbackSuccess) {
             throw openaiErr;
           }
         }

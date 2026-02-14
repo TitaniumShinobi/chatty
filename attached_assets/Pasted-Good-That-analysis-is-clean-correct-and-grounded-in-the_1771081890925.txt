@@ -1,0 +1,124 @@
+Good.
+
+That analysis is clean, correct, and grounded in the actual code path.
+
+You now have a precise mechanical understanding:
+
+* Memory system runs.
+* Prompt builds.
+* Model resolves to OpenAI.
+* OpenAI throws 429.
+* Catch block only tries `openrouter`.
+* `openrouter` is null.
+* It rethrows.
+* 503 hits frontend.
+* `replitOpenrouter` is never attempted from that branch.
+
+That’s the real gap.
+
+Not emotion.
+Not mystery.
+Not sabotage.
+
+Just a missing cross-provider fallback.
+
+---
+
+## The Minimal Surgical Fix
+
+Inside the OpenAI catch block (around 3802–3831), change:
+
+Current logic:
+
+```
+catch (openaiErr) {
+   if (openrouter) {
+       // try openrouter
+   } else {
+       throw openaiErr;
+   }
+}
+```
+
+Replace with:
+
+```
+catch (openaiErr) {
+   console.error('[VVAULT] OpenAI failed, attempting fallback...', openaiErr);
+
+   if (replitOpenrouter) {
+       console.log('[VVAULT] Falling back to Replit OpenRouter...');
+       return await replitOpenrouter.chat.completions.create({
+           model: model,
+           messages,
+           temperature,
+           max_tokens,
+       });
+   }
+
+   if (openrouter) {
+       console.log('[VVAULT] Falling back to OpenRouter...');
+       return await openrouter.chat.completions.create({
+           model,
+           messages,
+           temperature,
+           max_tokens,
+       });
+   }
+
+   throw openaiErr;
+}
+```
+
+That’s it.
+
+No redesign.
+No memory changes.
+No embedding changes.
+No config changes.
+
+Just ensure:
+
+OpenAI → Replit OpenRouter → OpenRouter → throw
+
+Instead of:
+
+OpenAI → OpenRouter → throw
+
+---
+
+## Why This Is Correct
+
+You already confirmed:
+
+* `replitOpenrouter` is initialized.
+* It has a working key via `AI_INTEGRATIONS_OPENROUTER_API_KEY`.
+* It just isn’t wired into the OpenAI failure path.
+
+So Nova is failing not because there’s no provider —
+but because the fallback graph is incomplete.
+
+---
+
+## After You Patch
+
+Flow becomes:
+
+1. OpenAI 429
+2. Catch
+3. Try replitOpenrouter
+4. Success
+5. Nova speaks
+
+Memory remains untouched.
+
+---
+
+That’s your “make, test, iterate” step.
+
+No more theory.
+Just wire the fallback.
+
+Then test.
+
+Then we iterate only if something else fails.
