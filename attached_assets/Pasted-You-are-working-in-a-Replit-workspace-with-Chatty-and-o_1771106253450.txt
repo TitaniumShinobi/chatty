@@ -1,0 +1,111 @@
+You are working in a Replit workspace with Chatty (and optionally MOCR service reachable by URL).
+
+Goal for today:
+1) Fix tool transparency so constructs cannot falsely claim tool usage.
+2) Ship a minimal “Watch with Nova” live movie mode using periodic screen capture + OCR context injection.
+
+Hard constraints:
+- Make the smallest safe changes.
+- Do not refactor unrelated modules.
+- Preserve existing chat behavior.
+- If blocked, report exact blocker + minimal patch plan.
+- End with PASS/FAIL evidence.
+
+========================
+PHASE 0 — Locate hooks
+========================
+Find and confirm:
+- Where assistant response payload is assembled (server/runtime).
+- Where tool calls are executed and results returned.
+- Where message metadata is stored/rendered in UI.
+- Where system/context messages are injected into model prompt.
+
+Print file paths + function names before editing.
+
+=============================
+PHASE 1 — Tool Transparency
+=============================
+Implement runtime-truth `tool_trace` on every assistant turn.
+
+Schema:
+tool_trace: [
+  {
+    tool: string,          // e.g. web_search, ocr_image, screen_capture
+    provider: string,      // e.g. duckduckgo, local_ocr, mocr
+    input: string,         // compact summary/query
+    ts: string,            // ISO time
+    success: boolean,
+    result_ref?: string
+  }
+]
+
+Requirements:
+1) `tool_trace` is attached to every assistant message.
+   - No tools run => `tool_trace: []`
+2) `tool_trace` must come only from actual runtime tool events.
+3) UI: show “Tools used” pill per assistant message:
+   - None | Search | OCR | Capture | Multiple
+   - Click/expand shows raw trace.
+4) Prompt rule (global/system):
+   - If `tool_trace` is empty, assistant must not claim tool usage.
+   - If non-empty, assistant should acknowledge tool use when relevant.
+
+Acceptance checks:
+- Normal “hello” with no tools => `tool_trace=[]`, pill = None.
+- Run a real tool call => `tool_trace` populated, pill matches.
+- Assistant text cannot claim search when trace is empty.
+
+========================================
+PHASE 2 — Watch with Nova (MVP today)
+========================================
+Implement browser-side live capture loop (no heavy backend streaming build).
+
+Features:
+1) Add “Watch with Nova” mode + “Write Access” toggle.
+2) On Start:
+   - Request `getDisplayMedia` (user approved).
+   - Every 3–5 seconds:
+     - grab frame to canvas
+     - OCR frame via existing OCR path (prefer existing working OCR tool/service)
+     - build compact context update
+3) Context update format:
+   [VIDEO_CONTEXT_UPDATE]
+   ts=<iso>
+   source=screen_ocr
+   lines=<top 1-3 OCR lines>
+   confidence=<if available>
+4) Inject update into active Nova thread only when Write Access = ON.
+5) If Write Access = OFF, continue preview but do not inject.
+6) Add dedupe/rate limit:
+   - Skip near-duplicate text
+   - Max 12 updates/min
+   - Keep last N updates bounded for token budget
+
+Safety rules:
+- Never claim web search from this feature.
+- Capture only while session active; stop stream tracks on exit.
+- Append-only evidence updates (no rewriting prior evidence).
+
+=================================
+PHASE 3 — Verification (Required)
+=================================
+Run and report:
+
+A) Tool transparency
+- Send chat with no tools -> verify trace/pill.
+- Trigger one tool -> verify trace/pill.
+- Confirm assistant wording aligns with trace.
+
+B) Movie mode
+- Start Watch with Nova on a subtitle-heavy video.
+- Verify at least 3 VIDEO_CONTEXT_UPDATE injections with timestamps.
+- Ask Nova what’s happening; response must reference recent OCR lines.
+- Toggle Write Access OFF; verify no further injections.
+
+Output required:
+1) Files changed
+2) Commands run
+3) PASS/FAIL table for each acceptance check
+4) Remaining known gaps
+
+If any acceptance check fails, stop and provide minimal follow-up patch plan.
