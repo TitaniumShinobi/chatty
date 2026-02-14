@@ -28,10 +28,7 @@ const router = express.Router();
 // OpenRouter client for fallback when VVAULT API is unavailable
 // Primary: user's own OpenRouter key; Fallback: Replit AI Integrations (managed, billed to credits)
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const openrouter = OPENROUTER_API_KEY ? new OpenAI({
-  baseURL: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
-  apiKey: OPENROUTER_API_KEY,
-}) : null;
+const openrouter = null; // Force-disabled: OpenRouter key is invalid (401 User not found). Route all traffic to OpenAI.
 
 // Replit-managed OpenRouter client (fallback when user's key fails)
 const REPLIT_OPENROUTER_KEY = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY;
