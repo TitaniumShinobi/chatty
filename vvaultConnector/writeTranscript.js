@@ -167,6 +167,40 @@ async function writeTranscript(params) {
 }
 
 async function resolveVVAULTUserId(userId, email, autoCreate = false) {
+  try {
+    const { getSupabaseClient } = await import('../server/lib/supabaseClient.js');
+    const supabase = getSupabaseClient();
+    if (supabase && email) {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, name')
+        .or(`email.eq.${email},name.eq.${email}`)
+        .limit(1)
+        .single();
+
+      if (!error && data) {
+        const vvaultId = data.name || data.id;
+        console.log(`✅ [resolveVVAULTUserId] Supabase resolved ${email} → ${vvaultId}`);
+        return vvaultId;
+      }
+
+      const { data: shardUser, error: shardError } = await supabase
+        .from('users')
+        .select('id, name')
+        .eq('name', 'shard_0000')
+        .limit(1)
+        .single();
+
+      if (!shardError && shardUser) {
+        const vvaultId = shardUser.name || shardUser.id;
+        console.log(`✅ [resolveVVAULTUserId] Supabase shard fallback for ${email} → ${vvaultId}`);
+        return vvaultId;
+      }
+    }
+  } catch (err) {
+    console.warn(`⚠️ [resolveVVAULTUserId] Supabase lookup failed: ${err.message}`);
+  }
+
   return userId || email || null;
 }
 

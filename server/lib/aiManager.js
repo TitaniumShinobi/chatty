@@ -732,7 +732,7 @@ export class AIManager {
     };
   }
 
-  async getAllAIs(userId, originalUserId = null) {
+  async getAllAIs(userId, originalUserId = null, email = null) {
     try {
       if (!this.db) {
         throw new Error('Database not initialized');
@@ -748,6 +748,7 @@ export class AIManager {
       const gptsRows = [];
       const userIds = [userId];
       if (originalUserId && originalUserId !== userId) userIds.push(originalUserId);
+      if (email && !userIds.includes(email)) userIds.push(email);
 
       for (const uid of userIds) {
         try {

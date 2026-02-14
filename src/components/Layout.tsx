@@ -294,9 +294,10 @@ export default function Layout() {
     [threads, shareConversationId],
   );
   const synthAddressBookThreads = useMemo(() => {
-    // Address Book: Custom GPTs only (Zen is a nav item, not an address book contact)
-    // Lin is excluded - she's the GPTCreator create tab agent/undertone stabilizer
-    // Zen is excluded - it's a system-level nav item now
+    console.log(`📊 [Layout] Address Book inputs: threads=${threads.length}, userGPTs=${userGPTs.length}`, {
+      threadConstructIds: threads.filter(t => t.constructId).map(t => t.constructId),
+      gptCallsigns: userGPTs.map(g => g.constructCallsign),
+    });
     const EXCLUDED_CONSTRUCTS = ['lin-001', 'zen-001', 'zen', 'lin', 'synth-001', 'synth'];
     
     // Get threads that have a constructId (excluding system constructs)

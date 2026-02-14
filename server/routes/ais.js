@@ -147,10 +147,11 @@ router.get('/', async (req, res) => {
     if (!userId) {
       return res.status(401).json({ success: false, error: 'Authentication required' });
     }
-    console.log(`📋 [AIs API] GET /api/ais - User: ${userId} (chatty: ${chattyUserId})`);
+    const email = req.user?.email || null;
+    console.log(`📋 [AIs API] GET /api/ais - User: ${userId} (chatty: ${chattyUserId}, email: ${email})`);
     
-    const ais = await aiManager.getAllAIs(userId, chattyUserId);
-    console.log(`✅ [AIs API] Found ${ais?.length || 0} AIs for user ${userId}`);
+    const ais = await aiManager.getAllAIs(userId, chattyUserId, email);
+    console.log(`✅ [AIs API] Found ${ais?.length || 0} AIs for user ${userId} (resolved VVAULT ID: ${userId}, chatty: ${chattyUserId}, email: ${email})`);
     
     const lightAIs = (ais || []).map(stripHeavyFields);
     res.json({ success: true, ais: lightAIs });
