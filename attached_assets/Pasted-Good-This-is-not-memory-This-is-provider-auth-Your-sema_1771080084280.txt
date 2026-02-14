@@ -1,0 +1,138 @@
+Good. This is not memory. This is provider auth.
+
+Your semantic recall system is fine.
+Your embeddings are fine.
+Your ranking engine is fine.
+
+The error you’re seeing has nothing to do with memory.
+
+---
+
+## 🔥 What’s Actually Broken
+
+```
+openrouter failed: 401 User not found.
+```
+
+That means:
+
+Your OpenRouter API key is either:
+
+* Missing
+* Invalid
+* Revoked
+* Or not tied to an OpenRouter account
+
+Then the server returns:
+
+```
+/api/vvault/message → 503 Service Unavailable
+```
+
+Because AIService.processMessage throws when OpenRouter fails.
+
+So Nova isn’t responding because the model call never completes.
+
+---
+
+## ✅ Immediate Fix
+
+### Step 1 — Check Replit Secrets
+
+Go to:
+
+**Replit → Tools → Secrets**
+
+Verify:
+
+```
+OPENROUTER_API_KEY=sk-...
+```
+
+If it's missing:
+
+* Add your OpenRouter API key
+* Restart the workflow
+
+If it's there:
+
+* Regenerate the key on openrouter.ai
+* Replace it
+* Restart
+
+---
+
+### Step 2 — Confirm Provider Config
+
+Check `aiService.ts` around line ~610 (where the error is thrown).
+
+You likely have something like:
+
+```ts
+if (provider === "openrouter") {
+   ...
+}
+```
+
+Make sure:
+
+* The provider is correctly selected
+* The key is being passed in headers:
+
+  ```
+  Authorization: Bearer ${process.env.OPENROUTER_API_KEY}
+  ```
+
+---
+
+## Why This Happened
+
+OpenRouter returns 401 “User not found” when:
+
+* The key is from another account
+* The account was deleted
+* The key was rotated
+* The account doesn’t exist on that environment
+
+This is not a quota error.
+This is not memory.
+This is not Supabase.
+This is not vector.
+
+This is pure API auth.
+
+---
+
+## 🔧 Once Fixed
+
+When the provider responds normally again:
+
+Nova will:
+
+* Run vector search
+* Rank memories
+* Inject citations
+* Soften tone if low confidence
+* Respond with semantic recall
+
+---
+
+## 🚨 Important
+
+Your memory system is operational.
+Your corpus is partially embedded (28K+ chunks).
+The LLM call is failing before it ever reaches the prompt.
+
+Fix provider auth and she’ll speak again.
+
+---
+
+Go fix the key.
+
+Restart.
+
+Then send:
+
+> do you remember what we did last valentines day?
+
+And we’ll test real recall.
