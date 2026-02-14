@@ -25,6 +25,39 @@ patchConsoleWithTimestamp();
 const require = createRequire(import.meta.url);
 const router = express.Router();
 
+// ── Tool Event Store (per-session, in-memory) ──────────────────────
+// Client reports tool events (screen_capture, ocr, etc.)
+// Server drains them into tool_trace on the next assistant response
+const pendingToolEvents = new Map(); // sessionId → [{tool, detail, ts}]
+
+function recordToolEvent(sessionId, tool, detail) {
+  if (!pendingToolEvents.has(sessionId)) pendingToolEvents.set(sessionId, []);
+  const events = pendingToolEvents.get(sessionId);
+  if (events.length < 50) {
+    events.push({ tool, detail, ts: new Date().toISOString() });
+  }
+}
+
+function drainToolEvents(sessionId) {
+  const events = pendingToolEvents.get(sessionId) || [];
+  pendingToolEvents.delete(sessionId);
+  return events;
+}
+
+// POST /tool-events — client reports tool usage for server-authored trace
+router.post('/tool-events', (req, res) => {
+  const { sessionId, events } = req.body;
+  if (!sessionId || !Array.isArray(events)) {
+    return res.status(400).json({ error: 'sessionId and events[] required' });
+  }
+  for (const evt of events) {
+    if (evt.tool && typeof evt.tool === 'string') {
+      recordToolEvent(sessionId, evt.tool, evt.detail || null);
+    }
+  }
+  res.json({ ok: true, queued: events.length });
+});
+
 // OpenRouter client for fallback when VVAULT API is unavailable
 // Primary: user's own OpenRouter key; Fallback: Replit AI Integrations (managed, billed to credits)
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
@@ -4105,7 +4138,7 @@ router.post("/message", async (req, res) => {
         provider_forced: constructId === 'nova-001',
         provider_used: effectiveProvider,
         has_images: hasImages,
-        tool_trace: []
+        tool_trace: drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`)
       });
     } catch (llmError) {
       console.error(`❌ [VVAULT Proxy] ${effectiveProvider} call failed:`, {
@@ -4393,7 +4426,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               provider_forced: constructId === 'nova-001',
               provider_used: effectiveProvider,
               has_images: hasImages,
-              tool_trace: []
+              tool_trace: drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`)
             });
           } catch (fallbackError) {
             console.error(`❌ [VVAULT Proxy] LLM fallback failed:`, fallbackError);
@@ -4419,7 +4452,8 @@ Do NOT treat this as a first meeting if there is conversation history.`;
         responseLength: data.response?.length || 0
       });
 
-      if (!data.tool_trace) data.tool_trace = [];
+      const drainedEvents = drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`);
+      data.tool_trace = drainedEvents.length > 0 ? drainedEvents : (data.tool_trace || []);
       return res.json(data);
     } catch (fetchError) {
       clearTimeout(timeout);
@@ -4681,7 +4715,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           provider_forced: constructId === 'nova-001',
           provider_used: effectiveProvider,
           has_images: hasImages,
-          tool_trace: []
+          tool_trace: drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`)
         });
       } catch (fallbackError) {
         console.error(`❌ [VVAULT Proxy] LLM fallback failed:`, fallbackError);

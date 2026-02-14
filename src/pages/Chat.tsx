@@ -14,6 +14,7 @@ import { getUserId } from "../lib/auth";
 import MessageBar, { ImageAttachment } from "../components/MessageBar";
 import { prepareMessageContent, stripDateLines } from "../utils/text";
 import GPTCreator from "../components/GPTCreator";
+import WatchWithNova from "../components/WatchWithNova";
 import { AIService } from "../lib/aiService";
 import type { GPTConfig } from "../lib/gptService";
 
@@ -417,6 +418,7 @@ export default function Chat() {
   const [gptCreatorConfig, setGptCreatorConfig] = useState<GPTConfig | null>(null);
   const [gptCreatorInitialMessage, setGptCreatorInitialMessage] = useState<string | null>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const lastOcrContextRef = useRef<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [zenMarkdown, setZenMarkdown] = useState<string | null>(null);
@@ -479,6 +481,10 @@ export default function Chat() {
     ? threadId?.split("_chat_with_")[0]?.replace(/-\d+$/, "")?.charAt(0).toUpperCase() +
     threadId?.split("_chat_with_")[0]?.replace(/-\d+$/, "")?.slice(1)
     : null;
+
+  const isNovaSessionThread = Boolean(
+    threadId && threadId.startsWith("nova-001_chat_with_"),
+  );
 
   const isSystemConstructThread = isZenSessionThread || isLinSessionThread;
   const isCanonicalThread = isSystemConstructThread || isGPTSessionThread;
@@ -1965,13 +1971,32 @@ export default function Chat() {
         </div>
       )}
 
+      {/* Watch with Nova */}
+      {isNovaSessionThread && (
+        <div className="px-4 pt-2 flex-shrink-0">
+          <WatchWithNova
+            sessionId={thread?.id || threadId || ''}
+            onContextUpdate={(ocrText: string) => {
+              lastOcrContextRef.current = ocrText;
+              console.log('[WatchWithNova] Context update stored:', ocrText.slice(0, 80));
+            }}
+            isActive={isNovaSessionThread}
+          />
+        </div>
+      )}
+
       <div className="p-4 border-t flex-shrink-0" style={{ borderColor: "var(--chatty-bg-main)" }}>
         <MessageBar
           onSubmit={(messageText, messageFiles, imageAttachments) => {
             if (thread) {
               setUserHasInteracted(true);
+              let finalText = messageText;
+              if (isNovaSessionThread && lastOcrContextRef.current) {
+                finalText = `${lastOcrContextRef.current}\n\n${messageText}`;
+                lastOcrContextRef.current = '';
+              }
               console.log(`📸 [Chat.tsx] Sending message with ${imageAttachments?.length || 0} images`);
-              onSendMessage(thread.id, messageText, messageFiles || [], imageAttachments);
+              onSendMessage(thread.id, finalText, messageFiles || [], imageAttachments);
             }
           }}
           placeholder={`Message ${canonicalConstructName || "Chatty"}…`}

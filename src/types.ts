@@ -83,6 +83,7 @@ export interface ChatAreaProps {
   onSendMessage: (message: Message) => void
   onNewConversation: () => void
   onToggleSidebar: () => void
+  constructId?: string
 }
 
 export interface SidebarProps {

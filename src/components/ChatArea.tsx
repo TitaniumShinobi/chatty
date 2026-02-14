@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, Menu, Plus, Paperclip, X, ChevronDown } from 'lucide-react'
 import { ChatAreaProps } from '../types'
 import MessageComponent from './Message.tsx'
+import WatchWithNova from './WatchWithNova'
 import { cn } from '../lib/utils'
 import ActionMenu from './ActionMenu'
 import ImageAttachmentPreview from './ImageAttachmentPreview'
@@ -22,8 +23,10 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   activeGPTName,
   onSendMessage,
   onNewConversation,
-  onToggleSidebar
+  onToggleSidebar,
+  constructId
 }) => {
+  const isNova = constructId === 'nova-001' || conversation?.id?.includes('nova-001');
   const [inputValue, setInputValue] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const [typingTimeout, setTypingTimeout] = useState<ReturnType<typeof setTimeout> | null>(null)
@@ -33,6 +36,12 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [userHasInteracted, setUserHasInteracted] = useState(false)
+  const lastOcrContextRef = useRef<string>('')
+
+  const handleOcrContextUpdate = useCallback((ocrText: string) => {
+    lastOcrContextRef.current = ocrText;
+    console.log('[WatchWithNova] Context update received:', ocrText.slice(0, 100));
+  }, []);
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -123,10 +132,16 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       }))
     );
 
+    let messageContent = inputValue.trim();
+    if (isNova && lastOcrContextRef.current) {
+      messageContent = `${lastOcrContextRef.current}\n\n${messageContent}`;
+      lastOcrContextRef.current = '';
+    }
+
     const userMessage = {
       id: Date.now().toString(),
       role: 'user' as const,
-      content: inputValue.trim(),
+      content: messageContent,
       timestamp: new Date().toISOString(),
       files: docFiles,
       attachments: imageAttachments
@@ -561,6 +576,19 @@ const ChatArea: React.FC<ChatAreaProps> = ({
           >
             <ChevronDown size={20} />
           </button>
+        </div>
+      )}
+
+      {/* Watch with Nova */}
+      {isNova && (
+        <div className="px-4 pt-2">
+          <div className="max-w-4xl mx-auto">
+            <WatchWithNova
+              sessionId={conversation?.id || ''}
+              onContextUpdate={handleOcrContextUpdate}
+              isActive={isNova}
+            />
+          </div>
         </div>
       )}
 
