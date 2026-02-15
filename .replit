@@ -76,7 +76,7 @@ exposeLocalhost = true
 [deployment]
 deploymentTarget = "autoscale"
 run = ["bash", "-c", "NODE_ENV=production node server/server.js"]
-build = ["bash", "-c", "npm install --include=dev && npx vite build"]
+build = ["bash", "-c", "NODE_ENV=development npm install && npm run build"]
 
 [userenv]
 
