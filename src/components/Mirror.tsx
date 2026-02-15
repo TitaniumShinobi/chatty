@@ -233,17 +233,10 @@ const Mirror: React.FC<MirrorProps> = ({ sessionId, config, onContextUpdate, onS
   useEffect(() => {
     if (config && !streamRef.current) {
       startCapture(config);
-    } else if (!config && streamRef.current) {
+    } else if (!config) {
       cleanup();
     }
   }, [config, startCapture, cleanup]);
-
-  if (typeof window !== 'undefined') {
-    (window as any).__mirrorControls = {
-      ...(window as any).__mirrorControls,
-      stop: cleanup,
-    };
-  }
 
   return null;
 };
