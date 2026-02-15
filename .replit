@@ -75,7 +75,7 @@ exposeLocalhost = true
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["node", "server/server.js"]
+run = ["sh", "-c", "NODE_ENV=production node server/server.js"]
 build = ["npm", "run", "build"]
 
 [userenv]
