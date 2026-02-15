@@ -163,13 +163,10 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       // Handle non-file actions
       switch (action) {
         case 'web-search':
-          console.log('Web search mode activated');
           break;
         case 'deep-research':
-          console.log('Deep research mode activated');
           break;
         case 'create-image':
-          console.log('Image creation mode activated');
           break;
         case 'mirror':
           if ((window as any).__mirrorControls?.openSetup) {
@@ -177,7 +174,6 @@ const ChatArea: React.FC<ChatAreaProps> = ({
           }
           break;
         default:
-          console.log(`Action: ${action}`);
       }
       return;
     }
@@ -287,7 +283,6 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         } as import('../types').AssistantMsg
         onSendMessage(successMessage)
 
-        console.log(`✅ ${actionMessage} completed for ${file.name}`);
         setParsingProgress(prev => ({ ...prev, [file.name]: 100 }));
       } catch (error: any) {
         console.error(`❌ Error processing file ${file.name}:`, error);
@@ -373,7 +368,6 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     
     // Log image attachments (no parsing needed)
     if (imageFiles.length > 0) {
-      console.log(`📷 Attached ${imageFiles.length} image(s): ${imageFiles.map(f => f.name).join(', ')}`);
     }
     
     // Only parse documents, not images
@@ -407,7 +401,6 @@ const ChatArea: React.FC<ChatAreaProps> = ({
           } as import('../types').AssistantMsg
           onSendMessage(successMessage)
           
-          console.log(`✅ Parsed ${file.type} ${file.name} (${parsedContent.extractedText.length} characters)`);
           setParsingProgress(prev => ({ ...prev, [file.name]: 100 }));
         } catch (error: any) {
           console.error(`❌ Error processing file ${file.name}:`, error);

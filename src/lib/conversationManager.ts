@@ -34,7 +34,6 @@ export class ConversationManager {
    * 1. BACKUP ALL LOCALSTORAGE TO DISK
    */
   async backupAllLocalStorage(): Promise<void> {
-    console.log('💾 Creating localStorage backup...');
     
     const allData: Record<string, string> = {};
     
@@ -59,7 +58,6 @@ export class ConversationManager {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     
-    console.log('✅ localStorage backup created and downloaded');
   }
 
   /**
@@ -68,8 +66,6 @@ export class ConversationManager {
   async migrateConversations(user: User): Promise<ConversationThread[]> {
     // Handle missing user.sub by using fallback ID
     const userId = user.sub || user.id || user.email || 'unknown';
-    console.log(`🔄 Migrating conversations for user: ${user.email} (ID: ${userId})`);
-    console.log('User object for migration:', user);
     
   const newKey = `chatty:threads:${userId}`;
   // We intentionally DO NOT create localStorage backups here to avoid
@@ -92,19 +88,16 @@ export class ConversationManager {
       if (data && data.length > 10) {
         oldData = data;
         sourceKey = source;
-        console.log(`📦 Found data in ${source}: ${data.length} characters`);
         break;
       }
     }
     
     if (!oldData) {
-      console.log('ℹ️ No old conversations found to migrate');
       return [];
     }
     
     // Check if already migrated
     if (localStorage.getItem(newKey)) {
-      console.log('ℹ️ Conversations already migrated for this user');
       try {
         return JSON.parse(localStorage.getItem(newKey) || '[]');
       } catch (e) {
@@ -142,7 +135,6 @@ export class ConversationManager {
       
       // Migrate to user-specific storage
       localStorage.setItem(newKey, JSON.stringify(oldThreads));
-      console.log(`✅ Migrated ${oldThreads.length} conversations from ${sourceKey} to ${newKey}`);
       
       // Show success message
       this.showMigrationSuccess(user, oldThreads.length);
@@ -160,7 +152,6 @@ export class ConversationManager {
   async loadUserConversations(user: User): Promise<ConversationThread[]> {
     // Handle missing user.sub by using fallback ID
     const userId = getUserId(user);
-    console.log(`📂 Loading conversations for user: ${user.email} (ID: ${userId})`);
     
     const userKey = `chatty:threads:${userId}`;
     
@@ -170,7 +161,6 @@ export class ConversationManager {
     try {
       const backendThreads = await this.loadFromBackend(user);
       if (backendThreads.length > 0) {
-        console.log(`✅ Loaded ${backendThreads.length} conversations from backend`);
         
   // Cache only recent conversations locally (last 10). Use a safe
   // setter that checks size and quota before attempting to write.
@@ -191,7 +181,6 @@ export class ConversationManager {
       try {
         const threads = JSON.parse(existingData);
         if (Array.isArray(threads) && threads.length > 0) {
-          console.log(`✅ Loaded ${threads.length} conversations from localStorage cache`);
           return threads;
         }
       } catch (error) {
@@ -200,7 +189,6 @@ export class ConversationManager {
     }
     
     // LAST RESORT: Attempt migration (but don't store backups)
-    console.log('🔍 No conversations found, attempting migration...');
     return await this.migrateConversations(user);
   }
 
@@ -225,7 +213,6 @@ export class ConversationManager {
   // removed to free any space they may be consuming.
   this.cleanupAllBackups(userId);
       
-      console.log(`💾 Saved ${threads.length} conversations to localStorage only (backend sync disabled)`);
     } catch (error) {
       console.error('❌ Failed to save conversations:', error);
       // Don't throw error to prevent app crash
@@ -255,7 +242,6 @@ export class ConversationManager {
         throw new Error(result.error || 'Backend save failed');
       }
       
-      console.log('☁️ Conversations saved to backend');
     } catch (error) {
       console.warn('⚠️ Backend save failed, using localStorage only:', error);
       // Don't throw error - localStorage is still working
@@ -277,7 +263,6 @@ export class ConversationManager {
         throw new Error(data.error || 'Backend load failed');
       }
       
-      console.log('☁️ Conversations loaded from backend');
       return data.conversations || [];
     } catch (error) {
       console.warn('⚠️ Backend load failed, using localStorage:', error);
@@ -339,10 +324,8 @@ export class ConversationManager {
 
       keysToRemove.forEach(key => {
         localStorage.removeItem(key);
-        console.log(`🗑️ Cleaned up backup: ${key}`);
       });
 
-      console.log(`🧹 Cleaned up ${keysToRemove.length} backup files (legacy) for user ${userId}`);
     } catch (error) {
       console.error('Failed to cleanup backups:', error);
     }
@@ -361,7 +344,6 @@ export class ConversationManager {
       const settingsKey = `chatty:settings:${userId}`;
       localStorage.removeItem(settingsKey);
 
-      console.log(`🧹 Cleared user data for: ${userId}`);
     } catch (error) {
       console.error('Failed to clear user data:', error);
     }
@@ -527,7 +509,7 @@ export class ConversationManager {
     }
 
     toRemove.forEach(k => {
-      try { localStorage.removeItem(k); console.log(`🗑️ Emergency cleanup: removed ${k}`); } catch (e) { /* noop */ }
+      try { localStorage.removeItem(k);  } catch (e) { /* noop */ }
     });
   }
 

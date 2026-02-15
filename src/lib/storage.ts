@@ -33,11 +33,8 @@ export class StorageManager {
   // Save all data with error handling and validation
   saveData(data: Partial<StorageData>): boolean {
     try {
-      console.log('💾 StorageManager: Starting save operation')
-      console.log('💾 Data to save:', data)
       
       const existingData = this.loadData();
-      console.log('💾 Existing data:', existingData)
       
       const newData: StorageData = {
         ...existingData,
@@ -46,18 +43,15 @@ export class StorageManager {
         version: this.VERSION
       };
 
-      console.log('💾 Combined data:', newData)
 
       // Always try to save, even if validation fails
       const jsonData = JSON.stringify(newData);
-      console.log('💾 JSON data length:', jsonData.length)
       
       localStorage.setItem(this.STORAGE_KEY, jsonData);
       
       // Also save to sessionStorage as backup
       sessionStorage.setItem(this.STORAGE_KEY, jsonData);
       
-      console.log('💾 Data saved successfully to localStorage and sessionStorage:', new Date().toISOString());
       
       // Log validation result but don't fail the save
       if (!this.validateData(newData)) {
@@ -75,27 +69,21 @@ export class StorageManager {
   // Load data with fallback and recovery
   loadData(): StorageData {
     try {
-      console.log('📂 StorageManager: Starting load operation')
       
       // Try localStorage first
       const localStorageData = localStorage.getItem(this.STORAGE_KEY);
-      console.log('📂 localStorage data exists:', !!localStorageData)
       
       if (localStorageData) {
         try {
           const data = JSON.parse(localStorageData);
-          console.log('📂 Parsed localStorage data:', data)
           
           // Try to use the data even if validation fails
           if (this.validateData(data)) {
-            console.log('📂 localStorage data is valid, returning it')
             return data;
           } else {
-            console.log('📂 localStorage data validation failed, but trying to use it anyway')
             // Try to repair the data
             const repairedData = this.repairData(data);
             if (repairedData) {
-              console.log('📂 Data repaired successfully')
               return repairedData;
             }
           }
@@ -106,23 +94,18 @@ export class StorageManager {
 
       // Try sessionStorage as backup
       const sessionStorageData = sessionStorage.getItem(this.STORAGE_KEY);
-      console.log('📂 sessionStorage data exists:', !!sessionStorageData)
       
       if (sessionStorageData) {
         try {
           const data = JSON.parse(sessionStorageData);
-          console.log('📂 Parsed sessionStorage data:', data)
           
           if (this.validateData(data)) {
             // Restore to localStorage
             localStorage.setItem(this.STORAGE_KEY, sessionStorageData);
-            console.log('📂 sessionStorage data is valid, restored to localStorage')
             return data;
           } else {
-            console.log('📂 sessionStorage data validation failed, but trying to use it anyway')
             const repairedData = this.repairData(data);
             if (repairedData) {
-              console.log('📂 Data repaired successfully from sessionStorage')
               return repairedData;
             }
           }
@@ -132,7 +115,6 @@ export class StorageManager {
       }
 
       // Return default data if nothing valid found
-      console.log('📂 No valid data found, returning default data')
       return this.getDefaultData();
     } catch (error) {
       console.error('📂 Error loading data:', error);
@@ -228,20 +210,16 @@ export class StorageManager {
 
   // Validate data structure - more lenient for better compatibility
   private validateData(data: any): data is StorageData {
-    console.log('🔍 Validating data:', data)
     
     if (!data || typeof data !== 'object') {
-      console.log('🔍 Validation failed: data is not an object')
       return false;
     }
     
     // Basic structure validation - be more lenient
     if (data.conversations !== undefined && !Array.isArray(data.conversations)) {
-      console.log('🔍 Validation failed: conversations not an array')
       return false;
     }
     if (data.personalities !== undefined && !Array.isArray(data.personalities)) {
-      console.log('🔍 Validation failed: personalities not an array')
       return false;
     }
     
@@ -249,17 +227,14 @@ export class StorageManager {
     if (Array.isArray(data.conversations)) {
       for (const conversation of data.conversations) {
         if (!conversation || typeof conversation !== 'object') {
-          console.log('🔍 Validation failed: conversation is not an object:', conversation)
           return false;
         }
         // Only require id and title, messages can be undefined initially
         if (!conversation.id || !conversation.title) {
-          console.log('🔍 Validation failed: conversation missing id or title:', conversation)
           return false;
         }
         // Ensure messages is an array if it exists
         if (conversation.messages !== undefined && !Array.isArray(conversation.messages)) {
-          console.log('🔍 Validation failed: conversation messages not an array:', conversation)
           return false;
         }
       }
@@ -271,24 +246,22 @@ export class StorageManager {
         // Handle case where personality is stored as array [id, object] instead of just object
         const personalityObj = Array.isArray(personality) ? personality[1] : personality;
         
-        if (!personalityObj || typeof personalityObj !== 'object') {console.log('🔍 Validation failed: personality is not an object:', personality)
+        if (!personalityObj || typeof personalityObj !== 'object') {
           return false;
         }
         // Only require id and name, instructions can be optional
-        if (!personalityObj.id || !personalityObj.name) {console.log('🔍 Validation failed: personality missing id or name:', personality)
+        if (!personalityObj.id || !personalityObj.name) {
           return false;
         }
       }
     }
     
-    console.log('🔍 Data validation passed')
     return true;
   }
 
   // Repair corrupted or incomplete data
   private repairData(data: any): StorageData | null {
     try {
-      console.log('🔧 Attempting to repair data:', data)
       
       const defaultData = this.getDefaultData();
       const repairedData: StorageData = { ...defaultData };
@@ -329,7 +302,6 @@ export class StorageManager {
         };
       }
       
-      console.log('🔧 Data repair completed:', repairedData)
       return repairedData;
     } catch (error) {
       console.error('🔧 Data repair failed:', error);
@@ -408,7 +380,6 @@ export class StorageManager {
     // Auto-save every 30 seconds
     this.autoSaveInterval = setInterval(() => {
       // This will be called by the app when data changes
-      console.log('Auto-save check:', new Date().toISOString());
     }, 30000);
   }
 
@@ -422,20 +393,11 @@ export class StorageManager {
 
   // Debug function to test storage
   debugStorage(): void {
-    console.log('🔍 === STORAGE DEBUG ===')
-    console.log('localStorage key exists:', !!localStorage.getItem(this.STORAGE_KEY))
-    console.log('sessionStorage key exists:', !!sessionStorage.getItem(this.STORAGE_KEY))
     
     const data = this.loadData()
-    console.log('Loaded data:', data)
-    console.log('Conversations count:', data.conversations?.length || 0)
-    console.log('Active conversation ID:', data.activeConversationId)
     
     if (data.conversations?.length > 0) {
-      console.log('First conversation:', data.conversations[0])
-      console.log('First conversation messages:', data.conversations[0].messages?.length || 0)
     }
     
-    console.log('🔍 === END DEBUG ===')
   }
 }

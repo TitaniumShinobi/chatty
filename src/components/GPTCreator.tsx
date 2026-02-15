@@ -510,9 +510,6 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
             if (data.transcripts) {
               setAllTranscripts(data.transcripts);
             }
-            console.log(
-              `📚 [Transcripts] Loaded ${data.transcripts?.length || 0} existing transcripts for ${constructId}`,
-            );
           }
         }
       } catch (err) {
@@ -559,32 +556,19 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
       if (avatarUrl && avatarUrl.startsWith("/api/")) {
         try {
-          console.log(`🖼️ [GPTCreator] Loading avatar blob from: ${avatarUrl}`);
           const response = await fetch(avatarUrl, {
             credentials: "include",
             mode: "cors",
-          });
-          console.log(`🖼️ [GPTCreator] Avatar fetch response:`, {
-            status: response.status,
-            statusText: response.statusText,
-            ok: response.ok,
           });
 
           if (isCancelled) return;
 
           if (response.ok) {
             const blob = await response.blob();
-            console.log(`🖼️ [GPTCreator] Avatar blob created:`, {
-              size: blob.size,
-              type: blob.type,
-            });
             if (!isCancelled) {
               const blobUrl = URL.createObjectURL(blob);
               currentBlobUrl = blobUrl;
               setAvatarBlobUrl(blobUrl);
-              console.log(
-                `✅ [GPTCreator] Avatar blob URL set: ${blobUrl.substring(0, 50)}...`,
-              );
             } else {
               URL.revokeObjectURL(URL.createObjectURL(blob));
             }
@@ -888,17 +872,14 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       try {
         const user = await fetchMe().catch(() => null);
         if (!user) {
-          console.log("📚 [Lin] No user, skipping conversation load");
           return;
         }
         
         const userEmail = user.email;
         if (!userEmail) {
-          console.log("📚 [Lin] No user email, skipping conversation load");
           return;
         }
         
-        console.log("📚 [Lin] Loading conversation from Supabase vault_files...");
         
         // Load Lin's canonical conversation from Supabase via VVAULT API
         const response = await fetch("/api/vvault/conversations", {
@@ -915,14 +896,6 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         const conversations = data.conversations || [];
         
         // Debug: Log all available conversations to help troubleshoot
-        console.log(`📚 [Lin] Available conversations (${conversations.length}):`, 
-          conversations.map((c: any) => ({
-            sessionId: c.sessionId,
-            constructId: c.constructId,
-            title: c.title,
-            messageCount: c.messages?.length || 0
-          }))
-        );
         
         // Find Lin's canonical conversation using exact sessionId matching
         // The canonical sessionId follows the pattern: {constructId}_chat_with_{constructId}
@@ -936,7 +909,6 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         );
         
         if (linConversation && linConversation.messages?.length > 0) {
-          console.log(`✅ [Lin] Loaded ${linConversation.messages.length} messages from canonical conversation (sessionId: ${linConversation.sessionId})`);
           
           // Convert to createMessages format
           const loadedMessages = linConversation.messages.map((msg: any) => ({
@@ -947,8 +919,6 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
           
           setCreateMessages(loadedMessages);
         } else {
-          console.log("📚 [Lin] No existing conversation found in vault_files, starting fresh");
-          console.log("💡 [Lin] New messages will be saved to instances/lin/chatty/chat_with_lin-001.md");
         }
       } catch (error) {
         console.error("❌ [Lin] Error loading conversation:", error);
@@ -1002,7 +972,6 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   // Save preview conversation to construct's transcript in Supabase
   const savePreviewConversation = async () => {
     if (previewMessages.length === 0 || !config.constructCallsign) {
-      console.log('[GPTCreator] No preview messages to save or missing callsign');
       onClose();
       return;
     }
@@ -1034,7 +1003,6 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         const error = await response.json();
         console.error('[GPTCreator] Failed to save preview:', error);
       } else {
-        console.log(`[GPTCreator] Saved ${previewMessages.length} preview messages to transcript`);
       }
     } catch (error) {
       console.error('[GPTCreator] Error saving preview conversation:', error);
@@ -1365,7 +1333,6 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         : await (service as GPTService).uploadZip(gptId, zipFile);
 
       setUploadProgress(null);
-      console.log(`[GPTCreator] ZIP upload complete: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped, ${result.failed} failed`);
 
       if (result.errors && result.errors.length > 0) {
         console.warn('[GPTCreator] ZIP upload errors:', result.errors);
@@ -1598,9 +1565,6 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
           try {
             const zip = await JSZip.loadAsync(file);
             const entries = Object.keys(zip.files);
-            console.log(
-              `📦 [Zip Upload] Extracting ${entries.length} entries from ${file.name}`,
-            );
             for (const entryName of entries) {
               const zipEntry = zip.files[entryName];
               if (zipEntry.dir) continue;
@@ -1691,7 +1655,6 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
                 path,
               });
               if (result.isPdfPlaceholder) {
-                console.log(`ℹ️ PDF ${file.name}: ${result.message}`);
               }
             } else {
               console.warn(`Failed to extract PDF: ${file.name}`);
@@ -1757,9 +1720,6 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
                 `Saved ${saveResult.saved} transcripts. ${saveResult.failed.length} failed to save.`,
               );
             } else {
-              console.log(
-                `✅ Saved ${saveResult.saved} transcripts for ${constructId}`,
-              );
             }
           }
         } catch (saveError) {
@@ -1984,7 +1944,6 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         console.warn("[GPTCreator] Failed to refresh transcript list after folder upload:", refreshErr);
       }
 
-      console.log(`[GPTCreator] Folder upload complete: ${savedTotal} saved, ${failedTotal} failed, ${skippedFiles.length} skipped`);
 
       setFolderUploadProgress(null);
 
@@ -2518,7 +2477,6 @@ Assistant:`;
               metadata: linMetadata,
             }),
           });
-          console.log("✅ [Lin] Saved message pair to canonical vault_files");
         } else {
           console.warn("⚠️ [Lin] Failed to save to vault_files:", saveResponse.statusText);
         }
@@ -2688,9 +2646,6 @@ Previous conversation:\n[...earlier messages truncated...]\n${truncatedContext}
 User: ${userMessage}
 
 Assistant:`;
-          console.log(
-            `✅ [GPTCreator] Prompt truncated from ${fullPrompt.length + conversationContext.length - truncatedContext.length} to ${fullPrompt.length} chars`,
-          );
         }
 
         // Final safety check: if still too long, truncate system prompt minimally
@@ -3391,7 +3346,6 @@ ALWAYS:
     }
 
     if (Object.keys(updates).length > 0) {
-      console.log("📋 [GPTCreator] Extracted config from conversation:", updates);
       setConfig((prev) => ({ ...prev, ...updates }));
     }
 
@@ -4919,10 +4873,6 @@ ALWAYS:
 
                                     if (response.ok) {
                                       const data = await response.json();
-                                      console.log(
-                                        `🗂️ [ContinuityGPT] Auto-organize result:`,
-                                        data,
-                                      );
 
                                       // Refresh transcript list
                                       const listResponse = await fetch(
@@ -4972,10 +4922,6 @@ ALWAYS:
                               <TranscriptFolderTree
                                 transcripts={allTranscripts}
                                 onFileClick={(file) => {
-                                  console.log(
-                                    "📄 [Transcripts] File clicked:",
-                                    file.name,
-                                  );
                                 }}
                               />
                             </div>
@@ -5299,7 +5245,6 @@ ALWAYS:
                       }
                       constructName={config.name || "Construct"}
                       onIdentityForged={(result) => {
-                        console.log("[GPTCreator] Identity forged:", result);
                         if (result.identityFiles?.["prompt.txt"]) {
                           setConfig((prev) => ({
                             ...prev,

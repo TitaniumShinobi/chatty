@@ -18,14 +18,12 @@ export function migrateConversations(userId: string): boolean {
     // Check if legacy data exists
     const legacyData = localStorage.getItem(legacyKey);
     if (!legacyData) {
-      console.log('ℹ️ No legacy conversations found to migrate');
       return false;
     }
     
     // Check if user-specific data already exists
     const existingUserData = localStorage.getItem(newKey);
     if (existingUserData) {
-      console.log('ℹ️ User-specific conversations already exist, skipping migration');
       return false;
     }
     
@@ -38,7 +36,6 @@ export function migrateConversations(userId: string): boolean {
     
     // Migrate to user-specific storage
     localStorage.setItem(newKey, legacyData);
-    console.log(`✅ Migrated ${threads.length} conversations to ${newKey}`);
     
   // Note: we intentionally avoid creating timestamped localStorage
   // backups to prevent quota exhaustion. Operators who need a full
@@ -122,7 +119,6 @@ export function cleanupOldBackups(): void {
     const toRemove = backupKeys.slice(3);
     toRemove.forEach(key => {
       localStorage.removeItem(key);
-      console.log(`🗑️ Removed old backup: ${key}`);
     });
   }
 }
@@ -135,7 +131,6 @@ export async function migrateUserData(user: User): Promise<boolean> {
   // 🚨 CRITICAL: Abort if user.sub is undefined
   if (!user.sub) {
     console.error('❌ Migration aborted: user.sub is undefined');
-    console.log('User object:', user);
     return false;
   }
 
@@ -145,20 +140,17 @@ export async function migrateUserData(user: User): Promise<boolean> {
   const backupKey = 'chatty:threads:backup';
   const migrationRecordKey = `chatty:migration:${userId}:${Date.now()}`;
 
-  console.log(`🔄 Starting surgical migration for user: ${user.email} (${userId})`);
 
   try {
     // Step 1: Check if legacy data exists
     const legacyData = localStorage.getItem(legacyKey);
     if (!legacyData) {
-      console.log('ℹ️ No legacy data found, migration not needed');
       return false;
     }
 
     // Step 2: Check if user already has migrated data
     const existingUserData = localStorage.getItem(userKey);
     if (existingUserData) {
-      console.log('ℹ️ User already has migrated data, skipping migration');
       return false;
     }
 
@@ -174,16 +166,13 @@ export async function migrateUserData(user: User): Promise<boolean> {
       return false;
     }
 
-    console.log(`📦 Found ${legacyThreads.length} legacy conversations`);
 
   // Step 4: Skip backup creation - backend is the backup. Avoid
   // writing large backups into localStorage which may cause quota
   // exhaustion.
-  console.log('🛡️ Skipping backup creation to avoid localStorage quota issues');
 
     // Step 5: Migrate data to user-specific key
     localStorage.setItem(userKey, legacyData);
-    console.log(`✅ Migrated data to: ${userKey}`);
 
     // Step 6: Create migration record
     const migrationRecord = {
@@ -197,9 +186,7 @@ export async function migrateUserData(user: User): Promise<boolean> {
       status: 'completed'
     };
     localStorage.setItem(migrationRecordKey, JSON.stringify(migrationRecord));
-    console.log(`📝 Created migration record: ${migrationRecordKey}`);
 
-    console.log(`🎯 Surgical migration completed successfully for ${user.email}`);
     return true;
 
   } catch (error) {
@@ -224,7 +211,6 @@ export async function migrateUserData(user: User): Promise<boolean> {
  */
 export function runFullMigration(user: User): boolean {
   const userId = user.sub || user.email || 'unknown';
-  console.log(`🔄 Starting full migration for user: ${user.email} (${userId})`);
   
   // Create full backup first
   // WARNING: Creating full backups in localStorage can exhaust quota. We
@@ -238,9 +224,7 @@ export function runFullMigration(user: User): boolean {
   cleanupOldBackups();
   
   if (migrated) {
-    console.log('✅ Migration completed successfully');
   } else {
-    console.log('ℹ️ No migration needed');
   }
   
   return migrated;

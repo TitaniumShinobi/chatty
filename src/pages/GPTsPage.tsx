@@ -58,27 +58,14 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
         if (avatarUrl && avatarUrl.startsWith("/api/")) {
           const promise = (async () => {
             try {
-              console.log(
-                `🖼️ [AIsPage] Loading avatar blob for ${ai.id} from: ${avatarUrl}`,
-              );
               const response = await fetch(avatarUrl, {
                 credentials: "include",
                 mode: "cors",
               });
-              console.log(`🖼️ [AIsPage] Avatar fetch response for ${ai.id}:`, {
-                status: response.status,
-                statusText: response.statusText,
-                ok: response.ok,
-              });
 
               if (response.ok) {
                 const blob = await response.blob();
-                console.log(`🖼️ [AIsPage] Avatar blob created for ${ai.id}:`, {
-                  size: blob.size,
-                  type: blob.type,
-                });
                 blobMap[ai.id] = URL.createObjectURL(blob);
-                console.log(`✅ [AIsPage] Avatar blob URL set for ${ai.id}`);
               } else {
                 console.error(
                   `❌ [AIsPage] Avatar fetch failed for ${ai.id}: ${response.status} ${response.statusText}`,
@@ -96,10 +83,6 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
       }
 
       await Promise.all(blobPromises);
-      console.log(
-        `📊 [AIsPage] Loaded ${Object.keys(blobMap).length} avatar blobs:`,
-        Object.keys(blobMap),
-      );
       setAvatarBlobs(blobMap);
     };
 
@@ -193,15 +176,6 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
         }
       }
       // #endregion
-      console.log(`📊 [AIsPage] Loaded ${allAIs.length} AIs`);
-      console.log(
-        `📊 [AIsPage] AIs:`,
-        allAIs.map((a) => ({
-          id: a.id,
-          name: a.name,
-          constructCallsign: a.constructCallsign,
-        })),
-      );
       setAIs(allAIs);
     } catch (error: any) {
       // #region agent log
@@ -269,9 +243,6 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
   const handleClone = async (id: string) => {
     try {
       const clonedAI = await aiService.cloneAI(id);
-      console.log(
-        `✅ [AIsPage] Cloned AI ${id} → ${clonedAI.id} (${clonedAI.constructCallsign})`,
-      );
       // Open cloned AI in editor
       setEditingConfig(clonedAI);
       setCreatorOpen(true);
@@ -364,15 +335,6 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
             {/* AI Cards */}
             {ais.map((ai) => {
               const avatarSrc = avatarBlobs[ai.id] || ai.avatar;
-              console.log(
-                `🖼️ [AIsPage] Rendering avatar for ${ai.id} (${ai.name}):`,
-                {
-                  hasAvatar: !!ai.avatar,
-                  avatarUrl: ai.avatar,
-                  hasBlob: !!avatarBlobs[ai.id],
-                  finalSrc: avatarSrc,
-                },
-              );
 
               return (
                 <div
@@ -405,9 +367,6 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
                             : undefined
                         }
                         onLoad={() => {
-                          console.log(
-                            `✅ [AIsPage] Avatar loaded successfully for ${ai.name}`,
-                          );
                         }}
                         onError={() => {
                           console.warn(

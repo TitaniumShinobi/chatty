@@ -142,7 +142,6 @@ export default function App() {
 
     (async () => {
       try {
-        console.log("🔍 [App.tsx] Auth effect starting");
 
         // Quick backend health check with timeout (non-blocking)
         const healthCheckController = new AbortController();
@@ -161,7 +160,6 @@ export default function App() {
           if (!healthCheck.ok) {
             console.warn("⚠️ [App.tsx] Backend health check failed");
           } else {
-            console.log("✅ [App.tsx] Backend health check passed");
           }
         } catch (healthError) {
           clearTimeout(healthTimeout);
@@ -176,19 +174,13 @@ export default function App() {
         }
 
         // Check API for user session
-        console.log("⏳ [App.tsx] fetchMe() starting");
         try {
           const me = await fetchMe();
-          console.log(
-            "✅ [App.tsx] fetchMe() resolved:",
-            me ? `user: ${me.email}` : "null",
-          );
 
           if (me) {
             setUser(me);
             // Session is already stored in fetchMe()
           } else {
-            console.log("ℹ️ [App.tsx] No user session found");
             // Clear any invalid cached session
             localStorage.removeItem("auth:session");
           }
@@ -205,7 +197,6 @@ export default function App() {
         );
       } finally {
         clearTimeout(timeoutId);
-        console.log("🛑 [App.tsx] Auth effect complete - isLoading → false");
         setIsLoading(false);
       }
     })();
@@ -610,7 +601,6 @@ export default function App() {
       const currentPath = window.location.pathname;
       if (currentPath === "/" || currentPath === "") {
         hasRedirectedRef.current = true;
-        console.log("➡️ [App.tsx] User exists; redirecting to /app");
         window.location.replace("/app");
       }
     }
@@ -621,15 +611,8 @@ export default function App() {
   }, [user, isLoading]);
 
   // Debug logging at render time
-  console.log(
-    "🔍 [App.tsx] Render - isLoading:",
-    isLoading,
-    "user:",
-    user ? `${user.email} (${user.sub || "no-id"})` : "null",
-  );
 
   if (isLoading) {
-    console.log("⏳ [App.tsx] Rendering loading state");
     return (
       <div
         className="min-h-screen flex items-center justify-center"
@@ -658,7 +641,6 @@ export default function App() {
     );
   }
 
-  console.log("🔐 [App.tsx] Showing login/signup screen");
 
   // Simple login screen
   return (

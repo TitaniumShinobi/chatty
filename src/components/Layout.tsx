@@ -234,7 +234,6 @@ export default function Layout() {
   const location = useLocation();
   
   // Debug: Log URL on every render
-  console.log(`🔗 [Layout.tsx] Render - window.location.pathname: "${typeof window !== 'undefined' ? window.location.pathname : 'SSR'}", location.pathname: "${location.pathname}"`);
 
   const [threads, setThreads] = useState<Thread[]>([]);
   const [userGPTs, setUserGPTs] = useState<AIConfig[]>([]);
@@ -263,7 +262,6 @@ export default function Layout() {
   const initialPathRef = useRef(typeof window !== 'undefined' ? window.location.pathname : location.pathname);
 
   useEffect(() => {
-    console.log("📚 [Layout.tsx] Threads updated (length):", threads.length);// Expose threads to window for message recovery (if browser is still open)
     // This allows recovery from React state if server restarts before messages are saved
     if (typeof window !== "undefined") {
       (window as any).__CHATTY_THREADS__ = threads;
@@ -337,10 +335,6 @@ export default function Layout() {
     [threads, shareConversationId],
   );
   const synthAddressBookThreads = useMemo(() => {
-    console.log(`📊 [Layout] Address Book inputs: threads=${threads.length}, userGPTs=${userGPTs.length}`, {
-      threadConstructIds: threads.filter(t => t.constructId).map(t => t.constructId),
-      gptCallsigns: userGPTs.map(g => g.constructCallsign),
-    });
     const EXCLUDED_CONSTRUCTS = ['lin-001', 'zen-001', 'zen', 'lin', 'synth-001', 'synth'];
     
     // Get threads that have a constructId (excluding system constructs)
@@ -363,18 +357,14 @@ export default function Layout() {
     const gptContactCards: Thread[] = [];
     for (const gpt of userGPTs) {
       if (!gpt.constructCallsign) {
-        console.log(`⏭️ [Layout] Skipping GPT (no callsign):`, gpt.name, gpt.id);
         continue;
       }
       if (EXCLUDED_CONSTRUCTS.includes(gpt.constructCallsign)) {
-        console.log(`⏭️ [Layout] Skipping system construct: ${gpt.name} (${gpt.constructCallsign})`);
         continue;
       }
       if (existingConstructIds.has(gpt.constructCallsign)) {
-        console.log(`⏭️ [Layout] Skipping (already has thread): ${gpt.name} (${gpt.constructCallsign})`);
         continue;
       }
-      console.log(`✅ [Layout] Force-including GPT contact card: ${gpt.name} (${gpt.constructCallsign})`);
       gptContactCards.push({
         id: `${gpt.constructCallsign}_contact`,
         title: gpt.name,
@@ -401,9 +391,6 @@ export default function Layout() {
         return true;
       });
     
-    console.log(`📖 [Layout] Address Book filter: ${deduplicatedContacts.length} contacts (${conversationThreads.length} threads + ${gptContactCards.length} GPT cards, deduplicated from ${allContacts.length})`, 
-      deduplicatedContacts.map(t => ({ id: t.id, title: t.title, constructId: t.constructId, avatar: (t as any).avatar?.substring?.(0, 50) || (t as any).avatar })));
-    console.log(`🖼️ [Layout] userGPTs avatars:`, userGPTs.map(g => ({ name: g.name, constructCallsign: g.constructCallsign, avatar: g.avatar?.substring?.(0, 50) || g.avatar })));
     
     return deduplicatedContacts;
   }, [threads, userGPTs]);
@@ -556,13 +543,6 @@ export default function Layout() {
 
   // Debug logging for overlay state (must be before any conditional returns)
   useEffect(() => {
-    console.log("[Layout] hasBlockingOverlay:", hasBlockingOverlay, {
-      isSearchOpen,
-      isProjectsOpen,
-      isSettingsOpen,
-      shareConversation: Boolean(shareConversation),
-      storageFailureInfo: Boolean(storageFailureInfo),
-    });
   }, [
     hasBlockingOverlay,
     isSearchOpen,
@@ -753,9 +733,6 @@ export default function Layout() {
   useEffect(() => {
     // Prevent multiple runs - check ref first
     if (hasAuthenticatedRef.current) {
-      console.log(
-        "⏭️ [Layout.tsx] Auth effect skipped - already authenticated",
-      );
       return;
     }
 
@@ -764,7 +741,6 @@ export default function Layout() {
 
     // Also check if user is already set (from previous run)
     if (user) {
-      console.log("⏭️ [Layout.tsx] Auth effect skipped - user already set");
       hasAuthenticatedRef.current = false; // Reset so it can run if user changes
       return;
     }
@@ -784,19 +760,13 @@ export default function Layout() {
 
     (async () => {
       try {
-        console.log("🔍 [Layout.tsx] Auth effect starting");
         setIsLoading(true);
 
         const me = await fetchMe();
-        console.log(
-          "✅ [Layout.tsx] fetchMe() resolved:",
-          me ? `user: ${me.email}` : "null",
-        );
 
         if (cancelled || !me) {
           hasAuthenticatedRef.current = false;
           if (!cancelled) {
-            console.log("🚪 [Layout.tsx] No user session - redirecting to /");
             navigate("/");
             setIsLoading(false);
           }
@@ -806,7 +776,6 @@ export default function Layout() {
         setUser(me);
 
         // Load user's custom GPTs for Address Book (decoupled - updates UI independently)
-        console.log("🤖 [Layout.tsx] Loading user GPTs for Address Book...");
         let gpts: AIConfig[] = [];
         const gptsPromise = (async () => {
           try {
@@ -814,7 +783,6 @@ export default function Layout() {
             const loaded = await aiService.getAllAIs();
             if (!cancelled) {
               setUserGPTs(loaded);
-              console.log(`✅ [Layout.tsx] Loaded ${loaded.length} custom GPTs:`, loaded.map(g => g.name));
             }
             return loaded;
           } catch (gptError) {
@@ -827,10 +795,8 @@ export default function Layout() {
         try {
           gpts = await gptsPromise;
           const constructIds = ["zen-001", "lin-001", ...gpts.map((g: AIConfig) => g.constructCallsign || `${g.name.toLowerCase()}-001`)];
-          console.log("🚀 [Layout.tsx] Bootstrapping constructs:", constructIds);
           const bootstrapResult = await bootstrapConstructs(constructIds);
           if (bootstrapResult.success) {
-            console.log(`✅ [Layout.tsx] Bootstrapped ${bootstrapResult.constructs.length} constructs with master scripts`);
           } else {
             console.warn("⚠️ [Layout.tsx] Some constructs failed to bootstrap:", bootstrapResult.errors);
           }
@@ -838,18 +804,12 @@ export default function Layout() {
           console.warn("⚠️ [Layout.tsx] Master scripts bootstrap failed (non-fatal):", bootstrapError);
         }
 
-        console.log(
-          "📚 [Layout.tsx] Loading conversations from VVAULT filesystem...",
-        );
 
         // Wait for backend to be ready before making VVAULT requests
         try {
           const { waitForBackendReady } = await import("../lib/backendReady");
           await waitForBackendReady(5, (attempt) => {
             if (attempt === 1) {
-              console.log(
-                "⏳ [Layout.tsx] Waiting for backend to be ready before loading VVAULT...",
-              );
             }
           });
         } catch (error) {
@@ -864,15 +824,6 @@ export default function Layout() {
         // Use email for VVAULT lookup since user IDs might not match (Chatty uses MongoDB ObjectId, VVAULT uses LIFE format)
         const vvaultUserId = me.email || userId;
         const transcriptsPath = `${VVAULT_FILESYSTEM_ROOT}/users/shard_0000/${userId}/instances/`;
-        console.log("📁 [Layout.tsx] VVAULT root:", VVAULT_FILESYSTEM_ROOT);
-        console.log(
-          "📁 [Layout.tsx] User instances directory:",
-          transcriptsPath,
-        );
-        console.log(
-          "📁 [Layout.tsx] Using email for VVAULT lookup:",
-          vvaultUserId,
-        );
 
         // Load VVAULT conversations with timeout protection (but don't race - wait for actual result)
         let vvaultConversations: any[] = [];
@@ -892,9 +843,6 @@ export default function Layout() {
           try {
             vvaultConversations = await vvaultPromise;clearTimeout(timeoutId); // Cancel timeout if promise resolves first
             if (timeoutFired) {
-              console.log(
-                "✅ [Layout.tsx] VVAULT loading completed after timeout warning",
-              );
             }
           } catch (promiseError) {
             clearTimeout(timeoutId);
@@ -911,43 +859,14 @@ export default function Layout() {
             message.includes("ENOENT");
         }
         setIsBackendUnavailable(backendUnavailable);
-        console.log("📚 [Layout.tsx] VVAULT returned:", vvaultConversations);
 
         vvaultConversations = vvaultConversations.filter(
           (conv) => conv.constructId !== "synth-001" && conv.constructId !== "synth"
         );
 
         vvaultConversations.forEach((conv, idx) => {
-          console.log(`📋 [Layout] Conversation ${idx + 1}:`, {
-            sessionId: conv.sessionId,
-            title: conv.title,
-            constructId: conv.constructId,
-            messageCount: conv.messages?.length || 0,
-            messages:
-              conv.messages?.map((m: any, i: number) => ({
-                index: i,
-                id: m.id,
-                role: m.role,
-                contentLength: m.content?.length || 0,
-                contentPreview: m.content?.substring(0, 50) || "no content",
-                timestamp: m.timestamp,
-              })) || [],
-          });
         });const loadedThreads: Thread[] = vvaultConversations.map((conv) => {
           // Debug: Log raw conversation data before mapping
-          console.log(`🔍 [Layout] Mapping conversation:`, {
-            sessionId: conv.sessionId,
-            title: conv.title,
-            constructId: conv.constructId,
-            rawMessageCount: conv.messages?.length || 0,
-            rawMessages:
-              conv.messages?.slice(0, 3).map((m: any) => ({
-                id: m.id,
-                role: m.role,
-                contentLength: m.content?.length || 0,
-                hasTimestamp: !!m.timestamp,
-              })) || [],
-          });
 
           const constructId =
             conv.constructId ||
@@ -1023,12 +942,6 @@ export default function Layout() {
             .filter((msg): msg is NonNullable<typeof msg> => msg !== null);
 
           // Debug: Log after mapping
-          console.log(`✅ [Layout] Mapped conversation "${normalizedTitle}":`, {
-            sessionId: conv.sessionId,
-            rawMessageCount: conv.messages?.length || 0,
-            mappedMessageCount: mappedMessages.length,
-            messageIds: mappedMessages.map((m) => m.id).slice(0, 5),
-          });
 
           if (mappedMessages.length === 0 && (conv.messages?.length || 0) > 0) {
             console.error(
@@ -1052,9 +965,6 @@ export default function Layout() {
           if (isZenConversation) {
             // Use canonical ID format for Zen to match URL routing
             threadId = DEFAULT_ZEN_CANONICAL_SESSION_ID;
-            console.log(
-              `🔄 [Layout] Normalized Zen thread ID: ${conv.sessionId} → ${threadId}`,
-            );
           }
 
           return {
@@ -1077,51 +987,20 @@ export default function Layout() {
           };
         });
 
-        console.log(
-          `✅ [Layout.tsx] Loaded ${loadedThreads.length} conversations from VVAULT`,
-        );
 
         // Log message counts for debugging
         loadedThreads.forEach((thread) => {
-          console.log(
-            `📊 [Layout] Thread "${thread.title}" (${thread.id}): ${thread.messages.length} messages`,
-            {
-              messageIds: thread.messages.map((m) => m.id).slice(0, 5),
-              firstMessage: thread.messages[0]
-                ? {
-                    role: thread.messages[0].role,
-                    textPreview: (thread.messages[0].text || "").substring(
-                      0,
-                      50,
-                    ),
-                  }
-                : null,
-              constructId: thread.constructId,
-              isPrimary: thread.isPrimary,
-            },
-          );
 
           // Special check for Zen
           if (
             thread.constructId === "zen-001" ||
             thread.title.toLowerCase() === "zen"
           ) {
-            console.log(`🔍 [Layout] ZEN THREAD FOUND:`, {
-              id: thread.id,
-              expectedId: DEFAULT_ZEN_CANONICAL_SESSION_ID,
-              matches: thread.id === DEFAULT_ZEN_CANONICAL_SESSION_ID,
-              messageCount: thread.messages.length,
-              messages: thread.messages.slice(0, 3).map((m) => ({
-                role: m.role,
-                textPreview: (m.text || "").substring(0, 30),
-              })),
-            });
           }
         });
 
         // Deduplicate threads by ID, using quality scoring (prefers original timestamps over message count)
         const deduplicatedThreads = deduplicateThreadsByIdUtil(loadedThreads);
-        console.log(`🔄 [Layout] Deduplicated threads: ${loadedThreads.length} → ${deduplicatedThreads.length}`);
 
         // Check if there's a thread ID in the URL that we should preserve
         const urlThreadId = activeId;
@@ -1149,9 +1028,6 @@ export default function Layout() {
         // VVAULT-FIRST PATTERN: Never create local fallbacks when backend is down
         // This ensures single source of truth in Supabase/VVAULT
         if (backendDown) {
-          console.log(
-            "⚠️ [Layout.tsx] VVAULT unavailable - showing connection error (no local fallback)",
-          );
           // Don't create any local threads - UI will show VVAULT connection error
           setThreads([]); // Empty threads = show connection status UI
           setIsLoading(false);
@@ -1161,17 +1037,11 @@ export default function Layout() {
 
         // Guard clause: Skip thread creation if canonical Zen thread exists with messages
         if (zenCanonicalHasMessages) {
-          console.log(
-            "✅ [Layout.tsx] Canonical Zen thread exists with messages - skipping thread creation",
-          );
         } else if (filteredThreads.length === 0 && !hasUrlThread) {
           // Only create a new Zen thread if:
           // 1. VVAULT is connected (backendDown already handled above)
           // 2. No conversations loaded from VVAULT
           // 3. AND no thread ID in URL
-          console.log(
-            "🎯 [Layout.tsx] No conversations and no URL thread - creating Zen-001 in VVAULT",
-          );
           const urlRuntimeHint = extractRuntimeKeyFromThreadId(
             preferredUrlThreadId || urlThreadId,
           );
@@ -1215,7 +1085,6 @@ export default function Layout() {
 
           // Create in VVAULT first (single source of truth)
           if (!zenCanonicalHasMessages) {
-            console.log("💾 [Layout.tsx] Creating Zen-001 in VVAULT...");
             try {
               await conversationManager.createConversation(
                 userId,
@@ -1223,7 +1092,6 @@ export default function Layout() {
                 "Zen",
                 finalConstructId,
               );
-              console.log("✅ [Layout.tsx] Zen conversation created in VVAULT");
               // Only add to local state after successful VVAULT creation
               deduplicatedThreads.push(defaultThread);
               filteredThreads = filterThreadsWithCanonicalPreference(deduplicatedThreads);
@@ -1237,19 +1105,12 @@ export default function Layout() {
                 error,
               );
               // Mark VVAULT as unavailable since write failed
-              console.log("🔴 [Layout.tsx] Setting isBackendUnavailable = true (VVAULT write failed)");
               setIsBackendUnavailable(true);
               // Don't add to local state if VVAULT creation failed
             }
           }
         } else if (hasUrlThread) {
-          console.log(
-            `✅ [Layout.tsx] Found existing thread in URL: ${urlThreadId} - continuing conversation`,
-          );
         } else if (deduplicatedThreads.length > 0) {
-          console.log(
-            `✅ [Layout.tsx] Found ${deduplicatedThreads.length} existing conversations - continuing`,
-          );
         }
 
         const canonicalThreads = runtimeScopedThreads.filter(
@@ -1265,25 +1126,11 @@ export default function Layout() {
           ),
         ];
 
-        console.log(
-          `✅ [Layout.tsx] Prepared ${sortedThreads.length} conversations`,
-        );
 
-        console.log(
-          "🔍 [Layout.tsx] Threads state after loading:",
-          sortedThreads,
-        );
-        console.log("🔍 [Layout.tsx] Number of threads:", sortedThreads.length);
         if (sortedThreads.length > 0) {
-          console.log("🔍 [Layout.tsx] First thread details:", {
-            id: sortedThreads[0].id,
-            title: sortedThreads[0].title,
-            messageCount: sortedThreads[0].messages.length,
-            archived: sortedThreads[0].archived,
-          });
         }
 
-        console.log("🔄 [Layout.tsx] Setting threads in state...");setThreads(sortedThreads);
+        setThreads(sortedThreads);
 
         const urlRuntimeHint = extractRuntimeKeyFromThreadId(urlThreadId);
         const shouldRedirectToCanonical = Boolean(
@@ -1297,13 +1144,6 @@ export default function Layout() {
           const requestedPath = `/app/chat/${urlThreadId}`;
           const canonicalPath = `/app/chat/${preferredUrlThreadId}`;
           if (location.pathname === requestedPath) {
-            console.log(
-              "🎯 [Layout.tsx] URL points to runtime thread, redirecting to canonical:",
-              {
-                requested: urlThreadId,
-                canonical: preferredUrlThreadId,
-              },
-            );
             navigate(canonicalPath);
             didNavigateToCanonical = true;
           }
@@ -1314,7 +1154,6 @@ export default function Layout() {
         const currentPath = window.location.pathname;
         const initialPath = initialPathRef.current;
         
-        console.log(`🔍 [Layout.tsx] Navigation check - currentPath: "${currentPath}", initialPath: "${initialPath}"`);
         
         // Check if current path is a non-chat page that should NOT be navigated away from
         const isNonChatRoute = currentPath.startsWith('/app/') && 
@@ -1322,11 +1161,9 @@ export default function Layout() {
           currentPath !== '/app' && 
           currentPath !== '/app/';
         
-        console.log(`🔍 [Layout.tsx] isNonChatRoute: ${isNonChatRoute}`);
         
         if (isNonChatRoute) {
           // User is on a specific page like /app/vvault, /app/gpts - do NOT navigate away
-          console.log(`🧭 [Layout.tsx] Preserving non-chat route: ${currentPath}`);
         } else {
           // Navigation decisions must be based on the *current* URL, not the
           // initial path at mount. Users can navigate (e.g. click a thread or the
@@ -1343,26 +1180,16 @@ export default function Layout() {
           ) {
             const firstThread = sortedThreads[0];
             const targetPath = `/app/chat/${routeIdForThread(firstThread.id, sortedThreads)}`;
-            console.log(
-              `🎯 [Layout.tsx] Preparing to show conversation: ${firstThread.title} (${firstThread.id})`,
-            );
             if (currentPath !== targetPath) {
-              console.log(`🎯 [Layout.tsx] Navigating to: ${targetPath}`);
               navigate(targetPath, { state: { activeRuntimeId } });
             } else {
-              console.log(`📍 [Layout.tsx] Already on route: ${targetPath}`);
             }
           } else if (isSpecificChatRoute) {
-            console.log(
-              `🧭 [Layout.tsx] Preserving explicit chat route: ${currentPath}`,
-            );
           } else if (isAppRoot) {
             // Show home page when landing on /app
             if (currentPath !== "/app") {
-              console.log("🏠 [Layout.tsx] Navigating to home page");
               navigate("/app");
             } else {
-              console.log("📍 [Layout.tsx] Already on home page");
             }
           } else if (sortedThreads.length === 0) {
             console.warn(
@@ -1372,9 +1199,6 @@ export default function Layout() {
               navigate("/app");
             }
           } else {
-            console.log(
-              "🧭 [Layout.tsx] Preserving current route (non-chat destination detected)",
-            );
           }
         }
       } catch (error) {
@@ -1386,9 +1210,6 @@ export default function Layout() {
           }
 
           // === EMERGENCY FALLBACK - CREATE ZEN CONVERSATION WITH WELCOME MESSAGE ===
-          console.log(
-            "🚨 [Layout.tsx] Creating emergency Zen conversation with welcome message",
-          );
           const emergencyThreadId = `zen_emergency_${Date.now()}`;
           const emergencyTimestamp = Date.now();
           const emergencyText =
@@ -1416,19 +1237,12 @@ export default function Layout() {
             archived: false,
           };
 
-          console.log("🔄 [Layout.tsx] Setting emergency thread in state");
           setThreads([emergencyThread]);
-          console.log(
-            `🎯 [Layout.tsx] Navigating to emergency conversation: /app/chat/${emergencyThreadId}`,
-          );
           navigate(`/app/chat/${emergencyThreadId}`);
         }
       } finally {
         clearTimeout(safetyTimeout);
         if (!cancelled) {
-          console.log(
-            "🛑 [Layout.tsx] Auth effect complete - isLoading → false",
-          );
           setIsLoading(false);
         }
       }
@@ -1492,9 +1306,6 @@ export default function Layout() {
   const forceRefreshConversations = useCallback(async () => {
     if (!user) return;
 
-    console.log(
-      "🔄 [Layout.tsx] Force refreshing conversations from VVAULT...",
-    );
     const conversationManager = VVAULTConversationManager.getInstance();
     const userId = getUserId(user);
     const vvaultUserId = user.email || userId;
@@ -1509,9 +1320,6 @@ export default function Layout() {
     try {
       const vvaultConversations =
         await conversationManager.loadAllConversations(vvaultUserId, true);
-      console.log(
-        `✅ [Layout.tsx] Force refreshed: ${vvaultConversations.length} conversations`,
-      );
 
       // Convert and set threads (same logic as auth effect)
       const loadedThreads: Thread[] = vvaultConversations.map((conv) => {
@@ -1595,9 +1403,6 @@ export default function Layout() {
       ];
 
       setThreads(sortedThreads);
-      console.log(
-        `✅ [Layout.tsx] Force refresh complete: ${sortedThreads.length} threads`,
-      );
     } catch (error) {
       console.error("❌ [Layout.tsx] Force refresh failed:", error);
     }
@@ -1620,7 +1425,6 @@ export default function Layout() {
   const retryVVAULTConnection = useCallback(async () => {
     if (!user || isRetryingVVAULT) return;
     
-    console.log("🔄 [Layout.tsx] Retrying VVAULT connection...");
     setIsRetryingVVAULT(true);
     setVvaultRetryCount((prev) => prev + 1);
     
@@ -1635,7 +1439,6 @@ export default function Layout() {
       
       // Check if we got any threads
       if (threads.length > 0) {
-        console.log("✅ [Layout.tsx] VVAULT connection restored!");
         setIsBackendUnavailable(false);
       }
     } catch (error) {
@@ -1669,7 +1472,6 @@ export default function Layout() {
     );
     
     if (existingThread) {
-      console.log(`📖 [Layout] Thread for ${constructId} already exists`);
       return;
     }
 
@@ -1688,7 +1490,6 @@ export default function Layout() {
       canonicalForRuntime: null,
     };
 
-    console.log(`✅ [Layout] Adding new GPT thread to sidebar: ${constructId}`);
     setThreads((prev) => {
       // Add new thread, but keep Zen first
       const zenThread = prev.find(
@@ -1752,9 +1553,6 @@ export default function Layout() {
           threadId: "", // Will be set after conversation creation
         });
 
-      console.log(
-        `[Layout.tsx] Auto-selected runtime: ${runtimeAssignment.constructId} (confidence: ${Math.round(runtimeAssignment.confidence * 100)}%) - ${runtimeAssignment.reasoning}`,
-      );
 
       // Normalize synth → zen-001 (synth was renamed to zen)
       let normalizedConstructId = runtimeAssignment.constructId;
@@ -1763,9 +1561,6 @@ export default function Layout() {
         normalizedConstructId === "synth-001"
       ) {
         normalizedConstructId = "zen-001";
-        console.log(
-          `[Layout.tsx] Normalized constructId: ${runtimeAssignment.constructId} → ${normalizedConstructId}`,
-        );
       }
 
       const newConversation = await conversationManager.createConversation(
@@ -1808,7 +1603,6 @@ export default function Layout() {
         pendingStarterRef.current = null;
       }
 
-      console.log(`✅ Created new conversation via VVAULT: ${thread.id}`);
       return thread.id;
     } catch (error) {
       console.error("❌ Failed to create new conversation:", error);
@@ -1936,12 +1730,6 @@ export default function Layout() {
     passedImageAttachments?: Array<{ name: string; type: string; data: string }>,
     uiOverrides?: UIContextSnapshot,
   ) {
-    console.log("📤 [Layout.tsx] sendMessage called:", {
-      threadId,
-      inputLength: input.length,
-      filesCount: files?.length || 0,
-      passedImageAttachments: passedImageAttachments?.length || 0,
-    });
 
     // Use passed imageAttachments if provided, otherwise convert from files
     let imageAttachments: Array<{ name: string; type: string; data: string }>;
@@ -1951,7 +1739,6 @@ export default function Layout() {
       // Images already converted by MessageBar
       imageAttachments = passedImageAttachments;
       docFiles = files || [];
-      console.log(`📎 [Layout.tsx] Using ${imageAttachments.length} pre-converted image attachments`);
     } else {
       // Legacy path: convert files to imageAttachments
       const imageFiles = (files || []).filter(f => isImageFile(f));
@@ -1966,7 +1753,6 @@ export default function Layout() {
       );
       
       if (imageAttachments.length > 0) {
-        console.log(`📎 [Layout.tsx] Converted ${imageAttachments.length} images to base64`);
       }
     }
 
@@ -2232,7 +2018,6 @@ export default function Layout() {
     // Upload attachments to storage and get permanent URLs
     let persistedAttachments: Attachment[] = [];
     if (imageAttachments.length > 0) {
-      console.log(`📤 [Layout.tsx] Uploading ${imageAttachments.length} attachments to storage...`);
       const uploadResult = await uploadAttachments({
         userId: user.email || getUserId(user) || user.id || user.sub,
         constructId: thread.constructId || 'unknown',
@@ -2241,7 +2026,6 @@ export default function Layout() {
       });
       if (uploadResult.success && uploadResult.attachments.length > 0) {
         persistedAttachments = uploadResult.attachments;
-        console.log(`✅ [Layout.tsx] Uploaded ${persistedAttachments.length} attachments with permanent URLs`);
       } else {
         console.warn('⚠️ [Layout.tsx] Attachment upload failed, using base64 fallback');
         persistedAttachments = imageAttachmentsToAttachments(imageAttachments);
@@ -2286,7 +2070,6 @@ export default function Layout() {
     // 4. IMMEDIATELY save user message to VVAULT
     // CRITICAL: Save happens BEFORE continuing to AI response
     // This ensures user message is persisted even if server restarts during AI processing
-    console.log("💾 [Layout.tsx] Saving USER message to VVAULT...");
     try {
       await conversationManager.addMessageToConversation(user, threadId, {
         role: "user",
@@ -2308,13 +2091,6 @@ export default function Layout() {
               }))
             : undefined,
         },
-      });
-      console.log("✅ [Layout.tsx] USER message saved to VVAULT");
-      console.log("💾 [Layout] Message saved to VVAULT:", {
-        threadId,
-        messageLength: input.length,
-        timestamp: userTimestampIso,
-        filePath: `instances/${thread.constructId || "unknown"}/chatty/chat_with_${thread.constructId || "unknown"}.md`,
       });
       verifyMessagePersisted(threadId, "user", input, userTimestampIso);
     } catch (error) {
@@ -2347,9 +2123,6 @@ export default function Layout() {
     }> = [];
     try {
       const constructCallsign = effectiveConstructId;
-      console.log(
-        `🧠 [Layout.tsx] Querying identity for construct: ${constructCallsign}`,
-      );
       // Get settings from localStorage for memory permission check
       const settings =
         typeof window !== "undefined"
@@ -2370,9 +2143,6 @@ export default function Layout() {
         settings,
       );
       if (relevantMemories.length > 0) {
-        console.log(
-          `✅ [Layout.tsx] Found ${relevantMemories.length} relevant identity/memories`,
-        );
       }
     } catch (error) {
       console.warn(
@@ -2577,9 +2347,6 @@ export default function Layout() {
               .filter(Boolean)
               .join("\n\n");
 
-            console.log(
-              `📝 [Layout.tsx] onFinalUpdate: Extracted assistant content (length: ${assistantContent.length})`,
-            );
 
             let assistantUnsaved = false;
             if (user && assistantContent) {
@@ -2597,16 +2364,10 @@ export default function Layout() {
                 },
               };
               try {
-                console.log(
-                  "💾 [Layout.tsx] onFinalUpdate: Saving ASSISTANT message to VVAULT BEFORE UI update...",
-                );
                 await conversationManager.addMessageToConversation(
                   user,
                   threadId,
                   savePayload,
-                );
-                console.log(
-                  "✅ [Layout.tsx] onFinalUpdate: ASSISTANT message saved to VVAULT - safe to update UI",
                 );
                 verifyMessagePersisted(
                   threadId,
@@ -2741,9 +2502,6 @@ export default function Layout() {
           ),
         );
 
-        console.log(
-          "💾 [Layout.tsx] Saving ASSISTANT fallback message to VVAULT...",
-        );
         const assistantIso = new Date(aiMsg.ts).toISOString();
         const savePayload = {
           role: "assistant" as const,
@@ -2759,7 +2517,6 @@ export default function Layout() {
             threadId,
             savePayload,
           );
-          console.log("✅ [Layout.tsx] ASSISTANT fallback saved to VVAULT");
           verifyMessagePersisted(
             threadId,
             "assistant",
@@ -2877,7 +2634,6 @@ export default function Layout() {
   }
 
   async function reloadThreadMessages(threadId: string): Promise<void> {
-    console.log("🔄 [Layout] Reloading messages for thread:", threadId);
 
     if (!user) {
       console.error("❌ [Layout] Cannot reload messages: no user session");
@@ -2897,19 +2653,6 @@ export default function Layout() {
         true,
       );
 
-      console.log(
-        `📥 [Layout] Reloaded ${conversations.length} conversations from VVAULT`,
-      );
-      console.log(`🔍 [Layout] Searching for threadId: ${threadId}`);
-      console.log(
-        `📋 [Layout] Available conversations:`,
-        conversations.map((c) => ({
-          sessionId: c.sessionId,
-          title: c.title,
-          constructId: c.constructId,
-          messageCount: c.messages?.length || 0,
-        })),
-      );
 
       // Find the specific conversation - try multiple matching strategies
       let conv = conversations.find((c) => c.sessionId === threadId);
@@ -2959,9 +2702,6 @@ export default function Layout() {
 
         // Last resort: If this is a Zen conversation, try to find ANY Zen conversation
         if (threadId.includes("zen")) {
-          console.log(
-            `🔄 [Layout] Attempting fallback: finding any Zen conversation...`,
-          );
           conv = conversations.find(
             (c) =>
               c.constructId === "zen-001" ||
@@ -2971,9 +2711,6 @@ export default function Layout() {
           );
 
           if (conv) {
-            console.log(
-              `✅ [Layout] Found fallback Zen conversation: ${conv.sessionId} with ${conv.messages.length} messages`,
-            );
           } else {
             console.error(
               `❌ [Layout] No Zen conversation found at all. Total conversations: ${conversations.length}`,
@@ -2985,9 +2722,6 @@ export default function Layout() {
         }
       }
 
-      console.log(
-        `📋 [Layout] Found conversation: ${conv.title} (${conv.sessionId}) with ${conv.messages.length} messages`,
-      );
 
       if (conv.messages.length === 0) {
         console.warn(
@@ -3086,12 +2820,6 @@ export default function Layout() {
           isPrimary && constructId ? runtimeId || constructId : null,
       };
 
-      console.log(`🔄 [Layout] Updating thread state:`, {
-        threadId,
-        finalThreadId,
-        messageCount: updatedThread.messages.length,
-        sessionId: conv.sessionId,
-      });
 
       // Update thread in state - find by threadId from URL or by matching patterns
       setThreads((prevThreads) => {
@@ -3113,15 +2841,9 @@ export default function Layout() {
           // Update existing thread
           const updated = [...prevThreads];
           updated[existingIndex] = updatedThread;
-          console.log(
-            `✅ [Layout] Updated thread "${updatedThread.title}" (${updatedThread.id}) with ${updatedThread.messages.length} messages`,
-          );
           return updated;
         } else {
           // Add new thread if not found
-          console.log(
-            `✅ [Layout] Added new thread "${updatedThread.title}" (${updatedThread.id}) with ${updatedThread.messages.length} messages`,
-          );
           return [...prevThreads, updatedThread];
         }
       });
@@ -3132,7 +2854,6 @@ export default function Layout() {
   }
 
   async function startConversationWithConstruct(constructId: string, constructName?: string) {
-    console.log(`🚀 [Layout] Starting conversation with construct: ${constructId}`);
     
     if (!user) {
       console.error("❌ Cannot create conversation: No user");
@@ -3141,7 +2862,6 @@ export default function Layout() {
 
     // CRITICAL: Wait for threads to load before creating to prevent race condition duplicates
     if (isLoading) {
-      console.log(`⏳ [Layout] Threads still loading, deferring creation for ${constructId}`);
       // Navigate to canonical path - once threads load, Chat.tsx will find the right one
       const canonicalSessionId = `${constructId}_chat_with_${constructId}`;
       navigate(`/app/chat/${canonicalSessionId}`);
@@ -3167,7 +2887,6 @@ export default function Layout() {
       });
       
       const bestThread = sortedThreads[0];
-      console.log(`✅ [Layout] Found ${matchingThreads.length} existing conversation(s) for ${constructId}, using best: ${bestThread.id} with ${bestThread.messages?.length || 0} messages`);
       navigate(`/app/chat/${bestThread.id}`);
       return bestThread.id;
     }
@@ -3182,7 +2901,6 @@ export default function Layout() {
       }
 
       // Create a new conversation with canonical session ID format
-      console.log(`🆕 [Layout] No existing conversation for ${constructId}, creating new one`);
       const newConversation = await conversationManager.createConversation(
         userId,
         canonicalSessionId,
@@ -3204,7 +2922,6 @@ export default function Layout() {
       setThreads((prev) => [thread, ...prev]);
       navigate(`/app/chat/${thread.id}`);
 
-      console.log(`✅ Created new conversation with ${constructId}: ${thread.id}`);
       return thread.id;
     } catch (error) {
       console.error(`❌ Failed to create conversation with ${constructId}:`, error);
@@ -3218,27 +2935,15 @@ export default function Layout() {
   }
 
   function handleThreadClick(threadId: string) {
-    console.log("🟡 [Layout] handleThreadClick START:", {
-      threadId,
-      threadsCount: threads.length,
-      threadIds: threads.map((t) => ({
-        id: t.id,
-        title: t.title,
-        constructId: t.constructId,
-        isPrimary: t.isPrimary,
-      })),
-    });
 
     // Handle GPT contact cards (IDs ending with _contact)
     if (threadId.endsWith('_contact')) {
       const constructId = threadId.replace('_contact', '');
       // Find the GPT name from userGPTs
       const gpt = userGPTs.find(g => g.constructCallsign === constructId);
-      console.log(`📇 [Layout] GPT contact card clicked: ${constructId}`, gpt);
       
       // Always use canonical format for GPT conversations
       const canonicalId = `${constructId}_chat_with_${constructId}`;
-      console.log(`🎯 [Layout] Routing to canonical GPT conversation: ${canonicalId}`);
       navigate(`/app/chat/${canonicalId}`);
       return;
     }
@@ -3251,7 +2956,6 @@ export default function Layout() {
         threadId.toLowerCase().includes('lin')) {
       const canonicalId = 'lin-001_chat_with_lin-001';
       if (threadId !== canonicalId) {
-        console.log(`🎯 [Layout] Redirecting Lin thread to canonical: ${threadId} → ${canonicalId}`);
         navigate(`/app/chat/${canonicalId}`);
         return;
       }
@@ -3265,7 +2969,6 @@ export default function Layout() {
         !threadId.includes('_chat_with_')) {
       // Route GPT threads to canonical format
       const canonicalId = `${clickedThread.constructId}_chat_with_${clickedThread.constructId}`;
-      console.log(`🎯 [Layout] Redirecting GPT thread to canonical: ${threadId} → ${canonicalId}`);
       navigate(`/app/chat/${canonicalId}`);
       return;
     }
@@ -3279,9 +2982,6 @@ export default function Layout() {
       (t) => t.id === targetId || t.id === routedId,
     );
     if (selectedThread) {
-      console.log(
-        `📊 [Layout] Selected thread "${selectedThread.title}": ${selectedThread.messages.length} messages`,
-      );
       if (selectedThread.messages.length === 0) {
         console.warn(
           `⚠️ [Layout] Thread "${selectedThread.title}" has no messages - Chat.tsx will trigger reload`,
@@ -3293,23 +2993,11 @@ export default function Layout() {
       );
     }
 
-    console.log("🟡 [Layout] Navigation:", {
-      original: threadId,
-      targetId,
-      routedId,
-      targetPath,
-      currentPath: location.pathname,
-    });
 
     if (targetId !== threadId) {
-      console.log(
-        "🧭 [Layout.tsx] Routing to canonical thread instead of runtime thread:",
-        { requested: threadId, canonical: targetId },
-      );
     }
 
     navigate(targetPath, { state: { activeRuntimeId } });
-    console.log("✅ [Layout] Navigation called");
   }
 
   function handleGPTsClick() {
@@ -3357,7 +3045,6 @@ export default function Layout() {
   // For chat routes, require user authentication
   // For non-chat routes (VVAULT, GPTs, etc.), show loading state while auth completes
   if (!user) {
-    console.log('🔒 [Layout] No user, isNonChatRoute:', isNonChatRouteRender, 'path:', window.location.pathname);
     if (isNonChatRouteRender) {
         // Show minimal loading state for non-chat routes while auth completes
       return (
@@ -3395,13 +3082,11 @@ export default function Layout() {
               threads={threads as any}
               currentConversationId={activeId}
               onConversationSelect={(id: string) => {
-                console.log("🖱️ [Layout.tsx] Sidebar thread selected:", id);
                 handleThreadClick(id);
               }}
               onNewConversation={newThread}
               onNewConversationWithGPT={(constructId: string) => {
                 // Start a new conversation with this specific construct
-                console.log(`📱 [Layout] onNewConversationWithGPT called: ${constructId}`);
                 startConversationWithConstruct(constructId);
               }}
               onDeleteConversation={deleteThread}

@@ -619,12 +619,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                 (t: any) => t.constructId === "zen-001",
               );
               if (zenThread && onConversationSelect) {
-                console.log(
-                  `🟢 [Sidebar] Opening existing Zen conversation: ${zenThread.id}`,
-                );
                 onConversationSelect(zenThread.id);
               } else if (onNewConversationWithGPT) {
-                console.log(`🆕 [Sidebar] Creating new Zen conversation`);
                 onNewConversationWithGPT("zen-001");
               }
             }}
@@ -669,12 +665,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                 (t: any) => t.constructId === "lin-001" || t.constructId === "lin",
               );
               if (linThread && onConversationSelect) {
-                console.log(
-                  `🟢 [Sidebar] Opening existing Lin conversation: ${linThread.id}`,
-                );
                 onConversationSelect(linThread.id);
               } else if (onNewConversationWithGPT) {
-                console.log(`🆕 [Sidebar] Creating new Lin conversation`);
                 onNewConversationWithGPT("lin-001");
               }
             }}
@@ -975,21 +967,11 @@ const Sidebar: React.FC<SidebarProps> = ({
             <button
               key={conversation.id}
               onClick={(e) => {
-                console.log("🔵 [Sidebar] Button clicked:", {
-                  conversationId: conversation.id,
-                  conversationTitle: conversation.title,
-                  hasHandler: !!onConversationSelect,
-                });
                 e.preventDefault();
                 e.stopPropagation();
                 if (onConversationSelect) {
-                  console.log(
-                    "🟢 [Sidebar] Calling onConversationSelect with:",
-                    conversation.id,
-                  );
                   try {
                     onConversationSelect(conversation.id);
-                    console.log("✅ [Sidebar] onConversationSelect completed");
                   } catch (error) {
                     console.error(
                       "❌ [Sidebar] Error in onConversationSelect:",

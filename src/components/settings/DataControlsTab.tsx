@@ -197,7 +197,6 @@ const DataControlsTab: React.FC<DataControlsTabProps> = ({ user, onDeleteAllConv
       
       // Dispatch event for auto-navigation after 5 seconds
       setTimeout(() => {
-        console.log('🚀 [DataControls] Auto-navigating to imported runtime:', runtimeInfo.runtimeId);
         window.dispatchEvent(
           new CustomEvent('chatty:navigate-to-imported-runtime', {
             detail: runtimeInfo
@@ -282,7 +281,6 @@ const DataControlsTab: React.FC<DataControlsTabProps> = ({ user, onDeleteAllConv
     setExportMessage('Preparing export file, this may take a few seconds...');
     
     try {
-      console.log('Processing data export...');
       
       // Step 1: Create export and ZIP file
       setExportMessage('Creating export archive...');
@@ -319,8 +317,6 @@ const DataControlsTab: React.FC<DataControlsTabProps> = ({ user, onDeleteAllConv
           }
           
           setExportMessage(successMessage);
-          console.log('Export successful:', data.message);
-          console.log('Export details:', exportDetails);
         } else {
           throw new Error('Email sending failed - missing user email or verification URL');
         }
@@ -605,7 +601,6 @@ const DataControlsTab: React.FC<DataControlsTabProps> = ({ user, onDeleteAllConv
             }}
             onClick={() => {
               // TODO: Implement shared links management
-              console.log('Manage shared links clicked');
             }}
           >
             Manage
@@ -634,7 +629,6 @@ const DataControlsTab: React.FC<DataControlsTabProps> = ({ user, onDeleteAllConv
             }}
             onClick={() => {
               // TODO: Implement archived chats management
-              console.log('Manage archived chats clicked');
             }}
           >
             Manage
@@ -663,7 +657,6 @@ const DataControlsTab: React.FC<DataControlsTabProps> = ({ user, onDeleteAllConv
             }}
             onClick={() => {
               // TODO: Implement archive all chats
-              console.log('Archive all chats clicked');
             }}
           >
             Archive all

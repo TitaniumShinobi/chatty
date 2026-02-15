@@ -538,41 +538,9 @@ export default function Chat() {
 
   // Debug: Log thread details when found
   if (thread) {
-    console.log("📋 [Chat] Thread found with details:", {
-      id: thread.id,
-      title: thread.title,
-      messageCount: thread.messages?.length || 0,
-      messages:
-        thread.messages?.map((m, i) => ({
-          index: i,
-          id: m.id,
-          role: m.role,
-          hasText: !!m.text,
-          textLength: m.text?.length || 0,
-          hasPackets: !!m.packets,
-          packetsCount: m.packets?.length || 0,
-          textPreview: m.text
-            ? m.text.substring(0, 100)
-            : m.packets?.[0]?.payload?.content?.substring(0, 100) ||
-            "no content",
-        })) || [],
-    });
   }
 
   useEffect(() => {
-    console.log("🔍 [Chat] Thread lookup:", {
-      threadId,
-      found: !!thread,
-      threadIds: threads.map((t) => t.id),
-      threadConstructIds: threads.map((t) => t.constructId),
-      messageCount: thread?.messages?.length || 0,
-      messages:
-        thread?.messages?.map((m) => ({
-          id: m.id,
-          role: m.role,
-          textPreview: (m.text || "").substring(0, 50),
-        })) || [],
-    });
 
     if (!thread && threadId) {
       if (isCanonicalThread) {
@@ -676,14 +644,6 @@ export default function Chat() {
     if (!thread || !threadId || !reloadThreadMessages) return;
 
     if (thread.messages.length === 0 && !isReloading && !reloadAttempted) {
-      console.log("⚠️ [Chat] Thread has no messages, attempting reload...", {
-        threadId: thread.id,
-        urlThreadId: threadId,
-        title: thread.title,
-        constructId: thread.constructId,
-        threadsCount: threads.length,
-        allThreadIds: threads.map((t) => t.id),
-      });
       setIsReloading(true);
       setReloadAttempted(true);
 
@@ -698,7 +658,6 @@ export default function Chat() {
       reloadThreadMessages(threadId)
         .then(() => {
           clearTimeout(timeoutId);
-          console.log("✅ [Chat] Reload function completed");
           setIsReloading(false);
         })
         .catch((error) => {
@@ -708,9 +667,6 @@ export default function Chat() {
         });
     } else if (thread.messages.length > 0 && isReloading) {
       // If messages are now present, clear loading state
-      console.log(
-        `✅ [Chat] Messages now present (${thread.messages.length}), clearing loading state`,
-      );
       setIsReloading(false);
     }
   }, [
@@ -1129,7 +1085,6 @@ export default function Chat() {
                 placeholder={`Message ${canonicalConstructName || "AI"}...`}
                 onSubmit={(text: string) => {
                   // For fallback mode, just log - full send requires thread context
-                  console.log("[FallbackChat] Message send attempted:", text);
                 }}
               />
             </div>
@@ -1295,7 +1250,6 @@ export default function Chat() {
   const handleCopyMessage = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      console.log("✅ [Chat] Message copied to clipboard");
     } catch (error) {
       console.error("❌ [Chat] Failed to copy message:", error);
       alert("Failed to copy message to clipboard");
@@ -1331,7 +1285,6 @@ export default function Chat() {
         pinDestination,
         threadId,
       );
-      console.log(`✅ [Chat] Message pinned to ${pinDestination}`);
     } catch (error) {
       console.error("❌ [Chat] Failed to pin message:", error);
       alert("Failed to pin message");
@@ -1340,7 +1293,6 @@ export default function Chat() {
 
   const handleRemoveMessage = (messageId: string) => {
     setRemovedMessages((prev) => new Set([...prev, messageId]));
-    console.log(`✅ [Chat] Message ${messageId} marked as removed`);
   };
 
   const handleRewind = async (messageIndex: number): Promise<void> => {
@@ -1355,14 +1307,10 @@ export default function Chat() {
       await reloadThreadMessages(threadId);
     }
 
-    console.log(
-      `✅ [Chat] Conversation rewound to before message index ${messageIndex}`,
-    );
   };
 
   const handleEditMessage = (message: Message) => {
     if (!message.text) return;
-    console.log(`✅ [Chat] Message ${message.id} editing not yet implemented with new MessageBar`);
   };
 
   const handleReportMessage = async (message: Message) => {
@@ -2074,7 +2022,6 @@ export default function Chat() {
                 finalText = `${mirrorContextRef.current}\n\n${messageText}`;
                 mirrorContextRef.current = '';
               }
-              console.log(`📸 [Chat.tsx] Sending message with ${imageAttachments?.length || 0} images`);
               onSendMessage(thread.id, finalText, messageFiles || [], imageAttachments);
             }
           }}
