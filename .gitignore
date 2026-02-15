@@ -168,3 +168,10 @@ chatty.db
 chatty.db.bak.*
 *.db
 *.db.bak.*
+
+# Temp upload directories
+server/temp-transcribe-uploads/
+temp-mocr-uploads/
+MOCR-Service/temp-uploads/
+MOCR-Service/temp-audio/
+MOCR-Service/temp-frames/

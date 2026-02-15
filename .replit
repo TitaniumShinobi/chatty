@@ -74,15 +74,16 @@ externalPort = 8000
 exposeLocalhost = true
 
 [deployment]
-deploymentTarget = "autoscale"
-run = ["npm", "run", "start:prod"]
-build = ["npm", "run", "build:prod"]
+deploymentTarget = "vm"
+run = ["bash", "-c", "cd MOCR-Service && CHATTY_TRANSCRIBE_URL=http://localhost:5000/api/transcribe INTERNAL_SERVICE_KEY=chatty-internal-service-2026 PORT=3001 npx tsx src/api/server.ts & PORT=5000 NODE_ENV=production npx tsx server/server.js"]
+build = ["bash", "-c", "npm install && cd MOCR-Service && npm install"]
 
 [userenv]
 
 [userenv.development]
 NODE_ENV = "development"
 GOOGLE_CALLBACK = "https://9e87ef81-3206-41b7-ab62-5ac95372a8ad-00-1vnh2e2s81nle.riker.replit.dev/api/auth/google/callback"
+CHATTY_TRANSCRIBE_URL = "http://localhost:5050/api/transcribe"
 
 [userenv.shared]
 VVAULT_API_BASE_URL = "https://vvault.thewreck.org"
@@ -98,3 +99,5 @@ MOCR_SERVICE_URL = "http://localhost:3001"
 [userenv.production]
 GOOGLE_CALLBACK = "https://chatty.thewreck.org/api/auth/google/callback"
 NODE_ENV = "production"
+INTERNAL_SERVICE_KEY = "chatty-internal-service-2026"
+CHATTY_TRANSCRIBE_URL = "http://localhost:5000/api/transcribe"
