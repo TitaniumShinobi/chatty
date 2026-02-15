@@ -1338,7 +1338,9 @@ When answering:
 
   const totalEvidenceCount = (vectorCount || 0) + (needleCount || 0) + (verifiedCount || 0) + (result.memoriesLoaded || 0);
   const memoryRetrievalRan = !!userMessage;
+  const memoryQueryDetected = !!userMessage && isMemoryTriggeringQuestion(userMessage);
   result.memory_retrieval_ran = memoryRetrievalRan;
+  result.memory_query_detected = memoryQueryDetected;
   result.evidence_count = totalEvidenceCount;
 
   let memoryGuardrailSection = '';

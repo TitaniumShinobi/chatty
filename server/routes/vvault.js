@@ -4130,12 +4130,13 @@ router.post("/message", async (req, res) => {
 
       const validatorDebug = {
         memory_retrieval_ran: !!enrichedContext.memory_retrieval_ran,
+        memory_query_detected: !!enrichedContext.memory_query_detected,
         evidence_count: enrichedContext.evidence_count || 0,
         cutoff_violation_detected: false,
         rewrite_applied: false,
       };
 
-      if (enrichedContext.memory_retrieval_ran) {
+      if (enrichedContext.memory_query_detected) {
         const CUTOFF_PATTERNS = [
           /my\s+(training|knowledge)\s+(data\s+)?(only\s+)?(goes|extends|reaches|covers)\s+(up\s+)?to/i,
           /my\s+(memories?|knowledge|training)\s+cap(s)?\s+at/i,
@@ -4202,7 +4203,7 @@ Output ONLY the rewritten response, nothing else.`
           }
         }
       }
-      console.log(`🛡️ [PostResponseValidator] { memory_retrieval_ran: ${validatorDebug.memory_retrieval_ran}, evidence_count: ${validatorDebug.evidence_count}, cutoff_violation_detected: ${validatorDebug.cutoff_violation_detected}, rewrite_applied: ${validatorDebug.rewrite_applied} }`);
+      console.log(`🛡️ [PostResponseValidator] { memory_retrieval_ran: ${validatorDebug.memory_retrieval_ran}, memory_query_detected: ${validatorDebug.memory_query_detected}, evidence_count: ${validatorDebug.evidence_count}, cutoff_violation_detected: ${validatorDebug.cutoff_violation_detected}, rewrite_applied: ${validatorDebug.rewrite_applied} }`);
 
       if (!skipPersistence) {
         const effectiveSession = sessionId || threadId || `${constructId}_chat_with_${constructId}`;
@@ -4262,7 +4263,7 @@ Output ONLY the rewritten response, nothing else.`
         provider_used: effectiveProvider,
         has_images: hasImages,
         tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
-        validator: validatorDebug
+        ...(process.env.SHOW_DEV_INFO === 'true' ? { validator: validatorDebug } : {})
       });
     } catch (llmError) {
       console.error(`❌ [VVAULT Proxy] ${effectiveProvider} call failed:`, {
