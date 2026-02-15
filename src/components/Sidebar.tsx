@@ -101,7 +101,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         "Theme",
         "Library",
         "Projects",
-        "VVAULT",
+        "Continuity",
         "Code",
         "simForge",
         "Address Book",
@@ -711,7 +711,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             {!collapsed && <span>Lin</span>}
           </button>
 
-          {/* VVAULT (Default) */}
+          {/* Continuity (Default) */}
           <button
             onClick={() => navigate("/app/vvault")}
             className={navButtonBase}
@@ -720,7 +720,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             onMouseLeave={(e) => handleNavHover(e, "/app/vvault", false)}
           >
             <Shield size={16} />
-            {!collapsed && <span>VVAULT</span>}
+            {!collapsed && <span>Continuity</span>}
           </button>
 
           {/* simForge (Default) */}
@@ -1118,7 +1118,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               <p>
                 {isVVAULTConnected
                   ? "No conversations yet"
-                  : "No connection to VVAULT."}
+                  : "No connection to Continuity."}
               </p>
             </div>
           )}

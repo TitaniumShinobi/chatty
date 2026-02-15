@@ -221,7 +221,7 @@ export default function VVAULTPage() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-2xl font-semibold" style={{ color: 'var(--chatty-text)' }}>
-              V<sup>2</sup>AULT
+              Continuity
             </h1>
             <p className="text-sm mt-1" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
               Secure AI memory system storing all Chatty conversations
@@ -246,11 +246,11 @@ export default function VVAULTPage() {
               <AlertCircle size={24} className="text-yellow-500 flex-shrink-0 mt-1" />
               <div className="flex-1">
                 <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--chatty-text)' }}>
-                  VVAULT Account Not Linked
+                  Continuity Account Not Linked
                 </h3>
                 <p className="text-sm mb-4" style={{ color: 'var(--chatty-text)', opacity: 0.8 }}>
-                  VVAULT is a separate service that can be used with any LLM provider (ChatGPT, Gemini, Claude, etc.). 
-                  Link your VVAULT account to store Chatty conversations.
+                  Continuity is a separate service that can be used with any LLM provider (ChatGPT, Gemini, Claude, etc.). 
+                  Link your Continuity account to store Chatty conversations.
                 </p>
                 <div className="flex items-center gap-3">
                   <button
@@ -262,12 +262,12 @@ export default function VVAULTPage() {
                     }}
                   >
                     <Link2 size={16} />
-                    Link VVAULT Account
+                    Link Continuity Account
                     <ExternalLink size={14} />
                   </button>
                   {isLinking && (
                     <p className="text-sm" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
-                      After logging into VVAULT, return here and refresh to complete linking.
+                      After logging into Continuity, return here and refresh to complete linking.
                     </p>
                   )}
                 </div>
@@ -284,10 +284,10 @@ export default function VVAULTPage() {
                 <CheckCircle size={20} className="text-green-500" />
                 <div>
                   <p className="text-sm font-medium" style={{ color: 'var(--chatty-text)' }}>
-                    VVAULT Account Linked
+                    Continuity Account Linked
                   </p>
                   <p className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
-                    VVAULT User ID: {accountStatus.vvaultUserId}
+                    Continuity User ID: {accountStatus.vvaultUserId}
                   </p>
                   {accountStatus.linkedAt && (
                     <p className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.7 }}>
@@ -329,7 +329,7 @@ export default function VVAULTPage() {
           <div className="flex items-center justify-center py-8">
             <RefreshCw size={20} className="animate-spin" style={{ color: 'var(--chatty-text)', opacity: 0.5 }} />
             <span className="ml-2 text-sm" style={{ color: 'var(--chatty-text)', opacity: 0.5 }}>
-              Loading VVAULT account status...
+              Loading Continuity account status...
             </span>
           </div>
         )}
@@ -380,7 +380,7 @@ export default function VVAULTPage() {
               <div className="p-4 border-b border-[var(--chatty-line)]" style={{ opacity: 1 }}>
                 <h3 className="text-lg font-semibold" style={{ color: 'var(--chatty-text)', opacity: 1 }}>Recent Activity</h3>
                 <p className="text-sm" style={{ color: 'var(--chatty-text)', opacity: 1 }}>
-                  Latest conversations stored in VVAULT
+                  Latest conversations stored in Continuity
                 </p>
               </div>
               <div className="p-4" style={{ opacity: 1 }}>
@@ -432,10 +432,10 @@ export default function VVAULTPage() {
 
             {/* VVAULT Info */}
             <div className="rounded-lg border border-[var(--chatty-line)] p-4" style={{ backgroundColor: 'var(--chatty-bg-sidebar)', opacity: 0.5 }}>
-              <h3 className="text-lg font-semibold mb-3" style={{ color: 'var(--chatty-text)', opacity: 1 }}>About VVAULT</h3>
+              <h3 className="text-lg font-semibold mb-3" style={{ color: 'var(--chatty-text)', opacity: 1 }}>About Continuity</h3>
               <div className="space-y-2 text-sm" style={{ color: 'var(--chatty-text)', opacity: 1 }}>
                 <p style={{ color: 'var(--chatty-text)', opacity: 1 }}>
-                  VVAULT is a secure AI memory system that automatically stores all Chatty conversations
+                  Continuity is a secure AI memory system that automatically stores all Chatty conversations
                   in an append-only, immutable format.
                 </p>
                 <p style={{ color: 'var(--chatty-text)', opacity: 1 }}>
