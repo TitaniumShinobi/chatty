@@ -16,7 +16,7 @@ import { prepareMessageContent, stripDateLines } from "../utils/text";
 import GPTCreator from "../components/GPTCreator";
 import Mirror from "../components/Mirror";
 import MirrorSetup from "../components/MirrorSetup";
-import { MonitorOff } from "lucide-react";
+import { MonitorOff, Monitor, X } from "lucide-react";
 import { AIService } from "../lib/aiService";
 import type { GPTConfig } from "../lib/gptService";
 
@@ -422,6 +422,8 @@ export default function Chat() {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const mirrorContextRef = useRef<string>('');
   const [mirrorConfig, setMirrorConfig] = useState<{source: 'tab'|'window'|'screen', permission: 'read'|'write'|'both'} | null>(null);
+  const [mirrorActive, setMirrorActive] = useState(false);
+  const [mirrorWidgetOpen, setMirrorWidgetOpen] = useState(false);
   const [mirrorSetupOpen, setMirrorSetupOpen] = useState(false);
   const [mirrorStatus, setMirrorStatus] = useState<{text: string, count: number}>({text: 'idle', count: 0});
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -524,12 +526,15 @@ export default function Chat() {
   useEffect(() => {
     (window as any).__mirrorControls = {
       openSetup: () => setMirrorSetupOpen(true),
-      stop: () => setMirrorConfig(null),
+      stop: () => setMirrorActive(false),
+      close: () => { setMirrorActive(false); setMirrorWidgetOpen(false); setMirrorConfig(null); },
       setPermission: (p: 'read'|'write'|'both') => setMirrorConfig(prev => prev ? {...prev, permission: p} : null),
       getConfig: () => mirrorConfig,
+      isActive: () => mirrorActive,
+      isWidgetOpen: () => mirrorWidgetOpen,
     };
     return () => { delete (window as any).__mirrorControls; };
-  }, [mirrorConfig]);
+  }, [mirrorConfig, mirrorActive, mirrorWidgetOpen]);
 
   // Debug: Log thread details when found
   if (thread) {
@@ -2004,7 +2009,7 @@ export default function Chat() {
 
       <Mirror
         sessionId={thread?.id || threadId || ''}
-        config={mirrorConfig}
+        config={mirrorActive ? mirrorConfig : null}
         onContextUpdate={(block: string) => { mirrorContextRef.current = block; }}
         onStatusChange={(text: string, count: number) => setMirrorStatus({text, count})}
       />
@@ -2014,16 +2019,34 @@ export default function Chat() {
         onClose={() => setMirrorSetupOpen(false)}
         onStart={(cfg) => {
           setMirrorConfig(cfg);
+          setMirrorActive(true);
+          setMirrorWidgetOpen(true);
           setMirrorSetupOpen(false);
         }}
       />
 
-      {mirrorConfig && (
-        <div className="flex items-center justify-center gap-3 py-2 flex-shrink-0">
-          <button onClick={() => setMirrorConfig(null)}
-            className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30">
-            <MonitorOff size={12} /> Stop
+      {mirrorWidgetOpen && mirrorConfig && (
+        <div className="relative flex items-center justify-center gap-3 py-2 flex-shrink-0">
+          <button onClick={() => {
+            if (mirrorActive) setMirrorActive(false);
+            setMirrorWidgetOpen(false);
+            setMirrorConfig(null);
+          }}
+            className="absolute right-2 top-0 p-0.5 rounded text-gray-500 hover:text-gray-300 hover:bg-gray-700/50 transition-colors"
+            title="Close Mirror">
+            <X size={14} />
           </button>
+          {mirrorActive ? (
+            <button onClick={() => setMirrorActive(false)}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30">
+              <MonitorOff size={12} /> Stop
+            </button>
+          ) : (
+            <button onClick={() => { setMirrorActive(true); }}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30">
+              <Monitor size={12} /> Start
+            </button>
+          )}
           <button onClick={() => {
             const next = mirrorConfig.permission === 'read' ? 'write' : mirrorConfig.permission === 'write' ? 'both' : 'read';
             setMirrorConfig({...mirrorConfig, permission: next});
@@ -2036,7 +2059,7 @@ export default function Chat() {
             {mirrorConfig.permission === 'read' ? 'Read' : mirrorConfig.permission === 'write' ? 'Write' : 'Both'}
           </button>
           <span className="text-xs text-gray-500">
-            Mirror: {mirrorConfig.source} · {mirrorStatus.text} {mirrorStatus.count > 0 ? ` · ${mirrorStatus.count}` : ''}
+            Mirror: {mirrorConfig.source} · {mirrorActive ? mirrorStatus.text : 'stopped'} {mirrorActive && mirrorStatus.count > 0 ? ` · ${mirrorStatus.count}` : ''}
           </span>
         </div>
       )}
@@ -2047,7 +2070,7 @@ export default function Chat() {
             if (thread) {
               setUserHasInteracted(true);
               let finalText = messageText;
-              if (mirrorConfig && mirrorContextRef.current) {
+              if (mirrorActive && mirrorConfig && mirrorContextRef.current) {
                 finalText = `${mirrorContextRef.current}\n\n${messageText}`;
                 mirrorContextRef.current = '';
               }

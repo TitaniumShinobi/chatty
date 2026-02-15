@@ -1989,7 +1989,7 @@ export default function Layout() {
 
       if (subCmd === 'stop') {
         mc?.stop?.();
-        const stopMsg = 'Mirror stopped. Capture ended, controls hidden.';
+        const stopMsg = 'Mirror capture stopped. Widget remains visible for quick restart.';
         setThreads(prev => prev.map(t => {
           if (t.id !== threadId) return t;
           return {
@@ -2001,6 +2001,23 @@ export default function Layout() {
               timestamp: new Date().toISOString(),
               packets: [{ type: 'text', payload: { content: stopMsg } }],
               tool_trace: [{ tool: 'mirror', detail: 'action=stop' }]
+            }]
+          };
+        }));
+      } else if (subCmd === 'close') {
+        mc?.close?.();
+        const closeMsg = 'Mirror closed. Widget hidden, capture ended.';
+        setThreads(prev => prev.map(t => {
+          if (t.id !== threadId) return t;
+          return {
+            ...t,
+            messages: [...t.messages, {
+              id: `mirror-${Date.now()}`,
+              role: 'assistant' as const,
+              text: closeMsg,
+              timestamp: new Date().toISOString(),
+              packets: [{ type: 'text', payload: { content: closeMsg } }],
+              tool_trace: [{ tool: 'mirror', detail: 'action=close' }]
             }]
           };
         }));
