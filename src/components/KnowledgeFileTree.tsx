@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText, X, Image } from "lucide-react";
+import { useState, useMemo, useCallback } from "react";
+import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText, X, Image, Film, Music, Eye } from "lucide-react";
 
 interface KnowledgeFile {
   id: string;
@@ -21,6 +21,7 @@ interface TreeNode {
   children?: TreeNode[];
   file?: KnowledgeFile;
   count?: number;
+  isAssetsFolder?: boolean;
 }
 
 const FOLDER_META: Record<string, { label: string; icon: string }> = {
@@ -45,7 +46,6 @@ function buildKnowledgeTree(files: KnowledgeFile[]): TreeNode[] {
   for (const f of files) {
     const pathParts = f.filename.split('/');
     const instancesIdx = pathParts.indexOf('instances');
-
     const media = isMediaFile(f);
 
     if (instancesIdx >= 0 && pathParts.length > instancesIdx + 2) {
@@ -55,7 +55,6 @@ function buildKnowledgeTree(files: KnowledgeFile[]): TreeNode[] {
       if (topFolder === 'assets' || topFolder === 'documents' || topFolder === 'character.ai') {
         const subParts = pathParts.slice(instancesIdx + 3, -1);
         const subFolder = subParts.length > 0 ? subParts.join('/') : '__root__';
-
         if (!folderMap[topFolder]) folderMap[topFolder] = {};
         if (!folderMap[topFolder][subFolder]) folderMap[topFolder][subFolder] = [];
         folderMap[topFolder][subFolder].push(f);
@@ -89,6 +88,7 @@ function buildKnowledgeTree(files: KnowledgeFile[]): TreeNode[] {
         type: "folder",
         count: 0,
         children: [],
+        isAssetsFolder: folder === 'assets',
       });
       continue;
     }
@@ -133,6 +133,7 @@ function buildKnowledgeTree(files: KnowledgeFile[]): TreeNode[] {
       type: "folder",
       count: totalCount,
       children,
+      isAssetsFolder: folder === 'assets',
     });
   }
 
@@ -150,6 +151,151 @@ function buildKnowledgeTree(files: KnowledgeFile[]): TreeNode[] {
   }
 
   return tree;
+}
+
+function getThumbnailUrl(file: KnowledgeFile): string | null {
+  if (!file.mimeType?.startsWith('image/')) return null;
+  const encodedPath = encodeURIComponent(file.filename);
+  return `/api/ais/file-preview?path=${encodedPath}`;
+}
+
+function MediaFallbackIcon({ file }: { file: KnowledgeFile }) {
+  if (file.mimeType?.startsWith('video/')) {
+    return <Film size={24} style={{ color: "#a78bfa" }} />;
+  }
+  if (file.mimeType?.startsWith('audio/')) {
+    return <Music size={24} style={{ color: "#60a5fa" }} />;
+  }
+  return <Image size={24} style={{ color: "#a78bfa" }} />;
+}
+
+function MediaThumbnail({
+  file,
+  onRemoveFile,
+}: {
+  file: KnowledgeFile;
+  onRemoveFile?: (fileId: string) => void;
+}) {
+  const [imgError, setImgError] = useState(false);
+  const thumbUrl = getThumbnailUrl(file);
+  const displayName = file.originalName || file.filename.split('/').pop() || file.filename;
+
+  const handleOpen = useCallback(() => {
+    if (thumbUrl && file.mimeType?.startsWith('image/')) {
+      window.open(thumbUrl, '_blank', 'noopener');
+    }
+  }, [thumbUrl, file.mimeType]);
+
+  return (
+    <div
+      className="group relative flex flex-col items-center"
+      title={displayName}
+      style={{ width: 80 }}
+    >
+      <div
+        className="relative rounded-lg overflow-hidden cursor-pointer"
+        style={{
+          width: 80,
+          height: 80,
+          backgroundColor: "var(--chatty-bg-message)",
+          border: "1px solid rgba(255,255,255,0.08)",
+        }}
+        onClick={handleOpen}
+      >
+        {thumbUrl && !imgError ? (
+          <img
+            src={thumbUrl}
+            alt={displayName}
+            loading="lazy"
+            onError={() => setImgError(true)}
+            className="w-full h-full"
+            style={{ objectFit: "cover" }}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <MediaFallbackIcon file={file} />
+          </div>
+        )}
+
+        <div
+          className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5"
+          style={{ backgroundColor: "rgba(0,0,0,0.55)" }}
+        >
+          {thumbUrl && file.mimeType?.startsWith('image/') && (
+            <button
+              className="p-1.5 rounded-md hover:bg-white/20 transition-colors"
+              title="View"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpen();
+              }}
+            >
+              <Eye size={14} style={{ color: "#fff" }} />
+            </button>
+          )}
+          {onRemoveFile && (
+            <button
+              className="p-1.5 rounded-md hover:bg-red-500/40 transition-colors"
+              title="Remove"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemoveFile(file.id);
+              }}
+            >
+              <X size={14} style={{ color: "#fff" }} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <span
+        className="mt-1 text-[10px] text-center leading-tight truncate w-full"
+        style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+        title={displayName}
+      >
+        {displayName.length > 12 ? displayName.slice(0, 10) + '…' : displayName}
+      </span>
+    </div>
+  );
+}
+
+function AssetsGrid({
+  files,
+  onRemoveFile,
+}: {
+  files: KnowledgeFile[];
+  onRemoveFile?: (fileId: string) => void;
+}) {
+  return (
+    <div
+      className="grid gap-2 py-2 px-1"
+      style={{
+        gridTemplateColumns: "repeat(auto-fill, 80px)",
+        justifyContent: "start",
+      }}
+    >
+      {files.map((f) => (
+        <MediaThumbnail
+          key={f.id}
+          file={f}
+          onRemoveFile={onRemoveFile}
+        />
+      ))}
+    </div>
+  );
+}
+
+function collectMediaFiles(node: TreeNode): KnowledgeFile[] {
+  const files: KnowledgeFile[] = [];
+  if (node.type === 'file' && node.file) {
+    files.push(node.file);
+  }
+  if (node.children) {
+    for (const child of node.children) {
+      files.push(...collectMediaFiles(child));
+    }
+  }
+  return files;
 }
 
 function getFileIcon(file: KnowledgeFile) {
@@ -206,6 +352,51 @@ function FileItem({
   }
 
   const isEmpty = (node.count || 0) === 0;
+
+  if (node.isAssetsFolder && !isEmpty) {
+    const allMedia = isOpen ? collectMediaFiles(node) : [];
+    return (
+      <div>
+        <div
+          className="flex items-center gap-2 py-1.5 px-2 rounded cursor-pointer hover:bg-white/10 transition-colors"
+          style={{ paddingLeft: `${depth * 12}px` }}
+          onClick={() => setIsOpen(!isOpen)}
+        >
+          {isOpen ? (
+            <ChevronDown size={14} style={{ color: "var(--chatty-text)", opacity: 0.6 }} />
+          ) : (
+            <ChevronRight size={14} style={{ color: "var(--chatty-text)", opacity: 0.6 }} />
+          )}
+          {isOpen ? (
+            <FolderOpen size={14} style={{ color: "#a78bfa" }} />
+          ) : (
+            <Folder size={14} style={{ color: "#a78bfa" }} />
+          )}
+          <span
+            className="text-sm flex-1 font-semibold"
+            style={{ color: "var(--chatty-text)" }}
+          >
+            {node.name}
+          </span>
+          <span
+            className="text-xs px-1.5 py-0.5 rounded"
+            style={{
+              backgroundColor: "var(--chatty-bg-message)",
+              color: "var(--chatty-text)",
+              opacity: 0.7,
+            }}
+          >
+            {node.count || 0}
+          </span>
+        </div>
+        {isOpen && (
+          <div style={{ paddingLeft: `${(depth + 1) * 12}px` }}>
+            <AssetsGrid files={allMedia} onRemoveFile={onRemoveFile} />
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -275,7 +466,7 @@ export function KnowledgeFileTree({ files, onRemoveFile, formatFileSize }: Knowl
               style={{ opacity: 0.5 }}
             >
               <ChevronRight size={14} style={{ color: "var(--chatty-text)", opacity: 0.3 }} />
-              <Folder size={14} style={{ color: "var(--chatty-accent)" }} />
+              <Folder size={14} style={{ color: folder === 'assets' ? "#a78bfa" : "var(--chatty-accent)" }} />
               <span className="text-sm font-semibold" style={{ color: "var(--chatty-text)" }}>
                 {meta.icon} {meta.label}
               </span>

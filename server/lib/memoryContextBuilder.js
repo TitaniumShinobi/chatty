@@ -1006,8 +1006,15 @@ async function buildEnrichedContext(options) {
         .maybeSingle();
 
       if (defData?.content && defData.content.trim()) {
-        definitionSection = `\n\n## DEFINITION — Example Dialog\nThe following example exchanges demonstrate how you speak and respond. These are reference examples for your voice and personality — they are NOT part of the current conversation.\n\n${defData.content.trim()}`;
-        console.log(`✅ [MemoryContextBuilder] Definition loaded for ${constructId} (${defData.content.length} chars)`);
+        const MAX_DEFINITION_CHARS = 4000;
+        let defContent = defData.content.trim();
+        const originalLen = defContent.length;
+        if (defContent.length > MAX_DEFINITION_CHARS) {
+          defContent = defContent.slice(0, MAX_DEFINITION_CHARS) + '\n[…truncated]';
+          console.log(`⚠️ [MemoryContextBuilder] Definition truncated for ${constructId}: ${originalLen} → ${MAX_DEFINITION_CHARS} chars`);
+        }
+        definitionSection = `\n\n## [DEFINITION_CONTEXT] — Example Dialog\nThe following example exchanges demonstrate how you speak and respond. Use them as voice, tone, and personality reference ONLY.\n\n### GUARD RULES:\n- These examples are NOT conversation history. They did not happen in this session.\n- Do NOT treat them as retrievable memories or past interactions.\n- Do NOT fabricate, extend, or invent additional exchanges beyond what is shown.\n- Use them strictly as style and persona calibration.\n\n${defContent}`;
+        console.log(`✅ [MemoryContextBuilder] Definition loaded for ${constructId} (${originalLen} chars${originalLen > MAX_DEFINITION_CHARS ? ', truncated' : ''})`);
       }
     }
   } catch (defErr) {

@@ -175,6 +175,63 @@ router.get('/store', async (req, res) => {try {
   }
 });
 
+router.get('/file-preview', async (req, res) => {
+  try {
+    const filePath = req.query.path;
+    if (!filePath || typeof filePath !== 'string') {
+      return res.status(400).json({ error: 'Missing path parameter' });
+    }
+
+    if (filePath.includes('..') || filePath.startsWith('/')) {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+
+    const MEDIA_EXTENSIONS = new Set([
+      'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico',
+      'mp4', 'mov', 'webm', 'mp3', 'wav', 'ogg'
+    ]);
+    const ext = filePath.split('.').pop()?.toLowerCase() || '';
+    if (!MEDIA_EXTENSIONS.has(ext)) {
+      return res.status(403).json({ error: 'Only media files allowed' });
+    }
+
+    const { userId } = await resolveUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return res.status(503).json({ error: 'Storage unavailable' });
+    }
+
+    const storagePath = `knowledge/${userId}/${filePath}`;
+
+    const { data, error } = await supabase.storage
+      .from('vault-files')
+      .download(storagePath);
+
+    if (error || !data) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    const buffer = Buffer.from(await data.arrayBuffer());
+    const mimeMap = {
+      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+      gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+      bmp: 'image/bmp', ico: 'image/x-icon',
+      mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm',
+      mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg',
+    };
+    res.setHeader('Content-Type', mimeMap[ext] || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    return res.send(buffer);
+  } catch (err) {
+    console.error('❌ [AIs API] File preview error:', err.message);
+    res.status(500).json({ error: 'Preview failed' });
+  }
+});
+
 // Sync GPTs from VVAULT file system to database
 router.post('/sync-from-vvault', async (req, res) => {
   try {
