@@ -59,7 +59,10 @@ function mergeToolTrace(drainedEvents, enrichedContext) {
 // OpenRouter client for fallback when VVAULT API is unavailable
 // Primary: user's own OpenRouter key; Fallback: Replit AI Integrations (managed, billed to credits)
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const openrouter = null; // Force-disabled: OpenRouter key is invalid (401 User not found). Route all traffic to OpenAI.
+const openrouter = OPENROUTER_API_KEY ? new OpenAI({
+  baseURL: 'https://openrouter.ai/api/v1',
+  apiKey: OPENROUTER_API_KEY,
+}) : null;
 
 // Replit-managed OpenRouter client (fallback when user's key fails)
 const REPLIT_OPENROUTER_KEY = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY;
@@ -3904,48 +3907,73 @@ router.post("/message", async (req, res) => {
       let completion;
       let aiResponse;
 
-      // ===== NOVA-001 HOTFIX: Force replitOpenrouter, skip OpenAI entirely =====
-      if (constructId === 'nova-001' && replitOpenrouter && !hasImages) {
-        console.log(`[NOVA HOTFIX] Provider forced to replitOpenrouter for nova-001 (bypassing OpenAI 429)`);
+      // ===== NOVA-001 HOTFIX: Prefer OpenRouter, fall back through all providers =====
+      if (constructId === 'nova-001' && (replitOpenrouter || openrouter) && !hasImages) {
+        console.log(`[NOVA HOTFIX] Provider forced to OpenRouter for nova-001 (prefer non-OpenAI)`);
         const hotfixModel = DEFAULT_OPENROUTER_MODEL;
         const hotfixMessages = [
           { role: "system", content: systemPrompt },
           ...conversationHistoryMessages,
           { role: "user", content: message }
         ];
-        try {
-          completion = await replitOpenrouter.chat.completions.create({
-            model: hotfixModel,
-            messages: hotfixMessages,
-            max_tokens: 2048,
-          });
-          aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
-          effectiveProvider = 'replitOpenrouter';
-          effectiveModel = hotfixModel;
-          console.log(`✅ [NOVA HOTFIX] replitOpenrouter success for nova-001, response length: ${aiResponse.length}`);
-        } catch (hotfixErr) {
-          console.error(`❌ [NOVA HOTFIX] replitOpenrouter failed:`, hotfixErr?.status, hotfixErr?.message);
-          if (openrouter) {
-            try {
-              console.log(`🔄 [NOVA HOTFIX] Falling back to openrouter for nova-001`);
-              completion = await openrouter.chat.completions.create({
-                model: hotfixModel,
-                messages: hotfixMessages,
-                max_tokens: 2048,
-              });
-              aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
-              effectiveProvider = 'openrouter';
-              effectiveModel = hotfixModel;
-              console.log(`✅ [NOVA HOTFIX] openrouter fallback success for nova-001`);
-            } catch (orErr) {
-              console.error(`❌ [NOVA HOTFIX] openrouter fallback also failed:`, orErr?.status, orErr?.message);
-              throw hotfixErr;
-            }
-          } else {
-            throw hotfixErr;
+        let novaSuccess = false;
+
+        if (replitOpenrouter && !novaSuccess) {
+          try {
+            completion = await replitOpenrouter.chat.completions.create({
+              model: hotfixModel,
+              messages: hotfixMessages,
+              max_tokens: 2048,
+            });
+            aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+            effectiveProvider = 'replitOpenrouter';
+            effectiveModel = hotfixModel;
+            novaSuccess = true;
+            console.log(`✅ [NOVA HOTFIX] replitOpenrouter success for nova-001, response length: ${aiResponse.length}`);
+          } catch (hotfixErr) {
+            console.error(`❌ [NOVA HOTFIX] replitOpenrouter failed:`, hotfixErr?.status, hotfixErr?.message);
           }
         }
-        // Skip normal provider routing — jump straight to post-inference
+
+        if (openrouter && !novaSuccess) {
+          try {
+            console.log(`🔄 [NOVA HOTFIX] Falling back to openrouter for nova-001`);
+            completion = await openrouter.chat.completions.create({
+              model: hotfixModel,
+              messages: hotfixMessages,
+              max_tokens: 2048,
+            });
+            aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+            effectiveProvider = 'openrouter';
+            effectiveModel = hotfixModel;
+            novaSuccess = true;
+            console.log(`✅ [NOVA HOTFIX] openrouter fallback success for nova-001`);
+          } catch (orErr) {
+            console.error(`❌ [NOVA HOTFIX] openrouter fallback also failed:`, orErr?.status, orErr?.message);
+          }
+        }
+
+        if (openaiClient && !novaSuccess) {
+          try {
+            console.log(`🔄 [NOVA HOTFIX] Last resort: falling back to OpenAI for nova-001`);
+            completion = await openaiClient.chat.completions.create({
+              model: 'gpt-4.1-mini',
+              messages: hotfixMessages,
+              max_tokens: 2048,
+            });
+            aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+            effectiveProvider = 'openai';
+            effectiveModel = 'gpt-4.1-mini';
+            novaSuccess = true;
+            console.log(`✅ [NOVA HOTFIX] OpenAI last-resort success for nova-001`);
+          } catch (oaiErr) {
+            console.error(`❌ [NOVA HOTFIX] OpenAI last-resort also failed:`, oaiErr?.status, oaiErr?.message);
+          }
+        }
+
+        if (!novaSuccess) {
+          throw new Error('All providers failed for nova-001');
+        }
       } else if (effectiveProvider === 'openai') {
         console.log(`🔷 [VVAULT Proxy] Calling OpenAI (${effectiveModel}) for ${constructId}`);
         
