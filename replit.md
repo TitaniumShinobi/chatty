@@ -70,6 +70,15 @@ Chatty is an AI-powered workspace application providing a thin UI layer for inte
 - **Tool Transparency System:** Server-authored `tool_trace` field on assistant messages prevents false tool usage claims. Green pill UI in Message.tsx. `POST /api/vvault/tool-events` endpoint with strict validation (auth required, tool whitelist: screen_capture/ocr, unknown fields rejected 400).
 - **Watch with Nova:** Screen capture + OCR for nova-001 sessions. Write Access toggle controls server reporting and context injection. When Write Access OFF, capture runs locally but no events reach server (no pills).
 
+## Performance Optimization (Feb 2026)
+- **Route-Level Code Splitting:** All pages lazy-loaded via `React.lazy()` in `main.tsx` with Suspense fallback components.
+- **Chat Message Windowing:** Only last 50 messages rendered initially; "Load earlier messages" button on scroll-up (configurable `messageWindowSize`).
+- **Component-Level Lazy Loading:** PersonalityForge, TranscriptFolderTree, KnowledgeFileTree, Mirror, MirrorSetup lazy-loaded with Suspense boundaries.
+- **Vendor Chunk Splitting:** `react-markdown` (347 KB) and `react-syntax-highlighter` (616 KB) extracted to separate cached vendor chunks via `manualChunks` in `vite.config.ts`.
+- **Web-Vitals Metrics:** FCP/LCP/TTFB/INP tracking via `src/lib/perfMetrics.ts`. Visible in dev console or when `localStorage.PERF_DEBUG=1`.
+- **Bundle Results:** Main bundle 2,477 KB → 799 KB (67.7% reduction, 203 KB gzipped). Chat chunk 1,034 KB → 101 KB.
+- **Measured Dev Metrics:** TTFB 124ms (good), FCP 1876ms (needs-improvement), LCP 2064ms (good).
+
 ## External Dependencies
 - **VVAULT API:** Primary API for AI inference, memory management, and conversation transcripts.
 - **Supabase:** Persistent storage for conversations, attachments, and backend data.
