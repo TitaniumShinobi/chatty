@@ -44,6 +44,14 @@ function drainToolEvents(sessionId) {
   return events;
 }
 
+function mergeToolTrace(drainedEvents, enrichedContext) {
+  const events = [...drainedEvents];
+  if (enrichedContext?.continuityToolTrace) {
+    events.push(enrichedContext.continuityToolTrace);
+  }
+  return events;
+}
+
 // tool-events route defined AFTER requireAuth below
 
 // OpenRouter client for fallback when VVAULT API is unavailable
@@ -4169,7 +4177,7 @@ router.post("/message", async (req, res) => {
         provider_forced: constructId === 'nova-001',
         provider_used: effectiveProvider,
         has_images: hasImages,
-        tool_trace: drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`)
+        tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext)
       });
     } catch (llmError) {
       console.error(`❌ [VVAULT Proxy] ${effectiveProvider} call failed:`, {
@@ -4457,7 +4465,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               provider_forced: constructId === 'nova-001',
               provider_used: effectiveProvider,
               has_images: hasImages,
-              tool_trace: drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`)
+              tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext)
             });
           } catch (fallbackError) {
             console.error(`❌ [VVAULT Proxy] LLM fallback failed:`, fallbackError);
@@ -4484,7 +4492,8 @@ Do NOT treat this as a first meeting if there is conversation history.`;
       });
 
       const drainedEvents = drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`);
-      data.tool_trace = drainedEvents.length > 0 ? drainedEvents : (data.tool_trace || []);
+      const mergedEvents = mergeToolTrace(drainedEvents, enrichedContext);
+      data.tool_trace = mergedEvents.length > 0 ? mergedEvents : (data.tool_trace || []);
       return res.json(data);
     } catch (fetchError) {
       clearTimeout(timeout);
@@ -4746,7 +4755,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           provider_forced: constructId === 'nova-001',
           provider_used: effectiveProvider,
           has_images: hasImages,
-          tool_trace: drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`)
+          tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext)
         });
       } catch (fallbackError) {
         console.error(`❌ [VVAULT Proxy] LLM fallback failed:`, fallbackError);

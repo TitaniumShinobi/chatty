@@ -187,62 +187,11 @@ function buildNeedleMemorySection(needleHits, constructId) {
   return section;
 }
 
-function buildContinuityMemoryContext(needleHits, vectorHits, verifiedMemories, constructId, userMessage) {
-  const sections = [];
-  let hasEvidence = false;
-
-  if (needleHits && needleHits.length > 0) {
-    hasEvidence = true;
-    needleHits.forEach((hit, i) => {
-      const sourcePath = hit.source_file || hit.context_hint || `${constructId}/transcripts`;
-      const timestamp = hit.session_context?.estimatedDate || 'unknown date';
-      const confidence = hit.tier === 1 ? 1.0 : hit.tier === 2 ? 0.8 : 0.6;
-      sections.push(`### MEMORY_CONTEXT [${i + 1}]
-- source_path: ${sourcePath}
-- timestamp: ${timestamp}
-- confidence: ${confidence.toFixed(1)}
-- type: needle_transcript_match
-- excerpt_user: "${hit.user || ''}"
-- excerpt_assistant: "${hit.assistant || ''}"${hit.session_context ? `\n- session_title: "${hit.session_context.title || ''}"` : ''}${hit.session_context?.vibe ? `\n- vibe: ${hit.session_context.vibe}` : ''}`);
-    });
-  }
-
-  if (vectorHits && vectorHits.length > 0) {
-    hasEvidence = true;
-    vectorHits.forEach((hit, i) => {
-      const sourcePath = hit.source_file || 'semantic_memory';
-      const timestamp = hit.sourceDate || 'unknown date';
-      const confidence = hit.confidence ? hit.confidence.toFixed(2) : '0.50';
-      const truncated = hit.content?.trim().substring(0, 400) || '';
-      sections.push(`### MEMORY_CONTEXT [vector-${i + 1}]
-- source_path: ${sourcePath}
-- timestamp: ${timestamp}
-- confidence: ${confidence}
-- type: vector_semantic_match
-- excerpt: "${truncated}"`);
-    });
-  }
-
-  if (verifiedMemories && verifiedMemories.length > 0) {
-    hasEvidence = true;
-    verifiedMemories.forEach((mem, i) => {
-      const sourcePath = mem.sourceFile || mem.file || 'verified_memory';
-      const timestamp = mem.date || 'unknown date';
-      const confidence = mem.score ? (mem.score / 100).toFixed(2) : '0.70';
-      sections.push(`### MEMORY_CONTEXT [verified-${i + 1}]
-- source_path: ${sourcePath}
-- timestamp: ${timestamp}
-- confidence: ${confidence}
-- type: verified_transcript_memory
-- user_said: "${mem.user || ''}"
-- ai_said: "${mem.assistant || ''}"`);
-    });
-  }
-
-  if (!hasEvidence) {
+function buildContinuityMemoryContext(needleHits, constructId) {
+  if (!needleHits || needleHits.length === 0) {
     return `\n\n## MEMORY_CONTEXT
 No verified memory evidence found for this query.
-The memory system searched all transcripts, needle indexes, vector embeddings, and verified memories.
+The memory system searched all available Needle transcript indexes.
 No matches were returned.
 
 ### MANDATORY RESPONSE:
@@ -251,8 +200,21 @@ Do NOT claim to remember, recall, or have access to any information about this t
 Do NOT fabricate dates, events, file contents, or emotional history.`;
   }
 
+  const sections = needleHits.map((hit, i) => {
+    const sourcePath = hit.source_file || hit.context_hint || `${constructId}/transcripts`;
+    const timestamp = hit.session_context?.estimatedDate || 'unknown date';
+    const confidence = hit.tier === 1 ? 1.0 : hit.tier === 2 ? 0.8 : 0.6;
+    return `### MEMORY_CONTEXT [${i + 1}]
+- source_path: ${sourcePath}
+- timestamp: ${timestamp}
+- confidence: ${confidence.toFixed(1)}
+- type: needle_transcript_match
+- excerpt_user: "${hit.user || ''}"
+- excerpt_assistant: "${hit.assistant || ''}"${hit.session_context ? `\n- session_title: "${hit.session_context.title || ''}"` : ''}${hit.session_context?.vibe ? `\n- vibe: ${hit.session_context.vibe}` : ''}`;
+  });
+
   return `\n\n## MEMORY_CONTEXT
-The following evidence was retrieved from construct files and transcripts.
+The following evidence was retrieved from Needle transcript search.
 You MUST cite source_path and timestamp when referencing this evidence.
 You MUST NOT claim memory beyond what is documented here.
 If evidence conflicts, prefer explicit in-file timestamps over filenames/metadata.
@@ -1096,7 +1058,7 @@ RULES FOR MEMORY USE:
   }
 
   let memoryGapSection = '';
-  const memoryProfileWillHandle = gptConfig?.memoryEnabled && gptConfig?.memoryProfile && gptConfig.memoryProfile !== 'off';
+  const memoryProfileWillHandle = gptConfig?.memoryEnabled === true && gptConfig?.memoryProfile === 'continuitygpt';
   if (!memoryProfileWillHandle && userMessage && isMemoryTriggeringQuestion(userMessage) && vectorCount === 0 && verifiedCount === 0 && needleCount === 0 && (result.memoriesLoaded || 0) === 0) {
     memoryGapSection = buildMemoryGapSection(userMessage, constructId);
     result.memoryGapInjected = true;
@@ -1161,36 +1123,38 @@ When answering:
   }
 
   let continuitySection = '';
-  const memoryProfileActive = gptConfig?.memoryEnabled && gptConfig?.memoryProfile && gptConfig.memoryProfile !== 'off';
-  if (memoryProfileActive) {
-    const profile = MEMORY_PROFILES[gptConfig.memoryProfile];
-    if (profile) {
-      continuitySection += '\n\n' + profile.getGuard();
+  const continuityActive = gptConfig?.memoryEnabled === true && gptConfig?.memoryProfile === 'continuitygpt';
+  if (continuityActive) {
+    const profile = MEMORY_PROFILES.continuitygpt;
+    continuitySection += '\n\n' + profile.getGuard();
 
-      if (isMemoryTriggeringQuestion(userMessage)) {
-        const allNeedleHits = needleHits || [];
-        const allVectorHits = vectorHits || [];
-        const allVerifiedMems = verifiedResult?.memories || [];
-        continuitySection += buildContinuityMemoryContext(allNeedleHits, allVectorHits, allVerifiedMems, constructId, userMessage);
+    if (isMemoryTriggeringQuestion(userMessage)) {
+      const allNeedleHits = needleHits || [];
+      continuitySection += buildContinuityMemoryContext(allNeedleHits, constructId);
 
-        const totalEvidence = allNeedleHits.length + allVectorHits.length + allVerifiedMems.length;
-        result.continuityMemorySearch = {
-          triggered: true,
-          profile: gptConfig.memoryProfile,
+      result.continuityMemorySearch = {
+        triggered: true,
+        profile: 'continuitygpt',
+        query: userMessage?.substring(0, 100),
+        needleHits: allNeedleHits.length,
+        hasEvidence: allNeedleHits.length > 0
+      };
+      result.continuityToolTrace = {
+        tool: 'memory_search',
+        detail: {
+          constructId,
           query: userMessage?.substring(0, 100),
           needleHits: allNeedleHits.length,
-          vectorHits: allVectorHits.length,
-          verifiedHits: allVerifiedMems.length,
-          totalEvidence,
-          hasEvidence: totalEvidence > 0
-        };
-        console.log(`🔒 [ContinuityGPT] Memory search for ${constructId}: ${totalEvidence} evidence items (needle: ${allNeedleHits.length}, vector: ${allVectorHits.length}, verified: ${allVerifiedMems.length})`);
-      } else {
-        result.continuityMemorySearch = { triggered: false, profile: gptConfig.memoryProfile, reason: 'not_memory_query' };
-      }
-
-      console.log(`🔒 [ContinuityGPT] Profile "${gptConfig.memoryProfile}" active for ${constructId} — guard injected`);
+          hasEvidence: allNeedleHits.length > 0,
+          ts: new Date().toISOString()
+        }
+      };
+      console.log(`🔒 [ContinuityGPT] Memory search for ${constructId}: ${allNeedleHits.length} needle hits (Needle-only retrieval)`);
+    } else {
+      result.continuityMemorySearch = { triggered: false, profile: 'continuitygpt', reason: 'not_memory_query' };
     }
+
+    console.log(`🔒 [ContinuityGPT] Profile "continuitygpt" active for ${constructId} — guard injected`);
   }
 
   result.systemPrompt = basePrompt + physicalAppearanceSection + capsuleSection + userSection + knowledgeSection + citationDirective + ledgerSection + vectorMemorySection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + continuitySection + buildBehavioralDirectives(constructId);
