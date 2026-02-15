@@ -75,8 +75,8 @@ exposeLocalhost = true
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["bash", "-c", "cd /home/runner/workspace && NODE_ENV=production node server/server.js"]
-build = ["bash", "-c", "cd /home/runner/workspace && npm install --production=false && npm run build"]
+run = ["sh", "-c", "NODE_ENV=production node server/server.js"]
+build = ["sh", "-c", "npm install && npm run build"]
 
 [userenv]
 
