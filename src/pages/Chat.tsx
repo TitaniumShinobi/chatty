@@ -13,9 +13,9 @@ import { VVAULTConversationManager } from "../lib/vvaultConversationManager";
 import { getUserId } from "../lib/auth";
 import MessageBar, { ImageAttachment } from "../components/MessageBar";
 import { prepareMessageContent, stripDateLines } from "../utils/text";
-import GPTCreator from "../components/GPTCreator";
-import Mirror from "../components/Mirror";
-import MirrorSetup from "../components/MirrorSetup";
+const GPTCreator = React.lazy(() => import("../components/GPTCreator"));
+const Mirror = React.lazy(() => import("../components/Mirror"));
+const MirrorSetup = React.lazy(() => import("../components/MirrorSetup"));
 import { MonitorOff, Monitor, X } from "lucide-react";
 import { AIService } from "../lib/aiService";
 import type { GPTConfig } from "../lib/gptService";
@@ -420,6 +420,8 @@ export default function Chat() {
   const [gptCreatorConfig, setGptCreatorConfig] = useState<GPTConfig | null>(null);
   const [gptCreatorInitialMessage, setGptCreatorInitialMessage] = useState<string | null>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [messageWindowSize, setMessageWindowSize] = useState(50);
+  const MESSAGE_WINDOW_STEP = 30;
   const mirrorContextRef = useRef<string>('');
   const [mirrorConfig, setMirrorConfig] = useState<{source: 'tab'|'window'|'screen', permission: 'read'|'write'|'both'} | null>(null);
   const [mirrorActive, setMirrorActive] = useState(false);
@@ -555,14 +557,13 @@ export default function Chat() {
     }
   }, [thread, threadId, navigate, threads, isCanonicalThread, isZenSessionThread, isLinSessionThread, isGPTSessionThread]);
 
-  // Reset interaction flag when thread changes, but only if user navigated to a different thread
-  // (not when a new thread was created from the user's first message)
   const prevThreadId = useRef(thread?.id);
   useEffect(() => {
     if (prevThreadId.current !== thread?.id) {
       if (!userHasInteracted || (thread && thread.messages.length === 0)) {
         setUserHasInteracted(false);
       }
+      setMessageWindowSize(50);
       prevThreadId.current = thread?.id;
     }
   }, [thread?.id]);
@@ -574,17 +575,23 @@ export default function Chat() {
     }
   }, [thread?.messages, userHasInteracted]);
 
-  // Scroll position listener for scroll-to-bottom button
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
     const onScroll = () => {
       const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
       setShowScrollButton(!isNearBottom);
+      if (container.scrollTop < 80) {
+        setMessageWindowSize(prev => {
+          const total = thread?.messages?.length || 0;
+          if (prev >= total) return prev;
+          return prev + MESSAGE_WINDOW_STEP;
+        });
+      }
     };
     container.addEventListener("scroll", onScroll);
     return () => container.removeEventListener("scroll", onScroll);
-  }, [thread?.id]);
+  }, [thread?.id, thread?.messages?.length]);
 
   // Load transcript for canonical threads (Zen, Lin, or GPTs)
   // Only attempt fallback transcript loading if threads have loaded (threads.length > 0)
@@ -1613,9 +1620,26 @@ export default function Chat() {
         )}
 
         {thread.messages.length > 0 &&
-          thread.messages
-            .filter((m: any) => !isDateHeaderMessage(m)) // Hide date headers from UI (by flag OR content pattern)
-            .map((m, index, filteredMessages) => {
+          (() => {
+            const filtered = thread.messages.filter((m: any) => !isDateHeaderMessage(m));
+            const windowStart = Math.max(0, filtered.length - messageWindowSize);
+            const windowed = filtered.slice(windowStart);
+            const hasMore = windowStart > 0;
+            return (
+              <>
+                {hasMore && (
+                  <div className="flex justify-center py-3">
+                    <button
+                      onClick={() => setMessageWindowSize(prev => prev + MESSAGE_WINDOW_STEP)}
+                      className="text-xs px-3 py-1.5 rounded-full transition-colors"
+                      style={{ backgroundColor: "var(--chatty-bg-message)", color: "var(--chatty-text)", opacity: 0.7 }}
+                    >
+                      Load {Math.min(MESSAGE_WINDOW_STEP, windowStart)} earlier messages
+                    </button>
+                  </div>
+                )}
+                {windowed.map((m, index) => {
+                  const filteredMessages = windowed;
               const user = isUser(m.role);
               const isLatest = index === filteredMessages.length - 1;
               const isRemoved = isMessageRemoved(m.id);
@@ -1932,6 +1956,9 @@ export default function Chat() {
                 </div>
               );
             })}
+              </>
+            );
+          })()}
         {/* Fresh canvas spacer — large gap after last message on fresh session, disappears on first send */}
         {!userHasInteracted && thread.messages.length > 0 && (
           <div style={{ height: "calc(100vh - 200px)" }} />
@@ -1955,23 +1982,27 @@ export default function Chat() {
         </div>
       )}
 
-      <Mirror
-        sessionId={thread?.id || threadId || ''}
-        config={mirrorActive ? mirrorConfig : null}
-        onContextUpdate={(block: string) => { mirrorContextRef.current = block; }}
-        onStatusChange={(text: string, count: number) => setMirrorStatus({text, count})}
-      />
+      <React.Suspense fallback={null}>
+        <Mirror
+          sessionId={thread?.id || threadId || ''}
+          config={mirrorActive ? mirrorConfig : null}
+          onContextUpdate={(block: string) => { mirrorContextRef.current = block; }}
+          onStatusChange={(text: string, count: number) => setMirrorStatus({text, count})}
+        />
+      </React.Suspense>
 
-      <MirrorSetup
-        isOpen={mirrorSetupOpen}
-        onClose={() => setMirrorSetupOpen(false)}
-        onStart={(cfg) => {
-          setMirrorConfig(cfg);
-          setMirrorActive(true);
-          setMirrorWidgetOpen(true);
-          setMirrorSetupOpen(false);
-        }}
-      />
+      <React.Suspense fallback={null}>
+        <MirrorSetup
+          isOpen={mirrorSetupOpen}
+          onClose={() => setMirrorSetupOpen(false)}
+          onStart={(cfg) => {
+            setMirrorConfig(cfg);
+            setMirrorActive(true);
+            setMirrorWidgetOpen(true);
+            setMirrorSetupOpen(false);
+          }}
+        />
+      </React.Suspense>
 
       {mirrorWidgetOpen && mirrorConfig && (
         <div className="relative flex items-center justify-center gap-3 py-2 flex-shrink-0">
@@ -2040,29 +2071,33 @@ export default function Chat() {
         Chatty can make mistakes. Consider checking important information.
       </div>
 
-      <GPTCreator
-        isVisible={isGPTCreatorOpen}
-        onClose={() => {
-          setIsGPTCreatorOpen(false);
-          setGptCreatorConfig(null);
-          setGptCreatorInitialMessage(null);
-        }}
-        onGPTCreated={(gpt) => {
-          setIsGPTCreatorOpen(false);
-          setGptCreatorConfig(null);
-          setGptCreatorInitialMessage(null);
-          if (handleGPTCreated && gpt) {
-            handleGPTCreated({
-              constructId: (gpt as any).constructCallsign || (gpt as any).id,
-              constructCallsign: (gpt as any).constructCallsign,
-              name: gpt.name,
-            });
-          }
-          forceRefreshConversations?.();
-        }}
-        initialConfig={gptCreatorConfig}
-        initialCreateMessage={gptCreatorInitialMessage}
-      />
+      {isGPTCreatorOpen && (
+        <React.Suspense fallback={<div className="flex-1 flex items-center justify-center" style={{ color: 'var(--chatty-text)', opacity: 0.5 }}><div className="animate-pulse">Loading editor...</div></div>}>
+          <GPTCreator
+            isVisible={isGPTCreatorOpen}
+            onClose={() => {
+              setIsGPTCreatorOpen(false);
+              setGptCreatorConfig(null);
+              setGptCreatorInitialMessage(null);
+            }}
+            onGPTCreated={(gpt) => {
+              setIsGPTCreatorOpen(false);
+              setGptCreatorConfig(null);
+              setGptCreatorInitialMessage(null);
+              if (handleGPTCreated && gpt) {
+                handleGPTCreated({
+                  constructId: (gpt as any).constructCallsign || (gpt as any).id,
+                  constructCallsign: (gpt as any).constructCallsign,
+                  name: gpt.name,
+                });
+              }
+              forceRefreshConversations?.();
+            }}
+            initialConfig={gptCreatorConfig}
+            initialCreateMessage={gptCreatorInitialMessage}
+          />
+        </React.Suspense>
+      )}
     </div>
   );
 }

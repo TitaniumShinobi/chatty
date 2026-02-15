@@ -64,6 +64,12 @@ export default defineConfig({
       external: [
         /^server\/.*/,
       ],
+      output: {
+        manualChunks: {
+          'vendor-markdown': ['react-markdown', 'remark-breaks', 'remark-math', 'rehype-raw', 'rehype-katex'],
+          'vendor-syntax': ['react-syntax-highlighter'],
+        },
+      },
     },
   },
   optimizeDeps: {

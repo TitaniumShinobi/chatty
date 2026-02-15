@@ -29,9 +29,9 @@ import { fetchMe, getUserId } from "../lib/auth";
 import { useSettings } from "../context/SettingsContext";
 import Cropper from "react-easy-crop";
 import { Z_LAYERS } from "../lib/zLayers";
-import { TranscriptFolderTree } from "./TranscriptFolderTree";
+const TranscriptFolderTree = React.lazy(() => import("./TranscriptFolderTree").then(m => ({ default: m.TranscriptFolderTree })));
 const KnowledgeFileTree = React.lazy(() => import("./KnowledgeFileTree"));
-import PersonalityForge from "./PersonalityForge";
+const PersonalityForge = React.lazy(() => import("./PersonalityForge"));
 import {
   getUserFriendlyErrorMessage,
   isOrchestrationError,
@@ -4936,11 +4936,13 @@ ALWAYS:
                                 backgroundColor: "var(--chatty-bg-message)",
                               }}
                             >
-                              <TranscriptFolderTree
-                                transcripts={allTranscripts}
-                                onFileClick={(file) => {
-                                }}
-                              />
+                              <React.Suspense fallback={<div className="animate-pulse h-16 rounded" style={{ backgroundColor: "var(--chatty-line)" }} />}>
+                                <TranscriptFolderTree
+                                  transcripts={allTranscripts}
+                                  onFileClick={(file) => {
+                                  }}
+                                />
+                              </React.Suspense>
                             </div>
                           </div>
                         )
@@ -5253,6 +5255,13 @@ ALWAYS:
                 ) : (
                   // Forge Tab - Personality Extraction from Transcripts
                   <div className="flex-1 overflow-y-auto p-6">
+                    <React.Suspense fallback={
+                      <div className="space-y-4 animate-pulse p-4">
+                        <div className="h-6 rounded w-48" style={{ backgroundColor: "var(--chatty-line)" }} />
+                        <div className="h-4 rounded w-full" style={{ backgroundColor: "var(--chatty-line)" }} />
+                        <div className="h-32 rounded w-full" style={{ backgroundColor: "var(--chatty-line)" }} />
+                      </div>
+                    }>
                     <PersonalityForge
                       constructCallsign={
                         config.constructCallsign ||
@@ -5272,6 +5281,7 @@ ALWAYS:
                         }
                       }}
                     />
+                    </React.Suspense>
 
                     {/* Physical Features */}
                     <div className="mt-6 pt-6" style={{ borderTop: "1px solid var(--chatty-line)" }}>
