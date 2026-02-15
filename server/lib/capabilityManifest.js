@@ -30,6 +30,8 @@ export async function resolveCapabilities(constructId, threadId, userId) {
     _fallback: false,
   };
 
+  let gptConfigFailed = false;
+
   try {
     const gpt = await GPTManager.getInstance().getGPTByCallsign(constructId);
     if (gpt) {
@@ -44,6 +46,7 @@ export async function resolveCapabilities(constructId, threadId, userId) {
   } catch (err) {
     console.error('[CapabilityManifest] GPT config query failed:', err.message);
     manifest._fallback = true;
+    gptConfigFailed = true;
   }
 
   try {
@@ -82,14 +85,21 @@ export async function resolveCapabilities(constructId, threadId, userId) {
     manifest._fallback = true;
   }
 
+  if (gptConfigFailed) {
+    manifest.enabled.codeInterpreter = false;
+    manifest.enabled.webSearch = false;
+    manifest.enabled.imageGeneration = false;
+    manifest.enabled.canvas = false;
+    manifest.enabled.memory = false;
+    manifest.enabled.roleplay = false;
+    manifest.hard_blocked.push('all non-core capabilities: config unavailable (fail-safe)');
+  }
+
   if (manifest.enabled.roleplay && !manifest.state.ageVerified18) {
     manifest.hard_blocked.push('roleplay: age verification required');
   }
   if (manifest.enabled.roleplay && manifest.state.stepUpRequired) {
     manifest.hard_blocked.push('roleplay: step-up authentication required');
-  }
-  if (!manifest.state.mirrorActive && !manifest.enabled.mirror) {
-    manifest.hard_blocked.push('mirror: not active');
   }
 
   return manifest;
@@ -133,13 +143,15 @@ export function formatCapabilityContext(manifest) {
         enabled.push(label);
       }
     } else {
-      if (!isBlocked) {
-        disabled.push(label);
-      }
+      disabled.push(label);
     }
   }
 
-  let lines = ['[CAPABILITY_CONTEXT]'];
+  if (manifest._fallback && manifest.hard_blocked.some(b => b.includes('fail-safe'))) {
+    blocked.push('non-core capabilities (config unavailable)');
+  }
+
+  let lines = ['\n\n[CAPABILITY_CONTEXT]'];
   if (enabled.length > 0) lines.push(`Enabled: ${enabled.join(', ')}`);
   if (active.length > 0) lines.push(`Active: ${active.join(', ')}`);
   if (disabled.length > 0) lines.push(`Disabled: ${disabled.join(', ')}`);
