@@ -28,6 +28,7 @@ export interface GeneralSettings {
 export interface SecuritySettings {
   twoFactorEnabled: boolean;
   sessionTimeout: number;
+  screenTimeout: number;
   loginNotifications: boolean;
   suspiciousActivityAlerts: boolean;
 }

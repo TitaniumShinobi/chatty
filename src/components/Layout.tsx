@@ -17,6 +17,7 @@ import "../lib/messageRecovery";
 import StorageFailureFallback from "./StorageFailureFallback";
 import { ThemeProvider } from "../lib/ThemeContext";
 import { SettingsProvider, useSettings } from "../context/SettingsContext";
+import { useIdleTimeout } from "../hooks/useIdleTimeout";
 import { Z_LAYERS } from "../lib/zLayers";
 // icons not needed here after Sidebar is used
 import SearchPopup from "./SearchPopup";
@@ -214,6 +215,19 @@ function mapChatMessageToThreadMessage(message: ChatMessage): Message | null {
     default:
       return null;
   }
+}
+
+function IdleTimeoutWatcher({ onTimeout }: { onTimeout: () => void }) {
+  const { settings } = useSettings();
+  const timeoutMinutes = settings.security.screenTimeout || 0;
+
+  useIdleTimeout({
+    timeoutMinutes,
+    onTimeout,
+    enabled: timeoutMinutes > 0,
+  });
+
+  return null;
 }
 
 export default function Layout() {
@@ -3070,6 +3084,7 @@ export default function Layout() {
     setCollapsed((s) => !s);
   }return (
     <SettingsProvider>
+      <IdleTimeoutWatcher onTimeout={handleLogout} />
       <ThemeProvider user={user}>
         <div
           className="flex h-screen bg-[var(--chatty-bg-main)] text-[var(--chatty-text)] relative"

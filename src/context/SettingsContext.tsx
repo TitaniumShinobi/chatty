@@ -42,6 +42,7 @@ const DEFAULT_GENERAL: GeneralSettings = {
 const DEFAULT_SECURITY: SecuritySettings = {
   twoFactorEnabled: false,
   sessionTimeout: 30,
+  screenTimeout: 0,
   loginNotifications: true,
   suspiciousActivityAlerts: true
 };

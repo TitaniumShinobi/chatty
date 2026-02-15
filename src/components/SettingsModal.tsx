@@ -12,8 +12,8 @@ import NotificationsTab from './settings/NotificationsTab'
 import PersonalizationTab from './settings/PersonalizationTab'
 import DataControlsTab from './settings/DataControlsTab'
 import StubTab from './settings/StubTab'
+import SecurityTab from './settings/SecurityTab'
 import ParentalControlsTab from './settings/ParentalControlsTab'
-import { SettingsProvider } from '../context/SettingsContext'
 
 interface SettingsModalProps {
   isVisible: boolean
@@ -50,7 +50,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   ]
 
   return (
-    <SettingsProvider>
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={onClose}>
         <div 
           className="rounded-lg shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] flex" 
@@ -170,14 +169,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               {activeTab === 'schedules' && <StubTab title="Schedules" description="Schedule management coming soon..." />}
               {activeTab === 'orders' && <StubTab title="Orders" description="Order history coming soon..." />}
               {activeTab === 'data' && <DataControlsTab />}
-              {activeTab === 'security' && <StubTab title="Security" description="Security options coming soon..." />}
+              {activeTab === 'security' && <SecurityTab />}
               {activeTab === 'parental' && <ParentalControlsTab />}
               {activeTab === 'account' && <AccountTab user={user} onLogout={onLogout} />}
             </div>
           </div>
         </div>
       </div>
-    </SettingsProvider>
   )
 }
 

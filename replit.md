@@ -69,6 +69,7 @@ Chatty is an AI-powered workspace application designed to provide a thin UI laye
 - **Tool Transparency System:** Server-authored `tool_trace` field on assistant messages to prevent false tool usage claims.
 - **Parental Controls & Family Settings:** Family account linking, `standard`/`parent`/`child` account types, content filter levels (`strict`, `moderate`, `light`), child-safe prompt injection, AI "Tattletale" system, and a Parent Dashboard.
 - **Performance Optimization:** Route-level code splitting, chat message windowing, component-level lazy loading, and vendor chunk splitting.
+- **Screen Timeout:** Configurable inactivity timer (Never/1-60 min) in Settings > Security. `useIdleTimeout` hook monitors user activity; `IdleTimeoutWatcher` in Layout triggers logout on timeout. SecurityTab replaces StubTab with timeout dropdown and security toggles.
 
 ## External Dependencies
 - **VVAULT API:** Primary API for AI inference, memory management, and conversation transcripts.
