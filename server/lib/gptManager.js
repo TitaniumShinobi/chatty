@@ -101,6 +101,15 @@ export class GPTManager {
       this.db.exec(`ALTER TABLE gpts ADD COLUMN orchestration_mode TEXT`);
     }
 
+    const hasMemoryEnabled = columns.some(col => col.name === 'memory_enabled');
+    const hasMemoryProfile = columns.some(col => col.name === 'memory_profile');
+    if (!hasMemoryEnabled) {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN memory_enabled INTEGER DEFAULT 0`);
+    }
+    if (!hasMemoryProfile) {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN memory_profile TEXT DEFAULT 'off'`);
+    }
+
     // Backfill defaults for existing rows
     this.db.exec(`
       UPDATE gpts
@@ -108,7 +117,9 @@ export class GPTManager {
         conversation_model = COALESCE(conversation_model, model_id),
         creative_model = COALESCE(creative_model, model_id),
         coding_model = COALESCE(coding_model, model_id),
-        orchestration_mode = COALESCE(orchestration_mode, 'lin')
+        orchestration_mode = COALESCE(orchestration_mode, 'lin'),
+        memory_enabled = COALESCE(memory_enabled, 0),
+        memory_profile = COALESCE(memory_profile, 'off')
     `);
 
     // GPT Files table
@@ -670,9 +681,10 @@ export class GPTManager {
       INSERT INTO gpts (
         id, name, description, instructions, conversation_starters, avatar, capabilities, construct_callsign, 
         model_id, conversation_model, creative_model, coding_model, orchestration_mode, 
+        memory_enabled, memory_profile,
         is_active, created_at, updated_at, user_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -689,13 +701,14 @@ export class GPTManager {
       config.creativeModel || config.modelId,
       config.codingModel || config.modelId,
       config.orchestrationMode || 'lin',
+      config.memoryEnabled ? 1 : 0,
+      config.memoryProfile || 'off',
       config.isActive ? 1 : 0,
       now,
       now,
       config.userId || 'anonymous'
     );
 
-    // Record initial version history (version 1)
     this.recordVersion(id, 1, { ...config, constructCallsign });
 
     return {
@@ -709,7 +722,9 @@ export class GPTManager {
       conversationModel: config.conversationModel || config.modelId,
       creativeModel: config.creativeModel || config.modelId,
       codingModel: config.codingModel || config.modelId,
-      orchestrationMode: config.orchestrationMode || 'lin'
+      orchestrationMode: config.orchestrationMode || 'lin',
+      memoryEnabled: Boolean(config.memoryEnabled),
+      memoryProfile: config.memoryProfile || 'off'
     };
   }
 
@@ -736,6 +751,8 @@ export class GPTManager {
       creativeModel: row.creative_model,
       codingModel: row.coding_model,
       orchestrationMode: row.orchestration_mode || 'lin',
+      memoryEnabled: Boolean(row.memory_enabled),
+      memoryProfile: row.memory_profile || 'off',
       files,
       actions,
       isActive: Boolean(row.is_active),
@@ -914,6 +931,8 @@ export class GPTManager {
       creativeModel: row.creative_model,
       codingModel: row.coding_model,
       orchestrationMode: row.orchestration_mode || 'lin',
+      memoryEnabled: Boolean(row.memory_enabled),
+      memoryProfile: row.memory_profile || 'off',
       isActive: Boolean(row.is_active),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -942,6 +961,8 @@ export class GPTManager {
         creative_model = ?, 
         coding_model = ?, 
         orchestration_mode = ?, 
+        memory_enabled = ?,
+        memory_profile = ?,
         is_active = ?, 
         updated_at = ?
       WHERE id = ?
@@ -960,6 +981,8 @@ export class GPTManager {
       updates.creativeModel || existing.creativeModel || existing.modelId,
       updates.codingModel || existing.codingModel || existing.modelId,
       updates.orchestrationMode || existing.orchestrationMode || 'lin',
+      updates.memoryEnabled !== undefined ? (updates.memoryEnabled ? 1 : 0) : (existing.memoryEnabled ? 1 : 0),
+      updates.memoryProfile !== undefined ? updates.memoryProfile : (existing.memoryProfile || 'off'),
       updates.isActive !== undefined ? (updates.isActive ? 1 : 0) : (existing.isActive ? 1 : 0),
       new Date().toISOString(),
       id

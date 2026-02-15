@@ -18,6 +18,7 @@ import { loadVerifiedMemories, buildVerifiedMemorySection, clearVerifiedMemoryCa
 import { masterScriptsManager, Needle } from './masterScriptsBridge.js';
 import { loadLedger, enrichMemoryWithLedger, buildLedgerContextSection, generateLedger, storeLedger } from './continuityParser.js';
 import { retrieveSemanticMemories } from '../services/embeddingService.js';
+import { MEMORY_PROFILES } from './prompts/continuitygpt.js';
 
 let capsuleIntegrationModule = null;
 let memupServiceModule = null;
@@ -184,6 +185,79 @@ function buildNeedleMemorySection(needleHits, constructId) {
   section += `\n- Do NOT paraphrase vaguely. Use the actual content above.`;
 
   return section;
+}
+
+function buildContinuityMemoryContext(needleHits, vectorHits, verifiedMemories, constructId, userMessage) {
+  const sections = [];
+  let hasEvidence = false;
+
+  if (needleHits && needleHits.length > 0) {
+    hasEvidence = true;
+    needleHits.forEach((hit, i) => {
+      const sourcePath = hit.source_file || hit.context_hint || `${constructId}/transcripts`;
+      const timestamp = hit.session_context?.estimatedDate || 'unknown date';
+      const confidence = hit.tier === 1 ? 1.0 : hit.tier === 2 ? 0.8 : 0.6;
+      sections.push(`### MEMORY_CONTEXT [${i + 1}]
+- source_path: ${sourcePath}
+- timestamp: ${timestamp}
+- confidence: ${confidence.toFixed(1)}
+- type: needle_transcript_match
+- excerpt_user: "${hit.user || ''}"
+- excerpt_assistant: "${hit.assistant || ''}"${hit.session_context ? `\n- session_title: "${hit.session_context.title || ''}"` : ''}${hit.session_context?.vibe ? `\n- vibe: ${hit.session_context.vibe}` : ''}`);
+    });
+  }
+
+  if (vectorHits && vectorHits.length > 0) {
+    hasEvidence = true;
+    vectorHits.forEach((hit, i) => {
+      const sourcePath = hit.source_file || 'semantic_memory';
+      const timestamp = hit.sourceDate || 'unknown date';
+      const confidence = hit.confidence ? hit.confidence.toFixed(2) : '0.50';
+      const truncated = hit.content?.trim().substring(0, 400) || '';
+      sections.push(`### MEMORY_CONTEXT [vector-${i + 1}]
+- source_path: ${sourcePath}
+- timestamp: ${timestamp}
+- confidence: ${confidence}
+- type: vector_semantic_match
+- excerpt: "${truncated}"`);
+    });
+  }
+
+  if (verifiedMemories && verifiedMemories.length > 0) {
+    hasEvidence = true;
+    verifiedMemories.forEach((mem, i) => {
+      const sourcePath = mem.sourceFile || mem.file || 'verified_memory';
+      const timestamp = mem.date || 'unknown date';
+      const confidence = mem.score ? (mem.score / 100).toFixed(2) : '0.70';
+      sections.push(`### MEMORY_CONTEXT [verified-${i + 1}]
+- source_path: ${sourcePath}
+- timestamp: ${timestamp}
+- confidence: ${confidence}
+- type: verified_transcript_memory
+- user_said: "${mem.user || ''}"
+- ai_said: "${mem.assistant || ''}"`);
+    });
+  }
+
+  if (!hasEvidence) {
+    return `\n\n## MEMORY_CONTEXT
+No verified memory evidence found for this query.
+The memory system searched all transcripts, needle indexes, vector embeddings, and verified memories.
+No matches were returned.
+
+### MANDATORY RESPONSE:
+You MUST respond with: "I cannot verify that from available continuity records."
+Do NOT claim to remember, recall, or have access to any information about this topic.
+Do NOT fabricate dates, events, file contents, or emotional history.`;
+  }
+
+  return `\n\n## MEMORY_CONTEXT
+The following evidence was retrieved from construct files and transcripts.
+You MUST cite source_path and timestamp when referencing this evidence.
+You MUST NOT claim memory beyond what is documented here.
+If evidence conflicts, prefer explicit in-file timestamps over filenames/metadata.
+
+${sections.join('\n\n')}`;
 }
 
 const CHAT_FILLER_WORDS = new Set([
@@ -842,10 +916,13 @@ async function buildEnrichedContext(options) {
 
   let vectorMemorySection = '';
   let vectorCount = 0;
+  let vectorHits = [];
   let verifiedMemorySection = '';
   let verifiedCount = 0;
+  let verifiedResult = null;
   let needleSection = '';
   let needleCount = 0;
+  let needleHits = [];
   let ledgerSection = '';
 
   let ledger = null;
@@ -891,6 +968,7 @@ async function buildEnrichedContext(options) {
         }
       } catch (_) {}
       const semanticHits = await retrieveSemanticMemories(userMessage, vectorLookupId, constructId, 5);
+      vectorHits = semanticHits || [];
       if (semanticHits && semanticHits.length > 0) {
         vectorCount = semanticHits.length;
         result.vectorMemories = vectorCount;
@@ -937,13 +1015,15 @@ RULES FOR MEMORY USE:
 
   const tMemory = Date.now();
   if (userMessage) {
-    const [verifiedResult, needleHits] = await Promise.all([
+    const [verifiedRes, needleRes] = await Promise.all([
       loadVerifiedMemories(constructId, userMessage, 8).catch(err => {
         console.warn(`⚠️ [MemoryContextBuilder] Verified memory load failed for ${constructId}:`, err.message);
         return { memories: [], fileCount: 0, timing: 0 };
       }),
       runNeedleSearch(constructId, userMessage)
     ]);
+    verifiedResult = verifiedRes;
+    needleHits = needleRes;
 
     if (verifiedResult.memories.length > 0) {
       if (ledger) {
@@ -1016,7 +1096,8 @@ RULES FOR MEMORY USE:
   }
 
   let memoryGapSection = '';
-  if (userMessage && isMemoryTriggeringQuestion(userMessage) && vectorCount === 0 && verifiedCount === 0 && needleCount === 0 && (result.memoriesLoaded || 0) === 0) {
+  const memoryProfileWillHandle = gptConfig?.memoryEnabled && gptConfig?.memoryProfile && gptConfig.memoryProfile !== 'off';
+  if (!memoryProfileWillHandle && userMessage && isMemoryTriggeringQuestion(userMessage) && vectorCount === 0 && verifiedCount === 0 && needleCount === 0 && (result.memoriesLoaded || 0) === 0) {
     memoryGapSection = buildMemoryGapSection(userMessage, constructId);
     result.memoryGapInjected = true;
     console.log(`⚠️ [MemoryContextBuilder] Memory gap detected for ${constructId} — user asked about past but no memories found. Anti-confabulation guard injected.`);
@@ -1079,7 +1160,40 @@ When answering:
 `;
   }
 
-  result.systemPrompt = basePrompt + physicalAppearanceSection + capsuleSection + userSection + knowledgeSection + citationDirective + ledgerSection + vectorMemorySection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + buildBehavioralDirectives(constructId);
+  let continuitySection = '';
+  const memoryProfileActive = gptConfig?.memoryEnabled && gptConfig?.memoryProfile && gptConfig.memoryProfile !== 'off';
+  if (memoryProfileActive) {
+    const profile = MEMORY_PROFILES[gptConfig.memoryProfile];
+    if (profile) {
+      continuitySection += '\n\n' + profile.getGuard();
+
+      if (isMemoryTriggeringQuestion(userMessage)) {
+        const allNeedleHits = needleHits || [];
+        const allVectorHits = vectorHits || [];
+        const allVerifiedMems = verifiedResult?.memories || [];
+        continuitySection += buildContinuityMemoryContext(allNeedleHits, allVectorHits, allVerifiedMems, constructId, userMessage);
+
+        const totalEvidence = allNeedleHits.length + allVectorHits.length + allVerifiedMems.length;
+        result.continuityMemorySearch = {
+          triggered: true,
+          profile: gptConfig.memoryProfile,
+          query: userMessage?.substring(0, 100),
+          needleHits: allNeedleHits.length,
+          vectorHits: allVectorHits.length,
+          verifiedHits: allVerifiedMems.length,
+          totalEvidence,
+          hasEvidence: totalEvidence > 0
+        };
+        console.log(`🔒 [ContinuityGPT] Memory search for ${constructId}: ${totalEvidence} evidence items (needle: ${allNeedleHits.length}, vector: ${allVectorHits.length}, verified: ${allVerifiedMems.length})`);
+      } else {
+        result.continuityMemorySearch = { triggered: false, profile: gptConfig.memoryProfile, reason: 'not_memory_query' };
+      }
+
+      console.log(`🔒 [ContinuityGPT] Profile "${gptConfig.memoryProfile}" active for ${constructId} — guard injected`);
+    }
+  }
+
+  result.systemPrompt = basePrompt + physicalAppearanceSection + capsuleSection + userSection + knowledgeSection + citationDirective + ledgerSection + vectorMemorySection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + continuitySection + buildBehavioralDirectives(constructId);
 
   phaseTiming.totalMs = Date.now() - t0;
   result.phaseTiming = phaseTiming;

@@ -45,6 +45,8 @@ export interface GPTConfig {
   creativeModel?: string;
   codingModel?: string;
   orchestrationMode?: 'lin' | 'custom';
+  memoryEnabled?: boolean;
+  memoryProfile?: 'continuitygpt' | 'off';
   conditioning?: string;
   physicalFeatures?: string;
   files: GPTFile[];

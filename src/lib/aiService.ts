@@ -49,6 +49,8 @@ export interface AIConfig {
   creativeModel?: string;
   codingModel?: string;
   orchestrationMode?: 'lin' | 'custom';
+  memoryEnabled?: boolean;
+  memoryProfile?: 'continuitygpt' | 'off';
   files: AIFile[];
   actions: AIAction[];
   hasPersistentMemory: boolean; // VVAULT integration - defaults to true

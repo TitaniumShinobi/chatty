@@ -19,6 +19,7 @@ import {
   ImageOff,
   RotateCcw,
   FolderOpen,
+  Brain,
 } from "lucide-react";
 import JSZip from "jszip";
 import { GPTService, GPTConfig, GPTFile, GPTAction } from "../lib/gptService";
@@ -69,6 +70,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [orchestrationMode, setOrchestrationMode] = useState<"lin" | "custom">(
     "lin",
   ); // Tone & Orchestration mode
+  const [memoryEnabled, setMemoryEnabled] = useState(false);
+  const [memoryProfile, setMemoryProfile] = useState<'continuitygpt' | 'off'>('off');
 
   // Script Management
   const [scripts, setScripts] = useState<
@@ -642,6 +645,12 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       if (!isLinDefault) {
         setOrchestrationMode("custom");
       }
+      if (initialConfig.memoryEnabled !== undefined) {
+        setMemoryEnabled(initialConfig.memoryEnabled);
+      }
+      if (initialConfig.memoryProfile) {
+        setMemoryProfile(initialConfig.memoryProfile);
+      }
       // Extract filename from avatar URL if it's a URL, or set a generic name
       if (initialConfig.avatar) {
         if (initialConfig.avatar.startsWith("/api/")) {
@@ -1075,6 +1084,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         creativeModel: config.creativeModel,
         codingModel: config.codingModel,
         orchestrationMode: config.orchestrationMode,
+        memoryEnabled,
+        memoryProfile,
         isActive: config.isActive,
         hasPersistentMemory: config.hasPersistentMemory,
         conditioning: config.conditioning,
@@ -5185,6 +5196,91 @@ ALWAYS:
                             </p>
                           </div>
                         </label>
+                      </div>
+                    </div>
+
+                    {/* Memory Profile */}
+                    <div className="space-y-4 mt-6">
+                      <div
+                        className="p-4 rounded-lg"
+                        style={{
+                          backgroundColor: "var(--chatty-bg-message)",
+                        }}
+                      >
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <div className="relative">
+                            <input
+                              type="checkbox"
+                              checked={memoryEnabled}
+                              onChange={(e) => {
+                                setMemoryEnabled(e.target.checked);
+                                if (!e.target.checked) {
+                                  setMemoryProfile('off');
+                                }
+                              }}
+                              className="sr-only"
+                            />
+                            <div
+                              className={`w-10 h-6 rounded-full transition-colors ${memoryEnabled ? 'bg-green-500' : 'bg-gray-500'}`}
+                            />
+                            <div
+                              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${memoryEnabled ? 'translate-x-4' : 'translate-x-0'}`}
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Brain size={16} style={{ color: "var(--chatty-text)" }} />
+                            <span
+                              className="text-sm font-medium"
+                              style={{ color: "var(--chatty-text)" }}
+                            >
+                              Memory Enforcement
+                            </span>
+                          </div>
+                        </label>
+                        <p
+                          className="text-xs mt-2 ml-[52px]"
+                          style={{
+                            color: "var(--chatty-text)",
+                            opacity: 0.7,
+                          }}
+                        >
+                          When enabled, enforces evidence-based memory retrieval. The construct will only claim memories supported by retrieved transcript evidence.
+                        </p>
+                        {memoryEnabled && (
+                          <div className="mt-3 ml-[52px]">
+                            <label
+                              className="block text-xs font-medium mb-1"
+                              style={{ color: "var(--chatty-text)" }}
+                            >
+                              Memory Profile
+                            </label>
+                            <select
+                              value={memoryProfile}
+                              onChange={(e) => setMemoryProfile(e.target.value as 'continuitygpt' | 'off')}
+                              className="inline-flex items-center px-3 py-2 rounded text-sm focus:outline-none"
+                              style={{
+                                backgroundColor: "var(--chatty-bg-main)",
+                                color: "var(--chatty-text)",
+                                border: "none",
+                                width: "250px",
+                              }}
+                            >
+                              <option value="continuitygpt">ContinuityGPT</option>
+                              <option value="off">Off</option>
+                            </select>
+                            {memoryProfile === 'continuitygpt' && (
+                              <p
+                                className="text-xs mt-1"
+                                style={{
+                                  color: "var(--chatty-text)",
+                                  opacity: 0.6,
+                                }}
+                              >
+                                Forensic timeline reconstruction with evidence-driven memory
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

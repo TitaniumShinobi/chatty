@@ -144,6 +144,15 @@ export class AIManager {
       this.db.exec(`ALTER TABLE ais ADD COLUMN privacy TEXT DEFAULT 'private'`);
     }
 
+    const hasMemoryEnabled = columns.some(col => col.name === 'memory_enabled');
+    const hasMemoryProfile = columns.some(col => col.name === 'memory_profile');
+    if (!hasMemoryEnabled) {
+      this.db.exec(`ALTER TABLE ais ADD COLUMN memory_enabled INTEGER DEFAULT 0`);
+    }
+    if (!hasMemoryProfile) {
+      this.db.exec(`ALTER TABLE ais ADD COLUMN memory_profile TEXT DEFAULT 'off'`);
+    }
+
     // Backfill defaults for existing rows
     this.db.exec(`
       UPDATE ais
@@ -157,7 +166,9 @@ export class AIManager {
             WHEN is_active = 1 THEN 'link'
             ELSE 'private'
           END
-        )
+        ),
+        memory_enabled = COALESCE(memory_enabled, 0),
+        memory_profile = COALESCE(memory_profile, 'off')
     `);
 
     // Also add privacy column to legacy gpts table for backward compatibility
@@ -468,9 +479,10 @@ export class AIManager {
       INSERT INTO ais (
         id, name, description, instructions, conversation_starters, avatar, capabilities, construct_callsign, 
         model_id, conversation_model, creative_model, coding_model, orchestration_mode, 
+        memory_enabled, memory_profile,
         is_active, privacy, created_at, updated_at, user_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -487,6 +499,8 @@ export class AIManager {
       config.creativeModel || config.modelId,
       config.codingModel || config.modelId,
       config.orchestrationMode || 'lin',
+      config.memoryEnabled ? 1 : 0,
+      config.memoryProfile || 'off',
       isActive ? 1 : 0,
       privacy,
       now,
@@ -494,7 +508,6 @@ export class AIManager {
       config.userId || 'anonymous'
     );
 
-    // Record initial version history (version 1)
     this.recordVersion(id, 1, { ...config, constructCallsign, avatar: avatarPath, privacy });
 
     const cleanInstructions = sanitizeInstructions(config.instructions);
@@ -514,7 +527,9 @@ export class AIManager {
       conversationModel: config.conversationModel || config.modelId,
       creativeModel: config.creativeModel || config.modelId,
       codingModel: config.codingModel || config.modelId,
-      orchestrationMode: config.orchestrationMode || 'lin'
+      orchestrationMode: config.orchestrationMode || 'lin',
+      memoryEnabled: Boolean(config.memoryEnabled),
+      memoryProfile: config.memoryProfile || 'off'
     };
   }
 
@@ -615,6 +630,8 @@ export class AIManager {
       creativeModel: row.creative_model,
       codingModel: row.coding_model,
       orchestrationMode: row.orchestration_mode || 'lin',
+      memoryEnabled: Boolean(row.memory_enabled),
+      memoryProfile: row.memory_profile || 'off',
       files,
       actions,
       isActive: Boolean(row.is_active),
@@ -720,6 +737,8 @@ export class AIManager {
       creativeModel: row.creative_model,
       codingModel: row.coding_model,
       orchestrationMode: row.orchestration_mode || 'lin',
+      memoryEnabled: Boolean(row.memory_enabled),
+      memoryProfile: row.memory_profile || 'off',
       files,
       actions,
       isActive: Boolean(row.is_active),
@@ -993,6 +1012,8 @@ export class AIManager {
             creativeModel: row.creative_model || row.model_id || null,
             codingModel: row.coding_model || row.model_id || null,
             orchestrationMode: row.orchestration_mode || 'lin',
+            memoryEnabled: Boolean(row.memory_enabled),
+            memoryProfile: row.memory_profile || 'off',
             files,
             actions,
             isActive: Boolean(row.is_active),
@@ -1113,6 +1134,8 @@ export class AIManager {
             creativeModel: row.creative_model || row.model_id || null,
             codingModel: row.coding_model || row.model_id || null,
             orchestrationMode: row.orchestration_mode || 'lin',
+            memoryEnabled: Boolean(row.memory_enabled),
+            memoryProfile: row.memory_profile || 'off',
             files,
             actions,
             isActive: Boolean(row.is_active),
@@ -1248,6 +1271,8 @@ export class AIManager {
           creative_model = COALESCE(?, model_id), 
           coding_model = COALESCE(?, model_id), 
           orchestration_mode = COALESCE(?, 'lin'), 
+          memory_enabled = ?,
+          memory_profile = ?,
           is_active = ?, 
           privacy = COALESCE(?, 
             CASE 
@@ -1272,6 +1297,8 @@ export class AIManager {
         updates.creativeModel || existing.creativeModel || existing.modelId,
         updates.codingModel || existing.codingModel || existing.modelId,
         updates.orchestrationMode || existing.orchestrationMode || 'lin',
+        updates.memoryEnabled !== undefined ? (updates.memoryEnabled ? 1 : 0) : (existing.memoryEnabled ? 1 : 0),
+        updates.memoryProfile !== undefined ? updates.memoryProfile : (existing.memoryProfile || 'off'),
         isActive ? 1 : 0,
         privacy,
         new Date().toISOString(),
@@ -1295,6 +1322,8 @@ export class AIManager {
           creative_model = ?, 
           coding_model = ?, 
           orchestration_mode = ?, 
+          memory_enabled = ?,
+          memory_profile = ?,
           is_active = ?, 
           privacy = ?,
           updated_at = ?
@@ -1314,6 +1343,8 @@ export class AIManager {
         updates.creativeModel || existing.creativeModel || existing.modelId,
         updates.codingModel || existing.codingModel || existing.modelId,
         updates.orchestrationMode || existing.orchestrationMode || 'lin',
+        updates.memoryEnabled !== undefined ? (updates.memoryEnabled ? 1 : 0) : (existing.memoryEnabled ? 1 : 0),
+        updates.memoryProfile !== undefined ? updates.memoryProfile : (existing.memoryProfile || 'off'),
         isActive ? 1 : 0,
         privacy,
         new Date().toISOString(),
