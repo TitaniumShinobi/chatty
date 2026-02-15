@@ -238,6 +238,20 @@ try {
 }
 
 const app = express();
+
+if (process.env.ENABLE_SERVER_TIMING === 'true') {
+  app.use('/api', (req, res, next) => {
+    const start = process.hrtime.bigint();
+    const originalEnd = res.end;
+    res.end = function (...args) {
+      const ms = Number(process.hrtime.bigint() - start) / 1e6;
+      res.setHeader('Server-Timing', `total;dur=${ms.toFixed(1)};desc="${req.method} ${req.originalUrl}"`);
+      return originalEnd.apply(this, args);
+    };
+    next();
+  });
+}
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cookieParser());

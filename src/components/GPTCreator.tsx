@@ -30,7 +30,7 @@ import { useSettings } from "../context/SettingsContext";
 import Cropper from "react-easy-crop";
 import { Z_LAYERS } from "../lib/zLayers";
 import { TranscriptFolderTree } from "./TranscriptFolderTree";
-import { KnowledgeFileTree } from "./KnowledgeFileTree";
+const KnowledgeFileTree = React.lazy(() => import("./KnowledgeFileTree"));
 import PersonalityForge from "./PersonalityForge";
 import {
   getUserFriendlyErrorMessage,
@@ -485,8 +485,10 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     }
   }, [isVisible, config.constructCallsign, settings]); // Reload when constructCallsign changes
 
-  // Fetch existing transcripts when construct changes
+  // Fetch existing transcripts only when Configure tab is active
   useEffect(() => {
+    if (activeTab !== "configure") return;
+
     const fetchExistingTranscripts = async () => {
       const constructId =
         config.constructCallsign || initialConfig?.constructCallsign;
@@ -520,7 +522,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     };
 
     fetchExistingTranscripts();
-  }, [isVisible, config.constructCallsign, initialConfig?.constructCallsign]);
+  }, [isVisible, activeTab, config.constructCallsign, initialConfig?.constructCallsign]);
 
   // Helper function to normalize avatar URL
   const normalizeAvatarUrl = (
@@ -4509,11 +4511,26 @@ ALWAYS:
                         className="mt-3 rounded-lg p-2"
                         style={{ backgroundColor: "var(--chatty-bg-message)" }}
                       >
-                        <KnowledgeFileTree
-                          files={files}
-                          onRemoveFile={handleRemoveFile}
-                          formatFileSize={gptService.formatFileSize}
-                        />
+                        <React.Suspense
+                          fallback={
+                            <div className="space-y-2 animate-pulse">
+                              {[1, 2].map((i) => (
+                                <div key={i} className="flex items-center gap-2 py-1.5 px-2">
+                                  <div className="w-3.5 h-3.5 rounded" style={{ backgroundColor: "var(--chatty-line)" }} />
+                                  <div className="w-3.5 h-3.5 rounded" style={{ backgroundColor: "var(--chatty-line)" }} />
+                                  <div className="h-3.5 rounded flex-1" style={{ backgroundColor: "var(--chatty-line)", maxWidth: 120 }} />
+                                  <div className="h-3.5 w-6 rounded" style={{ backgroundColor: "var(--chatty-line)" }} />
+                                </div>
+                              ))}
+                            </div>
+                          }
+                        >
+                          <KnowledgeFileTree
+                            files={files}
+                            onRemoveFile={handleRemoveFile}
+                            formatFileSize={gptService.formatFileSize}
+                          />
+                        </React.Suspense>
                       </div>
                     </div>
 

@@ -14,6 +14,7 @@
     "build": "vite build",
     "build:prod": "npm run build",
     "start:prod": "NODE_ENV=production PORT=5000 npx tsx server/server.js",
+    "prod:check": "npm run build && NODE_ENV=production PORT=5000 ENABLE_SERVER_TIMING=true npx tsx server/server.js",
     "preview": "vite preview",
     "cli": "npm run build && npx tsx src/cli/chatty-cli.ts",
     "terminal": "npm run build && npx tsx src/cli/chatty-cli.ts",
