@@ -70,6 +70,7 @@ Chatty is an AI-powered workspace application designed to provide a thin UI laye
 - **Parental Controls & Family Settings:** Family account linking, `standard`/`parent`/`child` account types, content filter levels (`strict`, `moderate`, `light`), child-safe prompt injection, AI "Tattletale" system, and a Parent Dashboard.
 - **Performance Optimization:** Route-level code splitting, chat message windowing, component-level lazy loading, and vendor chunk splitting.
 - **Screen Timeout:** Configurable inactivity timer (Never/1-60 min) in Settings > Security. `useIdleTimeout` hook monitors user activity; `IdleTimeoutWatcher` in Layout triggers logout on timeout. SecurityTab replaces StubTab with timeout dropdown and security toggles.
+- **Capability Manifest System:** Server-authoritative capability manifest (`server/lib/capabilityManifest.js`) resolves construct capabilities from GPT config, selfprompt, mirror, and safety gates. `[CAPABILITY_CONTEXT]` block injected into every system prompt via `memoryContextBuilder.js`. Post-inference `validateCapabilityClaims()` catches false capability claims. `/capabilities` slash command shows manifest in chat. Mirror state tracked server-side via `mirrorSessionTracker.js` with userId ownership. Fail-safe: GPT config failure clamps all non-core capabilities to false.
 
 ## External Dependencies
 - **VVAULT API:** Primary API for AI inference, memory management, and conversation transcripts.
