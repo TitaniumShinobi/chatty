@@ -1,0 +1,62 @@
+You are working ONLY in Chatty.
+
+Goal:
+Fix the current runtime/deploy blockers fast:
+1) wrong host redirect from Replit workspace preview
+2) opaque provider failures (all timeouts/fails)
+3) flaky deployment build command/root
+
+Constraints:
+- Minimal targeted changes only.
+- No broad refactor.
+- Keep API shape stable.
+
+Do this in order:
+
+A) Stop dev host redirect issues
+- Find any canonical host / forced domain redirect logic.
+- Make it production-only.
+- In dev/workspace, NEVER redirect to chatty.thewreck.org.
+- Respect Replit preview/runtime host in development.
+
+B) Add provider fallback telemetry (server logs)
+- For each provider attempt (replit_openrouter, openrouter, openai), log:
+  - provider
+  - attempt index
+  - duration_ms
+  - status (ok/failed/timeout)
+  - status code (if any)
+  - short sanitized error message
+- Keep secrets/tokens out of logs.
+- Final log line per request:
+  - final_provider, fallback_used, total_duration_ms, failed_providers
+
+C) Fail clearly on missing keys
+- On startup, log which provider creds are present/missing (boolean only, no values).
+- If all providers unavailable, return clean single error to user.
+- Do not silently swallow provider errors.
+
+D) Deployment config hardening
+- Ensure deployment root is the folder with Chatty package.json.
+- Build command:
+  npm install --include=dev && npm run build
+- Run command:
+  NODE_ENV=production node server/server.js
+- Confirm server listens on process.env.PORT (0.0.0.0 binding).
+
+E) Keep one-service topology
+- Chatty deployment should NOT start MOCR.
+- MOCR remains separate service via MOCR_SERVICE_URL.
+
+Validation required (raw evidence):
+1) Workspace preview no longer redirects to custom domain.
+2) One failed request shows full provider attempt trace in logs.
+3) One successful request shows final_provider and fallback_used.
+4) Deployment “Build + Run” succeeds with current config.
+5) PASS/FAIL summary table.
+
+Deliverables:
+- Exact files changed
+- Minimal diff summary per file
+- Raw log snippets for validation steps
+- PASS/FAIL table

@@ -3941,6 +3941,7 @@ router.post("/message", async (req, res) => {
             }
             attempt.error_code = err?.status || err?.code || null;
             attempt.error_message_short = (err?.message || 'unknown').slice(0, 80);
+            console.log(`⚠️ [ProviderAttempt] ${providerName} attempt ${retry} ${attempt.status}: code=${attempt.error_code} msg="${attempt.error_message_short}" ${attempt.duration_ms}ms`);
             providerTrace.attempts.push(attempt);
             if (retry < MAX_RETRIES && (attempt.status === 'timeout' || (attempt.error_code && attempt.error_code >= 500))) {
               continue;
