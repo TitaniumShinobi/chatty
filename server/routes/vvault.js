@@ -10,6 +10,8 @@ import { loadIdentityFiles } from "../lib/identityLoader.js";
 import { GPTManager } from "../lib/gptManager.js";
 import { performSearch, injectSearchContext } from "./search.js";
 import { buildEnrichedContext, captureMemory } from "../lib/memoryContextBuilder.js";
+import { evaluateMessage, buildChildSafeDirectives } from "../lib/contentGuard.js";
+import { getAccountType, getChildSettings } from "../lib/familyManager.js";
 
 // Timestamp all console output from this module
 const patchConsoleWithTimestamp = () => {
@@ -3834,7 +3836,21 @@ router.post("/message", async (req, res) => {
 
     const { enhancedPrompt: searchEnhancedPrompt } = await injectSearchContext(message, systemPrompt);
     systemPrompt = searchEnhancedPrompt;
-    
+
+    try {
+      const userAccountType = await getAccountType(userId);
+      if (userAccountType === 'child') {
+        const childSettings = await getChildSettings(userId);
+        if (childSettings) {
+          const safeDirectives = buildChildSafeDirectives(childSettings);
+          systemPrompt = safeDirectives + '\n\n' + systemPrompt;
+          console.log(`[ParentalControls] Child-safe directives injected for ${userId} (filter: ${childSettings.contentFilterLevel})`);
+        }
+      }
+    } catch (pcErr) {
+      console.warn(`[ParentalControls] Could not check account type:`, pcErr.message);
+    }
+
     console.log(`🧠 [VVAULT Proxy] System prompt length: ${systemPrompt.length} (capsule: ${enrichedContext.capsuleLoaded}, verified: ${enrichedContext.verifiedMemories || 0}, memories: ${enrichedContext.memoriesLoaded})`);
     
     // Load conversation history for context (last 20 turns)
@@ -4251,6 +4267,9 @@ Output ONLY the rewritten response, nothing else.`
           email: req.user?.email
         }).catch(err => console.warn('⚠️ [VVAULT Proxy] Background memory capture failed:', err.message));
       }
+
+      evaluateMessage(userId, constructId, message, aiResponse)
+        .catch(err => console.warn('[ContentGuard] Background evaluation failed:', err.message));
 
       return res.json({
         success: true,

@@ -12,6 +12,7 @@ import NotificationsTab from './settings/NotificationsTab'
 import PersonalizationTab from './settings/PersonalizationTab'
 import DataControlsTab from './settings/DataControlsTab'
 import StubTab from './settings/StubTab'
+import ParentalControlsTab from './settings/ParentalControlsTab'
 import { SettingsProvider } from '../context/SettingsContext'
 
 interface SettingsModalProps {
@@ -170,7 +171,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               {activeTab === 'orders' && <StubTab title="Orders" description="Order history coming soon..." />}
               {activeTab === 'data' && <DataControlsTab />}
               {activeTab === 'security' && <StubTab title="Security" description="Security options coming soon..." />}
-              {activeTab === 'parental' && <StubTab title="Parental Controls" description="Parental control settings coming soon..." />}
+              {activeTab === 'parental' && <ParentalControlsTab />}
               {activeTab === 'account' && <AccountTab user={user} onLogout={onLogout} />}
             </div>
           </div>
