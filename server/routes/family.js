@@ -18,13 +18,20 @@ import {
   clearStepUp,
 } from '../lib/familyManager.js';
 
+import { resolveUserId } from '../lib/resolveUserId.js';
+
 const router = express.Router();
 
-function resolveUserId(user = {}) {
-  return user.sub || user.id || user.uid || user.user_id || user._id;
-}
-
 router.use(requireAuth);
+
+router.use((req, res, next) => {
+  const userId = resolveUserId(req.user);
+  if (!userId) {
+    console.error('[Family] FATAL: resolveUserId returned null — refusing to process request');
+    return res.status(401).json({ ok: false, error: 'Unable to identify user.' });
+  }
+  next();
+});
 
 router.get('/status', async (req, res) => {
   try {

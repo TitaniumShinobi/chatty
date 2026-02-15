@@ -237,8 +237,10 @@ function getConnector() {
   return connectorPromise;
 }
 
+import { resolveUserId } from '../lib/resolveUserId.js';
+
 function getUserId(user = {}) {
-  return user.sub || user.id || user.uid || user._id;
+  return resolveUserId(user);
 }
 
 function validateUser(res, user) {
