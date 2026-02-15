@@ -74,9 +74,9 @@ externalPort = 8000
 exposeLocalhost = true
 
 [deployment]
-deploymentTarget = "vm"
-run = ["bash", "-c", "NODE_ENV=production PORT=5000 npx tsx server/server.js & cd MOCR-Service && npx tsx src/api/server.ts"]
-build = ["bash", "-c", "npm install --include=dev && npm run build && cd MOCR-Service && npm install"]
+deploymentTarget = "autoscale"
+run = ["bash", "-c", "NODE_ENV=production node server/server.js"]
+build = ["bash", "-c", "npm ci --include=dev && npm run build"]
 
 [userenv]
 

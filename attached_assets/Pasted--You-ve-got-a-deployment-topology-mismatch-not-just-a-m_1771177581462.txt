@@ -1,0 +1,81 @@
+
+You’ve got a deployment topology mismatch, not just a missing script.
+
+Root issue: Replit Autoscale expects one service, one port.
+Your run command is trying to start Chatty + MOCR together.
+
+Do this:
+
+Deploy Chatty and MOCR-Service as separate Replit deployments.
+Chatty deployment should only run Chatty server.
+MOCR deployment should only run MOCR API.
+For Chatty deployment settings:
+
+# Build command
+npm ci --include=dev
+npm run build
+# Run command
+NODE_ENV=production node server/server.js
+And ensure server.js listens on:
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, "0.0.0.0", ...);
+Also verify in Replit deployment settings:
+
+Deployment root points to the folder containing Chatty package.json.
+Don’t use npm run dev:full for production.
+Don’t start MOCR-Service in Chatty run command.
+Then deploy MOCR separately and set Chatty env:
+
+VITE_MOCR_SERVICE_URL=https://<mocr-deployment-domain>
+If you want, I can give you the exact package.json script block for both repos so you can paste and ship.
+
+
+yes please
+
+Perfect. Copy these into each repo.
+
+Chatty package.json scripts
+
+{
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "start": "NODE_ENV=production node server/server.js",
+    "prod:check": "npm run build && NODE_ENV=production ENABLE_SERVER_TIMING=true node server/server.js"
+  }
+}
+MOCR-Service package.json scripts (recommended, compiled TS)
+
+{
+  "scripts": {
+    "dev": "tsx src/api/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "NODE_ENV=production node dist/api/server.js"
+  }
+}
+If your TS build outputs a different file, adjust server.js accordingly.
+
+Replit deploy commands
+
+For Chatty deployment:
+
+Build: npm ci --include=dev && npm run build
+Run: npm run start
+For MOCR deployment (separate Repl):
+
+Build: npm ci --include=dev && npm run build
+Run: npm run start
+Also make sure both servers bind:
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, "0.0.0.0");
+And in Chatty env:
+
+VITE_MOCR_SERVICE_URL=https://<your-mocr-repl-domain>
+
+
+
+
+
+
