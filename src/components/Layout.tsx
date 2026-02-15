@@ -270,6 +270,41 @@ export default function Layout() {
     }
   }, [threads]);
 
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
+
+  useEffect(() => {
+    const selfpromptLastPoll = { ts: new Date().toISOString() };
+    const pollTimer = setInterval(async () => {
+      const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+      const match = currentPath.match(/\/app\/chat\/(.+)/);
+      if (!match) return;
+      const activeThreadId = decodeURIComponent(match[1]);
+      const activeThread = threadsRef.current.find(t => t.id === activeThreadId);
+      if (!activeThread) return;
+      const constructId = activeThread.constructId || 'zen-001';
+      try {
+        const resp = await fetch(`/api/selfprompt/pending?constructId=${encodeURIComponent(constructId)}&threadId=${encodeURIComponent(activeThreadId)}&since=${encodeURIComponent(selfpromptLastPoll.ts)}`, {
+          credentials: 'include'
+        });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (data.ok && data.messages && data.messages.length > 0) {
+          selfpromptLastPoll.ts = new Date().toISOString();
+          const existingIds = new Set((activeThread.messages || []).map((m: any) => m.id));
+          const newMsgs = data.messages.filter((m: any) => !existingIds.has(m.id));
+          if (newMsgs.length > 0) {
+            setThreads(prev => prev.map(t => {
+              if (t.id !== activeThreadId) return t;
+              return { ...t, messages: [...t.messages, ...newMsgs] };
+            }));
+          }
+        }
+      } catch (_) {}
+    }, 10000);
+    return () => clearInterval(pollTimer);
+  }, []);
+
   // Listen for custom event to open settings modal
   useEffect(() => {
     const handleOpenSettings = (event: CustomEvent) => {
@@ -1944,6 +1979,50 @@ export default function Layout() {
     const thread = threads.find((t) => t.id === threadId);
     if (!thread) {
       console.error("❌ [Layout.tsx] Thread not found:", threadId);
+      return;
+    }
+
+    if (input.trim().startsWith('/selfprompt')) {
+      const parts = input.trim().split(/\s+/);
+      const subCmd = parts[1] || 'status';
+      const constructId = thread.constructId || 'zen-001';
+      let action = 'status';
+      let interval: number | undefined;
+
+      if (subCmd === 'on') action = 'on';
+      else if (subCmd === 'off') action = 'off';
+      else if (subCmd === 'interval') {
+        action = 'interval';
+        interval = parseInt(parts[2], 10) || 60;
+      }
+
+      try {
+        const resp = await fetch('/api/selfprompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ action, constructId, threadId, interval })
+        });
+        const data = await resp.json();
+        const statusMsg = data.message || `selfprompt: ${data.status || 'unknown'}`;
+
+        setThreads(prev => prev.map(t => {
+          if (t.id !== threadId) return t;
+          return {
+            ...t,
+            messages: [...t.messages, {
+              id: `selfprompt-${Date.now()}`,
+              role: 'assistant' as const,
+              text: statusMsg,
+              timestamp: new Date().toISOString(),
+              packets: [{ type: 'text', payload: { content: statusMsg } }],
+              tool_trace: [{ tool: 'selfprompt', detail: `action=${action}` }]
+            }]
+          };
+        }));
+      } catch (err: any) {
+        console.error('[Layout] selfprompt error:', err);
+      }
       return;
     }
 

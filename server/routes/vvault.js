@@ -3727,6 +3727,12 @@ router.post("/message", async (req, res) => {
     return res.status(400).json({ success: false, error: "Missing constructId" });
   }
 
+  try {
+    const { recordUserActivity } = await import('./selfprompt.js');
+    const effectiveThread = threadId || sessionId || `${constructId}_chat_with_${constructId}`;
+    recordUserActivity(constructId, effectiveThread);
+  } catch (_) {}
+
   // Handle image attachments for vision
   const hasImages = attachments && Array.isArray(attachments) && attachments.length > 0;
 

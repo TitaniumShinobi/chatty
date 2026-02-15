@@ -489,6 +489,22 @@ export default function Chat() {
   const isSystemConstructThread = isZenSessionThread || isLinSessionThread;
   const isCanonicalThread = isSystemConstructThread || isGPTSessionThread;
 
+  const selfpromptLastPollRef = useRef<string>(new Date().toISOString());
+  const [selfpromptEnabled, setSelfpromptEnabled] = useState(false);
+
+  useEffect(() => {
+    if (!thread || !threadId) return;
+    const constructId = thread.constructId || 'zen-001';
+    fetch(`/api/selfprompt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ action: 'status', constructId, threadId })
+    }).then(r => r.json()).then(d => {
+      setSelfpromptEnabled(!!d.enabled);
+    }).catch(() => {});
+  }, [threadId, thread?.constructId]);
+
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;

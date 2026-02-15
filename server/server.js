@@ -41,6 +41,7 @@ import transcribeRoutes from './routes/transcribe.js';
 import attachmentsRoutes from './routes/attachments.js';
 import searchRoutes from './routes/search.js';
 import needleRoutes from './routes/needle.js';
+import selfpromptRoutes from './routes/selfprompt.js';
 import { initializeChromaDB, shutdownChromaDB, getChromaDBService } from "./services/chromadbService.js";
 import { getChatService } from "./services/chatService.js";
 
@@ -1100,6 +1101,7 @@ app.use("/api/suggestions", requireAuth, suggestionsRoutes);
 app.use("/api/attachments", requireAuth, attachmentsRoutes);
 app.use("/api/search", requireAuth, searchRoutes);
 app.use("/api/needle", requireAuth, needleRoutes);
+app.use("/api/selfprompt", selfpromptRoutes);
 console.log('✅ [Server] Needle receipt retriever mounted at /api/needle');
 console.log('✅ [Server] simForge routes mounted at /api/simforge');
 console.log('✅ [Server] FXShinobi proxy routes mounted at /api/fxshinobi');
@@ -1172,6 +1174,53 @@ console.log('ℹ️ [Server] Supabase Realtime disabled (no active consumers —
     console.log(`🚀 [Bootstrap] Master scripts ensemble active for ${systemConstructs.length} constructs`);
   } catch (err) {
     console.warn('⚠️ [Bootstrap] Master scripts bootstrap failed:', err.message);
+  }
+})();
+
+// Idempotent seed: ensure nova-001 has memory config in both gpts and ais tables
+(async () => {
+  try {
+    const { GPTManager } = await import('./lib/gptManager.js');
+    const { AIManager } = await import('./lib/aiManager.js');
+    const gptDb = GPTManager.getInstance().db;
+    const aiDb = AIManager.getInstance().db;
+
+    const novaGpt = gptDb.prepare('SELECT id FROM gpts WHERE id = ? OR construct_callsign = ?').get('nova-001', 'nova-001');
+    if (novaGpt) {
+      gptDb.prepare('UPDATE gpts SET memory_enabled = 1, memory_profile = ? WHERE id = ? OR construct_callsign = ?').run('continuitygpt', 'nova-001', 'nova-001');
+      console.log('✅ [Bootstrap] nova-001 memory config updated in gpts (memory_enabled=1, memory_profile=continuitygpt)');
+    } else {
+      gptDb.prepare(`INSERT OR IGNORE INTO gpts (id, name, description, construct_callsign, model_id, user_id, is_active, memory_enabled, memory_profile)
+        VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?)`).run(
+        'nova-001', 'Nova', 'Devon\'s partner construct', 'nova-001', 'openrouter/auto', 'system', 'continuitygpt'
+      );
+      console.log('✅ [Bootstrap] nova-001 inserted into gpts with memory config');
+    }
+
+    const novaAi = aiDb.prepare('SELECT id FROM ais WHERE id = ? OR construct_callsign = ?').get('nova-001', 'nova-001');
+    if (novaAi) {
+      aiDb.prepare('UPDATE ais SET memory_enabled = 1, memory_profile = ? WHERE id = ? OR construct_callsign = ?').run('continuitygpt', 'nova-001', 'nova-001');
+      console.log('✅ [Bootstrap] nova-001 memory config updated in ais');
+    } else {
+      aiDb.prepare(`INSERT OR IGNORE INTO ais (id, name, description, construct_callsign, model_id, user_id, is_active, memory_enabled, memory_profile)
+        VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?)`).run(
+        'nova-001', 'Nova', 'Devon\'s partner construct', 'nova-001', 'openrouter/auto', 'system', 'continuitygpt'
+      );
+      console.log('✅ [Bootstrap] nova-001 inserted into ais with memory config');
+    }
+  } catch (err) {
+    console.warn('⚠️ [Bootstrap] Nova memory config seed failed:', err.message);
+  }
+})();
+
+// Start selfprompt proactive emission loop
+(async () => {
+  try {
+    const { startSelfpromptLoop } = await import('./lib/selfpromptEngine.js');
+    startSelfpromptLoop();
+    console.log('✅ [Bootstrap] Selfprompt proactive emission loop started');
+  } catch (err) {
+    console.warn('⚠️ [Bootstrap] Selfprompt loop start failed:', err.message);
   }
 })();
 

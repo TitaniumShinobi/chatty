@@ -23,6 +23,14 @@ export const SLASH_COMMANDS: Record<string, SlashCommand> = {
     usage: '/create <prompt>',
     handler: CreateCommand.handle,
     validate: CreateCommand.validateArgs
+  },
+  selfprompt: {
+    name: 'selfprompt',
+    description: 'Control proactive AI messaging (on/off/status/interval)',
+    usage: '/selfprompt [on|off|status|interval <seconds>]',
+    handler: async (_args: string[]) => {
+      return 'selfprompt is handled via server endpoint';
+    }
   }
 };
 

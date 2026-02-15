@@ -787,7 +787,9 @@ export class GPTManager {
           isActive: Boolean(aiRow.is_active),
           createdAt: aiRow.created_at,
           updatedAt: aiRow.updated_at,
-          userId: aiRow.user_id
+          userId: aiRow.user_id,
+          memoryEnabled: Boolean(aiRow.memory_enabled),
+          memoryProfile: aiRow.memory_profile || 'off'
         };
       }
     } catch (e) {
@@ -817,7 +819,9 @@ export class GPTManager {
       isActive: Boolean(row.is_active),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-      userId: row.user_id
+      userId: row.user_id,
+      memoryEnabled: Boolean(row.memory_enabled),
+      memoryProfile: row.memory_profile || 'off'
     };
   }
 
