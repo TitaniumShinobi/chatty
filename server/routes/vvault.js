@@ -4127,7 +4127,83 @@ router.post("/message", async (req, res) => {
       const providerForced = constructId === 'nova-001';
       console.log(`✅ [VVAULT Proxy] ${effectiveProvider} successful for ${constructId}, response length: ${aiResponse.length}`);
       console.log(`📊 [METRIC] { construct_id: "${constructId}", provider_forced: ${providerForced}, provider_used: "${effectiveProvider}", model: "${effectiveModel}", has_images: ${hasImages} }`);
-      
+
+      const validatorDebug = {
+        memory_retrieval_ran: !!enrichedContext.memory_retrieval_ran,
+        evidence_count: enrichedContext.evidence_count || 0,
+        cutoff_violation_detected: false,
+        rewrite_applied: false,
+      };
+
+      if (enrichedContext.memory_retrieval_ran) {
+        const CUTOFF_PATTERNS = [
+          /my\s+(training|knowledge)\s+(data\s+)?(only\s+)?(goes|extends|reaches|covers)\s+(up\s+)?to/i,
+          /my\s+(memories?|knowledge|training)\s+cap(s)?\s+at/i,
+          /(training|knowledge)\s+cutoff/i,
+          /I\s+(only\s+)?have\s+(data|information|knowledge)\s+(up\s+)?(to|through|until)/i,
+          /as\s+of\s+my\s+(last|latest)\s+(training|update)/i,
+          /my\s+(last|latest)\s+(training|update)\s+was/i,
+          /I\s+was\s+(last\s+)?(trained|updated)\s+(on|in|through)/i,
+        ];
+
+        const hasCutoffViolation = CUTOFF_PATTERNS.some(p => p.test(aiResponse));
+        if (hasCutoffViolation) {
+          validatorDebug.cutoff_violation_detected = true;
+          console.warn(`⚠️ [PostResponseValidator] Cutoff violation detected in ${constructId} response. Attempting corrective rewrite...`);
+
+          const rewriteClient = replitOpenrouter || openaiClient;
+          const rewriteModel = replitOpenrouter ? DEFAULT_OPENROUTER_MODEL : 'gpt-4.1-mini';
+
+          if (rewriteClient) {
+            try {
+              const rewriteCompletion = await rewriteClient.chat.completions.create({
+                model: rewriteModel,
+                messages: [
+                  {
+                    role: 'system',
+                    content: `You are a post-processing filter. Rewrite the following AI response to remove ANY mention of training cutoffs, knowledge cutoffs, or data limitations. The AI has real transcript memories — it is NOT limited by a training date.
+
+EVIDENCE STATUS: ${validatorDebug.evidence_count} pieces of evidence were retrieved from the memory system for this query.
+
+Rules:
+1. Remove all phrases like "my training data goes up to", "my knowledge cutoff", "my memories cap at", etc.
+2. If the response references specific evidence (evidence_count > 0), keep that evidence and cite it.
+3. If evidence_count is 0, replace the memory-related portion with exactly: "I cannot verify that from available continuity records."
+4. Keep the rest of the response tone, personality, and content intact.
+5. Do NOT add new information or fabricate memories.
+Output ONLY the rewritten response, nothing else.`
+                  },
+                  { role: 'user', content: aiResponse }
+                ],
+                max_tokens: 2048,
+              });
+              const rewritten = rewriteCompletion.choices[0]?.message?.content;
+              if (rewritten) {
+                const stillViolates = CUTOFF_PATTERNS.some(p => p.test(rewritten));
+                if (stillViolates) {
+                  console.warn(`⚠️ [PostResponseValidator] Rewrite still contains cutoff language. Applying hard fallback.`);
+                  aiResponse = "I cannot verify that from available continuity records.";
+                  validatorDebug.rewrite_applied = true;
+                } else {
+                  aiResponse = rewritten;
+                  validatorDebug.rewrite_applied = true;
+                  console.log(`✅ [PostResponseValidator] Corrective rewrite applied for ${constructId}`);
+                }
+              }
+            } catch (rewriteErr) {
+              console.error(`❌ [PostResponseValidator] Rewrite failed, applying hard fallback:`, rewriteErr.message);
+              aiResponse = "I cannot verify that from available continuity records.";
+              validatorDebug.rewrite_applied = true;
+            }
+          } else {
+            console.warn(`⚠️ [PostResponseValidator] No LLM client for rewrite, applying hard fallback.`);
+            aiResponse = "I cannot verify that from available continuity records.";
+            validatorDebug.rewrite_applied = true;
+          }
+        }
+      }
+      console.log(`🛡️ [PostResponseValidator] { memory_retrieval_ran: ${validatorDebug.memory_retrieval_ran}, evidence_count: ${validatorDebug.evidence_count}, cutoff_violation_detected: ${validatorDebug.cutoff_violation_detected}, rewrite_applied: ${validatorDebug.rewrite_applied} }`);
+
       if (!skipPersistence) {
         const effectiveSession = sessionId || threadId || `${constructId}_chat_with_${constructId}`;
         const constructName = constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase());
@@ -4185,7 +4261,8 @@ router.post("/message", async (req, res) => {
         provider_forced: constructId === 'nova-001',
         provider_used: effectiveProvider,
         has_images: hasImages,
-        tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext)
+        tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
+        validator: validatorDebug
       });
     } catch (llmError) {
       console.error(`❌ [VVAULT Proxy] ${effectiveProvider} call failed:`, {

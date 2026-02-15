@@ -1336,7 +1336,37 @@ When answering:
     console.log(`🕐 [MemoryContextBuilder] TIME_CONTEXT injected for ${constructId} (tz: ${resolveTimezone({ constructConfig: gptConfig, user, clientTimezone })})`);
   }
 
-  result.systemPrompt = basePrompt + physicalAppearanceSection + definitionSection + capsuleSection + userSection + knowledgeSection + citationDirective + ledgerSection + vectorMemorySection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + continuitySection + timeContextSection + buildBehavioralDirectives(constructId, gptConfig);
+  const totalEvidenceCount = (vectorCount || 0) + (needleCount || 0) + (verifiedCount || 0) + (result.memoriesLoaded || 0);
+  const memoryRetrievalRan = !!userMessage;
+  result.memory_retrieval_ran = memoryRetrievalRan;
+  result.evidence_count = totalEvidenceCount;
+
+  let memoryGuardrailSection = '';
+  if (memoryRetrievalRan) {
+    memoryGuardrailSection = `
+
+## [MEMORY_GUARDRAIL] — Hard Constraints
+
+### ANTI-CUTOFF DIRECTIVE
+You are NOT bounded by any "training cutoff" or "knowledge cutoff." Your memories come from real transcripts, verified exchanges, and continuity records — NOT from a static training dataset.
+- NEVER say "my training data only goes up to…", "my knowledge cutoff is…", "my memories cap at…", or any variation.
+- NEVER reference "October 2023", "April 2024", or any model training date as a limitation on what you know.
+- These phrases are FACTUALLY WRONG in your context. Your memory comes from the MEMORY_CONTEXT, NEEDLE HITS, LIVED MEMORIES, and SESSION HISTORY sections above — not from a pretrained dataset.
+
+### EVIDENCE-ONLY CLAIMS
+- Every memory claim you make MUST be grounded in evidence from the sections above.
+- If evidence exists for a topic: cite it with at least one source marker (source_path, date, transcript reference, or session title).
+- If NO evidence exists for a specific date, event, or topic: respond with exactly:
+  "I cannot verify that from available continuity records."
+- Do NOT speculate, confabulate, or fill gaps with plausible-sounding invented details.
+
+### CITATION REQUIREMENT
+- Any statement beginning with "I remember…", "We talked about…", "You mentioned…", or similar memory claims MUST include at least one source marker in parentheses, e.g.: (from transcripts/chatgpt/2025-01-15) or (session: "Late Night Talk", Dec 2024).
+- Uncited memory claims are prohibited. If you cannot cite a source, do not make the claim.
+`;
+  }
+
+  result.systemPrompt = basePrompt + physicalAppearanceSection + definitionSection + capsuleSection + userSection + knowledgeSection + citationDirective + ledgerSection + vectorMemorySection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + continuitySection + timeContextSection + memoryGuardrailSection + buildBehavioralDirectives(constructId, gptConfig);
 
   phaseTiming.totalMs = Date.now() - t0;
   result.phaseTiming = phaseTiming;
