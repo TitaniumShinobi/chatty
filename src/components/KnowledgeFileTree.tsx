@@ -52,29 +52,6 @@ function parseRealPath(filename: string): { section: string; subPath: string } |
   return null;
 }
 
-function classifyDocType(filename: string): string {
-  const ext = (filename.split('.').pop() || '').toLowerCase();
-  if (['txt', 'md', 'rtf'].includes(ext)) return 'Text Files';
-  if (ext === 'pdf') return 'PDFs';
-  if (['json', 'yaml', 'yml', 'xml', 'toml'].includes(ext)) return 'Data & Config';
-  if (['csv', 'tsv', 'xlsx', 'xls'].includes(ext)) return 'Spreadsheets';
-  if (['js', 'ts', 'py', 'html', 'css', 'sh', 'bat', 'ps1', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h'].includes(ext)) return 'Code';
-  if (['doc', 'docx', 'odt', 'pages'].includes(ext)) return 'Word Docs';
-  if (['log', 'capsule', 'capsuleso'].includes(ext)) return 'Logs & Capsules';
-  return 'Other';
-}
-
-const DOC_TYPE_ICONS: Record<string, string> = {
-  'Text Files': '📝',
-  'PDFs': '📕',
-  'Data & Config': '⚙️',
-  'Spreadsheets': '📊',
-  'Code': '💻',
-  'Word Docs': '📃',
-  'Logs & Capsules': '📋',
-  'Other': '📎',
-};
-
 function buildKnowledgeTree(files: KnowledgeFile[]): TreeNode[] {
   const sections: Record<string, Record<string, KnowledgeFile[]>> = {
     assets: {},
@@ -113,18 +90,6 @@ function buildKnowledgeTree(files: KnowledgeFile[]): TreeNode[] {
     }
   }
 
-  if (sections['documents']?.['__root__']?.length > 3) {
-    const rootFiles = sections['documents']['__root__'];
-    delete sections['documents']['__root__'];
-    for (const f of rootFiles) {
-      const basename = f.originalName || f.filename.split('/').pop() || f.filename;
-      const typeGroup = classifyDocType(basename);
-      const groupKey = `__auto__${typeGroup}`;
-      if (!sections['documents'][groupKey]) sections['documents'][groupKey] = [];
-      sections['documents'][groupKey].push(f);
-    }
-  }
-
   const sectionOrder: { key: string; label: string; icon: string; color: string }[] = [
     { key: 'assets', label: 'Assets', icon: '🎨', color: '#a78bfa' },
     { key: 'documents', label: 'Documents', icon: '📄', color: 'var(--chatty-accent)' },
@@ -154,19 +119,9 @@ function buildKnowledgeTree(files: KnowledgeFile[]): TreeNode[] {
     const children: TreeNode[] = [];
     let totalCount = 0;
 
-    const AUTO_ORDER = ['Text Files', 'PDFs', 'Word Docs', 'Data & Config', 'Spreadsheets', 'Code', 'Logs & Capsules', 'Other'];
     const sortedSubs = Object.keys(subs).sort((a, b) => {
       if (a === '__root__') return -1;
       if (b === '__root__') return 1;
-      const aAuto = a.startsWith('__auto__');
-      const bAuto = b.startsWith('__auto__');
-      if (aAuto && bAuto) {
-        const aIdx = AUTO_ORDER.indexOf(a.replace('__auto__', ''));
-        const bIdx = AUTO_ORDER.indexOf(b.replace('__auto__', ''));
-        return (aIdx === -1 ? 99 : aIdx) - (bIdx === -1 ? 99 : bIdx);
-      }
-      if (aAuto) return -1;
-      if (bAuto) return 1;
       return a.localeCompare(b);
     });
 
@@ -183,11 +138,8 @@ function buildKnowledgeTree(files: KnowledgeFile[]): TreeNode[] {
           });
         }
       } else {
-        const isAutoGroup = sub.startsWith('__auto__');
-        const displayName = isAutoGroup ? sub.replace('__auto__', '') : sub;
-        const autoIcon = isAutoGroup ? (DOC_TYPE_ICONS[displayName] || '📁') : undefined;
         children.push({
-          name: autoIcon ? `${autoIcon} ${displayName}` : displayName,
+          name: sub,
           type: "folder",
           count: subFiles.length,
           children: subFiles.map(f => ({
