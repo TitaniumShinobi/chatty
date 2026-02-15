@@ -5,7 +5,7 @@
   "description": "A next-generation AI workspace by LIFE Technology, designed for production environments.",
   "main": "index.js",
   "scripts": {
-    "start": "./start.sh",
+    "start": "NODE_ENV=production PORT=5000 npx tsx server/server.js",
     "dev": "vite",
     "dev:strict": "VITE_STRICT_MODE=true vite",
     "dev:full": "concurrently \"npm run dev\" \"npm run server\"",
