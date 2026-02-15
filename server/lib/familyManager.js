@@ -335,4 +335,54 @@ export async function revokeInvite(parentUserId, inviteId) {
   return { ok: true };
 }
 
+export async function isAgeVerified18(userId) {
+  const data = await loadFamilyData();
+  const verification = data.ageVerifications?.[userId];
+  if (!verification) return false;
+  if (!verification.verified) return false;
+  if (verification.expiresAt && new Date(verification.expiresAt) < new Date()) return false;
+  return true;
+}
+
+export async function setAgeVerification(userId, verified, method = 'self_declared') {
+  const data = await loadFamilyData();
+  if (!data.ageVerifications) data.ageVerifications = {};
+  data.ageVerifications[userId] = {
+    verified,
+    method,
+    verifiedAt: verified ? new Date().toISOString() : null,
+    expiresAt: null,
+    lastChecked: new Date().toISOString(),
+  };
+  await saveFamilyData(data);
+  return { ok: true };
+}
+
+export async function setStepUpRequired(userId, required = true) {
+  const data = await loadFamilyData();
+  if (!data.stepUpAuth) data.stepUpAuth = {};
+  data.stepUpAuth[userId] = {
+    required,
+    triggeredAt: required ? new Date().toISOString() : null,
+    reason: required ? 'idle_timeout_18plus' : null,
+  };
+  await saveFamilyData(data);
+  return { ok: true };
+}
+
+export async function isStepUpRequired(userId) {
+  const data = await loadFamilyData();
+  return data.stepUpAuth?.[userId]?.required === true;
+}
+
+export async function clearStepUp(userId) {
+  const data = await loadFamilyData();
+  if (data.stepUpAuth?.[userId]) {
+    data.stepUpAuth[userId].required = false;
+    data.stepUpAuth[userId].clearedAt = new Date().toISOString();
+    await saveFamilyData(data);
+  }
+  return { ok: true };
+}
+
 export { DEFAULT_CHILD_SETTINGS };

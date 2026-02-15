@@ -221,9 +221,20 @@ function IdleTimeoutWatcher({ onTimeout }: { onTimeout: () => void }) {
   const { settings } = useSettings();
   const timeoutMinutes = settings.security.screenTimeout || 0;
 
+  const handleTimeout = useCallback(async () => {
+    try {
+      await fetch('/api/family/step-up/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+    } catch {}
+    onTimeout();
+  }, [onTimeout]);
+
   useIdleTimeout({
     timeoutMinutes,
-    onTimeout,
+    onTimeout: handleTimeout,
     enabled: timeoutMinutes > 0,
   });
 

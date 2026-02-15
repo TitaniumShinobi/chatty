@@ -8,6 +8,7 @@ import os from 'os';
 import JSZip from 'jszip';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import { GPTManager } from '../lib/gptManager.js';
+import { enforceRoleplayToggle } from '../lib/contentGuard.js';
 
 const router = express.Router();
 
@@ -356,6 +357,17 @@ router.put('/:id', async (req, res) => {
     const { allowed, gpt: existing } = await verifyGPTOwnership(req, req.params.id);
     if (!existing) return res.status(404).json({ success: false, error: 'GPT not found' });
     if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
+
+    if (req.body.roleplayEnabled === true || req.body.roleplayEnabled === 1) {
+      const userId = req.user?.id || req.user?.email;
+      if (userId) {
+        const rpCheck = await enforceRoleplayToggle(userId);
+        if (!rpCheck.allowed) {
+          return res.status(403).json({ success: false, error: rpCheck.reason, roleplayBlocked: true });
+        }
+      }
+    }
+
     const gpt = await gptManager.updateGPT(req.params.id, req.body);
     res.json({ success: true, gpt });
 

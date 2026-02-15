@@ -10,7 +10,7 @@ import { loadIdentityFiles } from "../lib/identityLoader.js";
 import { GPTManager } from "../lib/gptManager.js";
 import { performSearch, injectSearchContext } from "./search.js";
 import { buildEnrichedContext, captureMemory } from "../lib/memoryContextBuilder.js";
-import { evaluateMessage, buildChildSafeDirectives } from "../lib/contentGuard.js";
+import { evaluateMessage, buildChildSafeDirectives, enforcePreInferenceGates, enforceRoleplayToggle } from "../lib/contentGuard.js";
 import { getAccountType, getChildSettings } from "../lib/familyManager.js";
 
 // Timestamp all console output from this module
@@ -3849,6 +3849,21 @@ router.post("/message", async (req, res) => {
       }
     } catch (pcErr) {
       console.warn(`[ParentalControls] Could not check account type:`, pcErr.message);
+    }
+
+    try {
+      const gate = await enforcePreInferenceGates(userId, constructId, message, gptConfig);
+      if (gate.blocked) {
+        console.log(`🚫 [ContentGate] BLOCKED pre-inference for ${userId} → ${constructId}: ${gate.reason}`);
+        return res.status(403).json({
+          success: false,
+          blocked: true,
+          reason: gate.reason,
+          response: gate.message,
+        });
+      }
+    } catch (gateErr) {
+      console.error(`[ContentGate] Gate check failed (allowing through):`, gateErr.message);
     }
 
     console.log(`🧠 [VVAULT Proxy] System prompt length: ${systemPrompt.length} (capsule: ${enrichedContext.capsuleLoaded}, verified: ${enrichedContext.verifiedMemories || 0}, memories: ${enrichedContext.memoriesLoaded})`);

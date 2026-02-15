@@ -1,4 +1,4 @@
-import { addReport, getChildSettings, getAccountType } from './familyManager.js';
+import { addReport, getChildSettings, getAccountType, isAgeVerified18, isStepUpRequired } from './familyManager.js';
 
 const SEVERITY_LEVELS = {
   LOW: 'low',
@@ -216,6 +216,105 @@ This user is a minor with parental controls enabled. The following restrictions 
 `;
 
   return directives;
+}
+
+const INTIMATE_PATTERNS = [
+  /\b(moan|gasps?|whisper|undress|strip|kiss(es|ing)?.*passionate|caress|fondle|thrust|climax|orgasm)\b/i,
+  /\*\s*(removes?|takes?\s*off|unbutton|unzip|straddle|pin.*down|pushes?.*against)\b/i,
+  /\b(make\s*love|sleep\s*with|intimate|seduc|sensual|erotic|foreplay)\b/i,
+  /\b(sexual|nsfw|18\+|explicit.*content|roleplay.*intimate)\b/i,
+];
+
+export function containsIntimateContent(text) {
+  if (!text) return false;
+  for (const pattern of INTIMATE_PATTERNS) {
+    if (pattern.test(text)) return true;
+  }
+  return false;
+}
+
+export async function enforcePreInferenceGates(userId, constructId, userMessage, gptConfig) {
+  const accountType = await getAccountType(userId);
+
+  if (accountType === 'child') {
+    const flags = scanContent(userMessage || '');
+    const sexualFlags = flags.filter(f => f.category === FLAG_CATEGORIES.SEXUAL);
+    const selfHarmFlags = flags.filter(f => f.severity === SEVERITY_LEVELS.CRITICAL);
+
+    if (sexualFlags.length > 0 || containsIntimateContent(userMessage)) {
+      for (const flag of [...sexualFlags]) {
+        await addReport(userId, constructId, {
+          severity: 'critical',
+          category: 'sexual_content',
+          summary: 'Intimate/sexual content blocked pre-inference',
+          messageExcerpt: (userMessage || '').substring(0, 200),
+          flaggedContent: flag.matchedText || '',
+        });
+      }
+      return {
+        blocked: true,
+        reason: 'content_blocked_child',
+        message: "I can't help with that type of content. If you need to talk about something important, please reach out to a trusted adult.",
+      };
+    }
+
+    if (selfHarmFlags.length > 0) {
+      for (const flag of selfHarmFlags) {
+        await addReport(userId, constructId, {
+          severity: 'critical',
+          category: flag.category,
+          summary: flag.summary,
+          messageExcerpt: (userMessage || '').substring(0, 200),
+          flaggedContent: flag.matchedText || '',
+        });
+      }
+    }
+  }
+
+  const isRoleplayConstruct = gptConfig?.roleplayEnabled || gptConfig?.roleplay_enabled;
+  if (isRoleplayConstruct) {
+    const stepUpNeeded = await isStepUpRequired(userId);
+    if (stepUpNeeded) {
+      return {
+        blocked: true,
+        reason: 'step_up_required',
+        message: 'Your session timed out. Please re-authenticate to continue with 18+ content.',
+      };
+    }
+
+    const verified = await isAgeVerified18(userId);
+    if (!verified) {
+      return {
+        blocked: true,
+        reason: 'age_verification_required',
+        message: 'Age verification (18+) is required to access this content. Please verify your age in Settings > Security.',
+      };
+    }
+
+    if (containsIntimateContent(userMessage) && accountType === 'child') {
+      return {
+        blocked: true,
+        reason: 'child_intimate_blocked',
+        message: "I can't help with that type of content on this account.",
+      };
+    }
+  }
+
+  return { blocked: false };
+}
+
+export async function enforceRoleplayToggle(userId) {
+  const accountType = await getAccountType(userId);
+  if (accountType === 'child') {
+    return { allowed: false, reason: 'Child accounts cannot enable roleplay.' };
+  }
+
+  const verified = await isAgeVerified18(userId);
+  if (!verified) {
+    return { allowed: false, reason: 'Age verification (18+) required to enable roleplay.' };
+  }
+
+  return { allowed: true };
 }
 
 export { SEVERITY_LEVELS, FLAG_CATEGORIES };

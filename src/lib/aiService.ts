@@ -562,6 +562,14 @@ export class AIService {
               
               if (!response.ok) {
                 const error = await response.json();
+                if (error.blocked && error.response) {
+                  return {
+                    agent_id: agentId,
+                    response: error.response,
+                    tool_trace: [],
+                    status: 'success' as const
+                  };
+                }
                 throw new Error(error.error || 'Failed to process message via VVAULT');
               }
               
@@ -612,12 +620,21 @@ export class AIService {
 
       if (!response.ok) {
         const error = await response.json();
+        if (error.blocked && error.response) {
+          const packets = [{ op: 'answer.v1', payload: { content: error.response, tool_trace: [] } }];
+          if (callbacks?.onFinalUpdate) {
+            const callbackResult = callbacks.onFinalUpdate(packets);
+            if (callbackResult instanceof Promise) {
+              await callbackResult;
+            }
+          }
+          return packets;
+        }
         throw new Error(error.error || 'Failed to process message via VVAULT');
       }
 
       const data = await response.json();
       
-      // Extract AI response content from VVAULT response
       const aiContent = data.response || '';
       
       // Convert response to packets format, threading tool_trace through

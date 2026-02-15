@@ -11,6 +11,11 @@ import {
   removeChildLink,
   revokeInvite,
   getAccountType,
+  isAgeVerified18,
+  setAgeVerification,
+  setStepUpRequired,
+  isStepUpRequired,
+  clearStepUp,
 } from '../lib/familyManager.js';
 
 const router = express.Router();
@@ -167,6 +172,76 @@ router.get('/account-type', async (req, res) => {
   } catch (error) {
     console.error('[Family] Account type error:', error);
     res.status(500).json({ ok: false, error: 'Failed to get account type' });
+  }
+});
+
+router.get('/age-verification', async (req, res) => {
+  try {
+    const userId = req.user.user_id || req.user.sub;
+    const verified = await isAgeVerified18(userId);
+    res.json({ ok: true, verified });
+  } catch (error) {
+    console.error('[Family] Age verification check error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to check age verification' });
+  }
+});
+
+router.post('/age-verification', async (req, res) => {
+  try {
+    const userId = req.user.user_id || req.user.sub;
+    const accountType = await getAccountType(userId);
+    if (accountType === 'child') {
+      return res.status(403).json({ ok: false, error: 'Child accounts cannot self-verify age.' });
+    }
+    const { confirmed } = req.body;
+    if (confirmed !== true) {
+      return res.status(400).json({ ok: false, error: 'You must confirm you are 18 or older.' });
+    }
+    await setAgeVerification(userId, true, 'self_declared');
+    console.log(`[AgeVerification] User ${userId} self-declared 18+ verification`);
+    res.json({ ok: true, verified: true, method: 'self_declared' });
+  } catch (error) {
+    console.error('[Family] Age verification error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to verify age' });
+  }
+});
+
+router.get('/step-up', async (req, res) => {
+  try {
+    const userId = req.user.user_id || req.user.sub;
+    const required = await isStepUpRequired(userId);
+    res.json({ ok: true, required });
+  } catch (error) {
+    console.error('[Family] Step-up check error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to check step-up status' });
+  }
+});
+
+router.post('/step-up/trigger', async (req, res) => {
+  try {
+    const userId = req.user.user_id || req.user.sub;
+    await setStepUpRequired(userId, true);
+    console.log(`[StepUp] Triggered step-up auth for ${userId}`);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('[Family] Step-up trigger error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to trigger step-up' });
+  }
+});
+
+router.post('/step-up/clear', async (req, res) => {
+  try {
+    const userId = req.user.user_id || req.user.sub;
+    const verified = await isAgeVerified18(userId);
+    if (!verified) {
+      return res.status(403).json({ ok: false, error: 'Age verification required before clearing step-up.' });
+    }
+    await clearStepUp(userId);
+    console.log(`[StepUp] Cleared step-up for ${userId} (re-authenticated)`);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('[Family] Step-up clear error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to clear step-up' });
   }
 });
 
