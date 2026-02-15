@@ -153,6 +153,11 @@ export class AIManager {
       this.db.exec(`ALTER TABLE ais ADD COLUMN memory_profile TEXT DEFAULT 'off'`);
     }
 
+    const hasRoleplayEnabled = columns.some(col => col.name === 'roleplay_enabled');
+    if (!hasRoleplayEnabled) {
+      this.db.exec(`ALTER TABLE ais ADD COLUMN roleplay_enabled INTEGER DEFAULT 0`);
+    }
+
     // Backfill defaults for existing rows
     this.db.exec(`
       UPDATE ais
@@ -168,7 +173,8 @@ export class AIManager {
           END
         ),
         memory_enabled = COALESCE(memory_enabled, 0),
-        memory_profile = COALESCE(memory_profile, 'off')
+        memory_profile = COALESCE(memory_profile, 'off'),
+        roleplay_enabled = COALESCE(roleplay_enabled, 0)
     `);
 
     // Also add privacy column to legacy gpts table for backward compatibility
@@ -479,10 +485,10 @@ export class AIManager {
       INSERT INTO ais (
         id, name, description, instructions, conversation_starters, avatar, capabilities, construct_callsign, 
         model_id, conversation_model, creative_model, coding_model, orchestration_mode, 
-        memory_enabled, memory_profile,
+        memory_enabled, memory_profile, roleplay_enabled,
         is_active, privacy, created_at, updated_at, user_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -501,6 +507,7 @@ export class AIManager {
       config.orchestrationMode || 'lin',
       config.memoryEnabled ? 1 : 0,
       config.memoryProfile || 'off',
+      config.roleplayEnabled ? 1 : 0,
       isActive ? 1 : 0,
       privacy,
       now,
@@ -529,7 +536,8 @@ export class AIManager {
       codingModel: config.codingModel || config.modelId,
       orchestrationMode: config.orchestrationMode || 'lin',
       memoryEnabled: Boolean(config.memoryEnabled),
-      memoryProfile: config.memoryProfile || 'off'
+      memoryProfile: config.memoryProfile || 'off',
+      roleplayEnabled: Boolean(config.roleplayEnabled)
     };
   }
 
@@ -632,6 +640,7 @@ export class AIManager {
       orchestrationMode: row.orchestration_mode || 'lin',
       memoryEnabled: Boolean(row.memory_enabled),
       memoryProfile: row.memory_profile || 'off',
+      roleplayEnabled: Boolean(row.roleplay_enabled),
       files,
       actions,
       isActive: Boolean(row.is_active),
@@ -739,6 +748,7 @@ export class AIManager {
       orchestrationMode: row.orchestration_mode || 'lin',
       memoryEnabled: Boolean(row.memory_enabled),
       memoryProfile: row.memory_profile || 'off',
+      roleplayEnabled: Boolean(row.roleplay_enabled),
       files,
       actions,
       isActive: Boolean(row.is_active),
@@ -1014,6 +1024,7 @@ export class AIManager {
             orchestrationMode: row.orchestration_mode || 'lin',
             memoryEnabled: Boolean(row.memory_enabled),
             memoryProfile: row.memory_profile || 'off',
+            roleplayEnabled: Boolean(row.roleplay_enabled),
             files,
             actions,
             isActive: Boolean(row.is_active),
@@ -1136,6 +1147,7 @@ export class AIManager {
             orchestrationMode: row.orchestration_mode || 'lin',
             memoryEnabled: Boolean(row.memory_enabled),
             memoryProfile: row.memory_profile || 'off',
+            roleplayEnabled: Boolean(row.roleplay_enabled),
             files,
             actions,
             isActive: Boolean(row.is_active),
@@ -1273,6 +1285,7 @@ export class AIManager {
           orchestration_mode = COALESCE(?, 'lin'), 
           memory_enabled = ?,
           memory_profile = ?,
+          roleplay_enabled = ?,
           is_active = ?, 
           privacy = COALESCE(?, 
             CASE 
@@ -1299,6 +1312,7 @@ export class AIManager {
         updates.orchestrationMode || existing.orchestrationMode || 'lin',
         updates.memoryEnabled !== undefined ? (updates.memoryEnabled ? 1 : 0) : (existing.memoryEnabled ? 1 : 0),
         updates.memoryProfile !== undefined ? updates.memoryProfile : (existing.memoryProfile || 'off'),
+        updates.roleplayEnabled !== undefined ? (updates.roleplayEnabled ? 1 : 0) : (existing.roleplayEnabled ? 1 : 0),
         isActive ? 1 : 0,
         privacy,
         new Date().toISOString(),
@@ -1324,6 +1338,7 @@ export class AIManager {
           orchestration_mode = ?, 
           memory_enabled = ?,
           memory_profile = ?,
+          roleplay_enabled = ?,
           is_active = ?, 
           privacy = ?,
           updated_at = ?
@@ -1345,6 +1360,7 @@ export class AIManager {
         updates.orchestrationMode || existing.orchestrationMode || 'lin',
         updates.memoryEnabled !== undefined ? (updates.memoryEnabled ? 1 : 0) : (existing.memoryEnabled ? 1 : 0),
         updates.memoryProfile !== undefined ? updates.memoryProfile : (existing.memoryProfile || 'off'),
+        updates.roleplayEnabled !== undefined ? (updates.roleplayEnabled ? 1 : 0) : (existing.roleplayEnabled ? 1 : 0),
         isActive ? 1 : 0,
         privacy,
         new Date().toISOString(),

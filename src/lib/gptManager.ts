@@ -46,6 +46,7 @@ export interface GPTConfig {
   files: GPTFile[];
   actions: GPTAction[];
   isActive: boolean;
+  roleplayEnabled?: boolean;
   createdAt: string;
   updatedAt: string;
   userId: string;

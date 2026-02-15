@@ -467,10 +467,8 @@ function buildTranscriptMemorySection(memories, constructId) {
   return section;
 }
 
-const ROLEPLAY_ENABLED_CONSTRUCTS = new Set(['nova-001']);
-
-function buildBehavioralDirectives(constructId) {
-  const isRoleplayConstruct = ROLEPLAY_ENABLED_CONSTRUCTS.has(constructId);
+function buildBehavioralDirectives(constructId, gptConfig) {
+  const isRoleplayConstruct = gptConfig?.roleplayEnabled === true;
 
   const platformAwareness = `
 ## PLATFORM AWARENESS
@@ -953,6 +951,29 @@ async function buildEnrichedContext(options) {
   }
   console.log(`⏱️ [MemoryContextBuilder] physicalFeatures: ${phaseTiming.physicalFeatures.ms}ms (${phaseTiming.physicalFeatures.source})`);
 
+  let definitionSection = '';
+  try {
+    const { getSupabaseClient } = await import('./supabaseClient.js');
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { data: defData } = await supabase
+        .from('vault_files')
+        .select('content')
+        .eq('construct_id', constructId)
+        .like('filename', '%definition.json')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (defData?.content && defData.content.trim()) {
+        definitionSection = `\n\n## DEFINITION — Example Dialog\nThe following example exchanges demonstrate how you speak and respond. These are reference examples for your voice and personality — they are NOT part of the current conversation.\n\n${defData.content.trim()}`;
+        console.log(`✅ [MemoryContextBuilder] Definition loaded for ${constructId} (${defData.content.length} chars)`);
+      }
+    }
+  } catch (defErr) {
+    console.warn(`⚠️ [MemoryContextBuilder] Definition load failed for ${constructId}:`, defErr.message);
+  }
+
   const cachedCapsule = capsuleCache.get(constructId);
   let capsuleSection = '';
   const tCapsule = Date.now();
@@ -1268,7 +1289,7 @@ When answering:
     console.log(`🕐 [MemoryContextBuilder] TIME_CONTEXT injected for ${constructId} (tz: ${resolveTimezone({ constructConfig: gptConfig, user, clientTimezone })})`);
   }
 
-  result.systemPrompt = basePrompt + physicalAppearanceSection + capsuleSection + userSection + knowledgeSection + citationDirective + ledgerSection + vectorMemorySection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + continuitySection + timeContextSection + buildBehavioralDirectives(constructId);
+  result.systemPrompt = basePrompt + physicalAppearanceSection + definitionSection + capsuleSection + userSection + knowledgeSection + citationDirective + ledgerSection + vectorMemorySection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + continuitySection + timeContextSection + buildBehavioralDirectives(constructId, gptConfig);
 
   phaseTiming.totalMs = Date.now() - t0;
   result.phaseTiming = phaseTiming;

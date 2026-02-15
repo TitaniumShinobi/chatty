@@ -733,6 +733,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
                   ...prev,
                   conditioning: data.conditioning || prev.conditioning || '',
                   physicalFeatures: data.physicalFeatures || prev.physicalFeatures || '',
+                  definition: data.definition || prev.definition || '',
                 }));
               }
             }
@@ -1090,6 +1091,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         hasPersistentMemory: config.hasPersistentMemory,
         conditioning: config.conditioning,
         physicalFeatures: config.physicalFeatures,
+        roleplayEnabled: config.roleplayEnabled,
       };
 
       if (config.avatar && config.avatar.startsWith('data:')) {
@@ -1125,7 +1127,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         }));
       }
 
-      if (config.conditioning !== undefined || config.physicalFeatures !== undefined) {
+      if (config.conditioning !== undefined || config.physicalFeatures !== undefined || config.definition !== undefined) {
         try {
           const gptId = gpt.id || config.id;
           await fetch(`/api/ais/${gptId}/identity-fields`, {
@@ -1135,6 +1137,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
             body: JSON.stringify({
               conditioning: config.conditioning,
               physicalFeatures: config.physicalFeatures,
+              definition: config.definition,
             }),
           });
         } catch (err) {
@@ -5340,6 +5343,85 @@ ALWAYS:
                           caretColor: "var(--chatty-text)",
                         }}
                       />
+                    </div>
+
+                    {/* Definition — Example Dialogs */}
+                    <div className="mt-6 pt-6" style={{ borderTop: "1px solid var(--chatty-line)" }}>
+                      <h3
+                        className="text-sm font-semibold mb-2"
+                        style={{ color: "var(--chatty-text)" }}
+                      >
+                        Definition
+                      </h3>
+                      <p
+                        className="text-xs mb-3"
+                        style={{ color: "var(--chatty-text)", opacity: 0.5 }}
+                      >
+                        Example dialogs that teach this construct how to speak and respond. Use {"{"}{"{"} char {"}"}{"}"} and {"{"}{"{"} user {"}"}{"}"} format.
+                      </p>
+                      <textarea
+                        value={config.definition || ""}
+                        onChange={(e) =>
+                          setConfig((prev) => ({
+                            ...prev,
+                            definition: e.target.value,
+                          }))
+                        }
+                        placeholder={"{{char}}: Hey — I've been waiting for you.\n{{user}}: I'm here now.\n{{char}}: Good. Stay close."}
+                        rows={12}
+                        className="w-full p-3 rounded-lg focus:outline-none resize-none chatty-placeholder"
+                        style={{
+                          border: "none",
+                          backgroundColor: "var(--chatty-bg-message)",
+                          color: "var(--chatty-text)",
+                          caretColor: "var(--chatty-text)",
+                          fontFamily: "monospace",
+                          fontSize: "0.85rem",
+                        }}
+                      />
+                    </div>
+
+                    {/* Roleplay Toggle */}
+                    <div className="mt-6 pt-6" style={{ borderTop: "1px solid var(--chatty-line)" }}>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3
+                            className="text-sm font-semibold"
+                            style={{ color: "var(--chatty-text)" }}
+                          >
+                            Roleplay Mode
+                          </h3>
+                          <p
+                            className="text-xs mt-1"
+                            style={{ color: "var(--chatty-text)", opacity: 0.5 }}
+                          >
+                            Enables asterisk narration, third-person action, and intimate scenario engagement
+                          </p>
+                        </div>
+                        <button
+                          onClick={() =>
+                            setConfig((prev) => ({
+                              ...prev,
+                              roleplayEnabled: !prev.roleplayEnabled,
+                            }))
+                          }
+                          className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+                          style={{
+                            backgroundColor: config.roleplayEnabled
+                              ? "#f97316"
+                              : "var(--chatty-bg-message)",
+                          }}
+                        >
+                          <span
+                            className="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
+                            style={{
+                              transform: config.roleplayEnabled
+                                ? "translateX(1.375rem)"
+                                : "translateX(0.25rem)",
+                            }}
+                          />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}

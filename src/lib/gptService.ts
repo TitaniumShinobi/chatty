@@ -49,6 +49,8 @@ export interface GPTConfig {
   memoryProfile?: 'continuitygpt' | 'off';
   conditioning?: string;
   physicalFeatures?: string;
+  definition?: string;
+  roleplayEnabled?: boolean;
   files: GPTFile[];
   actions: GPTAction[];
   hasPersistentMemory: boolean; // VVAULT integration - defaults to true

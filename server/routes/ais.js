@@ -470,6 +470,7 @@ router.get('/:id/identity-fields', async (req, res) => {
 
     let conditioning = null;
     let physicalFeatures = null;
+    let definition = null;
 
     try {
       const { getSupabaseClient } = await import('../lib/supabaseClient.js');
@@ -503,12 +504,22 @@ router.get('/:id/identity-fields', async (req, res) => {
             physicalFeatures = physData.content;
           }
         }
+
+        const { data: defData } = await supabase
+          .from('vault_files')
+          .select('content')
+          .eq('construct_id', constructCallsign)
+          .like('filename', '%definition.json')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (defData?.content) definition = defData.content;
       }
     } catch (err) {
       console.warn(`⚠️ [AIs API] Identity fields load failed for ${constructCallsign}:`, err.message);
     }
 
-    res.json({ success: true, conditioning, physicalFeatures });
+    res.json({ success: true, conditioning, physicalFeatures, definition });
   } catch (error) {
     console.error('Error loading identity fields:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -525,7 +536,7 @@ router.put('/:id/identity-fields', async (req, res) => {
       return res.status(400).json({ success: false, error: 'No construct callsign' });
     }
 
-    const { conditioning, physicalFeatures } = req.body;
+    const { conditioning, physicalFeatures, definition } = req.body;
     const userId = ai?.userId;
 
     try {
@@ -586,6 +597,12 @@ router.put('/:id/identity-fields', async (req, res) => {
         const filePath = `instances/${constructCallsign}/identity/physical_features.json`;
         await upsertVaultFile(filePath, 'identity', jsonContent);
         console.log(`✅ [AIs API] Saved physical_features.json for ${constructCallsign}`);
+      }
+
+      if (definition !== undefined) {
+        const filePath = `instances/${constructCallsign}/identity/definition.json`;
+        await upsertVaultFile(filePath, 'identity', definition);
+        console.log(`✅ [AIs API] Saved definition.json for ${constructCallsign}`);
       }
 
       res.json({ success: true });

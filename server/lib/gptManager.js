@@ -110,6 +110,11 @@ export class GPTManager {
       this.db.exec(`ALTER TABLE gpts ADD COLUMN memory_profile TEXT DEFAULT 'off'`);
     }
 
+    const hasRoleplayEnabled = columns.some(col => col.name === 'roleplay_enabled');
+    if (!hasRoleplayEnabled) {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN roleplay_enabled INTEGER DEFAULT 0`);
+    }
+
     // Backfill defaults for existing rows
     this.db.exec(`
       UPDATE gpts
@@ -119,7 +124,8 @@ export class GPTManager {
         coding_model = COALESCE(coding_model, model_id),
         orchestration_mode = COALESCE(orchestration_mode, 'lin'),
         memory_enabled = COALESCE(memory_enabled, 0),
-        memory_profile = COALESCE(memory_profile, 'off')
+        memory_profile = COALESCE(memory_profile, 'off'),
+        roleplay_enabled = COALESCE(roleplay_enabled, 0)
     `);
 
     // GPT Files table
@@ -681,10 +687,10 @@ export class GPTManager {
       INSERT INTO gpts (
         id, name, description, instructions, conversation_starters, avatar, capabilities, construct_callsign, 
         model_id, conversation_model, creative_model, coding_model, orchestration_mode, 
-        memory_enabled, memory_profile,
+        memory_enabled, memory_profile, roleplay_enabled,
         is_active, created_at, updated_at, user_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -703,6 +709,7 @@ export class GPTManager {
       config.orchestrationMode || 'lin',
       config.memoryEnabled ? 1 : 0,
       config.memoryProfile || 'off',
+      config.roleplayEnabled ? 1 : 0,
       config.isActive ? 1 : 0,
       now,
       now,
@@ -724,7 +731,8 @@ export class GPTManager {
       codingModel: config.codingModel || config.modelId,
       orchestrationMode: config.orchestrationMode || 'lin',
       memoryEnabled: Boolean(config.memoryEnabled),
-      memoryProfile: config.memoryProfile || 'off'
+      memoryProfile: config.memoryProfile || 'off',
+      roleplayEnabled: Boolean(config.roleplayEnabled)
     };
   }
 
@@ -753,6 +761,7 @@ export class GPTManager {
       orchestrationMode: row.orchestration_mode || 'lin',
       memoryEnabled: Boolean(row.memory_enabled),
       memoryProfile: row.memory_profile || 'off',
+      roleplayEnabled: Boolean(row.roleplay_enabled),
       files,
       actions,
       isActive: Boolean(row.is_active),
@@ -789,7 +798,8 @@ export class GPTManager {
           updatedAt: aiRow.updated_at,
           userId: aiRow.user_id,
           memoryEnabled: Boolean(aiRow.memory_enabled),
-          memoryProfile: aiRow.memory_profile || 'off'
+          memoryProfile: aiRow.memory_profile || 'off',
+          roleplayEnabled: Boolean(aiRow.roleplay_enabled)
         };
       }
     } catch (e) {
@@ -821,7 +831,8 @@ export class GPTManager {
       updatedAt: row.updated_at,
       userId: row.user_id,
       memoryEnabled: Boolean(row.memory_enabled),
-      memoryProfile: row.memory_profile || 'off'
+      memoryProfile: row.memory_profile || 'off',
+      roleplayEnabled: Boolean(row.roleplay_enabled)
     };
   }
 
@@ -896,6 +907,7 @@ export class GPTManager {
             creativeModel: row.creative_model,
             codingModel: row.coding_model,
             orchestrationMode: row.orchestration_mode || 'lin',
+            roleplayEnabled: Boolean(row.roleplay_enabled),
             files,
             actions,
             isActive: Boolean(row.is_active),
@@ -937,6 +949,7 @@ export class GPTManager {
       orchestrationMode: row.orchestration_mode || 'lin',
       memoryEnabled: Boolean(row.memory_enabled),
       memoryProfile: row.memory_profile || 'off',
+      roleplayEnabled: Boolean(row.roleplay_enabled),
       isActive: Boolean(row.is_active),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -967,6 +980,7 @@ export class GPTManager {
         orchestration_mode = ?, 
         memory_enabled = ?,
         memory_profile = ?,
+        roleplay_enabled = ?,
         is_active = ?, 
         updated_at = ?
       WHERE id = ?
@@ -987,6 +1001,7 @@ export class GPTManager {
       updates.orchestrationMode || existing.orchestrationMode || 'lin',
       updates.memoryEnabled !== undefined ? (updates.memoryEnabled ? 1 : 0) : (existing.memoryEnabled ? 1 : 0),
       updates.memoryProfile !== undefined ? updates.memoryProfile : (existing.memoryProfile || 'off'),
+      updates.roleplayEnabled !== undefined ? (updates.roleplayEnabled ? 1 : 0) : (existing.roleplayEnabled ? 1 : 0),
       updates.isActive !== undefined ? (updates.isActive ? 1 : 0) : (existing.isActive ? 1 : 0),
       new Date().toISOString(),
       id

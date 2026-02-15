@@ -1187,26 +1187,26 @@ console.log('ℹ️ [Server] Supabase Realtime disabled (no active consumers —
 
     const novaGpt = gptDb.prepare('SELECT id FROM gpts WHERE id = ? OR construct_callsign = ?').get('nova-001', 'nova-001');
     if (novaGpt) {
-      gptDb.prepare('UPDATE gpts SET memory_enabled = 1, memory_profile = ? WHERE id = ? OR construct_callsign = ?').run('continuitygpt', 'nova-001', 'nova-001');
-      console.log('✅ [Bootstrap] nova-001 memory config updated in gpts (memory_enabled=1, memory_profile=continuitygpt)');
+      gptDb.prepare('UPDATE gpts SET memory_enabled = 1, memory_profile = ?, roleplay_enabled = 1 WHERE id = ? OR construct_callsign = ?').run('continuitygpt', 'nova-001', 'nova-001');
+      console.log('✅ [Bootstrap] nova-001 config updated in gpts (memory_enabled=1, memory_profile=continuitygpt, roleplay_enabled=1)');
     } else {
-      gptDb.prepare(`INSERT OR IGNORE INTO gpts (id, name, description, construct_callsign, model_id, user_id, is_active, memory_enabled, memory_profile)
-        VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?)`).run(
+      gptDb.prepare(`INSERT OR IGNORE INTO gpts (id, name, description, construct_callsign, model_id, user_id, is_active, memory_enabled, memory_profile, roleplay_enabled)
+        VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, 1)`).run(
         'nova-001', 'Nova', 'Devon\'s partner construct', 'nova-001', 'openrouter/auto', 'system', 'continuitygpt'
       );
-      console.log('✅ [Bootstrap] nova-001 inserted into gpts with memory config');
+      console.log('✅ [Bootstrap] nova-001 inserted into gpts with memory+roleplay config');
     }
 
     const novaAi = aiDb.prepare('SELECT id FROM ais WHERE id = ? OR construct_callsign = ?').get('nova-001', 'nova-001');
     if (novaAi) {
-      aiDb.prepare('UPDATE ais SET memory_enabled = 1, memory_profile = ? WHERE id = ? OR construct_callsign = ?').run('continuitygpt', 'nova-001', 'nova-001');
-      console.log('✅ [Bootstrap] nova-001 memory config updated in ais');
+      aiDb.prepare('UPDATE ais SET memory_enabled = 1, memory_profile = ?, roleplay_enabled = 1 WHERE id = ? OR construct_callsign = ?').run('continuitygpt', 'nova-001', 'nova-001');
+      console.log('✅ [Bootstrap] nova-001 config updated in ais (memory_enabled=1, memory_profile=continuitygpt, roleplay_enabled=1)');
     } else {
-      aiDb.prepare(`INSERT OR IGNORE INTO ais (id, name, description, construct_callsign, model_id, user_id, is_active, memory_enabled, memory_profile)
-        VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?)`).run(
+      aiDb.prepare(`INSERT OR IGNORE INTO ais (id, name, description, construct_callsign, model_id, user_id, is_active, memory_enabled, memory_profile, roleplay_enabled)
+        VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, 1)`).run(
         'nova-001', 'Nova', 'Devon\'s partner construct', 'nova-001', 'openrouter/auto', 'system', 'continuitygpt'
       );
-      console.log('✅ [Bootstrap] nova-001 inserted into ais with memory config');
+      console.log('✅ [Bootstrap] nova-001 inserted into ais with memory+roleplay config');
     }
   } catch (err) {
     console.warn('⚠️ [Bootstrap] Nova memory config seed failed:', err.message);
