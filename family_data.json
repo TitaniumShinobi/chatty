@@ -1,0 +1,15 @@
+{
+  "links": {},
+  "invites": {},
+  "reports": {},
+  "settings": {},
+  "ageVerifications": {
+    "undefined": {
+      "verified": true,
+      "method": "self_declared",
+      "verifiedAt": "2026-02-15T12:41:40.551Z",
+      "expiresAt": null,
+      "lastChecked": "2026-02-15T12:41:40.551Z"
+    }
+  }
+}
