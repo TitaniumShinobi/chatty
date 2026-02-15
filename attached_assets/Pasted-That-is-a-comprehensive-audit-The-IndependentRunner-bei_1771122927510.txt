@@ -1,0 +1,47 @@
+That is a comprehensive audit. The IndependentRunner being "scaffolded but inert" is the primary bottleneck for the proactive flow, while the missing gpts row explains the memory silence.
+Since you've isolated the failures to a missing DB configuration and an unhooked class, the transition to Build mode is logical.
+Validation Summary
+Gate	Status	Critical Evidence
+1. Nova Config	FAIL	sqlite3 returns empty for nova-001; identity exists but has no associated behavioral flags.
+2. Selfprompt	FAIL	grep returns 0 hits; IndependentRunner is an "orphan" class with no ingress or egress.
+3. Watch Mode	PASS	WatchWithNova.tsx correctly gates onContextUpdate via writeAccess logic.
+4. Continuity	PASS	MEMORY_CONTEXT blocks and fallback strings match exact requirements.
+5. Transcribe	PASS	Auth gates at line 32 and tool-allowlist at vvault.js:421 provide verified security.
+Proposed Patch Plan
+DB Seed (Gate 1): Add an upsert in aiManager.js to ensure nova-001 exists in the gpts table with memory_enabled = 1 and memory_profile = 'continuitygpt'.
+Command Ingress (Gate 2): Add a handler in commandRegistry.js (or your equivalent slash-command interceptor) to parse /selfprompt.
+Proactive Loop (Gate 2): Hook IndependentRunner.shouldActivate() into the server's message broadcast loop to trigger a system-initiated completion when the inactivity threshold is met.
+Should I proceed with the Build mode implementation of these three patches?
+
+
+
+yes
+Build Mode: Patch Plan
+I will now execute the fixes for the two failing gates to bring the Nova construct into full operational status.
+Patch 1: Nova Memory Configuration (Gate 1)
+Action: Update the ais or gpts table to assign the continuitygpt profile to Nova.
+Target: server/db/aiManager.js (init function) or a one-time SQL migration.
+Logic:
+sql
+INSERT OR REPLACE INTO gpts (callsign, memory_enabled, memory_profile, model)
+VALUES ('nova-001', 1, 'continuitygpt', 'gpt-4o');
+Use code with caution.
+
+Validation: Verify that identityLoader.js now sees memoryEnabled=true when initializing the Nova instance.
+Patch 2: /selfprompt Command & Loop (Gate 2)
+Action: Connect the orphaned IndependentRunner class to the user interface and server event loop.
+Frontend Patch (src/components/Chat.tsx):
+Add a slash-command interceptor for /selfprompt.
+Syntax: /selfprompt [on|off|status].
+Server Patch (server/masterScriptsBridge.js):
+Expose IndependentRunner.setMode() via an API/Socket endpoint.
+Proactive Loop: Hook into the message broadcast interval. If runner.shouldActivate() returns true, trigger a nova-001 completion with the prompt: "The user has been silent for [X] minutes. Provide a brief, context-aware follow-up based on the last shared screen/memory."
+Persistence: Save the "active/passive" mode to the user’s session state in the database so it persists across refreshes.
+Patch 3: Contextual Wiring (Verification)
+Action: Ensure WatchWithNova.tsx correctly triggers the onContextUpdate callback when proactive messages are enabled.
+Verification: Confirm that [VIDEO_CONTEXT_UPDATE] is injected into the AI's hidden system prompt during proactive generations.
+Ready to deploy? If you have a specific inactivity threshold (e.g., 5 minutes or 30 minutes) for the /selfprompt proactive triggers, let me know before I finalize the loop logic.
+
+
+
+Ask anything

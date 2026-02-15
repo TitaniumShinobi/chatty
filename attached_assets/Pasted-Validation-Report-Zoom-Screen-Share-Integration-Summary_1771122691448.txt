@@ -1,0 +1,85 @@
+Validation Report: Zoom Screen Share Integration
+Summary: Validation of the proposed "Nova" construct against the Zoom Video SDK (Web/Windows) confirms that the architecture requires significant custom development. The specified configuration keys (memoryEnabled), commands (/selfprompt), and events ([VIDEO_CONTEXT_UPDATE]) are not native to the Zoom SDK and failed verification against public documentation. The "Watch Mode" feature is technically feasible via the Raw Data API but requires a custom implementation bridge.
+PASS/FAIL Matrix
+Gate 	Component	Result	Notes
+1	Preflight	FAIL	memoryEnabled/memoryProfile are not valid Zoom SDK parameters.
+2	selfprompt	FAIL	No /selfprompt command exists in Zoom Chat or SDK.
+3A	Watch (Write OFF)	FAIL	SDK does not track "capture status"; emits raw frames only.
+3B	Watch (Write ON)	FAIL	[VIDEO_CONTEXT_UPDATE] event is not native; requires custom OCR pipeline.
+3C	Stop Sharing	PASS	Supported via stopShareView / active-share-change event.
+4	Continuity Memory	FAIL	Zoom SDK has no built-in long-term memory or "continuity" verification.
+5	Transcribe API	FAIL	/api/transcribe is not a valid Zoom endpoint; Authentication requires OAuth/JWT.
+Raw Evidence & Validation Logs
+Gate 1: Preflight (Nova construct) 
+Evidence: Zoom Video SDK initialization relies on ZoomVideoSDKInitParams. Documented parameters are domain, enableLog, audioRawDataMemoryMode, videoRawDataMemoryMode, and shareRawDataMemoryMode.
+Result: memoryEnabled and memoryProfile not found in SDK specification.
+Payload:
+json
+// ACTUAL SDK INIT PARAMS
+{
+  "domain": "https://zoom.us",
+  "enableLog": true,
+  "shareRawDataMemoryMode": "ZoomVideoSDKRawDataMemoryModeStack"
+}
+// MISSING: memoryEnabled, memoryProfile
+Use code with caution.
+
+ 
+Gate 2: selfprompt behavior
+Evidence: Zoom Chat allows "Public" and "Private" messages. There is no "selfprompt" or "proactive" message type triggered by silence/intervals in the SDK.
+Result: Feature is missing from platform capabilities.
+Log: Command /selfprompt not recognized by Zoom Messaging Service. 
+Gate 3: Watch mode semantics
+Evidence:
+Sharing: Supported via startShareScreen (sender) and attachShareView (receiver).
+Data Access: Raw share data is accessible via ShareProcessor (Web) or IZoomVideoSDKShareSource (Windows).
+OCR: Native OCR is limited to "Zoom AI Companion" (internal feature) and not exposed as a raw event stream to the SDK.
+Result: The [VIDEO_CONTEXT_UPDATE] protocol does not exist. The SDK provides a stream of YUV/Canvas frames, not text context. 
+Gate 5: Transcribe endpoint
+Evidence:
+Standard Endpoint: https://api.zoom.us/v2/.
+Transcription: Requires https://api.zoom.us (RTMS) or Cloud Recording API.
+Result: Request to /api/transcribe would return 404 Not Found on Zoom servers.
+Failing Payload:
+http
+POST /api/transcribe HTTP/1.1
+Host: api.zoom.us
+Authorization: Bearer <SERVICE_KEY>
+
+Response: 404 Not Found (Endpoint does not exist)
+Use code with caution.
+
+ 
+Minimal Patch Plan
+1. Implement "Nova" & Memory Config (Gate 1 & 4)
+Action: Create a custom Client State Manager (Redux/Zustand) in your application wrapper.
+Code:
+javascript
+const novaConfig = {
+  memoryEnabled: true, // App-level state, not SDK state
+  memoryProfile: 'continuitygpt'
+};
+// Pass this context to your AI Agent, not the Zoom SDK init.
+Use code with caution.
+
+2. Build "Watch Mode" & OCR Bridge (Gate 3)
+Action: Use the Zoom Video SDK Raw Data feature to capture frames and pipe them to an external OCR service.
+Patch:
+Register a ShareProcessor to access the canvas stream.
+Capture blob from <canvas> every 5 seconds (interval).
+Send blob to your AI Vision endpoint.
+Inject the result back into the chat as a synthetic [VIDEO_CONTEXT_UPDATE] system message. 
+3. Fix Transcribe Endpoint (Gate 5)
+Action: Route requests to the correct Zoom V2 API or your own proxy.
+Patch:
+If Live: Use Zoom Video SDK Live Transcription (Closed Captioning) and scrape the onCaptionStatus events.
+If Post-Process:
+http
+GET https://api.zoom.us{sessionId}/recordings
+// Then parse the 'transcript_files' download_url
+Use code with caution.
+
+If Custom: Build /api/transcribe as a local middleware that takes the audio buffer from ZoomVideoSDKAudioRawDataDelegate, sends it to OpenAI Whisper, and returns text. 
+
+
+
