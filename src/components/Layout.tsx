@@ -1855,6 +1855,46 @@ export default function Layout() {
       return;
     }
 
+    if (input.trim().startsWith('/capabilities')) {
+      const constructId = thread.constructId || 'zen-001';
+      try {
+        const resp = await fetch(`/api/capabilities/${encodeURIComponent(constructId)}/${encodeURIComponent(threadId)}`, {
+          credentials: 'include',
+        });
+        const data = await resp.json();
+        let capMsg = 'Unable to retrieve capabilities.';
+        if (data.ok && data.manifest) {
+          const m = data.manifest;
+          const enabled = Object.entries(m.enabled).filter(([, v]) => v).map(([k]) => k);
+          const disabled = Object.entries(m.enabled).filter(([, v]) => !v).map(([k]) => k);
+          const lines = [`**Capabilities for ${constructId}**`];
+          if (enabled.length) lines.push(`Enabled: ${enabled.join(', ')}`);
+          if (disabled.length) lines.push(`Disabled: ${disabled.join(', ')}`);
+          if (m.state.mirrorActive) lines.push(`Mirror: active (${m.state.mirrorPermission || 'n/a'})`);
+          if (m.state.selfpromptOn) lines.push(`Selfprompt: on (${m.state.selfpromptInterval || 60}s)`);
+          if (m.hard_blocked?.length) lines.push(`Blocked: ${m.hard_blocked.join(', ')}`);
+          capMsg = lines.join('\n');
+        }
+        setThreads(prev => prev.map(t => {
+          if (t.id !== threadId) return t;
+          return {
+            ...t,
+            messages: [...t.messages, {
+              id: `capabilities-${Date.now()}`,
+              role: 'assistant' as const,
+              text: capMsg,
+              timestamp: new Date().toISOString(),
+              packets: [{ type: 'text', payload: { content: capMsg } }],
+              tool_trace: [{ tool: 'capabilities', detail: 'query' }]
+            }]
+          };
+        }));
+      } catch (err: any) {
+        console.error('[Layout] capabilities error:', err);
+      }
+      return;
+    }
+
     if (input.trim().startsWith('/selfprompt')) {
       const parts = input.trim().split(/\s+/);
       const subCmd = parts[1] || 'status';

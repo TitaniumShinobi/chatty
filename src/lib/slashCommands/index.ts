@@ -39,6 +39,14 @@ export const SLASH_COMMANDS: Record<string, SlashCommand> = {
     handler: async (_args: string[]) => {
       return 'mirror is handled via command handler';
     }
+  },
+  capabilities: {
+    name: 'capabilities',
+    description: 'Show current construct capabilities and active features',
+    usage: '/capabilities',
+    handler: async (_args: string[]) => {
+      return 'capabilities is handled via command handler';
+    }
   }
 };
 

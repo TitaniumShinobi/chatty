@@ -43,6 +43,7 @@ import searchRoutes from './routes/search.js';
 import needleRoutes from './routes/needle.js';
 import selfpromptRoutes from './routes/selfprompt.js';
 import familyRoutes from './routes/family.js';
+import capabilitiesRouter from './routes/capabilities.js';
 import { initializeChromaDB, shutdownChromaDB, getChromaDBService } from "./services/chromadbService.js";
 import { getChatService } from "./services/chatService.js";
 
@@ -1118,6 +1119,8 @@ app.use("/api/search", requireAuth, searchRoutes);
 app.use("/api/needle", requireAuth, needleRoutes);
 app.use("/api/selfprompt", selfpromptRoutes);
 app.use("/api/family", familyRoutes);
+app.use('/api/capabilities', capabilitiesRouter);
+console.log('✅ [Server] Capabilities routes mounted at /api/capabilities');
 console.log('✅ [Server] Needle receipt retriever mounted at /api/needle');
 console.log('✅ [Server] Family & Parental Controls routes mounted at /api/family');
 console.log('✅ [Server] simForge routes mounted at /api/simforge');

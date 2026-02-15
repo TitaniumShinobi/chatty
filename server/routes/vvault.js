@@ -3825,6 +3825,7 @@ router.post("/message", async (req, res) => {
 
     const clientTimezone = req.headers['x-user-timezone'] || null;
 
+    const effectiveThreadId = threadId || sessionId || `${constructId}_chat_with_${constructId}`;
     const enrichedContext = await buildEnrichedContext({
       userId,
       constructId,
@@ -3832,7 +3833,8 @@ router.post("/message", async (req, res) => {
       systemPromptOverride,
       gptConfig,
       user: req.user,
-      clientTimezone
+      clientTimezone,
+      threadId: effectiveThreadId
     });
     let systemPrompt = enrichedContext.systemPrompt;
 
@@ -4238,6 +4240,19 @@ Output ONLY the rewritten response, nothing else.`
       }
       console.log(`🛡️ [PostResponseValidator] { memory_retrieval_ran: ${validatorDebug.memory_retrieval_ran}, memory_query_detected: ${validatorDebug.memory_query_detected}, evidence_count: ${validatorDebug.evidence_count}, cutoff_violation_detected: ${validatorDebug.cutoff_violation_detected}, rewrite_applied: ${validatorDebug.rewrite_applied} }`);
 
+      if (enrichedContext.capabilityManifest && aiResponse) {
+        try {
+          const { validateCapabilityClaims } = await import('../lib/capabilityManifest.js');
+          const capValidation = validateCapabilityClaims(aiResponse, enrichedContext.capabilityManifest);
+          if (!capValidation.valid) {
+            console.warn(`🚫 [CapabilityValidator] False claim detected for ${constructId}:`, capValidation.violations);
+            validatorDebug.capability_violations = capValidation.violations;
+          }
+        } catch (capValErr) {
+          console.warn(`⚠️ [CapabilityValidator] Validation error:`, capValErr.message);
+        }
+      }
+
       if (!skipPersistence) {
         const effectiveSession = sessionId || threadId || `${constructId}_chat_with_${constructId}`;
         const constructName = constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase());
@@ -4400,7 +4415,8 @@ Output ONLY the rewritten response, nothing else.`
               constructId,
               userMessage: message,
               gptConfig,
-              user: req.user
+              user: req.user,
+              threadId: threadId || sessionId || `${constructId}_chat_with_${constructId}`
             });
             let systemPrompt = enrichedResult.systemPrompt;
             console.log(`✅ [VVAULT Proxy] Enriched context built for ${constructId} (capsule: ${enrichedResult.capsuleLoaded}, memories: ${enrichedResult.memoriesLoaded}, ${systemPrompt.length} chars)`);

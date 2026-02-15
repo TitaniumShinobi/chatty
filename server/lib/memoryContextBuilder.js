@@ -905,7 +905,7 @@ async function getKnowledgeContext(constructId, userEmail, userMessage) {
 }
 
 async function buildEnrichedContext(options) {
-  const { userId, constructId, userMessage, systemPromptOverride, gptConfig, user, clientTimezone } = options;
+  const { userId, constructId, userMessage, systemPromptOverride, gptConfig, user, clientTimezone, threadId } = options;
   const t0 = Date.now();
   const phaseTiming = {};
 
@@ -1368,7 +1368,23 @@ You are NOT bounded by any "training cutoff" or "knowledge cutoff." Your memorie
 `;
   }
 
-  result.systemPrompt = basePrompt + physicalAppearanceSection + definitionSection + capsuleSection + userSection + knowledgeSection + citationDirective + ledgerSection + vectorMemorySection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + continuitySection + timeContextSection + memoryGuardrailSection + buildBehavioralDirectives(constructId, gptConfig);
+  let capabilityContextSection = '';
+  if (threadId) {
+    try {
+      const { resolveCapabilities, formatCapabilityContext } = await import('./capabilityManifest.js');
+      const tCap = Date.now();
+      const manifest = await resolveCapabilities(constructId, threadId, userId);
+      capabilityContextSection = formatCapabilityContext(manifest);
+      result.capabilityManifest = manifest;
+      phaseTiming.capabilities = { ms: Date.now() - tCap, source: 'resolved' };
+      console.log(`🔧 [MemoryContextBuilder] CAPABILITY_CONTEXT injected for ${constructId}:${threadId}`);
+    } catch (capErr) {
+      phaseTiming.capabilities = { ms: 0, source: 'error', error: capErr.message };
+      console.warn(`⚠️ [MemoryContextBuilder] Capability context failed for ${constructId}:`, capErr.message);
+    }
+  }
+
+  result.systemPrompt = basePrompt + physicalAppearanceSection + definitionSection + capsuleSection + userSection + knowledgeSection + citationDirective + ledgerSection + vectorMemorySection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + continuitySection + timeContextSection + memoryGuardrailSection + capabilityContextSection + buildBehavioralDirectives(constructId, gptConfig);
 
   phaseTiming.totalMs = Date.now() - t0;
   result.phaseTiming = phaseTiming;
