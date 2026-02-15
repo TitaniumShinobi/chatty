@@ -20,11 +20,15 @@ import {
 
 const router = express.Router();
 
+function resolveUserId(user = {}) {
+  return user.sub || user.id || user.uid || user.user_id || user._id;
+}
+
 router.use(requireAuth);
 
 router.get('/status', async (req, res) => {
   try {
-    const userId = req.user.user_id || req.user.sub;
+    const userId = resolveUserId(req.user);
     const email = req.user.email;
     const family = await getFamilyForUser(userId, email);
     res.json({ ok: true, ...family });
@@ -36,7 +40,7 @@ router.get('/status', async (req, res) => {
 
 router.post('/invite', async (req, res) => {
   try {
-    const parentUserId = req.user.user_id || req.user.sub;
+    const parentUserId = resolveUserId(req.user);
     const parentEmail = req.user.email;
     const { childEmail, childName } = req.body;
 
@@ -58,7 +62,7 @@ router.post('/invite', async (req, res) => {
 
 router.post('/accept', async (req, res) => {
   try {
-    const childUserId = req.user.user_id || req.user.sub;
+    const childUserId = resolveUserId(req.user);
     const childEmail = req.user.email;
     const { inviteCode } = req.body;
 
@@ -76,7 +80,7 @@ router.post('/accept', async (req, res) => {
 
 router.get('/children', async (req, res) => {
   try {
-    const userId = req.user.user_id || req.user.sub;
+    const userId = resolveUserId(req.user);
     const email = req.user.email;
     const family = await getFamilyForUser(userId, email);
 
@@ -93,7 +97,7 @@ router.get('/children', async (req, res) => {
 
 router.put('/child-settings/:childUserId', async (req, res) => {
   try {
-    const parentUserId = req.user.user_id || req.user.sub;
+    const parentUserId = resolveUserId(req.user);
     const { childUserId } = req.params;
     const updates = req.body;
 
@@ -107,7 +111,7 @@ router.put('/child-settings/:childUserId', async (req, res) => {
 
 router.get('/reports/:childUserId', async (req, res) => {
   try {
-    const parentUserId = req.user.user_id || req.user.sub;
+    const parentUserId = resolveUserId(req.user);
     const { childUserId } = req.params;
     const { severity, since, includeReviewed, limit } = req.query;
 
@@ -127,7 +131,7 @@ router.get('/reports/:childUserId', async (req, res) => {
 
 router.post('/reports/:reportId/reviewed', async (req, res) => {
   try {
-    const parentUserId = req.user.user_id || req.user.sub;
+    const parentUserId = resolveUserId(req.user);
     const { reportId } = req.params;
 
     const result = await markReportReviewed(parentUserId, reportId);
@@ -140,7 +144,7 @@ router.post('/reports/:reportId/reviewed', async (req, res) => {
 
 router.delete('/child/:childUserId', async (req, res) => {
   try {
-    const parentUserId = req.user.user_id || req.user.sub;
+    const parentUserId = resolveUserId(req.user);
     const { childUserId } = req.params;
 
     const result = await removeChildLink(parentUserId, childUserId);
@@ -153,7 +157,7 @@ router.delete('/child/:childUserId', async (req, res) => {
 
 router.delete('/invite/:inviteId', async (req, res) => {
   try {
-    const parentUserId = req.user.user_id || req.user.sub;
+    const parentUserId = resolveUserId(req.user);
     const { inviteId } = req.params;
 
     const result = await revokeInvite(parentUserId, inviteId);
@@ -166,7 +170,7 @@ router.delete('/invite/:inviteId', async (req, res) => {
 
 router.get('/account-type', async (req, res) => {
   try {
-    const userId = req.user.user_id || req.user.sub;
+    const userId = resolveUserId(req.user);
     const accountType = await getAccountType(userId);
     res.json({ ok: true, accountType });
   } catch (error) {
@@ -177,7 +181,7 @@ router.get('/account-type', async (req, res) => {
 
 router.get('/age-verification', async (req, res) => {
   try {
-    const userId = req.user.user_id || req.user.sub;
+    const userId = resolveUserId(req.user);
     const verified = await isAgeVerified18(userId);
     res.json({ ok: true, verified });
   } catch (error) {
@@ -188,7 +192,7 @@ router.get('/age-verification', async (req, res) => {
 
 router.post('/age-verification', async (req, res) => {
   try {
-    const userId = req.user.user_id || req.user.sub;
+    const userId = resolveUserId(req.user);
     const accountType = await getAccountType(userId);
     if (accountType === 'child') {
       return res.status(403).json({ ok: false, error: 'Child accounts cannot self-verify age.' });
@@ -208,7 +212,7 @@ router.post('/age-verification', async (req, res) => {
 
 router.get('/step-up', async (req, res) => {
   try {
-    const userId = req.user.user_id || req.user.sub;
+    const userId = resolveUserId(req.user);
     const required = await isStepUpRequired(userId);
     res.json({ ok: true, required });
   } catch (error) {
@@ -219,7 +223,7 @@ router.get('/step-up', async (req, res) => {
 
 router.post('/step-up/trigger', async (req, res) => {
   try {
-    const userId = req.user.user_id || req.user.sub;
+    const userId = resolveUserId(req.user);
     await setStepUpRequired(userId, true);
     console.log(`[StepUp] Triggered step-up auth for ${userId}`);
     res.json({ ok: true });
@@ -231,7 +235,7 @@ router.post('/step-up/trigger', async (req, res) => {
 
 router.post('/step-up/clear', async (req, res) => {
   try {
-    const userId = req.user.user_id || req.user.sub;
+    const userId = resolveUserId(req.user);
     const verified = await isAgeVerified18(userId);
     if (!verified) {
       return res.status(403).json({ ok: false, error: 'Age verification required before clearing step-up.' });
