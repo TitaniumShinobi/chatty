@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from "react";
-import { Plus, Mic, Paperclip, X } from "lucide-react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { Plus, Mic, MicOff, Paperclip, X, Loader2 } from "lucide-react";
 import ImageAttachmentPreview from "./ImageAttachmentPreview";
 import { 
   CHAT_UPLOAD_LIMITS, 
@@ -43,8 +43,23 @@ export default function MessageBar({
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [isFocused, setIsFocused] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop();
+      }
+      mediaRecorderRef.current?.stream?.getTracks().forEach(t => t.stop());
+      mediaRecorderRef.current = null;
+      audioChunksRef.current = [];
+    };
+  }, []);
 
   useEffect(() => {
     if (autoFocus && textareaRef.current) {
@@ -171,6 +186,76 @@ export default function MessageBar({
   const removeDoc = (index: number) => {
     setDocFiles(prev => prev.filter((_, i) => i !== index));
   };
+
+  const handleVoiceToggle = useCallback(async () => {
+    if (isRecording) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop();
+      }
+      setIsRecording(false);
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? 'audio/webm;codecs=opus'
+          : 'audio/webm'
+      });
+      audioChunksRef.current = [];
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        if (audioBlob.size < 100) {
+          console.warn('[VoiceInput] Recording too short');
+          return;
+        }
+
+        setIsTranscribing(true);
+        try {
+          const formData = new FormData();
+          formData.append('audio', audioBlob, 'recording.webm');
+
+          const resp = await fetch('/api/transcribe', {
+            method: 'POST',
+            body: formData,
+            credentials: 'include'
+          });
+
+          const result = await resp.json();
+          if (result.ok && result.text) {
+            setInputValue(prev => {
+              const newVal = prev ? `${prev} ${result.text}` : result.text;
+              onValueChange?.(newVal);
+              return newVal;
+            });
+            textareaRef.current?.focus();
+          } else {
+            console.error('[VoiceInput] Transcription failed:', result.error || 'Unknown error');
+          }
+        } catch (err) {
+          console.error('[VoiceInput] Transcription request failed:', err);
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error('[VoiceInput] Microphone access denied:', err);
+    }
+  }, [isRecording, onValueChange]);
 
   // Drag and drop handlers
   const handleDragEnter = (e: React.DragEvent) => {
@@ -309,19 +394,35 @@ export default function MessageBar({
         {showVoiceButton && (
           <button
             type="button"
+            onClick={handleVoiceToggle}
+            disabled={isTranscribing || disabled}
             className="p-2 rounded-lg transition-colors flex-shrink-0"
-            style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+            style={{
+              color: isRecording ? "var(--chatty-accent)" : "var(--chatty-text)",
+              opacity: isTranscribing ? 0.5 : (isRecording ? 1 : 0.7),
+              backgroundColor: isRecording ? "var(--chatty-highlight)" : "transparent",
+            }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
-              e.currentTarget.style.opacity = "1";
+              if (!isRecording) {
+                e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
+                e.currentTarget.style.opacity = "1";
+              }
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "transparent";
-              e.currentTarget.style.opacity = "0.7";
+              if (!isRecording) {
+                e.currentTarget.style.backgroundColor = "transparent";
+                e.currentTarget.style.opacity = "0.7";
+              }
             }}
-            title="Voice input"
+            title={isTranscribing ? "Transcribing..." : isRecording ? "Stop recording" : "Voice input"}
           >
-            <Mic size={20} />
+            {isTranscribing ? (
+              <Loader2 size={20} className="animate-spin" />
+            ) : isRecording ? (
+              <MicOff size={20} />
+            ) : (
+              <Mic size={20} />
+            )}
           </button>
         )}
 
