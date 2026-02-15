@@ -3819,14 +3819,16 @@ router.post("/message", async (req, res) => {
       console.warn(`⚠️ [VVAULT Proxy] Memory stack init deferred for ${constructId}:`, msErr.message);
     }
 
-    // Load enriched system prompt: identity + capsule + memories + anti-roleplay directives
+    const clientTimezone = req.headers['x-user-timezone'] || null;
+
     const enrichedContext = await buildEnrichedContext({
       userId,
       constructId,
       userMessage: message,
       systemPromptOverride,
       gptConfig,
-      user: req.user
+      user: req.user,
+      clientTimezone
     });
     let systemPrompt = enrichedContext.systemPrompt;
 

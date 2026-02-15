@@ -256,6 +256,111 @@ function isMemoryTriggeringQuestion(userMessage) {
   return MEMORY_TRIGGER_PATTERNS.some(pattern => pattern.test(userMessage));
 }
 
+const VALID_IANA_TZ = (() => {
+  try {
+    const zones = Intl.supportedValuesOf('timeZone');
+    return new Set(zones);
+  } catch {
+    return null;
+  }
+})();
+
+function isValidTimezone(tz) {
+  if (!tz || typeof tz !== 'string') return false;
+  if (VALID_IANA_TZ) return VALID_IANA_TZ.has(tz);
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolveTimezone(options = {}) {
+  const { constructConfig, user, clientTimezone } = options;
+  if (constructConfig?.timezone && isValidTimezone(constructConfig.timezone)) return constructConfig.timezone;
+  if (user?.timezone && isValidTimezone(user.timezone)) return user.timezone;
+  if (clientTimezone && isValidTimezone(clientTimezone)) return clientTimezone;
+  if (process.env.TZ && isValidTimezone(process.env.TZ)) return process.env.TZ;
+  return 'UTC';
+}
+
+function parseHHMM(str) {
+  if (!str || typeof str !== 'string') return null;
+  const m = str.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return h * 60 + min;
+}
+
+function isQuietHours(hour24, minute, startStr, endStr) {
+  const start = parseHHMM(startStr ?? '00:00');
+  const end = parseHHMM(endStr ?? '06:00');
+  if (start === null || end === null) return false;
+  const now = hour24 * 60 + minute;
+  if (start <= end) {
+    return now >= start && now < end;
+  }
+  return now >= start || now < end;
+}
+
+function getPartOfDay(hour24) {
+  if (hour24 >= 0 && hour24 < 6) return 'overnight';
+  if (hour24 >= 6 && hour24 < 12) return 'morning';
+  if (hour24 >= 12 && hour24 < 17) return 'afternoon';
+  if (hour24 >= 17 && hour24 < 21) return 'evening';
+  return 'night';
+}
+
+function buildTimeContext(options = {}) {
+  const { constructConfig, user, clientTimezone } = options;
+  if (constructConfig?.timeAware === false) return '';
+
+  try {
+    const tz = resolveTimezone({ constructConfig, user, clientTimezone });
+    const now = new Date();
+
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false, weekday: 'long'
+    });
+    const parts = {};
+    for (const p of formatter.formatToParts(now)) {
+      parts[p.type] = p.value;
+    }
+
+    const hour24 = parseInt(parts.hour, 10);
+    const minute = parseInt(parts.minute, 10);
+    const localDate = `${parts.year}-${parts.month}-${parts.day}`;
+    const localTime = `${parts.hour}:${parts.minute}`;
+    const localIso = `${localDate}T${localTime}:${parts.second}`;
+    const dayOfWeek = parts.weekday;
+    const partOfDay = getPartOfDay(hour24);
+    const quietStart = constructConfig?.quietHoursStart ?? '00:00';
+    const quietEnd = constructConfig?.quietHoursEnd ?? '06:00';
+    const quietHours = isQuietHours(hour24, minute, quietStart, quietEnd);
+
+    return `\n\n[TIME_CONTEXT]
+local_iso: ${localIso}
+timezone: ${tz}
+local_date: ${localDate}
+local_time: ${localTime}
+hour_24: ${hour24}
+day_of_week: ${dayOfWeek}
+part_of_day: ${partOfDay}
+is_quiet_hours: ${quietHours}
+Use only TIME_CONTEXT for current time; never guess.
+[/TIME_CONTEXT]`;
+  } catch (err) {
+    console.warn(`⚠️ [TIME_CONTEXT] Failed to build time context: ${err.message}`);
+    return '';
+  }
+}
+
 function buildMemoryGapSection(userMessage, constructId) {
   const constructName = constructId.replace(/-\d+$/, '');
   const displayName = constructName.charAt(0).toUpperCase() + constructName.slice(1);
@@ -762,7 +867,7 @@ async function getKnowledgeContext(constructId, userEmail, userMessage) {
 }
 
 async function buildEnrichedContext(options) {
-  const { userId, constructId, userMessage, systemPromptOverride, gptConfig, user } = options;
+  const { userId, constructId, userMessage, systemPromptOverride, gptConfig, user, clientTimezone } = options;
   const t0 = Date.now();
   const phaseTiming = {};
 
@@ -1157,12 +1262,18 @@ When answering:
     console.log(`🔒 [ContinuityGPT] Profile "continuitygpt" active for ${constructId} — guard injected`);
   }
 
-  result.systemPrompt = basePrompt + physicalAppearanceSection + capsuleSection + userSection + knowledgeSection + citationDirective + ledgerSection + vectorMemorySection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + continuitySection + buildBehavioralDirectives(constructId);
+  const timeContextSection = buildTimeContext({ constructConfig: gptConfig, user, clientTimezone });
+  if (timeContextSection) {
+    result.timeContextInjected = true;
+    console.log(`🕐 [MemoryContextBuilder] TIME_CONTEXT injected for ${constructId} (tz: ${resolveTimezone({ constructConfig: gptConfig, user, clientTimezone })})`);
+  }
+
+  result.systemPrompt = basePrompt + physicalAppearanceSection + capsuleSection + userSection + knowledgeSection + citationDirective + ledgerSection + vectorMemorySection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + continuitySection + timeContextSection + buildBehavioralDirectives(constructId);
 
   phaseTiming.totalMs = Date.now() - t0;
   result.phaseTiming = phaseTiming;
   console.log(`⏱️ [MemoryContextBuilder] TOTAL: ${phaseTiming.totalMs}ms | identity: ${phaseTiming.identity?.ms}ms | phys: ${phaseTiming.physicalFeatures?.ms}ms | capsule: ${phaseTiming.capsule?.ms}ms | ledger: ${phaseTiming.ledger?.ms}ms | vector: ${phaseTiming.vectorSearch?.ms || 0}ms | memory: ${phaseTiming.memorySearch?.ms || 0}ms | knowledge: ${phaseTiming.knowledge?.ms}ms`);
-  console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, physicalFeatures: ${!!physicalAppearanceSection}, knowledge: ${!!knowledgeSection}, knowledgeRelevant: ${knowledgeMatchedFiles.length}, ledger: ${safeLedgerSessionCount(ledger)}, vector: ${vectorCount}, needle: ${needleCount}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded})`);
+  console.log(`🧠 [MemoryContextBuilder] Built enriched prompt for ${constructId}: ${result.systemPrompt.length} chars (capsule: ${result.capsuleLoaded}, physicalFeatures: ${!!physicalAppearanceSection}, knowledge: ${!!knowledgeSection}, knowledgeRelevant: ${knowledgeMatchedFiles.length}, ledger: ${safeLedgerSessionCount(ledger)}, vector: ${vectorCount}, needle: ${needleCount}, verified: ${verifiedCount}, memories: ${result.memoriesLoaded}, timeContext: ${!!timeContextSection})`);
 
   return result;
 }

@@ -547,6 +547,7 @@ export class AIService {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
+                  'x-user-timezone': Intl.DateTimeFormat().resolvedOptions().timeZone,
                 },
                 credentials: 'include',
                 body: JSON.stringify({
@@ -596,6 +597,7 @@ export class AIService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'x-user-timezone': Intl.DateTimeFormat().resolvedOptions().timeZone,
         },
         credentials: 'include',
         body: JSON.stringify({
