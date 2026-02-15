@@ -2400,6 +2400,10 @@ export default function Layout() {
               .filter(Boolean)
               .flat();
 
+            const providerTrace = finalPackets
+              .map((p: any) => p?.payload?.provider_trace)
+              .filter(Boolean)[0] || null;
+
             // Extract content from packets before saving
             const assistantContent = finalPackets
               .map((packet) => {
@@ -2487,6 +2491,7 @@ export default function Layout() {
                 thinkingLog: filteredThinking,
                 unsaved: assistantUnsaved,
                 tool_trace: toolTrace.length > 0 ? toolTrace : [],
+                ...(providerTrace ? { provider_trace: providerTrace } : {}),
               },
             };
 

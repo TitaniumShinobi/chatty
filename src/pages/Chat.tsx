@@ -1908,6 +1908,21 @@ export default function Chat() {
                                   chars
                                 </div>
                               )}
+                              {(m as any).metadata?.provider_trace && (
+                                <div className="mt-1 pt-1" style={{ borderTop: '1px solid var(--chatty-line)' }}>
+                                  <strong>Provider Trace:</strong>
+                                  <div className="ml-2">
+                                    <div>Final: {(m as any).metadata.provider_trace.final_provider || 'unknown'}</div>
+                                    <div>Fallback: {(m as any).metadata.provider_trace.fallback_used ? 'yes' : 'no'}</div>
+                                    <div>Total: {(m as any).metadata.provider_trace.total_duration_ms}ms</div>
+                                    {(m as any).metadata.provider_trace.attempts?.map((a: any, i: number) => (
+                                      <div key={i} style={{ color: a.status === 'ok' ? '#4ade80' : '#f87171' }}>
+                                        {a.status === 'ok' ? '\u2713' : '\u2717'} {a.provider} ({a.status}{a.error_code ? ` ${a.error_code}` : ''}) {a.duration_ms}ms
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                         )}

@@ -578,13 +578,14 @@ export class AIService {
                 agent_id: agentId,
                 response: data.response || '',
                 tool_trace: data.tool_trace || [],
+                ...(data.provider_trace ? { provider_trace: data.provider_trace } : {}),
                 status: 'success' as const
               };
             }
           );
           
           // If orchestration returned a response, use it
-          if (orchestrationResult.status !== 'error' && orchestrationResult.response) {const packets = [{ op: 'answer.v1', payload: { content: orchestrationResult.response, tool_trace: orchestrationResult.tool_trace || [] } }];
+          if (orchestrationResult.status !== 'error' && orchestrationResult.response) {const packets = [{ op: 'answer.v1', payload: { content: orchestrationResult.response, tool_trace: orchestrationResult.tool_trace || [], ...(orchestrationResult.provider_trace ? { provider_trace: orchestrationResult.provider_trace } : {}) } }];
             
             if (callbacks?.onFinalUpdate) {
               const callbackResult = callbacks.onFinalUpdate(packets);
@@ -638,7 +639,7 @@ export class AIService {
       const aiContent = data.response || '';
       
       // Convert response to packets format, threading tool_trace through
-      const packets = [{ op: 'answer.v1', payload: { content: aiContent, tool_trace: data.tool_trace || [] } }];
+      const packets = [{ op: 'answer.v1', payload: { content: aiContent, tool_trace: data.tool_trace || [], ...(data.provider_trace ? { provider_trace: data.provider_trace } : {}) } }];
       
       // Call final update callback if provided
       // CRITICAL: Await callback to ensure save completes before returning

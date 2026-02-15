@@ -3907,9 +3907,52 @@ router.post("/message", async (req, res) => {
       let completion;
       let aiResponse;
 
-      // ===== NOVA-001 HOTFIX: Prefer OpenRouter, fall back through all providers =====
-      if (constructId === 'nova-001' && (replitOpenrouter || openrouter) && !hasImages) {
-        console.log(`[NOVA HOTFIX] Provider forced to OpenRouter for nova-001 (prefer non-OpenAI)`);
+      const PROVIDER_TIMEOUT = 12000;
+      const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const providerTrace = {
+        request_id: requestId,
+        construct_id: constructId,
+        attempts: [],
+        final_provider: null,
+        fallback_used: false,
+        total_duration_ms: 0,
+      };
+      const traceStart = Date.now();
+
+      const MAX_RETRIES = 1;
+
+      async function tryProvider(client, providerName, model, messages) {
+        for (let retry = 0; retry <= MAX_RETRIES; retry++) {
+          const attempt = { provider: providerName, retry, started_at: new Date().toISOString(), duration_ms: 0, status: 'failed', error_code: null, error_message_short: null };
+          const t0 = Date.now();
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT);
+            const result = await client.chat.completions.create({ model, messages, max_tokens: 2048 }, { signal: controller.signal });
+            clearTimeout(timeout);
+            attempt.duration_ms = Date.now() - t0;
+            attempt.status = 'ok';
+            providerTrace.attempts.push(attempt);
+            return { ok: true, response: result.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.", model };
+          } catch (err) {
+            attempt.duration_ms = Date.now() - t0;
+            if (err?.name === 'AbortError' || attempt.duration_ms >= PROVIDER_TIMEOUT - 100) {
+              attempt.status = 'timeout';
+            }
+            attempt.error_code = err?.status || err?.code || null;
+            attempt.error_message_short = (err?.message || 'unknown').slice(0, 80);
+            providerTrace.attempts.push(attempt);
+            if (retry < MAX_RETRIES && (attempt.status === 'timeout' || (attempt.error_code && attempt.error_code >= 500))) {
+              continue;
+            }
+            return { ok: false };
+          }
+        }
+        return { ok: false };
+      }
+
+      // ===== NOVA-001: Deterministic fallback chain with telemetry =====
+      if (constructId === 'nova-001' && (replitOpenrouter || openrouter || openaiClient) && !hasImages) {
         const hotfixModel = DEFAULT_OPENROUTER_MODEL;
         const hotfixMessages = [
           { role: "system", content: systemPrompt },
@@ -3919,60 +3962,30 @@ router.post("/message", async (req, res) => {
         let novaSuccess = false;
 
         if (replitOpenrouter && !novaSuccess) {
-          try {
-            completion = await replitOpenrouter.chat.completions.create({
-              model: hotfixModel,
-              messages: hotfixMessages,
-              max_tokens: 2048,
-            });
-            aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
-            effectiveProvider = 'replitOpenrouter';
-            effectiveModel = hotfixModel;
-            novaSuccess = true;
-            console.log(`✅ [NOVA HOTFIX] replitOpenrouter success for nova-001, response length: ${aiResponse.length}`);
-          } catch (hotfixErr) {
-            console.error(`❌ [NOVA HOTFIX] replitOpenrouter failed:`, hotfixErr?.status, hotfixErr?.message);
-          }
+          const r = await tryProvider(replitOpenrouter, 'replit_openrouter', hotfixModel, hotfixMessages);
+          if (r.ok) { aiResponse = r.response; effectiveProvider = 'replit_openrouter'; effectiveModel = r.model; novaSuccess = true; }
         }
 
         if (openrouter && !novaSuccess) {
-          try {
-            console.log(`🔄 [NOVA HOTFIX] Falling back to openrouter for nova-001`);
-            completion = await openrouter.chat.completions.create({
-              model: hotfixModel,
-              messages: hotfixMessages,
-              max_tokens: 2048,
-            });
-            aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
-            effectiveProvider = 'openrouter';
-            effectiveModel = hotfixModel;
-            novaSuccess = true;
-            console.log(`✅ [NOVA HOTFIX] openrouter fallback success for nova-001`);
-          } catch (orErr) {
-            console.error(`❌ [NOVA HOTFIX] openrouter fallback also failed:`, orErr?.status, orErr?.message);
-          }
+          const r = await tryProvider(openrouter, 'openrouter', hotfixModel, hotfixMessages);
+          if (r.ok) { aiResponse = r.response; effectiveProvider = 'openrouter'; effectiveModel = r.model; novaSuccess = true; }
         }
 
         if (openaiClient && !novaSuccess) {
-          try {
-            console.log(`🔄 [NOVA HOTFIX] Last resort: falling back to OpenAI for nova-001`);
-            completion = await openaiClient.chat.completions.create({
-              model: 'gpt-4.1-mini',
-              messages: hotfixMessages,
-              max_tokens: 2048,
-            });
-            aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
-            effectiveProvider = 'openai';
-            effectiveModel = 'gpt-4.1-mini';
-            novaSuccess = true;
-            console.log(`✅ [NOVA HOTFIX] OpenAI last-resort success for nova-001`);
-          } catch (oaiErr) {
-            console.error(`❌ [NOVA HOTFIX] OpenAI last-resort also failed:`, oaiErr?.status, oaiErr?.message);
-          }
+          const r = await tryProvider(openaiClient, 'openai', 'gpt-4.1-mini', hotfixMessages);
+          if (r.ok) { aiResponse = r.response; effectiveProvider = 'openai'; effectiveModel = 'gpt-4.1-mini'; novaSuccess = true; }
         }
 
+        providerTrace.final_provider = effectiveProvider;
+        const firstSuccessIdx = providerTrace.attempts.findIndex(a => a.status === 'ok');
+        const uniqueProvidersBefore = firstSuccessIdx > 0 ? new Set(providerTrace.attempts.slice(0, firstSuccessIdx).map(a => a.provider)).size : 0;
+        providerTrace.fallback_used = uniqueProvidersBefore > 0;
+        providerTrace.total_duration_ms = Date.now() - traceStart;
+        const failedProviders = providerTrace.attempts.filter(a => a.status !== 'ok').map(a => `${a.provider}(${a.status}${a.retry > 0 ? ` r${a.retry}` : ''})`).join(', ');
+        console.log(`📡 [ProviderTrace] ${requestId} | construct=${constructId} | final=${providerTrace.final_provider} | fallback=${providerTrace.fallback_used} | failed=[${failedProviders}] | ${providerTrace.total_duration_ms}ms`);
+
         if (!novaSuccess) {
-          throw new Error('All providers failed for nova-001');
+          throw new Error(`All providers failed for nova-001: ${failedProviders}`);
         }
       } else if (effectiveProvider === 'openai') {
         console.log(`🔷 [VVAULT Proxy] Calling OpenAI (${effectiveModel}) for ${constructId}`);
@@ -4188,6 +4201,11 @@ router.post("/message", async (req, res) => {
       }
       
       const providerForced = constructId === 'nova-001';
+      if (!providerTrace.final_provider && effectiveProvider) {
+        providerTrace.final_provider = effectiveProvider;
+        providerTrace.total_duration_ms = Date.now() - traceStart;
+        providerTrace.attempts.push({ provider: effectiveProvider, retry: 0, status: 'ok', duration_ms: providerTrace.total_duration_ms });
+      }
       console.log(`✅ [VVAULT Proxy] ${effectiveProvider} successful for ${constructId}, response length: ${aiResponse.length}`);
       console.log(`📊 [METRIC] { construct_id: "${constructId}", provider_forced: ${providerForced}, provider_used: "${effectiveProvider}", model: "${effectiveModel}", has_images: ${hasImages} }`);
 
@@ -4342,7 +4360,7 @@ Output ONLY the rewritten response, nothing else.`
         provider_used: effectiveProvider,
         has_images: hasImages,
         tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
-        ...(process.env.SHOW_DEV_INFO === 'true' ? { validator: validatorDebug } : {})
+        ...(process.env.SHOW_DEV_INFO === 'true' ? { validator: validatorDebug, provider_trace: providerTrace } : {})
       });
     } catch (llmError) {
       console.error(`❌ [VVAULT Proxy] ${effectiveProvider} call failed:`, {
@@ -4631,7 +4649,8 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               provider_forced: constructId === 'nova-001',
               provider_used: effectiveProvider,
               has_images: hasImages,
-              tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext)
+              tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
+              ...(process.env.SHOW_DEV_INFO === 'true' ? { provider_trace: providerTrace } : {})
             });
           } catch (fallbackError) {
             console.error(`❌ [VVAULT Proxy] LLM fallback failed:`, fallbackError);
@@ -4921,7 +4940,8 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           provider_forced: constructId === 'nova-001',
           provider_used: effectiveProvider,
           has_images: hasImages,
-          tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext)
+          tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
+          ...(process.env.SHOW_DEV_INFO === 'true' ? { provider_trace: providerTrace } : {})
         });
       } catch (fallbackError) {
         console.error(`❌ [VVAULT Proxy] LLM fallback failed:`, fallbackError);
