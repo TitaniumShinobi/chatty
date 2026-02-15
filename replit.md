@@ -38,7 +38,8 @@ Chatty is an AI-powered workspace application providing a thin UI layer for inte
 - **Knowledge Files Rule:** Knowledge Files are ONLY files under `instances/{constructCallsign}/assets/` and `instances/{constructCallsign}/documents/`.
 - **Identity Loading:** Prioritizes Supabase `vault_files` for construct identity data with local fallbacks.
 - **Robust Transcript Parsing & Upload:** Handles various transcript formats, multi-platform uploads, Character.AI JSON imports, and batch "Upload Folder" functionality with PDF extraction.
-- **Knowledge File Tree:** Hierarchical folder tree for knowledge files in GPTCreator.
+- **Knowledge File Tree:** Hierarchical folder tree for knowledge files in GPTCreator. Media files (images, video, audio) are automatically routed to the Assets folder regardless of storage path.
+- **Capability Enforcement (Hard Constraints):** GPT capabilities (Code Interpreter, Web Search, Image Generation, Canvas) are stored per-construct and enforced via system prompt directives in `buildCapabilityDirectives()`. When a capability is disabled, the construct receives explicit prohibitions injected into the prompt. Code Interpreter disabled = construct MUST refuse all code tasks.
 - **Physical Features Injection:** `physical_features.json` from Supabase `vault_files` injected into system prompts.
 - **Conditioning Fallback:** 3-tier fallback for conditioning: VVAULT API → embedded system constructs → Supabase `vault_files`.
 - **Fresh Canvas Chat UX:** Clean chat interface with auto-scroll after first user message.

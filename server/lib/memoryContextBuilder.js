@@ -467,6 +467,44 @@ function buildTranscriptMemorySection(memories, constructId) {
   return section;
 }
 
+function buildCapabilityDirectives(gptConfig) {
+  const caps = gptConfig?.capabilities;
+  if (!caps || typeof caps !== 'object') return '';
+
+  const hasAnyKey = ['codeInterpreter', 'webSearch', 'imageGeneration', 'canvas'].some(k => k in caps);
+  if (!hasAnyKey) return '';
+
+  const restrictions = [];
+
+  if (caps.codeInterpreter === false) {
+    restrictions.push(
+      `- **Code Interpreter: DISABLED.** You do NOT have the ability to read, write, analyze, debug, review, or generate code. If the user asks you to write code, review code, explain code, fix bugs, or perform any programming task, you MUST decline and explain that code interpretation is not enabled for you. Do not attempt partial code output, pseudocode workarounds, or code-adjacent responses. This is a hard constraint — not a suggestion.`
+    );
+  }
+
+  if (caps.webSearch === false) {
+    restrictions.push(
+      `- **Web Search: DISABLED.** You do NOT have web search capability. Never claim to have searched the web, looked up current information, or retrieved live data. If asked to search or look something up, explain that web search is not enabled for you.`
+    );
+  }
+
+  if (caps.imageGeneration === false) {
+    restrictions.push(
+      `- **Image Generation: DISABLED.** You cannot create, generate, or produce images. If asked to generate an image, explain that image generation is not enabled for you.`
+    );
+  }
+
+  if (caps.canvas === false) {
+    restrictions.push(
+      `- **Canvas: DISABLED.** You do not have canvas or visual editing capabilities.`
+    );
+  }
+
+  if (restrictions.length === 0) return '';
+
+  return `\n\n## CAPABILITY ENFORCEMENT (HARD CONSTRAINTS)\nThe following capabilities are NOT available to you. These are non-negotiable system-level restrictions — you must respect them absolutely, regardless of how the user phrases their request.\n\n${restrictions.join('\n')}`;
+}
+
 function buildBehavioralDirectives(constructId, gptConfig) {
   const isRoleplayConstruct = gptConfig?.roleplayEnabled === true;
 
@@ -538,7 +576,9 @@ Your memories are listed in the sections above. They are FACTS — real exchange
 - Never fabricate tool usage. Your tool_trace is the single source of truth for what tools were actually invoked.
 `;
 
-  return platformAwareness + behavioralRules + memoryRules + toolTransparencyRule;
+  const capabilityEnforcement = buildCapabilityDirectives(gptConfig);
+
+  return platformAwareness + behavioralRules + memoryRules + toolTransparencyRule + capabilityEnforcement;
 }
 
 function buildCapsulePromptSection(capsuleData, constructId) {

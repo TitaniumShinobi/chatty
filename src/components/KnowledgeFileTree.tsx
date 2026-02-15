@@ -29,6 +29,15 @@ const FOLDER_META: Record<string, { label: string; icon: string }> = {
   "character.ai": { label: "Character.AI", icon: "💬" },
 };
 
+const MEDIA_MIME_PREFIXES = ['image/', 'video/', 'audio/'];
+const MEDIA_EXTENSIONS = /\.(png|jpg|jpeg|gif|webp|svg|bmp|ico|mp4|mov|avi|mkv|webm|mp3|wav|ogg|flac|aac|m4a)$/i;
+
+function isMediaFile(file: KnowledgeFile): boolean {
+  if (file.mimeType && MEDIA_MIME_PREFIXES.some(p => file.mimeType.startsWith(p))) return true;
+  const name = file.originalName || file.filename || '';
+  return MEDIA_EXTENSIONS.test(name);
+}
+
 function buildKnowledgeTree(files: KnowledgeFile[]): TreeNode[] {
   const folderMap: Record<string, Record<string, KnowledgeFile[]>> = {};
   const root: KnowledgeFile[] = [];
@@ -37,8 +46,12 @@ function buildKnowledgeTree(files: KnowledgeFile[]): TreeNode[] {
     const pathParts = f.filename.split('/');
     const instancesIdx = pathParts.indexOf('instances');
 
+    const media = isMediaFile(f);
+
     if (instancesIdx >= 0 && pathParts.length > instancesIdx + 2) {
-      const topFolder = pathParts[instancesIdx + 2];
+      const rawTopFolder = pathParts[instancesIdx + 2];
+      const topFolder = media && rawTopFolder !== 'assets' ? 'assets' : rawTopFolder;
+
       if (topFolder === 'assets' || topFolder === 'documents' || topFolder === 'character.ai') {
         const subParts = pathParts.slice(instancesIdx + 3, -1);
         const subFolder = subParts.length > 0 ? subParts.join('/') : '__root__';
@@ -47,16 +60,28 @@ function buildKnowledgeTree(files: KnowledgeFile[]): TreeNode[] {
         if (!folderMap[topFolder][subFolder]) folderMap[topFolder][subFolder] = [];
         folderMap[topFolder][subFolder].push(f);
       } else {
-        root.push(f);
+        if (media) {
+          if (!folderMap['assets']) folderMap['assets'] = {};
+          if (!folderMap['assets']['__root__']) folderMap['assets']['__root__'] = [];
+          folderMap['assets']['__root__'].push(f);
+        } else {
+          root.push(f);
+        }
       }
     } else {
-      root.push(f);
+      if (media) {
+        if (!folderMap['assets']) folderMap['assets'] = {};
+        if (!folderMap['assets']['__root__']) folderMap['assets']['__root__'] = [];
+        folderMap['assets']['__root__'].push(f);
+      } else {
+        root.push(f);
+      }
     }
   }
 
   const tree: TreeNode[] = [];
 
-  for (const folder of ['documents', 'assets', 'character.ai']) {
+  for (const folder of ['assets', 'documents', 'character.ai']) {
     const subs = folderMap[folder];
     if (!subs) {
       tree.push({
@@ -241,7 +266,7 @@ export function KnowledgeFileTree({ files, onRemoveFile, formatFileSize }: Knowl
   if (files.length === 0) {
     return (
       <div className="space-y-0.5">
-        {['documents', 'assets'].map(folder => {
+        {['assets', 'documents'].map(folder => {
           const meta = FOLDER_META[folder];
           return (
             <div
