@@ -24,12 +24,6 @@ interface TreeNode {
   isAssetsFolder?: boolean;
 }
 
-const FOLDER_META: Record<string, { label: string; icon: string }> = {
-  assets: { label: "Assets", icon: "🎨" },
-  documents: { label: "Documents", icon: "📄" },
-  "character.ai": { label: "Character.AI", icon: "💬" },
-};
-
 const MEDIA_MIME_PREFIXES = ['image/', 'video/', 'audio/'];
 const MEDIA_EXTENSIONS = /\.(png|jpg|jpeg|gif|webp|svg|bmp|ico|mp4|mov|avi|mkv|webm|mp3|wav|ogg|flac|aac|m4a)$/i;
 
@@ -39,57 +33,86 @@ function isMediaFile(file: KnowledgeFile): boolean {
   return MEDIA_EXTENSIONS.test(name);
 }
 
+const TRANSCRIPT_PLATFORMS = new Set([
+  'chatty', 'chatgpt', 'gemini', 'claude', 'openrouter', 'ollama', 'character.ai', 'codex', 'github_copilot'
+]);
+
+function parseRealPath(filename: string): { section: string; subPath: string } | null {
+  const parts = filename.split('/');
+  const instancesIdx = parts.indexOf('instances');
+  if (instancesIdx < 0 || parts.length <= instancesIdx + 2) return null;
+
+  const topFolder = parts[instancesIdx + 2];
+  const remainder = parts.slice(instancesIdx + 3).join('/');
+
+  if (topFolder === 'assets') return { section: 'assets', subPath: remainder };
+  if (topFolder === 'documents') return { section: 'documents', subPath: remainder };
+  if (TRANSCRIPT_PLATFORMS.has(topFolder)) return { section: 'transcripts', subPath: `${topFolder}/${remainder}` };
+
+  return null;
+}
+
 function buildKnowledgeTree(files: KnowledgeFile[]): TreeNode[] {
-  const folderMap: Record<string, Record<string, KnowledgeFile[]>> = {};
-  const root: KnowledgeFile[] = [];
+  const sections: Record<string, Record<string, KnowledgeFile[]>> = {
+    assets: {},
+    documents: {},
+  };
+  let hasTranscripts = false;
 
   for (const f of files) {
-    const pathParts = f.filename.split('/');
-    const instancesIdx = pathParts.indexOf('instances');
-    const media = isMediaFile(f);
+    const parsed = parseRealPath(f.filename);
 
-    if (instancesIdx >= 0 && pathParts.length > instancesIdx + 2) {
-      const rawTopFolder = pathParts[instancesIdx + 2];
-      const topFolder = media && rawTopFolder !== 'assets' ? 'assets' : rawTopFolder;
-
-      if (topFolder === 'assets' || topFolder === 'documents' || topFolder === 'character.ai') {
-        const subParts = pathParts.slice(instancesIdx + 3, -1);
-        const subFolder = subParts.length > 0 ? subParts.join('/') : '__root__';
-        if (!folderMap[topFolder]) folderMap[topFolder] = {};
-        if (!folderMap[topFolder][subFolder]) folderMap[topFolder][subFolder] = [];
-        folderMap[topFolder][subFolder].push(f);
-      } else {
-        if (media) {
-          if (!folderMap['assets']) folderMap['assets'] = {};
-          if (!folderMap['assets']['__root__']) folderMap['assets']['__root__'] = [];
-          folderMap['assets']['__root__'].push(f);
-        } else {
-          root.push(f);
-        }
+    if (parsed) {
+      if (parsed.section === 'transcripts') {
+        if (!sections['transcripts']) sections['transcripts'] = {};
+        hasTranscripts = true;
+        const folderParts = parsed.subPath.split('/');
+        const subFolder = folderParts.length > 1 ? folderParts.slice(0, -1).join('/') : '__root__';
+        if (!sections['transcripts'][subFolder]) sections['transcripts'][subFolder] = [];
+        sections['transcripts'][subFolder].push(f);
+        continue;
       }
+
+      const target = parsed.section;
+      const media = isMediaFile(f);
+      const resolvedTarget = media && target !== 'assets' ? 'assets' : target;
+
+      const subParts = parsed.subPath.split('/').filter(Boolean);
+      const subFolder = subParts.length > 1 ? subParts.slice(0, -1).join('/') : '__root__';
+      if (!sections[resolvedTarget]) sections[resolvedTarget] = {};
+      if (!sections[resolvedTarget][subFolder]) sections[resolvedTarget][subFolder] = [];
+      sections[resolvedTarget][subFolder].push(f);
     } else {
-      if (media) {
-        if (!folderMap['assets']) folderMap['assets'] = {};
-        if (!folderMap['assets']['__root__']) folderMap['assets']['__root__'] = [];
-        folderMap['assets']['__root__'].push(f);
-      } else {
-        root.push(f);
-      }
+      const media = isMediaFile(f);
+      const target = media ? 'assets' : 'documents';
+      if (!sections[target]['__root__']) sections[target]['__root__'] = [];
+      sections[target]['__root__'].push(f);
     }
+  }
+
+  const sectionOrder: { key: string; label: string; icon: string; color: string }[] = [
+    { key: 'assets', label: 'Assets', icon: '🎨', color: '#a78bfa' },
+    { key: 'documents', label: 'Documents', icon: '📄', color: 'var(--chatty-accent)' },
+  ];
+
+  if (hasTranscripts) {
+    sectionOrder.push({ key: 'transcripts', label: 'Transcripts', icon: '💬', color: '#60a5fa' });
   }
 
   const tree: TreeNode[] = [];
 
-  for (const folder of ['assets', 'documents', 'character.ai']) {
-    const subs = folderMap[folder];
-    if (!subs) {
-      tree.push({
-        name: `${FOLDER_META[folder].icon} ${FOLDER_META[folder].label}`,
-        type: "folder",
-        count: 0,
-        children: [],
-        isAssetsFolder: folder === 'assets',
-      });
+  for (const { key, label, icon, color } of sectionOrder) {
+    const subs = sections[key];
+    if (!subs || Object.keys(subs).length === 0) {
+      if (key !== 'transcripts') {
+        tree.push({
+          name: `${icon} ${label}`,
+          type: "folder",
+          count: 0,
+          children: [],
+          isAssetsFolder: key === 'assets',
+        });
+      }
       continue;
     }
 
@@ -129,24 +152,11 @@ function buildKnowledgeTree(files: KnowledgeFile[]): TreeNode[] {
     }
 
     tree.push({
-      name: `${FOLDER_META[folder].icon} ${FOLDER_META[folder].label}`,
+      name: `${icon} ${label}`,
       type: "folder",
       count: totalCount,
       children,
-      isAssetsFolder: folder === 'assets',
-    });
-  }
-
-  if (root.length > 0) {
-    tree.push({
-      name: "📁 Other",
-      type: "folder",
-      count: root.length,
-      children: root.map(f => ({
-        name: f.originalName || f.filename.split('/').pop() || f.filename,
-        type: "file",
-        file: f,
-      })),
+      isAssetsFolder: key === 'assets',
     });
   }
 
@@ -457,32 +467,32 @@ export function KnowledgeFileTree({ files, onRemoveFile, formatFileSize }: Knowl
   if (files.length === 0) {
     return (
       <div className="space-y-0.5">
-        {['assets', 'documents'].map(folder => {
-          const meta = FOLDER_META[folder];
-          return (
-            <div
-              key={folder}
-              className="flex items-center gap-2 py-1.5 px-2 rounded"
-              style={{ opacity: 0.5 }}
+        {[
+          { key: 'assets', label: 'Assets', icon: '🎨', color: '#a78bfa' },
+          { key: 'documents', label: 'Documents', icon: '📄', color: 'var(--chatty-accent)' },
+        ].map(({ key, label, icon, color }) => (
+          <div
+            key={key}
+            className="flex items-center gap-2 py-1.5 px-2 rounded"
+            style={{ opacity: 0.5 }}
+          >
+            <ChevronRight size={14} style={{ color: "var(--chatty-text)", opacity: 0.3 }} />
+            <Folder size={14} style={{ color }} />
+            <span className="text-sm font-semibold" style={{ color: "var(--chatty-text)" }}>
+              {icon} {label}
+            </span>
+            <span
+              className="text-xs px-1.5 py-0.5 rounded"
+              style={{
+                backgroundColor: "var(--chatty-bg-message)",
+                color: "var(--chatty-text)",
+                opacity: 0.4,
+              }}
             >
-              <ChevronRight size={14} style={{ color: "var(--chatty-text)", opacity: 0.3 }} />
-              <Folder size={14} style={{ color: folder === 'assets' ? "#a78bfa" : "var(--chatty-accent)" }} />
-              <span className="text-sm font-semibold" style={{ color: "var(--chatty-text)" }}>
-                {meta.icon} {meta.label}
-              </span>
-              <span
-                className="text-xs px-1.5 py-0.5 rounded"
-                style={{
-                  backgroundColor: "var(--chatty-bg-message)",
-                  color: "var(--chatty-text)",
-                  opacity: 0.4,
-                }}
-              >
-                0
-              </span>
-            </div>
-          );
-        })}
+              0
+            </span>
+          </div>
+        ))}
       </div>
     );
   }

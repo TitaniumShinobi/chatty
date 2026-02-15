@@ -44,7 +44,6 @@ function mapToVsiFolder(filename) {
   if (baseName === 'metadata.json' || baseName === 'tone_profile.json' || baseName === 'voice.md') return 'config/';
   if (baseName.endsWith('.log')) return 'logs/';
   if (/\.(png|jpg|jpeg|svg|gif|webp)$/i.test(baseName)) return 'assets/';
-  if (/character[._\-]?ai/i.test(lower)) return 'character.ai/';
   return 'documents/';
 }
 
@@ -1908,6 +1907,89 @@ router.get('/:id/prompt-context', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ [AIs API] Error loading prompt context:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/:id/reindex-knowledge', async (req, res) => {
+  try {
+    const { allowed, ai, userId } = await verifyAIOwnership(req, req.params.id);
+    if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
+
+    const constructCallsign = ai?.constructCallsign || req.params.id.replace(/^(ai-|gpt-)/, '');
+    const { getSupabaseClient } = await import('../lib/supabaseClient.js');
+    const supabase = getSupabaseClient();
+    if (!supabase) return res.status(503).json({ success: false, error: 'Supabase not available' });
+
+    const { data: rows, error } = await supabase
+      .from('vault_files')
+      .select('id, filename, file_type, storage_path, metadata')
+      .eq('user_id', userId)
+      .eq('construct_id', constructCallsign);
+
+    if (error) throw error;
+    if (!rows || rows.length === 0) {
+      return res.json({ success: true, message: 'No files to reindex', total: 0, moved: 0 });
+    }
+
+    const MEDIA_EXT = /\.(png|jpg|jpeg|gif|webp|svg|bmp|ico|mp4|mov|avi|mkv|webm|mp3|wav|ogg|flac|aac|m4a)$/i;
+    const TRANSCRIPT_PLATFORMS = new Set(['chatty', 'chatgpt', 'gemini', 'claude', 'openrouter', 'ollama', 'character.ai', 'codex', 'github_copilot']);
+    const SYSTEM_FOLDERS = new Set(['identity', 'memup', 'config', 'logs', 'data', 'frame', 'simDrive', 'vxrunner', 'lin', 'tests']);
+
+    let moved = 0;
+    const changes = [];
+
+    for (const row of rows) {
+      const path = row.filename || '';
+      const parts = path.split('/');
+      const instancesIdx = parts.indexOf('instances');
+      if (instancesIdx < 0 || parts.length <= instancesIdx + 2) continue;
+
+      const topFolder = parts[instancesIdx + 2];
+      const basename = parts[parts.length - 1];
+
+      if (topFolder === 'assets' || topFolder === 'documents') continue;
+      if (TRANSCRIPT_PLATFORMS.has(topFolder)) continue;
+      if (SYSTEM_FOLDERS.has(topFolder)) continue;
+
+      const isMedia = MEDIA_EXT.test(basename);
+      const newFolder = isMedia ? 'assets' : 'documents';
+      const remainder = parts.slice(instancesIdx + 3).join('/');
+      const newPath = remainder
+        ? `instances/${constructCallsign}/${newFolder}/${remainder}`
+        : `instances/${constructCallsign}/${newFolder}/${basename}`;
+
+      const { error: updateErr } = await supabase
+        .from('vault_files')
+        .update({
+          filename: newPath,
+          file_type: newFolder,
+          metadata: {
+            ...(typeof row.metadata === 'object' ? row.metadata : {}),
+            reindexed_from: path,
+            reindexed_at: new Date().toISOString(),
+          }
+        })
+        .eq('id', row.id);
+
+      if (!updateErr) {
+        changes.push({ id: row.id, from: path, to: newPath, reason: `${topFolder} → ${newFolder}` });
+        moved++;
+      } else {
+        console.warn(`⚠️ [Reindex] Failed to move ${row.id}: ${updateErr.message}`);
+      }
+    }
+
+    console.log(`✅ [Reindex] ${constructCallsign}: ${moved}/${rows.length} files reindexed`);
+    res.json({
+      success: true,
+      constructCallsign,
+      total: rows.length,
+      moved,
+      changes: changes.slice(0, 50),
+    });
+  } catch (error) {
+    console.error('❌ [Reindex] Error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

@@ -687,10 +687,10 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
               initialConfig.id!,
             );
           }
-          const knowledgeOnly = (loadedFiles as GPTFile[]).filter(
-            (f: any) => f.category === 'knowledge'
+          const knowledgeAndTranscripts = (loadedFiles as GPTFile[]).filter(
+            (f: any) => f.category === 'knowledge' || f.category === 'transcript'
           );
-          setFiles(knowledgeOnly);
+          setFiles(knowledgeAndTranscripts);
         } catch (error) {
           console.error("Failed to load files:", error);
         }
@@ -1312,10 +1312,10 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       } else {
         loadedFiles = await (service as GPTService).getFiles(gptId);
       }
-      const knowledgeOnly = (loadedFiles as GPTFile[]).filter(
-        (f: any) => f.category === 'knowledge'
+      const knowledgeAndTranscripts = (loadedFiles as GPTFile[]).filter(
+        (f: any) => f.category === 'knowledge' || f.category === 'transcript'
       );
-      setFiles(knowledgeOnly);
+      setFiles(knowledgeAndTranscripts);
     } catch (err: any) {
       console.error("[GPTCreator] Immediate upload failed:", err);
       setError(`File upload failed: ${err.message}`);
@@ -1377,10 +1377,10 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       } else {
         loadedFiles = await (service as GPTService).getFiles(gptId);
       }
-      const knowledgeOnly = (loadedFiles as GPTFile[]).filter(
-        (f: any) => f.category === 'knowledge'
+      const knowledgeAndTranscripts = (loadedFiles as GPTFile[]).filter(
+        (f: any) => f.category === 'knowledge' || f.category === 'transcript'
       );
-      setFiles(knowledgeOnly);
+      setFiles(knowledgeAndTranscripts);
 
       return result;
     } catch (err: any) {
