@@ -1982,6 +1982,51 @@ export default function Layout() {
       return;
     }
 
+    if (input.trim().startsWith('/mirror')) {
+      const parts = input.trim().split(/\s+/);
+      const subCmd = parts[1] || '';
+      const mc = (window as any).__mirrorControls;
+
+      if (subCmd === 'stop') {
+        mc?.stop?.();
+        const stopMsg = 'Mirror stopped. Capture ended, controls hidden.';
+        setThreads(prev => prev.map(t => {
+          if (t.id !== threadId) return t;
+          return {
+            ...t,
+            messages: [...t.messages, {
+              id: `mirror-${Date.now()}`,
+              role: 'assistant' as const,
+              text: stopMsg,
+              timestamp: new Date().toISOString(),
+              packets: [{ type: 'text', payload: { content: stopMsg } }],
+              tool_trace: [{ tool: 'mirror', detail: 'action=stop' }]
+            }]
+          };
+        }));
+      } else if (['read', 'write', 'both'].includes(subCmd)) {
+        mc?.setPermission?.(subCmd as 'read' | 'write' | 'both');
+        const modeMsg = `Mirror mode set to: ${subCmd}`;
+        setThreads(prev => prev.map(t => {
+          if (t.id !== threadId) return t;
+          return {
+            ...t,
+            messages: [...t.messages, {
+              id: `mirror-${Date.now()}`,
+              role: 'assistant' as const,
+              text: modeMsg,
+              timestamp: new Date().toISOString(),
+              packets: [{ type: 'text', payload: { content: modeMsg } }],
+              tool_trace: [{ tool: 'mirror', detail: `action=setMode mode=${subCmd}` }]
+            }]
+          };
+        }));
+      } else {
+        mc?.openSetup?.();
+      }
+      return;
+    }
+
     if (input.trim().startsWith('/selfprompt')) {
       const parts = input.trim().split(/\s+/);
       const subCmd = parts[1] || 'status';

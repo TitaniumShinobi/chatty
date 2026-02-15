@@ -14,7 +14,9 @@ import { getUserId } from "../lib/auth";
 import MessageBar, { ImageAttachment } from "../components/MessageBar";
 import { prepareMessageContent, stripDateLines } from "../utils/text";
 import GPTCreator from "../components/GPTCreator";
-import WatchWithNova from "../components/WatchWithNova";
+import Mirror from "../components/Mirror";
+import MirrorSetup from "../components/MirrorSetup";
+import { MonitorOff } from "lucide-react";
 import { AIService } from "../lib/aiService";
 import type { GPTConfig } from "../lib/gptService";
 
@@ -418,7 +420,10 @@ export default function Chat() {
   const [gptCreatorConfig, setGptCreatorConfig] = useState<GPTConfig | null>(null);
   const [gptCreatorInitialMessage, setGptCreatorInitialMessage] = useState<string | null>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const lastOcrContextRef = useRef<string>('');
+  const mirrorContextRef = useRef<string>('');
+  const [mirrorConfig, setMirrorConfig] = useState<{source: 'tab'|'window'|'screen', permission: 'read'|'write'|'both'} | null>(null);
+  const [mirrorSetupOpen, setMirrorSetupOpen] = useState(false);
+  const [mirrorStatus, setMirrorStatus] = useState<{text: string, count: number}>({text: 'idle', count: 0});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [zenMarkdown, setZenMarkdown] = useState<string | null>(null);
@@ -515,6 +520,16 @@ export default function Chat() {
     window.addEventListener("chatty:open-gpt-creator", handler);
     return () => window.removeEventListener("chatty:open-gpt-creator", handler);
   }, []);
+
+  useEffect(() => {
+    (window as any).__mirrorControls = {
+      openSetup: () => setMirrorSetupOpen(true),
+      stop: () => setMirrorConfig(null),
+      setPermission: (p: 'read'|'write'|'both') => setMirrorConfig(prev => prev ? {...prev, permission: p} : null),
+      getConfig: () => mirrorConfig,
+    };
+    return () => { delete (window as any).__mirrorControls; };
+  }, [mirrorConfig]);
 
   // Debug: Log thread details when found
   if (thread) {
@@ -1987,17 +2002,42 @@ export default function Chat() {
         </div>
       )}
 
-      {/* Watch with Nova */}
-      {isNovaSessionThread && (
-        <div className="px-4 pt-2 flex-shrink-0">
-          <WatchWithNova
-            sessionId={thread?.id || threadId || ''}
-            onContextUpdate={(ocrText: string) => {
-              lastOcrContextRef.current = ocrText;
-              console.log('[WatchWithNova] Context update stored:', ocrText.slice(0, 80));
-            }}
-            isActive={isNovaSessionThread}
-          />
+      <Mirror
+        sessionId={thread?.id || threadId || ''}
+        config={mirrorConfig}
+        onContextUpdate={(block: string) => { mirrorContextRef.current = block; }}
+        onStatusChange={(text: string, count: number) => setMirrorStatus({text, count})}
+      />
+
+      <MirrorSetup
+        isOpen={mirrorSetupOpen}
+        onClose={() => setMirrorSetupOpen(false)}
+        onStart={(cfg) => {
+          setMirrorConfig(cfg);
+          setMirrorSetupOpen(false);
+        }}
+      />
+
+      {mirrorConfig && (
+        <div className="flex items-center justify-center gap-3 py-2 flex-shrink-0">
+          <button onClick={() => setMirrorConfig(null)}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30">
+            <MonitorOff size={12} /> Stop
+          </button>
+          <button onClick={() => {
+            const next = mirrorConfig.permission === 'read' ? 'write' : mirrorConfig.permission === 'write' ? 'both' : 'read';
+            setMirrorConfig({...mirrorConfig, permission: next});
+          }}
+            className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium ${
+              mirrorConfig.permission !== 'read'
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                : 'bg-gray-500/20 text-gray-400 border border-gray-500/30'
+            }`}>
+            {mirrorConfig.permission === 'read' ? 'Read' : mirrorConfig.permission === 'write' ? 'Write' : 'Both'}
+          </button>
+          <span className="text-xs text-gray-500">
+            Mirror: {mirrorConfig.source} · {mirrorStatus.text} {mirrorStatus.count > 0 ? ` · ${mirrorStatus.count}` : ''}
+          </span>
         </div>
       )}
 
@@ -2007,9 +2047,9 @@ export default function Chat() {
             if (thread) {
               setUserHasInteracted(true);
               let finalText = messageText;
-              if (isNovaSessionThread && lastOcrContextRef.current) {
-                finalText = `${lastOcrContextRef.current}\n\n${messageText}`;
-                lastOcrContextRef.current = '';
+              if (mirrorConfig && mirrorContextRef.current) {
+                finalText = `${mirrorContextRef.current}\n\n${messageText}`;
+                mirrorContextRef.current = '';
               }
               console.log(`📸 [Chat.tsx] Sending message with ${imageAttachments?.length || 0} images`);
               onSendMessage(thread.id, finalText, messageFiles || [], imageAttachments);

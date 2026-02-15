@@ -31,6 +31,14 @@ export const SLASH_COMMANDS: Record<string, SlashCommand> = {
     handler: async (_args: string[]) => {
       return 'selfprompt is handled via server endpoint';
     }
+  },
+  mirror: {
+    name: 'mirror',
+    description: 'Screen sharing with AI analysis',
+    usage: '/mirror [read|write|both|stop]',
+    handler: async (_args: string[]) => {
+      return 'mirror is handled via command handler';
+    }
   }
 };
 

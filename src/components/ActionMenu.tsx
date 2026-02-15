@@ -16,7 +16,8 @@ import {
   X,
   Upload,
   Camera,
-  FileImage
+  FileImage,
+  Monitor
 } from 'lucide-react';
 
 interface ActionMenuProps {
@@ -38,7 +39,6 @@ const ActionMenu: React.FC<ActionMenuProps> = ({ onAction, disabled = false }) =
   const [isOpen, setIsOpen] = useState(false);
   const [selectedAction, setSelectedAction] = useState<ActionItem | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const actions: ActionItem[] = [
@@ -98,6 +98,13 @@ const ActionMenu: React.FC<ActionMenuProps> = ({ onAction, disabled = false }) =
       description: 'Visualize anything with AI',
       icon: <Camera size={20} />,
       color: 'text-pink-500'
+    },
+    {
+      id: 'mirror',
+      title: 'Mirror',
+      description: 'Share your screen for AI-assisted analysis',
+      icon: <Monitor size={20} />,
+      color: 'text-emerald-500'
     }
   ];
 

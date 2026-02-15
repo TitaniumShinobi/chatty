@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, Menu, Plus, Paperclip, X, ChevronDown } from 'lucide-react'
 import { ChatAreaProps } from '../types'
 import MessageComponent from './Message.tsx'
-import WatchWithNova from './WatchWithNova'
 import { cn } from '../lib/utils'
 import ActionMenu from './ActionMenu'
 import ImageAttachmentPreview from './ImageAttachmentPreview'
@@ -36,13 +35,6 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [userHasInteracted, setUserHasInteracted] = useState(false)
-  const lastOcrContextRef = useRef<string>('')
-
-  const handleOcrContextUpdate = useCallback((ocrText: string) => {
-    lastOcrContextRef.current = ocrText;
-    console.log('[WatchWithNova] Context update received:', ocrText.slice(0, 100));
-  }, []);
-
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -133,10 +125,6 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     );
 
     let messageContent = inputValue.trim();
-    if (isNova && lastOcrContextRef.current) {
-      messageContent = `${lastOcrContextRef.current}\n\n${messageContent}`;
-      lastOcrContextRef.current = '';
-    }
 
     const userMessage = {
       id: Date.now().toString(),
@@ -182,6 +170,11 @@ const ChatArea: React.FC<ChatAreaProps> = ({
           break;
         case 'create-image':
           console.log('Image creation mode activated');
+          break;
+        case 'mirror':
+          if ((window as any).__mirrorControls?.openSetup) {
+            (window as any).__mirrorControls.openSetup();
+          }
           break;
         default:
           console.log(`Action: ${action}`);
@@ -585,19 +578,6 @@ const ChatArea: React.FC<ChatAreaProps> = ({
           >
             <ChevronDown size={20} />
           </button>
-        </div>
-      )}
-
-      {/* Watch with Nova */}
-      {isNova && (
-        <div className="px-4 pt-2">
-          <div className="max-w-4xl mx-auto">
-            <WatchWithNova
-              sessionId={conversation?.id || ''}
-              onContextUpdate={handleOcrContextUpdate}
-              isActive={isNova}
-            />
-          </div>
         </div>
       )}
 
