@@ -70,6 +70,7 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('💥 [CRASH] Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const CANONICAL_DOMAIN = process.env.CANONICAL_DOMAIN || 'chatty.thewreck.org';
 const CALLBACK_PATH = process.env.CALLBACK_PATH || '/api/auth/google/callback';
 const REDIRECT_URI = `https://${CANONICAL_DOMAIN}${CALLBACK_PATH}`;
@@ -92,6 +93,10 @@ function isReplitPreview(req) {
   return false;
 }
 
+function isDev(req) {
+  return !IS_PRODUCTION || isReplitPreview(req);
+}
+
 function getRequestOrigin(req) {
   const origin = req.get('origin') || '';
   const referer = req.get('referer') || '';
@@ -108,12 +113,18 @@ function getRequestOrigin(req) {
   const host = req.get('x-forwarded-host') || req.get('host');
   const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
   if (host) return `${proto}://${host}`;
-  return `https://${CANONICAL_DOMAIN}`;
+  if (IS_PRODUCTION) return `https://${CANONICAL_DOMAIN}`;
+  return 'http://localhost:5000';
 }
 
 function getRedirectUri(req) {
   if (isReplitPreview(req) && REPLIT_REDIRECT_URI) {
     return REPLIT_REDIRECT_URI;
+  }
+  if (!IS_PRODUCTION) {
+    const host = req.get('x-forwarded-host') || req.get('host');
+    const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+    if (host) return `${proto}://${host}${CALLBACK_PATH}`;
   }
   return REDIRECT_URI;
 }
@@ -588,7 +599,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
   try {
     const { code, error: oauthError, state: stateParam } = req.query;
 
-    let originUrl = `https://${CANONICAL_DOMAIN}`;
+    let originUrl = IS_PRODUCTION ? `https://${CANONICAL_DOMAIN}` : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : 'http://localhost:5000');
     let callbackRedirectUri = REDIRECT_URI;
     let stateValid = false;
 
@@ -739,7 +750,8 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
     res.redirect(`${originUrl}/api/auth/set-session?code=${encodeURIComponent(exchangeCode)}`);
   } catch (e) {
     console.error('OAuth callback error:', e);
-    res.redirect(`https://${CANONICAL_DOMAIN}/?error=auth_failed`);
+    const errorRedirect = IS_PRODUCTION ? `https://${CANONICAL_DOMAIN}` : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : 'http://localhost:5000');
+    res.redirect(`${errorRedirect}/?error=auth_failed`);
   }
 });
 
@@ -1145,7 +1157,7 @@ if (isProduction) {
   });
 }
 
-const PORT = process.env.PORT || 5050;
+const PORT = process.env.PORT || (IS_PRODUCTION ? 5000 : 5050);
 
 function startServer(port, retryCount = 0) {
   const srv = app.listen(port, '0.0.0.0', () => console.log(`API on :${port}`));

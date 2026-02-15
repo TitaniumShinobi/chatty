@@ -83,6 +83,16 @@ const openaiClient = DIRECT_OPENAI_KEY ? new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
 }) : null;
 
+console.log('🔑 [Provider Keys] Startup credential check:', {
+  hasReplitOpenRouterKey: !!REPLIT_OPENROUTER_KEY,
+  hasDirectOpenRouterKey: !!OPENROUTER_API_KEY,
+  hasOpenAIKey: !!DIRECT_OPENAI_KEY,
+  hasAIIntegrationsKey: !!(process.env.AI_INTEGRATIONS_OPENAI_API_KEY && process.env.AI_INTEGRATIONS_OPENAI_API_KEY !== '_DUMMY_API_KEY_'),
+  replitOpenrouterClient: !!replitOpenrouter,
+  openrouterClient: !!openrouter,
+  openaiClient: !!openaiClient
+});
+
 // GPT Manager singleton for fetching GPT configurations
 const gptManager = GPTManager.getInstance();
 
