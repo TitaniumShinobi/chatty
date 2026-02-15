@@ -1,0 +1,72 @@
+You are working ONLY in Chatty (Replit workspace).
+
+Goal:
+Configure the provided ContinuityGPT prompt as the enforceable memory base for constructs, toggled from GPTCreator, with Needle-style retrieval on memory/event questions.
+
+Use the ContinuityGPT prompt text VERBATIM from user input.
+
+Constraints:
+- Minimal targeted changes only.
+- Keep API shape stable.
+- No embeddings/vector DB in this phase.
+- No fabricated memory claims.
+
+Implement:
+
+1) Add memory profile support
+- Add per-construct fields:
+  - memoryEnabled: boolean (default false)
+  - memoryProfile: "continuitygpt" | "off" (default "off")
+- Persist in existing construct config store.
+- Expose in GPTCreator UI toggle + profile selector.
+
+2) Register ContinuityGPT base prompt
+- Create a single source file for prompt templates (e.g. server/lib/prompts/continuitygpt.js).
+- Store the exact ContinuityGPT block there.
+- Do not duplicate prompt text across files.
+
+3) Forced seat injection
+- In server-side context assembly (memory/system prompt builder), inject ContinuityGPT prompt when:
+  - memoryEnabled === true
+  - memoryProfile === "continuitygpt"
+- This must happen on every assistant turn for that construct.
+
+4) Memory-triggered retrieval (Needle style)
+- On memory/event queries (e.g. “remember”, “last time”, “what happened”, specific date/event references), run workspace search across construct files.
+- Use lexical + snippet extraction (rg/needle-style), no vector DB.
+- Inject retrieved snippets into context as MEMORY_CONTEXT with:
+  - source path
+  - timestamp/date evidence (if present)
+  - excerpt
+  - confidence
+- If no reliable evidence: inject explicit “no verified memory evidence found” guard.
+
+5) Truth guard behavior
+- Model must not claim file access or memory without retrieved evidence.
+- If evidence missing/weak, response must say it cannot verify.
+
+6) Tool trace + observability
+- Add tool_trace entry for memory retrieval runs (e.g. memory_search).
+- Log query + selected source paths + confidence at debug level.
+
+Acceptance tests (show raw evidence):
+A) Memory OFF:
+- Ask “What did we do last Valentine’s Day?”
+- Must NOT claim memory/file reads.
+
+B) Memory ON + known file:
+- Ask about known event/file.
+- Must cite retrieved source path/date in answer context.
+
+C) Unknown event:
+- Must explicitly say cannot verify; no fabricated memory.
+
+D) Toggle flow:
+- Flip memory off/on in GPTCreator and verify behavior changes immediately for new turns.
+
+Deliverables:
+1) Exact files changed
+2) Minimal diff summary per file
+3) Raw before/after response samples for A/B/C/D
+4) PASS/FAIL per gate
+5) Remaining limitations
