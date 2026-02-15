@@ -3,5 +3,13 @@
   "invites": {},
   "reports": {},
   "settings": {},
-  "ageVerifications": {}
+  "ageVerifications": {
+    "devon_woodson_1762969514958": {
+      "verified": true,
+      "method": "self_declared",
+      "verifiedAt": "2026-02-15T12:52:36.162Z",
+      "expiresAt": null,
+      "lastChecked": "2026-02-15T12:52:36.162Z"
+    }
+  }
 }
