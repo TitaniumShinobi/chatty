@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Wrapper script that launches the development environment in the background
+# so that Click/agents can invoke it with a simple `run chatty` command and
+# immediately regain control of the chat.
+
+# Change to the repo root (script is installed in scripts/ so go up one level)
+cd "$(dirname "$0")/.." || exit 1
+
+# start the normal quantum helper in background
+# any output is logged to a temp file for debugging if needed
+./scripts/quantum "$@" &
+
+# optionally, you could use `pnpm dev &` directly if you don't need quantum
+# here; quantum does some extra setup so we reuse it.
+
+# Provide immediate feedback
+echo "chatty started (PID $!)"
+
+disown  # detach from shell

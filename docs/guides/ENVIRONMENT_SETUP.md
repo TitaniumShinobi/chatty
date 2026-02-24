@@ -168,6 +168,7 @@ When using the VS Code **Click** agent for development, a few settings keep the
    ```
 
 3. **Agent guardrails** – prevent interactive prompts and TUI programs by creating a rules file:
+
    ```markdown
    # .ai/agent-rules.md
 
@@ -176,6 +177,24 @@ When using the VS Code **Click** agent for development, a few settings keep the
    - Abort any command that runs longer than 5 min without output.
    - Pass secrets via environment variables or `.env` files rather than interactive prompts.
    ```
+
+### Making this global
+
+The examples above live in the workspace; they apply only when you open **this** repo. To keep Click responsive in *every* project, replicate the settings in your **user** settings file (Preferences → Settings → open JSON) and maintain a global copy of the agent rules at `~/.ai/agent-rules.md` as well. A sample user config might look like:
+
+```jsonc
+{
+  "chat.tools.terminal.commandTimeout": 300000,
+  "chat.tools.terminal.shellIntegrationTimeout": 10000,
+  // future flag (not yet shipped) could make every run command
+  // behave as if background=true was appended automatically:
+  // "chat.tools.terminal.defaultBackground": true
+}
+```
+
+> 💡 **Tip:** you can also create a universal wrapper script (see `scripts/chatty`) or shell alias
+> that backgrounds whatever you ask Click to run.  That way `run chatty` or `run npm run dev`
+> will always return immediately without needing any extra flags.
 
 With these tweaks the Click chat stays responsive even when your dev server or build runs for minutes.
 
