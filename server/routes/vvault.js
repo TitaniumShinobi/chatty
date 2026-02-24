@@ -83,6 +83,16 @@ const openaiClient = DIRECT_OPENAI_KEY ? new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
 }) : null;
 
+console.log('🔑 [Provider Keys] Startup credential check:', {
+  hasReplitOpenRouterKey: !!REPLIT_OPENROUTER_KEY,
+  hasDirectOpenRouterKey: !!OPENROUTER_API_KEY,
+  hasOpenAIKey: !!DIRECT_OPENAI_KEY,
+  hasAIIntegrationsKey: !!(process.env.AI_INTEGRATIONS_OPENAI_API_KEY && process.env.AI_INTEGRATIONS_OPENAI_API_KEY !== '_DUMMY_API_KEY_'),
+  replitOpenrouterClient: !!replitOpenrouter,
+  openrouterClient: !!openrouter,
+  openaiClient: !!openaiClient
+});
+
 // GPT Manager singleton for fetching GPT configurations
 const gptManager = GPTManager.getInstance();
 
@@ -3941,6 +3951,7 @@ router.post("/message", async (req, res) => {
             }
             attempt.error_code = err?.status || err?.code || null;
             attempt.error_message_short = (err?.message || 'unknown').slice(0, 80);
+            console.log(`⚠️ [ProviderAttempt] ${providerName} attempt ${retry} ${attempt.status}: code=${attempt.error_code} msg="${attempt.error_message_short}" ${attempt.duration_ms}ms`);
             providerTrace.attempts.push(attempt);
             if (retry < MAX_RETRIES && (attempt.status === 'timeout' || (attempt.error_code && attempt.error_code >= 500))) {
               continue;

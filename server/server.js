@@ -70,6 +70,7 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('💥 [CRASH] Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const CANONICAL_DOMAIN = process.env.CANONICAL_DOMAIN || 'chatty.thewreck.org';
 const CALLBACK_PATH = process.env.CALLBACK_PATH || '/api/auth/google/callback';
 const REDIRECT_URI = `https://${CANONICAL_DOMAIN}${CALLBACK_PATH}`;
@@ -92,6 +93,10 @@ function isReplitPreview(req) {
   return false;
 }
 
+function isDev(req) {
+  return !IS_PRODUCTION || isReplitPreview(req);
+}
+
 function getRequestOrigin(req) {
   const origin = req.get('origin') || '';
   const referer = req.get('referer') || '';
@@ -108,12 +113,18 @@ function getRequestOrigin(req) {
   const host = req.get('x-forwarded-host') || req.get('host');
   const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
   if (host) return `${proto}://${host}`;
-  return `https://${CANONICAL_DOMAIN}`;
+  if (IS_PRODUCTION) return `https://${CANONICAL_DOMAIN}`;
+  return 'http://localhost:5000';
 }
 
 function getRedirectUri(req) {
   if (isReplitPreview(req) && REPLIT_REDIRECT_URI) {
     return REPLIT_REDIRECT_URI;
+  }
+  if (!IS_PRODUCTION) {
+    const host = req.get('x-forwarded-host') || req.get('host');
+    const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+    if (host) return `${proto}://${host}${CALLBACK_PATH}`;
   }
   return REDIRECT_URI;
 }
@@ -159,87 +170,17 @@ const SMTP_CONFIG = {
   }
 };
 
-// Connect to database (optional in development)
-if (process.env.MONGODB_URI) {
-  try {
-    await connectDB();
-  } catch (error) {
-    console.log('🚀 Continuing in development mode without database...');
-  }
-} else {
-  console.log('🚀 Running in memory-only mode (no MONGODB_URI set)');
-}
-
-// Initialize user registry
-try {
-  const { initializeUserRegistry } = await import('./lib/userRegistry.js');
-  await initializeUserRegistry();
-} catch (error) {
-  console.error('⚠️ [Server] Failed to initialize user registry:', error);
-  // Continue anyway - registry will be created on first use
-}
-
-// Initialize memory persistence system
-try {
-  console.log('🧠 [Server] Initializing memory persistence system...');
-
-  // Import memory system components
-  const { getMemoryStore } = await import('../src/lib/MemoryStore.js');
-
-  // Initialize memory store
-  const memoryStore = getMemoryStore('./memory.db');
-  await memoryStore.initialize();
-
-  // Check if VVAULT path exists before initializing VVAULT components
-  const VVAULT_BASE = process.env.VVAULT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
-  let vvaultAvailable = false;
-  try {
-    await import('fs').then(fs => fs.promises.access(VVAULT_BASE));
-    vvaultAvailable = true;
-  } catch {
-    console.log('ℹ️ [Server] VVAULT path not found, skipping VVAULT initialization (Replit mode)');
-  }
-
-  let watchedConstructCount = 0;
-  if (vvaultAvailable) {
-    const { getVVAULTTranscriptLoader } = await import('../src/lib/VVAULTTranscriptLoader.js');
-    const { getVVAULTWatcher } = await import('../src/lib/VVAULTWatcher.js');
-
-    // Initialize transcript loader
-    const transcriptLoader = getVVAULTTranscriptLoader();
-
-    // Load Katana's transcripts on startup
-    await transcriptLoader.loadTranscriptFragments('katana-001', 'devon_woodson_1762969514958');
-
-    // Initialize and start file watcher
-    const watcher = getVVAULTWatcher();
-    await watcher.addConstruct('katana-001', 'devon_woodson_1762969514958');
-    await watcher.startWatching(30000); // 30 second intervals
-    watchedConstructCount = watcher.getWatchStatus().constructCount;
-  }
-
-  // Get memory statistics
-  const stats = await memoryStore.getStats();
-  console.log('✅ [Server] Memory system initialized:', {
-    messages: stats.messageCount,
-    triples: stats.tripleCount,
-    fragments: stats.fragmentCount,
-    watchedConstructs: watchedConstructCount
-  });
-
-} catch (error) {
-  console.error('❌ [Server] Failed to initialize memory system:', error);
-  // Continue anyway - memory system will initialize on first use
-}
-
-// Initialize the new Chat Application Service
-try {
-  getChatService();
-} catch (error) {
-  console.error('❌ [Server] Failed to initialize ChatService:', error);
-}
-
 const app = express();
+
+let serverReady = false;
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', ready: serverReady, uptime: process.uptime() });
+});
+
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  next();
+});
 
 if (process.env.ENABLE_SERVER_TIMING === 'true') {
   app.use('/api', (req, res, next) => {
@@ -269,7 +210,7 @@ app.use(cors({ origin: corsOrigin, credentials: true }));
 const isProduction = process.env.NODE_ENV === 'production';
 if (isProduction) {
   const distPath = path.join(__dirname, '../dist');
-  app.use(express.static(distPath));
+  app.use(express.static(distPath, { index: 'index.html' }));
   console.log('📦 [Server] Serving static files from:', distPath);
 }
 
@@ -326,9 +267,7 @@ if (!oauthValid) {
   console.warn('⚠️ [OAuth] Google authentication will not work without proper environment variables');
 }
 
-// health endpoints
-app.get("/health", (_req, res) => res.json({ ok: true }));
-app.get("/api/health", (_req, res) => res.json({ ok: true }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, ready: serverReady }));
 
 app.get("/api/health/openrouter", async (_req, res) => {
   const apiKey = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY;
@@ -588,7 +527,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
   try {
     const { code, error: oauthError, state: stateParam } = req.query;
 
-    let originUrl = `https://${CANONICAL_DOMAIN}`;
+    let originUrl = IS_PRODUCTION ? `https://${CANONICAL_DOMAIN}` : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : 'http://localhost:5000');
     let callbackRedirectUri = REDIRECT_URI;
     let stateValid = false;
 
@@ -739,7 +678,8 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
     res.redirect(`${originUrl}/api/auth/set-session?code=${encodeURIComponent(exchangeCode)}`);
   } catch (e) {
     console.error('OAuth callback error:', e);
-    res.redirect(`https://${CANONICAL_DOMAIN}/?error=auth_failed`);
+    const errorRedirect = IS_PRODUCTION ? `https://${CANONICAL_DOMAIN}` : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : 'http://localhost:5000');
+    res.redirect(`${errorRedirect}/?error=auth_failed`);
   }
 });
 
@@ -1137,18 +1077,26 @@ function cryptoRandom() {
 
 // SPA catch-all: serve index.html for client-side routing in production
 if (isProduction) {
+  const indexPath = path.join(__dirname, '../dist/index.html');
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api')) {
       return next();
     }
-    res.sendFile(path.join(__dirname, '../dist/index.html'));
+    res.sendFile(indexPath, (err) => {
+      if (err) {
+        res.status(200).send('ok');
+      }
+    });
   });
 }
 
-const PORT = process.env.PORT || 5050;
+const PORT = process.env.PORT || (IS_PRODUCTION ? 5000 : 5050);
 
 function startServer(port, retryCount = 0) {
-  const srv = app.listen(port, '0.0.0.0', () => console.log(`API on :${port}`));
+  const srv = app.listen(port, '0.0.0.0', () => {
+    serverReady = true;
+    console.log(`API on :${port}`);
+  });
   srv.on('error', (err) => {
     if (err.code === 'EADDRINUSE' && retryCount === 0) {
       console.warn(`⚠️ [Server] Port ${port} in use — killing stale process and retrying...`);
@@ -1166,6 +1114,79 @@ function startServer(port, retryCount = 0) {
 }
 
 startServer(PORT);
+
+// Deferred heavy initialization — runs AFTER server starts listening so health checks pass immediately
+(async () => {
+  try {
+    if (process.env.MONGODB_URI) {
+      try {
+        await connectDB();
+      } catch (error) {
+        console.log('🚀 Continuing in development mode without database...');
+      }
+    } else {
+      console.log('🚀 Running in memory-only mode (no MONGODB_URI set)');
+    }
+
+    try {
+      const { initializeUserRegistry } = await import('./lib/userRegistry.js');
+      await initializeUserRegistry();
+    } catch (error) {
+      console.error('⚠️ [Server] Failed to initialize user registry:', error);
+    }
+
+    try {
+      console.log('🧠 [Server] Initializing memory persistence system...');
+      const { getMemoryStore } = await import('../src/lib/MemoryStore.js');
+      const memoryStore = getMemoryStore('./memory.db');
+      await memoryStore.initialize();
+
+      const VVAULT_BASE = process.env.VVAULT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+      let vvaultAvailable = false;
+      try {
+        await import('fs').then(fs => fs.promises.access(VVAULT_BASE));
+        vvaultAvailable = true;
+      } catch {
+        console.log('ℹ️ [Server] VVAULT path not found, skipping VVAULT initialization (Replit mode)');
+      }
+
+      let watchedConstructCount = 0;
+      if (vvaultAvailable) {
+        const { getVVAULTTranscriptLoader } = await import('../src/lib/VVAULTTranscriptLoader.js');
+        const { getVVAULTWatcher } = await import('../src/lib/VVAULTWatcher.js');
+        const transcriptLoader = getVVAULTTranscriptLoader();
+        await transcriptLoader.loadTranscriptFragments('katana-001', 'devon_woodson_1762969514958');
+        const watcher = getVVAULTWatcher();
+        await watcher.addConstruct('katana-001', 'devon_woodson_1762969514958');
+        await watcher.startWatching(30000);
+        watchedConstructCount = watcher.getWatchStatus().constructCount;
+      }
+
+      const stats = await memoryStore.getStats();
+      console.log('✅ [Server] Memory system initialized:', {
+        messages: stats.messageCount,
+        triples: stats.tripleCount,
+        fragments: stats.fragmentCount,
+        watchedConstructs: watchedConstructCount
+      });
+    } catch (error) {
+      console.error('❌ [Server] Failed to initialize memory system:', error);
+    }
+
+    try {
+      getChatService();
+      console.log('✅ [ChatService] Database initialized successfully.');
+    } catch (error) {
+      console.error('❌ [Server] Failed to initialize ChatService:', error);
+    }
+
+    serverReady = true;
+    console.log('✅ [Server] All deferred initialization complete — server fully ready');
+  } catch (err) {
+    console.error('❌ [Server] Deferred initialization error:', err);
+    serverReady = true;
+  }
+})();
 
 // Supabase Realtime subscription disabled for performance
 // WebSocket overhead + RLS policy parsing adds latency with no active consumers

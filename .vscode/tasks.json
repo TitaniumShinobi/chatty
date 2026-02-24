@@ -1,0 +1,29 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "dev",
+            "command": "pnpm",
+            "args": ["dev"],
+            "isBackground": true,
+            "problemMatcher": [
+                {
+                    "pattern": ".",
+                    "background": { "activeOnStart": true, "beginsPattern": "VITE .* ready", "endsPattern": "ready" }
+                }
+            ]
+        },
+        {
+            "label": "test",
+            "command": "pnpm",
+            "args": ["test"],
+            "problemMatcher": []
+        },
+        {
+            "label": "build",
+            "command": "pnpm",
+            "args": ["build"],
+            "problemMatcher": []
+        }
+    ]
+}

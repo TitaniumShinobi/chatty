@@ -1,3 +1,9 @@
 {
-    "diffEditor.codeLens": true
+    "diffEditor.codeLens": true,
+
+    // Let long builds finish before the agent gives up (5 min)
+    "chat.tools.terminal.commandTimeout": 300000,
+
+    // Extra 10 s for Zsh/P10k shells to inject their hooks
+    "chat.tools.terminal.shellIntegrationTimeout": 10000
 }
