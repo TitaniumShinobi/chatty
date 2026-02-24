@@ -12,6 +12,18 @@
                     "background": { "activeOnStart": true, "beginsPattern": "VITE .* ready", "endsPattern": "ready" }
                 }
             ]
+        },
+        {
+            "label": "test",
+            "command": "pnpm",
+            "args": ["test"],
+            "problemMatcher": []
+        },
+        {
+            "label": "build",
+            "command": "pnpm",
+            "args": ["build"],
+            "problemMatcher": []
         }
     ]
 }
