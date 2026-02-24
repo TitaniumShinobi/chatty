@@ -1,0 +1,17 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "dev",
+            "command": "pnpm",
+            "args": ["dev"],
+            "isBackground": true,
+            "problemMatcher": [
+                {
+                    "pattern": ".",
+                    "background": { "activeOnStart": true, "beginsPattern": "VITE .* ready", "endsPattern": "ready" }
+                }
+            ]
+        }
+    ]
+}
