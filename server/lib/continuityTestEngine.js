@@ -239,7 +239,7 @@ async function generateTestsFromTranscripts(constructId, maxTests = 5) {
     .from('vault_files')
     .select('filename, content')
     .eq('construct_id', constructId)
-    .or('filename.like.%chatgpt%,filename.like.%character_ai%,filename.like.%transcript%,filename.like.%K1.md,filename.like.%test_%')
+    .or('filename.like.%chatgpt%,filename.like.%character_ai%,filename.like.%character.ai%,filename.like.%transcript%,filename.like.%K1.md,filename.like.%test_%')
     .not('filename', 'like', '%chat_with_%')
     .not('filename', 'like', '%memory_anchors%')
     .not('filename', 'like', '%continuity_%')

@@ -12,6 +12,7 @@ import { performSearch, injectSearchContext } from "./search.js";
 import { buildEnrichedContext, captureMemory } from "../lib/memoryContextBuilder.js";
 import { evaluateMessage, buildChildSafeDirectives, enforcePreInferenceGates, enforceRoleplayToggle } from "../lib/contentGuard.js";
 import { getAccountType, getChildSettings } from "../lib/familyManager.js";
+import { canonicalSourceFolderList } from "../lib/transcriptSource.js";
 
 // Timestamp all console output from this module
 const patchConsoleWithTimestamp = () => {
@@ -72,6 +73,8 @@ const replitOpenrouter = REPLIT_OPENROUTER_KEY ? new OpenAI({
 }) : null;
 
 const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
+const NOVA_FAST_OPENROUTER_MODEL = process.env.NOVA_FAST_OPENROUTER_MODEL || process.env.OPENROUTER_FAST_MODEL || 'meta-llama/llama-3.1-8b-instruct';
+const PROMPT_WARN_CHARS = Number.parseInt(process.env.VVAULT_PROMPT_WARN_CHARS || '', 10) || 24000;
 
 // OpenAI client - prefer direct API key, fall back to Replit AI Integrations
 const DIRECT_OPENAI_KEY = process.env.OPENAI_API_KEY;
@@ -95,6 +98,35 @@ console.log('🔑 [Provider Keys] Startup credential check:', {
 
 // GPT Manager singleton for fetching GPT configurations
 const gptManager = GPTManager.getInstance();
+
+const MEMORY_INTENT_RE = /\b(remember|recall|when did we|we talked|our conversation|first time|last time)\b/i;
+
+function isLowComplexityTurn(message, hasImages, historyCount, systemPromptLength) {
+  if (hasImages) return false;
+  const raw = (message || '').trim();
+  if (!raw) return true;
+
+  const normalized = raw.toLowerCase().replace(/[^\w\s']/g, ' ').replace(/\s+/g, ' ').trim();
+  const words = normalized ? normalized.split(' ') : [];
+  const simplePhrases = new Set([
+    'hello',
+    'hi',
+    'hey',
+    'yo',
+    'sup',
+    'good morning',
+    'good afternoon',
+    'good evening',
+    'how are you',
+    'hru',
+  ]);
+
+  if (MEMORY_INTENT_RE.test(normalized)) return false;
+  if (historyCount > 24) return false;
+  if (systemPromptLength > 18000) return false;
+  if (simplePhrases.has(normalized)) return true;
+  return words.length <= 4 && normalized.length <= 32;
+}
 
 /**
  * resolveModelForGPT - Single source of truth for model resolution.
@@ -1133,46 +1165,48 @@ router.post("/identity/reindex", requireAuth, async (req, res) => {
     const path = require('path');
     const transcriptPaths = [];
 
+    async function scanTranscriptFolder(rootPath, variant, maxDepth = 5, depth = 0) {
+      try {
+        const entries = await fs.readdir(rootPath, { withFileTypes: true });
+        for (const entry of entries) {
+          const filePath = path.join(rootPath, entry.name);
+          if (entry.isDirectory()) {
+            if (depth < maxDepth) {
+              await scanTranscriptFolder(filePath, variant, maxDepth, depth + 1);
+            }
+            continue;
+          }
+          if (!entry.isFile()) continue;
+          if (!/\.(md|txt|json|log|rtf)$/i.test(entry.name)) continue;
+          transcriptPaths.push({ path: filePath, variant });
+        }
+      } catch (_) {
+        // Folder missing or unreadable is non-fatal for reindex scans.
+      }
+    }
+
+    const sourceFolders = canonicalSourceFolderList();
+
     for (const variant of callsignVariants) {
       const instancePath = path.join(VVAULT_ROOT, 'users', 'shard_0000', vvaultUserId, 'instances', variant);
-      const identityPath = path.join(instancePath, 'identity');
-      const chatgptPath = path.join(instancePath, 'chatgpt');
+      const foldersToScan = new Set([
+        'identity',
+        ...sourceFolders,
+        'character_ai', // legacy alias
+        'documents',    // legacy transcript location
+      ]);
 
-      // Scan identity folder
-      try {
-        const identityFiles = await fs.readdir(identityPath);
-        for (const file of identityFiles) {
-          const filePath = path.join(identityPath, file);
-          const stat = await fs.stat(filePath);
-          if (stat.isFile() && (file.endsWith('.md') || file.endsWith('.txt') || file.endsWith('.json'))) {
-            transcriptPaths.push({ path: filePath, variant });
-          }
-        }
-      } catch (e) {
-        // Folder doesn't exist for this variant - continue
-      }
-
-      // Scan chatgpt folder
-      try {
-        const chatgptFiles = await fs.readdir(chatgptPath);
-        for (const file of chatgptFiles) {
-          const filePath = path.join(chatgptPath, file);
-          const stat = await fs.stat(filePath);
-          if (stat.isFile() && (file.endsWith('.md') || file.endsWith('.txt'))) {
-            transcriptPaths.push({ path: filePath, variant });
-          }
-        }
-      } catch (e) {
-        // Folder doesn't exist for this variant - continue
+      for (const folder of foldersToScan) {
+        await scanTranscriptFolder(path.join(instancePath, folder), variant);
       }
     }
 
     console.log(`📦 [reindex] Found ${transcriptPaths.length} transcript files to re-index for ${constructCallsign}`);
 
-    // Deduplicate transcript paths (same file might be in multiple variant folders)
+    // Deduplicate transcript paths while preserving distinct files with same basename.
     const uniquePaths = new Map();
     for (const item of transcriptPaths) {
-      const key = path.basename(item.path);
+      const key = item.path;
       if (!uniquePaths.has(key)) {
         uniquePaths.set(key, item);
       }
@@ -1184,7 +1218,8 @@ router.post("/identity/reindex", requireAuth, async (req, res) => {
     let totalImported = 0;
     let totalAnchors = 0;
 
-    for (const [filename, item] of uniquePaths) {
+    for (const [, item] of uniquePaths) {
+      const filename = path.basename(item.path);
       // Index to all callsign variants so queries work regardless of format
       for (const variant of callsignVariants) {
         try {
@@ -3884,6 +3919,9 @@ router.post("/message", async (req, res) => {
     }
 
     console.log(`🧠 [VVAULT Proxy] System prompt length: ${systemPrompt.length} (capsule: ${enrichedContext.capsuleLoaded}, verified: ${enrichedContext.verifiedMemories || 0}, memories: ${enrichedContext.memoriesLoaded})`);
+    if (systemPrompt.length >= PROMPT_WARN_CHARS) {
+      console.warn(`⚠️ [VVAULT Proxy] Prompt size warning for ${constructId}: ${systemPrompt.length} chars (threshold: ${PROMPT_WARN_CHARS})`);
+    }
     
     // Load conversation history for context (last 20 turns)
     let conversationHistoryMessages = [];
@@ -3912,16 +3950,41 @@ router.post("/message", async (req, res) => {
       console.warn(`⚠️ [VVAULT Proxy] Could not load conversation history:`, historyError.message);
     }
     
+    const lowComplexityTurn = isLowComplexityTurn(
+      message,
+      hasImages,
+      conversationHistoryMessages.length,
+      systemPrompt.length
+    );
+
+    const retrievalDiagnostics = {
+      low_complexity_turn: lowComplexityTurn,
+      system_prompt_chars: systemPrompt.length,
+      phase_timing: enrichedContext.phaseTiming || {},
+      evidence_count: enrichedContext.evidence_count ?? 0,
+      retrieval_counts: {
+        vector: enrichedContext.vectorMemories || 0,
+        verified: enrichedContext.verifiedMemories || 0,
+        needle: enrichedContext.needleHits || 0,
+        transcript: enrichedContext.memoriesLoaded || 0,
+      }
+    };
+
     // Route to appropriate provider
     try {
       let completion;
       let aiResponse;
 
-      const PROVIDER_TIMEOUT = 12000;
+      const configuredProviderTimeout = Number.parseInt(process.env.VVAULT_PROVIDER_TIMEOUT_MS || '', 10);
+      const PROVIDER_TIMEOUT = Number.isFinite(configuredProviderTimeout)
+        ? Math.max(5000, Math.min(configuredProviderTimeout, 120000))
+        : 30000;
       const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const providerTrace = {
         request_id: requestId,
         construct_id: constructId,
+        low_complexity_turn: lowComplexityTurn,
+        prompt_chars: systemPrompt.length,
         attempts: [],
         final_provider: null,
         fallback_used: false,
@@ -3964,7 +4027,9 @@ router.post("/message", async (req, res) => {
 
       // ===== NOVA-001: Deterministic fallback chain with telemetry =====
       if (constructId === 'nova-001' && (replitOpenrouter || openrouter || openaiClient) && !hasImages) {
-        const hotfixModel = DEFAULT_OPENROUTER_MODEL;
+        const hotfixModel = lowComplexityTurn ? NOVA_FAST_OPENROUTER_MODEL : DEFAULT_OPENROUTER_MODEL;
+        providerTrace.model_strategy = lowComplexityTurn ? 'fast' : 'default';
+        providerTrace.primary_model = hotfixModel;
         const hotfixMessages = [
           { role: "system", content: systemPrompt },
           ...conversationHistoryMessages,
@@ -3996,7 +4061,9 @@ router.post("/message", async (req, res) => {
         console.log(`📡 [ProviderTrace] ${requestId} | construct=${constructId} | final=${providerTrace.final_provider} | fallback=${providerTrace.fallback_used} | failed=[${failedProviders}] | ${providerTrace.total_duration_ms}ms`);
 
         if (!novaSuccess) {
-          throw new Error(`All providers failed for nova-001: ${failedProviders}`);
+          const allFailedError = new Error(`All providers failed for nova-001: ${failedProviders}`);
+          allFailedError.code = 'ALL_PROVIDERS_FAILED';
+          throw allFailedError;
         }
       } else if (effectiveProvider === 'openai') {
         console.log(`🔷 [VVAULT Proxy] Calling OpenAI (${effectiveModel}) for ${constructId}`);
@@ -4371,7 +4438,9 @@ Output ONLY the rewritten response, nothing else.`
         provider_used: effectiveProvider,
         has_images: hasImages,
         tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
-        ...(process.env.SHOW_DEV_INFO === 'true' ? { validator: validatorDebug, provider_trace: providerTrace } : {})
+        ...(process.env.SHOW_DEV_INFO === 'true'
+          ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics }
+          : {})
       });
     } catch (llmError) {
       console.error(`❌ [VVAULT Proxy] ${effectiveProvider} call failed:`, {
@@ -4382,13 +4451,17 @@ Output ONLY the rewritten response, nothing else.`
         apiKeySet: !!OPENROUTER_API_KEY,
         constructId
       });
+      const fallbackResponse = `I'm having trouble reaching my model providers right now. Please try again in a moment.`;
       return res.status(503).json({
         success: false,
         error: `${effectiveProvider} failed: ${llmError.message || 'Unknown error'}`,
+        response: fallbackResponse,
         provider: effectiveProvider,
         model: effectiveModel,
         upstreamStatus: llmError?.status || null,
-        details: llmError.message
+        details: llmError.message,
+        retryable: true,
+        ...(process.env.SHOW_DEV_INFO === 'true' ? { retrieval_diagnostics: retrievalDiagnostics, provider_trace: providerTrace } : {}),
       });
     }
   }
@@ -4661,7 +4734,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               provider_used: effectiveProvider,
               has_images: hasImages,
               tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
-              ...(process.env.SHOW_DEV_INFO === 'true' ? { provider_trace: providerTrace } : {})
+              ...(process.env.SHOW_DEV_INFO === 'true' ? { provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics } : {})
             });
           } catch (fallbackError) {
             console.error(`❌ [VVAULT Proxy] LLM fallback failed:`, fallbackError);
@@ -4952,7 +5025,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           provider_used: effectiveProvider,
           has_images: hasImages,
           tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
-          ...(process.env.SHOW_DEV_INFO === 'true' ? { provider_trace: providerTrace } : {})
+          ...(process.env.SHOW_DEV_INFO === 'true' ? { provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics } : {})
         });
       } catch (fallbackError) {
         console.error(`❌ [VVAULT Proxy] LLM fallback failed:`, fallbackError);

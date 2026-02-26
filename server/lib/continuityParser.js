@@ -236,7 +236,7 @@ async function getTranscriptFiles(constructId) {
         lower.includes('/avatar') || lower.includes('knowledge_base') ||
         lower.endsWith('.capsule')) return false;
     const isTranscript = lower.includes('chat') || lower.includes('transcript') ||
-        lower.includes('character_ai') || lower.includes('chatgpt') ||
+        lower.includes('character_ai') || lower.includes('character.ai') || lower.includes('chatgpt') ||
         lower.includes('conversation') || lower.includes('continuity') ||
         lower.endsWith('.md') || lower.endsWith('.log') || lower.endsWith('.txt');
     return isTranscript;

@@ -1,4 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
+import {
+  canonicalSourceFolderList,
+  extractSourceFromTranscriptPath,
+  normalizeTranscriptSource,
+} from './transcriptSource.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -11,6 +16,34 @@ const MAX_CHUNK_SIZE = 150_000;
 const MAX_PAIRS_PARSE_LIMIT = 500;
 const MAX_SCORED_PER_FILE = 4;
 const MAX_VERIFIED_MEMORIES = 8;
+const CANONICAL_SOURCE_SET = new Set(canonicalSourceFolderList().map((s) => normalizeTranscriptSource(s, { fallback: '' })));
+const LEGACY_SOURCE_HINTS = ['character_ai'];
+
+function isTranscriptCandidateFile(file, constructId) {
+  const filename = String(file?.filename || '');
+  if (!filename) return false;
+  const lowerName = filename.toLowerCase();
+
+  if (file?.file_type === 'transcript') return true;
+
+  const metadataSource = normalizeTranscriptSource(file?.metadata?.source, { fallback: '' });
+  if (metadataSource && CANONICAL_SOURCE_SET.has(metadataSource)) return true;
+
+  const extractedSource = normalizeTranscriptSource(extractSourceFromTranscriptPath(filename, constructId), { fallback: '' });
+  if (extractedSource && CANONICAL_SOURCE_SET.has(extractedSource)) return true;
+  if (LEGACY_SOURCE_HINTS.some((hint) => lowerName.includes(hint))) return true;
+
+  if (lowerName.includes('/documents/')) {
+    return lowerName.includes('/transcript') || lowerName.includes('/chatgpt') || lowerName.includes('/character.ai') || lowerName.includes('/character_ai');
+  }
+
+  return lowerName.includes('chatgpt')
+    || lowerName.includes('character.ai')
+    || lowerName.includes('character_ai')
+    || lowerName.includes('transcript')
+    || lowerName.includes('continuity')
+    || lowerName.includes('chat.log');
+}
 
 function getSupabase() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return null;
@@ -29,12 +62,11 @@ async function discoverTranscriptFiles(constructId) {
 
   const { data, error } = await supabase
     .from('vault_files')
-    .select('id, filename, construct_id, created_at, content, storage_path')
+    .select('id, filename, construct_id, created_at, content, storage_path, metadata, file_type')
     .eq('construct_id', constructId)
-    .or('filename.like.%chatgpt%,filename.like.%character_ai%,filename.like.%transcript%,filename.like.%continuity%,filename.like.%chat.log')
     .not('filename', 'like', '%chat_with_%')
     .order('created_at', { ascending: false })
-    .limit(20);
+    .limit(120);
 
   if (error) {
     console.warn(`⚠️ [VerifiedMemory] Catalog query failed for ${constructId}:`, error.message);
@@ -46,8 +78,8 @@ async function discoverTranscriptFiles(constructId) {
     const lowerName = f.filename.toLowerCase();
     if (lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.pdf') || lowerName.endsWith('.gif') || lowerName.endsWith('.webp') || lowerName.endsWith('.capsule') || f.filename === '.DS_Store') return false;
     if (f.filename === 'chat.log' && (!f.content || f.content.length < 100)) return false;
-    return true;
-  });
+    return isTranscriptCandidateFile(f, constructId);
+  }).slice(0, 20);
 
   catalogCache.set(cacheKey, { files, ts: Date.now() });
   console.log(`📂 [VerifiedMemory] Discovered ${files.length} transcript files for ${constructId}`);
@@ -298,6 +330,7 @@ function detectEmotionalTone(text) {
 function scoreVerifiedPairs(pairs, userMessage, constructId) {
   const query = preprocessQuery(userMessage);
   const queryLower = (userMessage || '').toLowerCase();
+  const hasQueryTerms = (query.words?.length || 0) > 0 || (query.bigrams?.length || 0) > 0;
 
   const chronoKeywords = ['first', 'beginning', 'started', 'original', 'earliest', 'initial', 'very first'];
   const lastKeywords = ['last', 'final', 'ended', 'stopped', 'most recent', 'latest', 'last thing'];
@@ -306,6 +339,10 @@ function scoreVerifiedPairs(pairs, userMessage, constructId) {
   const wantsFirst = chronoKeywords.some(k => queryLower.includes(k));
   const wantsLast = lastKeywords.some(k => queryLower.includes(k));
   const isCriticalEvent = eventKeywords.some(k => queryLower.includes(k));
+
+  if (!hasQueryTerms && !wantsFirst && !wantsLast && !isCriticalEvent) {
+    return [];
+  }
 
   const scored = pairs.map((pair, index) => {
     let score = 0;
@@ -358,7 +395,7 @@ function scoreVerifiedPairs(pairs, userMessage, constructId) {
     filtered.push({ ...lastPair, score: 50, index: pairs.length - 1, tone: detectEmotionalTone(lastPair.user + ' ' + lastPair.assistant) });
   }
 
-  if (filtered.length === 0 && pairs.length > 0) {
+  if (filtered.length === 0 && hasQueryTerms && pairs.length > 0) {
     const recentPairs = pairs.slice(-4).map((p, i) => ({
       ...p, score: 2 + i, index: pairs.length - 4 + i,
       tone: detectEmotionalTone(p.user + ' ' + p.assistant)
@@ -521,13 +558,12 @@ async function extractBoundaryPairs(constructId) {
   try {
     const { data, error: queryError } = await supabase
       .from('vault_files')
-      .select('content, storage_path, filename')
+      .select('content, storage_path, filename, metadata, file_type')
       .eq('construct_id', constructId)
-      .or('filename.like.%character_ai%,filename.like.%chatgpt%,filename.like.%transcript%')
       .not('filename', 'like', '%chat_with_%')
       .not('filename', 'like', '%memory_anchors%')
       .order('created_at', { ascending: true })
-      .limit(10);
+      .limit(30);
 
     if (queryError) {
       console.warn(`⚠️ [BoundaryExtract] Query error for ${constructId}:`, queryError.message);
@@ -536,7 +572,10 @@ async function extractBoundaryPairs(constructId) {
 
     if (!data || data.length === 0) return { first: [], last: [] };
 
-    const sorted = [...data].sort((a, b) => {
+    const candidateFiles = data.filter((file) => isTranscriptCandidateFile(file, constructId));
+    if (candidateFiles.length === 0) return { first: [], last: [] };
+
+    const sorted = [...candidateFiles].sort((a, b) => {
       const sizeA = a.content ? a.content.length : 999999;
       const sizeB = b.content ? b.content.length : 999999;
       return sizeB - sizeA;

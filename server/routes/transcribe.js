@@ -2,7 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
-import { speechToText, ensureCompatibleFormat } from '../replit_integrations/audio/client.ts';
+import { speechToText, ensureCompatibleFormat } from '../replit_integrations/audio/client.js';
 
 const router = express.Router();
 
