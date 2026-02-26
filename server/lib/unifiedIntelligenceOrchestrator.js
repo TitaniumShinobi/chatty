@@ -10,12 +10,11 @@
 
 import { getCapsuleIntegration } from './capsuleIntegration.js';
 import { getIdentityDriftPrevention } from './identityDriftPrevention.js';
+import { getHybridMemoryService } from '../services/hybridMemoryService.js';
 import { createRequire } from 'module';
 import OpenAI from 'openai';
 
-// Use createRequire for CommonJS module
 const require = createRequire(import.meta.url);
-const { getHybridMemoryService } = require('../services/hybridMemoryService.js');
 
 // OpenRouter client for GPT seat LLM calls
 const openrouter = new OpenAI({
