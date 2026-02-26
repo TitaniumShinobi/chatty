@@ -12,9 +12,9 @@
  * - Per-response memory retrieval
  */
 
-const { getIdentityService } = require('./identityService.js');
-const fs = require('fs').promises;
-const path = require('path');
+import { getIdentityService } from './identityService.js';
+import fs from 'fs/promises';
+import path from 'path';
 
 class HybridMemoryService {
   constructor() {
@@ -196,8 +196,5 @@ function getHybridMemoryService() {
   return instance;
 }
 
-module.exports = {
-  HybridMemoryService,
-  getHybridMemoryService
-};
+export { HybridMemoryService, getHybridMemoryService };
 
