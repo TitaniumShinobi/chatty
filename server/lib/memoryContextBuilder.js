@@ -256,6 +256,38 @@ function isMemoryTriggeringQuestion(userMessage) {
   return MEMORY_TRIGGER_PATTERNS.some(pattern => pattern.test(userMessage));
 }
 
+function isLowInformationPrompt(userMessage) {
+  if (!userMessage) return false;
+  const normalized = userMessage
+    .toLowerCase()
+    .replace(/[^\w\s']/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) return true;
+  if (isMemoryTriggeringQuestion(normalized)) return false;
+
+  const simplePhrases = new Set([
+    'hello',
+    'hi',
+    'hey',
+    'yo',
+    'sup',
+    'how are you',
+    'good morning',
+    'good afternoon',
+    'good evening',
+    'goodnight',
+    'thanks',
+    'thank you',
+  ]);
+
+  if (simplePhrases.has(normalized)) return true;
+
+  const words = normalized.split(' ').filter(Boolean);
+  const meaningfulWords = words.filter(w => !CHAT_FILLER_WORDS.has(w) && w.length > 2);
+  return words.length <= 4 && meaningfulWords.length <= 1 && normalized.length <= 36;
+}
+
 const VALID_IANA_TZ = (() => {
   try {
     const zones = Intl.supportedValuesOf('timeZone');
@@ -410,6 +442,7 @@ function extractTranscriptMemories(messages, userMessage, constructId, maxMemori
 
   const queryLower = (userMessage || '').toLowerCase().replace(/[^\w\s'-]/g, ' ');
   const queryWords = queryLower.split(/\s+/).filter(w => !CHAT_FILLER_WORDS.has(w) && w.length > 2);
+  if (queryWords.length === 0) return [];
 
   for (const pair of pairs) {
     const ctxLower = pair.context.toLowerCase();
@@ -914,6 +947,10 @@ async function buildEnrichedContext(options) {
     capsuleLoaded: false,
     memoriesLoaded: 0
   };
+  const memoryQueryDetected = !!userMessage && isMemoryTriggeringQuestion(userMessage);
+  const lowInformationPrompt = !!userMessage && isLowInformationPrompt(userMessage);
+  const shouldRunMemoryRetrieval = !!userMessage && !lowInformationPrompt && memoryQueryDetected;
+  result.lowInformationPrompt = lowInformationPrompt;
 
   const identityCacheKey = `${userId}:${constructId}`;
   const cachedIdentity = identityCache.get(identityCacheKey);
@@ -1084,7 +1121,7 @@ async function buildEnrichedContext(options) {
   console.log(`⏱️ [MemoryContextBuilder] ledger: ${phaseTiming.ledger.ms}ms (${phaseTiming.ledger.sessions} sessions)`);
 
   const tVector = Date.now();
-  if (userMessage) {
+  if (shouldRunMemoryRetrieval) {
     try {
       let vectorLookupId = userId || user?.email;
       try {
@@ -1145,11 +1182,18 @@ RULES FOR MEMORY USE:
       console.warn(`⚠️ [MemoryContextBuilder] Vector memory retrieval failed for ${constructId}:`, vecErr.message);
     }
   }
-  phaseTiming.vectorSearch = { ms: Date.now() - tVector, count: vectorCount };
+  phaseTiming.vectorSearch = {
+    ms: Date.now() - tVector,
+    count: vectorCount,
+    skipped: !shouldRunMemoryRetrieval,
+    reason: !shouldRunMemoryRetrieval
+      ? (lowInformationPrompt ? 'low_information_prompt' : (memoryQueryDetected ? 'disabled' : 'not_memory_query'))
+      : null
+  };
   console.log(`⏱️ [MemoryContextBuilder] vectorSearch: ${phaseTiming.vectorSearch.ms}ms (${vectorCount} hits)`);
 
   const tMemory = Date.now();
-  if (userMessage) {
+  if (shouldRunMemoryRetrieval) {
     const [verifiedRes, needleRes] = await Promise.all([
       loadVerifiedMemories(constructId, userMessage, 8).catch(err => {
         console.warn(`⚠️ [MemoryContextBuilder] Verified memory load failed for ${constructId}:`, err.message);
@@ -1191,14 +1235,22 @@ RULES FOR MEMORY USE:
     }
   }
 
-  phaseTiming.memorySearch = { ms: Date.now() - tMemory, verified: verifiedCount, needle: needleCount };
+  phaseTiming.memorySearch = {
+    ms: Date.now() - tMemory,
+    verified: verifiedCount,
+    needle: needleCount,
+    skipped: !shouldRunMemoryRetrieval,
+    reason: !shouldRunMemoryRetrieval
+      ? (lowInformationPrompt ? 'low_information_prompt' : (memoryQueryDetected ? 'disabled' : 'not_memory_query'))
+      : null
+  };
   console.log(`⏱️ [MemoryContextBuilder] memorySearch: ${phaseTiming.memorySearch.ms}ms (verified: ${verifiedCount}, needle: ${needleCount})`);
 
   let memorySection = '';
 
   const chatFallbackLimit = verifiedCount > 0 ? 4 : 12;
 
-  if (userMessage) {
+  if (shouldRunMemoryRetrieval) {
     try {
       const readConversations = await getReadConversations();
       if (readConversations) {
@@ -1232,7 +1284,7 @@ RULES FOR MEMORY USE:
 
   let memoryGapSection = '';
   const memoryProfileWillHandle = gptConfig?.memoryEnabled === true && gptConfig?.memoryProfile === 'continuitygpt';
-  if (!memoryProfileWillHandle && userMessage && isMemoryTriggeringQuestion(userMessage) && vectorCount === 0 && verifiedCount === 0 && needleCount === 0 && (result.memoriesLoaded || 0) === 0) {
+  if (!memoryProfileWillHandle && memoryQueryDetected && vectorCount === 0 && verifiedCount === 0 && needleCount === 0 && (result.memoriesLoaded || 0) === 0) {
     memoryGapSection = buildMemoryGapSection(userMessage, constructId);
     result.memoryGapInjected = true;
     console.log(`⚠️ [MemoryContextBuilder] Memory gap detected for ${constructId} — user asked about past but no memories found. Anti-confabulation guard injected.`);
@@ -1248,20 +1300,35 @@ RULES FOR MEMORY USE:
   let knowledgeMatchedFiles = [];
   let hasRelevantDocs = false;
   const tKnowledge = Date.now();
-  try {
-    const knowledgeResult = await getKnowledgeContext(constructId, user?.email, userMessage);
-    knowledgeSection = knowledgeResult.section;
-    knowledgeMatchedFiles = knowledgeResult.matchedFiles || [];
-    hasRelevantDocs = knowledgeResult.hasRelevantDocs || false;
-    if (knowledgeSection) {
-      result.knowledgeFiles = true;
-      result.knowledgeMatchedFiles = knowledgeMatchedFiles;
+  if (!lowInformationPrompt) {
+    try {
+      const knowledgeResult = await getKnowledgeContext(constructId, user?.email, userMessage);
+      knowledgeSection = knowledgeResult.section;
+      knowledgeMatchedFiles = knowledgeResult.matchedFiles || [];
+      hasRelevantDocs = knowledgeResult.hasRelevantDocs || false;
+      if (knowledgeSection) {
+        result.knowledgeFiles = true;
+        result.knowledgeMatchedFiles = knowledgeMatchedFiles;
+      }
+    } catch (knowledgeErr) {
+      console.warn(`⚠️ [MemoryContextBuilder] Knowledge context load failed for ${constructId}:`, knowledgeErr.message);
     }
-  } catch (knowledgeErr) {
-    console.warn(`⚠️ [MemoryContextBuilder] Knowledge context load failed for ${constructId}:`, knowledgeErr.message);
+    phaseTiming.knowledge = {
+      ms: Date.now() - tKnowledge,
+      files: knowledgeMatchedFiles.length,
+      relevant: hasRelevantDocs
+    };
+    console.log(`⏱️ [MemoryContextBuilder] knowledge: ${phaseTiming.knowledge.ms}ms (${knowledgeMatchedFiles.length} files, relevant: ${hasRelevantDocs})`);
+  } else {
+    phaseTiming.knowledge = {
+      ms: Date.now() - tKnowledge,
+      files: 0,
+      relevant: false,
+      skipped: true,
+      reason: 'low_information_prompt',
+    };
+    console.log(`⏱️ [MemoryContextBuilder] knowledge: ${phaseTiming.knowledge.ms}ms (skipped: low_information_prompt)`);
   }
-  phaseTiming.knowledge = { ms: Date.now() - tKnowledge, files: knowledgeMatchedFiles.length, relevant: hasRelevantDocs };
-  console.log(`⏱️ [MemoryContextBuilder] knowledge: ${phaseTiming.knowledge.ms}ms (${knowledgeMatchedFiles.length} files, relevant: ${hasRelevantDocs})`);
 
   if (hasRelevantDocs && memoryGapSection) {
     memoryGapSection = `\n\n## DOCUMENT-BASED EVIDENCE AVAILABLE
@@ -1301,7 +1368,7 @@ When answering:
     const profile = MEMORY_PROFILES.continuitygpt;
     continuitySection += '\n\n' + profile.getGuard();
 
-    if (isMemoryTriggeringQuestion(userMessage)) {
+    if (memoryQueryDetected) {
       const allNeedleHits = needleHits || [];
       continuitySection += buildContinuityMemoryContext(allNeedleHits, constructId);
 
@@ -1337,8 +1404,7 @@ When answering:
   }
 
   const totalEvidenceCount = (vectorCount || 0) + (needleCount || 0) + (verifiedCount || 0) + (result.memoriesLoaded || 0);
-  const memoryRetrievalRan = !!userMessage;
-  const memoryQueryDetected = !!userMessage && isMemoryTriggeringQuestion(userMessage);
+  const memoryRetrievalRan = shouldRunMemoryRetrieval;
   result.memory_retrieval_ran = memoryRetrievalRan;
   result.memory_query_detected = memoryQueryDetected;
   result.evidence_count = totalEvidenceCount;

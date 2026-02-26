@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText, MoveRight, X } from "lucide-react";
+import { normalizeTranscriptSource } from "../lib/transcriptSource";
 
 interface TranscriptFile {
   name: string;
@@ -42,7 +43,9 @@ const SOURCE_META: Record<string, { label: string; icon: string }> = {
   copilot: { label: "Copilot", icon: "🪁" },
   claude: { label: "Claude", icon: "🎭" },
   chai: { label: "Chai", icon: "🍵" },
+  character_ai: { label: "Character.AI", icon: "👤" }, // legacy alias
   "character.ai": { label: "Character.AI", icon: "👤" },
+  chatty: { label: "Chatty", icon: "💬" },
   deepseek: { label: "DeepSeek", icon: "🔍" },
   codex: { label: "Codex", icon: "💻" },
   github_copilot: { label: "GitHub Copilot", icon: "🐙" },
@@ -59,7 +62,7 @@ function buildFolderTree(transcripts: TranscriptFile[]): FolderNode[] {
   const unsorted: TranscriptFile[] = [];
 
   for (const t of transcripts) {
-    const src = t.source || "unknown";
+    const src = normalizeTranscriptSource(t.source, "unknown");
     if (!sourceMap[src]) sourceMap[src] = {};
 
     if (t.year) {
@@ -488,7 +491,7 @@ export function TranscriptFolderTree({ transcripts, onFileClick, onMoveFile }: T
   const existingSources = useMemo(() => {
     const sources = new Set<string>();
     for (const t of transcripts) {
-      if (t.source) sources.add(t.source);
+      if (t.source) sources.add(normalizeTranscriptSource(t.source, "unknown"));
     }
     return Array.from(sources);
   }, [transcripts]);

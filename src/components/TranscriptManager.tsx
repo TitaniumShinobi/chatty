@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Upload, FolderTree, RefreshCw, FileText, AlertCircle, CheckCircle, Trash2 } from 'lucide-react';
 import { TranscriptFolderTree } from './TranscriptFolderTree';
 import JSZip from 'jszip';
+import { normalizeTranscriptSource } from '../lib/transcriptSource';
 
 interface Transcript {
   id: string;
@@ -48,10 +49,10 @@ const TRANSCRIPT_SOURCES = [
   { value: 'chatgpt', label: 'ChatGPT' },
   { value: 'gemini', label: 'Gemini' },
   { value: 'grok', label: 'Grok' },
-  { value: 'copilot', label: 'Copilot' },
+  { value: 'github_copilot', label: 'Copilot' },
   { value: 'claude', label: 'Claude' },
   { value: 'chai', label: 'Chai' },
-  { value: 'character_ai', label: 'Character.AI' },
+  { value: 'character.ai', label: 'Character.AI' },
   { value: 'deepseek', label: 'DeepSeek' },
   { value: 'other', label: 'Other' }
 ];
@@ -77,7 +78,7 @@ function parseCharacterAIJson(jsonString: string, filename: string): TranscriptF
           id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           name: filename.replace(/\.json$/i, '') + `_chat_${results.length + 1}.md`,
           content: md,
-          source: 'character_ai',
+          source: 'character.ai',
           year: dateInfo.year,
           month: dateInfo.month,
         });
@@ -93,7 +94,7 @@ function parseCharacterAIJson(jsonString: string, filename: string): TranscriptF
         id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         name: filename.replace(/\.json$/i, '.md'),
         content: md,
-        source: 'character_ai',
+        source: 'character.ai',
         year: dateInfo.year,
         month: dateInfo.month,
       }];
@@ -107,7 +108,7 @@ function parseCharacterAIJson(jsonString: string, filename: string): TranscriptF
         id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         name: filename.replace(/\.json$/i, '.md'),
         content: md,
-        source: 'character_ai',
+        source: 'character.ai',
         year: dateInfo.year,
         month: dateInfo.month,
       }];
@@ -235,7 +236,7 @@ function parseCharacterAIText(text: string, filename: string): TranscriptFile[] 
     id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     name: filename.replace(/\.txt$/i, '.md'),
     content: mdLines.join('\n'),
-    source: 'character_ai',
+    source: 'character.ai',
     year: '',
     month: '',
   }];
@@ -378,7 +379,7 @@ export function TranscriptManager() {
           const pathParts = path.split('/').filter(p => p);
           const filename = pathParts.pop() || 'unknown';
           
-          let source = transcriptSource || 'transcripts';
+          let source = normalizeTranscriptSource(transcriptSource || 'transcripts');
           let year = transcriptYear;
           let month = transcriptMonth;
           
@@ -387,8 +388,8 @@ export function TranscriptManager() {
             else if (MONTHS.some(m => m.toLowerCase() === part.toLowerCase())) {
               month = MONTHS.find(m => m.toLowerCase() === part.toLowerCase()) || part;
             }
-            else if (TRANSCRIPT_SOURCES.some(s => s.value === part.toLowerCase())) {
-              source = part.toLowerCase();
+            else if (TRANSCRIPT_SOURCES.some(s => s.value === normalizeTranscriptSource(part.toLowerCase()))) {
+              source = normalizeTranscriptSource(part.toLowerCase());
             }
           }
 
@@ -397,7 +398,7 @@ export function TranscriptManager() {
             if (parsed) {
               newFiles.push(...parsed.map(p => ({
                 ...p,
-                source: source === 'transcripts' ? 'character_ai' : source,
+                source: source === 'transcripts' ? 'character.ai' : normalizeTranscriptSource(source),
                 year: year || p.year,
                 month: month || p.month,
               })));
@@ -410,7 +411,7 @@ export function TranscriptManager() {
             if (caiParsed) {
               newFiles.push(...caiParsed.map(p => ({
                 ...p,
-                source: source === 'transcripts' ? 'character_ai' : source,
+                source: source === 'transcripts' ? 'character.ai' : normalizeTranscriptSource(source),
                 year: year || p.year,
                 month: month || p.month,
               })));
@@ -422,7 +423,7 @@ export function TranscriptManager() {
             id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             name: filename,
             content,
-            source,
+            source: normalizeTranscriptSource(source),
             year,
             month
           });
@@ -433,7 +434,7 @@ export function TranscriptManager() {
         if (parsed) {
           newFiles.push(...parsed.map(p => ({
             ...p,
-            source: transcriptSource || 'character_ai',
+            source: normalizeTranscriptSource(transcriptSource || 'character.ai'),
             year: transcriptYear || p.year,
             month: transcriptMonth || p.month,
           })));
@@ -442,7 +443,7 @@ export function TranscriptManager() {
             id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             name: file.name,
             content,
-            source: transcriptSource || 'transcripts',
+            source: normalizeTranscriptSource(transcriptSource || 'transcripts'),
             year: transcriptYear,
             month: transcriptMonth
           });
@@ -453,7 +454,7 @@ export function TranscriptManager() {
         if (caiParsed) {
           newFiles.push(...caiParsed.map(p => ({
             ...p,
-            source: transcriptSource || 'character_ai',
+            source: normalizeTranscriptSource(transcriptSource || 'character.ai'),
             year: transcriptYear || p.year,
             month: transcriptMonth || p.month,
           })));
@@ -462,7 +463,7 @@ export function TranscriptManager() {
             id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             name: file.name,
             content,
-            source: transcriptSource || 'transcripts',
+            source: normalizeTranscriptSource(transcriptSource || 'transcripts'),
             year: transcriptYear,
             month: transcriptMonth
           });
@@ -478,7 +479,7 @@ export function TranscriptManager() {
           id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           name: file.name,
           content,
-          source: transcriptSource || 'transcripts',
+          source: normalizeTranscriptSource(transcriptSource || 'transcripts'),
           year: transcriptYear,
           month: transcriptMonth
         });
@@ -488,7 +489,7 @@ export function TranscriptManager() {
           id: `transcript_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           name: file.name,
           content,
-          source: transcriptSource || 'transcripts',
+          source: normalizeTranscriptSource(transcriptSource || 'transcripts'),
           year: transcriptYear,
           month: transcriptMonth
         });
@@ -514,7 +515,7 @@ export function TranscriptManager() {
       const transcriptsPayload = stagedFiles.map(file => ({
         name: file.name,
         content: file.content,
-        source: file.source || transcriptSource || 'transcripts',
+        source: normalizeTranscriptSource(file.source || transcriptSource || 'transcripts'),
         year: file.year || transcriptYear || '',
         month: file.month || transcriptMonth || ''
       }));
