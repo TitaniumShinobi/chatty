@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Plus, Mic, MicOff, Paperclip, X, Loader2 } from "lucide-react";
 import ImageAttachmentPreview from "./ImageAttachmentPreview";
+import SendButton from "./SendButton";
 import { 
   CHAT_UPLOAD_LIMITS, 
   ALL_ALLOWED_TYPES,
@@ -25,6 +26,37 @@ interface MessageBarProps {
   initialValue?: string;
   onValueChange?: (value: string) => void;
   maxRows?: number;
+  isSending?: boolean;
+  canRetry?: boolean;
+  onRetry?: () => void;
+  allowEmptySubmit?: boolean;
+}
+
+interface SendAvailabilityParams {
+  disabled: boolean;
+  isSending: boolean;
+  canRetry: boolean;
+  allowEmptySubmit: boolean;
+  inputValue: string;
+  docFileCount: number;
+  imageFileCount: number;
+}
+
+export function shouldDisableSendButton({
+  disabled,
+  isSending,
+  canRetry,
+  allowEmptySubmit,
+  inputValue,
+  docFileCount,
+  imageFileCount,
+}: SendAvailabilityParams): boolean {
+  if (disabled || isSending) return true;
+  if (canRetry) return false;
+
+  const hasComposerContent =
+    inputValue.trim().length > 0 || docFileCount > 0 || imageFileCount > 0;
+  return !allowEmptySubmit && !hasComposerContent;
 }
 
 export default function MessageBar({
@@ -37,6 +69,10 @@ export default function MessageBar({
   initialValue = "",
   onValueChange,
   maxRows = 6,
+  isSending = false,
+  canRetry = false,
+  onRetry,
+  allowEmptySubmit = false,
 }: MessageBarProps) {
   const [inputValue, setInputValue] = useState(initialValue);
   const [docFiles, setDocFiles] = useState<File[]>([]);
@@ -101,7 +137,21 @@ export default function MessageBar({
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     const trimmed = inputValue.trim();
-    if (!trimmed && docFiles.length === 0 && imageFiles.length === 0) return;
+    const hasAttachments = docFiles.length > 0 || imageFiles.length > 0;
+
+    if (!trimmed && !hasAttachments && !allowEmptySubmit) return;
+
+    if (!trimmed && !hasAttachments && allowEmptySubmit) {
+      onSubmit("", undefined, undefined);
+      if (inputValue.length > 0) {
+        setInputValue("");
+        onValueChange?.("");
+        if (textareaRef.current) {
+          textareaRef.current.style.height = "auto";
+        }
+      }
+      return;
+    }
     
     // Convert images to base64
     const imageAttachments: ImageAttachment[] = await Promise.all(
@@ -425,6 +475,38 @@ export default function MessageBar({
             )}
           </button>
         )}
+
+        <SendButton
+          onClick={() => {
+            const trimmed = inputValue.trim();
+            const hasAttachments = docFiles.length > 0 || imageFiles.length > 0;
+            if (canRetry && !trimmed && !hasAttachments && onRetry) {
+              onRetry();
+            } else {
+              handleSubmit();
+            }
+          }}
+          disabled={shouldDisableSendButton({
+            disabled,
+            isSending,
+            canRetry,
+            allowEmptySubmit,
+            inputValue,
+            docFileCount: docFiles.length,
+            imageFileCount: imageFiles.length,
+          })}
+          animating={isSending && !canRetry}
+          ariaLabel={
+            canRetry
+              ? "Retry / force prompt"
+              : allowEmptySubmit &&
+                  !inputValue.trim() &&
+                  docFiles.length === 0 &&
+                  imageFiles.length === 0
+                ? "Continue conversation"
+                : "Send message"
+          }
+        />
 
       </div>
       
