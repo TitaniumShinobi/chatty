@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Plus, Mic, MicOff, Paperclip, X, Loader2 } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Plus, Mic, MicOff, Paperclip, X, Loader2, Volume2 } from "lucide-react";
 import ImageAttachmentPreview from "./ImageAttachmentPreview";
 import SendButton from "./SendButton";
 import { 
@@ -8,6 +9,8 @@ import {
   isImageFile, 
   getFileSizeLimit 
 } from "../config/chatConfig";
+import { getSavedTtsConfig, saveTtsConfig } from "../lib/tts";
+import { Z_LAYERS } from "../lib/zLayers";
 
 export interface ImageAttachment {
   name: string;
@@ -81,6 +84,11 @@ export default function MessageBar({
   const [isDragging, setIsDragging] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [voicePopoverOpen, setVoicePopoverOpen] = useState(false);
+  const sendAreaRef = useRef<HTMLDivElement>(null);
+  const voicePopoverRef = useRef<HTMLDivElement | null>(null);
+  const voiceCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [sendAreaRect, setSendAreaRect] = useState<{ top: number; right: number; bottom: number; left: number } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -106,6 +114,64 @@ export default function MessageBar({
   useEffect(() => {
     setInputValue(initialValue);
   }, [initialValue]);
+
+  useEffect(() => {
+    return () => {
+      if (voiceCloseTimeoutRef.current) clearTimeout(voiceCloseTimeoutRef.current);
+    };
+  }, []);
+
+  // Close voice popover on Escape or outside click
+  useEffect(() => {
+    if (!voicePopoverOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setVoicePopoverOpen(false);
+    };
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+      const inSendArea = sendAreaRef.current?.contains(target);
+      const inPopover = voicePopoverRef.current?.contains(target);
+      if (!inSendArea && !inPopover) setVoicePopoverOpen(false);
+    };
+    window.addEventListener("keydown", handleKey);
+    window.addEventListener("mousedown", handleClick, true);
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+      window.removeEventListener("mousedown", handleClick, true);
+    };
+  }, [voicePopoverOpen]);
+
+  const clearVoiceCloseTimeout = useCallback(() => {
+    if (voiceCloseTimeoutRef.current) {
+      clearTimeout(voiceCloseTimeoutRef.current);
+      voiceCloseTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleVoiceClose = useCallback(() => {
+    clearVoiceCloseTimeout();
+    voiceCloseTimeoutRef.current = setTimeout(() => setVoicePopoverOpen(false), 150);
+  }, [clearVoiceCloseTimeout]);
+
+  const updateSendAreaRect = useCallback(() => {
+    const el = sendAreaRef.current;
+    if (el) setSendAreaRect(el.getBoundingClientRect());
+  }, []);
+
+  // When voice popover opens, measure send area and keep position updated (scroll/resize)
+  useEffect(() => {
+    if (!voicePopoverOpen) {
+      setSendAreaRect(null);
+      return;
+    }
+    updateSendAreaRect();
+    window.addEventListener("scroll", updateSendAreaRect, true);
+    window.addEventListener("resize", updateSendAreaRect);
+    return () => {
+      window.removeEventListener("scroll", updateSendAreaRect, true);
+      window.removeEventListener("resize", updateSendAreaRect);
+    };
+  }, [voicePopoverOpen, updateSendAreaRect]);
 
   const adjustTextareaHeight = () => {
     if (textareaRef.current) {
@@ -335,6 +401,12 @@ export default function MessageBar({
     }
   };
 
+  // Consider the bar "expanded" when focused or when there is any composer content
+  const hasComposerContent = inputValue.trim().length > 0 || docFiles.length > 0 || imageFiles.length > 0;
+  const isExpanded = isFocused || hasComposerContent;
+
+  const COLLAPSED_HEIGHT = 48; // px — exact collapsed height
+
   return (
     <form 
       onSubmit={handleSubmit} 
@@ -355,46 +427,32 @@ export default function MessageBar({
       )}
 
       <div
-        className={`flex items-center gap-2 px-4 py-2 transition-all ${isDragging ? 'ring-2 ring-[var(--chatty-accent)]' : ''}`}
+        className={`px-4 transition-all relative ${isDragging ? 'ring-2 ring-[var(--chatty-accent)]' : ''}`}
         style={{
-          borderRadius: "24px",
+          /* Outer: geometry-only container */
+          height: isExpanded ? undefined : `${COLLAPSED_HEIGHT}px`,
+          minHeight: COLLAPSED_HEIGHT,
+          borderRadius: isExpanded ? "24px" : `${COLLAPSED_HEIGHT / 2}px`,
+          boxSizing: "border-box",
+          overflow: "hidden",
           backgroundColor: "var(--chatty-bg-message)",
           boxShadow: isFocused
             ? "0 4px 16px rgba(0, 0, 0, 0.15)"
             : "0 4px 12px rgba(0, 0, 0, 0.1)",
+          transition: "border-radius 200ms ease, height 200ms ease, box-shadow 200ms ease",
         }}
       >
-        {showFileAttachment && (
-          <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept={ALL_ALLOWED_TYPES.join(',')}
-              onChange={handleFileChange}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={handleFileClick}
-              className="p-2 rounded-lg transition-colors flex-shrink-0"
-              style={{ color: "var(--chatty-text)", opacity: 0.6 }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
-                e.currentTarget.style.opacity = "1";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "transparent";
-                e.currentTarget.style.opacity = "0.6";
-              }}
-              title="Attach files or images"
-            >
-              <Plus size={20} />
-            </button>
-          </>
-        )}
-
-        <div className="flex-1 flex flex-col">
+        <div
+          className="flex"
+          style={{
+            height: '100%',
+            flexDirection: 'row' as const,
+            alignItems: isExpanded ? 'flex-start' : 'stretch',
+            paddingTop: isExpanded ? 8 : 0,
+            paddingBottom: isExpanded ? 8 : 0,
+            gap: 8,
+          }}
+        >
           {/* Document file chips */}
           {docFiles.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-2">
@@ -433,80 +491,214 @@ export default function MessageBar({
             placeholder={placeholder}
             disabled={disabled}
             rows={1}
-            className="w-full bg-transparent outline-none text-base resize-none chatty-placeholder leading-normal"
+            className="bg-transparent outline-none text-base resize-none chatty-placeholder leading-normal"
             style={{
               color: "var(--chatty-text)",
               minHeight: "24px",
+              flex: 1,
+              height: '100%',
+              lineHeight: isExpanded ? undefined : `${COLLAPSED_HEIGHT}px`,
+              paddingTop: 0,
+              paddingBottom: 0,
+              paddingLeft: 12,
+              // When collapsed, leave space on the right for the three inline buttons
+              paddingRight: isExpanded ? 12 : 120,
             }}
           />
         </div>
 
-        {showVoiceButton && (
-          <button
-            type="button"
-            onClick={handleVoiceToggle}
-            disabled={isTranscribing || disabled}
-            className="p-2 rounded-lg transition-colors flex-shrink-0"
-            style={{
-              color: isRecording ? "var(--chatty-accent)" : "var(--chatty-text)",
-              opacity: isTranscribing ? 0.5 : (isRecording ? 1 : 0.7),
-              backgroundColor: isRecording ? "var(--chatty-highlight)" : "transparent",
-            }}
-            onMouseEnter={(e) => {
-              if (!isRecording) {
-                e.currentTarget.style.backgroundColor = "var(--chatty-highlight)";
-                e.currentTarget.style.opacity = "1";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!isRecording) {
-                e.currentTarget.style.backgroundColor = "transparent";
-                e.currentTarget.style.opacity = "0.7";
-              }
-            }}
-            title={isTranscribing ? "Transcribing..." : isRecording ? "Stop recording" : "Voice input"}
-          >
-            {isTranscribing ? (
-              <Loader2 size={20} className="animate-spin" />
-            ) : isRecording ? (
-              <MicOff size={20} />
-            ) : (
-              <Mic size={20} />
-            )}
-          </button>
-        )}
-
-        <SendButton
-          onClick={() => {
-            const trimmed = inputValue.trim();
-            const hasAttachments = docFiles.length > 0 || imageFiles.length > 0;
-            if (canRetry && !trimmed && !hasAttachments && onRetry) {
-              onRetry();
-            } else {
-              handleSubmit();
-            }
-          }}
-          disabled={shouldDisableSendButton({
-            disabled,
-            isSending,
-            canRetry,
-            allowEmptySubmit,
-            inputValue,
-            docFileCount: docFiles.length,
-            imageFileCount: imageFiles.length,
-          })}
-          animating={isSending && !canRetry}
-          ariaLabel={
-            canRetry
-              ? "Retry / force prompt"
-              : allowEmptySubmit &&
-                  !inputValue.trim() &&
-                  docFiles.length === 0 &&
-                  imageFiles.length === 0
-                ? "Continue conversation"
-                : "Send message"
+        <div
+          className="flex gap-2"
+          style={
+            isExpanded
+              ? {
+                  // Expanded: cluster anchored at bottom; all buttons align to same baseline (no elevation)
+                  position: 'absolute',
+                  right: 4,
+                  bottom: 8,
+                  height: 44,
+                  display: 'flex',
+                  alignItems: 'flex-end',
+                  zIndex: 1,
+                }
+              : {
+                  // Collapsed: same anchor (bottom: 8) so send button does not move when bar expands; height fits 48px bar
+                  position: 'absolute',
+                  right: 4,
+                  bottom: 8,
+                  height: 40,
+                  display: 'flex',
+                  alignItems: 'flex-end',
+                  zIndex: 1,
+                }
           }
-        />
+        >
+          {showFileAttachment && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept={ALL_ALLOWED_TYPES.join(',')}
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={handleFileClick}
+                className="p-2 rounded-lg transition-colors flex-shrink-0"
+                style={{ color: "var(--chatty-text)", opacity: 0.7, backgroundColor: "transparent", transform: 'translateY(1px)' }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.opacity = "1";
+                  e.currentTarget.style.color = "var(--chatty-accent)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.opacity = "0.7";
+                  e.currentTarget.style.color = "var(--chatty-text)";
+                }}
+                title="Attach files or images"
+              >
+                <Plus size={20} />
+              </button>
+            </>
+          )}
+
+          <div style={{ flex: 1 }} />
+
+          {/* Voice button removed from inline cluster — keep voice controls in popover only */}
+
+          <div
+            ref={sendAreaRef}
+            className="relative flex-shrink-0"
+            style={{
+              zIndex: 1,
+              display: 'flex',
+              alignItems: 'flex-end',
+              marginTop: 16,
+            }}
+            onMouseEnter={() => {
+              clearVoiceCloseTimeout();
+              setVoicePopoverOpen(true);
+            }}
+            onMouseLeave={scheduleVoiceClose}
+            onFocusCapture={() => {
+              clearVoiceCloseTimeout();
+              setVoicePopoverOpen(true);
+            }}
+            onBlurCapture={() => {
+              // Delay so we can see if focus moved into the popover (still inside wrapper)
+              setTimeout(() => {
+                const wrapper = sendAreaRef.current;
+                const active = document.activeElement as Node | null;
+                if (wrapper && active && !wrapper.contains(active)) {
+                  setVoicePopoverOpen(false);
+                }
+              }, 0);
+            }}
+            aria-expanded={voicePopoverOpen}
+            aria-haspopup="dialog"
+          >
+            {voicePopoverOpen &&
+              sendAreaRect &&
+              createPortal(
+                <div
+                  ref={voicePopoverRef}
+                  role="menu"
+                  aria-label="Voice actions"
+                  className="flex flex-col rounded-md"
+                  style={{
+                    position: "fixed",
+                    top: sendAreaRect.top,
+                    left: Math.max(8, sendAreaRect.right - 44),
+                    transform: "translateY(-100%) translateY(-6px)",
+                    backgroundColor: "var(--chatty-bg-main)",
+                    color: "var(--chatty-text)",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+                    zIndex: Z_LAYERS.popover,
+                    padding: 4,
+                    opacity: 1,
+                  }}
+                  onMouseEnter={clearVoiceCloseTimeout}
+                  onMouseLeave={scheduleVoiceClose}
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-label="Dictate"
+                    title="Dictate"
+                    onClick={() => {
+                      setVoicePopoverOpen(false);
+                      handleVoiceToggle();
+                    }}
+                    className="p-2 rounded transition-colors"
+                    style={{
+                      color: isRecording ? "var(--chatty-accent)" : "var(--chatty-text)",
+                      backgroundColor: "var(--chatty-bg-main)",
+                    }}
+                  >
+                    {isRecording ? (
+                      <MicOff size={20} />
+                    ) : (
+                      <Mic size={20} />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-label={getSavedTtsConfig().enabled ? "Voice on" : "Voice off"}
+                    title={getSavedTtsConfig().enabled ? "Voice on" : "Voice off"}
+                    onClick={() => {
+                      const cfg = getSavedTtsConfig();
+                      saveTtsConfig({ ...cfg, enabled: !cfg.enabled });
+                      setVoicePopoverOpen(false);
+                    }}
+                    className="p-2 rounded transition-colors"
+                    style={{
+                      color: getSavedTtsConfig().enabled ? "var(--chatty-accent)" : "var(--chatty-text)",
+                      backgroundColor: "var(--chatty-bg-main)",
+                    }}
+                  >
+                    <Volume2 size={20} />
+                  </button>
+                </div>,
+                document.body
+              )}
+            <div style={{ transform: 'translateY(6px)', display: 'flex' }}>
+              <SendButton
+                onClick={() => {
+                  const trimmed = inputValue.trim();
+                  const hasAttachments = docFiles.length > 0 || imageFiles.length > 0;
+                  if (canRetry && !trimmed && !hasAttachments && onRetry) {
+                    onRetry();
+                  } else {
+                    handleSubmit();
+                  }
+                }}
+                disabled={shouldDisableSendButton({
+                  disabled,
+                  isSending,
+                  canRetry,
+                  allowEmptySubmit,
+                  inputValue,
+                  docFileCount: docFiles.length,
+                  imageFileCount: imageFiles.length,
+                })}
+                animating={isSending && !canRetry}
+                ariaLabel={
+                  canRetry
+                    ? "Retry / force prompt"
+                    : allowEmptySubmit &&
+                        !inputValue.trim() &&
+                        docFiles.length === 0 &&
+                        imageFiles.length === 0
+                      ? "Continue conversation"
+                      : "Send message"
+                }
+              />
+            </div>
+          </div>
+
+        </div>
 
       </div>
       
