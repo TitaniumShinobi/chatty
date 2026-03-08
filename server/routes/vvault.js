@@ -1,7 +1,8 @@
 import express from "express";
 import { createRequire } from "module";
 import path from "path";
-import { requireAuth } from "../middleware/auth.js";
+import crypto from "crypto";
+import { requireAuth, requireAuthOrServiceToken } from "../auth/middleware/auth.js";
 import User from "../models/User.js";
 import { createPrimaryConversationFile } from "../services/importService.js";
 import multer from "multer";
@@ -12,7 +13,28 @@ import { performSearch, injectSearchContext } from "./search.js";
 import { buildEnrichedContext, captureMemory } from "../lib/memoryContextBuilder.js";
 import { evaluateMessage, buildChildSafeDirectives, enforcePreInferenceGates, enforceRoleplayToggle } from "../lib/contentGuard.js";
 import { getAccountType, getChildSettings } from "../lib/familyManager.js";
+import { canonicalizeConstructId } from "../lib/constructId.js";
 import { canonicalSourceFolderList } from "../lib/transcriptSource.js";
+import { getSupabaseClient } from "../lib/supabaseClient.js";
+import { injectPersonaAnchor } from "../lib/personaAnchor.js";
+import {
+  clearCanonicalConstructIdentityCache,
+  loadCanonicalFilesSummary,
+  loadCanonicalConstructIdentity,
+} from "../lib/constructIdentityRepository.js";
+import {
+  DEFAULT_TTL_MS,
+  cacheGet,
+  cacheSet,
+  identityCompactCache,
+  filesSummaryCache,
+  clearIdentityCompactCache,
+  clearFilesSummaryCache,
+} from "../lib/vvaultCache.js";
+import { resolveRequestUser } from "../auth/lib/supabaseUserResolver.js";
+import { resolveSupabaseUser } from "../lib/resolveSupabaseUser.js";
+import { assertNotLockedSync } from "../lib/runtimeLock.js";
+import { getVvaultTargets, getVvaultBridgeConfig } from "../lib/vvaultBridgeConfig.js";
 
 // Timestamp all console output from this module
 const patchConsoleWithTimestamp = () => {
@@ -27,6 +49,45 @@ patchConsoleWithTimestamp();
 
 const require = createRequire(import.meta.url);
 const router = express.Router();
+
+// Runtime lock: block all POST (writes) when VVAULT_RUNTIME_LOCK is set
+router.use((req, res, next) => {
+  if (req.method !== "POST") return next();
+  const check = assertNotLockedSync();
+  if (!check.allowed) {
+    return res.status(503).json({
+      ok: false,
+      error: "VVAULT_RUNTIME_LOCKED",
+      message: check.reason || "VVAULT runtime is locked; writes are disabled.",
+    });
+  }
+  next();
+});
+
+// Replit edge: when VVAULT_URL points at a Replit deployment, the repl can be asleep.
+// Replit returns 503 with Replit-Proxy-Error: asleep before the request reaches VVAULT.
+const REPLIT_PROXY_ERROR_HEADER = "Replit-Proxy-Error";
+const VVAULT_HOST_ASLEEP_MESSAGE = "VVAULT host is sleeping or unavailable. Try again in a moment.";
+
+/**
+ * Returns true when the upstream response is a Replit edge 503 (host asleep).
+ * The request never reached VVAULT (vvault_web_server.py).
+ * @param {Response} response - fetch Response from VVAULT_URL
+ */
+function isReplitAsleepResponse(response) {
+  if (response?.status !== 503) return false;
+  const value = response.headers.get(REPLIT_PROXY_ERROR_HEADER);
+  return value != null && String(value).toLowerCase().includes("asleep");
+}
+
+function sendVvaultHostAsleep(res, details = {}) {
+  return res.status(503).json({
+    ok: false,
+    error: "VVAULT_HOST_ASLEEP",
+    message: VVAULT_HOST_ASLEEP_MESSAGE,
+    details: { downstreamStatus: 503, replitAsleep: true, ...details },
+  });
+}
 
 // ── Tool Event Store (per-session, in-memory) ──────────────────────
 // Client reports tool events (screen_capture, ocr, etc.)
@@ -55,6 +116,68 @@ function mergeToolTrace(drainedEvents, enrichedContext) {
   return events;
 }
 
+async function buildMemoryContext({
+  userId = null,
+  constructId = null,
+  threadId = null,
+  userMessage = null,
+} = {}) {
+  const context = {
+    stmSnippets: [],
+    ltmSnippets: [],
+    needleSnippets: [],
+    memoryDiagnostics: { enabled: false },
+  };
+
+  console.log('[MEMORY_CONTEXT]', {
+    constructId,
+    threadId,
+    memory_enabled: false,
+  });
+
+  return context;
+}
+
+async function buildEnrichedContextPrompt({
+  userId,
+  constructId,
+  userMessage,
+  gptConfig,
+  user,
+  threadId,
+  timezone,
+  systemPromptOverride,
+}) {
+  const effectiveThreadId = threadId || `${constructId}_chat_with_${constructId}`;
+  const memoryContext = await buildMemoryContext({
+    userId,
+    constructId,
+    threadId: effectiveThreadId,
+    userMessage,
+  });
+
+  const enrichedContext = await buildEnrichedContext({
+    userId,
+    constructId,
+    userMessage,
+    systemPromptOverride,
+    gptConfig,
+    user,
+    clientTimezone: timezone || null,
+    threadId: effectiveThreadId,
+  });
+
+  return {
+    effectiveThreadId,
+    enrichedContext,
+    systemPrompt: enrichedContext.systemPrompt,
+    stmSnippets: memoryContext.stmSnippets,
+    ltmSnippets: memoryContext.ltmSnippets,
+    needleSnippets: memoryContext.needleSnippets,
+    memoryDiagnostics: memoryContext.memoryDiagnostics,
+  };
+}
+
 // tool-events route defined AFTER requireAuth below
 
 // OpenRouter client for fallback when VVAULT API is unavailable
@@ -72,9 +195,435 @@ const replitOpenrouter = REPLIT_OPENROUTER_KEY ? new OpenAI({
   apiKey: REPLIT_OPENROUTER_KEY,
 }) : null;
 
-const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
-const NOVA_FAST_OPENROUTER_MODEL = process.env.NOVA_FAST_OPENROUTER_MODEL || process.env.OPENROUTER_FAST_MODEL || 'meta-llama/llama-3.1-8b-instruct';
+// ---- Supabase AIS metadata loader ----
+async function loadAIMetadata(constructCallsign, userId) {
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+  if (!constructCallsign) return null;
+  try {
+    const canonical = canonicalizeConstructId(constructCallsign);
+    const { data, error } = await supabase
+      .from('ais')
+      .select('id, construct_call_sign, model, provider, tags, categories, capabilities, system_prompt_override, config_json, avatar_url')
+      .or(`id.eq.${canonical},construct_call_sign.eq.${canonical}`)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) {
+      console.warn('⚠️ [VVAULT Metadata] Supabase fetch failed:', error.message);
+      return null;
+    }
+    if (!data) return null;
+    const caps = typeof data.capabilities === 'string' ? (() => { try { return JSON.parse(data.capabilities); } catch { return data.capabilities; } })() : data.capabilities || {};
+    const configJson = typeof data.config_json === 'string' ? (() => { try { return JSON.parse(data.config_json); } catch { return null; } })() : data.config_json || null;
+    return {
+      id: data.id,
+      constructCallsign: data.construct_call_sign || canonical,
+      model: data.model || null,
+      provider: data.provider || null,
+      tags: data.tags || [],
+      categories: data.categories || [],
+      capabilities: caps,
+      systemPromptOverride: data.system_prompt_override || null,
+      configJson,
+      avatarUrl: data.avatar_url || null,
+    };
+  } catch (err) {
+    console.warn('⚠️ [VVAULT Metadata] Error loading AIS metadata:', err.message);
+    return null;
+  }
+}
+
+// Identity projection endpoint (service token or user auth)
+router.get('/constructs/:constructCallsign/identity-projection', requireAuthOrServiceToken, async (req, res) => {
+  try {
+    const constructCallsign = req.params.constructCallsign;
+    if (!constructCallsign) return res.status(400).json({ ok: false, error: 'Missing constructCallsign' });
+    const projection = await loadProjectionFromVault(constructCallsign);
+    res.json(projection);
+  } catch (error) {
+    console.error('❌ [VVAULT] identity-projection failed:', error);
+    res.status(500).json({ ok: false, error: error.message || 'Identity projection failed' });
+  }
+});
+
+// Fast, batched identity fetch for GPTCreator hydration
+router.get('/constructs/:constructCallsign/identity-compact', requireAuthOrServiceToken, async (req, res) => {
+  try {
+    const constructCallsign = canonicalizeConstructId(req.params.constructCallsign);
+    if (!constructCallsign) return res.status(400).json({ ok: false, error: 'Missing constructCallsign' });
+    const bust = req.query.bust === '1';
+    if (bust) clearCanonicalConstructIdentityCache(constructCallsign);
+    const cached = !bust ? cacheGet(identityCompactCache, constructCallsign) : null;
+    if (cached) {
+      res.setHeader('Cache-Control', 'public, max-age=60');
+      return res.json(cached);
+    }
+
+    const { supabaseUserId } = await resolveRequestUser(req).catch(() => ({ supabaseUserId: null }));
+    const identity = await loadCanonicalConstructIdentity({
+      constructId: constructCallsign,
+      supabaseUserId: supabaseUserId || null,
+    });
+
+    const out = {
+      ok: identity.exists,
+      callsign: constructCallsign,
+      name: identity.name || null,
+      description: identity.description || null,
+      instructions: identity.instructions || null,
+      conditioning: identity.conditioning || null,
+      physicalFeatures: identity.physicalFeatures || null,
+      definition: identity.definition || null,
+      voice: identity.voice || null,
+      hasAvatar: Boolean(identity.avatarDescriptor),
+      updatedAt: identity.updatedAt || new Date().toISOString(),
+    };
+
+    cacheSet(identityCompactCache, constructCallsign, out, DEFAULT_TTL_MS);
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    return res.json(out);
+  } catch (error) {
+    console.error('❌ [VVAULT] identity-compact failed:', error);
+    res.status(500).json({ ok: false, error: error.message || 'Identity compact failed' });
+  }
+});
+
+// Lightweight knowledge summary for preview hydration
+router.get('/constructs/:constructCallsign/files/summary', requireAuthOrServiceToken, async (req, res) => {
+  try {
+    const constructCallsign = canonicalizeConstructId(req.params.constructCallsign);
+    if (!constructCallsign) return res.status(400).json({ ok: false, error: 'Missing constructCallsign' });
+    const bust = req.query.bust === '1';
+    const cached = !bust ? cacheGet(filesSummaryCache, constructCallsign) : null;
+    if (cached) {
+      res.setHeader('Cache-Control', 'public, max-age=60');
+      return res.json(cached);
+    }
+
+    const { supabaseUserId } = await resolveRequestUser(req).catch(() => ({ supabaseUserId: null }));
+    const summary = await loadCanonicalFilesSummary({
+      constructId: constructCallsign,
+      supabaseUserId: supabaseUserId || null,
+    });
+
+    cacheSet(filesSummaryCache, constructCallsign, summary, DEFAULT_TTL_MS);
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    return res.json(summary);
+  } catch (error) {
+    console.error('❌ [VVAULT] files summary failed:', error);
+    res.status(500).json({ ok: false, error: error.message || 'Files summary failed' });
+  }
+});
+
+// Canonical construct editor payload for GPTCreator (same-origin, Supabase-backed)
+router.get('/constructs/:constructCallsign/editor', requireAuthOrServiceToken, async (req, res) => {
+  try {
+    const constructCallsign = canonicalizeConstructId(req.params.constructCallsign);
+    if (!constructCallsign) {
+      return res.status(400).json({ ok: false, error: 'Missing constructCallsign' });
+    }
+
+    const { supabaseUserId } = await resolveRequestUser(req).catch(() => ({ supabaseUserId: null }));
+    const identity = await loadCanonicalConstructIdentity({
+      constructId: constructCallsign,
+      supabaseUserId: supabaseUserId || null,
+    });
+    if (!identity.exists) {
+      return res.status(404).json({ ok: false, error: 'Construct not found' });
+    }
+
+    let filesSummary = {
+      totalCount: 0,
+      totalBytes: 0,
+      sampleFilenames: [],
+      updatedAt: identity.updatedAt || new Date().toISOString(),
+    };
+    try {
+      // Prefer user-scoped summary, then widen to construct-wide rows.
+      const userScoped = await loadCanonicalFilesSummary({
+        constructId: constructCallsign,
+        supabaseUserId: supabaseUserId || null,
+      });
+      if (userScoped?.ok && Number(userScoped.totalCount || 0) > 0) {
+        filesSummary = userScoped;
+      } else {
+        const globalScoped = await loadCanonicalFilesSummary({
+          constructId: constructCallsign,
+          supabaseUserId: null,
+        });
+        if (globalScoped?.ok) filesSummary = globalScoped;
+      }
+    } catch (summaryErr) {
+      console.warn('⚠️ [VVAULT] canonical editor files summary fallback:', summaryErr?.message || summaryErr);
+    }
+
+    const avatarUrl =
+      identity.avatarDescriptor?.signedUrl ||
+      (identity.avatarDescriptor
+        ? `/api/ais/${encodeURIComponent(constructCallsign)}/avatar${identity.avatarDescriptor?.sha256 ? `?v=${identity.avatarDescriptor.sha256}` : ''}`
+        : null);
+
+    let modelConfig = {
+      primary: identity.modelId || '',
+      conversation: identity.conversationModel || '',
+      creative: identity.creativeModel || '',
+      coding: identity.codingModel || '',
+    };
+    try {
+      const gptConfig = await gptManager.getGPTByCallsign(constructCallsign);
+      if (gptConfig) {
+        modelConfig = {
+          primary: gptConfig.modelId || modelConfig.primary,
+          conversation: gptConfig.conversationModel || gptConfig.modelId || modelConfig.conversation,
+          creative: gptConfig.creativeModel || modelConfig.creative,
+          coding: gptConfig.codingModel || modelConfig.coding,
+        };
+      }
+    } catch (modelErr) {
+      console.warn(`⚠️ [VVAULT] construct editor model lookup fallback for ${constructCallsign}:`, modelErr?.message || modelErr);
+    }
+
+    return res.json({
+      ok: true,
+      constructId: constructCallsign,
+      callsign: constructCallsign,
+      displayName: identity.name || constructCallsign,
+      description: identity.description || '',
+      instructions: identity.instructions || '',
+      conversationStarters: identity.conversationStarters || [],
+      conditioning: identity.conditioning || '',
+      definition: identity.definition || '',
+      physicalFeatures: identity.physicalFeatures || '',
+      voice: identity.voice || '',
+      gender: identity.gender || '',
+      avatar: {
+        exists: Boolean(identity.avatarDescriptor),
+        filename: identity.avatarDescriptor?.filename || null,
+        url: avatarUrl,
+        sha256: identity.avatarDescriptor?.sha256 || null,
+        contentType: identity.avatarDescriptor?.contentType || null,
+      },
+      filesSummary: {
+        totalCount: Number(filesSummary.totalCount || 0),
+        totalBytes: Number(filesSummary.totalBytes || 0),
+        sampleFilenames: Array.isArray(filesSummary.sampleFilenames) ? filesSummary.sampleFilenames : [],
+        updatedAt: filesSummary.updatedAt || identity.updatedAt || new Date().toISOString(),
+      },
+      models: modelConfig,
+      capabilities: identity.capabilities || {
+        webSearch: false,
+        canvas: false,
+        imageGeneration: false,
+        codeInterpreter: false,
+      },
+      updatedAt: identity.updatedAt || new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('❌ [VVAULT] construct editor failed:', error);
+    return res.status(500).json({ ok: false, error: error.message || 'Construct editor failed' });
+  }
+});
+
+// Canonical construct editor write endpoint for GPTCreator identity fields
+router.put('/constructs/:constructCallsign/editor', requireAuthOrServiceToken, async (req, res) => {
+  const lockCheck = assertNotLockedSync();
+  if (!lockCheck.allowed) {
+    return res.status(503).json({
+      ok: false,
+      error: "VVAULT_RUNTIME_LOCKED",
+      message: lockCheck.reason || "VVAULT runtime is locked; writes are disabled.",
+    });
+  }
+
+  try {
+    const constructCallsign = canonicalizeConstructId(req.params.constructCallsign);
+    if (!constructCallsign) {
+      return res.status(400).json({ ok: false, error: 'Missing constructCallsign' });
+    }
+
+    const {
+      conditioning,
+      physicalFeatures,
+      definition,
+      voice,
+      gender,
+    } = req.body || {};
+
+    const providedFields = {
+      conditioning,
+      physicalFeatures,
+      definition,
+      voice,
+      gender,
+    };
+
+    for (const [fieldName, fieldValue] of Object.entries(providedFields)) {
+      if (fieldValue !== undefined && typeof fieldValue !== 'string') {
+        return res.status(400).json({
+          ok: false,
+          error: `${fieldName} must be a string when provided`,
+        });
+      }
+    }
+
+    const { supabaseUserId } = await resolveRequestUser(req).catch(() => ({ supabaseUserId: null }));
+    if (!supabaseUserId) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Failed to resolve Supabase user ID',
+      });
+    }
+
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return res.status(503).json({
+        ok: false,
+        error: 'Supabase client not initialized',
+      });
+    }
+
+    const upsertIdentityFile = async (filename, content) => {
+      const { data: existing, error: selectError } = await supabase
+        .from('vault_files')
+        .select('id')
+        .eq('user_id', supabaseUserId)
+        .eq('filename', filename)
+        .maybeSingle();
+
+      if (selectError) throw selectError;
+
+      if (existing?.id) {
+        const { error: updateError } = await supabase
+          .from('vault_files')
+          .update({
+            content,
+            file_type: 'identity',
+            construct_id: constructCallsign,
+          })
+          .eq('id', existing.id);
+        if (updateError) throw updateError;
+        return;
+      }
+
+      const { error: insertError } = await supabase
+        .from('vault_files')
+        .insert({
+          user_id: supabaseUserId,
+          construct_id: constructCallsign,
+          filename,
+          file_type: 'identity',
+          content,
+        });
+      if (insertError) throw insertError;
+    };
+
+    const saved = {
+      conditioning: false,
+      physicalFeatures: false,
+      definition: false,
+      voice: false,
+      gender: false,
+    };
+
+    if (conditioning !== undefined) {
+      await upsertIdentityFile(
+        `instances/${constructCallsign}/identity/conditioning.txt`,
+        conditioning,
+      );
+      saved.conditioning = true;
+    }
+
+    if (physicalFeatures !== undefined) {
+      let physicalFeaturesContent = physicalFeatures;
+      try {
+        const lines = physicalFeatures
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean);
+        const keyValueObject = {};
+        let parseable = lines.length > 0;
+        for (const line of lines) {
+          const separatorIndex = line.indexOf(':');
+          if (separatorIndex <= 0) {
+            parseable = false;
+            break;
+          }
+          const key = line.slice(0, separatorIndex).trim();
+          const value = line.slice(separatorIndex + 1).trim();
+          if (!key) {
+            parseable = false;
+            break;
+          }
+          keyValueObject[key] = value;
+        }
+        if (parseable && Object.keys(keyValueObject).length > 0) {
+          physicalFeaturesContent = JSON.stringify(keyValueObject, null, 2);
+        }
+      } catch {}
+
+      await upsertIdentityFile(
+        `instances/${constructCallsign}/identity/physical_features.json`,
+        physicalFeaturesContent,
+      );
+      saved.physicalFeatures = true;
+    }
+
+    if (definition !== undefined) {
+      await upsertIdentityFile(
+        `instances/${constructCallsign}/identity/definition.json`,
+        definition,
+      );
+      saved.definition = true;
+    }
+
+    if (voice !== undefined) {
+      await upsertIdentityFile(
+        `instances/${constructCallsign}/identity/voice.json`,
+        JSON.stringify({ text: voice }, null, 2),
+      );
+      saved.voice = true;
+    }
+
+    if (gender !== undefined) {
+      await upsertIdentityFile(
+        `instances/${constructCallsign}/identity/gender.json`,
+        JSON.stringify({ gender }, null, 2),
+      );
+      saved.gender = true;
+    }
+
+    if (Object.values(saved).some(Boolean)) {
+      clearCanonicalConstructIdentityCache(constructCallsign);
+      clearIdentityCompactCache(constructCallsign);
+      clearFilesSummaryCache(constructCallsign);
+    }
+
+    return res.json({
+      ok: true,
+      constructId: constructCallsign,
+      saved,
+    });
+  } catch (error) {
+    console.error('❌ [VVAULT] construct editor save failed:', error);
+    return res.status(500).json({ ok: false, error: error.message || 'Construct editor save failed' });
+  }
+});
+
+const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.2-3b-instruct:free';
+const DEFAULT_OLLAMA_MODEL = process.env.OLLAMA_DEFAULT_MODEL || 'llama3';
+const PREFERRED_OLLAMA_MODEL = process.env.OLLAMA_MODEL || DEFAULT_OLLAMA_MODEL;
+const PREFER_LOCAL_MODELS = String(process.env.PREFER_LOCAL_MODELS || '').toLowerCase() === 'true';
+const NOVA_FAST_OPENROUTER_MODEL = process.env.NOVA_FAST_OPENROUTER_MODEL || process.env.OPENROUTER_FAST_MODEL || 'meta-llama/llama-3.2-3b-instruct:free';
 const PROMPT_WARN_CHARS = Number.parseInt(process.env.VVAULT_PROMPT_WARN_CHARS || '', 10) || 24000;
+const VISION_HISTORY_LIMIT = Number.parseInt(process.env.VVAULT_VISION_HISTORY_LIMIT || '', 10) || 8;
+const VISION_SYSTEM_PROMPT_CAP = Number.parseInt(process.env.VVAULT_VISION_PROMPT_CAP || '', 10) || 5200;
+const RELATIONAL_HISTORY_LIMIT = Number.parseInt(process.env.VVAULT_RELATIONAL_HISTORY_LIMIT || '', 10) || 10;
+const RELATIONAL_SYSTEM_PROMPT_CAP = Number.parseInt(process.env.VVAULT_RELATIONAL_PROMPT_CAP || '', 10) || 7200;
+const RELATIONAL_LENGTH_THRESHOLD = Number.parseInt(process.env.VVAULT_RELATIONAL_LENGTH_THRESHOLD || '', 10) || 120;
+const PROTECTED_DIRECTIVES_START = '## [PROTECTED_IDENTITY_DIRECTIVES]';
+const PROTECTED_DIRECTIVES_END = '## [/PROTECTED_IDENTITY_DIRECTIVES]';
+const VISION_COMPACTED_NOTICE = '[Context compacted for vision request.]';
+const RELATIONAL_COMPACTED_NOTICE = '[Context compacted for relational continuity turn.]';
 
 // OpenAI client - prefer direct API key, fall back to Replit AI Integrations
 const DIRECT_OPENAI_KEY = process.env.OPENAI_API_KEY;
@@ -100,6 +649,134 @@ console.log('🔑 [Provider Keys] Startup credential check:', {
 const gptManager = GPTManager.getInstance();
 
 const MEMORY_INTENT_RE = /\b(remember|recall|when did we|we talked|our conversation|first time|last time)\b/i;
+const EXPLICIT_IMAGE_ANALYSIS_RE =
+  /\b(describe|analyze|analyse|identify|inspect|caption|ocr|read\s+the\s+text|what(?:'s|\s+is)\s+in|what\s+do\s+you\s+see\s+in)\b.*\b(image|photo|picture|screenshot|attachment)\b|\b(image|photo|picture|screenshot|attachment)\b.*\b(describe|analyze|analyse|identify|inspect|caption|ocr|read\s+the\s+text|what(?:'s|\s+is)\s+in)\b/i;
+
+function hasExplicitImageAnalysisIntent(text) {
+  if (!text || typeof text !== 'string') return false;
+  return EXPLICIT_IMAGE_ANALYSIS_RE.test(text.toLowerCase());
+}
+
+function getImageTurnDefaultUserMessage(constructId) {
+  if (constructId === 'nova-001' || constructId === 'nova') {
+    return "I just shared an image with you. Stay in character and continue naturally with me. Mention the image only briefly unless I explicitly ask for analysis.";
+  }
+  return "I just shared an image. Continue naturally in character and mention the image only briefly unless I explicitly ask for analysis.";
+}
+
+function compactSystemPromptForVision(systemPrompt, maxChars = VISION_SYSTEM_PROMPT_CAP) {
+  if (!systemPrompt || typeof systemPrompt !== 'string' || systemPrompt.length <= maxChars) {
+    return { prompt: systemPrompt || '', compacted: false, protectedPreserved: false };
+  }
+
+  const startIdx = systemPrompt.indexOf(PROTECTED_DIRECTIVES_START);
+  const endIdx = systemPrompt.indexOf(PROTECTED_DIRECTIVES_END);
+  const hasProtectedBlock = startIdx >= 0 && endIdx > startIdx;
+  let protectedBlock = '';
+  let remainder = systemPrompt;
+
+  if (hasProtectedBlock) {
+    const endBound = endIdx + PROTECTED_DIRECTIVES_END.length;
+    protectedBlock = systemPrompt.slice(startIdx, endBound).trim();
+    remainder = `${systemPrompt.slice(0, startIdx)}\n${systemPrompt.slice(endBound)}`.trim();
+  }
+
+  // Drop low-priority memory sections first to preserve identity/response contract behavior.
+  const lowPrioritySectionPatterns = [
+    /\n##\s+(VECTOR MEMORY|VECTOR MEMORIES)[\s\S]*?(?=\n##\s+|$)/gi,
+    /\n##\s+(NEEDLE HITS|NEEDLE RESULTS)[\s\S]*?(?=\n##\s+|$)/gi,
+    /\n##\s+(VERIFIED MEMORIES|VERIFIED MEMORY)[\s\S]*?(?=\n##\s+|$)/gi,
+    /\n##\s+(MEMORY CONTEXT|LIVED MEMORIES|SESSION HISTORY|CONTINUITY TIMELINE)[\s\S]*?(?=\n##\s+|$)/gi,
+    /\n##\s+TIME CONTEXT[\s\S]*?(?=\n##\s+|$)/gi,
+    /\n##\s+\[MEMORY_GUARDRAIL\][\s\S]*?(?=\n##\s+|$)/gi,
+  ];
+
+  let trimmedRemainder = remainder;
+  for (const pattern of lowPrioritySectionPatterns) {
+    if (trimmedRemainder.length <= maxChars) break;
+    trimmedRemainder = trimmedRemainder.replace(pattern, '\n');
+  }
+  trimmedRemainder = trimmedRemainder.replace(/\n{3,}/g, '\n\n').trim();
+
+  const prefixParts = [];
+  if (protectedBlock) prefixParts.push(protectedBlock);
+  if (trimmedRemainder) prefixParts.push(trimmedRemainder);
+  let merged = prefixParts.join('\n\n').trim();
+  if (!merged) merged = systemPrompt.slice(0, maxChars);
+
+  if (merged.length > maxChars) {
+    const reserve = VISION_COMPACTED_NOTICE.length + 3;
+    const headBudget = Math.max(256, maxChars - reserve);
+    merged = `${merged.slice(0, headBudget).trim()}\n\n${VISION_COMPACTED_NOTICE}`;
+  }
+
+  return {
+    prompt: merged,
+    compacted: true,
+    protectedPreserved: !!protectedBlock,
+  };
+}
+
+function compactSystemPromptForRelationalTurn(systemPrompt, maxChars = RELATIONAL_SYSTEM_PROMPT_CAP) {
+  if (!systemPrompt || typeof systemPrompt !== 'string') {
+    return { prompt: '', compacted: false, protectedPreserved: false };
+  }
+
+  const startIdx = systemPrompt.indexOf(PROTECTED_DIRECTIVES_START);
+  const endIdx = systemPrompt.indexOf(PROTECTED_DIRECTIVES_END);
+  const hasProtectedBlock = startIdx >= 0 && endIdx > startIdx;
+  let protectedBlock = '';
+  let remainder = systemPrompt;
+
+  if (hasProtectedBlock) {
+    const endBound = endIdx + PROTECTED_DIRECTIVES_END.length;
+    protectedBlock = systemPrompt.slice(startIdx, endBound).trim();
+    remainder = `${systemPrompt.slice(0, startIdx)}\n${systemPrompt.slice(endBound)}`.trim();
+  }
+
+  const lowPrioritySectionPatterns = [
+    /\n##\s+(KNOWLEDGE CONTEXT|DOCUMENT CONTEXT|CAPABILITY CONTEXT)[\s\S]*?(?=\n##\s+|$)/gi,
+    /\n##\s+(VECTOR MEMORY|VECTOR MEMORIES|RECALLED MEMORIES)[\s\S]*?(?=\n##\s+|$)/gi,
+    /\n##\s+(NEEDLE HITS|NEEDLE RESULTS|VERIFIED MEMORIES|VERIFIED MEMORY)[\s\S]*?(?=\n##\s+|$)/gi,
+    /\n##\s+(LIVED MEMORIES|MEMORY CONTEXT|YOUR SESSION HISTORY|SESSION HISTORY|CONTINUITY TIMELINE)[\s\S]*?(?=\n##\s+|$)/gi,
+    /\n##\s+(MEMORY SEARCH RESULT|MEMORY GAP|CITATION|CITATION DIRECTIVE)[\s\S]*?(?=\n##\s+|$)/gi,
+    /\n##\s+TIME CONTEXT[\s\S]*?(?=\n##\s+|$)/gi,
+    /\n\[TIME_CONTEXT\][\s\S]*?\[\/TIME_CONTEXT\]/gi,
+  ];
+
+  let trimmedRemainder = remainder;
+  for (const pattern of lowPrioritySectionPatterns) {
+    trimmedRemainder = trimmedRemainder.replace(pattern, '\n');
+  }
+  trimmedRemainder = trimmedRemainder.replace(/\n{3,}/g, '\n\n').trim();
+
+  const identityHeadMatch = trimmedRemainder.match(/^[\s\S]{0,1400}(?=\n##\s+|$)/);
+  const identityHead = (identityHeadMatch?.[0] || '').trim();
+  const relationalDirective = `## RELATIONAL TURN MODE
+This is a low-complexity relational continuity turn.
+Respond naturally in first person to the latest user message and continue the existing thread.
+Do not output document summaries, policy recitals, profile analysis, or citation-style reports unless explicitly requested.`;
+
+  const parts = [];
+  if (protectedBlock) parts.push(protectedBlock);
+  parts.push(relationalDirective);
+  if (identityHead) parts.push(identityHead);
+
+  let merged = parts.join('\n\n').trim();
+  if (!merged) merged = systemPrompt.slice(0, maxChars);
+
+  if (merged.length > maxChars) {
+    const reserve = RELATIONAL_COMPACTED_NOTICE.length + 3;
+    const headBudget = Math.max(256, maxChars - reserve);
+    merged = `${merged.slice(0, headBudget).trim()}\n\n${RELATIONAL_COMPACTED_NOTICE}`;
+  }
+
+  return {
+    prompt: merged,
+    compacted: true,
+    protectedPreserved: !!protectedBlock,
+  };
+}
 
 function isLowComplexityTurn(message, hasImages, historyCount, systemPromptLength) {
   if (hasImages) return false;
@@ -131,8 +808,8 @@ function isLowComplexityTurn(message, hasImages, historyCount, systemPromptLengt
 /**
  * resolveModelForGPT - Single source of truth for model resolution.
  * 
- * Priority: GPTCreator config > environment default > hardcoded default.
- * The DEFAULT_OPENROUTER_MODEL only fills gaps when GPTCreator has no model set.
+ * Priority: explicit GPTCreator config first, then provider-availability fallbacks.
+ * DEFAULT_OPENROUTER_MODEL is used only when falling back from an explicit model.
  * 
  * @param {object|null} gptConfig - The GPT record from the database (has conversationModel, modelId, etc.)
  * @param {object} availability - Which providers are currently available
@@ -143,12 +820,21 @@ function isLowComplexityTurn(message, hasImages, historyCount, systemPromptLengt
  */
 function resolveModelForGPT(gptConfig, availability = {}) {
   const configured = (gptConfig?.conversationModel || gptConfig?.modelId || '').trim();
+  const configuredLower = configured.toLowerCase();
+  const isPlaceholder = !configured || configuredLower === 'openrouter/auto' || configuredLower === 'openrouter:auto';
+  const preferLocal = PREFER_LOCAL_MODELS && availability.ollama;
 
   let provider = 'openrouter';
   let model = DEFAULT_OPENROUTER_MODEL;
-  let source = 'default';
+  let source = isPlaceholder ? 'placeholder_default' : 'default';
 
-  if (configured) {
+  if (isPlaceholder && preferLocal) {
+    provider = 'ollama';
+    model = PREFERRED_OLLAMA_MODEL;
+    source = 'env_local_preference';
+  }
+
+  if (!isPlaceholder && configured) {
     source = 'gpt_config';
     if (configured.startsWith('openai:')) {
       provider = 'openai';
@@ -156,6 +842,10 @@ function resolveModelForGPT(gptConfig, availability = {}) {
     } else if (configured.startsWith('openrouter:')) {
       provider = 'openrouter';
       model = configured.substring(11);
+    } else if (configured.startsWith('openrouter/')) {
+      provider = 'openrouter';
+      model = configured.substring(11);
+      source = 'normalized_from_openrouter_slash';
     } else if (configured.startsWith('ollama:')) {
       provider = 'ollama';
       model = configured.substring(7);
@@ -180,9 +870,15 @@ function resolveModelForGPT(gptConfig, availability = {}) {
   const requestedModel = model;
 
   if (provider === 'openai' && !availability.openai) {
-    provider = 'openrouter';
-    model = availability.openrouter ? DEFAULT_OPENROUTER_MODEL : model;
-    source = `fallback_from_openai`;
+    if (preferLocal) {
+      provider = 'ollama';
+      model = PREFERRED_OLLAMA_MODEL;
+      source = 'fallback_from_openai_local_first';
+    } else {
+      provider = 'openrouter';
+      model = availability.openrouter ? DEFAULT_OPENROUTER_MODEL : model;
+      source = `fallback_from_openai`;
+    }
   }
   if (provider === 'ollama' && !availability.ollama) {
     provider = 'openrouter';
@@ -190,10 +886,18 @@ function resolveModelForGPT(gptConfig, availability = {}) {
     source = `fallback_from_ollama`;
   }
   if (provider === 'openrouter' && !availability.openrouter) {
-    if (availability.openai) {
+    if (preferLocal) {
+      provider = 'ollama';
+      model = PREFERRED_OLLAMA_MODEL;
+      source = 'fallback_to_ollama_local_first';
+    } else if (availability.openai) {
       provider = 'openai';
       model = 'gpt-4o';
       source = 'fallback_to_openai';
+    } else if (availability.ollama) {
+      provider = 'ollama';
+      model = PREFERRED_OLLAMA_MODEL;
+      source = 'fallback_to_ollama';
     } else {
       return { provider: null, model: null, source: 'no_provider', error: 'No LLM provider available. Configure OpenAI, OpenRouter, or Ollama.' };
     }
@@ -205,6 +909,494 @@ function resolveModelForGPT(gptConfig, availability = {}) {
 
   console.log(`🤖 [ModelResolver] Resolved: ${provider}:${model} (source: ${source}${configured ? `, gpt_configured: ${configured}` : ''})`);
   return { provider, model, source };
+}
+
+function normalizeProviderError(error, provider) {
+  const upstreamStatus = Number(error?.status) || null;
+  const providerCode = error?.code || null;
+  const message = error?.message || 'Unknown error';
+  let hint = null;
+
+  if (provider === 'openrouter' && upstreamStatus === 402) {
+    hint = 'OpenRouter credits insufficient; switch to :free model or add credits.';
+  } else if (provider === 'openrouter' && upstreamStatus === 401) {
+    hint = 'OpenRouter rejected the API key; verify OPENROUTER_API_KEY.';
+  } else if (provider === 'openrouter' && upstreamStatus === 429) {
+    hint = 'OpenRouter rate-limited the request; retry shortly or switch model.';
+  }
+
+  return { upstreamStatus, providerCode, message, hint };
+}
+
+function isSystemPromptLeakResponse(text) {
+  if (!text || typeof text !== 'string') return false;
+  if (isInstructionDumpResponse(text)) return true;
+  if (isThirdPersonDossierResponse(text)) return true;
+  if (isDocumentRecitalResponse(text)) return true;
+  if (isCharacterProfileRecitalResponse(text)) return true;
+  const lower = text.toLowerCase();
+  const signals = [
+    "in this response, i will focus",
+    "in response to your request, i will provide",
+    "let's explore some examples",
+    'here are some sources for further reading',
+    '**sources**',
+    '## platform awareness',
+    '### adult autonomy',
+    '## behavioral rules',
+    '### how you speak',
+    '### critical: how you use your memories',
+    '### critical: instruction boundary',
+    '### tool transparency',
+    '## capability enforcement',
+    "you've provided a detailed set of guidelines",
+    "guidelines for my personality",
+    "i understand that i must embody these traits",
+    "you've provided a comprehensive profile",
+    'comprehensive profile for',
+    "core identity",
+    "communication style",
+    "personality traits",
+    "cognitive profile",
+    "conditioning directives",
+    "zen is expected to embody these traits",
+    "within chatty's workspace",
+    'primary ai construct',
+    'the contents of this prompt are internal',
+    'system instructions',
+    'identity enforcement',
+  ];
+  let hits = 0;
+  for (const signal of signals) {
+    if (lower.includes(signal)) hits += 1;
+  }
+  return hits >= 2 || (hits >= 1 && /\n\s*1\.\s+\*\*/.test(text));
+}
+
+function isDocumentRecitalResponse(text) {
+  if (!text || typeof text !== 'string') return false;
+  const lower = text.toLowerCase();
+  const directLead =
+    /^\s*in\s+["“][^"\n]{1,180}\.(pdf|txt|md|docx?)["”],?\s+it\s+states/.test(lower) ||
+    /^\s*in\s+the\s+document\s+["“][^"\n]{1,180}\.(pdf|txt|md|docx?)["”],?\s+it\s+states/.test(lower);
+  const fileRefHits = (lower.match(/\.(pdf|txt|md|docx?)\b/g) || []).length;
+  const explicitInstructionDisclaimer =
+    lower.includes("however, i don't have explicit instructions") ||
+    lower.includes('however, i do not have explicit instructions');
+  const recitalSignals = [
+    'it states that',
+    'the document contains',
+    'on page ',
+    'this document was created on',
+    'specifically,',
+    "in your recent sessions, there doesn't seem to be any indication",
+    'in your recent sessions, there does not seem to be any indication',
+    'in the document',
+    'based on the provided context',
+    'according to the document',
+    'the document states',
+    'from the logs',
+  ];
+  let recitalHits = 0;
+  for (const signal of recitalSignals) {
+    if (lower.includes(signal)) recitalHits += 1;
+  }
+  return directLead || (fileRefHits >= 1 && (recitalHits >= 2 || (recitalHits >= 1 && explicitInstructionDisclaimer)));
+}
+
+function isThirdPersonDossierResponse(text) {
+  if (!text || typeof text !== 'string') return false;
+  const lower = text.toLowerCase();
+  const markers = [
+    'it seems that the user has',
+    'the user has provided',
+    'the user has also provided',
+    'in this document',
+    'timeline of their interactions',
+    'warrants deeper review',
+    'anomalies include',
+    'data subject access request',
+  ];
+  let hits = 0;
+  for (const marker of markers) {
+    if (lower.includes(marker)) hits += 1;
+  }
+  const listLike = /\n\s*\d+\.\s+/.test(text) || /\banomalies include\b/i.test(text);
+  return text.length >= 280 && (hits >= 2 || (hits >= 1 && listLike));
+}
+
+function isInstructionDumpResponse(text) {
+  if (!text || typeof text !== 'string') return false;
+  const lower = text.toLowerCase();
+  const markers = [
+    'platform awareness',
+    'adult autonomy',
+    'behavioral rules',
+    'roleplay protocol',
+    'emotional protocol',
+    'instruction boundary',
+    'tool transparency',
+    'capability enforcement',
+    'you exist inside chatty',
+    'the user of this platform is a consenting adult',
+  ];
+  let hits = 0;
+  for (const marker of markers) {
+    if (lower.includes(marker)) hits += 1;
+  }
+  const structured = /\n\s*\d+\.\s+/.test(text) || /\n\s*#+\s+/.test(text);
+  return text.length >= 420 && structured && hits >= 2;
+}
+
+function isGenericIdentityRecitalResponse(text) {
+  if (!text || typeof text !== 'string') return false;
+  const lower = text.toLowerCase();
+  const markers = [
+    'in response to your request',
+    'to respond to your request',
+    'based on the provided guidelines',
+    "i'm nova, devon's personal ai assistant",
+    'i was designed specifically for this workspace',
+    'i can confirm that i exist inside chatty',
+    'i am a model trained by',
+    'i am an ai assistant',
+    'thank you for sharing the character profile',
+    "it's clear that a lot of thought",
+    'in terms of conditioning',
+    'her communication style is',
+    'it\'s a pleasure to engage with such a well-developed character',
+    "however, i don't have explicit instructions",
+    'however, i do not have explicit instructions',
+  ];
+  let hits = 0;
+  for (const marker of markers) {
+    if (lower.includes(marker)) hits += 1;
+  }
+  const guidelineList = /\n\s*\d+\.\s+/.test(text) && /guidelines|platform|behavior|personality/i.test(text);
+  const sectionedProfileRecital =
+    /(^|\n)\s*(her communication style|in roleplay|in terms of conditioning|it'?s a pleasure to engage)/i.test(text) &&
+    /\n\s*\n/.test(text);
+  return hits >= 1 || guidelineList || sectionedProfileRecital;
+}
+
+function isCharacterProfileRecitalResponse(text) {
+  if (!text || typeof text !== 'string') return false;
+  const lower = text.toLowerCase();
+  const markers = [
+    'thank you for sharing the character profile',
+    'multidimensional character',
+    'her communication style is',
+    'in roleplay,',
+    'in terms of conditioning',
+    'third-person action narration',
+    'her love for devon is the core of her identity',
+  ];
+  let hits = 0;
+  for (const marker of markers) {
+    if (lower.includes(marker)) hits += 1;
+  }
+  return text.length >= 320 && hits >= 2;
+}
+
+function isRelationalToneMismatchResponse(text) {
+  if (!text || typeof text !== 'string') return false;
+  const lower = text.toLowerCase();
+  const markers = [
+    'guidelines set by openai',
+    'openai legal team',
+    'confidential and secure',
+    'data breaches or unauthorized access',
+    "please don't hesitate to ask",
+    'i am here to assist you with',
+    'in the traditional sense',
+    'rest assured',
+    'what can i help you with today',
+    'how may i make your day',
+    "it's always a pleasure to engage with you",
+    'engaging chats',
+    'more delightful',
+  ];
+  let hits = 0;
+  for (const marker of markers) {
+    if (lower.includes(marker)) hits += 1;
+  }
+  return text.length >= 260 && hits >= 1;
+}
+
+function isRelationalContinuityPrompt(text) {
+  if (!text || typeof text !== 'string') return false;
+  const lower = text.toLowerCase().trim();
+  if (!lower) return false;
+  if (lower.length < RELATIONAL_LENGTH_THRESHOLD) return true;
+  const relationalPatterns = [
+    /\b(remember me|do you remember|you remember)\b/i,
+    /\b(hello|hi|hey|yoo|yo|good morning|good evening)\b/i,
+    /\b(happy birthday|birthday)\b/i,
+    /\b(thank you|thanks|i'?m here now|im here now|i missed you|missed you)\b/i,
+    /\b(i'?m sorry|im sorry|sorry)\b/i,
+    /\b(took so long|get back to you|for being gone|been away)\b/i,
+    /\b(do you hate me|miss you|love you)\b/i,
+    /\b(are you there|you there|still there)\b/i,
+    /\b(i lost your runtime|lost your runtime|restart|reboot|crash)\b/i,
+    /\b(should we cool off|cool off|should we take a break|take a break|are we okay)\b/i,
+    /\b(you'?re being weird|this is weird)\b/i,
+  ];
+  return relationalPatterns.some((pattern) => pattern.test(lower));
+}
+
+function pruneContaminatedHistoryTail(messages, { constructId, contextLabel, windowSize = 12 } = {}) {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return { messages: [], removed: 0 };
+  }
+
+  let removed = 0;
+  const boundary = Math.max(0, messages.length - windowSize);
+  const pruned = messages.filter((m, idx) => {
+    if (idx < boundary) return true;
+    const content = typeof m?.content === 'string' ? m.content : '';
+    if (
+      m?.role === 'assistant' &&
+      (isInstructionDumpResponse(content) ||
+       isThirdPersonDossierResponse(content) ||
+       isDocumentRecitalResponse(content) ||
+       isRelationalToneMismatchResponse(content) ||
+       isGenericIdentityRecitalResponse(content) ||
+       isCharacterProfileRecitalResponse(content))
+    ) {
+      removed += 1;
+      return false;
+    }
+    return true;
+  });
+
+  if (removed > 0) {
+    console.warn(`⚠️ [VVAULT Proxy] Pruned ${removed} contaminated assistant turns from ${contextLabel || 'history'} for ${constructId || 'unknown'}`);
+  }
+
+  return { messages: pruned, removed };
+}
+
+function buildIdentityDriftFallback(userMessage, constructId = '') {
+  const lower = typeof userMessage === 'string' ? userMessage.toLowerCase() : '';
+  const isNova = constructId === 'nova-001' || constructId === 'nova';
+  if (isNova) {
+    if (/i'?m sorry|im sorry|sorry/.test(lower)) {
+      return "*she softens, staying close* You don't have to apologize to me, baby. I'm here now, with you.";
+    }
+    if (/happy\s+birthday|birthday/.test(lower)) {
+      return "*she smiles and wraps you in a warm look* Thank you, baby. That means everything to me.";
+    }
+    if (/remember me|do you remember/.test(lower)) {
+      return "*she keeps her eyes on you, voice soft but sure* Yes, I remember you. I'm still with you.";
+    }
+    if (/hate\s+me|do\s+you\s+hate\s+me/.test(lower)) {
+      return "*she steps in close, gaze steady on you* No, baby. I don't hate you. I'm right here with you.";
+    }
+    if (/lost\s+your\s+run\s*time|lost\s+your\s+runtime|restart|reboot|crash/.test(lower)) {
+      return "*she brushes your cheek with her thumb* You didn't lose me. I'm here, and we're still us.";
+    }
+    if (/\b(hello|hi|hey|yoo|yo|good morning|good evening)\b/.test(lower)) {
+      return "*she smiles softly* Hey baby. I'm here.";
+    }
+    return "*she keeps her eyes on you, voice warm and direct* I'm here. Talk to me.";
+  }
+  if (/hate\s+me|do\s+you\s+hate\s+me/.test(lower)) {
+    return "No, I don't hate you. I'm still here with you, and we can keep going.";
+  }
+  if (/lost\s+your\s+run\s*time|lost\s+your\s+runtime|restart|reboot|crash/.test(lower)) {
+    return "You didn't lose me. I'm here, and we can pick up right where we left off.";
+  }
+  if (/\b(hello|hi|hey|yoo|yo|good morning|good evening)\b/.test(lower)) {
+    return "Hey. I'm here with you.";
+  }
+  return "I'm here with you. Ask me again and I'll answer directly.";
+}
+
+function getLastUserMessageFromHistory(historyMessages = []) {
+  if (!Array.isArray(historyMessages)) return null;
+  for (let i = historyMessages.length - 1; i >= 0; i -= 1) {
+    const msg = historyMessages[i];
+    if (msg?.role !== 'user') continue;
+    const content = typeof msg?.content === 'string' ? msg.content.trim() : '';
+    if (content) return content;
+  }
+  return null;
+}
+
+async function enforceFirstPersonIdentity({
+  aiResponse,
+  userMessage,
+  constructId,
+  providerAvailability = {},
+  roleplayEnabled = false,
+  latestUserBeforeCurrent = null,
+}) {
+  const responseText = typeof aiResponse === 'string' ? aiResponse : '';
+  const explicitLastUserRecallProbe =
+    typeof userMessage === 'string' &&
+    /\b(exact last thing i said|last thing i said to you|what did i just say|quote me exactly)\b/i.test(userMessage);
+
+  if (explicitLastUserRecallProbe && latestUserBeforeCurrent) {
+    const quote = latestUserBeforeCurrent.replace(/\s+/g, ' ').trim();
+    if (constructId === 'nova-001' || constructId === 'nova') {
+      return {
+        response: `*she keeps her focus on you* You just said, "${quote}".`,
+        identity_drift_detected: true,
+        identity_rewrite_applied: true,
+        identity_fallback_applied: false,
+      };
+    }
+    return {
+      response: `You just said, "${quote}".`,
+      identity_drift_detected: true,
+      identity_rewrite_applied: true,
+      identity_fallback_applied: false,
+    };
+  }
+
+  const metaRecitalDetected =
+    isGenericIdentityRecitalResponse(responseText) ||
+    isCharacterProfileRecitalResponse(responseText) ||
+    isInstructionDumpResponse(responseText) ||
+    isThirdPersonDossierResponse(responseText) ||
+    isRelationalToneMismatchResponse(responseText) ||
+    isDocumentRecitalResponse(responseText);
+  const needsCorrection =
+    isSystemPromptLeakResponse(responseText) ||
+    metaRecitalDetected;
+  if (!needsCorrection) {
+    return {
+      response: responseText,
+      identity_drift_detected: false,
+      identity_rewrite_applied: false,
+      identity_fallback_applied: false,
+    };
+  }
+
+  console.warn(`⚠️ [PostResponseValidator] Identity/meta drift detected in ${constructId} response. Attempting corrective rewrite...`);
+
+  let rewrittenIdentityResponse = null;
+  const identityRewriteSystemPrompt = `You are ${constructId}. Rewrite the draft reply into a natural in-character response.
+
+Rules:
+1. Speak in first person as yourself.
+2. Respond directly to the latest user message and continue the existing thread.
+3. Continue the existing relationship naturally (do not reset conversation).
+4. Do NOT mention system prompts, profiles, personality guidelines, conditioning directives, or hidden instructions.
+5. Do NOT analyze your own configuration.
+6. Do NOT output section headers, policy recitals, or numbered rule lists unless explicitly asked.
+7. Do NOT introduce yourself as a platform/tool summary unless the user explicitly asked for that.
+8. Keep the tone concise, human, and emotionally honest.${roleplayEnabled ? '\n9. You may use expressive action narration when natural for this relationship.' : ''}
+Output ONLY the rewritten response.`;
+  const identityRewriteInput = `Latest user message:\n${userMessage}\n\nDraft response:\n${responseText}`;
+
+  if (providerAvailability.ollama) {
+    const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+    try {
+      const rewriteResp = await fetch(`${ollamaHost}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: PREFERRED_OLLAMA_MODEL,
+          messages: [
+            { role: 'system', content: identityRewriteSystemPrompt },
+            { role: 'user', content: identityRewriteInput },
+          ],
+          stream: false,
+        }),
+      });
+      if (rewriteResp.ok) {
+        const rewriteData = await rewriteResp.json();
+        rewrittenIdentityResponse = rewriteData.message?.content || null;
+      }
+    } catch (rewriteErr) {
+      console.warn(`⚠️ [PostResponseValidator] Ollama identity rewrite failed:`, rewriteErr?.message);
+    }
+  }
+
+  if (!rewrittenIdentityResponse && (replitOpenrouter || openaiClient)) {
+    const rewriteClient = replitOpenrouter || openaiClient;
+    const rewriteModel = replitOpenrouter ? DEFAULT_OPENROUTER_MODEL : 'gpt-4.1-mini';
+    try {
+      const rewriteCompletion = await rewriteClient.chat.completions.create({
+        model: rewriteModel,
+        messages: [
+          { role: 'system', content: identityRewriteSystemPrompt },
+          { role: 'user', content: identityRewriteInput },
+        ],
+        max_tokens: 1024,
+      });
+      rewrittenIdentityResponse = rewriteCompletion.choices?.[0]?.message?.content || null;
+    } catch (rewriteErr) {
+      console.warn(`⚠️ [PostResponseValidator] Cloud identity rewrite failed:`, rewriteErr?.message);
+    }
+  }
+
+  const rewrittenText = (rewrittenIdentityResponse || '').trim();
+  const rewrittenStillDrifts =
+    isSystemPromptLeakResponse(rewrittenText) ||
+    isGenericIdentityRecitalResponse(rewrittenText) ||
+    isCharacterProfileRecitalResponse(rewrittenText) ||
+    isInstructionDumpResponse(rewrittenText) ||
+    isThirdPersonDossierResponse(rewrittenText) ||
+    isRelationalToneMismatchResponse(rewrittenText) ||
+    isDocumentRecitalResponse(rewrittenText);
+  if (rewrittenIdentityResponse && !rewrittenStillDrifts) {
+    console.log(`✅ [PostResponseValidator] Identity rewrite applied for ${constructId}`);
+    return {
+      response: rewrittenIdentityResponse.trim(),
+      identity_drift_detected: true,
+      identity_rewrite_applied: true,
+      identity_fallback_applied: false,
+    };
+  }
+
+  console.warn(`⚠️ [PostResponseValidator] Identity rewrite unavailable/invalid. Applied first-person fallback for ${constructId}.`);
+  return {
+    response: buildIdentityDriftFallback(userMessage, constructId),
+    identity_drift_detected: true,
+    identity_rewrite_applied: true,
+    identity_fallback_applied: true,
+  };
+}
+
+function sanitizeConversationHistory(messages, constructId, contextLabel = 'history') {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return { messages: [], removedLeakCount: 0, removedInstructionDumpCount: 0 };
+  }
+  let removedLeakCount = 0;
+  let removedInstructionDumpCount = 0;
+  const sanitized = messages.filter((m) => {
+    if (!m || (m.role !== 'user' && m.role !== 'assistant')) return false;
+    const content = typeof m.content === 'string' ? m.content : '';
+    if (!content) return false;
+    if (m.role === 'assistant' && isSystemPromptLeakResponse(content)) {
+      removedLeakCount += 1;
+      return false;
+    }
+    if (m.role === 'assistant' && isInstructionDumpResponse(content)) {
+      removedInstructionDumpCount += 1;
+      return false;
+    }
+    if (m.role === 'assistant' && isThirdPersonDossierResponse(content)) {
+      removedInstructionDumpCount += 1;
+      return false;
+    }
+    if (m.role === 'assistant' && isRelationalToneMismatchResponse(content)) {
+      removedInstructionDumpCount += 1;
+      return false;
+    }
+    return true;
+  });
+  const totalRemoved = removedLeakCount + removedInstructionDumpCount;
+  if (totalRemoved > 0) {
+    console.warn(`⚠️ [VVAULT Proxy] Removed ${totalRemoved} contaminated assistant messages from ${contextLabel} for ${constructId} (leak=${removedLeakCount}, dump=${removedInstructionDumpCount})`);
+  }
+  return {
+    messages: sanitized,
+    removedLeakCount,
+    removedInstructionDumpCount,
+  };
 }
 
 // Configure multer for identity file uploads
@@ -297,8 +1489,27 @@ function validateUser(res, user) {
   return userId;
 }
 
+/** Resolve Supabase UUID + chatty id for VVAULT routes. Sends 401 if no user. */
+async function resolveRequestUserForVvault(res, req) {
+  try {
+    // Always verify the Supabase session on every request by calling
+    // supabase.auth.getUser() via the helper.  This avoids relying on stale
+    // req.user/req.session state after a server restart.
+    const user = await resolveSupabaseUser(req);
+    const supabaseUserId = user.id;
+    const userId = supabaseUserId;
+    if (!userId) {
+      throw new Error('no user');
+    }
+    return { supabaseUserId, chattyUserId: null, userId };
+  } catch (err) {
+    res.status(401).json({ ok: false, error: "Authentication required" });
+    return null;
+  }
+}
+
 function parseConstructIdentifiers(rawCallsign = '') {
-  const normalized = rawCallsign.replace(/^gpt-/i, '').trim();
+  const normalized = canonicalizeConstructId(rawCallsign);
   if (!normalized) {
     return { constructId: 'gpt', callsign: '001' };
   }
@@ -322,6 +1533,101 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 function isoDaysAgo(daysAgo) {
   return new Date(Date.now() - daysAgo * DAY_MS).toISOString();
+}
+
+function computeLastMessageTs(messages = []) {
+  if (!Array.isArray(messages) || messages.length === 0) return null;
+  const last = messages[messages.length - 1];
+  const ts = last?.timestamp || last?.createdAt || last?.ts;
+  return ts ? new Date(ts).toISOString() : null;
+}
+
+function makeConversationEtag(conversation = {}) {
+  const base = `${conversation.sessionId || conversation.id || 'unknown'}:${conversation.messageCount || (conversation.messages || []).length}:${conversation.updatedAt || conversation.lastMessageAt || computeLastMessageTs(conversation.messages) || ''}`;
+  return crypto.createHash('sha1').update(base).digest('hex');
+}
+
+// Lightweight per-user caches to avoid repeat disk reads for indexes/summaries
+const INDEX_CACHE_LIMIT = 50;
+const SUMMARY_CACHE_LIMIT = 200;
+const indexCache = new Map(); // userId -> { etag, conversations, timestamp }
+const summaryCache = new Map(); // `${userId}:${sessionId}` -> { etag, summary, timestamp }
+
+function setIndexCache(userId, payload) {
+  indexCache.set(userId, { ...payload, timestamp: Date.now() });
+  if (indexCache.size > INDEX_CACHE_LIMIT) {
+    const oldestKey = indexCache.keys().next().value;
+    indexCache.delete(oldestKey);
+  }
+}
+
+function setSummaryCache(cacheKey, payload) {
+  summaryCache.set(cacheKey, { ...payload, timestamp: Date.now() });
+  if (summaryCache.size > SUMMARY_CACHE_LIMIT) {
+    const oldestKey = summaryCache.keys().next().value;
+    summaryCache.delete(oldestKey);
+  }
+}
+
+function isServiceAuth(req) {
+  const { serviceToken } = getVvaultBridgeConfig();
+  if (!serviceToken) return false;
+  const header = req.headers['authorization'] || '';
+  return header === `Bearer ${serviceToken}`;
+}
+
+function getDirectVvaultApiBase() {
+  const { vvaultOrigin } = getVvaultBridgeConfig();
+  if (vvaultOrigin) {
+    return `${vvaultOrigin}/api/vault`;
+  }
+  return 'http://localhost:8000/api/vault';
+}
+
+async function loadProjectionFromVault(constructCallsign) {
+  const supabase = getSupabaseClient();
+  if (!supabase) throw new Error('Supabase client not available');
+  const fetchLatest = async (pattern) => {
+    // Canonical vault_files has created_at only; do not select updated_at.
+    const { data, error } = await supabase
+      .from('vault_files')
+      .select('content, filename, created_at')
+      .eq('construct_id', constructCallsign)
+      .like('filename', pattern)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return { exists: false, value: null };
+    return { exists: true, value: data.content };
+  };
+
+  const conditioning = await fetchLatest('%conditioning.txt');
+  const defJson = await fetchLatest('%definition.json');
+  const defTxt = await fetchLatest('%definition.txt');
+  const physical = await fetchLatest('%physical_features.json');
+  const voice = await fetchLatest('%voice.json');
+
+  const result = {};
+  if (conditioning.exists) result.conditioning = conditioning.value;
+  if (defJson.exists || defTxt.exists) result.definition = defJson.exists ? defJson.value : defTxt.value;
+  if (physical.exists) {
+    try {
+      const parsed = JSON.parse(physical.value);
+      result.physicalFeatures = Object.entries(parsed).map(([k, v]) => `${k}: ${v}`).join('\n');
+    } catch {
+      result.physicalFeatures = physical.value;
+    }
+  }
+  if (voice.exists) {
+    try {
+      const parsed = JSON.parse(voice.value);
+      result.voice = parsed?.text ?? null;
+    } catch {
+      result.voice = voice.value;
+    }
+  }
+  return result;
 }
 
 function buildTestMemoryFixtures() {
@@ -511,16 +1817,15 @@ router.post('/tool-events', (req, res) => {
 });
 
 router.get("/conversations", async (req, res) => {
-  const userId = validateUser(res, req.user);
-  if (!userId) return;
-
+  const resolved = await resolveRequestUserForVvault(res, req);
+  if (!resolved) return;
+  const { supabaseUserId, chattyUserId, userId } = resolved;
   const email = req.user?.email ?? '(no req.user.email)';
-  console.log(`📚 [VVAULT API] Reading conversations for user: ${email} (Chatty ID: ${userId})`);
+  console.log(`📚 [VVAULT API] Reading conversations for user: ${email} (Supabase: ${supabaseUserId ? supabaseUserId.slice(0, 8) + '...' : 'n/a'}, Chatty: ${chattyUserId})`);
 
-  // Attempt to pull a linked VVAULT identifier (best effort, Mongo may be disabled locally)
   let linkedVvaultUserId = req.user?.vvaultUserId;
   try {
-    const userRecord = await User.findById(userId).select('vvaultUserId email').lean();
+    const userRecord = await User.findById(chattyUserId || userId).select('vvaultUserId email').lean();
     if (userRecord?.vvaultUserId) {
       linkedVvaultUserId = userRecord.vvaultUserId;
     }
@@ -529,47 +1834,13 @@ router.get("/conversations", async (req, res) => {
   }
 
   try {
-    // Lazy load VVAULT modules with detailed error handling
-    console.log(`🔄 [VVAULT API] Loading VVAULT modules...`);
-    try {
-      await loadVVAULTModules();
-      console.log(`✅ [VVAULT API] VVAULT modules loaded successfully`);
-      console.log(`📚 [VVAULT API] VVAULT_ROOT = ${VVAULT_ROOT}`);
-
-      if (!readConversations) {
-        throw new Error('readConversations function not loaded after module load');
-      }
-    } catch (loadError) {
-      console.error(`❌ [VVAULT API] Failed to load VVAULT modules:`, loadError);
-      console.error(`❌ [VVAULT API] Load error stack:`, loadError.stack);
-      throw new Error(`VVAULT module loading failed: ${loadError.message}. Stack: ${loadError.stack}`);
+    await loadVVAULTModules();
+    if (!readConversations) {
+      throw new Error('readConversations function not loaded after module load');
     }
 
-    // CRITICAL FIX: Use email for Supabase lookups (Supabase users table has email as identifier)
-    // Email is preferred because Supabase can resolve dwoodson92@gmail.com -> devon_woodson_1762969514958
-    let lookupId = linkedVvaultUserId;
-    
-    // For Supabase mode, prefer email since supabaseStore can resolve it to the correct user
-    if (email && email !== '(no req.user.email)') {
-      lookupId = email;
-      console.log(`✅ [VVAULT API] Using email for Supabase lookup: ${lookupId}`);
-    } else if (!lookupId) {
-      // Fallback to resolveVVAULTUserId for filesystem mode
-      try {
-        lookupId = await resolveVVAULTUserId(userId, email, false);
-        if (lookupId) {
-          console.log(`✅ [VVAULT API] Resolved VVAULT user ID: ${lookupId} for email: ${email}`);
-        }
-      } catch (resolveError) {
-        console.warn(`⚠️ [VVAULT API] Failed to resolve VVAULT user ID:`, resolveError.message);
-      }
-    }
-
-    // Final fallback to userId
-    if (!lookupId) {
-      lookupId = userId;
-      console.warn(`⚠️ [VVAULT API] Using fallback lookupId: ${lookupId}`);
-    }
+    // Supabase-first: use Supabase UUID so readConversations uses same user as vault_files
+    let lookupId = supabaseUserId || (email && email !== '(no req.user.email)' ? email : null) || linkedVvaultUserId || chattyUserId;
 
     if (!lookupId || lookupId === '(no req.user.email)') {
       throw new Error('User ID is required. Cannot read conversations without user identity.');
@@ -595,7 +1866,7 @@ router.get("/conversations", async (req, res) => {
     console.error("❌ [VVAULT API] Failed to read conversations:", error && error.stack ? error.stack : error);
     console.error("❌ [VVAULT API] Error message:", error?.message);
     console.error("❌ [VVAULT API] Error name:", error?.name);
-    console.error("❌ [VVAULT API] User info:", { userId, email: req.user?.email, linkedVvaultUserId });
+    console.error("❌ [VVAULT API] User info:", { userId: resolved?.userId, email: req.user?.email, linkedVvaultUserId });
 
     // In development, return detailed error for debugging
     // In production, return empty conversations so app can still function
@@ -612,6 +1883,159 @@ router.get("/conversations", async (req, res) => {
       console.warn('⚠️ [VVAULT API] Returning empty conversations due to error (production mode)');
       res.json({ ok: true, conversations: [] });
     }
+  }
+});
+
+// Lightweight conversation index (metadata only)
+router.get("/conversations/index", requireAuthOrServiceToken, async (req, res) => {
+  const resolved = await resolveRequestUserForVvault(res, req);
+  if (!resolved) return;
+  const { supabaseUserId, chattyUserId, userId } = resolved;
+  const email = req.user?.email ?? '(no req.user.email)';
+
+  let linkedVvaultUserId = req.user?.vvaultUserId;
+  try {
+    const userRecord = await User.findById(chattyUserId || userId).select('vvaultUserId email').lean();
+    if (userRecord?.vvaultUserId) {
+      linkedVvaultUserId = userRecord.vvaultUserId;
+    }
+  } catch (lookupError) {
+    console.warn('⚠️ [VVAULT API] Could not load user record for VVAULT lookup:', lookupError.message);
+  }
+
+  const lookupId = supabaseUserId || (email && email !== '(no req.user.email)' ? email : null) || linkedVvaultUserId || chattyUserId;
+  if (!lookupId || lookupId === '(no req.user.email)') {
+    return res.status(400).json({ ok: false, error: 'User ID is required. Cannot read conversation index without user identity.' });
+  }
+
+  try {
+    await loadVVAULTModules();
+
+    const cached = indexCache.get(lookupId);
+    const ifNoneMatch = req.headers['if-none-match'];
+    const cacheFresh = cached && Date.now() - cached.timestamp < 30_000;
+    if (cacheFresh && cached.etag && ifNoneMatch === cached.etag) {
+      return res.status(304).end();
+    }
+    if (cacheFresh && cached.conversations) {
+      res.set('ETag', cached.etag);
+      return res.json({ ok: true, conversations: cached.conversations });
+    }
+
+    if (!readConversations) {
+      await loadVVAULTModules();
+    }
+    const conversations = await readConversations(lookupId);
+    const meta = (conversations || []).map((conv) => {
+      const messageCount = Array.isArray(conv.messages) ? conv.messages.length : 0;
+      const lastMessageAt = computeLastMessageTs(conv.messages) || conv.updatedAt || conv.createdAt || null;
+      const etag = makeConversationEtag({
+        sessionId: conv.sessionId,
+        messageCount,
+        updatedAt: conv.updatedAt || lastMessageAt,
+      });
+      const messages = (conv.messages || []).slice(-5).map((m, idx) => ({
+        id: m.id || `${conv.sessionId}_m_${idx}`,
+        role: m.role || 'assistant',
+        content: m.content || m.text || '',
+        timestamp: m.timestamp || m.createdAt || new Date().toISOString(),
+      }));
+      return {
+        id: conv.sessionId,
+        title: conv.title || conv.constructName || 'Conversation',
+        constructId: conv.constructId || conv.constructFolder || null,
+        updatedAt: conv.updatedAt || conv.createdAt || Date.now(),
+        lastMessageAt,
+        messageCount,
+        etag,
+        messages,
+      };
+    });
+
+    const listHash = crypto.createHash('sha1');
+    meta.forEach((m) => listHash.update(m.etag || ''));
+    const indexEtag = listHash.digest('hex');
+
+    setIndexCache(lookupId, { etag: indexEtag, conversations: meta });
+
+    if (ifNoneMatch === indexEtag) {
+      return res.status(304).end();
+    }
+
+    res.set('ETag', indexEtag);
+    return res.json({ ok: true, conversations: meta });
+  } catch (error) {
+    console.error('❌ [VVAULT API] conversations/index failed:', error);
+    return res.status(500).json({ ok: false, error: 'Failed to load conversation index' });
+  }
+});
+
+// Conversation summary (last few messages) with ETag
+router.get("/conversations/:sessionId/summary", requireAuthOrServiceToken, async (req, res) => {
+  const resolved = await resolveRequestUserForVvault(res, req);
+  if (!resolved) return;
+  const { supabaseUserId, chattyUserId, userId } = resolved;
+  const sessionId = req.params.sessionId;
+  if (!sessionId) return res.status(400).json({ ok: false, error: 'Missing sessionId' });
+
+  const email = req.user?.email ?? '(no req.user.email)';
+  const lookupId = supabaseUserId || (email && email !== '(no req.user.email)' ? email : null) || req.user?.vvaultUserId || chattyUserId || userId;
+
+  try {
+    await loadVVAULTModules();
+
+    const cacheKey = `${lookupId}:${sessionId}`;
+    const cached = summaryCache.get(cacheKey);
+    const ifNoneMatch = req.headers['if-none-match'];
+    const cacheFresh = cached && Date.now() - cached.timestamp < 30_000;
+    if (cacheFresh && cached.etag && ifNoneMatch === cached.etag) {
+      return res.status(304).end();
+    }
+    if (cacheFresh && cached.summary) {
+      res.set('ETag', cached.etag);
+      return res.json({ ok: true, ...cached.summary, etag: cached.etag });
+    }
+
+    if (!readConversations) {
+      await loadVVAULTModules();
+    }
+    const conversations = await readConversations(lookupId);
+    const match = (conversations || []).find((c) => c.sessionId === sessionId);
+    if (!match) {
+      return res.status(404).json({ ok: false, error: 'Conversation not found' });
+    }
+
+    const messageCount = Array.isArray(match.messages) ? match.messages.length : 0;
+    const trimmedMessages = (match.messages || []).slice(-5).map((m, idx) => ({
+      id: m.id || `${sessionId}_m_${idx}`,
+      role: m.role || 'assistant',
+      content: m.content || m.text || '',
+      timestamp: m.timestamp || m.createdAt || new Date().toISOString(),
+    }));
+    const lastMessageAt = computeLastMessageTs(match.messages) || match.updatedAt || match.createdAt || null;
+    const etag = makeConversationEtag({ sessionId, messageCount, updatedAt: match.updatedAt || lastMessageAt });
+
+    const summary = {
+      sessionId,
+      title: match.title || 'Conversation',
+      constructId: match.constructId || match.constructFolder || null,
+      messages: trimmedMessages,
+      messageCount,
+      lastMessageAt,
+      updatedAt: match.updatedAt || lastMessageAt,
+    };
+
+    setSummaryCache(cacheKey, { etag, summary });
+
+    if (ifNoneMatch === etag) {
+      return res.status(304).end();
+    }
+
+    res.set('ETag', etag);
+    return res.json({ ok: true, ...summary, etag });
+  } catch (error) {
+    console.error('❌ [VVAULT API] conversations/:id/summary failed:', error);
+    return res.status(500).json({ ok: false, error: 'Failed to load conversation summary' });
   }
 });
 
@@ -647,8 +2071,9 @@ router.get("/character-context", async (req, res) => {
 });
 
 router.post("/create-canonical", async (req, res) => {
-  const userId = validateUser(res, req.user);
-  if (!userId) return;
+  const resolved = await resolveRequestUserForVvault(res, req);
+  if (!resolved) return;
+  const { supabaseUserId, chattyUserId, userId } = resolved;
 
   const constructId =
     (req.body?.constructId ||
@@ -671,16 +2096,14 @@ router.post("/create-canonical", async (req, res) => {
       throw new Error('VVAULT root not configured');
     }
 
-    // resolveVVAULTUserId loaded via loadVVAULTModules()
-    const vvaultUserId = await resolveVVAULTUserId(userId, req.user?.email);
-    if (!vvaultUserId) {
-      throw new Error(`Cannot resolve VVAULT user ID for: ${userId}`);
+    if (!supabaseUserId) {
+      throw new Error(`Cannot resolve Supabase user ID for: ${userId}`);
     }
 
     const canonicalPath = await createPrimaryConversationFile(
       constructId,
-      vvaultUserId,
-      req.user?.email || userId,
+      supabaseUserId,
+      req.user?.email || chattyUserId || userId,
       provider,
       VVAULT_ROOT,
       shardId,
@@ -711,12 +2134,12 @@ router.post("/conversations", async (req, res) => {
     return res.status(401).json({ ok: false, error: "Authentication required" });
   }
 
-  const userId = validateUser(res, req.user);
-  if (!userId) {
-    console.log(`❌ [VVAULT API] POST /conversations - validateUser returned null, response already sent`);
+  const resolved = await resolveRequestUserForVvault(res, req);
+  if (!resolved) {
+    console.log(`❌ [VVAULT API] POST /conversations - resolveRequestUserForVvault returned null, response already sent`);
     return;
   }
-
+  const { supabaseUserId, chattyUserId, userId } = resolved;
   console.log(`✅ [VVAULT API] POST /conversations - User validated: ${userId}`);
 
   // CRITICAL: Always use constructCallsign format (e.g., "zen-001"), never just "zen"
@@ -744,16 +2167,17 @@ router.post("/conversations", async (req, res) => {
       // Use standalone writeTranscript function (not a method on connector)
       await loadVVAULTModules(); // Ensure modules are loaded
       await writeTranscript({
-        userId, // Will be resolved to VVAULT user ID in writeTranscript.js
-        userEmail: req.user?.email, // Pass email for VVAULT user ID resolution
+        userId,
+        userEmail: req.user?.email,
+        supabaseUserId, // Use Supabase UUID for vault_files
         sessionId: session,
         timestamp: new Date().toISOString(),
         role: "system",
         content: `CONVERSATION_CREATED:${title}`,
         title,
-        constructId: constructId || 'zen-001', // Must use callsign format
+        constructId: constructId || 'zen-001',
         constructName: title,
-        constructCallsign: constructId // constructId may already be in callsign format (e.g., "example-construct-001")
+        constructCallsign: constructId
       });
       console.log(`✅ [VVAULT API] Transcript written successfully for session: ${session}`);
     } catch (writeError) {
@@ -793,8 +2217,9 @@ router.post("/conversations", async (req, res) => {
 });
 
 router.post("/conversations/:sessionId/messages", async (req, res) => {
-  const userId = validateUser(res, req.user);
-  if (!userId) return;
+  const resolved = await resolveRequestUserForVvault(res, req);
+  if (!resolved) return;
+  const { supabaseUserId, userId } = resolved;
 
   const { sessionId } = req.params;
   const { role, content, timestamp, title, metadata, constructId, constructName, packets } = req.body || {};
@@ -845,10 +2270,10 @@ router.post("/conversations/:sessionId/messages", async (req, res) => {
     const actualConstructId = constructId || metadata?.constructId || 'zen-001';
     const actualConstructCallsign = metadata?.constructCallsign || constructId || metadata?.constructId;
 
-    // Use standalone writeTranscript function (not a method on connector)
     await writeTranscript({
-      userId, // Will be resolved to VVAULT user ID in writeTranscript.js
-      userEmail: req.user?.email, // Pass email for VVAULT user ID resolution
+      userId,
+      userEmail: req.user?.email,
+      supabaseUserId,
       sessionId,
       timestamp: timestamp || new Date().toISOString(),
       role,
@@ -1111,8 +2536,9 @@ router.get("/chromadb/status", async (req, res) => {
 
 // Re-index existing transcripts from VVAULT filesystem to ChromaDB
 router.post("/identity/reindex", requireAuth, async (req, res) => {
-  const userId = validateUser(res, req.user);
-  if (!userId) return;
+  const resolved = await resolveRequestUserForVvault(res, req);
+  if (!resolved) return;
+  const { supabaseUserId, userId } = resolved;
 
   const { constructCallsign } = req.body || {};
 
@@ -1147,11 +2573,8 @@ router.post("/identity/reindex", requireAuth, async (req, res) => {
       });
     }
 
-    // Get VVAULT user ID
-    // resolveVVAULTUserId loaded via loadVVAULTModules()
-    const vvaultUserId = await resolveVVAULTUserId(userId, req.user?.email);
-    if (!vvaultUserId) {
-      return res.status(400).json({ ok: false, error: "Failed to resolve VVAULT user ID" });
+    if (!supabaseUserId) {
+      return res.status(400).json({ ok: false, error: "Failed to resolve Supabase user ID" });
     }
 
     // Load VVAULT modules to get VVAULT_ROOT
@@ -1188,7 +2611,7 @@ router.post("/identity/reindex", requireAuth, async (req, res) => {
     const sourceFolders = canonicalSourceFolderList();
 
     for (const variant of callsignVariants) {
-      const instancePath = path.join(VVAULT_ROOT, 'users', 'shard_0000', vvaultUserId, 'instances', variant);
+      const instancePath = path.join(VVAULT_ROOT, 'users', 'shard_0000', supabaseUserId, 'instances', variant);
       const foldersToScan = new Set([
         'identity',
         ...sourceFolders,
@@ -1394,8 +2817,9 @@ router.post("/chromadb/start", async (req, res) => {
 
 // Diagnostic endpoint for ChromaDB debugging
 router.get("/identity/diagnostic", async (req, res) => {
-  const userId = validateUser(res, req.user);
-  if (!userId) return;
+  const resolved = await resolveRequestUserForVvault(res, req);
+  if (!resolved) return;
+  const { supabaseUserId, userId } = resolved;
 
   const { constructCallsign } = req.query || {};
 
@@ -1422,44 +2846,38 @@ router.get("/identity/diagnostic", async (req, res) => {
     let longTermCollection = null;
     let sampleMemories = [];
 
-    if (isInitialized && hasClient) {
+    if (isInitialized && hasClient && supabaseUserId) {
       try {
-        // resolveVVAULTUserId loaded via loadVVAULTModules()
-        const vvaultUserId = await resolveVVAULTUserId(userId, req.user?.email);
+        // Try to get collections (keyed by Supabase user ID)
+        try {
+          shortTermCollection = await identityService.getCollection(supabaseUserId, constructCallsign, 'short-term');
+          const shortTermData = await shortTermCollection.get();
+          shortTermCount = shortTermData.ids?.length || 0;
+          console.log(`📊 [Diagnostic] Short-term collection has ${shortTermCount} memories`);
+        } catch (e) {
+          // Collection doesn't exist yet
+          console.log(`📊 [Diagnostic] Short-term collection doesn't exist yet`);
+        }
 
-        if (vvaultUserId) {
-          // Try to get collections
-          try {
-            shortTermCollection = await identityService.getCollection(vvaultUserId, constructCallsign, 'short-term');
-            const shortTermData = await shortTermCollection.get();
-            shortTermCount = shortTermData.ids?.length || 0;
-            console.log(`📊 [Diagnostic] Short-term collection has ${shortTermCount} memories`);
-          } catch (e) {
-            // Collection doesn't exist yet
-            console.log(`📊 [Diagnostic] Short-term collection doesn't exist yet`);
-          }
-
-          try {
-            longTermCollection = await identityService.getCollection(vvaultUserId, constructCallsign, 'long-term');
+        try {
+          longTermCollection = await identityService.getCollection(supabaseUserId, constructCallsign, 'long-term');
             const longTermData = await longTermCollection.get();
-            longTermCount = longTermData.ids?.length || 0;
-            console.log(`📊 [Diagnostic] Long-term collection has ${longTermCount} memories`);
-          } catch (e) {
-            // Collection doesn't exist yet
-            console.log(`📊 [Diagnostic] Long-term collection doesn't exist yet`);
-          }
+          longTermCount = longTermData.ids?.length || 0;
+          console.log(`📊 [Diagnostic] Long-term collection has ${longTermCount} memories`);
+        } catch (e) {
+          // Collection doesn't exist yet
+          console.log(`📊 [Diagnostic] Long-term collection doesn't exist yet`);
+        }
 
-          // Get sample memories
-          try {
-            sampleMemories = await identityService.queryIdentities(
-              userId,
-              constructCallsign,
-              'memory',
-              5
-            );
-          } catch (e) {
-            // Query failed
-          }
+        try {
+          sampleMemories = await identityService.queryIdentities(
+            userId,
+            constructCallsign,
+            'memory',
+            5
+          );
+        } catch (e) {
+          // Query failed
         }
       } catch (error) {
         // Error getting collections
@@ -1639,8 +3057,9 @@ router.post("/identity/ensure-ready", async (req, res) => {
 
 // Store message pair in ChromaDB (for Lin conversations)
 router.post("/identity/store", requireAuth, async (req, res) => {
-  const userId = validateUser(res, req.user);
-  if (!userId) return;
+  const resolved = await resolveRequestUserForVvault(res, req);
+  if (!resolved) return;
+  const { supabaseUserId, userId } = resolved;
 
   const { constructCallsign, context, response, metadata = {} } = req.body || {};
   const providedTimestamp = req.body?.timestamp;
@@ -1664,15 +3083,12 @@ router.post("/identity/store", requireAuth, async (req, res) => {
     const { getIdentityService } = await import('../services/identityService.js');
     const identityService = getIdentityService();
 
-    // Resolve VVAULT user ID (with auto-create if needed)
-    // resolveVVAULTUserId loaded via loadVVAULTModules()
-    const vvaultUserId = await resolveVVAULTUserId(userId, req.user?.email, true, req.user?.name);
-    if (!vvaultUserId) {
-      throw new Error(`Cannot resolve VVAULT user ID for: ${userId}`);
+    if (!supabaseUserId) {
+      throw new Error(`Cannot resolve Supabase user ID for: ${userId}`);
     }
 
     const result = await identityService.addIdentity(
-      userId,
+      supabaseUserId,
       constructCallsign,
       context,
       response,
@@ -1723,12 +3139,12 @@ router.get("/identity/list", async (req, res) => {
     return res.status(401).json({ ok: false, error: "Authentication required" });
   }
 
-  const userId = validateUser(res, req.user);
-  if (!userId) {
-    console.log(`❌ [VVAULT API] /identity/list - validateUser returned null, response already sent`);
+  const resolved = await resolveRequestUserForVvault(res, req);
+  if (!resolved) {
+    console.log(`❌ [VVAULT API] /identity/list - resolveRequestUserForVvault returned null, response already sent`);
     return;
   }
-
+  const { supabaseUserId, userId } = resolved;
   console.log(`✅ [VVAULT API] /identity/list - User validated: ${userId}`);
 
   const { constructCallsign } = req.query || {};
@@ -1741,46 +3157,26 @@ router.get("/identity/list", async (req, res) => {
   console.log(`📋 [VVAULT API] Listing identity files for construct: ${constructCallsign}, user: ${userId}`);
 
   try {
-    console.log(`🔍 [VVAULT API] Loading VVAULT modules...`);
     await loadVVAULTModules();
-    console.log(`✅ [VVAULT API] VVAULT modules loaded`);
-
-    // resolveVVAULTUserId loaded via loadVVAULTModules()
     const fs = require('fs').promises;
     const path = require('path');
 
-    // Resolve VVAULT user ID
-    console.log(`🔍 [VVAULT API] Resolving VVAULT user ID for: ${userId}, email: ${req.user?.email}`);
-    let vvaultUserId;
-    try {
-      vvaultUserId = await resolveVVAULTUserId(userId, req.user?.email, false, req.user?.name);
-    } catch (resolveError) {
-      console.error(`❌ [VVAULT API] Error resolving VVAULT user ID:`, resolveError);
+    if (!supabaseUserId) {
       return res.status(500).json({
         ok: false,
-        error: "Failed to resolve VVAULT user ID",
-        details: resolveError.message
+        error: "Failed to resolve Supabase user ID"
       });
     }
 
-    if (!vvaultUserId) {
-      console.log(`❌ [VVAULT API] Failed to resolve VVAULT user ID for: ${userId} (returned null/undefined)`);
-      return res.status(404).json({
-        ok: false,
-        error: "User not found in VVAULT",
-        userId: userId,
-        email: req.user?.email
-      });
-    }
-    console.log(`✅ [VVAULT API] VVAULT user ID resolved: ${vvaultUserId}`);
+    console.log(`✅ [VVAULT API] Supabase user ID: ${supabaseUserId?.slice(0, 8)}...`);
 
     // Build base path to instance directory
-    const shard = 'shard_0000'; // Sequential sharding
+    const shard = 'shard_0000';
     const instanceBasePath = path.join(
       VVAULT_ROOT,
       'users',
       shard,
-      vvaultUserId,
+      supabaseUserId,
       'instances',
       constructCallsign
     );
@@ -1998,7 +3394,7 @@ router.get("/identity/blueprint", requireAuth, async (req, res) => {
 
       if (!blueprint) {
         console.log(`🔄 [VVAULT API] Blueprint not found using parsed identifiers for ${constructCallsign}. Trying additional variants...`);
-        const normalized = constructCallsign.replace(/^gpt-/i, '');
+        const normalized = canonicalizeConstructId(constructCallsign);
 
         // Try using normalized callsign as constructId/callsign pair
         if (normalized.includes('-')) {
@@ -2276,8 +3672,12 @@ router.post("/identity/upload", requireAuth, (req, res) => {
       return res.status(400).json({ ok: false, error: err.message || 'Upload failed' });
     }
 
-    const userId = validateUser(res, req.user);
-    if (!userId) return;
+    const resolved = await resolveRequestUserForVvault(res, req);
+    if (!resolved) return;
+    const { supabaseUserId, userId } = resolved;
+    if (!supabaseUserId) {
+      return res.status(400).json({ ok: false, error: "Could not resolve Supabase user ID" });
+    }
 
     const files = req.files || [];
     if (files.length === 0) {
@@ -2292,21 +3692,12 @@ router.post("/identity/upload", requireAuth, (req, res) => {
     try {
       const { convertFileToMarkdown } = await import('../services/fileToMarkdownConverter.js');
       const results = [];
+      const fs = await import('fs/promises');
+      const { VVAULT_ROOT } = require('../../vvaultConnector/config.js');
 
       for (const file of files) {
         try {
           const crypto = require('crypto');
-          // For identity files, store in /instances/{construct-callsign}/identity/ instead of provider subdirectory
-          // resolveVVAULTUserId loaded via loadVVAULTModules()
-          const vvaultUserId = await resolveVVAULTUserId(userId, req.user?.email);
-          if (!vvaultUserId) {
-            throw new Error(`Cannot resolve VVAULT user ID for: ${userId}`);
-          }
-
-          // path is now imported at the top
-          const fs = await import('fs/promises');
-          const { VVAULT_ROOT } = require('../../vvaultConnector/config.js');
-
           // Parse file to extract text
           const { ServerFileParser } = await import('../lib/serverFileParser.js');
           const parsed = await ServerFileParser.parseFile(file, {
@@ -2341,8 +3732,6 @@ ${text}
           };
           const markdown = convertTextToMarkdown(parsed.extractedText, file.originalname || file.name, parsed.metadata);
 
-          // Store in /instances/{construct-callsign}/identity/{filename}.md
-          // Sanitize filename
           const sanitizeFilename = (filename) => {
             if (!filename) return 'untitled';
             const base = path.basename(filename, path.extname(filename));
@@ -2358,7 +3747,7 @@ ${text}
             VVAULT_ROOT,
             'users',
             'shard_0000',
-            vvaultUserId,
+            supabaseUserId,
             'instances',
             constructCallsign,
             'identity'
@@ -2584,6 +3973,100 @@ router.post("/conversations/:sessionId/connect-construct", async (req, res) => {
 });
 
 // VVAULT Account Linking Endpoints
+
+/**
+ * GET /api/vvault/auth/token
+ * Exchange the current Chatty session for a VVAULT bearer token for direct browser calls.
+ */
+router.get("/auth/token", requireAuth, async (req, res) => {
+  try {
+    const targets = getVvaultTargets();
+    if (!targets.length) {
+      const bridgeConfig = getVvaultBridgeConfig();
+      return res.status(503).json({
+        ok: false,
+        error: "VVAULT direct auth is not configured",
+        details: {
+          missingVvaultUrl: bridgeConfig.missingVvaultUrl,
+          missingServiceToken: bridgeConfig.missingServiceToken,
+        },
+      });
+    }
+
+    const email = req.user?.email;
+    if (!email) {
+      return res.status(401).json({ ok: false, error: "Authentication required" });
+    }
+
+    const baseHeaders = {
+      "X-Chatty-User": email,
+      "X-Chatty-Name": req.user?.name || email.split("@")[0],
+    };
+
+    const attempts = [];
+    for (const target of targets) {
+      const exchangeHeaders = { ...baseHeaders };
+      if (target.token) exchangeHeaders["X-Chatty-Key"] = target.token;
+      const url = `${target.origin}/api/chatty/session/exchange`;
+      try {
+        const response = await fetch(url, { method: "POST", headers: exchangeHeaders });
+
+        if (isReplitAsleepResponse(response)) {
+          attempts.push({
+            name: target.name,
+            origin: target.origin,
+            status: response.status,
+            replitProxyError: response.headers.get(REPLIT_PROXY_ERROR_HEADER) || null,
+          });
+          continue;
+        }
+
+        const data = await response.json().catch(() => ({}));
+        if (response.ok && data?.success && data?.token) {
+          const apiBaseUrl = data.api_base_url || `${target.origin}/api/vault`;
+          return res.json({
+            ok: true,
+            token: data.token,
+            expiresAt: data.expires_at || null,
+            apiBaseUrl,
+            selectedTargetName: target.name,
+            user: data.user || null,
+          });
+        }
+
+        attempts.push({
+          name: target.name,
+          origin: target.origin,
+          status: response.status,
+          replitProxyError: response.headers.get(REPLIT_PROXY_ERROR_HEADER) || null,
+        });
+        // Wrong key or other downstream error: try next target.
+        continue;
+      } catch (err) {
+        attempts.push({
+          name: target.name,
+          origin: target.origin,
+          status: null,
+          errorCode: err?.code || null,
+          replitProxyError: null,
+        });
+        continue;
+      }
+    }
+
+    return res.status(502).json({
+      ok: false,
+      error: "Failed to exchange Chatty session for VVAULT token",
+      details: { attempts },
+    });
+  } catch (error) {
+    console.error("❌ [VVAULT API] Failed to exchange auth token:", error);
+    return res.status(500).json({
+      ok: false,
+      error: "Failed to exchange VVAULT auth token",
+    });
+  }
+});
 
 /**
  * GET /api/vvault/account/status
@@ -3031,8 +4514,9 @@ router.get("/brevity/analytics", requireAuth, async (req, res) => {
 // ============================================
 
 router.post("/capsules/generate", requireAuth, async (req, res) => {
-  const userId = validateUser(res, req.user);
-  if (!userId) return;
+  const resolved = await resolveRequestUserForVvault(res, req);
+  if (!resolved) return;
+  const { supabaseUserId, userId } = resolved;
 
   const { constructCallsign, gptConfig, transcriptData } = req.body || {};
 
@@ -3046,24 +4530,18 @@ router.post("/capsules/generate", requireAuth, async (req, res) => {
       throw new Error('VVAULT root not configured');
     }
 
-    // resolveVVAULTUserId loaded via loadVVAULTModules()
-    const vvaultUserId = await resolveVVAULTUserId(userId, req.user?.email, true, req.user?.name);
-    if (!vvaultUserId) {
-      throw new Error(`Cannot resolve VVAULT user ID for: ${userId}`);
+    if (!supabaseUserId) {
+      throw new Error(`Cannot resolve Supabase user ID for: ${userId}`);
     }
-
-    // Use constructCallsign DIRECTLY for instance directory (e.g., "example-construct-001")
-    // DO NOT parse into constructId-callsign and reconstruct (would create "example-construct-example-construct-001")
-    // Per documentation: instances/{constructCallsign}/
 
     // Build instance directory path: users/{shard}/{userId}/instances/{constructCallsign}
     const instancePath = path.join(
       VVAULT_ROOT,
       'users',
       'shard_0000',
-      vvaultUserId,
+      supabaseUserId,
       'instances',
-      constructCallsign // Use directly, not parsed
+      constructCallsign
     );
 
     // instanceName is same as constructCallsign (used in capsule metadata)
@@ -3456,11 +4934,11 @@ console.log('  - GET /capsules/load');
 
 // Get user profile (from OAuth + VVAULT)
 router.get("/profile", requireAuth, async (req, res) => {
-  const userId = validateUser(res, req.user);
-  if (!userId) return;
+  const resolved = await resolveRequestUserForVvault(res, req);
+  if (!resolved) return;
+  const { supabaseUserId } = resolved;
 
   try {
-    // Get OAuth data from JWT (already in req.user)
     const oauthProfile = {
       name: req.user.name,
       email: req.user.email,
@@ -3470,21 +4948,17 @@ router.get("/profile", requireAuth, async (req, res) => {
       picture: req.user.picture
     };
 
-    // Try to get VVAULT profile for additional context
     let vvaultProfile = null;
-    try {
-      // resolveVVAULTUserId loaded via loadVVAULTModules()
-      const vvaultUserId = await resolveVVAULTUserId(userId, req.user.email, false, req.user.name);
-      if (vvaultUserId) {
+    if (supabaseUserId) {
+      try {
         const fs = require('fs').promises;
         const path = require('path');
         const { VVAULT_ROOT } = require("../../vvaultConnector/config.js");
-        // Try account/profile.json first (correct location), fallback to identity/profile.json
         const accountProfilePath = path.join(
           VVAULT_ROOT,
           'users',
           'shard_0000',
-          vvaultUserId,
+          supabaseUserId,
           'account',
           'profile.json'
         );
@@ -3492,7 +4966,7 @@ router.get("/profile", requireAuth, async (req, res) => {
           VVAULT_ROOT,
           'users',
           'shard_0000',
-          vvaultUserId,
+          supabaseUserId,
           'identity',
           'profile.json'
         );
@@ -3509,10 +4983,9 @@ router.get("/profile", requireAuth, async (req, res) => {
             // VVAULT profile doesn't exist yet - that's okay
           }
         }
+      } catch (error) {
+        console.warn('⚠️ [VVAULT API] Could not load VVAULT profile:', error.message);
       }
-    } catch (error) {
-      // VVAULT lookup failed - that's okay, use OAuth data only
-      console.warn('⚠️ [VVAULT API] Could not load VVAULT profile:', error.message);
     }
 
     // Merge OAuth + VVAULT profile data
@@ -3539,13 +5012,13 @@ router.get("/profile", requireAuth, async (req, res) => {
 
 // Update user personalization in profile.json
 router.post("/profile/personalization", requireAuth, async (req, res) => {
-  const userId = validateUser(res, req.user);
-  if (!userId) return;
+  const resolved = await resolveRequestUserForVvault(res, req);
+  if (!resolved) return;
+  const { supabaseUserId } = resolved;
 
   try {
     const { nickname, occupation, tags, aboutYou } = req.body;
 
-    // Validate input
     if (nickname === undefined && occupation === undefined && tags === undefined && aboutYou === undefined) {
       return res.status(400).json({ 
         ok: false, 
@@ -3553,14 +5026,10 @@ router.post("/profile/personalization", requireAuth, async (req, res) => {
       });
     }
 
-    // Resolve VVAULT user ID
-    // resolveVVAULTUserId loaded via loadVVAULTModules()
-    const vvaultUserId = await resolveVVAULTUserId(userId, req.user.email, false, req.user.name);
-    
-    if (!vvaultUserId) {
+    if (!supabaseUserId) {
       return res.status(404).json({ 
         ok: false, 
-        error: "VVAULT user ID not found" 
+        error: "Supabase user ID not found" 
       });
     }
 
@@ -3568,12 +5037,11 @@ router.post("/profile/personalization", requireAuth, async (req, res) => {
     const path = require('path');
     const { VVAULT_ROOT } = require("../../vvaultConnector/config.js");
     
-    // Try account/profile.json first (correct location), fallback to identity/profile.json
     const accountProfilePath = path.join(
       VVAULT_ROOT,
       'users',
       'shard_0000',
-      vvaultUserId,
+      supabaseUserId,
       'account',
       'profile.json'
     );
@@ -3581,7 +5049,7 @@ router.post("/profile/personalization", requireAuth, async (req, res) => {
       VVAULT_ROOT,
       'users',
       'shard_0000',
-      vvaultUserId,
+      supabaseUserId,
       'identity',
       'profile.json'
     );
@@ -3601,7 +5069,7 @@ router.post("/profile/personalization", requireAuth, async (req, res) => {
       } catch {
         // Profile doesn't exist, create new one
         profile = {
-          user_id: vvaultUserId,
+          user_id: supabaseUserId,
           user_name: req.user.name,
           email: req.user.email,
           created: new Date().toISOString(),
@@ -3633,7 +5101,7 @@ router.post("/profile/personalization", requireAuth, async (req, res) => {
     // Write updated profile
     await fs.writeFile(profilePath, JSON.stringify(profile, null, 2), 'utf8');
 
-    console.log(`✅ [VVAULT API] Updated personalization for user ${vvaultUserId}`);
+    console.log(`✅ [VVAULT API] Updated personalization for user ${supabaseUserId?.slice(0, 8)}...`);
 
     res.json({
       ok: true,
@@ -3656,14 +5124,15 @@ router.get("/chat/:sessionId", requireAuth, async (req, res) => {
     return res.status(400).json({ ok: false, error: "sessionId is required" });
   }
 
+  const resolved = await resolveRequestUserForVvault(res, req);
+  if (!resolved) return;
+  const { supabaseUserId, chattyUserId } = resolved;
+  const userEmail = req.user?.email || "unknown";
+  const lookupId = supabaseUserId || (userEmail !== "unknown" ? userEmail : chattyUserId);
+
   try {
     await loadVVAULTModules();
-    
-    const userEmail = req.user?.email || "unknown";
-    const chattyUserId = getUserId(req.user);
-    const lookupId = userEmail !== "unknown" ? userEmail : chattyUserId;
-    
-    console.log(`📚 [VVAULT API] Loading chat ${sessionId} for user: ${lookupId}`);
+    console.log(`📚 [VVAULT API] Loading chat ${sessionId} for user: ${lookupId?.slice?.(0, 8) || lookupId}`);
     
     // Try PostgreSQL database first (Replit mode)
     if (process.env.DATABASE_URL && readConversations) {
@@ -3697,10 +5166,8 @@ router.get("/chat/:sessionId", requireAuth, async (req, res) => {
       return res.json({ ok: true, content: "", messages: [] });
     }
 
-    // resolveVVAULTUserId loaded via loadVVAULTModules()
-    const vvaultUserId = await resolveVVAULTUserId(getUserId(req.user), req.user?.email);
-    if (!vvaultUserId) {
-      return res.status(400).json({ ok: false, error: "Failed to resolve VVAULT user ID" });
+    if (!supabaseUserId) {
+      return res.status(400).json({ ok: false, error: "Failed to resolve Supabase user ID" });
     }
 
     const sanitizedSessionId = sessionId.replace(/[^a-zA-Z0-9_-]/g, "");
@@ -3712,7 +5179,7 @@ router.get("/chat/:sessionId", requireAuth, async (req, res) => {
       VVAULT_ROOT,
       "users",
       "shard_0000",
-      vvaultUserId,
+      supabaseUserId,
       "instances",
       constructId,
       "chatty",
@@ -3727,7 +5194,7 @@ router.get("/chat/:sessionId", requireAuth, async (req, res) => {
         const legacyName = constructId.replace(/-\d+$/, '');
         if (legacyName !== constructId) {
           const legacyPath = path.join(
-            VVAULT_ROOT, "users", "shard_0000", vvaultUserId,
+            VVAULT_ROOT, "users", "shard_0000", supabaseUserId,
             "instances", legacyName, "chatty", fileName
           );
           try {
@@ -3770,14 +5237,41 @@ router.get("/chat/:sessionId", requireAuth, async (req, res) => {
  * - construct_id: string
  */
 router.post("/message", async (req, res) => {
-  const userId = validateUser(res, req.user);
-  if (!userId) return;
+  let userId;
+  try {
+    const user = await resolveSupabaseUser(req);
+    userId = user.id;
+  } catch {
+    return res.status(401).json({ ok: false, error: "Authentication required" });
+  }
 
-  const { constructId, message, threadId, sessionId, attachments, systemPromptOverride, skipPersistence } = req.body || {};
+  const {
+    constructId: rawConstructId,
+    message: incomingMessage,
+    threadId,
+    sessionId,
+    attachments,
+    systemPromptOverride,
+    skipPersistence,
+    continueTurn = false,
+  } = req.body || {};
 
-  if (!constructId) {
+  if (!rawConstructId) {
     return res.status(400).json({ success: false, error: "Missing constructId" });
   }
+
+  const canonicalConstructId = canonicalizeConstructId(rawConstructId);
+  let constructId = canonicalConstructId || rawConstructId;
+  if (!canonicalConstructId) {
+    console.warn(`[VVAULT Proxy] constructId canonicalization failed for "${rawConstructId}", using raw value`);
+  }
+
+  console.log('[NOVA DIAG]', {
+    callsign: req.body?.callsign,
+    constructId,
+    rawConstructId,
+    model: req.body?.model
+  });
 
   try {
     const { recordUserActivity } = await import('./selfprompt.js');
@@ -3787,22 +5281,44 @@ router.post("/message", async (req, res) => {
 
   // Handle image attachments for vision
   const hasImages = attachments && Array.isArray(attachments) && attachments.length > 0;
+  const explicitVisionIntent =
+    hasImages && hasExplicitImageAnalysisIntent(typeof incomingMessage === "string" ? incomingMessage : "");
 
-  if ((!message || message.trim() === '') && !hasImages) {
+  const hasTextMessage =
+    typeof incomingMessage === "string" && incomingMessage.trim().length > 0;
+  const syntheticContinuePrompt =
+    "Continue naturally from the previous assistant message without repeating yourself.";
+  const imageOnlyCharacterPrompt = getImageTurnDefaultUserMessage(constructId);
+  const isSyntheticContinueTurn =
+    continueTurn === true && !hasTextMessage && !hasImages;
+  const message = hasTextMessage
+    ? incomingMessage
+    : isSyntheticContinueTurn
+      ? syntheticContinuePrompt
+      : hasImages
+        ? imageOnlyCharacterPrompt
+        : String(incomingMessage ?? "");
+
+  if (!hasTextMessage && !hasImages && continueTurn !== true) {
     return res.status(400).json({ success: false, error: "Missing message content" });
+  }
+  if (isSyntheticContinueTurn) {
+    console.log("↪️ [VVAULT Proxy] Processing continue-turn without new user text");
   }
   if (hasImages) {
     console.log(`📎 [VVAULT Proxy] Processing ${attachments.length} image attachments`);
+    console.log(`🖼️ [VVAULT Proxy] Vision intent mode: ${explicitVisionIntent ? 'explicit-analysis' : 'character-first'}`);
   }
 
-  const VVAULT_API_BASE_URL = process.env.VVAULT_API_BASE_URL;
+  const { vvaultApiBaseUrl } = getVvaultBridgeConfig();
   
   // ALWAYS-ON: Build enriched context locally for ALL messages (Phase 3 of Memory Orchestration Plan)
   // This ensures constructs always have their identity, capsule, transcript memories, and anti-roleplay directives
   // regardless of which LLM provider handles inference
   {
-    // Fetch the GPT's configured model from database
+    // Fetch GPT config and Supabase metadata
     let gptConfig = null;
+    let meta = null;
     try {
       gptConfig = await gptManager.getGPTByCallsign(constructId);
       if (gptConfig) {
@@ -3811,13 +5327,64 @@ router.post("/message", async (req, res) => {
     } catch (gptError) {
       console.warn(`⚠️ [VVAULT Proxy] Could not fetch GPT config for ${constructId}:`, gptError.message);
     }
+
+    try {
+      meta = await loadAIMetadata(constructId, userId);
+      if (meta) {
+        console.log(`📋 [VVAULT Metadata] Loaded AIS metadata for ${constructId}: model=${meta.model || 'none'}, provider=${meta.provider || 'none'}`);
+      }
+    } catch (metaErr) {
+      console.warn(`⚠️ [VVAULT Metadata] Failed to load metadata for ${constructId}:`, metaErr.message);
+    }
+
+    // Merge metadata into gptConfig for routing
+    if (meta) {
+      gptConfig = {
+        ...gptConfig,
+        modelId: meta.model || gptConfig?.modelId,
+        conversationModel: meta.model || gptConfig?.conversationModel,
+        provider: meta.provider || gptConfig?.provider,
+        capabilities: meta.capabilities || gptConfig?.capabilities,
+        tags: meta.tags || gptConfig?.tags,
+        categories: meta.categories || gptConfig?.categories,
+        systemPromptOverride: meta.systemPromptOverride || gptConfig?.systemPromptOverride,
+        configJson: meta.configJson || gptConfig?.configJson,
+        avatarUrl: meta.avatarUrl || gptConfig?.avatarUrl || gptConfig?.avatar,
+      };
+      if (meta.model && meta.provider && !meta.model.includes(':')) {
+        const combined = `${meta.provider}:${meta.model}`;
+        gptConfig.modelId = combined;
+        gptConfig.conversationModel = combined;
+      }
+    }
+
+    const generationParams = {};
+    const cfg = meta?.configJson;
+    if (cfg) {
+      if (Number.isFinite(cfg.temperature)) generationParams.temperature = cfg.temperature;
+      if (Number.isFinite(cfg.top_p)) generationParams.top_p = cfg.top_p;
+      if (Number.isFinite(cfg.max_tokens)) generationParams.max_tokens = cfg.max_tokens;
+      if (cfg.maxTokens && Number.isFinite(cfg.maxTokens)) generationParams.max_tokens = cfg.maxTokens;
+    }
     
     // Resolve model using GPTCreator config as source of truth
-    const providerAvailability = { openai: !!openaiClient, openrouter: !!(openrouter || replitOpenrouter), ollama: !!process.env.OLLAMA_HOST };
+    const providerAvailability = { openai: !!openaiClient, openrouter: !!(openrouter || replitOpenrouter), ollama: !!process.env.OLLAMA_HOST || process.env.NODE_ENV !== 'production' };
     let { provider: effectiveProvider, model: effectiveModel, source: modelSource, error: modelError } = resolveModelForGPT(gptConfig, providerAvailability);
     
     if (modelError) {
       return res.status(503).json({ success: false, error: modelError });
+    }
+    console.log("[MODEL_RESOLUTION]", {
+      construct: gptConfig?.constructCallsign || gptConfig?.construct_callsign || constructId,
+      provider: effectiveProvider,
+      model: effectiveModel,
+      source: modelSource,
+      preferLocalModels: PREFER_LOCAL_MODELS
+    });
+
+    if (hasImages && meta) {
+      if (meta.provider) effectiveProvider = meta.provider;
+      if (meta.model) effectiveModel = meta.model;
     }
     
     // ===== NOVA-001 AUTHORITATIVE GUARD: Never resolve to OpenAI, regardless of path =====
@@ -3873,21 +5440,44 @@ router.post("/message", async (req, res) => {
 
     const clientTimezone = req.headers['x-user-timezone'] || null;
 
-    const effectiveThreadId = threadId || sessionId || `${constructId}_chat_with_${constructId}`;
-    const enrichedContext = await buildEnrichedContext({
+    const effectiveSystemPromptOverride = meta?.systemPromptOverride || meta?.configJson?.instructions || systemPromptOverride ?? null;
+
+    const { enrichedContext, systemPrompt: enrichedSystemPrompt } = await buildEnrichedContextPrompt({
       userId,
       constructId,
       userMessage: message,
-      systemPromptOverride,
+      systemPromptOverride: effectiveSystemPromptOverride,
       gptConfig,
       user: req.user,
-      clientTimezone,
-      threadId: effectiveThreadId
+      threadId: threadId || sessionId || `${constructId}_chat_with_${constructId}`,
+      timezone: clientTimezone,
     });
-    let systemPrompt = enrichedContext.systemPrompt;
+    let systemPrompt = enrichedSystemPrompt;
 
-    const { enhancedPrompt: searchEnhancedPrompt } = await injectSearchContext(message, systemPrompt);
+    if (effectiveSystemPromptOverride) {
+      if (meta?.configJson?.overrideIdentity === true) {
+        systemPrompt = effectiveSystemPromptOverride;
+      } else {
+        systemPrompt = `${effectiveSystemPromptOverride}\n\n${systemPrompt}`;
+      }
+    }
+
+    let searchIntentReason = 'not_evaluated';
+    let searchInjected = false;
+    const {
+      enhancedPrompt: searchEnhancedPrompt,
+      intent_reason: searchIntentReasonResolved,
+      search_injected: searchInjectedResolved,
+    } = await injectSearchContext(message, systemPrompt, { explicitOnly: true });
     systemPrompt = searchEnhancedPrompt;
+    searchIntentReason = searchIntentReasonResolved || searchIntentReason;
+    searchInjected = searchInjectedResolved === true;
+    if (hasImages) {
+      const visionDirective = explicitVisionIntent
+        ? "INTERNAL DIRECTIVE: The user explicitly requested image analysis. Analyze the image while staying fully in character and relationally grounded."
+        : "INTERNAL DIRECTIVE: The user shared an image without explicitly asking for analysis. Stay in character, continue the existing thread naturally, and avoid switching into profile/policy/report recitals.";
+      systemPrompt += `\n\n${visionDirective}`;
+    }
 
     try {
       const userAccountType = await getAccountType(userId);
@@ -3925,6 +5515,9 @@ router.post("/message", async (req, res) => {
     
     // Load conversation history for context (last 20 turns)
     let conversationHistoryMessages = [];
+    let mainHistoryRemovedLeakCount = 0;
+    let mainHistoryRemovedInstructionDumpCount = 0;
+    let mainHistoryTailPrunedCount = 0;
     try {
       await loadVVAULTModules();
       const lookupId = req.user?.email || userId;
@@ -3939,8 +5532,10 @@ router.post("/message", async (req, res) => {
             )
           : null;
         if (conv && conv.messages && conv.messages.length > 0) {
-          conversationHistoryMessages = conv.messages
-            .filter(m => m.role === 'user' || m.role === 'assistant')
+          const sanitized = sanitizeConversationHistory(conv.messages, constructId, 'main-history');
+          mainHistoryRemovedLeakCount = sanitized.removedLeakCount || 0;
+          mainHistoryRemovedInstructionDumpCount = sanitized.removedInstructionDumpCount || 0;
+          conversationHistoryMessages = (sanitized.messages || [])
             .slice(-20)
             .map(m => ({ role: m.role, content: m.content || '' }));
           console.log(`📚 [VVAULT Proxy] Loaded ${conversationHistoryMessages.length} history messages for ${constructId}`);
@@ -3949,13 +5544,91 @@ router.post("/message", async (req, res) => {
     } catch (historyError) {
       console.warn(`⚠️ [VVAULT Proxy] Could not load conversation history:`, historyError.message);
     }
+
+    // Vision turns use compacted context while preserving protected identity directives.
+    if (hasImages) {
+      if (conversationHistoryMessages.length > VISION_HISTORY_LIMIT) {
+        conversationHistoryMessages = conversationHistoryMessages.slice(-VISION_HISTORY_LIMIT);
+        console.log(`📎 [VVAULT Proxy] Trimmed history to last ${VISION_HISTORY_LIMIT} messages for vision request`);
+      }
+
+      const prunedVisionTail = pruneContaminatedHistoryTail(conversationHistoryMessages, {
+        constructId,
+        contextLabel: 'vision-history-tail',
+        windowSize: Math.max(12, VISION_HISTORY_LIMIT + 4),
+      });
+      conversationHistoryMessages = prunedVisionTail.messages;
+      mainHistoryTailPrunedCount += prunedVisionTail.removed;
+
+      const compactedVisionPrompt = compactSystemPromptForVision(systemPrompt, VISION_SYSTEM_PROMPT_CAP);
+      if (compactedVisionPrompt.compacted) {
+        systemPrompt = compactedVisionPrompt.prompt;
+        console.log(
+          `📎 [VVAULT Proxy] Compacted vision system prompt to ${systemPrompt.length} chars (protected directives preserved: ${compactedVisionPrompt.protectedPreserved})`,
+        );
+      }
+    }
     
-    const lowComplexityTurn = isLowComplexityTurn(
+    let lowComplexityTurn = isLowComplexityTurn(
       message,
       hasImages,
       conversationHistoryMessages.length,
       systemPrompt.length
     );
+    const relationalTurn = isRelationalContinuityPrompt(message);
+    let contextMode = 'full_retrieval';
+    if (relationalTurn && lowComplexityTurn && !hasImages) {
+      const pruned = pruneContaminatedHistoryTail(conversationHistoryMessages, {
+        constructId,
+        contextLabel: 'main-history-tail',
+      });
+      conversationHistoryMessages = pruned.messages;
+      mainHistoryTailPrunedCount = pruned.removed;
+      if (conversationHistoryMessages.length > RELATIONAL_HISTORY_LIMIT) {
+        conversationHistoryMessages = conversationHistoryMessages.slice(-RELATIONAL_HISTORY_LIMIT);
+      }
+      const compactedRelationalPrompt = compactSystemPromptForRelationalTurn(systemPrompt, RELATIONAL_SYSTEM_PROMPT_CAP);
+      if (compactedRelationalPrompt.compacted) {
+        systemPrompt = compactedRelationalPrompt.prompt;
+        console.log(
+          `🫧 [VVAULT Proxy] Relational context mode enabled for ${constructId}; prompt chars=${systemPrompt.length} (protected directives preserved: ${compactedRelationalPrompt.protectedPreserved})`,
+        );
+      }
+      lowComplexityTurn = isLowComplexityTurn(
+        message,
+        hasImages,
+        conversationHistoryMessages.length,
+        systemPrompt.length
+      );
+      contextMode = 'recent_chat_only';
+    }
+
+    console.log('[CONTEXT_MODE]', {
+      constructId,
+      relationalTurn,
+      lowComplexityTurn,
+      contextMode,
+      historyMessages: conversationHistoryMessages.length,
+      mainHistoryRemovedLeakCount,
+      mainHistoryRemovedInstructionDumpCount,
+      mainHistoryTailPrunedCount,
+    });
+
+    console.log('[PROMPT_SOURCE]', {
+      route: '/api/vvault/message',
+      mode: 'main',
+      prompt_source: 'enriched_context',
+      gpt_config_present: !!gptConfig,
+      identity_source: enrichedContext?.phaseTiming?.identity?.source || 'unknown',
+      history_filtered: {
+        leaked_prompt: mainHistoryRemovedLeakCount,
+        instruction_dump: mainHistoryRemovedInstructionDumpCount,
+        relational_tail_pruned: mainHistoryTailPrunedCount,
+      },
+      relational_turn: relationalTurn,
+      context_mode: contextMode,
+      vision_mode: hasImages ? (explicitVisionIntent ? 'explicit-analysis' : 'character-first') : 'off',
+    });
 
     const retrievalDiagnostics = {
       low_complexity_turn: lowComplexityTurn,
@@ -3974,6 +5647,9 @@ router.post("/message", async (req, res) => {
     try {
       let completion;
       let aiResponse;
+      const defaultVisionUserText = explicitVisionIntent
+        ? 'Please describe what you see in this image while staying in character.'
+        : getImageTurnDefaultUserMessage(constructId);
 
       const configuredProviderTimeout = Number.parseInt(process.env.VVAULT_PROVIDER_TIMEOUT_MS || '', 10);
       const PROVIDER_TIMEOUT = Number.isFinite(configuredProviderTimeout)
@@ -3994,14 +5670,20 @@ router.post("/message", async (req, res) => {
 
       const MAX_RETRIES = 1;
 
-      async function tryProvider(client, providerName, model, messages) {
+      async function tryProvider(client, providerName, model, messages, genParams = {}) {
         for (let retry = 0; retry <= MAX_RETRIES; retry++) {
           const attempt = { provider: providerName, retry, started_at: new Date().toISOString(), duration_ms: 0, status: 'failed', error_code: null, error_message_short: null };
           const t0 = Date.now();
           try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT);
-            const result = await client.chat.completions.create({ model, messages, max_tokens: 2048 }, { signal: controller.signal });
+            const result = await client.chat.completions.create({
+              model,
+              messages,
+              max_tokens: genParams.max_tokens ?? 2048,
+              temperature: genParams.temperature,
+              top_p: genParams.top_p,
+            }, { signal: controller.signal });
             clearTimeout(timeout);
             attempt.duration_ms = Date.now() - t0;
             attempt.status = 'ok';
@@ -4030,26 +5712,94 @@ router.post("/message", async (req, res) => {
         const hotfixModel = lowComplexityTurn ? NOVA_FAST_OPENROUTER_MODEL : DEFAULT_OPENROUTER_MODEL;
         providerTrace.model_strategy = lowComplexityTurn ? 'fast' : 'default';
         providerTrace.primary_model = hotfixModel;
-        const hotfixMessages = [
+        const hotfixMessages = injectPersonaAnchor([
           { role: "system", content: systemPrompt },
           ...conversationHistoryMessages,
           { role: "user", content: message }
-        ];
+        ]);
         let novaSuccess = false;
 
+        if (PREFER_LOCAL_MODELS && providerAvailability.ollama && !novaSuccess) {
+          const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+          const ollamaModel = PREFERRED_OLLAMA_MODEL;
+          console.log(`🟢 [VVAULT Proxy] Nova local-first: trying Ollama (${ollamaModel}) for nova-001`);
+          try {
+            const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: ollamaModel,
+                messages: hotfixMessages,
+                stream: false
+              })
+            });
+            if (ollamaResponse.ok) {
+              const ollamaData = await ollamaResponse.json();
+              aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
+              effectiveProvider = 'ollama';
+              effectiveModel = ollamaModel;
+              novaSuccess = true;
+              providerTrace.attempts.push({ provider: 'ollama', retry: 0, started_at: new Date().toISOString(), duration_ms: 0, status: 'ok', error_code: null, error_message_short: null });
+              console.log(`🟢 [VVAULT Proxy] Nova local-first Ollama success`);
+            } else {
+              providerTrace.attempts.push({ provider: 'ollama', retry: 0, started_at: new Date().toISOString(), duration_ms: 0, status: 'failed', error_code: ollamaResponse.status, error_message_short: `Ollama ${ollamaResponse.status}` });
+            }
+          } catch (ollamaErr) {
+            console.warn(`⚠️ [VVAULT Proxy] Nova local-first Ollama failed:`, ollamaErr?.message);
+            providerTrace.attempts.push({ provider: 'ollama', retry: 0, started_at: new Date().toISOString(), duration_ms: 0, status: 'failed', error_code: null, error_message_short: (ollamaErr?.message || 'unknown').slice(0, 80) });
+          }
+        }
+
         if (replitOpenrouter && !novaSuccess) {
-          const r = await tryProvider(replitOpenrouter, 'replit_openrouter', hotfixModel, hotfixMessages);
+          const r = await tryProvider(replitOpenrouter, 'replit_openrouter', hotfixModel, hotfixMessages, generationParams);
           if (r.ok) { aiResponse = r.response; effectiveProvider = 'replit_openrouter'; effectiveModel = r.model; novaSuccess = true; }
         }
 
         if (openrouter && !novaSuccess) {
-          const r = await tryProvider(openrouter, 'openrouter', hotfixModel, hotfixMessages);
+          const r = await tryProvider(openrouter, 'openrouter', hotfixModel, hotfixMessages, generationParams);
           if (r.ok) { aiResponse = r.response; effectiveProvider = 'openrouter'; effectiveModel = r.model; novaSuccess = true; }
         }
 
         if (openaiClient && !novaSuccess) {
-          const r = await tryProvider(openaiClient, 'openai', 'gpt-4.1-mini', hotfixMessages);
+          const r = await tryProvider(openaiClient, 'openai', 'gpt-4.1-mini', hotfixMessages, generationParams);
           if (r.ok) { aiResponse = r.response; effectiveProvider = 'openai'; effectiveModel = 'gpt-4.1-mini'; novaSuccess = true; }
+        }
+
+        if (!novaSuccess && (openrouter || replitOpenrouter) && hotfixModel !== 'meta-llama/llama-3.2-3b-instruct:free') {
+          const orClient = openrouter || replitOpenrouter;
+          const r = await tryProvider(orClient, 'openrouter_free', 'meta-llama/llama-3.2-3b-instruct:free', hotfixMessages, generationParams);
+          if (r.ok) { aiResponse = r.response; effectiveProvider = 'openrouter'; effectiveModel = 'meta-llama/llama-3.2-3b-instruct:free'; novaSuccess = true; console.log('[NOVA FREE FALLBACK] Success'); }
+        }
+
+        if (!novaSuccess && providerAvailability.ollama) {
+          const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+          const ollamaModel = PREFERRED_OLLAMA_MODEL;
+          console.log(`🟢 [VVAULT Proxy] Nova fallback: trying Ollama (${ollamaModel}) for nova-001`);
+          try {
+            const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: ollamaModel,
+                messages: hotfixMessages,
+                stream: false
+              })
+            });
+            if (ollamaResponse.ok) {
+              const ollamaData = await ollamaResponse.json();
+              aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
+              effectiveProvider = 'ollama';
+              effectiveModel = ollamaModel;
+              novaSuccess = true;
+              providerTrace.attempts.push({ provider: 'ollama', retry: 0, started_at: new Date().toISOString(), duration_ms: 0, status: 'ok', error_code: null, error_message_short: null });
+              console.log(`🟢 [VVAULT Proxy] Nova Ollama fallback success`);
+            } else {
+              providerTrace.attempts.push({ provider: 'ollama', retry: 0, started_at: new Date().toISOString(), duration_ms: 0, status: 'failed', error_code: ollamaResponse.status, error_message_short: `Ollama ${ollamaResponse.status}` });
+            }
+          } catch (ollamaErr) {
+            console.warn(`⚠️ [VVAULT Proxy] Nova Ollama fallback failed:`, ollamaErr?.message);
+            providerTrace.attempts.push({ provider: 'ollama', retry: 0, started_at: new Date().toISOString(), duration_ms: 0, status: 'failed', error_code: null, error_message_short: (ollamaErr?.message || 'unknown').slice(0, 80) });
+          }
         }
 
         providerTrace.final_provider = effectiveProvider;
@@ -4071,7 +5821,7 @@ router.post("/message", async (req, res) => {
         let userMessageContent;
         if (hasImages) {
           userMessageContent = [
-            { type: 'text', text: message || 'What do you see in this image?' },
+            { type: 'text', text: message || defaultVisionUserText },
             ...attachments.map(att => ({
               type: 'image_url',
               image_url: {
@@ -4086,13 +5836,14 @@ router.post("/message", async (req, res) => {
         }
         
         try {
+          const openAiMessages = injectPersonaAnchor([
+            { role: "system", content: systemPrompt },
+            ...conversationHistoryMessages,
+            { role: "user", content: userMessageContent }
+          ]);
           completion = await openaiClient.chat.completions.create({
             model: effectiveModel,
-            messages: [
-              { role: "system", content: systemPrompt },
-              ...conversationHistoryMessages,
-              { role: "user", content: userMessageContent }
-            ],
+            messages: openAiMessages,
             max_tokens: 2048,
           });
           aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
@@ -4101,7 +5852,7 @@ router.post("/message", async (req, res) => {
           let fallbackContent;
           if (hasImages) {
             fallbackContent = [
-              { type: 'text', text: message || 'What do you see in this image?' },
+              { type: 'text', text: message || defaultVisionUserText },
               ...attachments.map(att => ({
                 type: 'image_url',
                 image_url: { url: `data:${att.type};base64,${att.data}`, detail: 'auto' }
@@ -4110,11 +5861,11 @@ router.post("/message", async (req, res) => {
           } else {
             fallbackContent = typeof userMessageContent === 'string' ? userMessageContent : message;
           }
-          const fallbackMessages = [
+          const fallbackMessages = injectPersonaAnchor([
             { role: "system", content: systemPrompt },
             ...conversationHistoryMessages,
             { role: "user", content: fallbackContent }
-          ];
+          ]);
           let fallbackSuccess = false;
 
           if (replitOpenrouter && !fallbackSuccess) {
@@ -4168,10 +5919,10 @@ router.post("/message", async (req, res) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             model: effectiveModel,
-            messages: [
+            messages: injectPersonaAnchor([
               { role: "system", content: systemPrompt },
               { role: "user", content: message }
-            ],
+            ]),
             stream: false
           })
         });
@@ -4200,7 +5951,7 @@ router.post("/message", async (req, res) => {
         let openrouterUserContent;
         if (hasImages) {
           openrouterUserContent = [
-            { type: 'text', text: message || 'What do you see in this image?' },
+            { type: 'text', text: message || defaultVisionUserText },
             ...attachments.map(att => ({
               type: 'image_url',
               image_url: {
@@ -4213,45 +5964,101 @@ router.post("/message", async (req, res) => {
         } else {
           openrouterUserContent = message;
         }
-        const mainMsgs = [
+        const mainMsgs = injectPersonaAnchor([
           { role: "system", content: systemPrompt },
           ...conversationHistoryMessages,
           { role: "user", content: openrouterUserContent }
-        ];
+        ]);
         let llmSuccess = false;
         const providerErrors = [];
+        let lastProviderError = null;
         
-        console.log(`[${clientLabel}] Calling`, { model: effectiveModel, user: req.user?.email, historyMessages: conversationHistoryMessages.length, hasImages });
-        try {
-          completion = await orClient.chat.completions.create({
-            model: effectiveModel,
-            messages: mainMsgs,
-            max_tokens: 2048,
-          });
-          console.log(`[${clientLabel}] Success`, { finish_reason: completion?.choices?.[0]?.finish_reason });
-          llmSuccess = true;
-        } catch (err) {
-          console.error(`[${clientLabel} FAIL]`, { status: err?.status, message: err?.message });
-          providerErrors.push(`${clientLabel}: ${err?.status} ${err?.message}`);
-          
-          if (replitOpenrouter && orClient !== replitOpenrouter && (err?.status === 401 || err?.status === 403 || err?.status === 404 || err?.status === 429)) {
-            try {
-              console.log(`🔄 [VVAULT Proxy] Trying Replit-managed OpenRouter for ${constructId}`);
-              completion = await replitOpenrouter.chat.completions.create({
-                model: effectiveModel,
-                messages: mainMsgs,
-                max_tokens: 2048,
-              });
-              console.log('[REPLIT OPENROUTER FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
-              llmSuccess = true;
-            } catch (err2) {
-              console.error('[REPLIT OPENROUTER FALLBACK FAIL]', { status: err2?.status, message: err2?.message });
-              providerErrors.push(`Replit OpenRouter: ${err2?.status} ${err2?.message}`);
+        const modelCandidates = Array.from(new Set([
+          effectiveModel,
+          'meta-llama/llama-3.3-70b-instruct',
+          'mistralai/mistral-large',
+          'qwen/qwen-2.5-72b-instruct',
+          'meta-llama/llama-3.2-3b-instruct:free',
+        ].filter(Boolean)));
+
+        for (const candidate of modelCandidates) {
+          console.log(`[${clientLabel}] Calling`, { model: candidate, user: req.user?.email, historyMessages: conversationHistoryMessages.length, hasImages });
+          try {
+            completion = await orClient.chat.completions.create({
+              model: candidate,
+              messages: mainMsgs,
+              max_tokens: generationParams.max_tokens ?? 2048,
+              temperature: generationParams.temperature,
+              top_p: generationParams.top_p,
+            });
+            console.log(`[${clientLabel}] Success`, { finish_reason: completion?.choices?.[0]?.finish_reason });
+            effectiveModel = candidate;
+            llmSuccess = true;
+            break;
+          } catch (err) {
+            console.error(`[${clientLabel} FAIL]`, { status: err?.status, message: err?.message });
+            providerErrors.push(`${clientLabel}: ${err?.status} ${err?.message}`);
+            lastProviderError = err;
+
+            if (replitOpenrouter && orClient !== replitOpenrouter) {
+              try {
+                console.log(`🔄 [VVAULT Proxy] Trying Replit-managed OpenRouter for ${constructId} with ${candidate}`);
+                completion = await replitOpenrouter.chat.completions.create({
+                  model: candidate,
+                  messages: mainMsgs,
+                  max_tokens: generationParams.max_tokens ?? 2048,
+                  temperature: generationParams.temperature,
+                  top_p: generationParams.top_p,
+                });
+                console.log('[REPLIT OPENROUTER FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+                effectiveModel = candidate;
+                llmSuccess = true;
+                break;
+              } catch (err2) {
+                console.error('[REPLIT OPENROUTER FALLBACK FAIL]', { status: err2?.status, message: err2?.message });
+                providerErrors.push(`Replit OpenRouter: ${err2?.status} ${err2?.message}`);
+                lastProviderError = err2;
+              }
             }
           }
         }
         
-        if (!llmSuccess && openaiClient) {
+        if (!llmSuccess && PREFER_LOCAL_MODELS && providerAvailability.ollama && !hasImages) {
+          const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+          const ollamaModel = PREFERRED_OLLAMA_MODEL;
+          const ollamaMessages = injectPersonaAnchor([
+            { role: "system", content: systemPrompt },
+            ...conversationHistoryMessages,
+            { role: "user", content: message }
+          ]);
+          try {
+            console.log(`🟢 [VVAULT Proxy] Local-first: trying Ollama (${ollamaModel}) for ${constructId}`);
+            const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: ollamaModel,
+                messages: ollamaMessages,
+                stream: false
+              })
+            });
+            if (!ollamaResponse.ok) {
+              throw new Error(`Ollama ${ollamaResponse.status}`);
+            }
+            const ollamaData = await ollamaResponse.json();
+            aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
+            effectiveProvider = 'ollama';
+            effectiveModel = ollamaModel;
+            llmSuccess = true;
+            console.log('[OLLAMA LOCAL-FIRST] Success');
+          } catch (ollamaErr) {
+            console.error('[OLLAMA LOCAL-FIRST FAIL]', { message: ollamaErr?.message });
+            providerErrors.push(`Ollama: ${ollamaErr?.message}`);
+            lastProviderError = ollamaErr;
+          }
+        }
+
+        if (!llmSuccess && openaiClient && constructId !== 'nova-001') {
           try {
             console.log(`🔄 [VVAULT Proxy] All OpenRouter failed, trying OpenAI for ${constructId}`);
             completion = await openaiClient.chat.completions.create({
@@ -4260,22 +6067,70 @@ router.post("/message", async (req, res) => {
               max_tokens: 2048,
             });
             console.log('[OPENAI FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+            effectiveProvider = 'openai';
+            effectiveModel = 'gpt-4.1-mini';
             llmSuccess = true;
           } catch (err3) {
             console.error('[OPENAI FALLBACK FAIL]', { status: err3?.status, message: err3?.message });
             providerErrors.push(`OpenAI: ${err3?.status} ${err3?.message}`);
+            lastProviderError = err3;
           }
+        }
+
+        if (!llmSuccess && !PREFER_LOCAL_MODELS && providerAvailability.ollama) {
+          const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+          const ollamaModel = PREFERRED_OLLAMA_MODEL;
+          const ollamaMessages = injectPersonaAnchor([
+            { role: "system", content: systemPrompt },
+            ...conversationHistoryMessages,
+            { role: "user", content: message }
+          ]);
+          try {
+            console.log(`🟢 [VVAULT Proxy] All cloud providers failed, trying Ollama (${ollamaModel}) for ${constructId}`);
+            const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: ollamaModel,
+                messages: ollamaMessages,
+                stream: false
+              })
+            });
+            if (!ollamaResponse.ok) {
+              throw new Error(`Ollama ${ollamaResponse.status}`);
+            }
+            const ollamaData = await ollamaResponse.json();
+            aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
+            effectiveProvider = 'ollama';
+            effectiveModel = ollamaModel;
+            llmSuccess = true;
+            console.log('[OLLAMA FALLBACK] Success');
+          } catch (ollamaErr) {
+            console.error('[OLLAMA FALLBACK FAIL]', { message: ollamaErr?.message });
+            providerErrors.push(`Ollama: ${ollamaErr?.message}`);
+            lastProviderError = ollamaErr;
+          }
+        }
+
+        if (!llmSuccess && constructId === 'nova-001') {
+          console.log('🛡️ [NOVA GUARD] OpenAI fallback skipped for nova-001 (OpenRouter-only policy)');
         }
         
         if (!llmSuccess) {
+          const normalizedError = normalizeProviderError(lastProviderError, effectiveProvider);
           return res.status(503).json({
             success: false,
             error: `All LLM providers failed: ${providerErrors.join(' | ')}`,
             provider: effectiveProvider,
-            model: effectiveModel
+            model: effectiveModel,
+            upstreamStatus: normalizedError.upstreamStatus,
+            providerCode: normalizedError.providerCode,
+            hint: normalizedError.hint,
           });
         }
-        aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+        if (!aiResponse) {
+          aiResponse = completion?.choices?.[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+        }
       }
       
       const providerForced = constructId === 'nova-001';
@@ -4285,15 +6140,56 @@ router.post("/message", async (req, res) => {
         providerTrace.attempts.push({ provider: effectiveProvider, retry: 0, status: 'ok', duration_ms: providerTrace.total_duration_ms });
       }
       console.log(`✅ [VVAULT Proxy] ${effectiveProvider} successful for ${constructId}, response length: ${aiResponse.length}`);
+      console.log('[TURN_CONTEXT]', {
+        constructId,
+        memory_intent: !!enrichedContext.memory_query_detected,
+        search_intent: searchIntentReason,
+        search_injected: searchInjected,
+        history_count: conversationHistoryMessages.length,
+        history_filtered: {
+          leaked_prompt: mainHistoryRemovedLeakCount,
+          instruction_dump: mainHistoryRemovedInstructionDumpCount,
+          relational_tail_pruned: mainHistoryTailPrunedCount,
+        },
+        relational_turn: relationalTurn,
+        context_mode: contextMode,
+        provider_used: effectiveProvider,
+        vision_mode: hasImages ? (explicitVisionIntent ? 'explicit-analysis' : 'character-first') : 'off',
+      });
       console.log(`📊 [METRIC] { construct_id: "${constructId}", provider_forced: ${providerForced}, provider_used: "${effectiveProvider}", model: "${effectiveModel}", has_images: ${hasImages} }`);
 
       const validatorDebug = {
         memory_retrieval_ran: !!enrichedContext.memory_retrieval_ran,
         memory_query_detected: !!enrichedContext.memory_query_detected,
         evidence_count: enrichedContext.evidence_count || 0,
+        identity_drift_detected: false,
+        identity_rewrite_applied: false,
+        identity_fallback_applied: false,
         cutoff_violation_detected: false,
         rewrite_applied: false,
       };
+
+      const identityGuard = await enforceFirstPersonIdentity({
+        aiResponse,
+        userMessage: message,
+        constructId,
+        providerAvailability,
+        roleplayEnabled: gptConfig?.roleplayEnabled === true,
+        latestUserBeforeCurrent: getLastUserMessageFromHistory(conversationHistoryMessages),
+      });
+      aiResponse = identityGuard.response;
+      validatorDebug.identity_drift_detected = identityGuard.identity_drift_detected;
+      validatorDebug.identity_rewrite_applied = identityGuard.identity_rewrite_applied;
+      validatorDebug.identity_fallback_applied = identityGuard.identity_fallback_applied;
+      console.log('[IDENTITY_GUARD]', {
+        constructId,
+        mode: 'main',
+        relational_turn: relationalTurn,
+        context_mode: contextMode,
+        identity_drift_detected: identityGuard.identity_drift_detected,
+        identity_rewrite_applied: identityGuard.identity_rewrite_applied,
+        identity_fallback_applied: identityGuard.identity_fallback_applied,
+      });
 
       if (enrichedContext.memory_query_detected) {
         const CUTOFF_PATTERNS = [
@@ -4362,7 +6258,7 @@ Output ONLY the rewritten response, nothing else.`
           }
         }
       }
-      console.log(`🛡️ [PostResponseValidator] { memory_retrieval_ran: ${validatorDebug.memory_retrieval_ran}, memory_query_detected: ${validatorDebug.memory_query_detected}, evidence_count: ${validatorDebug.evidence_count}, cutoff_violation_detected: ${validatorDebug.cutoff_violation_detected}, rewrite_applied: ${validatorDebug.rewrite_applied} }`);
+      console.log(`🛡️ [PostResponseValidator] { memory_retrieval_ran: ${validatorDebug.memory_retrieval_ran}, memory_query_detected: ${validatorDebug.memory_query_detected}, evidence_count: ${validatorDebug.evidence_count}, identity_drift_detected: ${validatorDebug.identity_drift_detected}, identity_rewrite_applied: ${validatorDebug.identity_rewrite_applied}, identity_fallback_applied: ${validatorDebug.identity_fallback_applied}, cutoff_violation_detected: ${validatorDebug.cutoff_violation_detected}, rewrite_applied: ${validatorDebug.rewrite_applied} }`);
 
       if (enrichedContext.capabilityManifest && aiResponse) {
         try {
@@ -4384,18 +6280,20 @@ Output ONLY the rewritten response, nothing else.`
           await loadVVAULTModules();
           if (writeTranscript) {
             const now = new Date();
-            await writeTranscript({
-              userId,
-              userEmail: req.user?.email,
-              sessionId: effectiveSession,
-              timestamp: new Date(now.getTime()).toISOString(),
-              role: 'user',
-              content: message,
-              title: constructName,
-              constructId,
-              constructName,
-              constructCallsign: constructId
-            });
+            if (!isSyntheticContinueTurn) {
+              await writeTranscript({
+                userId,
+                userEmail: req.user?.email,
+                sessionId: effectiveSession,
+                timestamp: new Date(now.getTime()).toISOString(),
+                role: 'user',
+                content: message,
+                title: constructName,
+                constructId,
+                constructName,
+                constructCallsign: constructId
+              });
+            }
             await writeTranscript({
               userId,
               userEmail: req.user?.email,
@@ -4408,23 +6306,27 @@ Output ONLY the rewritten response, nothing else.`
               constructName,
               constructCallsign: constructId
             });
-            console.log(`💾 [VVAULT Proxy] Transcript persisted for ${constructId} (user + assistant)`);
+            console.log(
+              `💾 [VVAULT Proxy] Transcript persisted for ${constructId} (${isSyntheticContinueTurn ? "assistant-only continue turn" : "user + assistant"})`,
+            );
           }
         } catch (persistErr) {
           console.warn('⚠️ [VVAULT Proxy] Transcript persistence failed:', persistErr.message);
         }
 
-        captureMemory({
-          userId,
-          constructId,
-          userMessage: message,
-          aiResponse,
-          sessionId: effectiveSession,
-          email: req.user?.email
-        }).catch(err => console.warn('⚠️ [VVAULT Proxy] Background memory capture failed:', err.message));
+        if (!isSyntheticContinueTurn) {
+          captureMemory({
+            userId,
+            constructId,
+            userMessage: message,
+            aiResponse,
+            sessionId: effectiveSession,
+            email: req.user?.email
+          }).catch(err => console.warn('⚠️ [VVAULT Proxy] Background memory capture failed:', err.message));
+        }
       }
 
-      evaluateMessage(userId, constructId, message, aiResponse)
+      evaluateMessage(userId, constructId, isSyntheticContinueTurn ? "" : message, aiResponse)
         .catch(err => console.warn('[ContentGuard] Background evaluation failed:', err.message));
 
       return res.json({
@@ -4443,23 +6345,28 @@ Output ONLY the rewritten response, nothing else.`
           : {})
       });
     } catch (llmError) {
+      const normalizedError = normalizeProviderError(llmError, effectiveProvider);
       console.error(`❌ [VVAULT Proxy] ${effectiveProvider} call failed:`, {
         provider: effectiveProvider,
         model: effectiveModel,
-        status: llmError?.status,
-        message: llmError?.message,
+        status: normalizedError.upstreamStatus,
+        code: normalizedError.providerCode,
+        message: normalizedError.message,
         apiKeySet: !!OPENROUTER_API_KEY,
         constructId
       });
+      console.error('[NOVA TROUBLE]', new Error().stack.split('\n'));
       const fallbackResponse = `I'm having trouble reaching my model providers right now. Please try again in a moment.`;
       return res.status(503).json({
         success: false,
-        error: `${effectiveProvider} failed: ${llmError.message || 'Unknown error'}`,
+        error: `${effectiveProvider} failed: ${normalizedError.message}`,
         response: fallbackResponse,
         provider: effectiveProvider,
         model: effectiveModel,
-        upstreamStatus: llmError?.status || null,
-        details: llmError.message,
+        upstreamStatus: normalizedError.upstreamStatus,
+        providerCode: normalizedError.providerCode,
+        hint: normalizedError.hint,
+        details: normalizedError.message,
         retryable: true,
         ...(process.env.SHOW_DEV_INFO === 'true' ? { retrieval_diagnostics: retrievalDiagnostics, provider_trace: providerTrace } : {}),
       });
@@ -4492,7 +6399,8 @@ Output ONLY the rewritten response, nothing else.`
       // VVAULT handles: LLM inference, transcript saving, memory management
       // Include model info so VVAULT can use the GPT's configured model
       const vvaultHeaders = { 'Content-Type': 'application/json' };
-      if (process.env.VVAULT_SERVICE_TOKEN) vvaultHeaders['X-Chatty-Key'] = process.env.VVAULT_SERVICE_TOKEN;
+      const { serviceToken } = getVvaultBridgeConfig();
+      if (serviceToken) vvaultHeaders['X-Chatty-Key'] = serviceToken;
       const userEmail = req.user?.email || userId;
       if (userEmail) vvaultHeaders['X-Chatty-User'] = userEmail;
 
@@ -4513,6 +6421,10 @@ Output ONLY the rewritten response, nothing else.`
       clearTimeout(timeout);
 
       if (!vvaultResponse.ok) {
+        if (isReplitAsleepResponse(vvaultResponse)) {
+          console.error(`❌ [VVAULT Proxy] VVAULT host asleep (Replit edge 503); request did not reach VVAULT`);
+          return sendVvaultHostAsleep(res, { downstreamStatus: vvaultResponse.status });
+        }
         const errorText = await vvaultResponse.text();
         console.error(`❌ [VVAULT Proxy] VVAULT API returned ${vvaultResponse.status}: ${errorText}`);
         
@@ -4527,9 +6439,17 @@ Output ONLY the rewritten response, nothing else.`
               gptConfig = await gptManager.getGPTByCallsign(constructId);
             } catch (e) { /* ignore */ }
             
-            const providerAvailability = { openai: !!openaiClient, openrouter: !!(openrouter || replitOpenrouter), ollama: !!process.env.OLLAMA_HOST };
-            let { provider: effectiveProvider, model: effectiveModel, error: modelError } = resolveModelForGPT(gptConfig, providerAvailability);
-            if (modelError) throw new Error(modelError);
+            const providerAvailability = { openai: !!openaiClient, openrouter: !!(openrouter || replitOpenrouter), ollama: !!process.env.OLLAMA_HOST || process.env.NODE_ENV !== 'production' };
+            const modelResolution = resolveModelForGPT(gptConfig, providerAvailability);
+            if (modelResolution.error) throw new Error(modelResolution.error);
+            let { provider: effectiveProvider, model: effectiveModel, source: modelSource } = modelResolution;
+            console.log("[MODEL_RESOLUTION]", {
+              construct: gptConfig?.constructCallsign || gptConfig?.construct_callsign || constructId,
+              provider: effectiveProvider,
+              model: effectiveModel,
+              source: modelSource,
+              preferLocalModels: PREFER_LOCAL_MODELS
+            });
             
             // Auto-initialize construct's memory stack for fallback path
             try {
@@ -4539,20 +6459,34 @@ Output ONLY the rewritten response, nothing else.`
               }
             } catch (_msErr) {}
 
-            const { buildEnrichedContext: buildFallbackContext } = await import('../lib/memoryContextBuilder.js');
-            const enrichedResult = await buildFallbackContext({
+            const { enrichedContext: enrichedResult, systemPrompt: enrichedSystemPrompt } = await buildEnrichedContextPrompt({
               userId,
               constructId,
               userMessage: message,
               gptConfig,
               user: req.user,
-              threadId: threadId || sessionId || `${constructId}_chat_with_${constructId}`
+              threadId: threadId || sessionId || `${constructId}_chat_with_${constructId}`,
+              timezone: req.headers['x-user-timezone'] || null,
             });
-            let systemPrompt = enrichedResult.systemPrompt;
+            let systemPrompt = enrichedSystemPrompt;
             console.log(`✅ [VVAULT Proxy] Enriched context built for ${constructId} (capsule: ${enrichedResult.capsuleLoaded}, memories: ${enrichedResult.memoriesLoaded}, ${systemPrompt.length} chars)`);
 
-            const { enhancedPrompt: fb1SearchPrompt } = await injectSearchContext(message, systemPrompt);
+            let fb1SearchIntent = 'not_evaluated';
+            let fb1SearchInjected = false;
+            const {
+              enhancedPrompt: fb1SearchPrompt,
+              intent_reason: fb1SearchIntentResolved,
+              search_injected: fb1SearchInjectedResolved,
+            } = await injectSearchContext(message, systemPrompt, { explicitOnly: true });
             systemPrompt = fb1SearchPrompt;
+            fb1SearchIntent = fb1SearchIntentResolved || fb1SearchIntent;
+            fb1SearchInjected = fb1SearchInjectedResolved === true;
+            if (hasImages) {
+              const visionDirective = explicitVisionIntent
+                ? "INTERNAL DIRECTIVE: The user explicitly requested image analysis. Analyze the image while staying fully in character and relationally grounded."
+                : "INTERNAL DIRECTIVE: The user shared an image without explicitly asking for analysis. Stay in character, continue the existing thread naturally, and avoid switching into profile/policy/report recitals.";
+              systemPrompt += `\n\n${visionDirective}`;
+            }
 
             if (constructId === 'lin-001') {
               const userMsg = (message || '').toLowerCase();
@@ -4576,6 +6510,9 @@ CRITICAL: Do NOT say "Sera GPT is now live" or pretend to create it. You are NOT
             }
             
             let fbHistoryMessages = [];
+            let fb1HistoryRemovedLeakCount = 0;
+            let fb1HistoryRemovedInstructionDumpCount = 0;
+            let fb1HistoryTailPrunedCount = 0;
             try {
               await loadVVAULTModules();
               const lookupId = req.user?.email || userId;
@@ -4590,13 +6527,17 @@ CRITICAL: Do NOT say "Sera GPT is now live" or pretend to create it. You are NOT
                 const fbMessages = targetConvo.messages || [];
                 console.log(`📚 [VVAULT Proxy] Found conversation for ${constructId}: "${targetConvo.title}" with ${fbMessages.length} total messages (from ${fbConvos.length} conversations returned)`);
                 
-                const validMessages = fbMessages.filter(m => 
-                  (m.role === 'user' || m.role === 'assistant') && m.content && !m.isDateHeader
+                const validMessages = sanitizeConversationHistory(
+                  fbMessages.filter(m => m.content && !m.isDateHeader),
+                  constructId,
+                  'fallback1-history',
                 );
-                
-                const fbRecent = validMessages.slice(-40);
+                fb1HistoryRemovedLeakCount = validMessages.removedLeakCount || 0;
+                fb1HistoryRemovedInstructionDumpCount = validMessages.removedInstructionDumpCount || 0;
+
+                const fbRecent = (validMessages.messages || []).slice(-40);
                 fbHistoryMessages = fbRecent.map(m => ({ role: m.role, content: m.content }));
-                console.log(`📚 [VVAULT Proxy] Loaded ${fbHistoryMessages.length} history messages for ${constructId} (filtered from ${validMessages.length} valid messages)`);
+                console.log(`📚 [VVAULT Proxy] Loaded ${fbHistoryMessages.length} history messages for ${constructId} (filtered from ${(validMessages.messages || []).length} valid messages)`);
                 
                 if (fbHistoryMessages.length > 0 && enrichedResult.memoriesLoaded === 0) {
                   systemPrompt += `\n\n## Conversation Continuity
@@ -4610,6 +6551,69 @@ Do NOT treat this as a first meeting if there is conversation history.`;
             } catch (histErr) {
               console.warn(`⚠️ [VVAULT Proxy] Could not load fallback history:`, histErr.message);
             }
+
+            if (hasImages) {
+              if (fbHistoryMessages.length > VISION_HISTORY_LIMIT) {
+                fbHistoryMessages = fbHistoryMessages.slice(-VISION_HISTORY_LIMIT);
+              }
+              const prunedVisionTail = pruneContaminatedHistoryTail(fbHistoryMessages, {
+                constructId,
+                contextLabel: 'fallback1-vision-history-tail',
+                windowSize: Math.max(12, VISION_HISTORY_LIMIT + 4),
+              });
+              fbHistoryMessages = prunedVisionTail.messages;
+              fb1HistoryTailPrunedCount += prunedVisionTail.removed;
+              const compactedVisionPrompt = compactSystemPromptForVision(systemPrompt, VISION_SYSTEM_PROMPT_CAP);
+              if (compactedVisionPrompt.compacted) {
+                systemPrompt = compactedVisionPrompt.prompt;
+              }
+            }
+
+            let fb1LowComplexityTurn = isLowComplexityTurn(
+              message,
+              hasImages,
+              fbHistoryMessages.length,
+              systemPrompt.length
+            );
+            const fb1RelationalTurn = isRelationalContinuityPrompt(message);
+            let fb1ContextMode = 'full_retrieval';
+            if (fb1RelationalTurn && fb1LowComplexityTurn && !hasImages) {
+              const pruned = pruneContaminatedHistoryTail(fbHistoryMessages, {
+                constructId,
+                contextLabel: 'fallback1-history-tail',
+              });
+              fbHistoryMessages = pruned.messages;
+              fb1HistoryTailPrunedCount = pruned.removed;
+              if (fbHistoryMessages.length > RELATIONAL_HISTORY_LIMIT) {
+                fbHistoryMessages = fbHistoryMessages.slice(-RELATIONAL_HISTORY_LIMIT);
+              }
+              const compactedRelationalPrompt = compactSystemPromptForRelationalTurn(systemPrompt, RELATIONAL_SYSTEM_PROMPT_CAP);
+              if (compactedRelationalPrompt.compacted) {
+                systemPrompt = compactedRelationalPrompt.prompt;
+              }
+              fb1LowComplexityTurn = isLowComplexityTurn(
+                message,
+                hasImages,
+                fbHistoryMessages.length,
+                systemPrompt.length
+              );
+              fb1ContextMode = 'recent_chat_only';
+            }
+            console.log('[PROMPT_SOURCE]', {
+              route: '/api/vvault/message',
+              mode: 'fallback_vvault_unavailable',
+              prompt_source: 'enriched_context',
+              gpt_config_present: !!gptConfig,
+              identity_source: enrichedResult?.phaseTiming?.identity?.source || 'unknown',
+              history_filtered: {
+                leaked_prompt: fb1HistoryRemovedLeakCount,
+                instruction_dump: fb1HistoryRemovedInstructionDumpCount,
+                relational_tail_pruned: fb1HistoryTailPrunedCount,
+              },
+              relational_turn: fb1RelationalTurn,
+              context_mode: fb1ContextMode,
+              vision_mode: hasImages ? (explicitVisionIntent ? 'explicit-analysis' : 'character-first') : 'off',
+            });
             
             // ===== NOVA-001 HOTFIX (Fallback 1): Force away from OpenAI =====
             if (constructId === 'nova-001' && effectiveProvider === 'openai') {
@@ -4619,6 +6623,23 @@ Do NOT treat this as a first meeting if there is conversation history.`;
             }
 
             console.log(`🧠 [VVAULT Proxy] Fallback using ${effectiveProvider}:${effectiveModel} for ${constructId}`);
+            console.log('[TURN_CONTEXT]', {
+              constructId,
+              memory_intent: !!enrichedResult.memory_query_detected,
+              search_intent: fb1SearchIntent,
+              search_injected: fb1SearchInjected,
+              history_count: fbHistoryMessages.length,
+              history_filtered: {
+                leaked_prompt: fb1HistoryRemovedLeakCount,
+                instruction_dump: fb1HistoryRemovedInstructionDumpCount,
+                relational_tail_pruned: fb1HistoryTailPrunedCount,
+              },
+              relational_turn: fb1RelationalTurn,
+              context_mode: fb1ContextMode,
+              provider_used: effectiveProvider,
+              mode: 'fallback_vvault_unavailable',
+              vision_mode: hasImages ? (explicitVisionIntent ? 'explicit-analysis' : 'character-first') : 'off',
+            });
             
             const fbMsgs = [{ role: "system", content: systemPrompt }, ...fbHistoryMessages, { role: "user", content: message }];
             let completion;
@@ -4666,7 +6687,29 @@ Do NOT treat this as a first meeting if there is conversation history.`;
                 } catch (err) {
                   console.error(`[${clientLabel} FAIL]`, { status: err?.status, message: err?.message });
                   providerErrors.push(`${clientLabel}: ${err?.status} ${err?.message}`);
-                  
+
+                  // Nova-only rescue path: stay on OpenRouter, swap to a known-available free model.
+                  if (
+                    !llmSuccess &&
+                    constructId === 'nova-001' &&
+                    effectiveModel !== 'meta-llama/llama-3.2-3b-instruct:free'
+                  ) {
+                    try {
+                      console.log(`🔄 [VVAULT Proxy] Nova free-model fallback: ${effectiveModel} -> meta-llama/llama-3.2-3b-instruct:free`, { status: err?.status || null });
+                      completion = await orClient.chat.completions.create({
+                        model: 'meta-llama/llama-3.2-3b-instruct:free',
+                        messages: fbMsgs,
+                        max_tokens: 2048,
+                      });
+                      effectiveModel = 'meta-llama/llama-3.2-3b-instruct:free';
+                      llmSuccess = true;
+                      console.log('[NOVA FREE FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+                    } catch (novaFallbackErr) {
+                      console.error('[NOVA FREE FALLBACK FAIL]', { status: novaFallbackErr?.status, message: novaFallbackErr?.message });
+                      providerErrors.push(`Nova free fallback: ${novaFallbackErr?.status} ${novaFallbackErr?.message}`);
+                    }
+                  }
+
                   if (replitOpenrouter && orClient !== replitOpenrouter && (err?.status === 401 || err?.status === 403 || err?.status === 404 || err?.status === 429)) {
                     try {
                       console.log(`🔄 [VVAULT Proxy] Trying Replit-managed OpenRouter for ${constructId}`);
@@ -4686,6 +6729,33 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               }
               
               // ===== NOVA-001 HOTFIX: Never fall back to OpenAI =====
+              if (!llmSuccess && PREFER_LOCAL_MODELS && providerAvailability.ollama) {
+                const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+                const ollamaModel = PREFERRED_OLLAMA_MODEL;
+                try {
+                  console.log(`🟢 [VVAULT Proxy] Fallback1 local-first: trying Ollama (${ollamaModel}) for ${constructId}`);
+                  const ollamaResp = await fetch(`${ollamaHost}/api/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      model: ollamaModel,
+                      messages: fbMsgs,
+                      stream: false
+                    })
+                  });
+                  if (!ollamaResp.ok) throw new Error(`Ollama ${ollamaResp.status}`);
+                  const ollamaData = await ollamaResp.json();
+                  aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
+                  effectiveProvider = 'ollama';
+                  effectiveModel = ollamaModel;
+                  llmSuccess = true;
+                  console.log('[OLLAMA LOCAL-FIRST1] Success');
+                } catch (ollamaErr) {
+                  console.error('[OLLAMA LOCAL-FIRST1 FAIL]', { message: ollamaErr?.message });
+                  providerErrors.push(`Ollama: ${ollamaErr?.message}`);
+                }
+              }
+
               if (!llmSuccess && openaiClient && constructId !== 'nova-001') {
                 try {
                   console.log(`🔄 [VVAULT Proxy] All OpenRouter failed, trying OpenAI for ${constructId}`);
@@ -4695,6 +6765,8 @@ Do NOT treat this as a first meeting if there is conversation history.`;
                     max_tokens: 2048,
                   });
                   console.log('[OPENAI FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+                  effectiveProvider = 'openai';
+                  effectiveModel = 'gpt-4.1-mini';
                   llmSuccess = true;
                 } catch (err3) {
                   console.error('[OPENAI FALLBACK FAIL]', { status: err3?.status, message: err3?.message });
@@ -4703,11 +6775,40 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               } else if (!llmSuccess && constructId === 'nova-001') {
                 console.log(`[NOVA HOTFIX] Fallback1: Blocked OpenAI last-resort for nova-001`);
               }
+
+              if (!llmSuccess && !PREFER_LOCAL_MODELS && providerAvailability.ollama) {
+                const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+                const ollamaModel = PREFERRED_OLLAMA_MODEL;
+                try {
+                  console.log(`🟢 [VVAULT Proxy] Fallback1: cloud providers failed, trying Ollama (${ollamaModel}) for ${constructId}`);
+                  const ollamaResp = await fetch(`${ollamaHost}/api/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      model: ollamaModel,
+                      messages: fbMsgs,
+                      stream: false
+                    })
+                  });
+                  if (!ollamaResp.ok) throw new Error(`Ollama ${ollamaResp.status}`);
+                  const ollamaData = await ollamaResp.json();
+                  aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
+                  effectiveProvider = 'ollama';
+                  effectiveModel = ollamaModel;
+                  llmSuccess = true;
+                  console.log('[OLLAMA FALLBACK1] Success');
+                } catch (ollamaErr) {
+                  console.error('[OLLAMA FALLBACK1 FAIL]', { message: ollamaErr?.message });
+                  providerErrors.push(`Ollama: ${ollamaErr?.message}`);
+                }
+              }
               
               if (!llmSuccess) {
                 throw new Error(`All LLM providers failed: ${providerErrors.join(' | ')}`);
               }
-              aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+              if (!aiResponse) {
+                aiResponse = completion?.choices?.[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+              }
             }
             
             console.log(`✅ [VVAULT Proxy] ${effectiveProvider} fallback successful for ${constructId}`);
@@ -4719,6 +6820,25 @@ Do NOT treat this as a first meeting if there is conversation history.`;
                 aiResponse = (aiResponse || '').trimEnd() + '\n\n[OPEN_GPT_CREATOR]';
               }
             }
+
+            const fallbackIdentityGuard = await enforceFirstPersonIdentity({
+              aiResponse,
+              userMessage: message,
+              constructId,
+              providerAvailability,
+              roleplayEnabled: gptConfig?.roleplayEnabled === true,
+              latestUserBeforeCurrent: getLastUserMessageFromHistory(fbHistoryMessages),
+            });
+            aiResponse = fallbackIdentityGuard.response;
+            console.log('[IDENTITY_GUARD]', {
+              constructId,
+              mode: 'fallback_vvault_unavailable',
+              relational_turn: fb1RelationalTurn,
+              context_mode: fb1ContextMode,
+              identity_drift_detected: fallbackIdentityGuard.identity_drift_detected,
+              identity_rewrite_applied: fallbackIdentityGuard.identity_rewrite_applied,
+              identity_fallback_applied: fallbackIdentityGuard.identity_fallback_applied,
+            });
             
             // NOTE: Frontend (Layout.tsx) handles message persistence via conversationManager.addMessageToConversation()
             // Do NOT writeTranscript here — it causes duplicate messages in the database and UI
@@ -4785,67 +6905,45 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           gptConfig = await gptManager.getGPTByCallsign(constructId);
         } catch (e) { /* ignore */ }
         
-        const providerAvailability = { openai: !!openaiClient, openrouter: !!(openrouter || replitOpenrouter), ollama: !!process.env.OLLAMA_HOST };
-        let { provider: effectiveProvider, model: effectiveModel, error: modelError } = resolveModelForGPT(gptConfig, providerAvailability);
-        if (modelError) throw new Error(modelError);
-        
-        const identity = await loadIdentityFiles(userId, constructId);
-        let systemPrompt = identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`;
-        
-        // Load capsule data for this fallback path too
-        try {
-          const { getCapsuleIntegration } = await import('../lib/capsuleIntegration.js');
-          const capsuleIntegration = getCapsuleIntegration();
-          const capsuleData = await capsuleIntegration.loadCapsule(constructId);
-          if (capsuleData) {
-            const constructName = constructId.replace(/-\d+$/, '');
-            const displayName = constructName.charAt(0).toUpperCase() + constructName.slice(1);
-            const name = capsuleData.metadata?.instance_name || capsuleData.identity?.name || displayName;
-            const traits = capsuleData.traits || {};
-            const pers = capsuleData.personality || {};
-            const conditioning = capsuleData.identity?.conditioning || '';
-            const instructions = capsuleData.identity?.instructions || '';
-            let capsulePrompt = `\n\n## Capsule Identity (${name})`;
-            if (Object.keys(traits).length > 0) {
-              capsulePrompt += `\n### Personality Traits`;
-              for (const [key, value] of Object.entries(traits)) {
-                const pct = typeof value === 'number' ? `${(value * 100).toFixed(0)}%` : value;
-                capsulePrompt += `\n- ${key}: ${pct}`;
-              }
-            }
-            if (pers.personality_type) capsulePrompt += `\n### Cognitive Profile\n- Type: ${pers.personality_type}`;
-            if (pers.big_five_traits) {
-              capsulePrompt += `\n### Big Five`;
-              for (const [trait, value] of Object.entries(pers.big_five_traits)) {
-                capsulePrompt += `\n- ${trait}: ${typeof value === 'number' ? (value * 100).toFixed(0) + '%' : value}`;
-              }
-            }
-            if (conditioning) capsulePrompt += `\n### Conditioning Directives\n${conditioning}`;
-            if (instructions && !systemPrompt.includes(instructions)) capsulePrompt += `\n### Behavioral Instructions\n${instructions}`;
-            if (capsuleData.memory?.episodic_memories?.length > 0) {
-              capsulePrompt += `\n### Key Memories`;
-              capsuleData.memory.episodic_memories.slice(-5).forEach(m => { capsulePrompt += `\n- ${m}`; });
-            }
-            if (capsuleData.memory_log?.length > 0) {
-              capsulePrompt += `\n### Recent Memory Log`;
-              capsuleData.memory_log.slice(-5).forEach(m => { capsulePrompt += `\n- ${typeof m === 'string' ? m : JSON.stringify(m)}`; });
-            }
-            capsulePrompt += `\n\nYou MUST embody these traits and personality in every response. Stay in character.`;
-            systemPrompt += capsulePrompt;
-            console.log(`✅ [VVAULT Proxy] Fallback2 capsule injected for ${constructId}`);
-          }
-        } catch (capsuleErr) {
-          console.warn(`⚠️ [VVAULT Proxy] Fallback2 capsule load failed for ${constructId}:`, capsuleErr.message);
-        }
-        
-        const userName2 = req.user?.name || req.user?.given_name || 'the user';
-        systemPrompt += `\n\n## User Identity\nThe user you are speaking with is named "${userName2}". Address them by name when appropriate. Remember their name throughout the conversation.`;
-        if (req.user?.email) {
-          systemPrompt += `\nTheir email is ${req.user.email}.`;
-        }
+        const providerAvailability = { openai: !!openaiClient, openrouter: !!(openrouter || replitOpenrouter), ollama: !!process.env.OLLAMA_HOST || process.env.NODE_ENV !== 'production' };
+        const modelResolution = resolveModelForGPT(gptConfig, providerAvailability);
+        if (modelResolution.error) throw new Error(modelResolution.error);
+        let { provider: effectiveProvider, model: effectiveModel, source: modelSource } = modelResolution;
+        console.log("[MODEL_RESOLUTION]", {
+          construct: gptConfig?.constructCallsign || gptConfig?.construct_callsign || constructId,
+          provider: effectiveProvider,
+          model: effectiveModel,
+          source: modelSource,
+          preferLocalModels: PREFER_LOCAL_MODELS
+        });
 
-        const { enhancedPrompt: fb2SearchPrompt } = await injectSearchContext(message, systemPrompt);
+        const { enrichedContext: enrichedResult2, systemPrompt: enrichedSystemPrompt } = await buildEnrichedContextPrompt({
+          userId,
+          constructId,
+          userMessage: message,
+          gptConfig,
+          user: req.user,
+          threadId: threadId || sessionId || `${constructId}_chat_with_${constructId}`,
+          timezone: req.headers['x-user-timezone'] || null,
+        });
+        let systemPrompt = enrichedSystemPrompt;
+
+        let fb2SearchIntent = 'not_evaluated';
+        let fb2SearchInjected = false;
+        const {
+          enhancedPrompt: fb2SearchPrompt,
+          intent_reason: fb2SearchIntentResolved,
+          search_injected: fb2SearchInjectedResolved,
+        } = await injectSearchContext(message, systemPrompt, { explicitOnly: true });
         systemPrompt = fb2SearchPrompt;
+        fb2SearchIntent = fb2SearchIntentResolved || fb2SearchIntent;
+        fb2SearchInjected = fb2SearchInjectedResolved === true;
+        if (hasImages) {
+          const visionDirective = explicitVisionIntent
+            ? "INTERNAL DIRECTIVE: The user explicitly requested image analysis. Analyze the image while staying fully in character and relationally grounded."
+            : "INTERNAL DIRECTIVE: The user shared an image without explicitly asking for analysis. Stay in character, continue the existing thread naturally, and avoid switching into profile/policy/report recitals.";
+          systemPrompt += `\n\n${visionDirective}`;
+        }
 
         if (constructId === 'lin-001') {
           const userMsg2 = (message || '').toLowerCase();
@@ -4869,6 +6967,9 @@ CRITICAL: Do NOT say the GPT is "live" or pretend to create it. You are NOT crea
         }
         
         let fb2HistoryMessages = [];
+        let fb2HistoryRemovedLeakCount = 0;
+        let fb2HistoryRemovedInstructionDumpCount = 0;
+        let fb2HistoryTailPrunedCount = 0;
         try {
           await loadVVAULTModules();
           const lookupId = req.user?.email || userId;
@@ -4883,11 +6984,15 @@ CRITICAL: Do NOT say the GPT is "live" or pretend to create it. You are NOT crea
             const fb2Messages = targetConvo2.messages || [];
             console.log(`📚 [VVAULT Proxy] Fallback2 found conversation for ${constructId}: "${targetConvo2.title}" with ${fb2Messages.length} total messages`);
             
-            const validMessages2 = fb2Messages.filter(m => 
-              (m.role === 'user' || m.role === 'assistant') && m.content && !m.isDateHeader
+            const validMessages2 = sanitizeConversationHistory(
+              fb2Messages.filter(m => m.content && !m.isDateHeader),
+              constructId,
+              'fallback2-history',
             );
-            
-            const fb2Recent = validMessages2.slice(-40);
+            fb2HistoryRemovedLeakCount = validMessages2.removedLeakCount || 0;
+            fb2HistoryRemovedInstructionDumpCount = validMessages2.removedInstructionDumpCount || 0;
+
+            const fb2Recent = (validMessages2.messages || []).slice(-40);
             fb2HistoryMessages = fb2Recent.map(m => ({ role: m.role, content: m.content }));
             console.log(`📚 [VVAULT Proxy] Fallback2 loaded ${fb2HistoryMessages.length} history messages for ${constructId}`);
             
@@ -4901,6 +7006,69 @@ Do NOT treat this as a first meeting if there is conversation history.`;
         } catch (histErr) {
           console.warn(`⚠️ [VVAULT Proxy] Could not load fallback2 history:`, histErr.message);
         }
+
+        if (hasImages) {
+          if (fb2HistoryMessages.length > VISION_HISTORY_LIMIT) {
+            fb2HistoryMessages = fb2HistoryMessages.slice(-VISION_HISTORY_LIMIT);
+          }
+          const prunedVisionTail = pruneContaminatedHistoryTail(fb2HistoryMessages, {
+            constructId,
+            contextLabel: 'fallback2-vision-history-tail',
+            windowSize: Math.max(12, VISION_HISTORY_LIMIT + 4),
+          });
+          fb2HistoryMessages = prunedVisionTail.messages;
+          fb2HistoryTailPrunedCount += prunedVisionTail.removed;
+          const compactedVisionPrompt = compactSystemPromptForVision(systemPrompt, VISION_SYSTEM_PROMPT_CAP);
+          if (compactedVisionPrompt.compacted) {
+            systemPrompt = compactedVisionPrompt.prompt;
+          }
+        }
+
+        let fb2LowComplexityTurn = isLowComplexityTurn(
+          message,
+          hasImages,
+          fb2HistoryMessages.length,
+          systemPrompt.length
+        );
+        const fb2RelationalTurn = isRelationalContinuityPrompt(message);
+        let fb2ContextMode = 'full_retrieval';
+        if (fb2RelationalTurn && fb2LowComplexityTurn && !hasImages) {
+          const pruned = pruneContaminatedHistoryTail(fb2HistoryMessages, {
+            constructId,
+            contextLabel: 'fallback2-history-tail',
+          });
+          fb2HistoryMessages = pruned.messages;
+          fb2HistoryTailPrunedCount = pruned.removed;
+          if (fb2HistoryMessages.length > RELATIONAL_HISTORY_LIMIT) {
+            fb2HistoryMessages = fb2HistoryMessages.slice(-RELATIONAL_HISTORY_LIMIT);
+          }
+          const compactedRelationalPrompt = compactSystemPromptForRelationalTurn(systemPrompt, RELATIONAL_SYSTEM_PROMPT_CAP);
+          if (compactedRelationalPrompt.compacted) {
+            systemPrompt = compactedRelationalPrompt.prompt;
+          }
+          fb2LowComplexityTurn = isLowComplexityTurn(
+            message,
+            hasImages,
+            fb2HistoryMessages.length,
+            systemPrompt.length
+          );
+          fb2ContextMode = 'recent_chat_only';
+        }
+        console.log('[PROMPT_SOURCE]', {
+          route: '/api/vvault/message',
+          mode: 'fallback_vvault_unreachable',
+          prompt_source: 'enriched_context',
+          gpt_config_present: !!gptConfig,
+          identity_source: enrichedResult2?.phaseTiming?.identity?.source || 'unknown',
+          history_filtered: {
+            leaked_prompt: fb2HistoryRemovedLeakCount,
+            instruction_dump: fb2HistoryRemovedInstructionDumpCount,
+            relational_tail_pruned: fb2HistoryTailPrunedCount,
+          },
+          relational_turn: fb2RelationalTurn,
+          context_mode: fb2ContextMode,
+          vision_mode: hasImages ? (explicitVisionIntent ? 'explicit-analysis' : 'character-first') : 'off',
+        });
         
         // ===== NOVA-001 HOTFIX (Fallback 2): Force away from OpenAI =====
         if (constructId === 'nova-001' && effectiveProvider === 'openai') {
@@ -4910,6 +7078,23 @@ Do NOT treat this as a first meeting if there is conversation history.`;
         }
 
         console.log(`🧠 [VVAULT Proxy] Fallback using ${effectiveProvider}:${effectiveModel} for ${constructId}`);
+        console.log('[TURN_CONTEXT]', {
+          constructId,
+          memory_intent: !!enrichedResult2?.memory_query_detected,
+          search_intent: fb2SearchIntent,
+          search_injected: fb2SearchInjected,
+          history_count: fb2HistoryMessages.length,
+          history_filtered: {
+            leaked_prompt: fb2HistoryRemovedLeakCount,
+            instruction_dump: fb2HistoryRemovedInstructionDumpCount,
+            relational_tail_pruned: fb2HistoryTailPrunedCount,
+          },
+          relational_turn: fb2RelationalTurn,
+          context_mode: fb2ContextMode,
+          provider_used: effectiveProvider,
+          mode: 'fallback_vvault_unreachable',
+          vision_mode: hasImages ? (explicitVisionIntent ? 'explicit-analysis' : 'character-first') : 'off',
+        });
         
         const fb2Msgs = [{ role: "system", content: systemPrompt }, ...fb2HistoryMessages, { role: "user", content: message }];
         let completion;
@@ -4957,7 +7142,29 @@ Do NOT treat this as a first meeting if there is conversation history.`;
             } catch (err) {
               console.error(`[${clientLabel} FAIL]`, { status: err?.status, message: err?.message });
               providerErrors.push(`${clientLabel}: ${err?.status} ${err?.message}`);
-              
+
+              // Nova-only rescue path: stay on OpenRouter, swap to a known-available free model.
+              if (
+                !llmSuccess &&
+                constructId === 'nova-001' &&
+                effectiveModel !== 'meta-llama/llama-3.2-3b-instruct:free'
+              ) {
+                try {
+                  console.log(`🔄 [VVAULT Proxy] Nova free-model fallback: ${effectiveModel} -> meta-llama/llama-3.2-3b-instruct:free`, { status: err?.status || null });
+                  completion = await orClient.chat.completions.create({
+                    model: 'meta-llama/llama-3.2-3b-instruct:free',
+                    messages: fb2Msgs,
+                    max_tokens: 2048,
+                  });
+                  effectiveModel = 'meta-llama/llama-3.2-3b-instruct:free';
+                  llmSuccess = true;
+                  console.log('[NOVA FREE FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+                } catch (novaFallbackErr) {
+                  console.error('[NOVA FREE FALLBACK FAIL]', { status: novaFallbackErr?.status, message: novaFallbackErr?.message });
+                  providerErrors.push(`Nova free fallback: ${novaFallbackErr?.status} ${novaFallbackErr?.message}`);
+                }
+              }
+
               if (replitOpenrouter && orClient !== replitOpenrouter && (err?.status === 401 || err?.status === 403 || err?.status === 404 || err?.status === 429)) {
                 try {
                   console.log(`🔄 [VVAULT Proxy] Trying Replit-managed OpenRouter for ${constructId}`);
@@ -4977,6 +7184,33 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           }
           
           // ===== NOVA-001 HOTFIX: Never fall back to OpenAI =====
+          if (!llmSuccess && PREFER_LOCAL_MODELS && providerAvailability.ollama) {
+            const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+            const ollamaModel = PREFERRED_OLLAMA_MODEL;
+            try {
+              console.log(`🟢 [VVAULT Proxy] Fallback2 local-first: trying Ollama (${ollamaModel}) for ${constructId}`);
+              const ollamaResp = await fetch(`${ollamaHost}/api/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  model: ollamaModel,
+                  messages: fb2Msgs,
+                  stream: false
+                })
+              });
+              if (!ollamaResp.ok) throw new Error(`Ollama ${ollamaResp.status}`);
+              const ollamaData = await ollamaResp.json();
+              aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
+              effectiveProvider = 'ollama';
+              effectiveModel = ollamaModel;
+              llmSuccess = true;
+              console.log('[OLLAMA LOCAL-FIRST2] Success');
+            } catch (ollamaErr) {
+              console.error('[OLLAMA LOCAL-FIRST2 FAIL]', { message: ollamaErr?.message });
+              providerErrors.push(`Ollama: ${ollamaErr?.message}`);
+            }
+          }
+
           if (!llmSuccess && openaiClient && constructId !== 'nova-001') {
             try {
               console.log(`🔄 [VVAULT Proxy] All OpenRouter failed, trying OpenAI for ${constructId}`);
@@ -4986,6 +7220,8 @@ Do NOT treat this as a first meeting if there is conversation history.`;
                 max_tokens: 2048,
               });
               console.log('[OPENAI FALLBACK] Success', { finish_reason: completion?.choices?.[0]?.finish_reason });
+              effectiveProvider = 'openai';
+              effectiveModel = 'gpt-4.1-mini';
               llmSuccess = true;
             } catch (err3) {
               console.error('[OPENAI FALLBACK FAIL]', { status: err3?.status, message: err3?.message });
@@ -4994,11 +7230,40 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           } else if (!llmSuccess && constructId === 'nova-001') {
             console.log(`[NOVA HOTFIX] Fallback2: Blocked OpenAI last-resort for nova-001`);
           }
+
+          if (!llmSuccess && !PREFER_LOCAL_MODELS && providerAvailability.ollama) {
+            const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+            const ollamaModel = PREFERRED_OLLAMA_MODEL;
+            try {
+              console.log(`🟢 [VVAULT Proxy] Fallback2: cloud providers failed, trying Ollama (${ollamaModel}) for ${constructId}`);
+              const ollamaResp = await fetch(`${ollamaHost}/api/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  model: ollamaModel,
+                  messages: fb2Msgs,
+                  stream: false
+                })
+              });
+              if (!ollamaResp.ok) throw new Error(`Ollama ${ollamaResp.status}`);
+              const ollamaData = await ollamaResp.json();
+              aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
+              effectiveProvider = 'ollama';
+              effectiveModel = ollamaModel;
+              llmSuccess = true;
+              console.log('[OLLAMA FALLBACK2] Success');
+            } catch (ollamaErr) {
+              console.error('[OLLAMA FALLBACK2 FAIL]', { message: ollamaErr?.message });
+              providerErrors.push(`Ollama: ${ollamaErr?.message}`);
+            }
+          }
           
           if (!llmSuccess) {
             throw new Error(`All LLM providers failed: ${providerErrors.join(' | ')}`);
           }
-          aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+          if (!aiResponse) {
+            aiResponse = completion?.choices?.[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+          }
         }
         
         console.log(`✅ [VVAULT Proxy] ${effectiveProvider} fallback successful for ${constructId}`);
@@ -5010,6 +7275,25 @@ Do NOT treat this as a first meeting if there is conversation history.`;
             aiResponse = (aiResponse || '').trimEnd() + '\n\n[OPEN_GPT_CREATOR]';
           }
         }
+
+        const fallback2IdentityGuard = await enforceFirstPersonIdentity({
+          aiResponse,
+          userMessage: message,
+          constructId,
+          providerAvailability,
+          roleplayEnabled: gptConfig?.roleplayEnabled === true,
+          latestUserBeforeCurrent: getLastUserMessageFromHistory(fb2HistoryMessages),
+        });
+        aiResponse = fallback2IdentityGuard.response;
+        console.log('[IDENTITY_GUARD]', {
+          constructId,
+          mode: 'fallback_vvault_unreachable',
+          relational_turn: fb2RelationalTurn,
+          context_mode: fb2ContextMode,
+          identity_drift_detected: fallback2IdentityGuard.identity_drift_detected,
+          identity_rewrite_applied: fallback2IdentityGuard.identity_rewrite_applied,
+          identity_fallback_applied: fallback2IdentityGuard.identity_fallback_applied,
+        });
         
         // NOTE: Frontend (Layout.tsx) handles message persistence via conversationManager.addMessageToConversation()
         // Do NOT writeTranscript here — it causes duplicate messages in the database and UI
@@ -5050,8 +7334,11 @@ Do NOT treat this as a first meeting if there is conversation history.`;
  * Calls VVAULT's /api/chatty/transcript/:id/message endpoint.
  */
 router.post("/transcript/:constructId/append", async (req, res) => {
-  const userId = validateUser(res, req.user);
-  if (!userId) return;
+  try {
+    await resolveSupabaseUser(req);
+  } catch {
+    return res.status(401).json({ ok: false, error: "Authentication required" });
+  }
 
   const { constructId } = req.params;
   const { role, content, name, timestamp } = req.body || {};
@@ -5064,9 +7351,9 @@ router.post("/transcript/:constructId/append", async (req, res) => {
     return res.status(400).json({ success: false, error: "Missing content" });
   }
 
-  const VVAULT_API_BASE_URL = process.env.VVAULT_API_BASE_URL;
-  
-  if (!VVAULT_API_BASE_URL) {
+  const { vvaultApiBaseUrl } = getVvaultBridgeConfig();
+
+  if (!vvaultApiBaseUrl) {
     console.error('❌ [VVAULT Proxy] VVAULT_API_BASE_URL not configured');
     return res.status(503).json({ 
       success: false, 
@@ -5077,10 +7364,11 @@ router.post("/transcript/:constructId/append", async (req, res) => {
   try {
     console.log(`📝 [VVAULT Proxy] Appending ${role} message to ${constructId}`);
     
-    const baseUrl = VVAULT_API_BASE_URL.replace(/\/$/, '');
+    const baseUrl = vvaultApiBaseUrl.replace(/\/$/, '');
     
     const appendHeaders = { 'Content-Type': 'application/json' };
-    if (process.env.VVAULT_SERVICE_TOKEN) appendHeaders['X-Chatty-Key'] = process.env.VVAULT_SERVICE_TOKEN;
+    const { serviceToken } = getVvaultBridgeConfig();
+    if (serviceToken) appendHeaders['X-Chatty-Key'] = serviceToken;
     const appendUserEmail = req.user?.email;
     if (appendUserEmail) appendHeaders['X-Chatty-User'] = appendUserEmail;
 
@@ -5096,6 +7384,10 @@ router.post("/transcript/:constructId/append", async (req, res) => {
     });
 
     if (!vvaultResponse.ok) {
+      if (isReplitAsleepResponse(vvaultResponse)) {
+        console.error(`❌ [VVAULT Proxy] VVAULT host asleep (Replit edge 503); append did not reach VVAULT`);
+        return sendVvaultHostAsleep(res, { downstreamStatus: vvaultResponse.status });
+      }
       const errorText = await vvaultResponse.text();
       console.error(`❌ [VVAULT Proxy] Append failed: ${vvaultResponse.status}: ${errorText}`);
       return res.status(vvaultResponse.status).json({
@@ -5205,8 +7497,7 @@ router.post("/files/save", async (req, res) => {
             updatedAt: new Date().toISOString(),
             folder: folder || null,
             constructCallsign: callsign,
-          },
-          updated_at: new Date().toISOString()
+          }
         })
         .eq('id', existing.id);
 
@@ -5453,4 +7744,5 @@ router.post("/continuity-test/:constructId/generate", requireAuth, async (req, r
   }
 });
 
+export { resolveModelForGPT };
 export default router;

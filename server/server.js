@@ -1,19 +1,24 @@
+import "./loadEnv.js";
+// Supabase Storage is canonical identity authority. DB is projection only; filesystem is cache.
 import express from "express";
 import fetch from "node-fetch"; // if on Node <18, else use global fetch
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import helmet from "helmet";
 import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
-import dotenv from "dotenv";
 import path from "path";
+import fs from "node:fs";
 import { fileURLToPath } from "url";
 import { execSync } from "child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const PROJECT_ROOT = path.resolve(__dirname, '..');
 import { connectDB } from "./config/database.js";
+import { initAvatarStore } from "./lib/avatarStore.js";
 import { Store } from "./store.js";
-import { requireAuth } from "./middleware/auth.js";
+import { requireAuth, requireAuthOrServiceToken } from "./auth/middleware/auth.js";
 import convRoutes from "./routes/conversations.js";
 import aiRoutes from "./routes/ais.js";
 import crypto from "node:crypto";
@@ -26,6 +31,7 @@ import unrestrictedConversationRoutes from "./routes/unrestrictedConversation.js
 import orchestrationRoutes from "./routes/orchestration.js";
 import diagnosticsRoutes from "./routes/diagnostics.js";
 import chatRoutes from './routes/chat.js';
+import telephonyTwilioRoutes from './routes/telephonyTwilio.js';
 import linChatRoutes from './routes/linChat.js';
 import vsiRoutes from './routes/vsi.js';
 import gptsRoutes from './routes/gpts.js';
@@ -38,21 +44,49 @@ import vaultProxyRoutes from './routes/vault.js';
 import suggestionsRoutes from './routes/suggestions.js';
 import mocrProxyRoutes from './routes/mocr.js';
 import transcribeRoutes from './routes/transcribe.js';
+import ttsRoutes from './routes/tts.js';
+import voiceUploadRoutes from './routes/voiceUpload.js';
 import attachmentsRoutes from './routes/attachments.js';
 import searchRoutes from './routes/search.js';
 import needleRoutes from './routes/needle.js';
 import selfpromptRoutes from './routes/selfprompt.js';
 import familyRoutes from './routes/family.js';
 import capabilitiesRouter from './routes/capabilities.js';
+import { startZenWatch } from './lib/zenWatch.js';
 import { initializeChromaDB, shutdownChromaDB, getChromaDBService } from "./services/chromadbService.js";
 import { getChatService } from "./services/chatService.js";
+import { setupTranscribeStream } from "./routes/transcribeStream.js";
+import { getAgentsManifest, loadRolePrompt } from "./lib/rolePromptLoader.js";
+import { checkDbHealth, checkMemoryHealth, checkVvaultHealth, checkBuildHealth, checkProviderHealth, runAllHealthChecks } from "./lib/healthChecks.js";
+import { getVvaultBridgeConfig, describeVvaultBridgeConfig, getVvaultTargets, describeVvaultTargets } from "./lib/vvaultBridgeConfig.js";
 
-dotenv.config();
+console.log('[ENV CHECK]', {
+  JWT_SECRET: process.env.JWT_SECRET ? 'SET' : 'MISSING',
+});
+
+// initialize avatar store if configuration is present
+if (process.env.AVATAR_BUCKET && process.env.AVATAR_CDN) {
+  initAvatarStore({
+    region: process.env.AWS_REGION,
+    bucket: process.env.AVATAR_BUCKET,
+    cdnUrl: process.env.AVATAR_CDN,
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  });
+  console.log('[AvatarStore] initialized with bucket', process.env.AVATAR_BUCKET);
+}
 
 console.log('[ENV CHECK]', {
   JWT_SECRET: process.env.JWT_SECRET ? 'SET' : 'MISSING',
   COOKIE_NAME: process.env.COOKIE_NAME || 'sid',
   NODE_ENV: process.env.NODE_ENV
+});
+const vvaultBridgeConfig = getVvaultBridgeConfig();
+console.log(describeVvaultBridgeConfig(vvaultBridgeConfig));
+console.log(describeVvaultTargets(getVvaultTargets()));
+console.log("[VVAULT BRIDGE PRESENCE]", {
+  VVAULT_URL_PRESENT: !vvaultBridgeConfig.missingVvaultUrl,
+  VVAULT_SERVICE_TOKEN_PRESENT: !vvaultBridgeConfig.missingServiceToken,
 });
 console.log('[OPENROUTER]', {
   API_KEY_SET: !!(process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY),
@@ -71,6 +105,12 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const isProduction = process.env.NODE_ENV === "production";
+function cookieSecure(req) {
+  // Treat localhost & 127.0.0.1 (any port) as non-secure
+  const host = req.get('host') || '';
+  return !/^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host);
+}
 const CANONICAL_DOMAIN = process.env.CANONICAL_DOMAIN || 'chatty.thewreck.org';
 const CALLBACK_PATH = process.env.CALLBACK_PATH || '/api/auth/google/callback';
 const REDIRECT_URI = `https://${CANONICAL_DOMAIN}${CALLBACK_PATH}`;
@@ -81,6 +121,31 @@ const REPLIT_REDIRECT_URI = REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}${CALLBACK_
 const POST_LOGIN_REDIRECT = REPLIT_DOMAIN
   ? `https://${REPLIT_DOMAIN}`
   : (process.env.POST_LOGIN_REDIRECT || process.env.FRONTEND_URL || "http://localhost:5173");
+
+const WATCHDOG_DEFAULT_LOG_DIR = process.env.WATCHDOG_LOG_DIR || '/var/log/chatty';
+const WATCHDOG_FALLBACK_LOG = path.join(PROJECT_ROOT, 'watchdog', 'logs', 'watchdog.log');
+
+function resolveWatchdogLogPath() {
+  const primary = path.join(WATCHDOG_DEFAULT_LOG_DIR, 'watchdog.log');
+  if (fs.existsSync(primary)) return primary;
+  if (fs.existsSync(WATCHDOG_FALLBACK_LOG)) return WATCHDOG_FALLBACK_LOG;
+  return primary; // default even if missing
+}
+
+function readWatchdogEvents(limit = 100) {
+  const logPath = resolveWatchdogLogPath();
+  try {
+    const raw = fs.readFileSync(logPath, 'utf8');
+    const lines = raw.trim().split('\n').filter(Boolean);
+    const slice = lines.slice(-limit);
+    const events = slice.map(line => {
+      try { return JSON.parse(line); } catch { return { raw: line }; }
+    });
+    return { ok: true, events, logPath };
+  } catch (err) {
+    return { ok: false, error: err.message, logPath };
+  }
+}
 
 function isReplitPreview(req) {
   if (!REPLIT_DOMAIN) return false;
@@ -112,20 +177,39 @@ function getRequestOrigin(req) {
   }
   const host = req.get('x-forwarded-host') || req.get('host');
   const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
-  if (host) return `${proto}://${host}`;
+  if (host && host !== 'localhost:5050') return `${proto}://${host}`;
   if (IS_PRODUCTION) return `https://${CANONICAL_DOMAIN}`;
-  return 'http://localhost:5000';
+  return 'http://localhost:5173';
 }
 
 function getRedirectUri(req) {
+  // If running in a Replit preview environment we have a special URI
   if (isReplitPreview(req) && REPLIT_REDIRECT_URI) {
     return REPLIT_REDIRECT_URI;
   }
+
   if (!IS_PRODUCTION) {
+    // For development we normally want the callback to come back to the
+    // front‑end origin (localhost:5173 or 127.0.0.1:5173); the Vite dev server
+    // will proxy anything under /api back to the backend on :5050 so the
+    // server still receives the request and can set the cookie.  This keeps
+    // the value stable and allows us to register just one URI in Google.
+    const origin = getRequestOrigin(req);
+    if (
+      origin === 'http://localhost:5173' ||
+      origin === 'http://127.0.0.1:5173'
+    ) {
+      return `${origin}${CALLBACK_PATH}`;
+    }
+
+    // Fallback: build from whatever host header we received.  Useful when
+    // using a reverse proxy or running on a different port.
     const host = req.get('x-forwarded-host') || req.get('host');
-    const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+    const proto = req.get('x-forwarded-proto') || req.protocol || 'http';
     if (host) return `${proto}://${host}${CALLBACK_PATH}`;
   }
+
+  // Production: use canonically-configured HTTPS URI
   return REDIRECT_URI;
 }
 
@@ -172,9 +256,36 @@ const SMTP_CONFIG = {
 
 const app = express();
 
+// Security headers (CSP is disabled here to avoid breaking dev/proxy/Electron; tighten per env if possible)
+app.use(helmet({
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: false,
+  referrerPolicy: { policy: 'no-referrer' }
+}));
+
+// Request correlation id for debugging intermittent 500s/aborts (Vite proxy + backend restarts).
+// Do not treat this as a security boundary; it's purely for observability.
+app.use((req, res, next) => {
+  const rid = randomBytes(8).toString('hex');
+  req._rid = rid;
+  res.setHeader('X-Req-Id', rid);
+  next();
+});
+
 let serverReady = false;
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', ready: serverReady, uptime: process.uptime() });
+});
+
+// bulletproof API health: defined before any middleware that might patch
+// response methods.  We avoid res.json() entirely and build the body string
+// synchronously off a local copy of serverReady so nothing can throw.
+app.get('/api/health', (_req, res) => {
+  const ready = serverReady;
+  const body = '{"ok":true,"ready":' + (ready ? 'true' : 'false') + '}';
+  res.status(200)
+     .setHeader('Content-Type', 'application/json')
+     .end(body);
 });
 
 app.use((req, res, next) => {
@@ -184,30 +295,44 @@ app.use((req, res, next) => {
 
 if (process.env.ENABLE_SERVER_TIMING === 'true') {
   app.use('/api', (req, res, next) => {
+    // Skip timing for the health endpoint to avoid any accidental side effects.
+    if (req.path === '/health') return next();
+
     const start = process.hrtime.bigint();
     const originalEnd = res.end;
     res.end = function (...args) {
-      const ms = Number(process.hrtime.bigint() - start) / 1e6;
-      res.setHeader('Server-Timing', `total;dur=${ms.toFixed(1)};desc="${req.method} ${req.originalUrl}"`);
+      try {
+        const ms = Number(process.hrtime.bigint() - start) / 1e6;
+        res.setHeader('Server-Timing', `total;dur=${ms.toFixed(1)};desc="${req.method} ${req.originalUrl}"`);
+      } catch (err) {
+        console.error('⚠️ [Server-Timing] failed to set header:', err);
+        // fall through to ensure response is still sent
+      }
       return originalEnd.apply(this, args);
     };
     next();
   });
 }
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// Body limits
+const BODY_LIMIT = process.env.BODY_LIMIT || '1mb';
+app.use(express.json({ limit: BODY_LIMIT }));
+app.use(express.urlencoded({ limit: BODY_LIMIT, extended: true }));
 app.use(cookieParser());
 app.set("trust proxy", 1);
 
-// CORS configuration
+// CORS configuration (explicit allowlist in prod)
+const defaultOrigin = 'https://chatty.thewreck.org';
 const corsOrigin = process.env.NODE_ENV === 'production'
-  ? (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || 'https://chatty.thewreck.org')
-  : true;
-app.use(cors({ origin: corsOrigin, credentials: true }));
+  ? (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || defaultOrigin)
+  : (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:5173');
+
+app.use(cors({
+  origin: corsOrigin,
+  credentials: true
+}));
 
 // Serve static files in production (built frontend)
-const isProduction = process.env.NODE_ENV === 'production';
 if (isProduction) {
   const distPath = path.join(__dirname, '../dist');
   app.use(express.static(distPath, { index: 'index.html' }));
@@ -217,7 +342,9 @@ if (isProduction) {
 // Rate limiting for auth endpoints
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // limit each IP to 20 requests per windowMs (10 OAuth flows)
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
   message: { error: "Too many auth attempts, please try again later" }
 });
 
@@ -267,7 +394,18 @@ if (!oauthValid) {
   console.warn('⚠️ [OAuth] Google authentication will not work without proper environment variables');
 }
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, ready: serverReady }));
+// /api/health previously defined earlier, no need to redefine here.
+// the earlier handler is intentionally minimal and cannot throw.
+// kept for backward-compatibility comments; remove this block if duplicate
+// definition warnings appear.
+//
+// app.get("/api/health", (_req, res) => {
+//   const ready = serverReady;
+//   const body = '{"ok":true,"ready":' + (ready ? 'true' : 'false') + '}';
+//   res.status(200)
+//      .setHeader('Content-Type', 'application/json')
+//      .end(body);
+//});
 
 app.get("/api/health/openrouter", async (_req, res) => {
   const apiKey = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY;
@@ -321,6 +459,26 @@ app.get("/api/health/openrouter", async (_req, res) => {
   }
 });
 
+app.get("/api/health/db", (_req, res) => {
+  const result = checkDbHealth();
+  res.status(result.ok ? 200 : 503).json(result);
+});
+
+app.get("/api/health/memory", async (_req, res) => {
+  const result = await checkMemoryHealth();
+  res.status(result.ok ? 200 : 503).json(result);
+});
+
+app.get("/api/health/vvault", (_req, res) => {
+  const result = checkVvaultHealth();
+  res.status(result.ok ? 200 : 503).json(result);
+});
+
+app.get("/api/health/full", async (_req, res) => {
+  const result = await runAllHealthChecks(true);
+  res.status(result.ok ? 200 : 503).json(result);
+});
+
 // Build artifacts health check endpoint
 app.get("/api/health/build", (req, res) => {
   const { existsSync } = require('node:fs');
@@ -352,15 +510,43 @@ app.get("/api/health/build", (req, res) => {
   });
 });
 
+app.get("/api/agents", (_req, res) => {
+  const manifest = getAgentsManifest();
+  res.json(manifest);
+});
+
+app.get("/api/agents/:role/prompt", (req, res) => {
+  try {
+    const result = loadRolePrompt(req.params.role);
+    res.json(result);
+  } catch (err) {
+    res.status(404).json({ error: err.message });
+  }
+});
+
+app.get("/api/watchdog/events", (req, res) => {
+  const limit = Number.parseInt(req.query.limit || '100', 10);
+  const safeLimit = Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 1000) : 100;
+  const result = readWatchdogEvents(safeLimit);
+  res.status(result.ok ? 200 : 503).json(result);
+});
+
 // OAuth health check endpoint
 app.get("/api/auth/google/health", (req, res) => {
+  const effectiveLocalRedirectUri = getRedirectUri(req);
   res.json({
     oauth_configured: !!OAUTH.client_id && !!OAUTH.client_secret,
     redirect_uri: OAUTH.redirect_uri,
     environment: process.env.NODE_ENV || 'development',
     client_id_present: !!OAUTH.client_id,
     client_secret_present: !!OAUTH.client_secret,
-    validation_passed: oauthValid
+    validation_passed: oauthValid,
+    effective_local_redirect_uri: effectiveLocalRedirectUri,
+    allowed_origins: [...ALLOWED_ORIGINS],
+    correlation: {
+      strategy: "cid_in_oauth_logs",
+      spans: ["/api/auth/google", "/api/auth/google/callback", "/api/auth/set-session"]
+    }
   });
 });
 
@@ -392,15 +578,18 @@ app.post("/api/auth/dev-login", async (req, res) => {
 
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: "30d" });
 
-    const domain = req.hostname && req.hostname.includes('thewreck.org') ? '.thewreck.org' : undefined;
     const cookieOptions = {
       httpOnly: true,
-      secure: true,
+      secure: cookieSecure(req),
       sameSite: 'lax',
       path: '/',
-      maxAge: 1000 * 60 * 60 * 24 * 30,
-      ...(domain ? { domain } : {})
+      maxAge: 1000 * 60 * 60 * 24 * 30
     };
+    if (cookieSecure(req)) {
+      cookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || '.thewreck.org';
+    } else {
+      delete cookieOptions.domain;
+    }
     console.log('[COOKIE SET]', {
       name: COOKIE_NAME,
       secure: cookieOptions.secure,
@@ -431,6 +620,9 @@ function buildAllowedOrigins() {
   if (POST_LOGIN_REDIRECT && POST_LOGIN_REDIRECT !== 'http://localhost:5173') origins.add(POST_LOGIN_REDIRECT);
   origins.add('http://localhost:5173');
   origins.add('http://localhost:5000');
+  // Allow VS Code Simple Browser which uses 127.0.0.1
+  origins.add('http://127.0.0.1:5173');
+  origins.add('http://127.0.0.1:5000');
   return origins;
 }
 const ALLOWED_ORIGINS = buildAllowedOrigins();
@@ -464,10 +656,23 @@ setInterval(() => {
 
 // start OAuth (front-end should hit this)
 app.get("/api/auth/google", authLimiter, (req, res) => {
-  console.log('🔍 [OAuth] /api/auth/google endpoint hit');
+  const correlationId = createAuthCorrelationId();
+  res.set('X-Auth-Correlation', correlationId);
+  console.log(`🔍 [OAuth][cid:${correlationId}] /api/auth/google endpoint hit`);
+
+  // Graceful degradation: avoid 500 and avoid calling getRequestOrigin/getRedirectUri/signState when env is missing
+  if (!OAUTH.client_id || !OAUTH.client_secret) {
+    console.warn(`⚠️ [OAuth][cid:${correlationId}] OAuth not configured (missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET)`);
+    return res.status(503).json({
+      error: 'OAuth not configured',
+      details: 'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required for Google login.',
+      cid: correlationId
+    });
+  }
+
   try {
     const originUrl = getRequestOrigin(req);
-    console.log('🔍 [OAuth] Detected origin via Origin/Referer/Host:', originUrl, {
+    console.log(`🔍 [OAuth][cid:${correlationId}] Detected origin via Origin/Referer/Host:`, originUrl, {
       origin_header: req.get('origin') || '(none)',
       referer_header: req.get('referer') || '(none)',
       x_forwarded_host: req.get('x-forwarded-host') || '(none)',
@@ -475,12 +680,12 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
     });
 
     if (!ALLOWED_ORIGINS.has(originUrl)) {
-      console.warn(`⚠️ [OAuth] Origin not in allowlist: ${originUrl}. Allowed:`, [...ALLOWED_ORIGINS]);
+      console.warn(`⚠️ [OAuth][cid:${correlationId}] Origin not in allowlist: ${originUrl}. Allowed:`, [...ALLOWED_ORIGINS]);
     }
 
     const dynamicRedirectUri = getRedirectUri(req);
 
-    console.log('🔍 [OAuth] Environment check:', {
+    console.log(`🔍 [OAuth][cid:${correlationId}] Environment check:`, {
       has_client_id: !!process.env.GOOGLE_CLIENT_ID,
       has_client_secret: !!process.env.GOOGLE_CLIENT_SECRET,
       redirect_uri: dynamicRedirectUri,
@@ -489,19 +694,24 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
     });
 
     if (!OAUTH.client_id) {
-      console.error("❌ [OAuth] GOOGLE_CLIENT_ID is not set in environment variables");
-      return res.status(500).json({ error: "OAuth configuration missing: GOOGLE_CLIENT_ID" });
+      console.error(`❌ [OAuth][cid:${correlationId}] GOOGLE_CLIENT_ID is not set in environment variables`);
+      return res.status(500).json({ error: "OAuth configuration missing: GOOGLE_CLIENT_ID", cid: correlationId });
     }
     if (!OAUTH.client_secret) {
-      console.error("❌ [OAuth] GOOGLE_CLIENT_SECRET is not set in environment variables");
-      return res.status(500).json({ error: "OAuth configuration missing: GOOGLE_CLIENT_SECRET" });
+      console.error(`❌ [OAuth][cid:${correlationId}] GOOGLE_CLIENT_SECRET is not set in environment variables`);
+      return res.status(500).json({ error: "OAuth configuration missing: GOOGLE_CLIENT_SECRET", cid: correlationId });
     }
 
     const nonce = cryptoRandom();
-    const stateData = { nonce, origin: originUrl, redirect_uri: dynamicRedirectUri };
+    const stateData = { nonce, origin: originUrl, redirect_uri: dynamicRedirectUri, cid: correlationId };
     const stateToken = signState(stateData);
 
-    oauthPendingStates.set(nonce, { origin: originUrl, redirect_uri: dynamicRedirectUri, created: Date.now() });
+    oauthPendingStates.set(nonce, {
+      origin: originUrl,
+      redirect_uri: dynamicRedirectUri,
+      cid: correlationId,
+      created: Date.now()
+    });
 
     const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     url.searchParams.set("client_id", OAUTH.client_id);
@@ -513,21 +723,26 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
     url.searchParams.set("prompt", "consent");
     url.searchParams.set("state", stateToken);
 
-    console.log('✅ [OAuth] Redirecting to Google with redirect_uri:', dynamicRedirectUri, 'origin:', originUrl);
+    console.log(`✅ [OAuth][cid:${correlationId}] Redirecting to Google with redirect_uri:`, dynamicRedirectUri, 'origin:', originUrl);
     res.redirect(url.toString());
   } catch (error) {
-    console.error('❌ [OAuth] Unexpected error in /api/auth/google:', error);
-    console.error('❌ [OAuth] Error stack:', error.stack);
-    res.status(500).json({ error: 'Internal server error', details: error.message });
+    console.error(`❌ [OAuth][cid:${correlationId}] Unexpected error in /api/auth/google:`, error);
+    console.error(`❌ [OAuth][cid:${correlationId}] Error stack:`, error.stack);
+    res.status(500).json({ error: 'Internal server error', details: error.message, cid: correlationId });
   }
 });
 
 // OAuth callback → exchange code → set cookie → redirect home
 app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
+  let correlationId = createAuthCorrelationId();
+  res.set('X-Auth-Correlation', correlationId);
   try {
-    const { code, error: oauthError, state: stateParam } = req.query;
+    const { code, error: oauthError, state: stateParam, cid: requestCid } = req.query;
+    if (typeof requestCid === 'string' && requestCid) {
+      correlationId = requestCid;
+    }
 
-    let originUrl = IS_PRODUCTION ? `https://${CANONICAL_DOMAIN}` : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : 'http://localhost:5000');
+    let originUrl = IS_PRODUCTION ? `https://${CANONICAL_DOMAIN}` : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : 'http://localhost:5173');
     let callbackRedirectUri = REDIRECT_URI;
     let stateValid = false;
 
@@ -537,9 +752,15 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
         const pending = oauthPendingStates.get(stateData.nonce);
         if (pending && pending.origin === stateData.origin) {
           oauthPendingStates.delete(stateData.nonce);
+          correlationId = pending.cid || stateData.cid || correlationId;
+          res.set('X-Auth-Correlation', correlationId);
           stateValid = true;
           const VALID_REDIRECT_URIS = new Set([REDIRECT_URI]);
           if (REPLIT_REDIRECT_URI) VALID_REDIRECT_URIS.add(REPLIT_REDIRECT_URI);
+          if (!IS_PRODUCTION) {
+            VALID_REDIRECT_URIS.add(`http://localhost:5173${CALLBACK_PATH}`);
+            VALID_REDIRECT_URIS.add(`http://localhost:5050${CALLBACK_PATH}`);
+          }
           if (pending.redirect_uri && VALID_REDIRECT_URIS.has(pending.redirect_uri)) {
             callbackRedirectUri = pending.redirect_uri;
           }
@@ -548,32 +769,32 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
           } else if (REPLIT_DOMAIN && stateData.origin === `https://${REPLIT_DOMAIN}`) {
             originUrl = stateData.origin;
           } else {
-            console.warn(`⚠️ [OAuth Callback] Origin not in allowlist: ${stateData.origin}, using canonical`);
+            console.warn(`⚠️ [OAuth Callback][cid:${correlationId}] Origin not in allowlist: ${stateData.origin}, using canonical`);
           }
         } else {
-          console.warn('⚠️ [OAuth Callback] State nonce not found or origin mismatch (possible replay)');
+          console.warn(`⚠️ [OAuth Callback][cid:${correlationId}] State nonce not found or origin mismatch (possible replay)`);
         }
       } else {
-        console.warn('⚠️ [OAuth Callback] Invalid state signature');
+        console.warn(`⚠️ [OAuth Callback][cid:${correlationId}] Invalid state signature`);
       }
     }
 
     if (!stateValid) {
-      console.error('❌ [OAuth Callback] CSRF check failed — state invalid or missing');
+      console.error(`❌ [OAuth Callback][cid:${correlationId}] CSRF check failed — state invalid or missing`);
       return res.redirect(`${originUrl}/?error=invalid_state`);
     }
 
     if (oauthError) {
-      console.error('OAuth error from Google:', oauthError);
+      console.error(`❌ [OAuth Callback][cid:${correlationId}] OAuth error from Google:`, oauthError);
       return res.redirect(`${originUrl}/?error=${encodeURIComponent(oauthError)}`);
     }
 
     if (!code) {
-      console.error('OAuth callback missing code parameter');
+      console.error(`❌ [OAuth Callback][cid:${correlationId}] OAuth callback missing code parameter`);
       return res.redirect(`${originUrl}/?error=missing_code`);
     }
 
-    console.log('🔍 [OAuth Callback] Using redirect_uri:', callbackRedirectUri, 'origin:', originUrl);
+    console.log(`🔍 [OAuth Callback][cid:${correlationId}] Using redirect_uri:`, callbackRedirectUri, 'origin:', originUrl);
 
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
@@ -587,14 +808,14 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       })
     }).then(r => r.json());
     if (!tokenRes.access_token) {
-      console.error("OAuth token exchange failed:", tokenRes);
+      console.error(`❌ [OAuth Callback][cid:${correlationId}] OAuth token exchange failed:`, tokenRes);
       return res.redirect(`${originUrl}/?error=oauth_token_exchange_failed`);
     }
 
     const user = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
       headers: { Authorization: `Bearer ${tokenRes.access_token}` }
     }).then(r => r.json());
-    console.log('🖼️ [OAuth] Google user info received:', {
+    console.log(`🖼️ [OAuth][cid:${correlationId}] Google user info received:`, {
       email: user.email,
       name: user.name,
       picture: user.picture ? `${user.picture.substring(0, 50)}...` : 'NO PICTURE',
@@ -627,18 +848,18 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       const { getOrCreateUser } = await import('./lib/userRegistry.js');
       const userProfile = await getOrCreateUser(doc._id.toString?.() ?? doc._id, profile.email, profile.name);
       userId = userProfile.user_id;
-      console.log(`✅ [User Registry] Registered user: ${userId} (${profile.email})`);
+      console.log(`✅ [User Registry][cid:${correlationId}] Registered user: ${userId} (${profile.email})`);
 
       try {
         const { GPTManager } = await import('./lib/gptManager.js');
         const gptManager = GPTManager.getInstance();
         gptManager.provisionUserConstructs(userId);
-        console.log(`✅ [User Provisioning] System constructs provisioned for: ${userId}`);
+        console.log(`✅ [User Provisioning][cid:${correlationId}] System constructs provisioned for: ${userId}`);
       } catch (provisionError) {
-        console.error('⚠️ [User Provisioning] Failed to provision constructs (non-critical):', provisionError);
+        console.error(`⚠️ [User Provisioning][cid:${correlationId}] Failed to provision constructs (non-critical):`, provisionError);
       }
     } catch (regError) {
-      console.error('⚠️ [User Registry] Failed to register user (non-critical):', regError);
+      console.error(`⚠️ [User Registry][cid:${correlationId}] Failed to register user (non-critical):`, regError);
       userId = profile.id || (doc._id.toString ? doc._id.toString() : doc._id);
     }
 
@@ -660,68 +881,102 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
     if (originIsCanonical) {
       const cookieOptions = {
         httpOnly: true,
-        secure: true,
+        secure: cookieSecure(req),
         sameSite: 'lax',
         path: '/',
-        maxAge: 1000 * 60 * 60 * 24 * 30,
-        domain: '.thewreck.org'
+        maxAge: 1000 * 60 * 60 * 24 * 30
       };
-      console.log('[COOKIE SET] Setting cookie on canonical domain');
+      if (cookieSecure(req)) {
+        cookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || '.thewreck.org';
+      } else {
+        delete cookieOptions.domain;
+      }
+      console.log(`[COOKIE SET][cid:${correlationId}] Setting cookie on canonical domain`);
       res.cookie(COOKIE_NAME, sessionToken, cookieOptions);
-      console.log(`✅ OAuth success! Redirecting to ${originUrl}/app`);
+      console.log(`✅ [OAuth Callback][cid:${correlationId}] OAuth success! Redirecting to ${originUrl}/app`);
       return res.redirect(`${originUrl}/app`);
     }
 
     const exchangeCode = cryptoRandom();
-    oauthExchangeCodes.set(exchangeCode, { token: sessionToken, created: Date.now() });
-    console.log(`✅ OAuth success! Redirecting to origin with exchange code: ${originUrl}`);
-    res.redirect(`${originUrl}/api/auth/set-session?code=${encodeURIComponent(exchangeCode)}`);
+    oauthExchangeCodes.set(exchangeCode, {
+      token: sessionToken,
+      origin: originUrl,
+      cid: correlationId,
+      created: Date.now()
+    });
+    console.log(`✅ [OAuth Callback][cid:${correlationId}] OAuth success! Redirecting to origin with exchange code: ${originUrl}`);
+    res.redirect(`${originUrl}/api/auth/set-session?code=${encodeURIComponent(exchangeCode)}&cid=${encodeURIComponent(correlationId)}`);
   } catch (e) {
-    console.error('OAuth callback error:', e);
-    const errorRedirect = IS_PRODUCTION ? `https://${CANONICAL_DOMAIN}` : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : 'http://localhost:5000');
+    console.error(`❌ [OAuth Callback][cid:${correlationId}] OAuth callback error:`, e);
+    const errorRedirect = IS_PRODUCTION ? `https://${CANONICAL_DOMAIN}` : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : 'http://localhost:5173');
     res.redirect(`${errorRedirect}/?error=auth_failed`);
   }
 });
 
 app.get("/api/auth/set-session", (req, res) => {
-  const { code } = req.query;
+  let correlationId = createAuthCorrelationId();
+  const { code, cid: requestCid } = req.query;
+  if (typeof requestCid === 'string' && requestCid) {
+    correlationId = requestCid;
+  }
+  res.set('X-Auth-Correlation', correlationId);
+
   if (!code) {
+    console.error(`❌ [set-session][cid:${correlationId}] Missing exchange code`);
     return res.redirect('/?error=missing_code');
   }
   const entry = oauthExchangeCodes.get(code);
   if (!entry) {
-    console.error('❌ [set-session] Invalid or expired exchange code');
+    console.error(`❌ [set-session][cid:${correlationId}] Invalid or expired exchange code`);
     return res.redirect('/?error=invalid_or_expired_code');
   }
+  correlationId = entry.cid || correlationId;
+  res.set('X-Auth-Correlation', correlationId);
   oauthExchangeCodes.delete(code);
 
   if (Date.now() - entry.created > EXCHANGE_CODE_TTL) {
-    console.error('❌ [set-session] Exchange code expired');
+    console.error(`❌ [set-session][cid:${correlationId}] Exchange code expired`);
     return res.redirect('/?error=expired_code');
   }
 
   const cookieOptions = {
     httpOnly: true,
-    secure: true,
+    secure: cookieSecure(req),
     sameSite: 'lax',
     path: '/',
-    maxAge: 1000 * 60 * 60 * 24 * 30,
+    maxAge: 1000 * 60 * 60 * 24 * 30
   };
-  console.log('[COOKIE SET] Setting cookie on origin domain via set-session');
+  if (cookieSecure(req)) {
+    cookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || '.thewreck.org';
+  } else {
+    delete cookieOptions.domain;
+  }
+  const redirectTo = (entry.origin && ALLOWED_ORIGINS.has(entry.origin))
+    ? `${entry.origin}/app`
+    : '/app';
+  console.log(`[set-session][cid:${correlationId}] Reached; host:`, req.get('host'), 'x-forwarded-host:', req.get('x-forwarded-host') || '(none)', 'redirectTo:', redirectTo);
+  console.log(`[set-session][cid:${correlationId}] cookieOptions:`, cookieOptions);
+  console.log(`[COOKIE SET][cid:${correlationId}] Setting cookie on origin domain via set-session`);
   res.cookie(COOKIE_NAME, entry.token, cookieOptions);
-  return res.redirect('/app');
+  return res.redirect(redirectTo);
 });
 
 app.get("/api/me", (req, res) => {
-  const raw = req.cookies?.[COOKIE_NAME];
-  if (!raw) return res.status(401).json({ ok: false });
-
   try {
+    const raw = req.cookies?.[COOKIE_NAME];
+    if (!raw) {
+      console.error('❌ [Auth] /api/me 401: no cookie', { rid: req?._rid || null });
+      return res.status(401).json({ ok: false, reason: 'no_cookie' });
+    }
     const user = jwt.verify(raw, JWT_SECRET);
-    res.json({ ok: true, user });
+    return res.json({ ok: true, user });
   } catch (error) {
-    console.error('❌ [Auth] JWT verification failed:', error.message);
-    res.status(401).json({ ok: false });
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      console.error('❌ [Auth] JWT verification failed:', error.message);
+      return res.status(401).json({ ok: false, reason: 'invalid_jwt' });
+    }
+    console.error('❌ [Auth] /api/me threw:', error, { rid: req?._rid || null });
+    return res.status(500).json({ ok: false, error: error?.message || String(error), rid: req?._rid || null });
   }
 });
 
@@ -814,14 +1069,16 @@ app.get("/api/profile-image/:userId", async (req, res) => {
 
 // logout
 app.post("/api/logout", (req, res) => {
-  const domain = req.hostname && req.hostname.includes('thewreck.org') ? '.thewreck.org' : undefined;
-  res.clearCookie(COOKIE_NAME, {
+  const clearCookieOptions = {
     path: "/",
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    ...(domain ? { domain } : {})
-  });
+    secure: cookieSecure(req),
+    sameSite: 'lax'
+  };
+  if (cookieSecure(req)) {
+    clearCookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || '.thewreck.org';
+  }
+  res.clearCookie(COOKIE_NAME, clearCookieOptions);
   res.json({ ok: true });
 });
 
@@ -949,14 +1206,16 @@ app.post("/api/auth/delete-account", requireAuth, async (req, res) => {
     }
 
     // 7. Clear cookie / session
-    const domain = req.hostname && req.hostname.includes('thewreck.org') ? '.thewreck.org' : undefined;
-    res.clearCookie(COOKIE_NAME, {
+    const clearCookieOptions = {
       path: "/",
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      ...(domain ? { domain } : {})
-    });
+      secure: cookieSecure(req),
+      sameSite: 'lax'
+    };
+    if (cookieSecure(req)) {
+      clearCookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || '.thewreck.org';
+    }
+    res.clearCookie(COOKIE_NAME, clearCookieOptions);
 
     console.log(`✅ [DeleteAccount] Account deletion complete for ${userId}`, deletionLog.results);
 
@@ -997,7 +1256,7 @@ app.use("/api/diagnostics", requireAuth, diagnosticsRoutes);
 app.use("/api/ais", requireAuth, aiRoutes);
 
 // Mount VVAULT routes with auth
-app.use("/api/vvault", requireAuth, vvaultRoutes);
+app.use("/api/vvault", requireAuthOrServiceToken, vvaultRoutes);
 console.log('✅ [Server] VVAULT routes mounted at /api/vvault');
 
 // Mount VSI (Verified Sentient Intelligence) routes
@@ -1053,12 +1312,15 @@ app.use("/api/fxshinobi", fxshinobiRoutes);
 app.use("/api/vault", vaultProxyRoutes);
 app.use("/api/mocr", requireAuth, mocrProxyRoutes);
 app.use("/api/transcribe", transcribeRoutes);
+app.use("/api/tts", requireAuth, ttsRoutes);
+app.use("/api/voice", requireAuth, voiceUploadRoutes);
 app.use("/api/suggestions", requireAuth, suggestionsRoutes);
 app.use("/api/attachments", requireAuth, attachmentsRoutes);
 app.use("/api/search", requireAuth, searchRoutes);
 app.use("/api/needle", requireAuth, needleRoutes);
 app.use("/api/selfprompt", selfpromptRoutes);
 app.use("/api/family", familyRoutes);
+app.use('/api/telephony/twilio', telephonyTwilioRoutes);
 app.use('/api/capabilities', capabilitiesRouter);
 console.log('✅ [Server] Capabilities routes mounted at /api/capabilities');
 console.log('✅ [Server] Needle receipt retriever mounted at /api/needle');
@@ -1071,8 +1333,21 @@ console.log('✅ [Server] VVAULT proxy routes mounted at /api/vault');
 console.log('✅ [Server] Suggestions routes mounted at /api/suggestions');
 console.log('✅ [Server] Attachments routes mounted at /api/attachments');
 
+// Last-resort error handler: ensures route/middleware throws become JSON (not a dropped connection),
+// and includes `rid` for correlation with browser Network entries.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, _next) => {
+  console.error('❌ [Express] Unhandled error:', err, { rid: req?._rid || null, path: req?.originalUrl });
+  if (res.headersSent) return;
+  res.status(500).json({ ok: false, error: err?.message || String(err), rid: req?._rid || null });
+});
+
 function cryptoRandom() {
   return randomBytes(16).toString("hex");
+}
+
+function createAuthCorrelationId() {
+  return cryptoRandom().slice(0, 12);
 }
 
 // SPA catch-all: serve index.html for client-side routing in production
@@ -1090,18 +1365,44 @@ if (isProduction) {
   });
 }
 
-const PORT = process.env.PORT || (IS_PRODUCTION ? 5000 : 5050);
+// choose port with some defensive logic. the front-end dev server
+// often sets PORT=5173 in the shell, which previously leaked into the
+// backend start script and caused the API to bind on the wrong port
+// (see incident report). we try to use the env var if provided, but
+// ignore the known bad value and fall back to the normal default.
+const DEFAULT_PORT = IS_PRODUCTION ? 5000 : 5050;
+let PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : DEFAULT_PORT;
+if (process.env.PORT && PORT === 5173) {
+  console.warn(`⚠️ [Server] Ignoring environment PORT=${process.env.PORT} ` +
+               `(looks like the Vite dev server) and using ${DEFAULT_PORT}`);
+  PORT = DEFAULT_PORT;
+}
+if (isNaN(PORT)) {
+  PORT = DEFAULT_PORT;
+}
 
 function startServer(port, retryCount = 0) {
   const srv = app.listen(port, '0.0.0.0', () => {
     serverReady = true;
     console.log(`API on :${port}`);
+    if (process.env.ZEN_WATCH_DISABLED !== 'true' && process.env.NODE_ENV !== 'test') {
+      try { startZenWatch(); } catch (err) { console.warn('[ZenWatch] failed to start', err?.message || err); }
+    }
   });
+  setupTranscribeStream(srv);
   srv.on('error', (err) => {
     if (err.code === 'EADDRINUSE' && retryCount === 0) {
       console.warn(`⚠️ [Server] Port ${port} in use — killing stale process and retrying...`);
       try {
-        execSync(`lsof -ti:${port} | xargs -r kill -9`, { stdio: 'ignore' });
+        const output = execSync(`lsof -ti:${port}`, { encoding: 'utf8' }).trim();
+        const myPid = process.pid.toString();
+        const pids = output ? output.split(/\s+/).filter(Boolean) : [];
+        const otherPids = pids.filter((pid) => pid !== myPid);
+        if (otherPids.length) {
+          execSync(`kill -9 ${otherPids.join(' ')}`, { stdio: 'ignore' });
+        } else {
+          console.warn(`⚠️ [Server] Port ${port} in use by current process (${myPid}); not killing self.`);
+        }
       } catch (_) {}
       setTimeout(() => startServer(port, 1), 1000);
     } else if (err.code === 'EADDRINUSE') {
@@ -1154,12 +1455,21 @@ startServer(PORT);
       if (vvaultAvailable) {
         const { getVVAULTTranscriptLoader } = await import('../src/lib/VVAULTTranscriptLoader.js');
         const { getVVAULTWatcher } = await import('../src/lib/VVAULTWatcher.js');
-        const transcriptLoader = getVVAULTTranscriptLoader();
-        await transcriptLoader.loadTranscriptFragments('katana-001', 'devon_woodson_1762969514958');
-        const watcher = getVVAULTWatcher();
-        await watcher.addConstruct('katana-001', 'devon_woodson_1762969514958');
-        await watcher.startWatching(30000);
-        watchedConstructCount = watcher.getWatchStatus().constructCount;
+        // Ensure both loader and watcher are created with the validated base path.
+        const transcriptLoader = getVVAULTTranscriptLoader(VVAULT_BASE);
+        try {
+          await transcriptLoader.loadTranscriptFragments('katana-001', 'devon_woodson_1762969514958');
+        } catch (err) {
+          console.warn('⚠️ [VVAULTLoader] Failed to preload katana-001 transcripts:', err.message);
+        }
+        const watcher = getVVAULTWatcher(VVAULT_BASE);
+        try {
+          await watcher.addConstruct('katana-001', 'devon_woodson_1762969514958');
+          await watcher.startWatching(30000);
+          watchedConstructCount = watcher.getWatchStatus().constructCount;
+        } catch (err) {
+          console.warn('⚠️ [VVAULTWatcher] Failed to watch katana-001:', err.message);
+        }
       }
 
       const stats = await memoryStore.getStats();
@@ -1348,6 +1658,7 @@ void (async () => {
         coldStartMetrics.phases.push({ phase: `capsule-load-${target}`, ms: elapsed });
         console.log(`⏱️ [Profiling] capsule-load-${target}: ${elapsed}ms`);
       } catch (e) {
+        // Treat missing capsule dirs as a warning, not fatal.
         coldStartMetrics.phases.push({ phase: `capsule-load-${target}`, ms: Date.now() - tC, error: e.message });
         console.warn(`⏱️ [Profiling] capsule-load-${target}: FAILED (${Date.now() - tC}ms) - ${e.message}`);
       }
