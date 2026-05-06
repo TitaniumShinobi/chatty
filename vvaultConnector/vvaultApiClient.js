@@ -11,17 +11,38 @@
  * - GET /api/chatty/constructs - list all constructs
  */
 
-const VVAULT_API_BASE_URL = process.env.VVAULT_API_BASE_URL;
-
 function getBaseUrl() {
-  if (!VVAULT_API_BASE_URL) {
-    console.warn('⚠️ [VVAULTApiClient] VVAULT_API_BASE_URL not set');
+  const configuredBaseUrl =
+    process.env.VVAULT_API_BASE_URL ||
+    process.env.VVAULT_URL ||
+    process.env.VVAULT_BASE_URL;
+  if (!configuredBaseUrl) {
+    console.warn('⚠️ [VVAULTApiClient] VVAULT API origin not set');
     return null;
   }
-  return VVAULT_API_BASE_URL.replace(/\/$/, '');
+  return configuredBaseUrl.replace(/\/$/, '');
 }
 
-function getChattyAuthHeaders(userEmail) {
+function isSupabaseUuid(value) {
+  return typeof value === 'string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
+function normalizeChattyUserContext(userContext) {
+  if (typeof userContext === 'string') {
+    return { userEmail: userContext, supabaseUserId: null };
+  }
+  if (!userContext || typeof userContext !== 'object') {
+    return { userEmail: null, supabaseUserId: null };
+  }
+  return {
+    userEmail: userContext.userEmail || userContext.email || null,
+    supabaseUserId: userContext.supabaseUserId || userContext.supabase_user_id || null,
+  };
+}
+
+function getChattyAuthHeaders(userContext) {
+  const { userEmail, supabaseUserId } = normalizeChattyUserContext(userContext);
   const headers = { 'Content-Type': 'application/json' };
   const apiKey = process.env.VVAULT_SERVICE_TOKEN;
   if (apiKey) {
@@ -30,10 +51,30 @@ function getChattyAuthHeaders(userEmail) {
   if (userEmail) {
     headers['X-Chatty-User'] = userEmail;
   }
+  if (isSupabaseUuid(supabaseUserId)) {
+    headers['X-Chatty-Supabase-User-Id'] = supabaseUserId.trim();
+  }
   return headers;
 }
 
-async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+function normalizeConstructFilesPayload(data) {
+  if (!data || data.success !== true || data.status !== 'body_native') {
+    return null;
+  }
+  if (Array.isArray(data.files)) {
+    return data;
+  }
+  const files = ['assets', 'documents', 'identity']
+    .flatMap((group) => Array.isArray(data[group])
+      ? data[group].map((file) => ({ ...file, folder: group }))
+      : []);
+  if (!files.length) {
+    return null;
+  }
+  return { ...data, files };
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 3000) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   
@@ -53,7 +94,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
  * @param {string} constructId - e.g., "zen-001"
  * @returns {Promise<{success: boolean, content: string, messages: Array, construct_id: string} | null>}
  */
-async function getTranscript(constructId, userEmail) {
+async function getTranscript(constructId, userContext) {
   const baseUrl = getBaseUrl();
   if (!baseUrl) return null;
 
@@ -64,7 +105,7 @@ async function getTranscript(constructId, userEmail) {
       `${baseUrl}/api/chatty/transcript/${constructId}`,
       {
         method: 'GET',
-        headers: getChattyAuthHeaders(userEmail)
+        headers: getChattyAuthHeaders(userContext)
       }
     );
 
@@ -101,7 +142,7 @@ async function getTranscript(constructId, userEmail) {
  * @param {string} content - markdown transcript content
  * @returns {Promise<boolean>}
  */
-async function updateTranscript(constructId, content, userEmail) {
+async function updateTranscript(constructId, content, userContext) {
   const baseUrl = getBaseUrl();
   if (!baseUrl) return false;
 
@@ -112,7 +153,7 @@ async function updateTranscript(constructId, content, userEmail) {
       `${baseUrl}/api/chatty/transcript/${constructId}`,
       {
         method: 'POST',
-        headers: getChattyAuthHeaders(userEmail),
+        headers: getChattyAuthHeaders(userContext),
         body: JSON.stringify({ content })
       }
     );
@@ -135,7 +176,7 @@ async function updateTranscript(constructId, content, userEmail) {
  * List all constructs with transcripts
  * @returns {Promise<Array<{construct_id: string, filename: string}> | null>}
  */
-async function listConstructs(userEmail) {
+async function listConstructs(userContext) {
   const baseUrl = getBaseUrl();
   if (!baseUrl) return null;
 
@@ -146,7 +187,7 @@ async function listConstructs(userEmail) {
       `${baseUrl}/api/chatty/constructs`,
       {
         method: 'GET',
-        headers: getChattyAuthHeaders(userEmail)
+        headers: getChattyAuthHeaders(userContext)
       }
     );
 
@@ -165,6 +206,102 @@ async function listConstructs(userEmail) {
     return null;
   } catch (error) {
     console.error(`❌ [VVAULTApiClient] Error listing constructs:`, error.message);
+    return null;
+  }
+}
+
+async function getConstructIdentity(constructId, userContext) {
+  const baseUrl = getBaseUrl();
+  if (!baseUrl) return null;
+
+  try {
+    const response = await fetchWithTimeout(
+      `${baseUrl}/api/chatty/construct/${constructId}/identity`,
+      {
+        method: 'GET',
+        headers: getChattyAuthHeaders(userContext)
+      }
+    );
+
+    if (!response.ok) {
+      console.warn(`⚠️ [VVAULTApiClient] Identity read failed with ${response.status} for ${constructId}`);
+      return null;
+    }
+
+    const data = await response.json();
+    if (data?.success === true && data?.status === 'body_native') {
+      return data;
+    }
+    return null;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.warn(`⚠️ [VVAULTApiClient] Identity request timed out for ${constructId}`);
+    } else {
+      console.error(`❌ [VVAULTApiClient] Error fetching identity for ${constructId}:`, error.message);
+    }
+    return null;
+  }
+}
+
+async function getConstructFiles(constructId, userContext) {
+  const baseUrl = getBaseUrl();
+  if (!baseUrl) return null;
+
+  try {
+    const response = await fetchWithTimeout(
+      `${baseUrl}/api/chatty/construct/${constructId}/files`,
+      {
+        method: 'GET',
+        headers: getChattyAuthHeaders(userContext)
+      }
+    );
+
+    if (!response.ok) {
+      console.warn(`⚠️ [VVAULTApiClient] Construct files read failed with ${response.status} for ${constructId}`);
+      return null;
+    }
+
+    const data = await response.json();
+    return normalizeConstructFilesPayload(data);
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.warn(`⚠️ [VVAULTApiClient] Construct files request timed out for ${constructId}`);
+    } else {
+      console.error(`❌ [VVAULTApiClient] Error fetching construct files for ${constructId}:`, error.message);
+    }
+    return null;
+  }
+}
+
+async function getConstructMemories(constructId, userContext) {
+  const baseUrl = getBaseUrl();
+  if (!baseUrl) return null;
+
+  try {
+    const response = await fetchWithTimeout(
+      `${baseUrl}/api/chatty/construct/${constructId}/memories`,
+      {
+        method: 'GET',
+        headers: getChattyAuthHeaders(userContext)
+      }
+    );
+
+    if (!response.ok) {
+      console.warn(`⚠️ [VVAULTApiClient] Memories read failed with ${response.status} for ${constructId}`);
+      return null;
+    }
+
+    const data = await response.json();
+    if (data?.success === true && data?.status === 'body_native') {
+      return data;
+    }
+    return null;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.warn(`⚠️ [VVAULTApiClient] Memories request timed out for ${constructId}`);
+    } else {
+      console.error(`❌ [VVAULTApiClient] Error fetching memories for ${constructId}:`, error.message);
+    }
     return null;
   }
 }
@@ -269,6 +406,22 @@ function parseMarkdownToMessages(content) {
       continue;
     }
 
+    // Chatty inline ISO timestamp format: "[ISO_TIMESTAMP] **User**: content"
+    const inlineIsoBoldMatch = line.match(/^\[(\d{4}-\d{2}-\d{2}T[^\]]+)\]\s+\*\*([^*]+)\*\*:\s*(.*)$/);
+    if (inlineIsoBoldMatch) {
+      saveCurrentMessage();
+
+      const isoTimestamp = inlineIsoBoldMatch[1];
+      const speaker = inlineIsoBoldMatch[2].trim().toLowerCase();
+      const msgContent = inlineIsoBoldMatch[3];
+      const isUser = speaker === 'user' || speaker === 'you' || speaker.startsWith('devon');
+
+      currentRole = isUser ? 'user' : 'assistant';
+      currentTimestamp = isoTimestamp;
+      currentContent = msgContent ? [msgContent] : [];
+      continue;
+    }
+
     // VVAULT format: "You said:" - marks user message
     const youSaidMatch = line.match(/^You said:\s*$/i);
     // VVAULT format: "[Name] said:" - marks assistant message
@@ -309,8 +462,11 @@ function parseMarkdownToMessages(content) {
 function formatMessagesToMarkdown(title, messages) {
   let md = `# ${title || 'Conversation'}\n\n`;
   for (const msg of messages || []) {
+    const timestampPrefix = typeof msg.timestamp === 'string' && msg.timestamp.trim()
+      ? `[${msg.timestamp.trim()}] `
+      : '';
     const roleLabel = msg.role === 'user' ? '**User**' : '**Zen**';
-    md += `${roleLabel}: ${msg.content}\n\n`;
+    md += `${timestampPrefix}${roleLabel}: ${msg.content}\n\n`;
   }
   return md;
 }
@@ -325,7 +481,7 @@ function formatMessagesToMarkdown(title, messages) {
  * @param {string} [params.userId] - optional user ID
  * @returns {Promise<{success: boolean, response: string, construct_id: string} | null>}
  */
-async function postMessage({ constructId, message, userId, userEmail }) {
+async function postMessage({ constructId, message, userId, userEmail, supabaseUserId }) {
   const baseUrl = getBaseUrl();
   if (!baseUrl) {
     console.error('❌ [VVAULTApiClient] VVAULT_API_BASE_URL not set, cannot post message');
@@ -339,7 +495,7 @@ async function postMessage({ constructId, message, userId, userEmail }) {
       `${baseUrl}/api/chatty/message`,
       {
         method: 'POST',
-        headers: getChattyAuthHeaders(userEmail || userId),
+        headers: getChattyAuthHeaders({ userEmail: userEmail || (String(userId || '').includes('@') ? userId : null), supabaseUserId }),
         body: JSON.stringify({ 
           constructId, 
           message,
@@ -388,7 +544,7 @@ async function postMessage({ constructId, message, userId, userEmail }) {
  * @param {string} [params.timestamp] - ISO timestamp (optional, defaults to now)
  * @returns {Promise<{success: boolean, action: string} | null>}
  */
-async function appendMessage({ constructId, role, content, name, timestamp, userEmail }) {
+async function appendMessage({ constructId, role, content, name, timestamp, userEmail, supabaseUserId, attachments, projectName, rootPath }) {
   const baseUrl = getBaseUrl();
   if (!baseUrl) {
     console.error('❌ [VVAULTApiClient] VVAULT_API_BASE_URL not set, cannot append message');
@@ -402,12 +558,15 @@ async function appendMessage({ constructId, role, content, name, timestamp, user
       `${baseUrl}/api/chatty/transcript/${constructId}/message`,
       {
         method: 'POST',
-        headers: getChattyAuthHeaders(userEmail),
+        headers: getChattyAuthHeaders({ userEmail, supabaseUserId }),
         body: JSON.stringify({ 
           role, 
           content,
           name,
-          timestamp: timestamp || new Date().toISOString()
+          timestamp: timestamp || new Date().toISOString(),
+          attachments,
+          projectName,
+          rootPath
         })
       }
     );
@@ -436,10 +595,16 @@ export {
   getTranscript,
   updateTranscript,
   listConstructs,
+  getConstructFiles,
+  getConstructIdentity,
+  getConstructMemories,
   parseMarkdownToMessages,
   formatMessagesToMarkdown,
   getBaseUrl,
   getChattyAuthHeaders,
+  normalizeConstructFilesPayload,
+  normalizeChattyUserContext,
+  isSupabaseUuid,
   postMessage,
   appendMessage
 };
