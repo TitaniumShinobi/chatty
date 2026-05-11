@@ -1,7 +1,34 @@
-import { dispatch } from "./bus";
-import { pkt } from "../lib/emit";
 import { OP } from "../proto/opcodes";
 import { lexicon as lex } from "../data/lexicon";
+
+// Mock render so bus.test does not load full render.tsx (React, markdown, etc.)
+const tokenToString: Record<number, string> = {
+  [lex.tokens.hello]: "Hello",
+  [lex.names.devon]: "Devon",
+  [lex.tokens.file]: "File",
+  [lex.names.contractPdf]: "Contract.pdf",
+  [lex.tokens.uploaded]: "uploaded",
+  [lex.tokens.askNext]: "",
+  [lex.tokens.codeReady]: "Code mode armed.",
+  [lex.langs.typescript]: "TypeScript",
+  [lex.tasks.writeFn]: "Write a function",
+  [lex.tokens.authOk]: "Signed in.",
+  [lex.tokens.errGeneric]: "Something went wrong.",
+  [lex.tokens.idlePing]: "Idle ping",
+  [lex.tokens.qaReady]: "QA ready",
+  [lex.tokens.summaryReady]: "Summary ready",
+};
+function mockR(arg: any, _opts?: any, _extra?: any): string {
+  if (arg && Array.isArray(arg.join)) {
+    return arg.join.map((id: number) => tokenToString[id] ?? String(id)).filter(Boolean).join(" ");
+  }
+  if (typeof arg === "number") return tokenToString[arg] ?? String(arg);
+  return "[empty]";
+}
+jest.mock("./render", () => ({ R: mockR, __esModule: true }));
+
+import { dispatch } from "./bus";
+import { pkt } from "../lib/emit";
 
 describe("Event Bus - Integer-Driven Text Rendering", () => {
   test("HELLO opcode returns greeting with user name", async () => {

@@ -2,6 +2,86 @@ import path from "node:path";
 import { defineConfig, Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
+type LifecycleLogContext = Record<string, unknown>;
+
+function emitDevLifecycleLog(event: string, context: LifecycleLogContext = {}) {
+  console.log(
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      scope: "vite-dev",
+      event,
+      ...context,
+    }),
+  );
+}
+
+function safeReason(reason: unknown): string {
+  if (reason instanceof Error) return reason.message;
+  if (typeof reason === "string") return reason;
+  try {
+    return JSON.stringify(reason);
+  } catch {
+    return String(reason);
+  }
+}
+
+function devLifecycleLogPlugin(): Plugin {
+  return {
+    name: "chatty-dev-lifecycle-log",
+    apply: "serve",
+    configureServer(server) {
+      const processAny = process as NodeJS.Process & {
+        __chattyViteLifecycleHandlersInstalled?: boolean;
+      };
+
+      if (!processAny.__chattyViteLifecycleHandlersInstalled) {
+        processAny.__chattyViteLifecycleHandlersInstalled = true;
+        process.on("uncaughtException", (error) => {
+          emitDevLifecycleLog("process.uncaughtException", {
+            message: error?.message || String(error),
+            stack: error?.stack || null,
+          });
+        });
+        process.on("unhandledRejection", (reason) => {
+          emitDevLifecycleLog("process.unhandledRejection", {
+            reason: safeReason(reason),
+          });
+        });
+        process.on("exit", (code) => {
+          emitDevLifecycleLog("process.exit", { code });
+        });
+        process.on("SIGINT", () => {
+          emitDevLifecycleLog("process.signal", { signal: "SIGINT" });
+        });
+        process.on("SIGTERM", () => {
+          emitDevLifecycleLog("process.signal", { signal: "SIGTERM" });
+        });
+      }
+
+      server.httpServer?.once("listening", () => {
+        const address = server.httpServer?.address();
+        emitDevLifecycleLog("server.listening", {
+          address:
+            typeof address === "string"
+              ? address
+              : address
+                ? `${address.address}:${address.port}`
+                : null,
+        });
+      });
+      server.httpServer?.on("close", () => {
+        emitDevLifecycleLog("server.close");
+      });
+      server.httpServer?.on("error", (error: any) => {
+        emitDevLifecycleLog("server.error", {
+          code: error?.code || null,
+          message: error?.message || String(error),
+        });
+      });
+    },
+  };
+}
+
 // Plugin to redirect seatRunner imports to browserSeatRunner in browser builds
 function excludeSeatRunnerPlugin(): Plugin {
   return {
@@ -55,7 +135,7 @@ function stripSupabaseLocalhostDefaultPlugin(): Plugin {
 // Ensure .env.local has VITE_* vars and restart Vite after changes
 export default defineConfig({
   base: "/",
-  plugins: [react(), excludeSeatRunnerPlugin(), stripSupabaseLocalhostDefaultPlugin()],
+  plugins: [react(), devLifecycleLogPlugin(), excludeSeatRunnerPlugin(), stripSupabaseLocalhostDefaultPlugin()],
   define: {
     global: "globalThis",
   },
@@ -93,6 +173,27 @@ export default defineConfig({
         replacement: path.resolve(
           __dirname,
           "src/lib/browserShims/betterSqlite3Stub.ts",
+        ),
+      },
+      {
+        find: "node:fs/promises",
+        replacement: path.resolve(
+          __dirname,
+          "src/lib/browserShims/nodeFsPromisesStub.ts",
+        ),
+      },
+      {
+        find: "fs/promises",
+        replacement: path.resolve(
+          __dirname,
+          "src/lib/browserShims/nodeFsPromisesStub.ts",
+        ),
+      },
+      {
+        find: "node:fs",
+        replacement: path.resolve(
+          __dirname,
+          "src/lib/browserShims/nodeFsStub.ts",
         ),
       },
       {
@@ -144,10 +245,18 @@ export default defineConfig({
     ],
   },
   server: {
-    port: 5000,
+    port: 5173,
     strictPort: true,
     host: "0.0.0.0",
-    allowedHosts: true,
+    origin: "http://localhost:5173",
+    hmr: {
+      protocol: "ws",
+      host: "localhost",
+      port: 5173,
+      clientPort: 5173,
+      overlay: false,
+    },
+    allowedHosts: ["localhost", "127.0.0.1"],
     proxy: {
       "/api": {
         target: "http://localhost:5050",
@@ -156,20 +265,27 @@ export default defineConfig({
         ws: true, // Enable WebSocket proxying
         cookieDomainRewrite: "", // strip domain for Set-Cookie
         cookiePathRewrite: "/", // ensure path is /
-        configure: (proxy, _options) => {
-          proxy.on("error", (err, _req, res) => {
-            console.log("❌ [Vite Proxy] Error:", err.message);
+        configure: (proxy) => {
+          proxy.on("error", (err, req) => {
+            emitDevLifecycleLog("proxy.error", {
+              code: (err as any)?.code || null,
+              message: err?.message || String(err),
+              method: req?.method || null,
+              url: req?.url || null,
+            });
           });
-          proxy.on("proxyReq", (proxyReq, req, _res) => {
-            console.log("🔄 [Vite Proxy] Proxying:", req.method, req.url);
+          proxy.on("proxyReq", (_proxyReq, req) => {
+            emitDevLifecycleLog("proxy.request", {
+              method: req.method,
+              url: req.url,
+            });
           });
-          proxy.on("proxyRes", (proxyRes, req, _res) => {
-            console.log(
-              "✅ [Vite Proxy] Response:",
-              req.method,
-              req.url,
-              proxyRes.statusCode,
-            );
+          proxy.on("proxyRes", (proxyRes, req) => {
+            emitDevLifecycleLog("proxy.response", {
+              method: req.method,
+              url: req.url,
+              statusCode: proxyRes.statusCode,
+            });
           });
         },
       },

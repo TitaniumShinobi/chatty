@@ -3,6 +3,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import {
+  getChattyCliConversationsDir,
+  getChattyCliFileRoot,
+  getChattyCliSettingsFile,
+  resolveUserPath,
+} from './paths.js';
 
 const readFile = promisify(fs.readFile);
 const writeFile = promisify(fs.writeFile);
@@ -30,6 +36,19 @@ export interface CLISettings {
   // Model settings
   defaultModel: string;
   autoSwitchModel: boolean;
+
+  // Runtime transport settings
+  transport: 'vvault' | 'local';
+  apiBaseUrl: string;
+  constructId: string;
+  threadId: string;
+  requestTimeoutMs: number;
+  orchestrationMode: 'lin' | 'custom';
+  customModelTarget: string;
+  showConstructPickerOnStart: boolean;
+  showReceipts: boolean;
+  showChecklist: boolean;
+  skipPersistence: boolean;
   
   // File operations
   defaultFileOperationsPath: string;
@@ -48,11 +67,12 @@ export interface CLISettings {
 export class SettingsManager {
   private settingsFile: string;
   private settings: CLISettings;
+  private loadPromise: Promise<void>;
 
-  constructor(settingsFile = './chatty-cli-settings.json') {
-    this.settingsFile = path.resolve(settingsFile);
+  constructor(settingsFile = getChattyCliSettingsFile()) {
+    this.settingsFile = resolveUserPath(settingsFile);
     this.settings = this.getDefaultSettings();
-    this.loadSettings();
+    this.loadPromise = this.loadSettings();
   }
 
   /**
@@ -80,14 +100,27 @@ export class SettingsManager {
       // Model settings
       defaultModel: 'synth',
       autoSwitchModel: false,
+
+      // Runtime transport settings
+      transport: 'vvault',
+      apiBaseUrl: process.env.CHATTY_API_URL || 'http://127.0.0.1:5050',
+      constructId: 'zen-001',
+      threadId: '',
+      requestTimeoutMs: 45000,
+      orchestrationMode: 'lin',
+      customModelTarget: '',
+      showConstructPickerOnStart: true,
+      showReceipts: true,
+      showChecklist: false,
+      skipPersistence: false,
       
       // File operations
-      defaultFileOperationsPath: process.cwd(),
+      defaultFileOperationsPath: getChattyCliFileRoot(),
       enableFileOperations: true,
       
       // Conversation settings
       autoSaveConversations: false,
-      conversationSavePath: './chatty-conversations',
+      conversationSavePath: getChattyCliConversationsDir(),
       
       // Advanced settings
       enableDebugMode: false,
@@ -112,11 +145,16 @@ export class SettingsManager {
     }
   }
 
+  async ready(): Promise<void> {
+    await this.loadPromise;
+  }
+
   /**
    * Save settings to file
    */
   async saveSettings(): Promise<void> {
     try {
+      await mkdir(path.dirname(this.settingsFile), { recursive: true });
       const content = JSON.stringify(this.settings, null, 2);
       await writeFile(this.settingsFile, content);
     } catch (error: any) {
@@ -196,8 +234,24 @@ export class SettingsManager {
       {
         title: '🤖 Model Settings',
         settings: [
-          { key: 'defaultModel', label: 'Default model', type: 'text' },
+          { key: 'defaultModel', label: 'Default local model', type: 'text' },
           { key: 'autoSwitchModel', label: 'Auto switch model', type: 'boolean' }
+        ]
+      },
+      {
+        title: '🛰️ Runtime Settings',
+        settings: [
+          { key: 'transport', label: 'Transport', type: 'select', options: ['vvault', 'local'] },
+          { key: 'apiBaseUrl', label: 'API base URL', type: 'text' },
+          { key: 'constructId', label: 'Construct ID', type: 'text' },
+          { key: 'threadId', label: 'Thread ID', type: 'text' },
+          { key: 'requestTimeoutMs', label: 'Request timeout (ms)', type: 'number' },
+          { key: 'orchestrationMode', label: 'Backend orchestration mode', type: 'select', options: ['lin', 'custom'] },
+          { key: 'customModelTarget', label: 'Custom backend model target', type: 'text' },
+          { key: 'showConstructPickerOnStart', label: 'Show construct picker on start', type: 'boolean' },
+          { key: 'showReceipts', label: 'Show runtime receipts', type: 'boolean' },
+          { key: 'showChecklist', label: 'Show orchestration checklist', type: 'boolean' },
+          { key: 'skipPersistence', label: 'Skip persistence', type: 'boolean' }
         ]
       },
       {
@@ -278,13 +332,24 @@ export class SettingsManager {
       case 'maxContextLength':
         return typeof value === 'number' && value > 0 && value <= 50000;
       case 'defaultTimeout':
+      case 'requestTimeoutMs':
         return typeof value === 'number' && value > 0 && value <= 300000;
       case 'colorScheme':
         return ['default', 'dark', 'light', 'minimal'].includes(value);
       case 'logLevel':
         return ['error', 'warn', 'info', 'debug'].includes(value);
+      case 'transport':
+        return ['vvault', 'local'].includes(value);
+      case 'orchestrationMode':
+        return ['lin', 'custom'].includes(value);
       case 'defaultModel':
-        return typeof value === 'string' && value.length > 0;
+      case 'apiBaseUrl':
+      case 'constructId':
+        return typeof value === 'string' && value.trim().length > 0;
+      case 'customModelTarget':
+        return typeof value === 'string';
+      case 'threadId':
+        return typeof value === 'string';
       default:
         return true;
     }
@@ -315,7 +380,7 @@ export class SettingsManager {
     // Validate imported settings
     for (const [key, value] of Object.entries(importedSettings)) {
       if (key in this.settings && this.validateSetting(key as keyof CLISettings, value)) {
-        this.settings[key as keyof CLISettings] = value as any;
+        (this.settings as unknown as Record<string, unknown>)[key] = value;
       }
     }
     

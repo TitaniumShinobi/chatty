@@ -8,8 +8,15 @@
             "isBackground": true,
             "problemMatcher": [
                 {
-                    "pattern": ".",
-                    "background": { "activeOnStart": true, "beginsPattern": "VITE .* ready", "endsPattern": "ready" }
+                    "owner": "custom",
+                    "pattern": {
+                        "regexp": "."
+                    },
+                    "background": {
+                        "activeOnStart": true,
+                        "beginsPattern": "VITE .* ready",
+                        "endsPattern": "ready"
+                    }
                 }
             ]
         },

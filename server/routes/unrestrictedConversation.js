@@ -7,7 +7,7 @@
 
 import express from 'express';
 import { getUnifiedIntelligenceOrchestrator } from '../lib/unifiedIntelligenceOrchestrator.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth } from '../auth/middleware/auth.js';
 
 const router = express.Router();
 router.use(requireAuth);

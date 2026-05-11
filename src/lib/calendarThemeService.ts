@@ -110,6 +110,39 @@ export function getBlackHistoryMonthThemeScript(): ThemeScript {
   };
 }
 
+export function getStPatricksThemeScript(): ThemeScript {
+  return {
+    id: "stpatrick",
+    name: "St. Patrick's Day",
+    description: "Lucky theme with pastel green and dark azure, gold star accents",
+    activePeriod: {
+      startMonth: 3,
+      startDay: 17,
+      endMonth: 3,
+      endDay: 17,
+    },
+    colors: {
+      night: {
+        bgMain: "#04383f", /* Dark azure wallpaper */
+        bgSidebar: "#04383f",
+        bgMessage: "rgba(4, 56, 63, 0.6)",
+        highlight: "#0a5058",
+      },
+      light: {
+        bgMain: "#b1d8b7", /* Pastel gray-green wallpaper */
+        bgSidebar: "#b1d8b7",
+        bgMessage: "rgba(4, 56, 63, 0.08)",
+        highlight: "#9bc9a1",
+      },
+    },
+    starColors: {
+      starburst: "#fffff0",
+      nova: "#ffef42",
+      ray: "#ffef42",
+    },
+  };
+}
+
 export function getWinterOlympicsThemeScript(year: number): ThemeScript | null {
   const isOlympicYear = year % 4 === 2;
   if (!isOlympicYear) return null;
@@ -180,27 +213,28 @@ export function getActiveThemeScript(
   if (isThemeScriptActive(christmas, date)) {
     return christmas;
   }
+  const stpatrick = getStPatricksThemeScript();
+  if (isThemeScriptActive(stpatrick, date)) {
+    return stpatrick;
+  }
   return null;
 }
 
 export function getAvailableThemeScripts(): ThemeScript[] {
   const year = new Date().getFullYear();
   return [
-    getChristmasThemeScript(),
     getValentinesThemeScript(),
-    getBlackHistoryMonthThemeScript(),
-    getWinterOlympicsThemeScript(year),
-  ].filter((s): s is ThemeScript => s !== null);
+    getStPatricksThemeScript(),
+    getChristmasThemeScript(),
+  ];
 }
 
 /*
-Schedule of Events and Themes:
+Schedule of Events and Themes (2026 baseline):
 
 01-01                                          -- New Years Day
 3rd Monday of January                          -- MLK Day
-Four year cycle (2026, 2030)                  -- Winter Olympics
-02-01                                          -- Black History Month
-02-14                                          -- Valentines Day
+02-14                                          -- Valentines Day (Sat Feb 14, 2026)
 02-16                                          -- Washington's Birthday
 03-17                                          -- St Patrick's Day
 1 week before resurrection Sunday              -- Palm Sunday

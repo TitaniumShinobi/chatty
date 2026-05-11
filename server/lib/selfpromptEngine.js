@@ -14,7 +14,7 @@ function getLLMClient() {
         baseURL: process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL,
         apiKey: replitKey,
       }),
-      model: process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct',
+      model: process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free',
       provider: 'replitOpenrouter'
     };
   }

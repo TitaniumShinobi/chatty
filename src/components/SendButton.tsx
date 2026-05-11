@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from "react";
-// No visual icon by design — render an outlined ring only
+import { X } from "lucide-react";
+// No visual icon by design — render an outlined ring only; optional "end" mode shows X
 import styles from "./SendButton.module.css";
 
 export interface SendButtonProps {
@@ -7,6 +8,9 @@ export interface SendButtonProps {
   disabled?: boolean;
   animating?: boolean;
   ariaLabel?: string;
+  soft?: boolean;
+  /** When true, same circular frame but shows X (end voice mode). */
+  mode?: "send" | "end";
 }
 
 export default function SendButton({
@@ -14,6 +18,8 @@ export default function SendButton({
   disabled = false,
   animating = false,
   ariaLabel = "Send message",
+  soft = false,
+  mode = "send",
 }: SendButtonProps) {
   const [pressed, setPressed] = useState(false);
 
@@ -45,7 +51,7 @@ export default function SendButton({
   return (
     <button
       type="button"
-      className={`${styles.root} ${showPressed ? styles.pressed : ""} ${animating ? styles.animating : ""} ${isDisabled ? styles.disabled : ""}`}
+      className={`${styles.root} ${mode === "end" ? styles.end : styles.send} ${soft ? styles.soft : ""} ${showPressed ? styles.pressed : ""} ${animating ? styles.animating : ""} ${isDisabled ? styles.disabled : ""}`}
       onClick={handleClick}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
@@ -53,7 +59,7 @@ export default function SendButton({
       disabled={isDisabled}
       aria-label={ariaLabel}
     >
-      {/* Intentionally empty: visual is an outline ring matching other controls */}
+      {mode === "end" ? <X size={20} className={styles.endIcon} /> : null}
     </button>
   );
 }

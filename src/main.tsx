@@ -22,6 +22,22 @@ const FXShinobiPage = lazy(() => import('./pages/finance/FXShinobiPage'))
 
 initPerfMetrics()
 
+// Development: filter noisy React Router future-flag warnings during local dev
+if (import.meta.env.DEV) {
+  const _warn = console.warn.bind(console)
+  console.warn = (...args: any[]) => {
+    try {
+      const m = args[0]
+      if (typeof m === 'string' && (m.includes('React Router Future Flag Warning') || m.includes('Relative route resolution within Splat routes'))) {
+        return
+      }
+    } catch (e) {
+      // ignore
+    }
+    _warn(...args)
+  }
+}
+
 const enableStrictMode = import.meta.env.PROD || import.meta.env.VITE_STRICT_MODE === 'true'
 
 const PageFallback = () => (
@@ -35,7 +51,7 @@ const S: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 )
 
 const app = (
-  <BrowserRouter>
+  <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
     <Routes>
       <Route path="/" element={<App />} />
       <Route path="/auth/callback" element={<OAuthCallback />} />

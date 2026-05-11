@@ -474,7 +474,9 @@ export class RuntimeContextManager {
         
         // Restore active contexts (but not sessions, they should be fresh)
         if (data.threadRuntimeMap) {
-          const threadData = new Map(data.threadRuntimeMap);
+          const threadData = new Map<string, RuntimeContext>(
+            data.threadRuntimeMap as Array<[string, RuntimeContext]>
+          );
           threadData.forEach((context, threadId) => {
             // Only restore if recently active
             const lastUsed = new Date(context.lastUsed);

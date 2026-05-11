@@ -12,9 +12,65 @@ export interface Attachment {
   file?: File; // original file object
 }
 
+export interface PacketCitation {
+  index?: number;
+  title?: string;
+  label?: string;
+  url?: string;
+  source?: string;
+  snippet?: string;
+}
+
+export interface AnswerPacketPayload {
+  content: string;
+  citations?: PacketCitation[];
+}
+
+export interface HousingResultImage {
+  url: string;
+  alt?: string;
+}
+
+export interface HousingResultCard {
+  id?: string;
+  title?: string;
+  address?: string;
+  addressLine1?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  price?: number | string;
+  currency?: string;
+  bedrooms?: number | string;
+  bathrooms?: number | string;
+  sqft?: number | string;
+  propertyType?: string;
+  status?: string;
+  source?: string;
+  broker?: string;
+  url?: string;
+  listingUrl?: string;
+  sourceUrl?: string;
+  description?: string;
+  tags?: string[];
+  images?: Array<HousingResultImage | string>;
+  photos?: Array<HousingResultImage | string>;
+  citationIndex?: number;
+  citationIndices?: number[];
+}
+
+export interface HousingResultsPacketPayload {
+  query?: string;
+  region?: string;
+  total?: number;
+  results: HousingResultCard[];
+  citations?: PacketCitation[];
+}
+
 // Enforce packet-only for assistant messages
 export type Op =
   | "answer.v1"
+  | "housing.results.v1"
   | "file.summary.v1"
   | "warn.v1"
   | "error.v1"
@@ -26,14 +82,15 @@ export type Op =
   | "insight.v1";
 
 export type AssistantPacket =
-  | { op: "answer.v1"; payload: { content: string } }
+  | { op: "answer.v1"; payload: AnswerPacketPayload }
+  | { op: "housing.results.v1"; payload: HousingResultsPacketPayload }
   | { op: "file.summary.v1"; payload: { fileName: string; summary: string; fileCount: number } }
   | { op: "warn.v1"; payload: { message: string; severity?: 'low' | 'medium' | 'high' } }
   | { op: "error.v1"; payload: { message: string; code?: string } }
   | { op: "thought.v1"; payload: { notes: string[] } }
   | { op: "evidence.v1"; payload: { items: string[] } }
   | { op: "plan.v1"; payload: { steps: string[] } }
-  | { op: "web.evidence.v1"; payload: { engine: string; results: any[] } }
+  | { op: "web.evidence.v1"; payload: { engine: string; results: unknown[] } }
   | { op: "story.v1"; payload: { title: string; content: string } }
   | { op: "insight.v1"; payload: { note: string } };
 
@@ -88,8 +145,10 @@ export interface ChatAreaProps {
 
 export interface SidebarProps {
   conversations: Conversation[]
-  threads: any[]
+  threads: unknown[]
   currentConversationId: string | null
+  hasCreatedCustomAI?: boolean
+  hasAddressBookLoadError?: boolean
   onConversationSelect: (id: string) => void
   onNewConversation: () => void
   onNewConversationWithGPT: (gptId: string) => void
@@ -105,7 +164,7 @@ export interface SidebarProps {
   onShowRuntimeDashboard?: () => void
   collapsed?: boolean
   onToggleCollapsed?: () => void
-  currentUser?: any
+  currentUser?: unknown
   onLogout?: () => void
   onShowSettings?: () => void
   hasBlockingOverlay?: boolean
@@ -115,6 +174,12 @@ export interface SidebarProps {
 export interface MessageProps {
   message: Message
   isLast: boolean
+  sessionStartMs?: number
+  latestAssistantMessageId?: string | null
+  /** When set, TTS uses Zen/Lin voice from settings when thread is Zen/Lin. */
+  threadId?: string | null
+  /** Called after TTS playback succeeds so the message can be marked as spoken (voice badge). */
+  onMarkSpoken?: (messageId: string, metadata: { outputMode: 'voice'; speechText?: string; voiceReply: true }) => void
 }
 
 export interface ConversationItemProps {

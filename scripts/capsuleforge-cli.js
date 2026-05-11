@@ -45,7 +45,7 @@ const vvaultPath = process.env.VVAULT_ROOT_PATH || path.join(__dirname, '..', '.
 // For standard capsules, use vvault instance path
 const instancePath = capsuleType === 'undertone_capsule'
   ? null  // Bridge will determine chatty/identity/lin-001/ path
-  : path.join(vvaultPath, 'users', 'shard_0000', 'devon_woodson_1762969514958', 'instances', constructId);
+  : path.join(vvaultPath, 'users', 'shard_0000', process.env.VVAULT_USER_ID || 'devon_woodson_1774390416168', 'instances', constructId);
 
 // Prepare data for bridge
 const data = {
@@ -114,4 +114,3 @@ pythonProcess.on('close', (code) => {
     process.exit(1);
   }
 });
-

@@ -1,4 +1,6 @@
 // Keep this module browser-safe: require Node libs only when not running in the browser.
+import { LIN_DEFAULT_MODELS } from '../config/linModelDefaults';
+
 const isBrowser = typeof window !== 'undefined';
 const envVars = (!isBrowser && typeof process !== 'undefined' && process.env) ? process.env : undefined;
 
@@ -157,7 +159,22 @@ interface SeatConfig {
   [seat: string]: SeatInfo;
 }
 
+const DEFAULT_SEAT_CONFIG: SeatConfig = {
+  smalltalk: LIN_DEFAULT_MODELS.smalltalk,
+  coding: LIN_DEFAULT_MODELS.coding,
+  creative: LIN_DEFAULT_MODELS.creative,
+};
+
 let cachedConfig: SeatConfig | undefined;
+
+function defaultModelForSeat(seat: Seat): string {
+  const info = DEFAULT_SEAT_CONFIG[seat] || DEFAULT_SEAT_CONFIG.smalltalk;
+  return typeof info === 'string' ? info : info.tag;
+}
+
+function toOllamaModelTag(modelRef: string): string {
+  return modelRef.startsWith('ollama:') ? modelRef.slice('ollama:'.length) : modelRef;
+}
 
 /**
  * Loads seat configuration from models.json file asynchronously.
@@ -180,11 +197,7 @@ async function loadSeatConfig(): Promise<SeatConfig> {
   if (isBrowser) {
     // In the browser we don't have filesystem access; use defaults.
     console.log(`🌐 [SeatRunner] Browser environment - using default config`);
-    cachedConfig = {
-      smalltalk: 'phi3:latest',
-      coding: 'deepseek-coder-v2',
-      creative: 'mistral:instruct',
-    };
+    cachedConfig = DEFAULT_SEAT_CONFIG;
     return cachedConfig;
   }
 
@@ -199,20 +212,12 @@ async function loadSeatConfig(): Promise<SeatConfig> {
   } catch (err: any) {
     console.log(`⚠️ [SeatRunner] Could not load models.json (${err.message}), using defaults`);
     // defaults if missing
-    cachedConfig = {
-      smalltalk: 'phi3:latest',
-      coding: 'deepseek-coder-v2',
-      creative: 'mistral:instruct',
-    };
+    cachedConfig = DEFAULT_SEAT_CONFIG;
   }
 
   // Safety check
   if (!cachedConfig) {
-    cachedConfig = {
-      smalltalk: 'phi3:latest',
-      coding: 'deepseek-coder-v2',
-      creative: 'mistral:instruct',
-    };
+    cachedConfig = DEFAULT_SEAT_CONFIG;
   }
 
   return cachedConfig;
@@ -234,7 +239,7 @@ async function resolveModel(seat: Seat, explicit?: string): Promise<string> {
   const envSeat = envOverrideForSeat(seat);
   if (envSeat) return envSeat;
   const info = await seatInfo(seat);
-  if (!info) return 'phi3:latest';
+  if (!info) return defaultModelForSeat('smalltalk');
   return typeof info === 'string' ? info : info.tag;
 }
 
@@ -326,7 +331,7 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
 
   const host = ollamaHost.replace(/\/$/, '');
   const port = (opts.port ?? Number(envVars?.OLLAMA_PORT)) || DEFAULT_OLLAMA_PORT;
-  const model = await resolveModel(opts.seat, opts.modelOverride);
+  const model = toOllamaModelTag(await resolveModel(opts.seat, opts.modelOverride));
   const timeout = opts.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS;
   console.log(`🔧 [SeatRunner] Resolved - host: ${host}, port: ${port}, model: ${model}, timeout: ${timeout}ms, isBrowser: ${isBrowser}`);// quick availability check via /api/tags
   // Ensure host includes protocol for URL parsing, but don't add port if already present

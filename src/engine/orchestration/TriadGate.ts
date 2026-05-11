@@ -1,13 +1,13 @@
 /**
  * TriadGate.ts
  * 
- * Enforces atomic execution for the reasoning triad (DeepSeek, Phi-3, Mistral).
+ * Enforces atomic execution for the reasoning triad (Qwen3-Coder, Phi-4 mini, Mistral Small).
  * If ANY seat is unavailable or failing, this gate blocks the conversation.
  * 
  * Core Rule: NO TRIAD → NO RESPONSE
  */
 
-import { seatRunner } from '../seats/seatRunner.js';
+import { LIN_DEFAULT_MODELS } from '../../config/linModelDefaults';
 
 export interface TriadStatus {
     healthy: boolean;
@@ -24,9 +24,9 @@ export class TriadGate {
 
     // Required models for the triad
     private readonly TRIAD_SEATS = [
-        'deepseek-coder:6.7b', // Logic/Coding Seat
-        'phi3:latest',         // Synthesis/Routing Seat
-        'mistral:latest'       // Creative/Persona Seat
+        LIN_DEFAULT_MODELS.coding, // Intelligence: coding, continuity, truth, evidence, risk
+        LIN_DEFAULT_MODELS.smalltalk, // Interaction: dialogue flow and pacing
+        LIN_DEFAULT_MODELS.creative // Ingenuity: creative/persona shaping
     ];
 
     private constructor() { }
@@ -105,6 +105,7 @@ export class TriadGate {
      */
     private async pingModel(model: string): Promise<boolean> {
         try {
+            const ollamaModel = model.startsWith('ollama:') ? model.slice('ollama:'.length) : model;
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), this.HEALTH_CHECK_TIMEOUT);
 
@@ -133,7 +134,7 @@ export class TriadGate {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    model: model,
+                    model: ollamaModel,
                     prompt: 'ping',
                     stream: false,
                     options: { num_predict: 1 } // Generate max 1 token for speed

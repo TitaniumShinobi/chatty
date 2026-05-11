@@ -13,6 +13,8 @@ export async function resolveCapabilities(constructId, threadId, userId) {
       webSearch: false,
       imageGeneration: false,
       canvas: false,
+      agent: false,
+      proactiveInitiation: false,
       mirror: false,
       selfprompt: false,
       memory: false,
@@ -40,6 +42,8 @@ export async function resolveCapabilities(constructId, threadId, userId) {
       manifest.enabled.webSearch = Boolean(caps.webSearch || caps.webBrowsing);
       manifest.enabled.imageGeneration = Boolean(caps.imageGeneration);
       manifest.enabled.canvas = Boolean(caps.canvas);
+      manifest.enabled.agent = Boolean(caps.agent);
+      manifest.enabled.proactiveInitiation = Boolean(caps.proactiveInitiation);
       manifest.enabled.memory = Boolean(gpt.memoryEnabled);
       manifest.enabled.roleplay = Boolean(gpt.roleplayEnabled);
     }
@@ -52,8 +56,8 @@ export async function resolveCapabilities(constructId, threadId, userId) {
   try {
     const session = getSession(constructId, threadId);
     if (session) {
-      manifest.enabled.selfprompt = Boolean(session.enabled);
-      manifest.state.selfpromptOn = Boolean(session.enabled);
+      manifest.enabled.selfprompt = Boolean(session.enabled) && Boolean(manifest.enabled.proactiveInitiation);
+      manifest.state.selfpromptOn = Boolean(session.enabled) && Boolean(manifest.enabled.proactiveInitiation);
       manifest.state.selfpromptInterval = session.interval_sec || null;
     }
   } catch (err) {
@@ -90,6 +94,8 @@ export async function resolveCapabilities(constructId, threadId, userId) {
     manifest.enabled.webSearch = false;
     manifest.enabled.imageGeneration = false;
     manifest.enabled.canvas = false;
+    manifest.enabled.agent = false;
+    manifest.enabled.proactiveInitiation = false;
     manifest.enabled.memory = false;
     manifest.enabled.roleplay = false;
     manifest.hard_blocked.push('all non-core capabilities: config unavailable (fail-safe)');
@@ -116,7 +122,9 @@ export function formatCapabilityContext(manifest) {
     webSearch: 'web search',
     imageGeneration: 'image generation',
     canvas: 'canvas',
-    mirror: 'mirror',
+    agent: 'agent',
+    proactiveInitiation: 'proactive initiation',
+    mirror: 'screenshare',
     selfprompt: 'selfprompt',
     memory: 'memory',
     roleplay: 'roleplay',
@@ -137,8 +145,8 @@ export function formatCapabilityContext(manifest) {
         active.push('selfprompt');
       } else if (key === 'mirror' && manifest.state.mirrorActive) {
         const perm = manifest.state.mirrorPermission;
-        enabled.push('mirror');
-        active.push(perm ? `mirror (${perm} permission)` : 'mirror');
+        enabled.push('screenshare');
+        active.push(perm ? `screenshare (${perm} permission)` : 'screenshare');
       } else {
         enabled.push(label);
       }
@@ -159,8 +167,9 @@ export function formatCapabilityContext(manifest) {
   lines.push(`State: age_verified=${manifest.state.ageVerified18}, step_up_required=${manifest.state.stepUpRequired}`);
   lines.push('');
   lines.push('RULE: You may ONLY claim capabilities listed as enabled or active above.');
-  lines.push('You MUST NOT claim you can browse the web, run code, generate images, or any capability not listed as enabled.');
-  lines.push('If asked about a disabled capability, say: "That capability isn\'t available for me right now."');
+  lines.push('You MUST NOT claim you can independently browse the web, run code, generate images, act as an agent, proactively initiate outreach, or use any capability not listed as enabled.');
+  lines.push('If the system already provides web-search results for this turn, you may use only those supplied results without claiming autonomous browsing.');
+  lines.push('If asked about a disabled capability and no system-provided results are present, say: "That capability isn\'t available for me right now."');
   lines.push('[/CAPABILITY_CONTEXT]');
 
   return lines.join('\n');
@@ -187,6 +196,14 @@ const CAPABILITY_PATTERNS = [
   {
     key: 'canvas',
     pattern: /\b(I can|I('ll| will)|let me) (use|open|draw on) (the )?canvas\b/i,
+  },
+  {
+    key: 'agent',
+    pattern: /\b(I can|I('ll| will)|let me) (act as|operate as|be) (an? )?agent\b/i,
+  },
+  {
+    key: 'proactiveInitiation',
+    pattern: /\b(I can|I('ll| will)|let me) (initiate|start|send) (proactive )?(messages|check-?ins|outreach)\b/i,
   },
 ];
 

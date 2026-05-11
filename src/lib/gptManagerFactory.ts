@@ -10,8 +10,7 @@ import type { GPTConfig, GPTRuntime } from './gptManager';
 
 // Browser-safe interface that matches GPTManager API
 export interface IGPTManager {
-  getInstance(): IGPTManager;
-  getAllGPTs(): Promise<GPTConfig[]>;
+  getAllGPTs(userId?: string): Promise<GPTConfig[]>;
   getGPT(id: string): Promise<GPTConfig | null>;
   getGPTByCallsign(callsign: string): Promise<GPTConfig | null>;
   loadGPTForRuntime(gptId: string): Promise<GPTRuntime | null>;
@@ -30,11 +29,6 @@ class BrowserGPTManagerStub implements IGPTManager {
     }
     return BrowserGPTManagerStub.instance;
   }
-
-  getInstance(): IGPTManager {
-    return this;
-  }
-
   async getAllGPTs(): Promise<GPTConfig[]> {
     console.warn('[GPTManager] Browser stub: getAllGPTs() not available in browser environment');
     return [];
@@ -74,7 +68,7 @@ function isBrowser(): boolean {
 }
 
 function isServerSide(): boolean {
-  return typeof window === 'undefined' && typeof process !== 'undefined' && process.cwd;
+  return typeof window === 'undefined' && typeof process !== 'undefined' && typeof process.cwd === 'function';
 }
 
 /**

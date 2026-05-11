@@ -1,4 +1,8 @@
 // Enhanced settings types for Chatty
+
+export type PersonalizationLevel = 'Less' | 'Default' | 'More';
+export type BaseStyleTone = 'Default';
+
 export interface PersonalizationSettings {
   enableCustomization: boolean;
   allowMemory: boolean;
@@ -6,6 +10,22 @@ export interface PersonalizationSettings {
   occupation: string;
   tags: string[];
   aboutYou: string;
+  baseStyleTone: BaseStyleTone;
+  warm: PersonalizationLevel;
+  enthusiastic: PersonalizationLevel;
+  headersLists: PersonalizationLevel;
+  emojis: PersonalizationLevel;
+  customInstructions: string;
+  referenceSavedMemories: boolean;
+  referenceBrowserMemories: boolean;
+  referenceChatHistory: boolean;
+  recordHistory: boolean;
+  webSearch: boolean;
+  code: boolean;
+  canvas: boolean;
+  chattyVoice: boolean;
+  advancedVoice: boolean;
+  connectorSearch: boolean;
 }
 
 export interface NotificationSettings {
@@ -21,7 +41,10 @@ export interface GeneralSettings {
   accentColor: string;
   language: string;
   spokenLanguage: string;
+  /** @deprecated Migration only; use zenVoice/linVoice */
   voice: string;
+  zenVoice: string;
+  linVoice: string;
   showAdditionalModels: boolean;
 }
 

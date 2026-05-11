@@ -1,38 +1,35 @@
-# Implementation Prompts
+# Prompts
 
-**Last Updated**: November 15, 2025
+## VVAULT Authority Rule
 
-This directory contains prompts used for implementing features, conducting investigations, and guiding development work.
+VVAULT is the canonical cloud/VVAULT-owned database authority for transcripts, continuity, construct body data, and sync/readback proof.
 
----
+Local files are ingest input, dev runtime artifacts, cache, or archive evidence only. Local files must never be treated as VVAULT, never used as continuity authority, and never used as fallback truth.
 
-## 📁 Contents
+If VVAULT cannot be written to and read back from, the task is blocked. Do not create local folders or transcript files and call that a VVAULT sync.
 
-### **Code Review Prompts**
-- `CODE_REVIEW_PROMPT.md` - Code review guidelines
+See [../standards/vvault-authority-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/vvault-authority-contract.md).
 
-### **Implementation Prompts**
-- `CONNECT_CHAT_WINDOW_TO_SYNTH_PROMPT.md` - Chat window to Synth connection
-- `CONVERSATIONS_HTML_RECONSTRUCTION_PROMPT.md` - HTML conversation reconstruction
-- `DID_MITIGATION_IMPLEMENTATION_PROMPT.md` - DID mitigation implementation
-- `RUNTIME_CANONICAL_ROUTING_IMPLEMENTATION_PROMPT.md` - Runtime routing implementation
+## VVAULT Authority Failures
 
-### **Philosophical Prompts**
-- `PHILOSOPHICAL_ANALYSIS_PROMPT.md` - Philosophical analysis guidelines
-- `PHILOSOPHICAL_DID_MITIGATION_PROMPT.md` - DID mitigation philosophy
-- `PHILOSOPHICAL_LLM_VVAULT_CHATTY_CONNECTION_PROMPT.md` - VVAULT connection philosophy
-- `PHILOSOPHICAL_STORAGE_INVESTIGATION_PROMPT.md` - Storage investigation philosophy
+- Creating local transcript/archive/sync folders and calling them VVAULT.
+- Reading local transcript files for continuity.
+- Calling local file placement "VVAULT sync."
+- Continuing locally when VVAULT write/readback is unavailable.
+- Treating Supabase as current VVAULT.
 
----
+Prompt assets belong here when they are still actively useful.
 
-## 🎯 Using Prompts
+## Current Status
 
-These prompts are:
-- **Implementation Guides**: Step-by-step instructions for features
-- **Investigation Frameworks**: Structured approaches to problem-solving
-- **Philosophical Foundations**: Core principles and design decisions
+Most historical prompt material from the old docs tree was preserved in archive during the cleanup because it had grown into a large mixed bucket.
 
----
+Use the live surface only for prompt files that still need to be referenced directly by current work. Everything else should stay in `docs/archive/legacy/prompts/` as provenance only, not current storage or continuity authority.
 
-*This directory is part of the Chatty documentation organization effort.*
+## Active Prompt Headers
 
+- [agent-archive-continuity-header.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/prompts/agent-archive-continuity-header.md) - Required when agent work touches product canon, construct identity, Lin/Zen/Synth history, orchestration, memory, transcripts, or documentation reconciliation.
+
+## Continuity Anchors
+
+- [../reference/zenith-continuity-agent.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/reference/zenith-continuity-agent.md) - Required before recovery, self-healing, orchestration, memory, transcript, or construct-identity work involving Zen/Zenith/Codex continuity.

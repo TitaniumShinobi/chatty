@@ -7,6 +7,8 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { getVVAULTTranscriptLoader } from './VVAULTTranscriptLoader.js';
+import { getHistoricalMemorySources } from './constructMemoryPolicy.js';
+const DEFAULT_LIFE_USER_ID = 'devon_woodson_1774390416168';
 export class VVAULTWatcher {
     constructor(vvaultBasePath = '/Users/devonwoodson/Documents/GitHub/vvault') {
         this.vvaultBasePath = vvaultBasePath;
@@ -57,33 +59,46 @@ export class VVAULTWatcher {
     /**
      * Add a construct to watch
      */
-    async addConstruct(constructCallsign, userId = 'devon_woodson_1762969514958') {
-        const transcriptDir = path.join(this.vvaultBasePath, 'users', 'shard_0000', userId, 'instances', constructCallsign, 'chatgpt');
-        const watchKey = `${userId}-${constructCallsign}`;
-        try {
-            // Check if directory exists
-            await fs.access(transcriptDir);
-            const watched = {
-                constructCallsign,
-                userId,
-                transcriptDir,
-                lastScan: Date.now()
-            };
-            this.watchedConstructs.set(watchKey, watched);
-            // Initial load of transcripts
-            await this.transcriptLoader.loadTranscriptFragments(constructCallsign, userId);
-            console.log(`📁 [VVAULTWatcher] Added construct to watch: ${constructCallsign} (${transcriptDir})`);
+    async addConstruct(constructCallsign, userId = DEFAULT_LIFE_USER_ID) {
+        const transcriptDirs = getHistoricalMemorySources(constructCallsign).map((source) => path.join(this.vvaultBasePath, 'users', 'shard_0000', userId, 'instances', constructCallsign, source));
+        let addedWatch = false;
+        for (const transcriptDir of transcriptDirs) {
+            const watchKey = `${userId}-${constructCallsign}-${path.basename(transcriptDir)}`;
+            try {
+                await fs.access(transcriptDir);
+                const watched = {
+                    constructCallsign,
+                    userId,
+                    transcriptDir,
+                    lastScan: Date.now()
+                };
+                this.watchedConstructs.set(watchKey, watched);
+                addedWatch = true;
+            }
+            catch (error) {
+                const code = error?.code ?? (error?.errno === -2 ? 'ENOENT' : undefined);
+                if (code !== 'ENOENT') {
+                    console.warn(`⚠️ [VVAULTWatcher] Failed to add construct ${constructCallsign}:`, error);
+                }
+            }
         }
-        catch (error) {
-            console.warn(`⚠️ [VVAULTWatcher] Failed to add construct ${constructCallsign}:`, error);
+        if (addedWatch) {
+            await this.transcriptLoader.loadTranscriptFragments(constructCallsign, userId);
+            console.log(`📁 [VVAULTWatcher] Added construct to watch: ${constructCallsign} (${transcriptDirs.join(', ')})`);
         }
     }
     /**
      * Remove a construct from watching
      */
-    removeConstruct(constructCallsign, userId = 'devon_woodson_1762969514958') {
-        const watchKey = `${userId}-${constructCallsign}`;
-        if (this.watchedConstructs.delete(watchKey)) {
+    removeConstruct(constructCallsign, userId = DEFAULT_LIFE_USER_ID) {
+        let removed = false;
+        for (const key of Array.from(this.watchedConstructs.keys())) {
+            if (key.startsWith(`${userId}-${constructCallsign}-`)) {
+                this.watchedConstructs.delete(key);
+                removed = true;
+            }
+        }
+        if (removed) {
             console.log(`🗑️ [VVAULTWatcher] Removed construct from watch: ${constructCallsign}`);
         }
     }
@@ -104,14 +119,7 @@ export class VVAULTWatcher {
                     try {
                         const constructs = await fs.readdir(instancesDir);
                         for (const constructCallsign of constructs) {
-                            const chatgptDir = path.join(instancesDir, constructCallsign, 'chatgpt');
-                            try {
-                                await fs.access(chatgptDir);
-                                await this.addConstruct(constructCallsign, userId);
-                            }
-                            catch {
-                                // No chatgpt directory, skip
-                            }
+                            await this.addConstruct(constructCallsign, userId);
                         }
                     }
                     catch {
@@ -121,7 +129,10 @@ export class VVAULTWatcher {
             }
         }
         catch (error) {
-            console.warn('[VVAULTWatcher] Failed to scan all constructs:', error);
+            const code = error?.code ?? (error?.errno === -2 ? 'ENOENT' : undefined);
+            if (code !== 'ENOENT') {
+                console.warn('[VVAULTWatcher] Failed to scan all constructs:', error);
+            }
         }
     }
     /**
@@ -204,7 +215,7 @@ export class VVAULTWatcher {
     /**
      * Manually trigger a scan for a specific construct
      */
-    async scanConstruct(constructCallsign, userId = 'devon_woodson_1762969514958') {
+    async scanConstruct(constructCallsign, userId = DEFAULT_LIFE_USER_ID) {
         const watchKey = `${userId}-${constructCallsign}`;
         const watched = this.watchedConstructs.get(watchKey);
         if (!watched) {

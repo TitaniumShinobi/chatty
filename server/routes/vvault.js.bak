@@ -1,7 +1,7 @@
 import express from "express";
 import { createRequire } from "module";
 import path from "path";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth } from "../auth/middleware/auth.js";
 import User from "../models/User.js";
 import { createPrimaryConversationFile } from "../services/importService.js";
 import multer from "multer";

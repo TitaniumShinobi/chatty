@@ -5,5 +5,9 @@
     "chat.tools.terminal.commandTimeout": 300000,
 
     // Extra 10 s for Zsh/P10k shells to inject their hooks
-    "chat.tools.terminal.shellIntegrationTimeout": 10000
+    "chat.tools.terminal.shellIntegrationTimeout": 10000,
+    "git.ignoreLimitWarning": true
+
+    // Agent rules pointer: follow the shared workspace rules in the parent .ai folder
+    ,"ai.agentRules": "../.ai/agent-rules.md"
 }

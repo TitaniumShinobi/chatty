@@ -20,6 +20,11 @@ export interface FusionWeights {
   coreTraits: number;
 }
 
+interface PersonaLookupTarget {
+  constructId: string;
+  callsign: string;
+}
+
 export class DynamicPersonaOrchestrator {
   private personaOrchestrator: PersonalityOrchestrator;
   private personaDetector: PersonaDetectionEngine;
@@ -100,13 +105,15 @@ export class DynamicPersonaOrchestrator {
     
     const targetCallsign = shouldUseDetected && detectedPersona
       ? detectedPersona.callsign
-      : '001';
+      : (workspaceContext.currentThread.constructId || '001');
+
+    const lookupTarget = this.normalizeLookupTarget(targetConstructId, targetCallsign);
 
     // Load base personality context
     let personalityContext = await this.personaOrchestrator.loadPersonalityContext(
       userId,
-      targetConstructId,
-      targetCallsign
+      lookupTarget.constructId,
+      lookupTarget.callsign
     );
 
     // If detected persona has blueprint, fuse it
@@ -156,8 +163,8 @@ export class DynamicPersonaOrchestrator {
     if (!personalityContext) {
       return await this.personaOrchestrator.orchestrateResponse(
         userMessage,
-        targetConstructId,
-        targetCallsign,
+        lookupTarget.constructId,
+        lookupTarget.callsign,
         userId,
         conversationHistory,
         memoryContext,
@@ -169,8 +176,8 @@ export class DynamicPersonaOrchestrator {
     // activeLock is already declared at the top of the function
     const response = await this.personaOrchestrator.orchestrateResponse(
       userMessage,
-      targetConstructId,
-      targetCallsign,
+      lookupTarget.constructId,
+      lookupTarget.callsign,
       userId,
       conversationHistory,
       memoryContext,
@@ -185,6 +192,42 @@ export class DynamicPersonaOrchestrator {
       detectedPersona: detectedPersona || undefined,
       contextLock: activeLock || undefined
     };
+  }
+
+  /**
+   * Normalize construct/callsign specifically for blueprint lookup to avoid
+   * duplicate identifiers such as nova-001-001. This is lookup-only metadata.
+   */
+  private normalizeLookupTarget(constructId: string, callsign?: string): PersonaLookupTarget {
+    const normalizedConstruct = (constructId || 'synth').trim();
+    const rawCallsign = (callsign || '').trim();
+    const suffixIdx = normalizedConstruct.lastIndexOf('-');
+    const constructHasSuffix = suffixIdx > 0 && suffixIdx < normalizedConstruct.length - 1;
+    const constructSuffix = constructHasSuffix
+      ? normalizedConstruct.slice(suffixIdx + 1)
+      : '';
+
+    let normalizedCallsign = rawCallsign;
+    if (!normalizedCallsign) {
+      normalizedCallsign = constructHasSuffix ? normalizedConstruct : '001';
+    }
+
+    if (constructHasSuffix) {
+      const callsignLower = normalizedCallsign.toLowerCase();
+      const constructLower = normalizedConstruct.toLowerCase();
+      const suffixLower = constructSuffix.toLowerCase();
+      if (callsignLower === suffixLower || callsignLower === constructLower) {
+        normalizedCallsign = normalizedConstruct;
+      }
+    }
+
+    if (normalizedCallsign !== rawCallsign) {
+      console.log(
+        `[DynamicPersonaOrchestrator] Normalized lookup target ${normalizedConstruct}/${rawCallsign || '(empty)'} -> ${normalizedConstruct}/${normalizedCallsign}`
+      );
+    }
+
+    return { constructId: normalizedConstruct, callsign: normalizedCallsign };
   }
 
   /**

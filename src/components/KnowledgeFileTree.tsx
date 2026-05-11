@@ -166,7 +166,7 @@ function buildKnowledgeTree(files: KnowledgeFile[]): TreeNode[] {
 function getThumbnailUrl(file: KnowledgeFile): string | null {
   if (!file.mimeType?.startsWith('image/')) return null;
   const encodedPath = encodeURIComponent(file.filename);
-  return `/api/ais/file-preview?path=${encodedPath}`;
+  return `/api/ais/file-preview?path=${encodedPath}&optional=true`;
 }
 
 function MediaFallbackIcon({ file }: { file: KnowledgeFile }) {

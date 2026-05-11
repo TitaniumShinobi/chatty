@@ -1,9 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import {
   Plus,
   Bot,
-  ImageOff,
   Trash2,
   Lock,
   Copy,
@@ -19,33 +18,84 @@ interface AIsPageProps {
 }
 
 interface LayoutContext {
-  handleGPTCreated?: (gptConfig: { constructId?: string; constructCallsign?: string; name?: string }) => void;
+  handleGPTCreated?: (gptConfig: { constructId?: string; constructCallsign?: string; name?: string; avatar?: string; avatarUrl?: string | null }) => void;
   forceRefreshConversations?: () => void;
+}
+
+const INVALID_AVATAR_VALUES = new Set(["", "null", "undefined"]);
+
+function sanitizeAvatarSrc(value?: string | null): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (INVALID_AVATAR_VALUES.has(trimmed.toLowerCase())) return null;
+  return trimmed;
+}
+
+function addRetryToken(url: string, retryNonce: number): string {
+  if (
+    !url ||
+    retryNonce <= 0 ||
+    url.startsWith("data:image/") ||
+    url.startsWith("blob:")
+  ) {
+    return url;
+  }
+  const joiner = url.includes("?") ? "&" : "?";
+  return `${url}${joiner}retry=${retryNonce}`;
 }
 
 export default function AIsPage({ initialOpen = false }: AIsPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  const routeState = (location.state || {}) as {
+    initialConfig?: Partial<AIConfig>;
+    initialCreateMessage?: string | null;
+  };
   const aiService = AIService.getInstance();
   const layoutContext = useOutletContext<LayoutContext>();
   const [isCreatorOpen, setCreatorOpen] = useState(initialOpen);
   const [ais, setAIs] = useState<AIConfig[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [editingConfig, setEditingConfig] = useState<AIConfig | null>(null);
+  const [isEditLoading, setIsEditLoading] = useState(false);
   const [avatarBlobs, setAvatarBlobs] = useState<Record<string, string>>({});
   const [failedAvatars, setFailedAvatars] = useState<Set<string>>(new Set());
+  const [missingAvatars] = useState<Set<string>>(new Set());
+  const [avatarRetryNonce, setAvatarRetryNonce] = useState(0);
+  const avatarRetryTimersRef = useRef<Record<string, number>>({});
 
-  const getDevAgentLogEndpoint = () => {
-    const loc = (globalThis as any).location as Location | undefined;
-    if (!loc?.origin) return "";
-    const u = new URL(loc.origin);
-    u.protocol = "http:";
-    u.port = "7243";
-    u.pathname = "/ingest/9aa5e079-2a3d-44e1-a152-645d01668332";
-    u.search = "";
-    u.hash = "";
-    return u.toString();
-  };
+  const retryFailedAvatars = useCallback(() => {
+    setFailedAvatars((prev) => {
+      if (prev.size === 0) return prev;
+      return new Set();
+    });
+    setAvatarRetryNonce((prev) => prev + 1);
+  }, []);
+
+  const markAvatarFailed = useCallback((avatarId: string) => {
+    if (missingAvatars.has(avatarId)) return;
+
+    setFailedAvatars((prev) => {
+      const next = new Set(prev);
+      next.add(avatarId);
+      return next;
+    });
+
+    if (avatarRetryTimersRef.current[avatarId]) {
+      window.clearTimeout(avatarRetryTimersRef.current[avatarId]);
+    }
+    avatarRetryTimersRef.current[avatarId] = window.setTimeout(() => {
+      setFailedAvatars((prev) => {
+        const next = new Set(prev);
+        next.delete(avatarId);
+        return next;
+      });
+      setAvatarRetryNonce((prev) => prev + 1);
+      delete avatarRetryTimersRef.current[avatarId];
+    }, 2500);
+  }, [missingAvatars]);
 
   // Load avatars as blobs (fallback if proxy fails)
   useEffect(() => {
@@ -55,17 +105,27 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
 
       for (const ai of ais) {
         const avatarUrl = ai.avatar;
-        if (avatarUrl && avatarUrl.startsWith("/api/")) {
+        if (
+          avatarUrl &&
+          avatarUrl.startsWith("/api/")
+        ) {
+          const fetchUrl = addRetryToken(avatarUrl, avatarRetryNonce);
           const promise = (async () => {
             try {
-              const response = await fetch(avatarUrl, {
+              const response = await fetch(fetchUrl, {
                 credentials: "include",
                 mode: "cors",
+                cache: "no-store",
               });
 
               if (response.ok) {
                 const blob = await response.blob();
                 blobMap[ai.id] = URL.createObjectURL(blob);
+              } else if (response.status === 404) {
+                console.warn(
+                    `⚠️ [AIsPage] Avatar missing for ${ai.id}: ${avatarUrl}`,
+                );
+                markAvatarFailed(ai.id);
               } else {
                 console.error(
                   `❌ [AIsPage] Avatar fetch failed for ${ai.id}: ${response.status} ${response.statusText}`,
@@ -94,18 +154,53 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
     return () => {
       Object.values(avatarBlobs).forEach(URL.revokeObjectURL);
     };
-  }, [ais]);
+  }, [ais, avatarRetryNonce, markAvatarFailed]);
+
+  useEffect(() => {
+    if (failedAvatars.size === 0) return;
+    const retryInterval = window.setInterval(() => {
+      retryFailedAvatars();
+    }, 7000);
+    return () => window.clearInterval(retryInterval);
+  }, [failedAvatars, retryFailedAvatars]);
+
+  useEffect(() => {
+    const handleReconnect = () => {
+      retryFailedAvatars();
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        retryFailedAvatars();
+      }
+    };
+
+    window.addEventListener("online", handleReconnect);
+    window.addEventListener("focus", handleReconnect);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.removeEventListener("online", handleReconnect);
+      window.removeEventListener("focus", handleReconnect);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      for (const timerId of Object.values(avatarRetryTimersRef.current)) {
+        window.clearTimeout(timerId);
+      }
+      avatarRetryTimersRef.current = {};
+    };
+  }, [retryFailedAvatars]);
 
   // Route controls modal state
   useEffect(() => {
     const editMatch = location.pathname.match(/\/app\/ais\/edit\/([^/]+)/);
     if (location.pathname.endsWith("/new")) {
+      setIsEditLoading(false);
       setCreatorOpen(true);
       setEditingConfig(null);
     } else if (editMatch) {
-      setCreatorOpen(true);
+      setCreatorOpen(false);
+      setEditingConfig(null);
       loadAIForEdit(editMatch[1]);
     } else {
+      setIsEditLoading(false);
       setCreatorOpen(false);
       setEditingConfig(null);
     }
@@ -119,13 +214,11 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
   const loadAIs = async () => {
     try {
       setIsLoading(true);
+      setLoadError(null);
       // #region agent log
       {
         const endpoint =
-          import.meta.env.VITE_AGENT_LOG_URL ||
-          (import.meta.env.DEV
-            ? getDevAgentLogEndpoint()
-            : "");
+          import.meta.env.VITE_AGENT_LOG_URL || "";
         if (endpoint) {
           fetch(endpoint, {
             method: "POST",
@@ -147,10 +240,7 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
       // #region agent log
       {
         const endpoint =
-          import.meta.env.VITE_AGENT_LOG_URL ||
-          (import.meta.env.DEV
-            ? getDevAgentLogEndpoint()
-            : "");
+          import.meta.env.VITE_AGENT_LOG_URL || "";
         if (endpoint) {
           fetch(endpoint, {
             method: "POST",
@@ -181,10 +271,7 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
       // #region agent log
       {
         const endpoint =
-          import.meta.env.VITE_AGENT_LOG_URL ||
-          (import.meta.env.DEV
-            ? getDevAgentLogEndpoint()
-            : "");
+          import.meta.env.VITE_AGENT_LOG_URL || "";
         if (endpoint) {
           fetch(endpoint, {
             method: "POST",
@@ -207,6 +294,8 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
       }
       // #endregion
       console.error("Failed to load AIs:", error);
+      setAIs([]);
+      setLoadError(error?.message || "Unable to load AIs right now.");
     } finally {
       setIsLoading(false);
     }
@@ -214,10 +303,14 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
 
   const loadAIForEdit = async (id: string) => {
     try {
-      const ai = await aiService.getAI(id);
+      setIsEditLoading(true);
+      const ai = await aiService.getAI(id, { include: "full" });
       setEditingConfig(ai);
+      setCreatorOpen(true);
     } catch (error) {
       console.error("Failed to load AI for edit:", error);
+    } finally {
+      setIsEditLoading(false);
     }
   };
 
@@ -259,6 +352,7 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
   };
 
   const handleClose = () => {
+    setIsEditLoading(false);
     setCreatorOpen(false);
     navigate("/app/ais");
     setEditingConfig(null);
@@ -270,11 +364,13 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
     
     // Notify Layout to add thread to sidebar immediately
     if (layoutContext?.handleGPTCreated && aiConfig && typeof aiConfig === 'object') {
-      const config = aiConfig as { constructCallsign?: string; id?: string; name?: string };
+      const config = aiConfig as { constructCallsign?: string; id?: string; name?: string; avatar?: string; avatarUrl?: string | null };
       layoutContext.handleGPTCreated({
         constructId: config.constructCallsign || config.id,
         constructCallsign: config.constructCallsign,
         name: config.name,
+        avatar: config.avatar,
+        avatarUrl: config.avatarUrl,
       });
     }
   };
@@ -330,11 +426,39 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
               Loading AIs...
             </p>
           </div>
+        ) : loadError ? (
+          <div className="text-center py-12">
+            <p style={{ color: "var(--chatty-text)", opacity: 0.8, marginBottom: "12px" }}>
+              Failed to load AIs.
+            </p>
+            <p style={{ color: "var(--chatty-text)", opacity: 0.6, marginBottom: "16px" }}>
+              {loadError}
+            </p>
+            <button
+              onClick={() => {
+                loadAIs();
+              }}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              style={{
+                backgroundColor: "var(--chatty-highlight)",
+                color: "var(--chatty-bg-main)",
+                border: "none",
+              }}
+            >
+              Retry
+            </button>
+          </div>
         ) : (
           <div className="space-y-3">
             {/* AI Cards */}
             {ais.map((ai) => {
-              const avatarSrc = avatarBlobs[ai.id] || ai.avatar;
+              const directAvatar = sanitizeAvatarSrc(ai.avatar);
+              const blobAvatar = sanitizeAvatarSrc(avatarBlobs[ai.id]);
+              const directAvatarCanRender =
+                directAvatar && !directAvatar.startsWith("/api/");
+              const avatarSrc =
+                blobAvatar || (directAvatarCanRender ? directAvatar : null);
+              const imageSrc = avatarSrc ? addRetryToken(avatarSrc, avatarRetryNonce) : null;
 
               return (
                 <div
@@ -354,11 +478,11 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
                 >
                   {/* Avatar on LEFT */}
                   <div className="w-12 h-12 rounded-full flex items-center justify-center overflow-hidden">
-                    {failedAvatars.has(ai.id) ? (
-                      <ImageOff size={20} style={{ color: "#ef4444" }} />
-                    ) : avatarSrc ? (
+                    {failedAvatars.has(ai.id) || missingAvatars.has(ai.id) ? (
+                      <Bot size={20} style={{ color: "var(--chatty-text)" }} />
+                    ) : imageSrc ? (
                       <img
-                        src={avatarSrc}
+                        src={imageSrc}
                         alt={ai.name}
                         className="w-full h-full object-cover"
                         crossOrigin={
@@ -367,12 +491,20 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
                             : undefined
                         }
                         onLoad={() => {
+                          setFailedAvatars((prev) => {
+                            if (!prev.has(ai.id)) return prev;
+                            const next = new Set(prev);
+                            next.delete(ai.id);
+                            return next;
+                          });
                         }}
                         onError={() => {
-                          console.warn(
-                            `⚠️ [AIsPage] Avatar failed to load for ${ai.name}`,
-                          );
-                          setFailedAvatars(prev => new Set(prev).add(ai.id));
+                          if (!missingAvatars.has(ai.id)) {
+                            console.warn(
+                              `⚠️ [AIsPage] Avatar failed to load for ${ai.name}`,
+                            );
+                          }
+                          markAvatarFailed(ai.id);
                         }}
                       />
                     ) : (
@@ -525,12 +657,31 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
       </div>
 
       {/* AI Creator Modal */}
-      <AICreator
-        isVisible={isCreatorOpen}
-        onClose={handleClose}
-        onGPTCreated={handleAICreated}
-        initialConfig={editingConfig as any}
-      />
+      {isEditLoading ? (
+        <div
+          className="fixed inset-0 flex items-center justify-center"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.12)", zIndex: 50 }}
+        >
+          <div
+            className="rounded-lg px-4 py-3 text-sm"
+            style={{
+              backgroundColor: "var(--chatty-bg-main)",
+              color: "var(--chatty-text)",
+              boxShadow: "0 10px 30px rgba(0, 0, 0, 0.18)",
+            }}
+          >
+            Loading AI settings...
+          </div>
+        </div>
+      ) : (
+        <AICreator
+          isVisible={isCreatorOpen}
+          onClose={handleClose}
+          onGPTCreated={handleAICreated}
+          initialConfig={(editingConfig as any) || (routeState?.initialConfig as any)}
+          initialCreateMessage={routeState?.initialCreateMessage || null}
+        />
+      )}
     </div>
   );
 }

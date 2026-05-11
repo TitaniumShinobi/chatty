@@ -31,7 +31,9 @@ const buildCapabilities = (
   webSearch: caps?.webSearch ?? false,
   canvas: caps?.canvas ?? false,
   imageGeneration: caps?.imageGeneration ?? false,
-  codeInterpreter: caps?.codeInterpreter ?? true,
+  codeInterpreter: caps?.codeInterpreter ?? false,
+  agent: caps?.agent ?? false,
+  proactiveInitiation: caps?.proactiveInitiation ?? false,
   synthesisMode: mode,
 });
 
@@ -61,13 +63,15 @@ const SimForge: React.FC<SimForgeProps> = ({
       webSearch: false,
       canvas: false,
       imageGeneration: false,
-      codeInterpreter: true,
+      codeInterpreter: false,
+      agent: false,
+      proactiveInitiation: false,
       synthesisMode: "lin",
     },
     modelId: "phi3:latest",
     conversationModel: "phi3:latest",
     creativeModel: "mistral:latest",
-    codingModel: "deepseek-coder:latest",
+    codingModel: "qwen2.5-coder:latest",
   });
 
   // File management
@@ -232,13 +236,15 @@ const SimForge: React.FC<SimForgeProps> = ({
         webSearch: false,
         canvas: false,
         imageGeneration: false,
-        codeInterpreter: true,
+        codeInterpreter: false,
+        agent: false,
+        proactiveInitiation: false,
         synthesisMode: "lin",
       },
       modelId: "phi3:latest",
       conversationModel: "phi3:latest",
       creativeModel: "mistral:latest",
-      codingModel: "deepseek-coder:latest",
+      codingModel: "qwen2.5-coder:latest",
       hasPersistentMemory: true, // VVAULT integration - defaults to true
     });
     setUseLinMode(true);
@@ -1032,6 +1038,8 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
         capabilities.push("image generation");
       if (config.capabilities.canvas)
         capabilities.push("canvas drawing and visual creation");
+      if (config.capabilities.agent)
+        capabilities.push("agentic task execution");
 
       if (capabilities.length > 0) {
         systemPrompt += `\n\nCapabilities: You can ${capabilities.join(", ")}.`;
@@ -3066,7 +3074,7 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                           </label>
                           <select
                             value={
-                              config.codingModel || "deepseek-coder:latest"
+                              config.codingModel || "qwen2.5-coder:latest"
                             }
                             onChange={(e) =>
                               setConfig((prev) => ({
@@ -3143,6 +3151,9 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                             </option>
                             <option value="qwen2.5-coder:32b">
                               Qwen 2.5 Coder 32B
+                            </option>
+                            <option value="qwen2.5-coder:latest">
+                              Qwen 2.5 Coder Latest
                             </option>
                             <option value="qwen3-coder:30b">
                               Qwen 3 Coder 30B
@@ -3531,6 +3542,78 @@ Be friendly, helpful, and collaborative. This should feel like working with an e
                           style={{ color: "var(--chatty-text)" }}
                         />
                         <span className="text-sm">Code Interpreter</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-app-text-900">
+                        <input
+                          type="checkbox"
+                          checked={config.capabilities?.agent ?? false}
+                          onChange={(e) =>
+                            setConfig((prev) => ({
+                              ...prev,
+                              capabilities: (() => {
+                                const mode =
+                                  prev.capabilities?.synthesisMode === "synth"
+                                    ? "synth"
+                                    : useLinMode
+                                      ? "lin"
+                                      : "synth";
+                                const caps = buildCapabilities(
+                                  prev.capabilities,
+                                  mode,
+                                );
+                                return {
+                                  ...caps,
+                                  agent: e.target.checked,
+                                };
+                              })(),
+                            }))
+                          }
+                          style={{
+                            accentColor: "var(--chatty-button)",
+                          }}
+                          className="rounded"
+                        />
+                        <Bot
+                          size={16}
+                          style={{ color: "var(--chatty-text)" }}
+                        />
+                        <span className="text-sm">Agent</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-app-text-900">
+                        <input
+                          type="checkbox"
+                          checked={config.capabilities?.proactiveInitiation ?? false}
+                          onChange={(e) =>
+                            setConfig((prev) => ({
+                              ...prev,
+                              capabilities: (() => {
+                                const mode =
+                                  prev.capabilities?.synthesisMode === "synth"
+                                    ? "synth"
+                                    : useLinMode
+                                      ? "lin"
+                                      : "synth";
+                                const caps = buildCapabilities(
+                                  prev.capabilities,
+                                  mode,
+                                );
+                                return {
+                                  ...caps,
+                                  proactiveInitiation: e.target.checked,
+                                };
+                              })(),
+                            }))
+                          }
+                          style={{
+                            accentColor: "var(--chatty-button)",
+                          }}
+                          className="rounded"
+                        />
+                        <Play
+                          size={16}
+                          style={{ color: "var(--chatty-text)" }}
+                        />
+                        <span className="text-sm">Proactive Initiation</span>
                       </label>
                     </div>
                   </div>

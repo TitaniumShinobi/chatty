@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { getChattyCliConversationsDir, resolveUserPath } from './paths.js';
 
 const readFile = promisify(fs.readFile);
 const writeFile = promisify(fs.writeFile);
@@ -35,8 +36,8 @@ export class ConversationManager {
   private conversationsDir: string;
   private currentConversation: SavedConversation | null = null;
 
-  constructor(conversationsDir = './chatty-conversations') {
-    this.conversationsDir = path.resolve(conversationsDir);
+  constructor(conversationsDir = getChattyCliConversationsDir()) {
+    this.conversationsDir = resolveUserPath(conversationsDir);
     this.ensureConversationsDir();
   }
 

@@ -1,5 +1,7 @@
-// Browser-compatible seat runner for web interface
-// This version uses the server-side OpenRouter API instead of local Ollama
+// Browser-compatible helper seat runner for web interface.
+// Construct-quality conversation must use /api/vvault/message, not this helper.
+import { fetchWithDevAuthRetry } from '../auth';
+import { LIN_DEFAULT_MODELS } from '../config/linModelDefaults';
 
 export type Seat = 'smalltalk' | 'coding' | 'creative' | string;
 
@@ -10,12 +12,36 @@ interface SeatConfig {
 
 // Default configuration for browser environment
 const DEFAULT_CONFIG: SeatConfig = {
-  smalltalk: { tag: 'phi-3', role: 'general chat and synthesis' },
-  coding: { tag: 'deepseek-coder', role: 'technical and code reasoning' },
-  creative: { tag: 'mistral', role: 'creative language and storytelling' }
+  smalltalk: { tag: LIN_DEFAULT_MODELS.smalltalk, role: 'general chat and synthesis' },
+  coding: { tag: LIN_DEFAULT_MODELS.coding, role: 'technical and code reasoning' },
+  creative: { tag: LIN_DEFAULT_MODELS.creative, role: 'creative language and storytelling' }
 };
 
 let cachedConfig: SeatConfig | undefined;
+
+function normalizeSeatInfo(seat: string, info: SeatInfo | undefined): SeatInfo {
+  const fallback = DEFAULT_CONFIG[seat] || DEFAULT_CONFIG.smalltalk;
+  const fallbackTag = typeof fallback === 'string' ? fallback : fallback.tag;
+  const fallbackRole = typeof fallback === 'string' ? undefined : fallback.role;
+  const rawTag = typeof info === 'string' ? info : info?.tag;
+  const role = typeof info === 'string' ? fallbackRole : info?.role || fallbackRole;
+  const tag = rawTag
+    ? rawTag.includes(':')
+      ? rawTag
+      : `ollama:${rawTag}`
+    : fallbackTag;
+
+  return role ? { tag, role } : tag;
+}
+
+function normalizeSeatConfig(config: SeatConfig): SeatConfig {
+  return {
+    ...config,
+    smalltalk: normalizeSeatInfo('smalltalk', config.smalltalk),
+    coding: normalizeSeatInfo('coding', config.coding),
+    creative: normalizeSeatInfo('creative', config.creative),
+  };
+}
 
 async function loadSeatConfig(): Promise<SeatConfig> {
   if (cachedConfig) return cachedConfig;
@@ -24,8 +50,8 @@ async function loadSeatConfig(): Promise<SeatConfig> {
     const response = await fetch('/models.json');
     if (response.ok) {
       const config = await response.json() as SeatConfig;
-      cachedConfig = config;
-      return config;
+      cachedConfig = normalizeSeatConfig(config);
+      return cachedConfig;
     }
   } catch (error) {
     console.warn('Failed to load models.json, using defaults:', error);
@@ -64,19 +90,23 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
   // Retry loop with exponential backoff
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      // First check if cloud API is available
+      const configuredSeat = await seatInfo(opts.seat);
+      const seatModel = typeof configuredSeat === 'string' ? configuredSeat : configuredSeat?.tag;
+
+      // First check if the Lin helper API is available
       if (attempt === 0) {
         try {
-          const healthResponse = await fetch('/api/lin/health', {
+          const healthResponse = await fetchWithDevAuthRetry('/api/lin/health', {
             method: 'GET',
-            credentials: 'include'
+          }, {
+            logLabel: '/api/lin/health',
           });
           
           if (!healthResponse.ok) {
-            console.warn('[SeatRunner] Cloud API health check failed, will still try...');
+            console.warn('[SeatRunner] Lin helper API health check failed, will still try...');
           }
         } catch (error) {
-          console.warn('[SeatRunner] Cloud API health check error:', error);
+          console.warn('[SeatRunner] Lin helper API health check error:', error);
         }
       }
       
@@ -85,27 +115,28 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
       const timeoutId = setTimeout(() => controller.abort(), timeout);
       
       try {
-        const response = await fetch('/api/lin/generate', {
+        const response = await fetchWithDevAuthRetry('/api/lin/generate', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          credentials: 'include',
           body: JSON.stringify({
             prompt: opts.prompt,
             seat: opts.seat,
             systemPrompt: opts.systemPrompt,
-            model: opts.modelOverride,
+            model: opts.modelOverride || seatModel,
             constructId: opts.constructId
           }),
           signal: controller.signal,
+        }, {
+          logLabel: '/api/lin/generate',
         });
         
         clearTimeout(timeoutId);
         
         if (!response.ok) {
           const errorText = await response.text();
-          let errorMessage = `Cloud API error ${response.status}`;
+          let errorMessage = `Lin helper API error ${response.status}`;
           try {
             const errorJson = JSON.parse(errorText);
             errorMessage = errorJson.error || errorJson.details || errorMessage;
@@ -118,7 +149,7 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
         const data = await response.json();
         
         if (!data.response) {
-          throw new Error('Empty response from cloud API');
+          throw new Error('Empty response from Lin helper API');
         }
         
         return data.response;
@@ -130,7 +161,7 @@ export async function runSeat(opts: GenerateOptions): Promise<string> {
         }
         
         if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
-          throw new Error(`Cannot connect to cloud API service. Please check your connection.`);
+          throw new Error(`Cannot connect to Lin helper API service. Please check your connection.`);
         }
         
         throw error;

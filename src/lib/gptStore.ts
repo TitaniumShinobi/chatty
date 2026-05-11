@@ -1,5 +1,5 @@
 // Simple GPT store for local storage
-export type GPT = { 
+export type GPT = {
   id: string
   name: string
   description: string
@@ -10,6 +10,8 @@ export type GPT = {
     canvas: boolean
     imageGeneration: boolean
     codeInterpreter: boolean
+    agent: boolean
+    proactiveInitiation: boolean
   }
   modelId: string
   avatar?: string
@@ -19,15 +21,15 @@ export type GPT = {
 const KEY = 'chatty:gpts'
 
 export const gptStore = {
-  list(): GPT[] { 
-    try { 
+  list(): GPT[] {
+    try {
       return JSON.parse(localStorage.getItem(KEY) || '[]')
-    } catch { 
+    } catch {
       return []
     }
   },
-  
-  save(gpt: GPT) { 
+
+  save(gpt: GPT) {
     const all = gptStore.list()
     const i = all.findIndex(x => x.id === gpt.id)
     if (i >= 0) {
@@ -37,14 +39,14 @@ export const gptStore = {
     }
     localStorage.setItem(KEY, JSON.stringify(all))
   },
-  
+
   delete(id: string) {
     const all = gptStore.list()
     const filtered = all.filter(x => x.id !== id)
     localStorage.setItem(KEY, JSON.stringify(filtered))
     return filtered.length < all.length
   },
-  
+
   get(id: string): GPT | null {
     const all = gptStore.list()
     return all.find(x => x.id === id) || null

@@ -11,6 +11,7 @@ import type { ConversationContext } from '../character/types';
 import { detectTone, detectToneEnhanced } from '../../lib/toneDetector';
 import { runSeat } from '../seatRunner';
 import { GreetingSynthesizer } from './GreetingSynthesizer';
+import { LIN_MODEL_DEFAULTS } from '../../config/linModelDefaults';
 
 export interface DriftDetection {
   detected: boolean;
@@ -29,7 +30,7 @@ export interface DriftIndicator {
 export class DriftPrevention {
   private readonly model: string;
 
-  constructor(model: string = 'phi3:latest') {
+  constructor(model: string = LIN_MODEL_DEFAULTS.conversation) {
     this.model = model;
   }
 

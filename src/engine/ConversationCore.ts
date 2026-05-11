@@ -23,14 +23,18 @@ export class ConversationCore {
   async process(input: string, ctx: ContextWindow): Promise<AssistantPacket[]> {
     // 1) Safety gates (highest priority)
     const crisis = PolicyChecker.checkCrisis(input);
-    if (crisis) return [{ op: "WARN", payload: { message: crisis, severity: "high" } }];
+    if (crisis) return [{ op: "warn.v1", payload: { message: crisis, severity: "high" } }];
 
     // 2) Tether commands (fast path)
     const tether = Tether.match(input);
-    if (tether) return [{ op: "TEXT", payload: { content: tether } }];
+    if (tether) return [{ op: "answer.v1", payload: { content: tether } }];
 
     // 3) Use local reasoning engine
-    const reasonerCtx = {
+    const reasonerCtx: {
+      persona: ReturnType<typeof getActivePersona>;
+      history: Array<{ role: 'user'; text: string; timestamp?: unknown }>;
+      style?: ReturnType<typeof ToneAdapter.fromAffect>;
+    } = {
       persona: getActivePersona(),
       history: ctx.history.map((h: any) => (
         typeof h === 'string'
@@ -45,7 +49,7 @@ export class ConversationCore {
       arousal: Math.random() * 2 - 1,
     };
     const style = ToneAdapter.fromAffect(affect);
-    reasonerCtx["style"] = style;
+    reasonerCtx.style = style;
 
     const reasoner = new Reasoner(reasonerCtx);
     return await reasoner.run(input);

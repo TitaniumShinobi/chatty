@@ -47,7 +47,7 @@ function parseArgs(): CLIArgs {
     console.error('\nUsage:');
     console.error('  node scripts/extract-conversations.js \\');
     console.error('    --src path/to/conversations.html \\');
-    console.error('    --userId devon_woodson_1762969514958 \\');
+    console.error('    --userId "${VVAULT_USER_ID:-devon_woodson_1774390416168}" \\');
     console.error('    --runtimeId chatgpt-devon \\');
     console.error('    --constructId chatgpt-devon-001 \\');
     console.error('    --importedBy devon@thewreck.org \\');
@@ -142,4 +142,3 @@ if (require.main === module) {
     process.exit(1);
   });
 }
-

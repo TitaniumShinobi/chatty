@@ -17,7 +17,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
-const USER_ID = 'devon_woodson_1762969514958';
+const USER_ID = process.env.VVAULT_USER_ID || 'devon_woodson_1774390416168';
 const INSTANCES_DIR = path.join(VVAULT_ROOT, 'users', 'shard_0000', USER_ID, 'instances');
 
 async function cleanupInstances() {
@@ -117,4 +117,3 @@ async function cleanupInstances() {
 }
 
 cleanupInstances();
-

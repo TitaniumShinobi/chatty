@@ -1,39 +1,14 @@
-# Security & Safety Documentation
+# Security
 
-**Last Updated**: November 15, 2025
+Security and data-protection docs that remain live belong here.
 
-This directory contains security, safety, and data protection documentation.
+## Live Security Docs
 
----
+- [DATA_LOSS_PREVENTION_PLAN.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/security/DATA_LOSS_PREVENTION_PLAN.md)
+- [STORAGE_AND_SESSION_SAFEGUARDS.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/security/STORAGE_AND_SESSION_SAFEGUARDS.md)
 
-## 📁 Contents
+## Rules
 
-- `DATA_LOSS_PREVENTION_PLAN.md` - Critical plan for preventing runtime data loss
-- `STORAGE_AND_SESSION_SAFEGUARDS.md` - Storage quota protection and session security
-
----
-
-## 🔒 Security Topics
-
-### **Data Loss Prevention**
-- Runtime persistence verification
-- Conversation location tracking
-- File move protection
-- Project state ledger updates
-
-### **Storage Safeguards**
-- localStorage quota management
-- Client-side cache limits
-- Safe failure flows
-- Emergency cleanup procedures
-
-### **Session Security**
-- Authentication enforcement
-- User scoping and isolation
-- Cookie security (HttpOnly, Secure, SameSite)
-- Token management
-
----
-
-*This directory is part of the Chatty documentation organization effort.*
-
+- Keep this section for current safeguards, not historical debugging.
+- When a security note becomes dated investigation material, move it to reports or archive.
+- Cross-check live security claims against current auth, session, and storage code before expanding them.

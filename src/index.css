@@ -88,6 +88,40 @@
   --chatty-star-ray-color: #ffef42;
 }
 
+/* St. Patrick's Day Theme - Dark (dark azure wallpaper #04383f) */
+.theme-script-stpatrick[data-theme="night"],
+.theme-script-stpatrick:root.night-mode,
+[data-theme="night"].theme-script-stpatrick,
+:root.night-mode.theme-script-stpatrick {
+  --chatty-bg-main: #04383f; /* Dark azure */
+  --chatty-bg-sidebar: #04383f;
+  --chatty-bg-message: rgba(4, 56, 63, 0.6);
+  --chatty-hover: #0a5058;
+  --chatty-highlight: #0a5058; /* Slightly lighter azure */
+  --chatty-text: #d4ede0; /* Light mint - readable on dark azure */
+  --chatty-placeholder: rgba(212, 237, 224, 0.6);
+  --chatty-timestamp: rgba(212, 237, 224, 0.6);
+  --chatty-star-starburst-color: #fffff0;
+  --chatty-star-nova-color: #ffef42; /* Gold */
+  --chatty-star-ray-color: #ffef42;
+}
+
+/* St. Patrick's Day Theme - Light (pastel gray-green wallpaper #b1d8b7) */
+.theme-script-stpatrick,
+.theme-script-stpatrick:root {
+  --chatty-bg-main: #b1d8b7; /* Pastel gray-green */
+  --chatty-bg-sidebar: #b1d8b7;
+  --chatty-bg-message: rgba(4, 56, 63, 0.08);
+  --chatty-hover: #9bc9a1;
+  --chatty-highlight: #9bc9a1; /* Slightly darker pastel green */
+  --chatty-text: #0d2818; /* Dark green - readable on pastel */
+  --chatty-placeholder: rgba(13, 40, 24, 0.6);
+  --chatty-timestamp: rgba(13, 40, 24, 0.6);
+  --chatty-star-starburst-color: #fffff0;
+  --chatty-star-nova-color: #ffef42;
+  --chatty-star-ray-color: #ffef42;
+}
+
 @layer base {
   * {
     @apply border-app-yellow-800;
@@ -117,6 +151,11 @@
   [data-theme="night"] .chatty-placeholder::placeholder,
   :root.night-mode .chatty-placeholder::placeholder {
     opacity: 0.7;
+  }
+
+  /* Hide invisible overlay that blocks the message placeholder */
+  .plus-slot {
+    display: none !important;
   }
 
   /* Global placeholder styling for form inputs */
@@ -184,6 +223,17 @@
     animation-delay: -0.16s;
   }
   
+  @keyframes voice-orb-breathe {
+    0%, 100% {
+      opacity: 0.5;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.85;
+      transform: scale(1.05);
+    }
+  }
+
   @keyframes typing {
     0%, 80%, 100% {
       transform: scale(0.8);
@@ -243,8 +293,7 @@
   }
 
 
-  .chatty-logo:hover,
-  .chatty-star-wrapper:hover .chatty-star {
+  .chatty-logo:hover {
     animation: chatty-logo-swim 3s ease-in-out infinite;
     transform: scale(1.02);
   }
@@ -286,21 +335,32 @@
     transition: transform 0.3s ease;
   }
 
+    /* Sidebar star: canonical spec is docs/styling/SIDEBAR_STAR_LAYER_SPEC.md — do not change layers/sizes/timing without updating that file.
+      Order: nova (back) -> ray (middle) -> starburst (front) -> center. Z-index 5/8/10/12. */
   .chatty-star {
+    position: relative;
+    z-index: 12;
     transition: opacity 0.2s ease;
   }
 
+  /* Four-point burst layers: 80% of wrapper (design-system star scale) */
   .chatty-starburst {
     position: absolute;
-    width: 50%;
-    height: 50%;
+    inset: 0;
+    margin: auto;
+    width: 80%;
+    height: 80%;
     opacity: 0;
-    z-index: 10; /* Increased z-index for proper layering */
+    z-index: 10;
+    pointer-events: none;
     transition: opacity 0.3s ease;
   }
 
-  /* Default: No animations - stars are static */
-  .chatty-starburst-left {
+  /* Front starburst layer: 40% of wrapper; nova and ray stay at 80% */
+  .chatty-starburst-left,
+  .chatty-starburst-right {
+    width: 40%;
+    height: 40%;
     transform: rotate(0deg);
   }
 
@@ -308,35 +368,32 @@
     transform: rotate(45deg);
   }
 
+  .chatty-starburst-front-tight {
+    width: 40%;
+    height: 40%;
+  }
+
   .chatty-starburst-nova-left {
-    width: 90%;
-    height: 90%;
     opacity: 0;
-    z-index: 5; /* Adjusted z-index for nova elements */
+    z-index: 5;
     transform: rotate(0deg);
   }
 
   .chatty-starburst-nova-right {
-    width: 90%;
-    height: 90%;
     opacity: 0;
-    z-index: 5; /* Adjusted z-index for nova elements */
+    z-index: 5;
     transform: rotate(45deg);
   }
 
   .chatty-starburst-ray-left {
-    width: 90%;
-    height: 90%;
     opacity: 0;
-    z-index: 8; /* Adjusted z-index for ray elements */
+    z-index: 8;
     transform: rotate(0deg);
   }
 
   .chatty-starburst-ray-right {
-    width: 90%;
-    height: 90%;
     opacity: 0;
-    z-index: 8; /* Adjusted z-index for ray elements */
+    z-index: 8;
     transform: rotate(45deg);
   }
 
@@ -365,14 +422,24 @@
     animation: chatty-starburst-cw 14s linear infinite;
   }
 
-  /* Hide decorative overlays during Christmas theme - they clash with the Christmas star */
-  .theme-script-christmas .chatty-starburst,
-  .theme-script-christmas .chatty-starburst-ray-left,
-  .theme-script-christmas .chatty-starburst-ray-right,
-  .theme-script-christmas .chatty-starburst-nova-left,
-  .theme-script-christmas .chatty-starburst-nova-right {
-    opacity: 0 !important;
-    display: none;
+  /* St. Patrick's Day - same tiered star hover animations */
+  .theme-script-stpatrick .chatty-star-wrapper:hover .chatty-starburst-left {
+    animation: chatty-starburst-ccw 7s linear infinite;
+  }
+  .theme-script-stpatrick .chatty-star-wrapper:hover .chatty-starburst-right {
+    animation: chatty-starburst-cw 7s linear infinite;
+  }
+  .theme-script-stpatrick .chatty-star-wrapper:hover .chatty-starburst-nova-left {
+    animation: chatty-starburst-ccw 28s linear infinite;
+  }
+  .theme-script-stpatrick .chatty-star-wrapper:hover .chatty-starburst-nova-right {
+    animation: chatty-starburst-cw 28s linear infinite;
+  }
+  .theme-script-stpatrick .chatty-star-wrapper:hover .chatty-starburst-ray-left {
+    animation: chatty-starburst-ccw 14s linear infinite;
+  }
+  .theme-script-stpatrick .chatty-star-wrapper:hover .chatty-starburst-ray-right {
+    animation: chatty-starburst-cw 14s linear infinite;
   }
 
   /* Default hover behavior - hide main star, show overlay stars */
@@ -381,6 +448,11 @@
   }
 
   .chatty-star-wrapper:hover .chatty-starburst {
+    opacity: 1;
+  }
+
+  .chatty-star-wrapper:hover .chatty-starburst-left,
+  .chatty-star-wrapper:hover .chatty-starburst-right {
     opacity: 1;
   }
 

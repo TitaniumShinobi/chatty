@@ -34,6 +34,12 @@ import {
   isGPTConstruct,
   getCanonicalIdForGPT,
 } from "../lib/threadUtils";
+import {
+  createIdleActiveConversationHydrationState,
+  createLoadingActiveConversationHydrationState,
+  decodeRuntimeResumeAnchorParam,
+  deriveActiveConversationHydrationState,
+} from "../lib/vvaultConversationHydration";
 import { bootstrapConstructs } from "../lib/masterScripts";
 import { GPTService, type GPTConfig } from "../lib/gptService";
 import type { AIConfig } from "../lib/aiService";
@@ -149,6 +155,7 @@ type Thread = {
   canonicalForRuntime?: string | null;
   importMetadata?: Record<string, any> | null;
   isFallback?: boolean;
+  isIndexHydrated?: boolean;
 };
 
 const VVAULT_FILESYSTEM_ROOT = "/Users/devonwoodson/Documents/GitHub/vvault";

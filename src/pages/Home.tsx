@@ -8,6 +8,8 @@ import { useDynamicSuggestions } from "../hooks/useDynamicSuggestions";
 // Logo assets
 import chattyChristmas from "@assets/logo/christmas/Chatty_Christmas.svg";
 import chattyValentines from "@assets/logo/valentines/Chatty_Valentines.svg";
+import chattyStPatrick from "@assets/logo/stpatrick/Chatty_StPatrick.svg";
+import chattyMoon from "@assets/logo/moon/Chatty_Moon.svg";
 import chattyLogo from "@assets/logo/Chatty.svg";
 
 // Collapse animation frames (default theme)
@@ -31,21 +33,42 @@ import collapseValentines2 from "@assets/logo/valentines/collapseToggle_Valentin
 import collapseValentines3 from "@assets/logo/valentines/collapseToggle_Valentines/chatty_collapsed_Valentines_3.svg";
 import collapseValentines4 from "@assets/logo/valentines/collapseToggle_Valentines/chatty_collapsed_Valentines_4.svg";
 
+// Collapse animation frames (St. Patrick's theme)
+import collapseStPatrick0 from "@assets/logo/stpatrick/collapseToggle_StPatrick/chatty_collapsed_StPatrick.svg";
+import collapseStPatrick1 from "@assets/logo/stpatrick/collapseToggle_StPatrick/chatty_collapsed_StPatrick_1.svg";
+import collapseStPatrick2 from "@assets/logo/stpatrick/collapseToggle_StPatrick/chatty_collapsed_StPatrick_2.svg";
+import collapseStPatrick3 from "@assets/logo/stpatrick/collapseToggle_StPatrick/chatty_collapsed_StPatrick_3.svg";
+import collapseStPatrick4 from "@assets/logo/stpatrick/collapseToggle_StPatrick/chatty_collapsed_StPatrick_4.svg";
+
+// Collapse animation frames (Night theme)
+import collapseMoon0 from "@assets/logo/moon/collapseToggle_Moon/chatty_collapsed_Moon.svg";
+import collapseMoon1 from "@assets/logo/moon/collapseToggle_Moon/chatty_collapsed_Moon_1.svg";
+import collapseMoon2 from "@assets/logo/moon/collapseToggle_Moon/chatty_collapsed_Moon_2.svg";
+import collapseMoon3 from "@assets/logo/moon/collapseToggle_Moon/chatty_collapsed_Moon_3.svg";
+import collapseMoon4 from "@assets/logo/moon/collapseToggle_Moon/chatty_collapsed_Moon_4.svg";
+
 interface LayoutContext {
   threads: any[];
-  sendMessage: (threadId: string, text: string, files: File[]) => void;
+  sendMessage: (
+    threadId: string,
+    text: string,
+    files: File[],
+    imageAttachments?: any,
+    options?: { continueTurn?: boolean },
+  ) => void;
   renameThread: (threadId: string, title: string) => void;
-  newThread: () => void;
 }
 
 const DEFAULT_ZEN_CANONICAL_SESSION_ID = "zen-001_chat_with_zen-001";
 
 export default function Home() {
-  const { threads, sendMessage, newThread } = useOutletContext<LayoutContext>();
+  const { threads, sendMessage } = useOutletContext<LayoutContext>();
   const navigate = useNavigate();
-  const { activeThemeScript } = useTheme();
+  const { actualTheme, activeThemeScript } = useTheme();
   const isChristmasTheme = activeThemeScript?.id === "christmas";
   const isValentinesTheme = activeThemeScript?.id === "valentines";
+  const isStPatrickTheme = activeThemeScript?.id === "stpatrick";
+  const isNightWithoutSeasonal = actualTheme === "night" && !activeThemeScript;
   const [, setUser] = useState<User | null>(null);
   const [greeting, setGreeting] = useState("");
   const [inputValue, setInputValue] = useState("");
@@ -72,6 +95,26 @@ export default function Home() {
             collapseValentines4,
             chattyValentines,
           ]
+        : isStPatrickTheme
+        ? [
+            chattyStPatrick,
+            collapseStPatrick0,
+            collapseStPatrick1,
+            collapseStPatrick2,
+            collapseStPatrick3,
+            collapseStPatrick4,
+            chattyStPatrick,
+          ]
+        : isNightWithoutSeasonal
+        ? [
+            chattyMoon,
+            collapseMoon0,
+            collapseMoon1,
+            collapseMoon2,
+            collapseMoon3,
+            collapseMoon4,
+            chattyMoon,
+          ]
         : [
             chattyLogo,
             collapseFrame0,
@@ -81,15 +124,35 @@ export default function Home() {
             collapseFrame4,
             chattyLogo,
           ],
-    [isChristmasTheme, isValentinesTheme],
+    [isChristmasTheme, isNightWithoutSeasonal, isValentinesTheme, isStPatrickTheme],
   );
-  const baseLogo = isChristmasTheme ? chattyChristmas : isValentinesTheme ? chattyValentines : chattyLogo;
+  const baseLogo = isChristmasTheme
+    ? chattyChristmas
+    : isValentinesTheme
+    ? chattyValentines
+    : isStPatrickTheme
+    ? chattyStPatrick
+    : isNightWithoutSeasonal
+    ? chattyMoon
+    : chattyLogo;
   const inactivityBase = isChristmasTheme
     ? "/assets/logo/christmas/inactivityAnimations_Christmas"
     : isValentinesTheme
     ? "/assets/logo/valentines/inactivityAnimations_Valentines"
+    : isStPatrickTheme
+    ? "/assets/logo/stpatrick/inactivityAnimations_StPatrick"
+    : isNightWithoutSeasonal
+    ? "/assets/logo/moon/inactivityAnimations_Moon"
     : "/assets/logo";
-  const ext = isChristmasTheme ? "_Christmas.svg" : isValentinesTheme ? "_Valentines.svg" : ".png";
+  const ext = isChristmasTheme
+    ? "_Christmas.svg"
+    : isValentinesTheme
+    ? "_Valentines.svg"
+    : isStPatrickTheme
+    ? "_StPatrick.svg"
+    : isNightWithoutSeasonal
+    ? "_Moon.svg"
+    : ".png";
   const letterConfigs = useMemo(
     () => [
       {
@@ -448,11 +511,8 @@ export default function Home() {
         sendMessage(DEFAULT_ZEN_CANONICAL_SESSION_ID, trimmed, []);
       }, 100);
     } else {
-      // Fallback: create new thread if zen thread doesn't exist yet
-      newThread();
-      setTimeout(() => {
-        sendMessage("", trimmed, []);
-      }, 100);
+      navigate(`/app/chat/${DEFAULT_ZEN_CANONICAL_SESSION_ID}`);
+      console.warn("[Home] Canonical Zen thread was not hydrated; prompt send deferred.");
     }
 
     setInputValue("");
@@ -473,8 +533,7 @@ export default function Home() {
     logoSrc.includes("cha'T'") ||
     logoSrc.includes("chat'T'") ||
     logoSrc.includes("chatt'Y'");
-  const isBaseLogo =
-    !isCollapsedFrame && !isCycleFrame && logoSrc.endsWith("Chatty.png");
+  const isBaseLogo = !isCollapsedFrame && !isCycleFrame && logoSrc === baseLogo;
   const logoClassName = "chatty-logo w-auto object-contain";
 
   return (

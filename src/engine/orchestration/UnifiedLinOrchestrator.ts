@@ -11,14 +11,12 @@
  */
 
 import type { PersonalityBlueprint } from '../transcript/types';
-import { PersonalityOrchestrator } from './PersonalityOrchestrator';
+import { LIN_MODEL_DEFAULTS } from '../../config/linModelDefaults';
 import { detectTone, detectToneEnhanced } from '../../lib/toneDetector';
-import { WorkspaceContextBuilder } from '../context/WorkspaceContextBuilder';
 import { AutomaticRuntimeOrchestrator, RuntimeAssignment, RuntimeDetectionContext } from '../../lib/automaticRuntimeOrchestrator';
 import { RuntimeContextManager } from '../../lib/runtimeContextManager';
 import { getMemoryStore } from '../../lib/MemoryStore';
 import { getVVAULTTranscriptLoader } from '../../lib/VVAULTTranscriptLoader';
-import { Reasoner } from '../../brain/reasoner';
 import { loadWorkspaceContext } from '../../lib/workspaceContextLoader';
 import { detectRachelMoment, buildResonanceInstruction } from '../../lib/rachelMomentDetector';
 import { getPersonaRouter } from '../../core/persona/PersonaRouter';
@@ -52,7 +50,7 @@ const orchestratorConfig = {
     vvaultRoot: process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault',
   },
   models: {
-    toneDetection: 'phi3:latest',
+    toneDetection: LIN_MODEL_DEFAULTS.conversation,
   },
 };
 
@@ -111,13 +109,11 @@ export interface UnifiedLinResponse {
     conversationHistory: number;
     sharedKnowledge: boolean;
     blueprint: boolean;
+    capsule?: boolean;
   };
 }
 
 export class UnifiedLinOrchestrator {
-  private personalityOrchestrator: PersonalityOrchestrator;
-  private workspaceContextBuilder: WorkspaceContextBuilder;
-  private sharedContextCache: Map<string, UnifiedLinContext> = new Map();
   private automaticRuntimeOrchestrator: AutomaticRuntimeOrchestrator;
   private runtimeContextManager: RuntimeContextManager;
   private memoryStore = getMemoryStore();
@@ -135,8 +131,6 @@ export class UnifiedLinOrchestrator {
   }> = new Map();
 
   constructor(vvaultRoot?: string) {
-    this.personalityOrchestrator = new PersonalityOrchestrator(vvaultRoot);
-    this.workspaceContextBuilder = new WorkspaceContextBuilder();
     this.automaticRuntimeOrchestrator = AutomaticRuntimeOrchestrator.getInstance();
     this.runtimeContextManager = RuntimeContextManager.getInstance();
     this.memoryRetrievalEngine = new MemoryRetrievalEngine(vvaultRoot);
@@ -150,7 +144,7 @@ export class UnifiedLinOrchestrator {
    * IMPROVED: Exponential backoff retry with fallback to blueprint anchors
    */
   async loadVVAULTMemories(
-    userId: string,
+    _userId: string,
     constructCallsign: string,
     query: string,
     limit: number = 10,
@@ -237,7 +231,7 @@ export class UnifiedLinOrchestrator {
    */
   private fallbackToBlueprintAnchors(
     blueprint: PersonalityBlueprint | undefined,
-    query: string,
+    _query: string,
     limit: number
   ): UnifiedLinContext['memories'] {
     if (!blueprint?.memoryAnchors || blueprint.memoryAnchors.length === 0) {
@@ -270,7 +264,7 @@ export class UnifiedLinOrchestrator {
     userId: string,
     constructCallsign: string,
     userMessage: string,
-    conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
+    conversationHistory: UnifiedLinContext['conversationHistory'],
     blueprint?: PersonalityBlueprint,
     settings?: { personalization?: { allowMemory?: boolean } }
   ): Promise<UnifiedLinContext> {
@@ -332,7 +326,7 @@ export class UnifiedLinOrchestrator {
     threadId: string,
     constructId: string,
     callsign: string,
-    threads: any[],
+    _threads: any[],
     conversationHistory: Array<{ role: 'user' | 'assistant'; content: string; timestamp?: number }>,
     settings?: { personalization?: { allowMemory?: boolean } }
   ): Promise<UnifiedLinResponse> {
@@ -379,7 +373,7 @@ export class UnifiedLinOrchestrator {
     let blueprint: PersonalityBlueprint | undefined;
     try {
       const identityMatcher = new IdentityMatcher();
-      blueprint = await identityMatcher.loadPersonalityBlueprint(userId, constructId, callsign);
+      blueprint = (await identityMatcher.loadPersonalityBlueprint(userId, constructId, callsign)) || undefined;
     } catch (error) {
       console.warn('[UnifiedLinOrchestrator] Failed to load blueprint for memory fallback:', error);
     }
@@ -435,7 +429,7 @@ export class UnifiedLinOrchestrator {
     };
 
     // Update session state based on conversation history
-    sessionState.interactionCount = conversationHistory.filter(m => m.role === 'user').length;
+    sessionState.relationshipDynamics.interactionCount = conversationHistory.filter(m => m.role === 'user').length;
     if (conversationHistory.length > 0) {
       sessionState.lastMessageContext = conversationHistory[conversationHistory.length - 1].content;
     }
@@ -530,11 +524,11 @@ export class UnifiedLinOrchestrator {
     const lastMessageContent = lastMessage?.content || undefined;
 
     // Detect tone
-    const tone = await detectToneEnhanced({
+      const tone = await detectToneEnhanced({
       text: userMessage,
       context: {
         conversationHistory: timestampedHistory,
-        relationshipHistory: []
+        relationshipHistory: sessionState.relationshipDynamics
       }
     }, orchestratorConfig.models.toneDetection);
 
@@ -590,6 +584,7 @@ export class UnifiedLinOrchestrator {
           constructId,
           {
             topK: 20, // Get more candidates for scoring
+            userId,
             settings // Pass settings for memory permission
           }
         );
@@ -598,15 +593,15 @@ export class UnifiedLinOrchestrator {
         await this.contextScoringLayer.loadWeights(orchestratorConfig.paths.linIdentityWeights);
 
         const scoredMemories = this.contextScoringLayer.rankMemories(
-          retrievedMemories,
-          {
-            query: userMessage,
-            constructId,
-            conversationHistory: timestampedHistory,
-            emotionalTone: tone?.tone
-          },
-          5 // Top 5 memories
-        );
+            retrievedMemories,
+            {
+              query: userMessage,
+              constructId,
+              conversationHistory: timestampedHistory,
+              emotionalTone: tone?.surfaceTone
+            },
+            5 // Top 5 memories
+          );
 
         ragMemories = scoredMemories.map(sm => ({
           content: sm.memory.content,

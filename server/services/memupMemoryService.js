@@ -14,9 +14,9 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Path to Frame's Memup system
-const FRAME_ROOT = path.resolve(__dirname, '../../../frame');
-const MEMUP_BANK_SCRIPT = path.join(FRAME_ROOT, 'Terminal', 'memup', 'bank.py');
+// Path to Chatty's repo-local Frame Memup system.
+const FRAME_ROOT = path.resolve(__dirname, '../../frame');
+const MEMUP_CLI_SCRIPT = path.join(FRAME_ROOT, 'Terminal', 'memup', 'cli_adapter.py');
 
 class MemupMemoryService {
   constructor() {
@@ -46,15 +46,15 @@ class MemupMemoryService {
   async executePythonCommand(command, args = {}) {
     return new Promise((resolve, reject) => {
       // Check if Python script exists
-      fs.access(MEMUP_BANK_SCRIPT)
+      fs.access(MEMUP_CLI_SCRIPT)
         .then(() => {
           const pythonProcess = spawn('python3', [
-            MEMUP_BANK_SCRIPT,
+            MEMUP_CLI_SCRIPT,
             command,
             JSON.stringify(args)
           ], {
             stdio: ['pipe', 'pipe', 'pipe'],
-            cwd: path.dirname(MEMUP_BANK_SCRIPT)
+            cwd: path.dirname(MEMUP_CLI_SCRIPT)
           });
 
           let stdout = '';
@@ -88,7 +88,7 @@ class MemupMemoryService {
         })
         .catch(() => {
           // Fallback: Direct ChromaDB access if Python bridge not available
-          console.warn('⚠️ [MemupMemoryService] Frame Python script not found, using direct ChromaDB access');
+          console.warn('⚠️ [MemupMemoryService] Memup CLI adapter not found, using direct ChromaDB access');
           return this.executeDirectChromaDB(command, args)
             .then(resolve)
             .catch(reject);
@@ -245,6 +245,20 @@ class MemupMemoryService {
   }
 
   /**
+   * Basic health check through the Python CLI adapter.
+   * Returns summary object when available.
+   */
+  async health(constructCallsign = 'zen-001') {
+    try {
+      const result = await this.executePythonCommand('health', { constructCallsign });
+      return result;
+    } catch (error) {
+      console.error('❌ [MemupMemoryService] Health check failed:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
    * Import transcript markdown file into Memup memory bank
    * @param {string} userId - Chatty user ID
    * @param {string} constructCallsign - Construct-callsign
@@ -390,4 +404,3 @@ export function getMemupMemoryService() {
 }
 
 export default MemupMemoryService;
-

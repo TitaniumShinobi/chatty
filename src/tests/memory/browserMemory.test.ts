@@ -1,5 +1,5 @@
 // Test browser-compatible memory system
-import { browserStmBuffer } from '../../core/memory/BrowserSTMBuffer';
+import { BrowserSTMBuffer } from '../../core/memory/BrowserSTMBuffer';
 import { browserConstructRegistry } from '../../state/BrowserConstructs';
 
 // Mock localStorage for Node.js environment
@@ -27,7 +27,8 @@ describe('Browser Memory System', () => {
   });
 
   describe('BrowserSTMBuffer', () => {
-    it('should add and retrieve messages', () => {
+    it('should add and retrieve messages', async () => {
+      const browserStmBuffer = new BrowserSTMBuffer({ persistToStorage: false });
       const constructId = 'test-construct';
       const threadId = 'test-thread';
       
@@ -40,12 +41,13 @@ describe('Browser Memory System', () => {
       
       browserStmBuffer.addMessage(constructId, threadId, message);
       
-      const messages = browserStmBuffer.getWindow(constructId, threadId);
+      const messages = await browserStmBuffer.getWindow(constructId, threadId);
       expect(messages).toHaveLength(1);
       expect(messages[0].content).toBe('Hello, world!');
     });
 
-    it('should enforce sliding window', () => {
+    it('should enforce sliding window', async () => {
+      const browserStmBuffer = new BrowserSTMBuffer({ persistToStorage: false });
       const constructId = 'test-construct';
       const threadId = 'test-thread';
       
@@ -59,14 +61,19 @@ describe('Browser Memory System', () => {
         });
       }
       
-      const messages = browserStmBuffer.getWindow(constructId, threadId);
+      const messages = await browserStmBuffer.getWindow(constructId, threadId);
       expect(messages).toHaveLength(50); // Default window size
       expect(messages[0].content).toBe('Message 10'); // First message should be the 10th
     });
 
-    it('should persist to localStorage', () => {
+    it('should persist to the VVAULT API when enabled', async () => {
+      const browserStmBuffer = new BrowserSTMBuffer();
       const constructId = 'test-construct';
       const threadId = 'test-thread';
+      const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        text: async () => '',
+      } as Response);
       
       const message = {
         id: 'msg-1',
@@ -76,15 +83,22 @@ describe('Browser Memory System', () => {
       };
       
       browserStmBuffer.addMessage(constructId, threadId, message);
+      await Promise.resolve();
       
-      // Check localStorage
-      const key = `chatty_stm_${constructId}_${threadId}`;
-      const stored = localStorage.getItem(key);
-      expect(stored).toBeTruthy();
-      
-      const parsed = JSON.parse(stored!);
-      expect(parsed).toHaveLength(1);
-      expect(parsed[0].content).toBe('Persistent message');
+      expect(fetchSpy).toHaveBeenCalledWith('/api/vvault/identity/store', expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }));
+
+      const [, request] = fetchSpy.mock.calls[0];
+      const payload = JSON.parse(String(request?.body));
+      expect(payload.constructCallsign).toBe(constructId);
+      expect(payload.context).toBe('Persistent message');
+      expect(payload.metadata.sessionId).toBe(threadId);
+      expect(payload.metadata.memoryType).toBe('short-term');
     });
   });
 
@@ -137,6 +151,9 @@ describe('Browser Memory System', () => {
     });
 
     it('should get all constructs', async () => {
+      const nowSpy = jest.spyOn(Date, 'now');
+      nowSpy.mockReturnValueOnce(1000).mockReturnValueOnce(2000);
+
       await browserConstructRegistry.registerConstruct({
         id: 'construct-1',
         name: 'Construct 1',
@@ -166,6 +183,7 @@ describe('Browser Memory System', () => {
       const constructs = await browserConstructRegistry.getAllConstructs();
       expect(constructs).toHaveLength(2);
       expect(constructs[0].name).toBe('Construct 2'); // Should be sorted by creation time
+      nowSpy.mockRestore();
     });
   });
 });

@@ -1,21 +1,26 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, Menu, Plus, Paperclip, X, ChevronDown } from 'lucide-react'
+import { useOutletContext } from 'react-router-dom'
 import { ChatAreaProps } from '../types'
 import MessageComponent from './Message.tsx'
 import { cn } from '../lib/utils'
 import ActionMenu from './ActionMenu'
 import ImageAttachmentPreview from './ImageAttachmentPreview'
-import { 
-  CHAT_UPLOAD_LIMITS, 
+import {
+  CHAT_UPLOAD_LIMITS,
   ALL_ALLOWED_TYPES,
-  isImageFile, 
-  getFileSizeLimit 
+  isImageFile,
+  getFileSizeLimit
 } from '../config/chatConfig'
 import { emitOpcode } from '../lib/emit'
 import { lexicon as lex } from '../data/lexicon'
 import type { AssistantPacket } from '../types'
 
 const pktFromString = (s: string): AssistantPacket => ({ op: 'answer.v1', payload: { content: s } })
+
+type LayoutOutletContext = {
+  updateMessageMetadata?: (threadId: string, messageId: string, metadata: Record<string, unknown>) => void;
+};
 
 const ChatArea: React.FC<ChatAreaProps> = ({
   conversation,
@@ -25,6 +30,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   onToggleSidebar,
   constructId
 }) => {
+  const { updateMessageMetadata } = useOutletContext<LayoutOutletContext>() ?? {};
   const isNova = constructId === 'nova-001' || conversation?.id?.includes('nova-001');
   const [inputValue, setInputValue] = useState('')
   const [isTyping, setIsTyping] = useState(false)
@@ -37,6 +43,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   const [userHasInteracted, setUserHasInteracted] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const sessionStartRef = useRef<number>(Date.now());
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -45,8 +52,9 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   const checkScrollPosition = useCallback(() => {
     const container = messagesContainerRef.current
     if (!container) return
-    
-    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100
+
+    const distanceFromBottom = container.scrollHeight - (container.scrollTop + container.clientHeight)
+    const isNearBottom = distanceFromBottom <= 80
     setShowScrollButton(!isNearBottom)
   }, [])
 
@@ -67,10 +75,21 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   useEffect(() => {
     const container = messagesContainerRef.current
     if (!container) return
-    
+
     container.addEventListener('scroll', checkScrollPosition)
-    return () => container.removeEventListener('scroll', checkScrollPosition)
-  }, [checkScrollPosition])
+    // Initialize visibility without requiring a manual scroll first.
+    checkScrollPosition()
+    const rafId = requestAnimationFrame(() => checkScrollPosition())
+    const timeoutId = window.setTimeout(() => checkScrollPosition(), 120)
+    const onResize = () => checkScrollPosition()
+    window.addEventListener('resize', onResize)
+    return () => {
+      container.removeEventListener('scroll', checkScrollPosition)
+      window.removeEventListener('resize', onResize)
+      cancelAnimationFrame(rafId)
+      window.clearTimeout(timeoutId)
+    }
+  }, [checkScrollPosition, conversation?.id, conversation?.messages?.length])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -110,12 +129,12 @@ const ChatArea: React.FC<ChatAreaProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!inputValue.trim() || !conversation) return
 
     const imageFiles = attachedFiles.filter(f => isImageFile(f));
     const docFiles = attachedFiles.filter(f => !isImageFile(f));
-    
+
     const imageAttachments = await Promise.all(
       imageFiles.map(async (file) => ({
         name: file.name,
@@ -164,10 +183,11 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       switch (action) {
         case 'web-search':
           break;
-        case 'deep-research':
+        case 'research':
           break;
         case 'create-image':
           break;
+        case 'screenshare':
         case 'mirror':
           if ((window as any).__mirrorControls?.openSetup) {
             (window as any).__mirrorControls.openSetup();
@@ -337,11 +357,11 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         onSendMessage(errorMessage)
         return false;
       }
-      
+
       // Check attachment limits
       const currentImages = attachedFiles.filter(f => isImageFile(f)).length;
       const currentDocs = attachedFiles.filter(f => !isImageFile(f)).length;
-      
+
       if (isImageFile(file) && currentImages >= CHAT_UPLOAD_LIMITS.MAX_IMAGE_ATTACHMENTS) {
         console.warn(`Max image attachments (${CHAT_UPLOAD_LIMITS.MAX_IMAGE_ATTACHMENTS}) reached`);
         return false;
@@ -350,7 +370,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         console.warn(`Max document attachments (${CHAT_UPLOAD_LIMITS.MAX_DOC_ATTACHMENTS}) reached`);
         return false;
       }
-      
+
       return true;
     });
 
@@ -361,36 +381,36 @@ const ChatArea: React.FC<ChatAreaProps> = ({
 
     // Show immediate feedback that files are being processed
     setAttachedFiles(prev => [...prev, ...validFiles])
-    
+
     // Separate images from documents - images don't need parsing
     const imageFiles = validFiles.filter(f => isImageFile(f));
     const docFiles = validFiles.filter(f => !isImageFile(f));
-    
+
     // Log image attachments (no parsing needed)
     if (imageFiles.length > 0) {
     }
-    
+
     // Only parse documents, not images
     if (docFiles.length > 0) {
       setIsParsing(true);
-      
+
       for (const file of docFiles) {
         try {
           abortControllerRef.current?.abort();
           abortControllerRef.current = new AbortController();
 
           const { UnifiedFileParser } = await import('../lib/unifiedFileParser');
-          
+
           const parsedContent = await UnifiedFileParser.parseFile(file, {
             maxSize: CHAT_UPLOAD_LIMITS.MAX_DOC_SIZE_MB * 1024 * 1024,
             extractText: true,
             storeContent: false
           });
-          
+
           const successMessage = {
             id: Date.now().toString(),
             role: 'assistant' as const,
-            content: [pktFromString(emitOpcode(lex.tokens.fileParsed, { 
+            content: [pktFromString(emitOpcode(lex.tokens.fileParsed, {
               name: file.name,
               type: file.type,
               size: file.size,
@@ -400,11 +420,11 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             timestamp: new Date().toISOString()
           } as import('../types').AssistantMsg
           onSendMessage(successMessage)
-          
+
           setParsingProgress(prev => ({ ...prev, [file.name]: 100 }));
         } catch (error: any) {
           console.error(`❌ Error processing file ${file.name}:`, error);
-          
+
           const errorMessage = {
             id: Date.now().toString(),
             role: 'assistant' as const,
@@ -412,11 +432,11 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             timestamp: new Date().toISOString()
           } as import('../types').AssistantMsg
           onSendMessage(errorMessage)
-          
+
           setAttachedFiles(prev => prev.filter(f => f.name !== file.name));
         }
       }
-      
+
       setIsParsing(false);
       setParsingProgress({});
     }
@@ -469,7 +489,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   }
 
   return (
-    <div 
+    <div
       className={cn(
         "flex flex-col h-full bg-app-butter-50 relative",
         isDragging && "ring-2 ring-app-orange-400 ring-inset"
@@ -508,7 +528,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             )}
           </div>
         </div>
-        
+
         <button
           onClick={onNewConversation}
           className="p-2 hover:bg-app-chat-50 rounded-lg transition-colors"
@@ -526,14 +546,29 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         )}
         {conversation && conversation.messages.length > 0 ? (
           <div className="space-y-6 p-4">
-            {conversation.messages.map((message, index) => (
-              <MessageComponent
-                key={message.id}
-                message={message}
-                isLast={index === conversation.messages.length - 1}
-              />
-            ))}
-            
+            {(() => {
+              const latestAssistantMessageId = conversation.messages && conversation.messages.length
+                ? [...conversation.messages].reverse().find(m => m.role === 'assistant')?.id ?? null
+                : null;
+              const threadId = conversation?.id ?? undefined;
+              const onMarkSpoken =
+                threadId && updateMessageMetadata
+                  ? (messageId: string, metadata: { outputMode: 'voice'; speechText?: string; voiceReply: true }) =>
+                      updateMessageMetadata(threadId, messageId, metadata)
+                  : undefined;
+              return conversation.messages.map((message, index) => (
+                <MessageComponent
+                  key={message.id}
+                  message={message}
+                  isLast={index === conversation.messages.length - 1}
+                  sessionStartMs={sessionStartRef.current}
+                  latestAssistantMessageId={latestAssistantMessageId}
+                  threadId={threadId}
+                  onMarkSpoken={onMarkSpoken}
+                />
+              ));
+            })()}
+
             {/* Typing indicator */}
             {isTyping && (
               <div className="flex items-start gap-3 p-4 bg-app-chat-50 rounded-lg">
@@ -549,27 +584,47 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                 </div>
               </div>
             )}
-            
+
             <div ref={messagesEndRef} />
           </div>
         ) : (
           <div ref={messagesEndRef} />
         )}
+
       </div>
 
-      {/* Scroll to Bottom Button */}
-      {showScrollButton && (
-        <div className="relative">
+      {/* Scroll to Bottom Button (always available for reliable recovery) */}
+      {conversation && conversation.messages.length > 0 && (
+        <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-24 z-[100]">
           <button
             onClick={scrollToBottom}
-            className="absolute left-1/2 -translate-x-1/2 -top-14 w-10 h-10 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110 z-10"
+            className={cn(
+              "group pointer-events-auto h-11 rounded-full flex items-center justify-center gap-2 pl-3 pr-3 shadow-xl transition-all duration-300",
+              "border backdrop-blur-sm",
+              showScrollButton
+                ? "translate-y-0 scale-100 opacity-100"
+                : "translate-y-0 scale-95 opacity-65 hover:opacity-85",
+              showScrollButton ? "animate-bounce" : ""
+            )}
             style={{
-              backgroundColor: 'var(--chatty-highlight)',
-              color: 'var(--chatty-text)',
+              background: showScrollButton
+                ? 'linear-gradient(135deg, var(--chatty-text) 0%, #3b3b3b 100%)'
+                : 'linear-gradient(135deg, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.6) 100%)',
+              color: 'var(--chatty-bg-main)',
+              borderColor: 'rgba(255, 255, 255, 0.24)',
+              boxShadow: showScrollButton
+                ? '0 10px 30px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(255,255,255,0.06) inset'
+                : '0 8px 18px rgba(0, 0, 0, 0.2)',
             }}
             title="Scroll to bottom"
+            aria-label="Scroll to bottom"
           >
-            <ChevronDown size={20} />
+            <span className="relative flex items-center justify-center w-6 h-6 rounded-full bg-white/15">
+              <ChevronDown size={15} className="drop-shadow-sm" />
+            </span>
+            <span className="text-xs font-semibold tracking-wide whitespace-nowrap select-none">
+              {showScrollButton ? 'Catch up' : 'Bottom'}
+            </span>
           </button>
         </div>
       )}
@@ -597,15 +652,15 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                   </button>
                 )}
               </div>
-              
+
               {/* Image Previews */}
               {attachedFiles.some(f => isImageFile(f)) && (
-                <ImageAttachmentPreview 
+                <ImageAttachmentPreview
                   files={attachedFiles}
                   onRemove={removeFile}
                 />
               )}
-              
+
               {/* Document Chips */}
               <div className="space-y-2">
                 {attachedFiles.filter(f => !isImageFile(f)).map((file, idx) => {
@@ -619,9 +674,9 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                     };
                     return colors[ext] || 'text-orange-400';
                   };
-                  
+
                   const progress = parsingProgress[file.name] || 0;
-                  
+
                   return (
                     <div key={idx} className="flex items-center justify-between p-2 bg-app-chat-50 rounded">
                       <div className="flex items-center gap-2 flex-1">
@@ -638,7 +693,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                         {isParsing && progress > 0 && (
                           <div className="flex items-center gap-2 ml-2">
                             <div className="w-16 bg-app-butter-300 rounded-full h-1.5">
-                              <div 
+                              <div
                                 className="bg-app-green-500 h-1.5 rounded-full transition-all duration-300"
                                 style={{ width: `${progress * 100}%` }}
                               />
@@ -674,15 +729,15 @@ const ChatArea: React.FC<ChatAreaProps> = ({
               rows={1}
               disabled={!conversation}
             />
-            
+
             {/* Action Menu */}
             <div className="absolute right-12 top-1/2 -translate-y-1/2">
-              <ActionMenu 
+              <ActionMenu
                 onAction={handleAction}
                 disabled={!conversation}
               />
             </div>
-            
+
             {/* Send Button */}
             <button
               type="submit"
@@ -707,7 +762,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             onChange={handleFileSelect}
             className="hidden"
           />
-          
+
           <div className="text-xs text-app-orange-500 mt-2 text-center">
             Chatty can make mistakes. Consider checking important information.
           </div>

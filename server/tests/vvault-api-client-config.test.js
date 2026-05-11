@@ -7,6 +7,7 @@ import {
   getConstructFiles,
   getConstructIdentity,
   getConstructMemories,
+  parseMarkdownToMessages,
   normalizeConstructFilesPayload,
 } from "../../vvaultConnector/vvaultApiClient.js";
 
@@ -155,5 +156,25 @@ describe("VVAULT API client config", () => {
 
     assert.equal(normalized.files.length, 3);
     assert.deepEqual(normalized.files.map((file) => file.folder), ["assets", "documents", "identity"]);
+  });
+
+  it("recovers compact Chatty metadata comments from canonical markdown transcripts", () => {
+    const messages = parseMarkdownToMessages([
+      "# Zen",
+      "",
+      "---",
+      "",
+      "**Zen** (2026-05-09T10:00:00.000Z):",
+      "",
+      "ready to continue",
+      "",
+      "<!-- CHATTY_METADATA eyJydW50aW1lVHVyblN0YXRlIjp7ImNhbm9uaWNhbFRocmVhZElkIjoiemVuLTAwMV9jaGF0X3dpdGhfemVuLTAwMSIsImNvbnRpbnVpdHlTZXEiOjc3LCJhc3Npc3RhbnRUdXJuSWQiOiJydF83N190YWlsIiwiaHlkcmF0aW9uVHJ1dGgiOiJmdWxsIn19 -->",
+    ].join("\n"));
+
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].role, "assistant");
+    assert.equal(messages[0].content, "ready to continue");
+    assert.equal(messages[0].metadata.runtimeTurnState.assistantTurnId, "rt_77_tail");
+    assert.equal(messages[0].metadata.runtimeTurnState.continuitySeq, 77);
   });
 });

@@ -272,7 +272,8 @@ export async function enforcePreInferenceGates(userId, constructId, userMessage,
   }
 
   const isRoleplayConstruct = gptConfig?.roleplayEnabled || gptConfig?.roleplay_enabled;
-  if (isRoleplayConstruct) {
+  const intimateRequest = containsIntimateContent(userMessage);
+  if (isRoleplayConstruct && intimateRequest) {
     const stepUpNeeded = await isStepUpRequired(userId);
     if (stepUpNeeded) {
       return {
@@ -291,7 +292,7 @@ export async function enforcePreInferenceGates(userId, constructId, userMessage,
       };
     }
 
-    if (containsIntimateContent(userMessage) && accountType === 'child') {
+    if (intimateRequest && accountType === 'child') {
       return {
         blocked: true,
         reason: 'child_intimate_blocked',

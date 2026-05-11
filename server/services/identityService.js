@@ -4,8 +4,12 @@
  * Provides identity/memory management with ChromaDB for conversational continuity
  */
 
-import { resolveVVAULTUserId } from '../../vvaultConnector/writeTranscript.js';
 import { VVAULT_ROOT } from '../../vvaultConnector/config.js';
+
+async function resolveVVAULTUserId(chattyUserId, email, autoCreate = false) {
+  const { resolveVVAULTUserId: resolve } = await import('../../vvaultConnector/writeTranscript.js');
+  return resolve(chattyUserId, email, autoCreate);
+}
 import path from 'path';
 import fs from 'fs/promises';
 

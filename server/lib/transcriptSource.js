@@ -1,4 +1,5 @@
 const ROUTE_BUCKETS = new Set(['documents', 'assets', 'transcripts']);
+const REVIEW_ONLY_TRANSCRIPT_SOURCES = new Set(['', 'transcripts', 'other', 'unknown', 'documents', 'document', 'assets', 'asset']);
 
 const SOURCE_ALIASES = new Map([
   ['chat_gpt', 'chatgpt'],
@@ -36,7 +37,7 @@ export function isMonthSegment(value) {
 }
 
 export function normalizeTranscriptSource(rawSource, options = {}) {
-  const fallback = options.fallback ?? 'transcripts';
+  const fallback = options.fallback ?? '';
   const cleaned = cleanSegment(rawSource).replace(/\s+/g, '_');
   if (!cleaned) return fallback;
 
@@ -44,6 +45,20 @@ export function normalizeTranscriptSource(rawSource, options = {}) {
   if (aliasHit) return aliasHit;
 
   return cleaned;
+}
+
+export function isReviewOnlyTranscriptSource(rawSource) {
+  const normalized = normalizeTranscriptSource(rawSource, { fallback: '' });
+  return REVIEW_ONLY_TRANSCRIPT_SOURCES.has(normalized);
+}
+
+export function requireCanonicalTranscriptSource(rawSource, options = {}) {
+  const normalized = normalizeTranscriptSource(rawSource, { fallback: '' });
+  if (isReviewOnlyTranscriptSource(normalized)) {
+    const label = options.label || 'Transcript source';
+    throw new Error(`${label} must identify a real provider/source; received ${rawSource || 'missing'}`);
+  }
+  return normalized;
 }
 
 function splitPathSegments(filename) {
@@ -93,8 +108,12 @@ export function toCanonicalTranscriptFilename(existingFilename, constructCallsig
 
   const canonicalSource = normalizeTranscriptSource(
     sourceOverride || extractSourceFromTranscriptPath(existingFilename, constructCallsign),
-    { fallback: 'transcripts' }
+    { fallback: '' }
   );
+
+  if (isReviewOnlyTranscriptSource(canonicalSource)) {
+    return existingFilename;
+  }
 
   const remainder = [...tail];
 
@@ -117,6 +136,7 @@ export function canonicalSourceFolderList() {
     'chatgpt',
     'character.ai',
     'chatty',
+    'validation',
     'codex',
     'github_copilot',
     'gemini',
@@ -126,6 +146,5 @@ export function canonicalSourceFolderList() {
     'deepseek',
     'openrouter',
     'ollama',
-    'transcripts',
   ];
 }

@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { getZenPrompt } from '../lib/zenPromptLoader.js';
 
 const DB_PATH = './chatty_app.db';
 
@@ -51,7 +52,7 @@ class ChatService {
                 FOREIGN KEY (conversation_id) REFERENCES conversations (id)
             )
         `);
-        
+
         // Indexes
         this.db.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id);`);
         this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);`);
@@ -63,11 +64,12 @@ class ChatService {
     }
 
     async seedPersonas() {
+        const zenPrompt = getZenPrompt().prompt;
         const personas = [
             {
                 id: 'zen',
                 name: 'Zen',
-                system_prompt: 'You are Zen, a calm, mindful AI assistant. You provide clear, concise, and peaceful responses. You often use metaphors related to nature and tranquility.',
+                system_prompt: zenPrompt,
                 color_theme: 'blue',
                 icon: 'yin-yang'
             },
@@ -97,6 +99,11 @@ class ChatService {
                 stmt.run(p.id, p.name, p.system_prompt, p.color_theme, p.icon);
             }
         })();
+
+        // Keep Zen prompt current even if row already existed.
+        this.db
+          .prepare(`UPDATE personas SET system_prompt = @prompt WHERE id = 'zen'`)
+          .run({ prompt: zenPrompt });
         console.log('🌱 [ChatService] Personas seeded.');
     }
 

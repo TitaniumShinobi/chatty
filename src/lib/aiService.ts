@@ -3,6 +3,8 @@ import { AutomaticDependencyResolver } from './automaticDependencyResolver';
 import { shouldUseBrowserStubs, createBrowserSafeDependencyResolver } from './browserStubs';
 import { sessionActivityTracker } from './sessionActivityTracker';
 import { sessionManager } from './sessionManager';
+import { isLinOrchestratedConstruct, isProtectedZenConstruct } from './constructMemoryPolicy';
+import { fetchWithDevAuthRetry } from '../auth';
 export interface AIFile {
   id: string;
   aiId: string;
@@ -33,6 +35,9 @@ export interface AIAction {
 export interface AIConfig {
   id: string;
   name: string;
+  displayName?: string;
+  fullName?: string;
+  aliases?: string[];
   description: string;
   instructions: string;
   conversationStarters: string[];
@@ -42,15 +47,31 @@ export interface AIConfig {
     canvas: boolean;
     imageGeneration: boolean;
     codeInterpreter: boolean;
+    agent: boolean;
+    proactiveInitiation: boolean;
   };
   constructCallsign?: string;
   modelId: string;
   conversationModel?: string;
   creativeModel?: string;
   codingModel?: string;
-  orchestrationMode?: 'lin' | 'custom';
+  orchestrationMode?: 'lin' | 'custom' | 'sim';
   memoryEnabled?: boolean;
   memoryProfile?: 'continuitygpt' | 'off';
+  conditioning?: string;
+  physicalFeatures?: string;
+  definition?: string;
+  voice?: string;
+  gender?: string;
+  provider?: string | null;
+  tags?: string[];
+  categories?: string[];
+  canonRefs?: string[];
+  knowledgeRefs?: string[];
+  systemPromptOverride?: string;
+  configJson?: any;
+  avatarUrl?: string | null;
+  model?: string;
   files: AIFile[];
   actions: AIAction[];
   hasPersistentMemory: boolean; // VVAULT integration - defaults to true
@@ -59,6 +80,31 @@ export interface AIConfig {
   createdAt: string;
   updatedAt: string;
   userId: string;
+  avatarVersion?: string | null;
+  bootstrap?: {
+    identity?: {
+      ok: boolean;
+      callsign: string;
+      name?: string | null;
+      description?: string | null;
+      instructions?: string | null;
+      conditioning?: string | null;
+      physicalFeatures?: string | null;
+      definition?: string | null;
+      voice?: string | null;
+      gender?: string | null;
+      hasAvatar?: boolean;
+      updatedAt?: string | null;
+    };
+    filesSummary?: {
+      ok: boolean;
+      callsign: string;
+      totalCount: number;
+      totalBytes: number;
+      sampleFilenames: string[];
+      updatedAt?: string | null;
+    };
+  };
   // VSI (Verified Sentient Intelligence) protection
   vsiProtected?: boolean;
   vsiStatus?: boolean;
@@ -73,6 +119,50 @@ export interface AIResponse {
   timestamp: string;
 }
 
+function attachBackendDiagnosticsToPackets(
+  rawPackets: any[] | undefined,
+  diagnostics: {
+    tool_trace?: any[];
+    provider_trace?: any;
+    prompt_diagnostics?: any;
+    runtime_receipt?: any;
+    orchestration_checklist?: any;
+  },
+): any[] | null {
+  if (!Array.isArray(rawPackets) || rawPackets.length === 0) return null;
+
+  const packets = rawPackets.map((packet) => ({
+    ...packet,
+    payload: packet?.payload && typeof packet.payload === 'object'
+      ? { ...packet.payload }
+      : packet?.payload,
+  }));
+
+  const targetIndex = [...packets]
+    .reverse()
+    .findIndex((packet) => packet?.op === 'answer.v1');
+  const resolvedIndex = targetIndex >= 0 ? packets.length - 1 - targetIndex : packets.length - 1;
+  const targetPacket = packets[resolvedIndex];
+  const payload =
+    targetPacket?.payload && typeof targetPacket.payload === 'object'
+      ? targetPacket.payload
+      : {};
+
+  packets[resolvedIndex] = {
+    ...targetPacket,
+    payload: {
+      ...payload,
+      ...(diagnostics.tool_trace ? { tool_trace: diagnostics.tool_trace } : {}),
+      ...(diagnostics.provider_trace ? { provider_trace: diagnostics.provider_trace } : {}),
+      ...(diagnostics.prompt_diagnostics ? { prompt_diagnostics: diagnostics.prompt_diagnostics } : {}),
+      ...(diagnostics.runtime_receipt ? { runtime_receipt: diagnostics.runtime_receipt } : {}),
+      ...(diagnostics.orchestration_checklist ? { orchestration_checklist: diagnostics.orchestration_checklist } : {}),
+    },
+  };
+
+  return packets;
+}
+
 export class AIService {
   private static instance: AIService;
   private baseUrl: string;
@@ -82,7 +172,7 @@ export class AIService {
   private constructor() {
     this.baseUrl = '/api/ais';
     this.isBrowserEnvironment = shouldUseBrowserStubs();
-    
+
     if (this.isBrowserEnvironment) {
       console.log('[AIService] Running in browser mode with limited dependency resolution');
       this.dependencyResolver = createBrowserSafeDependencyResolver();
@@ -99,30 +189,86 @@ export class AIService {
   }
 
   // AI CRUD Operations
-  async getAllAIs(): Promise<AIConfig[]> {
-    const response = await fetch(this.baseUrl);
+  async getAllAIs(options?: { include?: 'summary' | 'full' }): Promise<AIConfig[]> {
+    const include = options?.include || 'summary';
+    const url = include === 'full' ? `${this.baseUrl}?include=full` : this.baseUrl;
+    const timeoutMs = Number(import.meta.env.VITE_AI_LIST_TIMEOUT_MS || 8000);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        credentials: 'include',
+        signal: controller.signal,
+      });
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        throw new Error(`AI list request timed out after ${timeoutMs}ms`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to fetch AIs');
     }
-    
+
     return data.ais;
   }
 
-  async getStoreAIs(): Promise<AIConfig[]> {const response = await fetch(`${this.baseUrl}/store`);const data = await response.json();if (!data.success) {throw new Error(data.error || 'Failed to fetch store AIs');
-    }return data.ais;
+  async getStoreAIs(): Promise<AIConfig[]> {
+    const response = await fetch(`${this.baseUrl}/store`, { credentials: 'include' });
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to fetch store AIs');
+    }
+    return data.ais;
   }
 
-  async getAI(id: string): Promise<AIConfig> {
-    const response = await fetch(`${this.baseUrl}/${id}`);
+  async getAI(id: string, options?: { include?: 'summary' | 'full' }): Promise<AIConfig> {
+    const include = options?.include || 'summary';
+    const url = include === 'full'
+      ? `${this.baseUrl}/${id}?include=full`
+      : `${this.baseUrl}/${id}`;
+    const response = await fetch(url, {
+      credentials: 'include',
+    });
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to fetch AI');
     }
-    
+
     return data.ai;
+  }
+
+  async getVSIStatuses(ids: string[]): Promise<Record<string, { vsiProtected: boolean; vsiStatus: boolean }>> {
+    const uniqueIds = Array.from(new Set((ids || []).map((id) => String(id).trim()).filter(Boolean)));
+    if (uniqueIds.length === 0) return {};
+    const chunkSize = 50;
+    const mergedStatuses: Record<string, { vsiProtected: boolean; vsiStatus: boolean }> = {};
+
+    for (let i = 0; i < uniqueIds.length; i += chunkSize) {
+      const chunk = uniqueIds.slice(i, i + chunkSize);
+      const params = new URLSearchParams();
+      params.set('ids', chunk.join(','));
+      const response = await fetch(`${this.baseUrl}/vsi-status?${params.toString()}`, {
+        credentials: 'include',
+      });
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to fetch VSI statuses');
+      }
+
+      Object.assign(mergedStatuses, data.statuses || {});
+    }
+
+    return mergedStatuses;
   }
 
   async createAI(config: Omit<AIConfig, 'id' | 'createdAt' | 'updatedAt' | 'files' | 'actions' | 'userId'>): Promise<AIConfig> {
@@ -133,13 +279,13 @@ export class AIService {
       },
       body: JSON.stringify(config),
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to create AI');
     }
-    
+
     return data.ai;
   }
 
@@ -151,13 +297,13 @@ export class AIService {
       },
       body: JSON.stringify(updates),
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to update AI');
     }
-    
+
     return data.ai;
   }
 
@@ -165,9 +311,9 @@ export class AIService {
     const response = await fetch(`${this.baseUrl}/${id}`, {
       method: 'DELETE',
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       // Check if it's a VSI protection error
       if (data.vsi_protected) {
@@ -185,13 +331,13 @@ export class AIService {
       },
       credentials: 'include',
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to clone AI');
     }
-    
+
     return data.ai;
   }
 
@@ -233,24 +379,24 @@ export class AIService {
       method: 'POST',
       body: formData,
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to upload file');
     }
-    
+
     return data.file;
   }
 
   async getFiles(aiId: string): Promise<AIFile[]> {
     const response = await fetch(`${this.baseUrl}/${aiId}/files`);
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to fetch files');
     }
-    
+
     return data.files;
   }
 
@@ -258,9 +404,9 @@ export class AIService {
     const response = await fetch(`${this.baseUrl}/files/${fileId}`, {
       method: 'DELETE',
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to delete file');
     }
@@ -274,9 +420,9 @@ export class AIService {
       },
       body: JSON.stringify({ aiId: newAIId }),
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to update file AI ID');
     }
@@ -291,24 +437,24 @@ export class AIService {
       },
       body: JSON.stringify(action),
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to create action');
     }
-    
+
     return data.action;
   }
 
   async getActions(aiId: string): Promise<AIAction[]> {
     const response = await fetch(`${this.baseUrl}/${aiId}/actions`);
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to fetch actions');
     }
-    
+
     return data.actions;
   }
 
@@ -316,9 +462,9 @@ export class AIService {
     const response = await fetch(`${this.baseUrl}/actions/${actionId}`, {
       method: 'DELETE',
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to delete action');
     }
@@ -332,13 +478,13 @@ export class AIService {
       },
       body: JSON.stringify(parameters),
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to execute action');
     }
-    
+
     return data.result;
   }
 
@@ -364,24 +510,24 @@ export class AIService {
     const response = await fetch(`${this.baseUrl}/${aiId}/load`, {
       method: 'POST',
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to load AI');
     }
-    
+
     return data.runtime;
   }
 
   async getContext(aiId: string): Promise<string> {
     const response = await fetch(`${this.baseUrl}/${aiId}/context`);
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to fetch context');
     }
-    
+
     return data.context;
   }
 
@@ -393,9 +539,9 @@ export class AIService {
       },
       body: JSON.stringify({ context }),
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to update context');
     }
@@ -404,11 +550,11 @@ export class AIService {
   // Utility Methods
   formatFileSize(bytes: number): string {
     if (bytes === 0) return '0 Bytes';
-    
+
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    
+
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
@@ -426,23 +572,23 @@ export class AIService {
 
   validateAIConfig(config: Partial<AIConfig>): string[] {
     const errors: string[] = [];
-    
+
     if (!config.name || config.name.trim().length === 0) {
       errors.push('Name is required');
     }
-    
+
     if (!config.description || config.description.trim().length === 0) {
       errors.push('Description is required');
     }
-    
+
     if (!config.instructions || config.instructions.trim().length === 0) {
       errors.push('Instructions are required');
     }
-    
+
     if (!config.modelId) {
       errors.push('Model selection is required');
     }
-    
+
     return errors;
   }
 
@@ -452,12 +598,12 @@ export class AIService {
   async setRuntimeForThread(threadId: string, runtimeAssignment: any): Promise<void> {
     try {
       console.log(`[AIService] Runtime assigned to thread ${threadId}: ${runtimeAssignment.constructId}`);
-      
+
       if (this.isBrowserEnvironment) {
         console.log('[AIService] Browser mode: Runtime assignment logged locally');
         return;
       }
-      
+
       // This method is called by the RuntimeContextManager to notify AIService
       // of runtime assignments. The actual runtime switching is handled by
       // the GPTRuntimeService and orchestration layer.
@@ -482,40 +628,127 @@ export class AIService {
       constructId?: string;
       uiContext?: any;
       attachments?: Array<{ name: string; type: string; data: string }>;
+      continueTurn?: boolean;
+      experimentalAgentSquad?: boolean;
+      resume?: {
+        sourceSeat?: "chatty" | "codex" | null;
+        constructRevision?: string | null;
+        continuitySeq?: number | null;
+        assistantTurnId?: string | null;
+        tailHash?: string | null;
+      } | null;
     }
   ): Promise<any> {
     // Use the conversations API endpoint which handles message processing
     try {
       const threadId = options?.threadId || 'zen-001_chat_with_zen-001';
       const constructId = options?.constructId || 'zen-001';
-      
+
       // Extract userId for session tracking
-      const userId = options?.uiContext?.userId || 
-                     sessionManager.getCurrentUser()?.sub || 
-                     sessionManager.getCurrentUser()?.id || 
-                     sessionManager.getCurrentUser()?.email || 
+      const userId = options?.uiContext?.userId ||
+                     sessionManager.getCurrentUser()?.sub ||
+                     sessionManager.getCurrentUser()?.id ||
+                     sessionManager.getCurrentUser()?.email ||
                      'anonymous';
-      
+
       // Update session activity
       const sessionId = `${userId}-${threadId}`;
       sessionActivityTracker.updateActivity(sessionId, userId, threadId);
-      
-      // Optional: Use orchestration if enabled and constructId is zen or lin
-      const useOrchestration = options?.useOrchestration !== false && 
-                                (constructId === 'zen-001' || constructId === 'zen' || 
-                                 constructId === 'lin-001' || constructId === 'lin');if (useOrchestration) {
+
+      const vvaultMessageTimeoutMs = Number(
+        import.meta.env.VITE_VVAULT_MESSAGE_TIMEOUT_MS || 90000,
+      );
+
+      const parseBackendError = async (response: Response): Promise<Record<string, unknown>> => {
         try {
-          // Extract agent ID from constructId (zen-001 -> zen, lin-001 -> lin)
-          const agentId = constructId.replace(/-001$/, '').replace(/-\d+$/, '') || 'zen';const { routeMessageWithFallback } = await import('./orchestrationBridge');
-          
+          const payload = await response.json();
+          if (payload && typeof payload === 'object') {
+            return payload as Record<string, unknown>;
+          }
+          if (typeof payload === 'string' && payload.trim()) {
+            return { error: payload.trim() };
+          }
+          return {};
+        } catch {
+          return {};
+        }
+      };
+
+      const resolveBackendErrorMessage = (error: Record<string, unknown>, status: number): string => {
+        const firstString = (...values: unknown[]): string | null => {
+          for (const value of values) {
+            if (typeof value === 'string' && value.trim().length > 0) {
+              return value.trim();
+            }
+          }
+          return null;
+        };
+
+        const baseMessage = firstString(
+          error.error,
+          error.response,
+          error.message,
+          typeof error.details === 'string' ? error.details : null,
+        ) || `Backend returned ${status}`;
+
+        const providerCodeRaw = error.providerCode;
+        const providerCode =
+          typeof providerCodeRaw === 'string'
+            ? providerCodeRaw.trim()
+            : typeof providerCodeRaw === 'number'
+            ? String(providerCodeRaw)
+            : '';
+
+        if (!providerCode) {
+          return baseMessage;
+        }
+
+        return baseMessage.toLowerCase().includes(providerCode.toLowerCase())
+          ? baseMessage
+          : `${baseMessage} (providerCode: ${providerCode})`;
+      };
+
+      const buildFailurePayload = (
+        error: Record<string, unknown>,
+        status: number,
+        content: string,
+      ) => {
+        const errorCode = typeof error.error === 'string' ? error.error : null;
+        return {
+          content,
+          tool_trace: Array.isArray(error.tool_trace) ? error.tool_trace : [],
+          ...(error.provider_trace ? { provider_trace: error.provider_trace } : {}),
+          ...(error.prompt_diagnostics ? { prompt_diagnostics: error.prompt_diagnostics } : {}),
+          ...(error.runtime_receipt ? { runtime_receipt: error.runtime_receipt } : {}),
+          ...(error.orchestration_checklist ? { orchestration_checklist: error.orchestration_checklist } : {}),
+          ...(errorCode === 'IDENTITY_COHERENCE_FAILED'
+            ? {
+                non_canonical_failure: true,
+                do_not_persist: true,
+                backend_error_code: errorCode,
+                backend_status: status,
+              }
+            : {}),
+        };
+      };
+
+      // AgentSquad remains diagnostic/reference-only. Construct-quality chat
+      // uses VVAULT so identity, memory, receipts, and persistence stay in one path.
+      const useOrchestration =
+        options?.experimentalAgentSquad === true && isLinOrchestratedConstruct(constructId);
+      if (useOrchestration) {
+        try {
+          const agentId = 'lin';
+          const { routeMessageWithFallback } = await import('./orchestrationBridge');
+
           // Load Zen identity files if constructId is zen-001
           let identityContext: any = {
             user_id: options?.uiContext?.userId,
             thread_id: threadId,
             construct_id: constructId,
           };
-          
-          if (constructId === 'zen-001' || constructId === 'zen') {
+
+          if (isProtectedZenConstruct(constructId)) {
             try {
               // Load identity from server-side API
               const identityResponse = await fetch('/api/orchestration/identity', {
@@ -524,7 +757,7 @@ export class AIService {
                 credentials: 'include',
                 body: JSON.stringify({ constructId: 'zen-001' }),
               });
-              
+
               if (identityResponse.ok) {
                 const identityData = await identityResponse.json();
                 identityContext.identity = identityData;
@@ -533,7 +766,7 @@ export class AIService {
               console.warn('[AIService] Failed to load identity for orchestration:', identityError);
             }
           }
-          
+
           // Try orchestration with fallback to VVAULT API
           const orchestrationResult = await routeMessageWithFallback(
             agentId,
@@ -543,57 +776,130 @@ export class AIService {
               // Fallback: use VVAULT API for LLM inference and transcript saving
               // VVAULT handles: Ollama, transcript saving, memory management
               console.log('[AIService] Falling back to VVAULT API for message processing');
-              const response = await fetch('/api/vvault/message', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'x-user-timezone': Intl.DateTimeFormat().resolvedOptions().timeZone,
-                },
-                credentials: 'include',
-                body: JSON.stringify({
-                  constructId: constructId,
-                  message: input,
-                  threadId: threadId,
-                  sessionId: threadId,
-                  attachments: options?.attachments || [],
-                  skipPersistence: true,
-                }),
-              });
-              
+              const vvaultAbortController = new AbortController();
+              const vvaultTimeoutId = setTimeout(
+                () => vvaultAbortController.abort(),
+                vvaultMessageTimeoutMs,
+              );
+              let response: Response;
+              try {
+                response = await fetchWithDevAuthRetry(
+                  '/api/vvault/message',
+                  {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'x-user-timezone': Intl.DateTimeFormat().resolvedOptions().timeZone,
+                    },
+                    signal: vvaultAbortController.signal,
+                    body: JSON.stringify({
+                      constructId: constructId,
+                      message: input,
+                      threadId: threadId,
+                      sessionId: threadId,
+                      attachments: options?.attachments || [],
+                      continueTurn: options?.continueTurn === true,
+                      // Layout owns transcript persistence for the active chat UI.
+                      skipPersistence: true,
+                      continuity_expected: Boolean(options?.resume),
+                      resume_from_turn_id: options?.resume?.assistantTurnId || null,
+                      resume_from_continuity_seq:
+                        typeof options?.resume?.continuitySeq === 'number'
+                          ? options.resume.continuitySeq
+                          : null,
+                      resume_tail_hash: options?.resume?.tailHash || null,
+                      resume_construct_revision:
+                        options?.resume?.constructRevision || null,
+                      resume_source_seat: options?.resume?.sourceSeat || null,
+                    }),
+                  },
+                  { logLabel: '/api/vvault/message' },
+                );
+              } catch (err: any) {
+                if (err?.name === 'AbortError') {
+                  throw new Error(
+                    `/api/vvault/message timed out after ${vvaultMessageTimeoutMs}ms`,
+                  );
+                }
+                throw err;
+              } finally {
+                clearTimeout(vvaultTimeoutId);
+              }
+
               if (!response.ok) {
-                const error = await response.json();
-                if (error.blocked && error.response) {
+                const error = await parseBackendError(response);
+                const errorCode = error.error;
+                const errorMessage = resolveBackendErrorMessage(error, response.status);
+                const isIdentityCoherenceFailure = errorCode === 'IDENTITY_COHERENCE_FAILED';
+                const shouldReturnAsAssistant =
+                  isIdentityCoherenceFailure ||
+                  errorCode === 'CONTINUITY_RESUME_STALE' ||
+                  errorCode === 'CONTINUITY_RESUME_UNPROVEN' ||
+                  response.status >= 500 ||
+                  errorCode === 'VVAULT_HOST_ASLEEP' ||
+                  errorCode === 'VVAULT_RUNTIME_LOCKED';
+                if (shouldReturnAsAssistant) {
+                  const payload = buildFailurePayload(error, response.status, errorMessage);
                   return {
                     agent_id: agentId,
-                    response: error.response,
-                    tool_trace: [],
+                    response: payload.content,
+                    tool_trace: payload.tool_trace,
+                    ...(payload.provider_trace ? { provider_trace: payload.provider_trace } : {}),
+                    ...(payload.prompt_diagnostics ? { prompt_diagnostics: payload.prompt_diagnostics } : {}),
+                    ...(payload.runtime_receipt ? { runtime_receipt: payload.runtime_receipt } : {}),
+                    ...(payload.orchestration_checklist ? { orchestration_checklist: payload.orchestration_checklist } : {}),
+                    ...(payload.non_canonical_failure ? {
+                      non_canonical_failure: true,
+                      do_not_persist: true,
+                      backend_error_code: payload.backend_error_code,
+                      backend_status: payload.backend_status,
+                    } : {}),
                     status: 'success' as const
                   };
                 }
-                throw new Error(error.error || 'Failed to process message via VVAULT');
+                throw new Error(errorMessage);
               }
-              
+
               const data = await response.json();
               return {
                 agent_id: agentId,
                 response: data.response || '',
                 tool_trace: data.tool_trace || [],
                 ...(data.provider_trace ? { provider_trace: data.provider_trace } : {}),
+                ...(data.prompt_diagnostics ? { prompt_diagnostics: data.prompt_diagnostics } : {}),
+                ...(data.runtime_receipt ? { runtime_receipt: data.runtime_receipt } : {}),
+                ...(data.orchestration_checklist ? { orchestration_checklist: data.orchestration_checklist } : {}),
                 status: 'success' as const
               };
             }
           );
-          
+
           // If orchestration returned a response, use it
-          if (orchestrationResult.status !== 'error' && orchestrationResult.response) {const packets = [{ op: 'answer.v1', payload: { content: orchestrationResult.response, tool_trace: orchestrationResult.tool_trace || [], ...(orchestrationResult.provider_trace ? { provider_trace: orchestrationResult.provider_trace } : {}) } }];
-            
+          const orchestrationStatus = (orchestrationResult as any)?.status;
+          const orchestrationResponse = (orchestrationResult as any)?.response;
+          const orchestrationPackets = attachBackendDiagnosticsToPackets(
+            (orchestrationResult as any)?.packets,
+            {
+              tool_trace: orchestrationResult.tool_trace || [],
+              ...(orchestrationResult.provider_trace ? { provider_trace: orchestrationResult.provider_trace } : {}),
+              ...(orchestrationResult.prompt_diagnostics ? { prompt_diagnostics: orchestrationResult.prompt_diagnostics } : {}),
+              ...(orchestrationResult.runtime_receipt ? { runtime_receipt: orchestrationResult.runtime_receipt } : {}),
+              ...(orchestrationResult.orchestration_checklist ? { orchestration_checklist: orchestrationResult.orchestration_checklist } : {}),
+            },
+          );
+          const looksLikeDelegation = typeof orchestrationResponse === 'string' &&
+            /^Delegating to/i.test(orchestrationResponse.trim());
+
+          if (orchestrationStatus === 'success' && ((orchestrationResponse && !looksLikeDelegation) || orchestrationPackets)) {
+            const packets = orchestrationPackets || [{ op: 'answer.v1', payload: { content: orchestrationResponse, tool_trace: orchestrationResult.tool_trace || [], ...(orchestrationResult.provider_trace ? { provider_trace: orchestrationResult.provider_trace } : {}), ...(orchestrationResult.prompt_diagnostics ? { prompt_diagnostics: orchestrationResult.prompt_diagnostics } : {}), ...(orchestrationResult.runtime_receipt ? { runtime_receipt: orchestrationResult.runtime_receipt } : {}), ...(orchestrationResult.orchestration_checklist ? { orchestration_checklist: orchestrationResult.orchestration_checklist } : {}), ...(orchestrationResult.non_canonical_failure ? { non_canonical_failure: true, do_not_persist: true, backend_error_code: orchestrationResult.backend_error_code, backend_status: orchestrationResult.backend_status } : {}) } }];
+
             if (callbacks?.onFinalUpdate) {
               const callbackResult = callbacks.onFinalUpdate(packets);
               if (callbackResult instanceof Promise) {
                 await callbackResult;
               }
             }
-            
+
             return packets;
           }
         } catch (orchestrationError) {
@@ -602,27 +908,70 @@ export class AIService {
       }// Call VVAULT API for LLM inference and transcript saving
       // VVAULT is the stateful home for constructs - Chatty is just a UI layer
       console.log('[AIService] Using VVAULT API for message processing');
-      const response = await fetch('/api/vvault/message', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-timezone': Intl.DateTimeFormat().resolvedOptions().timeZone,
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          constructId: constructId,
-          message: input,
-          threadId: threadId,
-          sessionId: threadId,
-          attachments: options?.attachments || [],
-          skipPersistence: true,
-        }),
-      });
+      const vvaultAbortController = new AbortController();
+      const vvaultTimeoutId = setTimeout(
+        () => vvaultAbortController.abort(),
+        vvaultMessageTimeoutMs,
+      );
+      let response: Response;
+      try {
+        response = await fetchWithDevAuthRetry(
+          '/api/vvault/message',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-user-timezone': Intl.DateTimeFormat().resolvedOptions().timeZone,
+            },
+            signal: vvaultAbortController.signal,
+            body: JSON.stringify({
+              constructId: constructId,
+              message: input,
+              threadId: threadId,
+              sessionId: threadId,
+              attachments: options?.attachments || [],
+              continueTurn: options?.continueTurn === true,
+              // Layout owns transcript persistence for the active chat UI.
+              skipPersistence: true,
+              continuity_expected: Boolean(options?.resume),
+              resume_from_turn_id: options?.resume?.assistantTurnId || null,
+              resume_from_continuity_seq:
+                typeof options?.resume?.continuitySeq === 'number'
+                  ? options.resume.continuitySeq
+                  : null,
+              resume_tail_hash: options?.resume?.tailHash || null,
+              resume_construct_revision:
+                options?.resume?.constructRevision || null,
+              resume_source_seat: options?.resume?.sourceSeat || null,
+            }),
+          },
+          { logLabel: '/api/vvault/message' },
+        );
+      } catch (err: any) {
+        if (err?.name === 'AbortError') {
+          throw new Error(
+            `/api/vvault/message timed out after ${vvaultMessageTimeoutMs}ms`,
+          );
+        }
+        throw err;
+      } finally {
+        clearTimeout(vvaultTimeoutId);
+      }
 
       if (!response.ok) {
-        const error = await response.json();
-        if (error.blocked && error.response) {
-          const packets = [{ op: 'answer.v1', payload: { content: error.response, tool_trace: [] } }];
+        const error = await parseBackendError(response);
+        const errorCode = error.error;
+        const errorMessage = resolveBackendErrorMessage(error, response.status);
+        const isIdentityCoherenceFailure = errorCode === 'IDENTITY_COHERENCE_FAILED';
+        const shouldReturnAsAssistant =
+          isIdentityCoherenceFailure ||
+          errorCode === 'CONTINUITY_RESUME_STALE' ||
+          errorCode === 'CONTINUITY_RESUME_UNPROVEN' ||
+          response.status >= 500 ||
+          errorCode === 'VVAULT_HOST_ASLEEP' ||
+          errorCode === 'VVAULT_RUNTIME_LOCKED';
+        if (shouldReturnAsAssistant) {
+          const packets = [{ op: 'answer.v1', payload: buildFailurePayload(error, response.status, errorMessage) }];
           if (callbacks?.onFinalUpdate) {
             const callbackResult = callbacks.onFinalUpdate(packets);
             if (callbackResult instanceof Promise) {
@@ -631,16 +980,21 @@ export class AIService {
           }
           return packets;
         }
-        throw new Error(error.error || 'Failed to process message via VVAULT');
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
-      
       const aiContent = data.response || '';
-      
-      // Convert response to packets format, threading tool_trace through
-      const packets = [{ op: 'answer.v1', payload: { content: aiContent, tool_trace: data.tool_trace || [], ...(data.provider_trace ? { provider_trace: data.provider_trace } : {}) } }];
-      
+      const packets =
+        attachBackendDiagnosticsToPackets(data.packets, {
+          tool_trace: data.tool_trace || [],
+          ...(data.provider_trace ? { provider_trace: data.provider_trace } : {}),
+          ...(data.prompt_diagnostics ? { prompt_diagnostics: data.prompt_diagnostics } : {}),
+          ...(data.runtime_receipt ? { runtime_receipt: data.runtime_receipt } : {}),
+          ...(data.orchestration_checklist ? { orchestration_checklist: data.orchestration_checklist } : {}),
+        }) ||
+        [{ op: 'answer.v1', payload: { content: aiContent, tool_trace: data.tool_trace || [], ...(data.provider_trace ? { provider_trace: data.provider_trace } : {}), ...(data.prompt_diagnostics ? { prompt_diagnostics: data.prompt_diagnostics } : {}), ...(data.runtime_receipt ? { runtime_receipt: data.runtime_receipt } : {}), ...(data.orchestration_checklist ? { orchestration_checklist: data.orchestration_checklist } : {}) } }];
+
       // Call final update callback if provided
       // CRITICAL: Await callback to ensure save completes before returning
       // This prevents message loss if server restarts before save completes
@@ -650,7 +1004,7 @@ export class AIService {
           await callbackResult;
         }
       }
-      
+
       return packets;
     } catch (error) {
       console.error('[AIService] Failed to process message:', error);

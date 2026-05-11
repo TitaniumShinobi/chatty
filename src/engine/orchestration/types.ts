@@ -53,3 +53,5 @@ export interface ZenMemoryContext {
   characterContext?: CharacterContext;
   characterMemories?: CharacterMemoryEntry[];
 }
+
+export type SynthMemoryContext = ZenMemoryContext;

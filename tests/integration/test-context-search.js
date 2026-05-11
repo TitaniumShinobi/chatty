@@ -11,6 +11,8 @@ import { getGPTRuntimeBridge } from './server/lib/gptRuntimeBridge.js';
 
 console.log('🔍 Testing Improved Context Search...\n');
 
+const TEST_USER_ID = process.env.CHATTY_TEST_USER_ID || process.env.VVAULT_USER_ID || 'devon_woodson_1774390416168';
+
 async function testContextSearch() {
   const bridge = getGPTRuntimeBridge();
   
@@ -35,7 +37,7 @@ async function testContextSearch() {
       const response = await bridge.processMessage(
         'katana-001',
         question,
-        'devon_woodson_1762969514958',
+        TEST_USER_ID,
         `context_test_${Date.now()}`
       );
       console.timeEnd('⏱️  Response time');

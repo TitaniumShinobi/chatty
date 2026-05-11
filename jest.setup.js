@@ -1,19 +1,50 @@
 // Minimal browser-like globals for Node/Jest environment
-if (typeof globalThis.localStorage === 'undefined') {
+const currentLocalStorage = globalThis.localStorage;
+const needsLocalStorageShim = !currentLocalStorage
+  || typeof currentLocalStorage.getItem !== 'function'
+  || typeof currentLocalStorage.setItem !== 'function'
+  || typeof currentLocalStorage.removeItem !== 'function'
+  || typeof currentLocalStorage.clear !== 'function'
+  || typeof currentLocalStorage.key !== 'function'
+  || typeof currentLocalStorage.length !== 'number';
+
+if (needsLocalStorageShim) {
   const store = new Map();
-  globalThis.localStorage = {
+  const storageShim = {
     getItem: (key) => (store.has(key) ? store.get(key) : null),
     setItem: (key, value) => {
-      store.set(key, String(value));
+      store.set(String(key), String(value));
     },
     removeItem: (key) => {
-      store.delete(key);
+      store.delete(String(key));
     },
     clear: () => {
       store.clear();
+    },
+    key: (index) => Array.from(store.keys())[index] ?? null,
+    get length() {
+      return store.size;
     }
   };
+
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: storageShim,
+    configurable: true,
+    writable: true
+  });
 }
+
+beforeEach(() => {
+  try {
+    globalThis.localStorage?.setItem('chatty_settings_v2', JSON.stringify({
+      personalization: {
+        allowMemory: true,
+      },
+    }));
+  } catch (error) {
+    console.warn('[jest.setup] Failed to seed memory-enabled test settings:', error);
+  }
+});
 
 // Provide a minimal crypto.getRandomValues for code paths that expect it
 if (typeof globalThis.crypto === 'undefined') {
@@ -129,4 +160,12 @@ if (typeof globalThis.File === 'undefined') {
     }
   }
   globalThis.File = MockFile;
+}
+
+// Extend Jest with DOM matchers
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+try {
+  require('@testing-library/jest-dom');
+} catch {
+  // Some targeted Node-only suites do not install DOM matchers.
 }

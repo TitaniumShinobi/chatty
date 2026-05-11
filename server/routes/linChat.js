@@ -19,6 +19,7 @@ import { getSupabaseClient } from '../lib/supabaseClient.js';
 import { GPTManager } from '../lib/gptManager.js';
 import { loadIdentityFiles } from '../lib/identityLoader.js';
 import { extractAndStoreAnchors } from '../lib/verifiedMemoryLoader.js';
+import { LIN_MODEL_DEFAULTS } from '../lib/linModelDefaults.js';
 
 const router = express.Router();
 const gptManager = GPTManager.getInstance();
@@ -40,12 +41,12 @@ const openaiDirect = DIRECT_OPENAI_KEY ? new OpenAI({
   apiKey: DIRECT_OPENAI_KEY,
 }) : null;
 
-const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
+const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free';
 
 const DEFAULT_SEAT_MODELS = {
-  creative: `openrouter:google/gemma-3-27b-it:free`,
-  coding: `openrouter:deepseek/deepseek-chat`, 
-  smalltalk: `openrouter:${DEFAULT_OPENROUTER_MODEL}`
+  creative: LIN_MODEL_DEFAULTS.creative,
+  coding: LIN_MODEL_DEFAULTS.coding,
+  smalltalk: LIN_MODEL_DEFAULTS.smalltalk,
 };
 
 /**
@@ -55,7 +56,7 @@ const DEFAULT_SEAT_MODELS = {
  */
 function parseModelString(modelString) {
   if (!modelString) {
-    return { provider: 'openrouter', model: 'mistralai/mistral-7b-instruct' };
+    return parseModelString(DEFAULT_SEAT_MODELS.smalltalk);
   }
   
   if (modelString.startsWith('openrouter:')) {
@@ -404,7 +405,7 @@ router.post('/generate', async (req, res) => {
     // Load GPT identity (instructions) if constructId provided
     let identityPrompt = '';
     if (constructId) {
-      // First try to load from GPT database (custom GPTs like Katana)
+      // First try to load from GPT database (custom GPTs)
       const gpt = await gptManager.getGPTByCallsign(constructId);
       if (gpt && gpt.instructions) {
         identityPrompt = `# Identity: ${gpt.name}\n\nYou are ${gpt.name}. ${gpt.description || ''}\n\n${gpt.instructions}`;
@@ -454,17 +455,28 @@ router.post('/generate', async (req, res) => {
     const linUserName = req.user?.name || req.user?.given_name || 'the user';
     const userIdentityBlock = `## User Identity\nThe user you are speaking with is named "${linUserName}". Address them by name when appropriate. Remember their name throughout the conversation.${req.user?.email ? `\nTheir email is ${req.user.email}.` : ''}`;
     enhancedSystemPrompt = enhancedSystemPrompt ? `${enhancedSystemPrompt}\n\n${userIdentityBlock}` : userIdentityBlock;
-    const isShortMessage = prompt.length < 100 && !/\b(search|find|look up|what is|who is|how to)\b/i.test(prompt);
+    let searchIntentReason = 'skipped_short_message';
+    let searchInjected = false;
+    const isShortMessage = prompt.length < 100 && !/\b(search|find|look up|what is|who is|how to|\/search)\b/i.test(prompt);
     if (!isShortMessage) {
       try {
         const { injectSearchContext } = await import('./search.js');
         if (injectSearchContext) {
-          const { enhancedPrompt } = await injectSearchContext(prompt, enhancedSystemPrompt);
+          const {
+            enhancedPrompt,
+            intent_reason: searchIntentReasonResolved,
+            search_injected: searchInjectedResolved,
+          } = await injectSearchContext(prompt, enhancedSystemPrompt, { explicitOnly: true });
           enhancedSystemPrompt = enhancedPrompt;
+          searchIntentReason = searchIntentReasonResolved || 'unknown';
+          searchInjected = searchInjectedResolved === true;
         }
       } catch (searchErr) {
         console.warn('⚠️ [LinChat] Search injection skipped:', searchErr.message);
+        searchIntentReason = 'search_injection_error';
       }
+    } else {
+      searchIntentReason = 'explicit_only_no_trigger';
     }
     if (memoryContext) {
       enhancedSystemPrompt = enhancedSystemPrompt ? `${enhancedSystemPrompt}\n\n${memoryContext}` : memoryContext;
@@ -476,6 +488,12 @@ router.post('/generate', async (req, res) => {
       messages.push({ role: 'system', content: enhancedSystemPrompt });
     }
     messages.push({ role: 'user', content: prompt });
+    console.log('[LinChat TURN_CONTEXT]', {
+      constructId: constructId || 'lin-001',
+      search_intent: searchIntentReason,
+      search_injected: searchInjected,
+      provider_requested: provider,
+    });
 
     let response;
     
@@ -616,24 +634,28 @@ router.get('/models', async (req, res) => {
   try {
     const models = {
       openrouter: [
-        'openrouter:meta-llama/llama-3.3-70b-instruct',
+        'openrouter:meta-llama/llama-3.3-70b-instruct:free',
         'openrouter:meta-llama/llama-3.1-8b-instruct',
         'openrouter:meta-llama/llama-3.1-70b-instruct',
         'openrouter:mistralai/mistral-7b-instruct',
-        'openrouter:deepseek/deepseek-coder-33b-instruct',
+        'openrouter:qwen/qwen-2.5-72b-instruct',
       ],
       ollama: process.env.OLLAMA_HOST ? [
+        LIN_MODEL_DEFAULTS.smalltalk,
+        LIN_MODEL_DEFAULTS.creative,
+        LIN_MODEL_DEFAULTS.coding,
+        LIN_MODEL_DEFAULTS.codingFallback,
         'ollama:phi3:latest',
+        'ollama:mistral:latest',
         'ollama:mistral:7b',
         'ollama:llama3:8b',
-        'ollama:deepseek-coder:6.7b',
       ] : []
     };
     
     res.json({
       models,
       defaultSeats: DEFAULT_SEAT_MODELS,
-      note: 'Ollama models require OLLAMA_HOST to be configured. See docs/MODEL_PROVIDERS.md'
+      note: '/api/lin/generate is a helper route. Construct-quality conversation uses /api/vvault/message; Ollama models require OLLAMA_HOST to be configured.'
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

@@ -5,22 +5,309 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import { ServerFileParser } from './serverFileParser.js';
+import { getVvaultBridgeConfig } from './vvaultBridgeConfig.js';
+import {
+  applyForgedSimLockToRecord,
+  pickPreferredRuntimeConfigRecord,
+  readForgedSimLock,
+} from './forgedSimLock.js';
+import { listSystemConstructCatalog } from '../../src/lib/systemConstructCatalog.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const MODEL_PLACEHOLDER_TOKENS = new Set(['', 'openrouter/auto', 'openrouter:auto']);
+const RUNTIME_MODEL_FIELDS = ['model_id', 'conversation_model', 'creative_model', 'coding_model'];
+const DEFAULT_CAPABILITIES = Object.freeze({
+  webSearch: false,
+  canvas: false,
+  imageGeneration: false,
+  codeInterpreter: false,
+  agent: false,
+  proactiveInitiation: false,
+});
+
+function isEmptyText(value) {
+  return value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function parseJsonField(raw, fallback) {
+  if (raw === null || raw === undefined || raw === '') return fallback;
+  if (typeof raw === 'object') return raw;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeStringArray(value) {
+  const array = Array.isArray(value) ? value : value == null ? [] : [value];
+  return array
+    .filter((item) => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeCapabilities(candidate) {
+  const normalized = { ...DEFAULT_CAPABILITIES };
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    return normalized;
+  }
+
+  for (const key of Object.keys(DEFAULT_CAPABILITIES)) {
+    normalized[key] = Boolean(candidate[key]);
+  }
+
+  return normalized;
+}
+
+function buildStoredConfigJson(input = {}) {
+  const base = isPlainObject(input.configJson) ? { ...input.configJson } : {};
+  return {
+    ...base,
+    bodyVersion: Number.isFinite(base.bodyVersion) ? base.bodyVersion : 1,
+    displayName:
+      typeof input.displayName === 'string' && input.displayName.trim()
+        ? input.displayName.trim()
+        : typeof base.displayName === 'string'
+          ? base.displayName
+          : typeof input.name === 'string'
+            ? input.name
+            : '',
+    fullName:
+      typeof input.fullName === 'string' && input.fullName.trim()
+        ? input.fullName.trim()
+        : typeof base.fullName === 'string'
+          ? base.fullName
+          : typeof input.displayName === 'string' && input.displayName.trim()
+            ? input.displayName.trim()
+            : typeof input.name === 'string'
+              ? input.name
+              : '',
+    aliases: normalizeStringArray(input.aliases !== undefined ? input.aliases : base.aliases),
+    conditioning:
+      typeof input.conditioning === 'string'
+        ? input.conditioning
+        : typeof base.conditioning === 'string'
+          ? base.conditioning
+          : '',
+    canonRefs: normalizeStringArray(input.canonRefs !== undefined ? input.canonRefs : base.canonRefs),
+    knowledgeRefs: normalizeStringArray(
+      input.knowledgeRefs !== undefined ? input.knowledgeRefs : base.knowledgeRefs,
+    ),
+    provider:
+      typeof input.provider === 'string'
+        ? input.provider
+        : typeof base.provider === 'string'
+          ? base.provider
+          : '',
+    tags: normalizeStringArray(input.tags !== undefined ? input.tags : base.tags),
+    categories: normalizeStringArray(input.categories !== undefined ? input.categories : base.categories),
+    summaryCapabilities: normalizeStringArray(
+      input.summaryCapabilities !== undefined ? input.summaryCapabilities : base.summaryCapabilities,
+    ),
+    capabilities: normalizeCapabilities(
+      input.capabilities !== undefined ? input.capabilities : base.capabilities,
+    ),
+    hasPersistentMemory:
+      input.hasPersistentMemory !== undefined
+        ? Boolean(input.hasPersistentMemory)
+        : base.hasPersistentMemory !== false,
+  };
+}
+
+function readStoredRowSimLock(row) {
+  if (!row) return null;
+  return readForgedSimLock({
+    construct_call_sign: row.construct_callsign,
+    model_id: row.model_id,
+    conversation_model: row.conversation_model,
+    creative_model: row.creative_model,
+    coding_model: row.coding_model,
+    config_json: parseJsonField(row.config_json, null),
+  });
+}
+
+function applyExistingSimLockToStoredDraft(row, draft = {}) {
+  const existingLock = readStoredRowSimLock(row);
+  if (!existingLock) return draft;
+  const forced = applyForgedSimLockToRecord(
+    {
+      constructCallsign: row?.construct_callsign,
+      provider: draft.provider ?? row?.provider ?? null,
+      modelId: draft.modelId ?? row?.model_id ?? existingLock.lockedModel,
+      conversationModel: draft.conversationModel ?? row?.conversation_model ?? existingLock.lockedModel,
+      creativeModel: draft.creativeModel ?? row?.creative_model ?? existingLock.lockedModel,
+      codingModel: draft.codingModel ?? row?.coding_model ?? existingLock.lockedModel,
+      orchestrationMode: draft.orchestrationMode ?? row?.orchestration_mode ?? 'sim',
+      configJson: draft.configJson ?? parseJsonField(row?.config_json, null),
+    },
+    {
+      force: true,
+      lockedModel: existingLock.lockedModel,
+      modelName: existingLock.modelName,
+      source: existingLock.source,
+      forgedFromMode: existingLock.forgedFromMode,
+      modeLabel: existingLock.modeLabel,
+      forgedAt: existingLock.forgedAt,
+      kind: existingLock.kind,
+    },
+  );
+
+  return {
+    provider: forced.provider ?? draft.provider ?? row?.provider ?? null,
+    modelId: forced.modelId ?? draft.modelId ?? row?.model_id ?? null,
+    conversationModel: forced.conversationModel ?? draft.conversationModel ?? row?.conversation_model ?? null,
+    creativeModel: forced.creativeModel ?? draft.creativeModel ?? row?.creative_model ?? null,
+    codingModel: forced.codingModel ?? draft.codingModel ?? row?.coding_model ?? null,
+    orchestrationMode: forced.orchestrationMode ?? draft.orchestrationMode ?? row?.orchestration_mode ?? 'sim',
+    configJson: forced.configJson ?? draft.configJson ?? parseJsonField(row?.config_json, null),
+  };
+}
+
+function extractBodyMetadata(row) {
+  const configJson = parseJsonField(row?.config_json, null);
+  const bodyConfig = isPlainObject(configJson) ? configJson : {};
+  const displayName =
+    row?.display_name ||
+    bodyConfig.displayName ||
+    row?.name ||
+    '';
+  const fullName =
+    row?.full_name ||
+    bodyConfig.fullName ||
+    displayName;
+  const aliases = normalizeStringArray(
+    parseJsonField(row?.aliases, bodyConfig.aliases || []),
+  );
+  const tags = normalizeStringArray(
+    parseJsonField(row?.tags, bodyConfig.tags || []),
+  );
+  const categories = normalizeStringArray(
+    parseJsonField(row?.categories, bodyConfig.categories || []),
+  );
+  const canonRefs = normalizeStringArray(bodyConfig.canonRefs);
+  const knowledgeRefs = normalizeStringArray(bodyConfig.knowledgeRefs);
+  const capabilities = normalizeCapabilities(
+    parseJsonField(row?.capabilities, bodyConfig.capabilities || {}),
+  );
+  const provider = row?.provider || bodyConfig.provider || null;
+  const conditioning = typeof bodyConfig.conditioning === 'string' ? bodyConfig.conditioning : '';
+
+  return {
+    configJson: bodyConfig,
+    displayName,
+    fullName,
+    aliases,
+    tags,
+    categories,
+    canonRefs,
+    knowledgeRefs,
+    capabilities,
+    provider,
+    conditioning,
+    hasPersistentMemory: bodyConfig.hasPersistentMemory !== false,
+  };
+}
+
+export function isPlaceholderModelValue(value) {
+  if (value === null || value === undefined) return true;
+  const normalized = String(value).trim().toLowerCase();
+  return MODEL_PLACEHOLDER_TOKENS.has(normalized);
+}
+
+export function mergeRuntimeRowsForCallsign(aiRow, gptRow) {
+  if (!aiRow && !gptRow) return null;
+  if (!aiRow) return gptRow;
+  if (!gptRow) return aiRow;
+
+  const preferredBase = pickPreferredRuntimeConfigRecord([aiRow, gptRow]) || aiRow;
+  const secondary = preferredBase === aiRow ? gptRow : aiRow;
+  const merged = { ...preferredBase };
+
+  for (const field of RUNTIME_MODEL_FIELDS) {
+    if (isPlaceholderModelValue(preferredBase[field]) && !isPlaceholderModelValue(secondary[field])) {
+      merged[field] = secondary[field];
+    }
+  }
+
+  if (isEmptyText(preferredBase.instructions) && !isEmptyText(secondary.instructions)) {
+    merged.instructions = secondary.instructions;
+  }
+
+  for (const field of [
+    'display_name',
+    'full_name',
+    'aliases',
+    'provider',
+    'tags',
+    'categories',
+    'config_json',
+    'capabilities',
+  ]) {
+    if (isEmptyText(preferredBase[field]) && !isEmptyText(secondary[field])) {
+      merged[field] = secondary[field];
+    }
+  }
+
+  return merged;
+}
+
+function rowToGPTConfig(row) {
+  const body = extractBodyMetadata(row);
+  return {
+    id: row.id,
+    name: body.displayName || row.name,
+    displayName: body.displayName || row.name,
+    fullName: body.fullName || body.displayName || row.name,
+    aliases: body.aliases,
+    description: row.description,
+    instructions: row.instructions,
+    conversationStarters: parseJsonField(row.conversation_starters, []),
+    avatar: row.avatar,
+    capabilities: body.capabilities,
+    constructCallsign: row.construct_callsign,
+    modelId: row.model_id,
+    conversationModel: row.conversation_model,
+    creativeModel: row.creative_model,
+    codingModel: row.coding_model,
+    orchestrationMode: row.orchestration_mode || 'lin',
+    provider: body.provider,
+    tags: body.tags,
+    categories: body.categories,
+    canonRefs: body.canonRefs,
+    knowledgeRefs: body.knowledgeRefs,
+    configJson: body.configJson,
+    conditioning: body.conditioning,
+    hasPersistentMemory: body.hasPersistentMemory,
+    isActive: Boolean(row.is_active),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    userId: row.user_id,
+    memoryEnabled: Boolean(row.memory_enabled),
+    memoryProfile: row.memory_profile || 'off',
+    roleplayEnabled: Boolean(row.roleplay_enabled)
+  };
+}
 
 export class GPTManager {
   static instance = null;
   db = null;
   runtimeGPTs = new Map();
   uploadDir = '';
+  hydrationPromise = null;
 
   constructor() {
     // Resolve DB at project root (chatty/chatty.db)
     // __dirname is /server/lib, so go up two levels to project root
     const dbPath = path.join(__dirname, '..', '..', 'chatty.db');
     const absoluteDbPath = path.resolve(dbPath);
-    
+
     // Check if database exists in server/ directory (wrong location)
     const serverDbPath = path.join(__dirname, '..', 'chatty.db');
     fs.access(serverDbPath).then(() => {
@@ -28,7 +315,7 @@ export class GPTManager {
     }).catch(() => {
       // Database not in server/ directory, which is correct
     });
-    
+
     this.db = new Database(absoluteDbPath);
     console.log(`✅ [GPTManager] Database initialized at: ${absoluteDbPath}`);
     this.uploadDir = path.join(process.cwd(), 'gpt-uploads');
@@ -115,17 +402,53 @@ export class GPTManager {
       this.db.exec(`ALTER TABLE gpts ADD COLUMN roleplay_enabled INTEGER DEFAULT 0`);
     }
 
+    const hasDisplayName = columns.some(col => col.name === 'display_name');
+    const hasFullName = columns.some(col => col.name === 'full_name');
+    const hasAliases = columns.some(col => col.name === 'aliases');
+    const hasProvider = columns.some(col => col.name === 'provider');
+    const hasTags = columns.some(col => col.name === 'tags');
+    const hasCategories = columns.some(col => col.name === 'categories');
+    const hasConfigJson = columns.some(col => col.name === 'config_json');
+    if (!hasDisplayName) {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN display_name TEXT`);
+    }
+    if (!hasFullName) {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN full_name TEXT`);
+    }
+    if (!hasAliases) {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN aliases TEXT`);
+    }
+    if (!hasProvider) {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN provider TEXT`);
+    }
+    if (!hasTags) {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN tags TEXT`);
+    }
+    if (!hasCategories) {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN categories TEXT`);
+    }
+    if (!hasConfigJson) {
+      this.db.exec(`ALTER TABLE gpts ADD COLUMN config_json TEXT`);
+    }
+
     // Backfill defaults for existing rows
     this.db.exec(`
       UPDATE gpts
-      SET 
+      SET
         conversation_model = COALESCE(conversation_model, model_id),
         creative_model = COALESCE(creative_model, model_id),
         coding_model = COALESCE(coding_model, model_id),
         orchestration_mode = COALESCE(orchestration_mode, 'lin'),
         memory_enabled = COALESCE(memory_enabled, 0),
         memory_profile = COALESCE(memory_profile, 'off'),
-        roleplay_enabled = COALESCE(roleplay_enabled, 0)
+        roleplay_enabled = COALESCE(roleplay_enabled, 0),
+        display_name = COALESCE(display_name, name),
+        full_name = COALESCE(full_name, display_name, name),
+        aliases = COALESCE(aliases, '[]'),
+        provider = COALESCE(provider, ''),
+        tags = COALESCE(tags, '[]'),
+        categories = COALESCE(categories, '[]'),
+        config_json = COALESCE(config_json, '{}')
     `);
 
     // GPT Files table
@@ -164,9 +487,145 @@ export class GPTManager {
     `);
 
     console.log('✅ GPT Manager database initialized');
-    
+
+    this.normalizeSystemConstructRows();
     this.cleanupRemovedSeeds();
     this.seedDefaultGPTs();
+  }
+
+  normalizeSystemConstructRows() {
+    const templates = GPTManager.getSystemConstructTemplates();
+    const selectRows = this.db.prepare(`
+      SELECT
+        id,
+        name,
+        description,
+        instructions,
+        conversation_starters,
+        capabilities,
+        orchestration_mode,
+        memory_enabled,
+        memory_profile,
+        roleplay_enabled,
+        display_name,
+        full_name,
+        aliases,
+        provider,
+        tags,
+        categories,
+        config_json
+      FROM gpts
+      WHERE construct_callsign = ?
+    `);
+    const updateStmt = this.db.prepare(`
+      UPDATE gpts
+      SET
+        display_name = ?,
+        full_name = ?,
+        description = ?,
+        instructions = ?,
+        conversation_starters = ?,
+        capabilities = ?,
+        aliases = ?,
+        provider = ?,
+        tags = ?,
+        categories = ?,
+        config_json = ?,
+        orchestration_mode = ?,
+        memory_enabled = ?,
+        memory_profile = ?,
+        roleplay_enabled = ?,
+        updated_at = ?
+      WHERE id = ?
+    `);
+
+    for (const template of templates) {
+      const rows = selectRows.all(template.callsign);
+      for (const row of rows) {
+        const nextDescription = (() => {
+          const check = this._dbValueEmpty(row.description)
+            ? { isStub: true }
+            : this._isStubValue(row.description, 'description', row.name || template.name);
+          return check.isStub ? template.description : row.description;
+        })();
+
+        const nextInstructions = (() => {
+          const check = this._dbValueEmpty(row.instructions)
+            ? { isStub: true }
+            : this._isStubValue(row.instructions, 'instructions', row.name || template.name);
+          return check.isStub ? template.instructions : row.instructions;
+        })();
+
+        let existingStarters = [];
+        try {
+          existingStarters = JSON.parse(row.conversation_starters || '[]');
+        } catch {
+          existingStarters = [];
+        }
+        const startersCheck = this._dbValueEmpty(row.conversation_starters)
+          ? { isStub: true }
+          : this._isStubStarters(existingStarters);
+        const nextStartersJson = startersCheck.isStub
+          ? JSON.stringify(template.starters || [])
+          : JSON.stringify(existingStarters);
+        const existingCapabilities = normalizeCapabilities(parseJsonField(row.capabilities, {}));
+        const nextCapabilitiesJson = JSON.stringify(normalizeCapabilities(template.capabilities));
+        const nextAliasesJson = JSON.stringify(normalizeStringArray(template.aliases));
+        const nextTagsJson = JSON.stringify(normalizeStringArray(template.tags));
+        const nextCategoriesJson = JSON.stringify(normalizeStringArray(template.categories));
+        const lockedRuntime = applyExistingSimLockToStoredDraft(row, {
+          provider: template.provider || '',
+          orchestrationMode: template.orchestrationMode,
+          configJson: buildStoredConfigJson(template),
+        });
+        const nextProvider = lockedRuntime.provider ?? template.provider ?? '';
+        const nextOrchestrationMode = lockedRuntime.orchestrationMode ?? template.orchestrationMode;
+        const nextConfigJson = JSON.stringify(lockedRuntime.configJson ?? buildStoredConfigJson(template));
+
+        const metadataChanged =
+          String(row.display_name || '') !== String(template.displayName || template.name || '') ||
+          String(row.full_name || '') !== String(template.fullName || template.displayName || template.name || '') ||
+          nextDescription !== (row.description || '') ||
+          nextInstructions !== (row.instructions || '') ||
+          nextStartersJson !== (row.conversation_starters || '[]') ||
+          JSON.stringify(existingCapabilities) !== nextCapabilitiesJson ||
+          String(row.aliases || '[]') !== nextAliasesJson ||
+          String(row.provider || '') !== String(nextProvider || '') ||
+          String(row.tags || '[]') !== nextTagsJson ||
+          String(row.categories || '[]') !== nextCategoriesJson ||
+          String(row.config_json || '{}') !== nextConfigJson;
+
+        const settingsChanged =
+          row.orchestration_mode !== nextOrchestrationMode ||
+          Number(row.memory_enabled) !== Number(template.memoryEnabled) ||
+          String(row.memory_profile || '') !== String(template.memoryProfile || '') ||
+          Number(row.roleplay_enabled) !== Number(template.roleplayEnabled);
+
+        if (!metadataChanged && !settingsChanged) {
+          continue;
+        }
+
+        updateStmt.run(
+          template.displayName || template.name,
+          template.fullName || template.displayName || template.name,
+          nextDescription,
+          nextInstructions,
+          nextStartersJson,
+          nextCapabilitiesJson,
+          nextAliasesJson,
+          nextProvider,
+          nextTagsJson,
+          nextCategoriesJson,
+          nextConfigJson,
+          nextOrchestrationMode,
+          template.memoryEnabled,
+          template.memoryProfile,
+          template.roleplayEnabled,
+          new Date().toISOString(),
+          row.id,
+        );
+      }
+    }
   }
 
   cleanupRemovedSeeds() {
@@ -183,36 +642,45 @@ export class GPTManager {
   }
 
   static getSystemConstructTemplates() {
-    return [
-      {
-        callsign: 'zen-001',
-        name: 'Zen',
-        description: '',
-        instructions: '',
-        starters: [],
-        orchestrationMode: 'zen',
-        model: 'openrouter:meta-llama/llama-3.3-70b-instruct',
-        creativeModel: 'openrouter:google/gemma-3-27b-it:free',
-        codingModel: 'openrouter:deepseek/deepseek-chat',
-      },
-      {
-        callsign: 'lin-001',
-        name: 'Lin',
-        description: '',
-        instructions: '',
-        starters: [],
-        orchestrationMode: 'lin',
-        model: 'openrouter:meta-llama/llama-3.3-70b-instruct',
-        creativeModel: 'openrouter:google/gemma-3-27b-it:free',
-        codingModel: 'openrouter:deepseek/deepseek-chat',
-        roleMetadata: JSON.stringify({ role: 'undertone', context: 'gpt_creator_create_tab', is_system: true }),
-      },
-    ];
+    return listSystemConstructCatalog({ seededOnly: true }).map((entry) => ({
+      callsign: entry.callsign,
+      name: entry.name,
+      displayName: entry.displayName || entry.name,
+      fullName: entry.fullName || entry.displayName || entry.name,
+      aliases: [...(entry.aliases || [])],
+      description: entry.description,
+      instructions: entry.instructions,
+      starters: [...(entry.conversationStarters || [])],
+      capabilities: { ...(entry.capabilities || DEFAULT_CAPABILITIES) },
+      orchestrationMode: entry.orchestrationMode,
+      memoryEnabled: entry.memoryEnabled,
+      memoryProfile: entry.memoryProfile,
+      roleplayEnabled: entry.roleplayEnabled,
+      model: entry.model,
+      creativeModel: entry.creativeModel,
+      codingModel: entry.codingModel,
+      provider: entry.provider || null,
+      tags: [...(entry.summaryTags || [])],
+      categories: [...(entry.summaryCategories || [])],
+      canonRefs: [...(entry.canonRefs || [])],
+      knowledgeRefs: [...(entry.knowledgeRefs || [])],
+      conditioning: entry.conditioning || '',
+      personality: entry.personality || null,
+      summaryCapabilities: [...(entry.summaryCapabilities || [])],
+      configJson: entry.configJson || null,
+      roleMetadata: entry.callsign === 'lin-001'
+        ? JSON.stringify({ role: 'undertone', context: 'gpt_creator_create_tab', is_system: true })
+        : entry.callsign === 'val-001'
+        ? JSON.stringify({ role: 'validator', context: 'continuity_custodian', is_system: true })
+        : entry.callsign === 'continuitygpt-001'
+        ? JSON.stringify({ role: 'continuity_engine', context: 'evidence_ledger', is_system: true })
+        : undefined,
+    }));
   }
 
   seedDefaultGPTs() {
     this.autoGenerateMissingAvatars();
-    this.hydrateFromVVAULT();
+    void this.hydrateFromVVAULT();
   }
 
   provisionUserConstructs(userId) {
@@ -224,62 +692,178 @@ export class GPTManager {
     const templates = GPTManager.getSystemConstructTemplates();
     const insertStmt = this.db.prepare(`
       INSERT INTO gpts (
-        id, name, description, instructions, conversation_starters, avatar, capabilities, construct_callsign, 
-        model_id, conversation_model, creative_model, coding_model, orchestration_mode, 
+        id, name, display_name, full_name, description, instructions, conversation_starters, avatar, capabilities, construct_callsign,
+        aliases, provider, tags, categories, config_json,
+        model_id, conversation_model, creative_model, coding_model, orchestration_mode,
+        memory_enabled, memory_profile, roleplay_enabled,
         is_active, created_at, updated_at, user_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const updateStmt = this.db.prepare(`
+      UPDATE gpts
+      SET
+        display_name = ?,
+        full_name = ?,
+        capabilities = ?,
+        aliases = ?,
+        provider = ?,
+        tags = ?,
+        categories = ?,
+        config_json = ?,
+        orchestration_mode = ?,
+        memory_enabled = ?,
+        memory_profile = ?,
+        roleplay_enabled = ?,
+        updated_at = ?
+      WHERE construct_callsign = ? AND user_id = ?
     `);
 
     for (const template of templates) {
-      const exists = this.db.prepare(
-        `SELECT id FROM gpts WHERE construct_callsign = ? AND user_id = ?`
+      const existingRow = this.db.prepare(
+        `SELECT * FROM gpts WHERE construct_callsign = ? AND user_id = ?`
       ).get(template.callsign, userId);
 
-      if (!exists) {
+      if (!existingRow) {
         const gptId = `gpt-${template.callsign}-${userId.substring(0, 8)}`;
         console.log(`🌱 [GPTManager] Provisioning ${template.name} for user ${userId}...`);
         const now = new Date().toISOString();
         insertStmt.run(
           gptId,
           template.name,
+          template.displayName || template.name,
+          template.fullName || template.displayName || template.name,
           template.description,
           template.instructions,
           JSON.stringify(template.starters),
           null,
-          JSON.stringify({ webBrowsing: false, imageGeneration: false, codeInterpreter: true }),
+          JSON.stringify(normalizeCapabilities(template.capabilities)),
           template.callsign,
+          JSON.stringify(normalizeStringArray(template.aliases)),
+          template.provider || '',
+          JSON.stringify(normalizeStringArray(template.tags)),
+          JSON.stringify(normalizeStringArray(template.categories)),
+          JSON.stringify(buildStoredConfigJson(template)),
           template.model,
           template.model,
           template.creativeModel,
           template.codingModel,
           template.orchestrationMode,
+          template.memoryEnabled,
+          template.memoryProfile,
+          template.roleplayEnabled,
           1,
           now,
           now,
           userId
         );
         console.log(`✅ [GPTManager] ${template.name} provisioned for user ${userId}`);
+      } else {
+        const lockedRuntime = applyExistingSimLockToStoredDraft(existingRow, {
+          provider: template.provider || '',
+          orchestrationMode: template.orchestrationMode,
+          configJson: buildStoredConfigJson(template),
+        });
+        updateStmt.run(
+          template.displayName || template.name,
+          template.fullName || template.displayName || template.name,
+          JSON.stringify(normalizeCapabilities(template.capabilities)),
+          JSON.stringify(normalizeStringArray(template.aliases)),
+          lockedRuntime.provider ?? template.provider ?? '',
+          JSON.stringify(normalizeStringArray(template.tags)),
+          JSON.stringify(normalizeStringArray(template.categories)),
+          JSON.stringify(lockedRuntime.configJson ?? buildStoredConfigJson(template)),
+          lockedRuntime.orchestrationMode ?? template.orchestrationMode,
+          template.memoryEnabled,
+          template.memoryProfile,
+          template.roleplayEnabled,
+          new Date().toISOString(),
+          template.callsign,
+          userId
+        );
       }
     }
-    
-    this.hydrateFromVVAULT();
+
+    void this.ensureSystemConstructBundles(userId).catch((error) => {
+      console.warn(`⚠️ [GPTManager] System construct bundle backfill failed for ${userId}: ${error.message}`);
+    });
+
+    void this.hydrateFromVVAULT();
+  }
+
+  async ensureSystemConstructBundles(userId) {
+    if (!userId || userId === 'anonymous') return;
+
+    const templates = GPTManager.getSystemConstructTemplates();
+    const { scaffoldConstruct } = await import('./constructScaffolder.js');
+
+    for (const template of templates) {
+      const payload = {
+        name: template.name,
+        displayName: template.displayName,
+        fullName: template.fullName,
+        aliases: template.aliases,
+        description: template.description,
+        instructions: template.instructions,
+        conversationStarters: template.starters,
+        capabilities: template.capabilities,
+        orchestrationMode: template.orchestrationMode,
+        memoryEnabled: Boolean(template.memoryEnabled),
+        memoryProfile: template.memoryProfile,
+        roleplayEnabled: Boolean(template.roleplayEnabled),
+        modelId: template.model,
+        conversationModel: template.model,
+        creativeModel: template.creativeModel,
+        codingModel: template.codingModel,
+        provider: template.provider || '',
+        tags: template.tags,
+        categories: template.categories,
+        canonRefs: template.canonRefs,
+        knowledgeRefs: template.knowledgeRefs,
+        conditioning: template.conditioning || '',
+        personality: template.personality || null,
+        configJson: template.configJson || null,
+        summaryCapabilities: template.summaryCapabilities || [],
+      };
+
+      const result = await scaffoldConstruct(template.callsign, payload, {
+        userId,
+        localOnly: true,
+        syncGenerated: false,
+      });
+
+      if (!result?.success) {
+        console.warn(`⚠️ [GPTManager] Failed to scaffold bundle for ${template.callsign}: ${result?.reason || 'unknown failure'}`);
+      }
+    }
   }
 
   async hydrateFromVVAULT() {
-    const VVAULT_API_BASE_URL = process.env.VVAULT_API_BASE_URL;
+    if (this.hydrationPromise) {
+      return this.hydrationPromise;
+    }
+
+    this.hydrationPromise = this._hydrateFromVVAULT()
+      .finally(() => {
+        this.hydrationPromise = null;
+      });
+
+    return this.hydrationPromise;
+  }
+
+  async _hydrateFromVVAULT() {
+    const { vvaultApiBaseUrl, serviceToken } = getVvaultBridgeConfig();
 
     const constructs = this.db.prepare(
-      `SELECT id, construct_callsign, name, description, instructions FROM gpts WHERE construct_callsign IS NOT NULL`
+      `SELECT id, construct_callsign, name, description, instructions, conversation_starters, capabilities, display_name, full_name, aliases, provider, tags, categories, config_json FROM gpts WHERE construct_callsign IS NOT NULL`
     ).all();
 
     for (const gpt of constructs) {
       let hydrated = false;
 
-      if (VVAULT_API_BASE_URL) {
+      if (vvaultApiBaseUrl) {
         try {
-          const baseUrl = VVAULT_API_BASE_URL.replace(/\/$/, '');
-          const serviceToken = process.env.VVAULT_SERVICE_TOKEN;
+          const baseUrl = vvaultApiBaseUrl.replace(/\/$/, '');
           const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
           if (serviceToken) headers['X-Chatty-Key'] = serviceToken;
 
@@ -294,13 +878,13 @@ export class GPTManager {
               const filesData = await filesResponse.json();
               const identityFiles = filesData.files?.identity || filesData.identity || [];
 
-              const promptFile = identityFiles.find(f => 
+              const promptFile = identityFiles.find(f =>
                 f.filename === 'prompt.json' || f.filename === 'prompt.txt' ||
                 (f.storage_path || '').includes('identity/prompt')
               );
 
               if (promptFile && promptFile.content) {
-                hydrated = this._applyIdentityUpdate(gpt, promptFile.content, 'VVAULT API');
+                hydrated = this._applyIdentityUpdate(gpt, promptFile.content, 'VVAULT API') || Boolean(String(promptFile.content).trim());
               }
             } else {
               console.log(`⚠️ [GPTManager] VVAULT files endpoint returned non-JSON for ${gpt.construct_callsign} (likely SPA catch-all)`);
@@ -331,7 +915,7 @@ export class GPTManager {
                 .limit(1);
 
               if (data && data.length > 0 && data[0].content) {
-                hydrated = this._applyIdentityUpdate(gpt, data[0].content, 'Supabase');
+                hydrated = this._applyIdentityUpdate(gpt, data[0].content, 'Supabase') || Boolean(String(data[0].content).trim());
               }
             }
           }
@@ -341,47 +925,34 @@ export class GPTManager {
       }
 
       if (!hydrated) {
+        try {
+          const { loadPromptTxt } = await import('./identityLoader.js');
+          const localPrompt = await loadPromptTxt(gpt.user_id || 'system', gpt.construct_callsign);
+          if (localPrompt) {
+            hydrated = this._applyIdentityUpdate(gpt, localPrompt, 'local_identity_loader') || Boolean(String(localPrompt).trim());
+          }
+        } catch (localErr) {
+          console.log(`⚠️ [GPTManager] Local identity fallback failed for ${gpt.construct_callsign}: ${localErr.message}`);
+        }
+      }
+
+      if (!hydrated) {
         console.log(`ℹ️ [GPTManager] No identity data found for ${gpt.construct_callsign} — will show empty until configured`);
       }
 
-      const currentAvatar = this.db.prepare('SELECT avatar FROM gpts WHERE id = ?').get(gpt.id);
-      const hasRealAvatar = currentAvatar?.avatar && !currentAvatar.avatar.startsWith('data:image/svg');
-      if (!hasRealAvatar) {
-        try {
-          const { getSupabaseClient } = await import('../lib/supabaseClient.js');
-          const supabase = getSupabaseClient();
-          if (supabase) {
-            const constructVariants = [
-              gpt.construct_callsign,
-              gpt.construct_callsign.replace(/-\d+$/, '')
-            ];
-            for (const cid of constructVariants) {
-              const { data } = await supabase
-                .from('vault_files')
-                .select('id, filename, storage_path')
-                .eq('construct_id', cid)
-                .ilike('filename', '%avatar%')
-                .limit(1);
-
-              if (data && data.length > 0) {
-                const avatarPath = `/api/ais/${gpt.id}/avatar`;
-                this.db.prepare('UPDATE gpts SET avatar = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(avatarPath, gpt.id);
-                console.log(`✅ [GPTManager] Set avatar URL for ${gpt.construct_callsign} from Supabase (${data[0].filename})`);
-                break;
-              }
-            }
-          }
-        } catch (avatarErr) {
-          console.log(`⚠️ [GPTManager] Avatar hydration failed for ${gpt.construct_callsign}: ${avatarErr.message}`);
-        }
-      }
+      // Avatar authority now stays on the canonical /api/ais/:constructCallsign/avatar
+      // route instead of being rewritten into the local GPT tables during hydration.
     }
 
     console.log('✅ [GPTManager] VVAULT identity hydration complete');
   }
 
+  _dbValueEmpty(value) {
+    return value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
+  }
+
   _isStubValue(value, fieldName, constructName) {
-    if (!value || value.trim() === '') return { isStub: true, reason: 'empty or null' };
+    if (this._dbValueEmpty(value)) return { isStub: true, reason: 'empty or null' };
     const v = value.trim().toLowerCase();
     const name = (constructName || '').toLowerCase();
     const stubPatterns = [
@@ -438,10 +1009,98 @@ export class GPTManager {
 
       const auditLog = [];
       const updates = {};
-      if (parsed.name && parsed.name !== gpt.name) updates.name = parsed.name;
+      const parsedDisplayName =
+        typeof parsed.displayName === 'string' && parsed.displayName.trim()
+          ? parsed.displayName.trim()
+          : typeof parsed.name === 'string' && parsed.name.trim()
+            ? parsed.name.trim()
+            : '';
+      const parsedFullName =
+        typeof parsed.fullName === 'string' && parsed.fullName.trim()
+          ? parsed.fullName.trim()
+          : parsedDisplayName;
+      const parsedAliases = normalizeStringArray(parsed.aliases);
+      const parsedTags = normalizeStringArray(parsed.tags);
+      const parsedCategories = normalizeStringArray(parsed.categories);
+      const parsedCapabilities = normalizeCapabilities(parsed.capabilities);
+      const parsedConfigJson = buildStoredConfigJson({
+        ...parsed,
+        name: parsedDisplayName || parsed.name,
+        displayName: parsedDisplayName || parsed.name,
+        fullName: parsedFullName || parsedDisplayName || parsed.name,
+        aliases: parsedAliases,
+        tags: parsedTags,
+        categories: parsedCategories,
+        capabilities: parsedCapabilities,
+        provider: parsed.provider || '',
+      });
+      const lockedRuntime = applyExistingSimLockToStoredDraft(gpt, {
+        provider: parsed.provider || '',
+        orchestrationMode: gpt.orchestration_mode || 'lin',
+        modelId: gpt.model_id,
+        conversationModel: gpt.conversation_model,
+        creativeModel: gpt.creative_model,
+        codingModel: gpt.coding_model,
+        configJson: parsedConfigJson,
+      });
+      const nextProvider = lockedRuntime.provider ?? parsed.provider ?? '';
+      const nextConfigJson = JSON.stringify(lockedRuntime.configJson ?? parsedConfigJson);
+      // VVAULT-first: when DB is null/empty, mirror VVAULT; when DB has value, stub protection only.
+      if (parsedDisplayName && parsedDisplayName !== gpt.name) updates.name = parsedDisplayName;
+      if (parsedDisplayName && parsedDisplayName !== gpt.display_name) {
+        updates.display_name = parsedDisplayName;
+      }
+      if (parsedFullName && parsedFullName !== gpt.full_name) {
+        updates.full_name = parsedFullName;
+      }
+      if (parsedAliases.length > 0) {
+        const nextAliasesJson = JSON.stringify(parsedAliases);
+        if (nextAliasesJson !== String(gpt.aliases || '[]')) {
+          updates.aliases = nextAliasesJson;
+        }
+      }
+      if (nextProvider && nextProvider !== gpt.provider) {
+        updates.provider = nextProvider;
+      }
+      if (parsedTags.length > 0) {
+        const nextTagsJson = JSON.stringify(parsedTags);
+        if (nextTagsJson !== String(gpt.tags || '[]')) {
+          updates.tags = nextTagsJson;
+        }
+      }
+      if (parsedCategories.length > 0) {
+        const nextCategoriesJson = JSON.stringify(parsedCategories);
+        if (nextCategoriesJson !== String(gpt.categories || '[]')) {
+          updates.categories = nextCategoriesJson;
+        }
+      }
+      if (parsed.capabilities && JSON.stringify(parsedCapabilities) !== String(gpt.capabilities || '{}')) {
+        updates.capabilities = JSON.stringify(parsedCapabilities);
+      }
+      if (Object.keys(lockedRuntime.configJson || parsedConfigJson).length > 0) {
+        if (nextConfigJson !== String(gpt.config_json || '{}')) {
+          updates.config_json = nextConfigJson;
+        }
+      }
+      if (lockedRuntime.orchestrationMode && lockedRuntime.orchestrationMode !== gpt.orchestration_mode) {
+        updates.orchestration_mode = lockedRuntime.orchestrationMode;
+      }
+      if (lockedRuntime.modelId && lockedRuntime.modelId !== gpt.model_id) {
+        updates.model_id = lockedRuntime.modelId;
+      }
+      if (lockedRuntime.conversationModel && lockedRuntime.conversationModel !== gpt.conversation_model) {
+        updates.conversation_model = lockedRuntime.conversationModel;
+      }
+      if (lockedRuntime.creativeModel && lockedRuntime.creativeModel !== gpt.creative_model) {
+        updates.creative_model = lockedRuntime.creativeModel;
+      }
+      if (lockedRuntime.codingModel && lockedRuntime.codingModel !== gpt.coding_model) {
+        updates.coding_model = lockedRuntime.codingModel;
+      }
 
       if (parsed.description && parsed.description !== gpt.description) {
-        const check = this._isStubValue(gpt.description, 'description', gpt.name);
+        const empty = this._dbValueEmpty(gpt.description);
+        const check = empty ? { isStub: true, reason: 'empty or null' } : this._isStubValue(gpt.description, 'description', gpt.name);
         if (check.isStub) {
           updates.description = parsed.description;
           auditLog.push({ field: 'description', action: 'hydrated', reason: check.reason });
@@ -451,7 +1110,8 @@ export class GPTManager {
       }
 
       if (parsed.instructions && parsed.instructions !== gpt.instructions) {
-        const check = this._isStubValue(gpt.instructions, 'instructions', gpt.name);
+        const empty = this._dbValueEmpty(gpt.instructions);
+        const check = empty ? { isStub: true, reason: 'empty or null' } : this._isStubValue(gpt.instructions, 'instructions', gpt.name);
         if (check.isStub) {
           updates.instructions = parsed.instructions;
           auditLog.push({ field: 'instructions', action: 'hydrated', reason: check.reason });
@@ -461,10 +1121,11 @@ export class GPTManager {
       }
 
       if (parsed.conversationStarters && parsed.conversationStarters.length > 0) {
-        const existingStarters = JSON.parse(gpt.conversation_starters || '[]');
+        const existingStarters = parseJsonField(gpt.conversation_starters, []);
         const newJson = JSON.stringify(parsed.conversationStarters);
         if (newJson !== JSON.stringify(existingStarters)) {
-          const check = this._isStubStarters(existingStarters);
+          const empty = this._dbValueEmpty(gpt.conversation_starters);
+          const check = empty ? { isStub: true, reason: 'empty or null' } : this._isStubStarters(existingStarters);
           if (check.isStub) {
             updates.conversation_starters = newJson;
             auditLog.push({ field: 'conversationStarters', action: 'hydrated', reason: check.reason });
@@ -501,7 +1162,7 @@ export class GPTManager {
       return false;
     }
   }
-  
+
   _parseStructuredPrompt(text) {
     const result = {};
     const lines = text.split('\n');
@@ -587,10 +1248,10 @@ export class GPTManager {
       const gptsWithoutAvatars = this.db.prepare(`
         SELECT id, name FROM gpts WHERE avatar IS NULL OR avatar = ''
       `).all();
-      
+
       if (gptsWithoutAvatars.length > 0) {
         console.log(`🎨 [GPTManager] Generating avatars for ${gptsWithoutAvatars.length} GPTs without avatars...`);
-        
+
         for (const gpt of gptsWithoutAvatars) {
           const avatar = this.generateAvatar(gpt.name, '');
           this.db.prepare(`UPDATE gpts SET avatar = ? WHERE id = ?`).run(avatar, gpt.id);
@@ -613,7 +1274,7 @@ export class GPTManager {
   /**
    * Generate constructCallsign from GPT name with sequential numbering
    * Example: "Katana" → "katana-001", "Katana" (second one) → "katana-002"
-   * 
+   *
    * @param {string} name - GPT name (e.g., "Katana", "Luna")
    * @param {string} userId - User ID to scope the search
    * @returns {Promise<string>} - Construct callsign (e.g., "katana-001")
@@ -638,7 +1299,7 @@ export class GPTManager {
 
     // Query existing GPTs with same normalized name for this user
     const stmt = this.db.prepare(`
-      SELECT construct_callsign FROM gpts 
+      SELECT construct_callsign FROM gpts
       WHERE user_id = ? AND construct_callsign LIKE ?
       ORDER BY construct_callsign DESC
     `);
@@ -662,13 +1323,16 @@ export class GPTManager {
     // Generate next sequential callsign
     const nextNumber = maxNumber + 1;
     const callsign = `${normalized}-${String(nextNumber).padStart(3, '0')}`;
-    
+
     console.log(`✅ [GPTManager] Generated constructCallsign: "${name}" → ${callsign} (user: ${userId})`);
     return callsign;
   }
 
   // GPT CRUD Operations
   async createGPT(config) {
+    if (process.env.VVAULT_CANONICAL === 'true') {
+      throw new Error('ChattyDB writes are disabled in canonical VVAULT mode');
+    }
     const id = `gpt-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
@@ -685,23 +1349,46 @@ export class GPTManager {
 
     const stmt = this.db.prepare(`
       INSERT INTO gpts (
-        id, name, description, instructions, conversation_starters, avatar, capabilities, construct_callsign, 
-        model_id, conversation_model, creative_model, coding_model, orchestration_mode, 
+        id, name, display_name, full_name, description, instructions, conversation_starters, avatar, capabilities, construct_callsign,
+        aliases, provider, tags, categories, config_json,
+        model_id, conversation_model, creative_model, coding_model, orchestration_mode,
         memory_enabled, memory_profile, roleplay_enabled,
         is_active, created_at, updated_at, user_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
+    const displayName = config.displayName || config.name;
+    const fullName = config.fullName || displayName;
+    const aliases = normalizeStringArray(config.aliases);
+    const tags = normalizeStringArray(config.tags);
+    const categories = normalizeStringArray(config.categories);
+    const capabilities = normalizeCapabilities(config.capabilities || {});
+    const storedConfigJson = buildStoredConfigJson({
+      ...config,
+      displayName,
+      fullName,
+      aliases,
+      tags,
+      categories,
+      capabilities,
+    });
 
     stmt.run(
       id,
       config.name,
+      displayName,
+      fullName,
       config.description,
       config.instructions,
       JSON.stringify(config.conversationStarters || []),
       config.avatar || null,
-      JSON.stringify(config.capabilities || {}),
+      JSON.stringify(capabilities),
       constructCallsign,
+      JSON.stringify(aliases),
+      config.provider || '',
+      JSON.stringify(tags),
+      JSON.stringify(categories),
+      JSON.stringify(storedConfigJson),
       config.modelId,
       config.conversationModel || config.modelId,
       config.creativeModel || config.modelId,
@@ -721,6 +1408,15 @@ export class GPTManager {
     return {
       id,
       ...config,
+      name: displayName || config.name,
+      displayName,
+      fullName,
+      aliases,
+      capabilities,
+      provider: config.provider || '',
+      tags,
+      categories,
+      configJson: storedConfigJson,
       files: [],
       actions: [],
       createdAt: now,
@@ -746,94 +1442,40 @@ export class GPTManager {
     const actions = await this.getGPTActions(id);
 
     return {
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      instructions: row.instructions,
-      conversationStarters: JSON.parse(row.conversation_starters || '[]'),
-      avatar: row.avatar,
-      capabilities: JSON.parse(row.capabilities || '{}'),
-      constructCallsign: row.construct_callsign,
-      modelId: row.model_id,
-      conversationModel: row.conversation_model,
-      creativeModel: row.creative_model,
-      codingModel: row.coding_model,
-      orchestrationMode: row.orchestration_mode || 'lin',
-      memoryEnabled: Boolean(row.memory_enabled),
-      memoryProfile: row.memory_profile || 'off',
-      roleplayEnabled: Boolean(row.roleplay_enabled),
+      ...rowToGPTConfig(row),
       files,
       actions,
-      isActive: Boolean(row.is_active),
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      userId: row.user_id
     };
   }
 
   async getGPTByCallsign(constructCallsign) {
     if (!constructCallsign) return null;
-    
-    // Check ais table first (GPTCreator saves here)
+
+    let aiRows = [];
+    let gptRows = [];
+
+    // Read from ais first (GPTCreator writes here)
     try {
-      const aiStmt = this.db.prepare('SELECT * FROM ais WHERE construct_callsign = ? LIMIT 1');
-      const aiRow = aiStmt.get(constructCallsign);
-      if (aiRow) {
-        return {
-          id: aiRow.id,
-          name: aiRow.name,
-          description: aiRow.description,
-          instructions: aiRow.instructions,
-          conversationStarters: JSON.parse(aiRow.conversation_starters || '[]'),
-          avatar: aiRow.avatar,
-          capabilities: JSON.parse(aiRow.capabilities || '{}'),
-          constructCallsign: aiRow.construct_callsign,
-          modelId: aiRow.model_id,
-          conversationModel: aiRow.conversation_model,
-          creativeModel: aiRow.creative_model,
-          codingModel: aiRow.coding_model,
-          orchestrationMode: aiRow.orchestration_mode || 'lin',
-          isActive: Boolean(aiRow.is_active),
-          createdAt: aiRow.created_at,
-          updatedAt: aiRow.updated_at,
-          userId: aiRow.user_id,
-          memoryEnabled: Boolean(aiRow.memory_enabled),
-          memoryProfile: aiRow.memory_profile || 'off',
-          roleplayEnabled: Boolean(aiRow.roleplay_enabled)
-        };
-      }
+      const aiStmt = this.db.prepare('SELECT * FROM ais WHERE construct_callsign = ?');
+      aiRows = aiStmt.all(constructCallsign).map((row) => ({ ...row, __source_table: 'ais' }));
     } catch (e) {
-      // ais table may not exist or lack columns - fall through to gpts
+      // ais table may not exist or lack columns - continue with gpts fallback
     }
 
-    // Fallback to gpts table (legacy/seed data)
-    const stmt = this.db.prepare('SELECT * FROM gpts WHERE construct_callsign = ? LIMIT 1');
-    const row = stmt.get(constructCallsign);
+    // Also read gpts to hydrate placeholders when ais uses authoring tokens like openrouter/auto
+    try {
+      const gptStmt = this.db.prepare('SELECT * FROM gpts WHERE construct_callsign = ?');
+      gptRows = gptStmt.all(constructCallsign).map((row) => ({ ...row, __source_table: 'gpts' }));
+    } catch (e) {
+      // gpts table may not exist in edge environments
+    }
 
-    if (!row) return null;
+    const aiRow = pickPreferredRuntimeConfigRecord(aiRows);
+    const gptRow = pickPreferredRuntimeConfigRecord(gptRows);
+    const resolvedRow = mergeRuntimeRowsForCallsign(aiRow, gptRow);
+    if (!resolvedRow) return null;
 
-    return {
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      instructions: row.instructions,
-      conversationStarters: JSON.parse(row.conversation_starters || '[]'),
-      avatar: row.avatar,
-      capabilities: JSON.parse(row.capabilities || '{}'),
-      constructCallsign: row.construct_callsign,
-      modelId: row.model_id,
-      conversationModel: row.conversation_model,
-      creativeModel: row.creative_model,
-      codingModel: row.coding_model,
-      orchestrationMode: row.orchestration_mode || 'lin',
-      isActive: Boolean(row.is_active),
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      userId: row.user_id,
-      memoryEnabled: Boolean(row.memory_enabled),
-      memoryProfile: row.memory_profile || 'off',
-      roleplayEnabled: Boolean(row.roleplay_enabled)
-    };
+    return rowToGPTConfig(applyForgedSimLockToRecord(resolvedRow));
   }
 
   async getAllGPTs(userId, originalUserId = null) {
@@ -867,53 +1509,10 @@ export class GPTManager {
         try {
           const files = await this.getGPTFiles(row.id);
           const actions = await this.getGPTActions(row.id);
-
-          // Parse JSON fields with error handling
-          let conversationStarters = [];
-          let capabilities = {};
-          
-          try {
-            conversationStarters = JSON.parse(row.conversation_starters || '[]');
-          } catch (e) {
-            console.warn(`⚠️ [GPTManager] Invalid conversation_starters JSON for ${row.id}, using empty array`);
-            conversationStarters = [];
-          }
-          
-          try {
-            capabilities = JSON.parse(row.capabilities || '{}');
-          } catch (e) {
-            console.warn(`⚠️ [GPTManager] Invalid capabilities JSON for ${row.id}, using empty object`);
-            // Try to fix common issues (unquoted keys in object literals)
-            try {
-              const fixed = (row.capabilities || '{}').replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/g, '$1"$2":');
-              capabilities = JSON.parse(fixed);
-              console.log(`✅ [GPTManager] Fixed capabilities JSON for ${row.id}`);
-            } catch (e2) {
-              capabilities = {};
-            }
-          }
-
           gpts.push({
-            id: row.id,
-            name: row.name,
-            description: row.description,
-            instructions: row.instructions,
-            conversationStarters,
-            avatar: row.avatar,
-            capabilities,
-            constructCallsign: row.construct_callsign,
-            modelId: row.model_id,
-            conversationModel: row.conversation_model,
-            creativeModel: row.creative_model,
-            codingModel: row.coding_model,
-            orchestrationMode: row.orchestration_mode || 'lin',
-            roleplayEnabled: Boolean(row.roleplay_enabled),
+            ...rowToGPTConfig(row),
             files,
             actions,
-            isActive: Boolean(row.is_active),
-            createdAt: row.created_at,
-            updatedAt: row.updated_at,
-            userId: row.user_id
           });
         } catch (rowError) {
           console.error(`❌ [GPTManager] Error processing GPT row ${row.id}:`, rowError);
@@ -933,67 +1532,90 @@ export class GPTManager {
     const stmt = this.db.prepare('SELECT * FROM gpts WHERE id = ?');
     const row = stmt.get(id);
     if (!row) return null;
-    return {
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      instructions: row.instructions,
-      conversationStarters: JSON.parse(row.conversation_starters || '[]'),
-      avatar: row.avatar,
-      capabilities: JSON.parse(row.capabilities || '{}'),
-      constructCallsign: row.construct_callsign,
-      modelId: row.model_id,
-      conversationModel: row.conversation_model,
-      creativeModel: row.creative_model,
-      codingModel: row.coding_model,
-      orchestrationMode: row.orchestration_mode || 'lin',
-      memoryEnabled: Boolean(row.memory_enabled),
-      memoryProfile: row.memory_profile || 'off',
-      roleplayEnabled: Boolean(row.roleplay_enabled),
-      isActive: Boolean(row.is_active),
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      userId: row.user_id
-    };
+    return rowToGPTConfig(row);
   }
 
   async updateGPT(id, updates) {
+    if (process.env.VVAULT_CANONICAL === 'true') {
+      throw new Error('ChattyDB writes are disabled in canonical VVAULT mode');
+    }
     const existing = this.getGPTConfig(id);
     if (!existing) return null;
 
     const nextVersion = this.getNextVersion(id);
 
     const stmt = this.db.prepare(`
-      UPDATE gpts 
-      SET 
-        name = ?, 
-        description = ?, 
-        instructions = ?, 
-        conversation_starters = ?, 
-        avatar = ?, 
-        capabilities = ?, 
-        construct_callsign = ?, 
-        model_id = ?, 
-        conversation_model = ?, 
-        creative_model = ?, 
-        coding_model = ?, 
-        orchestration_mode = ?, 
+      UPDATE gpts
+      SET
+        name = ?,
+        display_name = ?,
+        full_name = ?,
+        description = ?,
+        instructions = ?,
+        conversation_starters = ?,
+        avatar = ?,
+        capabilities = ?,
+        construct_callsign = ?,
+        aliases = ?,
+        provider = ?,
+        tags = ?,
+        categories = ?,
+        config_json = ?,
+        model_id = ?,
+        conversation_model = ?,
+        creative_model = ?,
+        coding_model = ?,
+        orchestration_mode = ?,
         memory_enabled = ?,
         memory_profile = ?,
         roleplay_enabled = ?,
-        is_active = ?, 
+        is_active = ?,
         updated_at = ?
       WHERE id = ?
     `);
+    const nextName = updates.name !== undefined ? updates.name : existing.name;
+    const nextDisplayName = updates.displayName !== undefined ? updates.displayName : (existing.displayName || nextName);
+    const nextFullName = updates.fullName !== undefined ? updates.fullName : (existing.fullName || nextDisplayName || nextName);
+    const nextAliases = updates.aliases !== undefined ? normalizeStringArray(updates.aliases) : normalizeStringArray(existing.aliases);
+    const nextTags = updates.tags !== undefined ? normalizeStringArray(updates.tags) : normalizeStringArray(existing.tags);
+    const nextCategories = updates.categories !== undefined ? normalizeStringArray(updates.categories) : normalizeStringArray(existing.categories);
+    const nextCapabilities = normalizeCapabilities(updates.capabilities || existing.capabilities);
+    const nextProvider =
+      updates.provider !== undefined
+        ? updates.provider
+        : existing.provider || '';
+    const nextConfigJson = buildStoredConfigJson({
+      ...existing,
+      ...updates,
+      name: nextName,
+      displayName: nextDisplayName,
+      fullName: nextFullName,
+      aliases: nextAliases,
+      tags: nextTags,
+      categories: nextCategories,
+      capabilities: nextCapabilities,
+      provider: nextProvider,
+      configJson:
+        updates.configJson !== undefined
+          ? updates.configJson
+          : existing.configJson,
+    });
 
     stmt.run(
-      updates.name !== undefined ? updates.name : existing.name,
+      nextName,
+      nextDisplayName,
+      nextFullName,
       updates.description !== undefined ? updates.description : existing.description,
       updates.instructions !== undefined ? updates.instructions : existing.instructions,
       JSON.stringify(updates.conversationStarters !== undefined ? updates.conversationStarters : existing.conversationStarters),
       updates.avatar !== undefined ? updates.avatar : existing.avatar,
-      JSON.stringify(updates.capabilities || existing.capabilities),
+      JSON.stringify(nextCapabilities),
       updates.constructCallsign !== undefined ? updates.constructCallsign : existing.constructCallsign,
+      JSON.stringify(nextAliases),
+      nextProvider || '',
+      JSON.stringify(nextTags),
+      JSON.stringify(nextCategories),
+      JSON.stringify(nextConfigJson),
       updates.modelId || existing.modelId,
       updates.conversationModel || existing.conversationModel || existing.modelId,
       updates.creativeModel || existing.creativeModel || existing.modelId,
@@ -1016,6 +1638,9 @@ export class GPTManager {
   }
 
   async deleteGPT(id) {
+    if (process.env.VVAULT_CANONICAL === 'true') {
+      throw new Error('ChattyDB writes are disabled in canonical VVAULT mode');
+    }
     const stmt = this.db.prepare('DELETE FROM gpts WHERE id = ?');
     const result = stmt.run(id);
     return result.changes > 0;
@@ -1074,13 +1699,13 @@ export class GPTManager {
     const resolvedMimeType = file.type || extMimeMap[fileExt] || 'application/octet-stream';
 
     stmt.run(
-      id, 
-      gptId, 
-      filename, 
-      file.name, 
-      resolvedMimeType, 
-      file.size, 
-      parsedContent.content, 
+      id,
+      gptId,
+      filename,
+      file.name,
+      resolvedMimeType,
+      file.size,
+      parsedContent.content,
       parsedContent.extractedText,
       JSON.stringify(parsedContent.metadata),
       now
@@ -1218,7 +1843,7 @@ export class GPTManager {
     const files = await this.getGPTFiles(gptId);
     const contextParts = [];
     let totalContextLength = 0;
-    
+
     // Sort files by relevance/importance for smart selection
     const sortedFiles = files
       .filter(file => file.isActive && file.extractedText)
@@ -1232,16 +1857,16 @@ export class GPTManager {
 
     for (const file of sortedFiles) {
       if (totalContextLength >= maxContextLength) break;
-      
+
       try {
         let contextEntry;
-        
+
         // Special handling for images with OCR-extracted text
         if (file.mimeType.startsWith('image/') && file.extractedText.includes('OCR Text Extraction')) {
           // Extract the actual text content from OCR results
           const ocrTextMatch = file.extractedText.match(/OCR Text Extraction[^:]*:\s*\n\n([\s\S]*?)\n\nThis image contains/);
           const extractedText = ocrTextMatch ? ocrTextMatch[1].trim() : '';
-          
+
           if (extractedText) {
             // Truncate long OCR text for context efficiency
             const truncatedText = extractedText.length > 1000 ? extractedText.substring(0, 1000) + '...' : extractedText;
@@ -1253,7 +1878,7 @@ export class GPTManager {
           // Special handling for videos with MOCR and ASR analysis
           const videoAnalysisMatch = file.extractedText.match(/Video Analysis Complete[^:]*:\s*\n([\s\S]*?)\n\nThis video has been analyzed/);
           const analysisContent = videoAnalysisMatch ? videoAnalysisMatch[1].trim() : '';
-          
+
           if (analysisContent) {
             // Truncate long video analysis for context efficiency
             const truncatedAnalysis = analysisContent.length > 1500 ? analysisContent.substring(0, 1500) + '...' : analysisContent;
@@ -1271,12 +1896,12 @@ export class GPTManager {
             extractedText: file.extractedText,
             metadata: file.metadata
           });
-          
+
           // Truncate summary for context efficiency
           const truncatedSummary = summary.length > 800 ? summary.substring(0, 800) + '...' : summary;
           contextEntry = `File "${file.originalName}": ${truncatedSummary}`;
         }
-        
+
         // Check if adding this context would exceed limits
         if (totalContextLength + contextEntry.length > maxContextLength) {
           // Add a summary of remaining files
@@ -1286,7 +1911,7 @@ export class GPTManager {
           }
           break;
         }
-        
+
         contextParts.push(contextEntry);
         totalContextLength += contextEntry.length;
       } catch (error) {
@@ -1362,25 +1987,25 @@ export class GPTManager {
    */
   async migrateExistingGPTs() {
     console.log('🔄 [GPTManager] Starting migration of existing GPTs...');
-    
+
     const stmt = this.db.prepare('SELECT * FROM gpts WHERE construct_callsign IS NULL OR construct_callsign = ""');
     const rows = stmt.all();
-    
+
     let migrated = 0;
     let errors = 0;
-    
+
     for (const row of rows) {
       if (!row.name || !row.name.trim()) {
         console.warn(`⚠️ [GPTManager] Skipping GPT ${row.id} - no name`);
         continue;
       }
-      
+
       try {
         const constructCallsign = await this.generateConstructCallsign(row.name, row.user_id);
-        
+
         const updateStmt = this.db.prepare('UPDATE gpts SET construct_callsign = ? WHERE id = ?');
         updateStmt.run(constructCallsign, row.id);
-        
+
         console.log(`✅ [GPTManager] Migrated GPT ${row.id}: "${row.name}" → ${constructCallsign}`);
         migrated++;
       } catch (error) {
@@ -1388,7 +2013,7 @@ export class GPTManager {
         errors++;
       }
     }
-    
+
     console.log(`✅ [GPTManager] Migration complete: ${migrated} migrated, ${errors} errors`);
     return { migrated, errors, total: rows.length };
   }

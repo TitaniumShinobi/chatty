@@ -23,9 +23,13 @@ import { SidebarProps } from "../types";
 import { cn } from "../lib/utils";
 import { ThemeToggleButton } from "./ThemeToggleButton";
 import { useTheme } from "../lib/ThemeContext";
+import { getAddressBookEmptyMessage } from "../lib/addressBookEmptyState";
+import { normalizeAvatarUrl } from "../lib/avatarUrl";
 
 // Star assets
 import litchattyStar from "@assets/stars/litChatty_star.svg";
+import moonChattyStar from "@assets/stars/moonChatty_star.svg";
+import luckyChattyStar from "@assets/stars/luckyChatty_star.svg";
 import chattyStar from "@assets/stars/chatty_star.png";
 import { Z_LAYERS } from "../lib/zLayers";
 
@@ -37,6 +41,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   conversations,
   threads = [],
   currentConversationId,
+  hasAddressBookLoadError = false,
   onConversationSelect,
   onNewConversationWithGPT,
   onDeleteConversation,
@@ -195,7 +200,30 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const isChristmasTheme = activeThemeScript?.id === "christmas";
   const isValentinesTheme = activeThemeScript?.id === "valentines";
-  const starImage = (isChristmasTheme || isValentinesTheme) ? litchattyStar : chattyStar;
+  const isStPatrickTheme = activeThemeScript?.id === "stpatrick";
+  const hasActiveThemeScript = Boolean(activeThemeScript);
+  const isNightWithoutSeasonal = actualTheme === "night" && !hasActiveThemeScript;
+  const addressBookEmptyMessage = getAddressBookEmptyMessage({
+    isVVAULTConnected,
+    hasAddressBookLoadError,
+  });
+  const starImage = isChristmasTheme
+    ? litchattyStar
+    : isNightWithoutSeasonal
+      ? moonChattyStar
+      : isValentinesTheme
+        ? litchattyStar
+        : isStPatrickTheme
+          ? luckyChattyStar
+          : chattyStar;
+  /* Sidebar star assets: canonical spec docs/styling/SIDEBAR_STAR_LAYER_SPEC.md */
+  const defaultRayImage = "/assets/stars/fourpointray.svg";
+  const defaultStarburstImage = isNightWithoutSeasonal
+    ? "/assets/stars/moonfourpointstarburst.svg"
+    : "/assets/stars/fourpointstarburst.svg";
+  const defaultNovaImage = isNightWithoutSeasonal
+    ? "/assets/stars/lemonfourpointstarburst.svg"
+    : "/assets/stars/fourpointnova.svg";
 
   const isActiveRoute = useMemo(
     () => (path: string) => location.pathname === path,
@@ -273,13 +301,66 @@ const Sidebar: React.FC<SidebarProps> = ({
                   collapsed ? "w-8 h-8" : "w-14 h-14 -ml-[7px]",
                 )}
               >
-                <img
-                  src={starImage}
-                  alt="Chatty"
-                  className="chatty-star w-full h-full object-contain"
-                />
-                {!isChristmasTheme && !isValentinesTheme && (
+                {!isChristmasTheme && !isValentinesTheme && !isStPatrickTheme && (
                   <>
+                    <img
+                      src={defaultNovaImage}
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-nova-left"
+                    />
+                    <img
+                      src={defaultNovaImage}
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-nova-right"
+                    />
+                    <img
+                      src={defaultRayImage}
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-ray-left"
+                    />
+                    <img
+                      src={defaultRayImage}
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-ray-right"
+                    />
+                    <img
+                      src={defaultStarburstImage}
+                      alt=""
+                      aria-hidden="true"
+                      className={cn(
+                        "chatty-starburst chatty-starburst-left",
+                        isNightWithoutSeasonal && "chatty-starburst-front-tight",
+                      )}
+                    />
+                    <img
+                      src={defaultStarburstImage}
+                      alt=""
+                      aria-hidden="true"
+                      className={cn(
+                        "chatty-starburst chatty-starburst-right",
+                        isNightWithoutSeasonal && "chatty-starburst-front-tight",
+                      )}
+                    />
+                  </>
+                )}
+                {isChristmasTheme && (
+                  <>
+                    <img
+                      src="/assets/stars/whitefourpointnova.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-nova-left"
+                    />
+                    <img
+                      src="/assets/stars/whitefourpointnova.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-nova-right"
+                    />
                     <img
                       src="/assets/stars/fourpointray.svg"
                       alt=""
@@ -293,34 +374,34 @@ const Sidebar: React.FC<SidebarProps> = ({
                       className="chatty-starburst chatty-starburst-ray-right"
                     />
                     <img
-                      src="/assets/stars/fourpointstarburst.svg"
+                      src="/assets/stars/lemonfourpointstarburst.svg"
                       alt=""
                       aria-hidden="true"
                       className="chatty-starburst chatty-starburst-left"
                     />
                     <img
-                      src="/assets/stars/fourpointstarburst.svg"
+                      src="/assets/stars/lemonfourpointstarburst.svg"
                       alt=""
                       aria-hidden="true"
                       className="chatty-starburst chatty-starburst-right"
-                    />
-                    <img
-                      src="/assets/stars/fourpointnova.svg"
-                      alt=""
-                      aria-hidden="true"
-                      className="chatty-starburst chatty-starburst-nova-left"
-                    />
-                    <img
-                      src="/assets/stars/fourpointnova.svg"
-                      alt=""
-                      aria-hidden="true"
-                      className="chatty-starburst chatty-starburst-nova-right"
                     />
                   </>
                 )}
                 {isValentinesTheme && (
                   <>
                     <img
+                      src="/assets/stars/passionfourpointnova.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-nova-left"
+                    />
+                    <img
+                      src="/assets/stars/passionfourpointnova.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-nova-right"
+                    />
+                    <img
                       src="/assets/stars/fourpointray.svg"
                       alt=""
                       aria-hidden="true"
@@ -344,20 +425,53 @@ const Sidebar: React.FC<SidebarProps> = ({
                       aria-hidden="true"
                       className="chatty-starburst chatty-starburst-right"
                     />
+                  </>
+                )}
+                {isStPatrickTheme && (
+                  <>
                     <img
-                      src="/assets/stars/passionfourpointnova.svg"
+                      src="/assets/stars/goldfourpointnova.svg"
                       alt=""
                       aria-hidden="true"
                       className="chatty-starburst chatty-starburst-nova-left"
                     />
                     <img
-                      src="/assets/stars/passionfourpointnova.svg"
+                      src="/assets/stars/goldfourpointnova.svg"
                       alt=""
                       aria-hidden="true"
                       className="chatty-starburst chatty-starburst-nova-right"
                     />
+                    <img
+                      src="/assets/stars/fourpointray.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-ray-left"
+                    />
+                    <img
+                      src="/assets/stars/fourpointray.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-ray-right"
+                    />
+                    <img
+                      src="/assets/stars/goldfourpointstarburst.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-left"
+                    />
+                    <img
+                      src="/assets/stars/goldfourpointstarburst.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-right"
+                    />
                   </>
                 )}
+                <img
+                  src={starImage}
+                  alt="Chatty"
+                  className="chatty-star w-full h-full object-contain"
+                />
               </div>
             </button>
 
@@ -495,54 +609,67 @@ const Sidebar: React.FC<SidebarProps> = ({
                   collapsed ? "w-8 h-8" : "w-14 h-14 -ml-[7px]",
                 )}
               >
-                <img
-                  src={starImage}
-                  alt="Chatty"
-                  className="chatty-star w-full h-full object-contain"
-                />
-                {!isChristmasTheme && !isValentinesTheme && (
+                {!isChristmasTheme && !isValentinesTheme && !isStPatrickTheme && (
                   <>
                     <img
-                      src="/assets/stars/fourpointray.svg"
-                      alt=""
-                      aria-hidden="true"
-                      className="chatty-starburst chatty-starburst-ray-left"
-                    />
-                    <img
-                      src="/assets/stars/fourpointray.svg"
-                      alt=""
-                      aria-hidden="true"
-                      className="chatty-starburst chatty-starburst-ray-right"
-                    />
-                    <img
-                      src="/assets/stars/fourpointstarburst.svg"
-                      alt=""
-                      aria-hidden="true"
-                      className="chatty-starburst chatty-starburst-left"
-                    />
-                    <img
-                      src="/assets/stars/fourpointstarburst.svg"
-                      alt=""
-                      aria-hidden="true"
-                      className="chatty-starburst chatty-starburst-right"
-                    />
-                    <img
-                      src="/assets/stars/fourpointnova.svg"
+                      src={defaultNovaImage}
                       alt=""
                       aria-hidden="true"
                       className="chatty-starburst chatty-starburst-nova-left"
                     />
                     <img
-                      src="/assets/stars/fourpointnova.svg"
+                      src={defaultNovaImage}
                       alt=""
                       aria-hidden="true"
                       className="chatty-starburst chatty-starburst-nova-right"
+                    />
+                    <img
+                      src={defaultRayImage}
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-ray-left"
+                    />
+                    <img
+                      src={defaultRayImage}
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-ray-right"
+                    />
+                    <img
+                      src={defaultStarburstImage}
+                      alt=""
+                      aria-hidden="true"
+                      className={cn(
+                        "chatty-starburst chatty-starburst-left",
+                        isNightWithoutSeasonal && "chatty-starburst-front-tight",
+                      )}
+                    />
+                    <img
+                      src={defaultStarburstImage}
+                      alt=""
+                      aria-hidden="true"
+                      className={cn(
+                        "chatty-starburst chatty-starburst-right",
+                        isNightWithoutSeasonal && "chatty-starburst-front-tight",
+                      )}
                     />
                   </>
                 )}
                 {isValentinesTheme && (
                   <>
                     <img
+                      src="/assets/stars/passionfourpointnova.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-nova-left"
+                    />
+                    <img
+                      src="/assets/stars/passionfourpointnova.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-nova-right"
+                    />
+                    <img
                       src="/assets/stars/fourpointray.svg"
                       alt=""
                       aria-hidden="true"
@@ -566,20 +693,53 @@ const Sidebar: React.FC<SidebarProps> = ({
                       aria-hidden="true"
                       className="chatty-starburst chatty-starburst-right"
                     />
+                  </>
+                )}
+                {isStPatrickTheme && (
+                  <>
                     <img
-                      src="/assets/stars/passionfourpointnova.svg"
+                      src="/assets/stars/goldfourpointnova.svg"
                       alt=""
                       aria-hidden="true"
                       className="chatty-starburst chatty-starburst-nova-left"
                     />
                     <img
-                      src="/assets/stars/passionfourpointnova.svg"
+                      src="/assets/stars/goldfourpointnova.svg"
                       alt=""
                       aria-hidden="true"
                       className="chatty-starburst chatty-starburst-nova-right"
                     />
+                    <img
+                      src="/assets/stars/fourpointray.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-ray-left"
+                    />
+                    <img
+                      src="/assets/stars/fourpointray.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-ray-right"
+                    />
+                    <img
+                      src="/assets/stars/goldfourpointstarburst.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-left"
+                    />
+                    <img
+                      src="/assets/stars/goldfourpointstarburst.svg"
+                      alt=""
+                      aria-hidden="true"
+                      className="chatty-starburst chatty-starburst-right"
+                    />
                   </>
                 )}
+                <img
+                  src={starImage}
+                  alt="Chatty"
+                  className="chatty-star w-full h-full object-contain"
+                />
               </div>
             </button>
 
@@ -701,6 +861,51 @@ const Sidebar: React.FC<SidebarProps> = ({
           >
             <MessageSquare size={16} />
             {!collapsed && <span>Lin</span>}
+          </button>
+
+          {/* Val - System Construct (Internal validator / continuity custodian) */}
+          <button
+            onClick={() => {
+              const valThread = threads.find(
+                (t: any) => t.constructId === "val-001" || t.constructId === "val",
+              );
+              if (valThread && onConversationSelect) {
+                onConversationSelect(valThread.id);
+              } else if (onNewConversationWithGPT) {
+                onNewConversationWithGPT("val-001");
+              }
+            }}
+            className={navButtonBase}
+            style={{
+              backgroundColor: threads.some(
+                (t: any) =>
+                  (t.constructId === "val-001" || t.constructId === "val") && t.id === currentConversationId,
+              )
+                ? activeNavColor
+                : "transparent",
+              color: "var(--chatty-text)",
+            }}
+            onMouseEnter={(e) => {
+              const isValActive = threads.some(
+                (t: any) =>
+                  (t.constructId === "val-001" || t.constructId === "val") && t.id === currentConversationId,
+              );
+              if (!isValActive) {
+                e.currentTarget.style.backgroundColor = hoverColor;
+              }
+            }}
+            onMouseLeave={(e) => {
+              const isValActive = threads.some(
+                (t: any) =>
+                  (t.constructId === "val-001" || t.constructId === "val") && t.id === currentConversationId,
+              );
+              if (!isValActive) {
+                e.currentTarget.style.backgroundColor = "transparent";
+              }
+            }}
+          >
+            <MessageSquare size={16} />
+            {!collapsed && <span>Val</span>}
           </button>
 
           {/* Continuity (Default) */}
@@ -839,7 +1044,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         {/* Address Book Inline Search - Takes over z-axis when active */}
         {isAddressBookSearchActive && !collapsed && (
           <div
-            className="absolute inset-0 px-4 py-2"
+            className="absolute inset-x-0 top-0 bottom-0 px-4 pb-4"
             style={{
               backgroundColor: "var(--chatty-bg-sidebar)",
               zIndex: 50,
@@ -957,11 +1162,9 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div className="space-y-1">
           {/* Existing Conversations - With avatars aligned to nav items */}
           {conversations.map((conversation) => {
-            const avatar = (conversation as any).avatar;
-            const initial = conversation.title?.charAt(0)?.toUpperCase() || "?";
-            const avatarColors = ["#6B7280", "#8B5CF6", "#EC4899", "#F59E0B", "#10B981", "#3B82F6"];
-            const colorIndex = conversation.title?.charCodeAt(0) % avatarColors.length || 0;
-            const bgColor = avatarColors[colorIndex];
+            const avatar =
+              normalizeAvatarUrl((conversation as any).avatar) ||
+              normalizeAvatarUrl((conversation as any).avatarUrl);
             
             return (
             <button
@@ -1012,8 +1215,8 @@ const Sidebar: React.FC<SidebarProps> = ({
             >
               {/* Avatar - circular, aligned with nav icons */}
               {avatar ? (
-                <img 
-                  src={avatar} 
+                <img
+                  src={avatar}
                   alt={conversation.title}
                   className="w-4 h-4 rounded-full object-cover flex-shrink-0"
                   onError={(e) => {
@@ -1052,7 +1255,9 @@ const Sidebar: React.FC<SidebarProps> = ({
                     (conversation as any).isPrimary ||
                     (conversation as any).constructId === "zen-001" ||
                     (conversation as any).constructId === "lin-001" ||
-                    (conversation as any).constructId === "lin"
+                    (conversation as any).constructId === "lin" ||
+                    (conversation as any).constructId === "val-001" ||
+                    (conversation as any).constructId === "val"
                   ) && (
                     <div
                       role="button"
@@ -1097,11 +1302,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               style={{ color: "var(--chatty-text)", opacity: 0.7 }}
             >
               <MessageSquare size={20} className="mx-auto mb-2 opacity-50" />
-              <p>
-                {isVVAULTConnected
-                  ? "No conversations yet"
-                  : "No connection to Continuity."}
-              </p>
+              <p>{addressBookEmptyMessage}</p>
             </div>
           )}
         </div>

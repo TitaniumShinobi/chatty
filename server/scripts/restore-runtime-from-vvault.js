@@ -22,7 +22,7 @@ const { GPTManager } = await import('../lib/gptManager.js');
 const gptManager = GPTManager.getInstance();
 
 const VVAULT_ROOT = path.join(__dirname, '../../../vvault');
-const USER_ID = 'devon_woodson_1762969514958';
+const USER_ID = process.env.VVAULT_USER_ID || 'devon_woodson_1774390416168';
 const USER_EMAIL = 'devon@thewreck.org';
 const PROVIDER = 'ChatGPT';
 

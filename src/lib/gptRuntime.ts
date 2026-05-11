@@ -736,8 +736,7 @@ export class GPTRuntimeService {
    * Includes brevity metadata for ultra-brief GPTs.
    */
   private async persistTurnToVvault(gptId: string, userMessage: string, assistantMessage: string): Promise<void> {
-    if (!gptId.toLowerCase().includes('katana')) return;
-
+    // Brevity/analytical persistence for any GPT; config-driven gating can be added via getBrevityConfig(callSign) if needed
     // Calculate brevity metrics
     const wordCount = assistantMessage.trim().split(/\s+/).filter(w => w.length > 0).length;
     const oneWordResponse = wordCount === 1;

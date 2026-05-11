@@ -141,7 +141,7 @@ async function auditSessionContinuity() {
       const response = await bridge.processMessage(
         testConstructId,
         message,
-        'devon_woodson_1762969514958',
+        process.env.VVAULT_USER_ID || 'devon_woodson_1774390416168',
         sessionId
       );
       console.timeEnd(`   ⏱️  Response time`);

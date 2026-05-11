@@ -2,6 +2,7 @@
 // Integrates with Chatty's existing CLI system
 
 import { FileOperationsCLI, formatFileSize, formatDate, formatPermissions } from './fileOps.js';
+import { getChattyCliFileRoot, resolveUserPath } from './paths.js';
 
 // Color utilities
 function colorize(text: string, color: string): string {
@@ -22,8 +23,8 @@ function colorize(text: string, color: string): string {
 export class FileOpsCommands {
   private fileOps: FileOperationsCLI;
 
-  constructor() {
-    this.fileOps = new FileOperationsCLI();
+  constructor(initialDir = getChattyCliFileRoot()) {
+    this.fileOps = new FileOperationsCLI(resolveUserPath(initialDir));
   }
 
   /** Handle file operations commands */

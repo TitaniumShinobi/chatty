@@ -28,7 +28,7 @@ export function useZenGuidance() {
   }, []);
 
   const showStep = (step: GuidanceStep) => {
-    getZenGuidanceService().极客时间showStep(step);
+    getZenGuidanceService().showStep(step);
   };
 
   const showFlow = (steps: GuidanceStep[]) => {

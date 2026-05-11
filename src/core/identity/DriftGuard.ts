@@ -149,10 +149,11 @@ export class DriftGuard {
 
     // Resolve user ID (simplified - would need actual user resolution in production)
     const userShard = 'shard_0000';
-    const userId = 'devon_woodson_1762969514958'; // Would be resolved from context
+    const userId = 'devon_woodson_1774390416168'; // Would be resolved from context
+    const vvaultRoot = VVAULT_ROOT || '';
     
     const instancePath = path.join(
-      VVAULT_ROOT,
+      vvaultRoot,
       'users',
       userShard,
       userId,
@@ -343,4 +344,3 @@ export function getDriftGuard(): DriftGuard {
   }
   return driftGuardInstance;
 }
-

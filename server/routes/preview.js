@@ -15,7 +15,7 @@ async function getEnsurePhi3() {
       
       ensurePhi3 = async (opts) => {
         const portsToTry = [
-          Number(process.env.OLLAMA_PORT) || opts.preferredPort,
+          opts.preferredPort,
           11434, // Ollama default
         ];
 
@@ -79,22 +79,29 @@ async function getEnsurePhi3() {
 
 /**
  * POST /api/preview/run
- * Body: { prompt: string, model?: string, host?: string, port?: number, timeoutMs?: number }
+ * Body: { prompt: string, model?: string, timeoutMs?: number }
  *
  * Runs a single Ollama generation server-side to keep previews out of the browser.
  * Automatically starts Ollama if it's not running.
  */
 router.post("/run", async (req, res) => {
   try {
-    const { prompt, model, host, port, timeoutMs } = req.body || {};
+    const body = req.body || {};
+    if (typeof body !== "object" || Array.isArray(body)) {
+      return res.status(400).json({ error: "request body must be an object" });
+    }
+    const allowedKeys = new Set(["prompt", "model", "timeoutMs"]);
+    const unknownKeys = Object.keys(body).filter((key) => !allowedKeys.has(key));
+    if (unknownKeys.length) return res.status(400).json({ error: "unknown request field" });
+    const { prompt, model, timeoutMs } = body;
 
     if (!prompt || typeof prompt !== "string") {
       return res.status(400).json({ error: "prompt is required" });
     }
 
     // Auto-start Ollama if needed (server-side only)
-    const targetHost = (host || process.env.OLLAMA_HOST || "http://localhost").replace(/\/$/, "");
-    let targetPort = port || Number(process.env.OLLAMA_PORT) || 11434;
+    const targetHost = "http://127.0.0.1";
+    let targetPort = 11434;
     
     try {
       const ensurePhi3Fn = await getEnsurePhi3();
@@ -109,6 +116,8 @@ router.post("/run", async (req, res) => {
       console.warn('Ollama auto-start failed, using default port:', error?.message || error);
     }
 
+    if (model != null && typeof model !== "string") return res.status(400).json({ error: "model must be a string" });
+    if (timeoutMs != null && (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000)) return res.status(400).json({ error: "timeoutMs is invalid" });
     const targetModel = model || process.env.OLLAMA_MODEL || "phi3:latest";
     const timeout = timeoutMs || 90000; // 90 seconds for preview
 

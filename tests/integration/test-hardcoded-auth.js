@@ -10,9 +10,11 @@
 process.env.NODE_ENV = 'development';
 
 // Import the auth middleware
-import { requireAuth } from './server/middleware/auth.js';
+import { requireAuth } from '../../server/auth/middleware/auth.js';
 
 console.log('🔓 Testing Hardcoded Authentication System...\n');
+
+const TEST_USER_ID = process.env.CHATTY_TEST_USER_ID || process.env.VVAULT_USER_ID || 'devon_woodson_1774390416168';
 
 // Mock Express request/response objects
 function createMockReq() {
@@ -65,7 +67,7 @@ async function testHardcodedAuth() {
     
     console.log('\n✅ Validation Results:');
     console.log(`   Has all required fields: ${hasAllFields ? '✅' : '❌'}`);
-    console.log(`   User ID matches VVAULT: ${req.user?.id === 'devon_woodson_1762969514958' ? '✅' : '❌'}`);
+    console.log(`   User ID matches configured test user: ${req.user?.id === TEST_USER_ID ? '✅' : '❌'}`);
     console.log(`   Email is correct: ${req.user?.email === 'dwoodson92@gmail.com' ? '✅' : '❌'}`);
     console.log(`   Development identifier: ${req.user?.sub === 'hardcoded_dev_user' ? '✅' : '❌'}`);
     
@@ -113,7 +115,7 @@ async function testAPIEndpoint() {
   if (process.env.NODE_ENV === 'development' || !JWT_SECRET) {
     console.log('🔓 [Auth] Using hardcoded development user for /api/me');
     const hardcodedUser = {
-      id: 'devon_woodson_1762969514958',
+      id: TEST_USER_ID,
       email: 'dwoodson92@gmail.com',
       name: 'Devon Woodson',
       sub: 'hardcoded_dev_user',

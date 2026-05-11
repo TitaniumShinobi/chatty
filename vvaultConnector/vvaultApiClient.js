@@ -74,6 +74,41 @@ function normalizeConstructFilesPayload(data) {
   return { ...data, files };
 }
 
+const CHATTY_METADATA_COMMENT_RE = /^\s*<!--\s*CHATTY_METADATA\s+([A-Za-z0-9_-]+)\s*-->\s*$/;
+
+function encodeChattyMetadataComment(metadata) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return '';
+  }
+  const keys = Object.keys(metadata).filter((key) => typeof key === 'string');
+  if (keys.length === 0) {
+    return '';
+  }
+  try {
+    const encoded = Buffer.from(JSON.stringify(metadata), 'utf8').toString('base64url');
+    return `\n\n<!-- CHATTY_METADATA ${encoded} -->`;
+  } catch {
+    return '';
+  }
+}
+
+function decodeChattyMetadataComment(line) {
+  const match = String(line || '').match(CHATTY_METADATA_COMMENT_RE);
+  if (!match) return null;
+  try {
+    const decoded = Buffer.from(match[1], 'base64url').toString('utf8');
+    const parsed = JSON.parse(decoded);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function appendChattyMetadataComment(content, metadata) {
+  const comment = encodeChattyMetadataComment(metadata);
+  return comment ? `${content || ''}${comment}` : content;
+}
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 3000) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -344,6 +379,7 @@ function parseMarkdownToMessages(content) {
   let currentRole = null;
   let currentContent = [];
   let currentTimestamp = null;
+  let currentMetadata = null;
   let messageIndex = 0;
   let inMetadataBlock = false;
 
@@ -356,16 +392,24 @@ function parseMarkdownToMessages(content) {
           id: `msg_${messageIndex++}`,
           role: currentRole,
           content: stripSurroundingQuotes(msgContent),
-          timestamp: currentTimestamp || new Date().toISOString()
+          timestamp: currentTimestamp || new Date().toISOString(),
+          metadata: currentMetadata || {},
         });
       }
     }
+    currentMetadata = null;
   }
 
   for (const line of lines) {
+    const chattyMetadata = decodeChattyMetadataComment(line);
+    if (chattyMetadata) {
+      currentMetadata = chattyMetadata;
+      continue;
+    }
+
     // Skip metadata block
     if (line.includes('<!-- IMPORT_METADATA') || line.includes('<!--')) {
-      inMetadataBlock = true;
+      inMetadataBlock = !line.includes('-->');
       continue;
     }
     if (line.includes('-->')) {
@@ -414,6 +458,22 @@ function parseMarkdownToMessages(content) {
       const isoTimestamp = inlineIsoBoldMatch[1];
       const speaker = inlineIsoBoldMatch[2].trim().toLowerCase();
       const msgContent = inlineIsoBoldMatch[3];
+      const isUser = speaker === 'user' || speaker === 'you' || speaker.startsWith('devon');
+
+      currentRole = isUser ? 'user' : 'assistant';
+      currentTimestamp = isoTimestamp;
+      currentContent = msgContent ? [msgContent] : [];
+      continue;
+    }
+
+    // Canonical body inline timestamp format: "**User** (ISO_TIMESTAMP): content"
+    const speakerTimestampMatch = line.match(/^\*\*([^*]+)\*\*\s+\((\d{4}-\d{2}-\d{2}T[^)]+)\):\s*(.*)$/);
+    if (speakerTimestampMatch) {
+      saveCurrentMessage();
+
+      const speaker = speakerTimestampMatch[1].trim().toLowerCase();
+      const isoTimestamp = speakerTimestampMatch[2];
+      const msgContent = speakerTimestampMatch[3];
       const isUser = speaker === 'user' || speaker === 'you' || speaker.startsWith('devon');
 
       currentRole = isUser ? 'user' : 'assistant';
@@ -544,7 +604,7 @@ async function postMessage({ constructId, message, userId, userEmail, supabaseUs
  * @param {string} [params.timestamp] - ISO timestamp (optional, defaults to now)
  * @returns {Promise<{success: boolean, action: string} | null>}
  */
-async function appendMessage({ constructId, role, content, name, timestamp, userEmail, supabaseUserId, attachments, projectName, rootPath }) {
+async function appendMessage({ constructId, role, content, name, timestamp, userEmail, supabaseUserId, metadata, attachments, projectName, rootPath }) {
   const baseUrl = getBaseUrl();
   if (!baseUrl) {
     console.error('❌ [VVAULTApiClient] VVAULT_API_BASE_URL not set, cannot append message');
@@ -561,9 +621,10 @@ async function appendMessage({ constructId, role, content, name, timestamp, user
         headers: getChattyAuthHeaders({ userEmail, supabaseUserId }),
         body: JSON.stringify({ 
           role, 
-          content,
+          content: appendChattyMetadataComment(content, metadata),
           name,
           timestamp: timestamp || new Date().toISOString(),
+          metadata,
           attachments,
           projectName,
           rootPath

@@ -4,6 +4,16 @@ import {
   extractSourceFromTranscriptPath,
   normalizeTranscriptSource,
 } from './transcriptSource.js';
+import {
+  matchesHistoricalSourcePolicy,
+  rankHistoricalSource,
+} from './constructMemoryPolicy.js';
+import {
+  buildMemoryAnchorFilename,
+  clearMemoryAnchorReadCache,
+  loadLatestMemoryAnchors,
+  primeMemoryAnchorReadCache,
+} from './memoryAnchorStore.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -18,36 +28,105 @@ const MAX_SCORED_PER_FILE = 4;
 const MAX_VERIFIED_MEMORIES = 8;
 const CANONICAL_SOURCE_SET = new Set(canonicalSourceFolderList().map((s) => normalizeTranscriptSource(s, { fallback: '' })));
 const LEGACY_SOURCE_HINTS = ['character_ai'];
+let vvaultApiClientPromise = null;
 
-function isTranscriptCandidateFile(file, constructId) {
+export function isTranscriptCandidateFile(file, constructId) {
   const filename = String(file?.filename || '');
   if (!filename) return false;
   const lowerName = filename.toLowerCase();
+  const metadata = file?.metadata || {};
+  const approvedReview = metadata.artifactClass === 'provider_transcript'
+    && (metadata.reviewStatus === 'approved' || metadata.taxonomyReviewed === true);
 
-  if (file?.file_type === 'transcript') return true;
+  if (!approvedReview && (lowerName.includes('/transcripts/') || lowerName.includes('/documents/'))) {
+    return false;
+  }
 
-  const metadataSource = normalizeTranscriptSource(file?.metadata?.source, { fallback: '' });
+  const metadataSource = normalizeTranscriptSource(metadata.source, { fallback: '' });
   if (metadataSource && CANONICAL_SOURCE_SET.has(metadataSource)) return true;
 
   const extractedSource = normalizeTranscriptSource(extractSourceFromTranscriptPath(filename, constructId), { fallback: '' });
   if (extractedSource && CANONICAL_SOURCE_SET.has(extractedSource)) return true;
-  if (LEGACY_SOURCE_HINTS.some((hint) => lowerName.includes(hint))) return true;
 
-  if (lowerName.includes('/documents/')) {
-    return lowerName.includes('/transcript') || lowerName.includes('/chatgpt') || lowerName.includes('/character.ai') || lowerName.includes('/character_ai');
-  }
+  if (file?.file_type === 'transcript') return false;
+
+  if (LEGACY_SOURCE_HINTS.some((hint) => lowerName.includes(hint))) return true;
 
   return lowerName.includes('chatgpt')
     || lowerName.includes('character.ai')
     || lowerName.includes('character_ai')
-    || lowerName.includes('transcript')
-    || lowerName.includes('continuity')
     || lowerName.includes('chat.log');
 }
 
 function getSupabase() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return null;
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+}
+
+async function getVvaultApiClient() {
+  if (!vvaultApiClientPromise) {
+    vvaultApiClientPromise = import('../../vvaultConnector/vvaultApiClient.js').catch((error) => {
+      vvaultApiClientPromise = null;
+      throw error;
+    });
+  }
+  return vvaultApiClientPromise;
+}
+
+function normalizeVvaultBodyMemories(apiResult, maxMemories) {
+  const rawMemories =
+    apiResult?.memories ||
+    apiResult?.memory ||
+    apiResult?.items ||
+    apiResult?.data ||
+    [];
+  if (!Array.isArray(rawMemories)) return [];
+
+  return rawMemories.slice(0, maxMemories).map((memory, index) => {
+    if (typeof memory === 'string') {
+      return {
+        context: memory,
+        response: '',
+        score: 100 - index,
+        sourceFile: 'vvault-body',
+        verified: true,
+        tone: 'neutral',
+        relevance: 1.0,
+      };
+    }
+    return {
+      context: memory.context || memory.prompt || memory.user || memory.content || memory.summary || '',
+      response: memory.response || memory.assistant || memory.reply || '',
+      score: typeof memory.score === 'number' ? memory.score : 100 - index,
+      sourceFile: memory.sourceFile || memory.source_file || memory.source || 'vvault-body',
+      verified: memory.verified !== false,
+      tone: memory.tone || detectEmotionalTone(`${memory.context || ''} ${memory.response || ''}`),
+      relevance: typeof memory.relevance === 'number' ? memory.relevance : 1.0,
+      tag: memory.tag,
+      summary: memory.summary,
+      context_hint: memory.context_hint,
+      session_context: memory.session_context,
+      continuity_hooks: memory.continuity_hooks,
+    };
+  }).filter((memory) => memory.context || memory.response || memory.summary);
+}
+
+async function loadVvaultBodyMemories(constructId, maxMemories, userContext = null) {
+  try {
+    const { getConstructMemories } = await getVvaultApiClient();
+    if (typeof getConstructMemories !== 'function') return null;
+    const apiResult = await getConstructMemories(constructId, userContext);
+    if (!apiResult) return null;
+    return {
+      memories: normalizeVvaultBodyMemories(apiResult, maxMemories),
+      source: 'vvault_body',
+      fileCount: apiResult.file_count || apiResult.fileCount || 0,
+      status: apiResult.status || 'body_native',
+    };
+  } catch (error) {
+    console.warn(`⚠️ [VerifiedMemory] VVAULT body memories unavailable for ${constructId}:`, error.message);
+    return null;
+  }
 }
 
 async function discoverTranscriptFiles(constructId) {
@@ -64,7 +143,6 @@ async function discoverTranscriptFiles(constructId) {
     .from('vault_files')
     .select('id, filename, construct_id, created_at, content, storage_path, metadata, file_type')
     .eq('construct_id', constructId)
-    .not('filename', 'like', '%chat_with_%')
     .order('created_at', { ascending: false })
     .limit(120);
 
@@ -78,7 +156,11 @@ async function discoverTranscriptFiles(constructId) {
     const lowerName = f.filename.toLowerCase();
     if (lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.pdf') || lowerName.endsWith('.gif') || lowerName.endsWith('.webp') || lowerName.endsWith('.capsule') || f.filename === '.DS_Store') return false;
     if (f.filename === 'chat.log' && (!f.content || f.content.length < 100)) return false;
-    return isTranscriptCandidateFile(f, constructId);
+    return isTranscriptCandidateFile(f, constructId) && matchesHistoricalSourcePolicy(f, constructId);
+  }).sort((left, right) => {
+    const rankDelta = rankHistoricalSource(left, constructId) - rankHistoricalSource(right, constructId);
+    if (rankDelta !== 0) return rankDelta;
+    return new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime();
   }).slice(0, 20);
 
   catalogCache.set(cacheKey, { files, ts: Date.now() });
@@ -426,20 +508,19 @@ async function loadPreExtractedAnchors(constructId) {
   if (!supabase) return null;
 
   try {
-    const anchorFilename = `instances/${constructId}/memory_anchors.json`;
-    const { data, error } = await supabase
-      .from('vault_files')
-      .select('content')
-      .eq('construct_id', constructId)
-      .eq('filename', anchorFilename)
-      .single();
+    const loaded = await loadLatestMemoryAnchors(constructId, { supabase });
 
-    if (error || !data?.content) {
-      console.log(`⚠️ [VerifiedMemory] Pre-extracted anchors query failed for ${constructId}: ${error?.message || 'no content'}`);
+    if (loaded.error) {
+      console.log(`⚠️ [VerifiedMemory] Pre-extracted anchors query failed for ${constructId}: ${loaded.error.message}`);
       return null;
     }
 
-    const anchors = JSON.parse(data.content);
+    const anchors = loaded.anchors;
+    if (!anchors) {
+      console.log(`⚠️ [VerifiedMemory] Pre-extracted anchors query returned no usable anchors for ${constructId}`);
+      return null;
+    }
+
     if (!anchors.pairs || anchors.pairs.length === 0) {
       console.log(`⚠️ [VerifiedMemory] Pre-extracted anchors for ${constructId} had 0 pairs`);
       return null;
@@ -481,19 +562,9 @@ async function extractAndStoreAnchors(constructId, transcriptContent, sourceFile
 
     if (deduped.length === 0) return null;
 
-    const anchorFilename = `instances/${constructId}/memory_anchors.json`;
-    let existingAnchors = null;
-    try {
-      const { data } = await supabase
-        .from('vault_files')
-        .select('content')
-        .eq('construct_id', constructId)
-        .eq('filename', anchorFilename)
-        .single();
-      if (data?.content) {
-        existingAnchors = JSON.parse(data.content);
-      }
-    } catch {}
+    const anchorFilename = buildMemoryAnchorFilename(constructId);
+    const loadedAnchors = await loadLatestMemoryAnchors(constructId, { supabase });
+    let existingAnchors = loadedAnchors.anchors;
 
     const mergedPairs = existingAnchors?.pairs || [];
     const existingKeys = new Set(mergedPairs.map(p => p.user.substring(0, 60) + p.assistant.substring(0, 60)));
@@ -512,20 +583,19 @@ async function extractAndStoreAnchors(constructId, transcriptContent, sourceFile
       pairs: mergedPairs.slice(0, 3000)
     };
 
-    const existing = await supabase
-      .from('vault_files')
-      .select('id')
-      .eq('construct_id', constructId)
-      .eq('filename', anchorFilename)
-      .single();
+    const existingRowId = loadedAnchors.row?.id || loadedAnchors.latestRow?.id || null;
 
     let error;
-    if (existing.data) {
+    let persistedRow = null;
+    if (existingRowId) {
       const result = await supabase
         .from('vault_files')
         .update({ content: JSON.stringify(anchors) })
-        .eq('id', existing.data.id);
+        .eq('id', existingRowId)
+        .select('id, filename, content, created_at')
+        .single();
       error = result.error;
+      persistedRow = result.data || null;
     } else {
       const result = await supabase
         .from('vault_files')
@@ -534,14 +604,25 @@ async function extractAndStoreAnchors(constructId, transcriptContent, sourceFile
           filename: anchorFilename,
           content: JSON.stringify(anchors),
           file_type: 'application/json'
-        });
+        })
+        .select('id, filename, content, created_at')
+        .single();
       error = result.error;
+      persistedRow = result.data || null;
     }
 
     if (error) {
       console.warn(`⚠️ [VerifiedMemory] Failed to store anchors for ${constructId}:`, error.message);
       return null;
     }
+
+    primeMemoryAnchorReadCache({
+      constructId,
+      anchors,
+      row: persistedRow,
+      latestRow: persistedRow,
+      rows: persistedRow ? [persistedRow] : loadedAnchors.rows,
+    });
 
     console.log(`✅ [VerifiedMemory] Stored ${mergedPairs.length} memory anchors for ${constructId} from ${sourceFilename}`);
     return anchors;
@@ -560,7 +641,6 @@ async function extractBoundaryPairs(constructId) {
       .from('vault_files')
       .select('content, storage_path, filename, metadata, file_type')
       .eq('construct_id', constructId)
-      .not('filename', 'like', '%chat_with_%')
       .not('filename', 'like', '%memory_anchors%')
       .order('created_at', { ascending: true })
       .limit(30);
@@ -572,7 +652,10 @@ async function extractBoundaryPairs(constructId) {
 
     if (!data || data.length === 0) return { first: [], last: [] };
 
-    const candidateFiles = data.filter((file) => isTranscriptCandidateFile(file, constructId));
+    const candidateFiles = data
+      .filter((file) => isTranscriptCandidateFile(file, constructId))
+      .filter((file) => matchesHistoricalSourcePolicy(file, constructId))
+      .sort((left, right) => rankHistoricalSource(left, constructId) - rankHistoricalSource(right, constructId));
     if (candidateFiles.length === 0) return { first: [], last: [] };
 
     const sorted = [...candidateFiles].sort((a, b) => {
@@ -619,8 +702,13 @@ async function extractBoundaryPairs(constructId) {
   return { first: [], last: [] };
 }
 
-async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_VERIFIED_MEMORIES) {
+async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_VERIFIED_MEMORIES, options = {}) {
   const startTime = Date.now();
+  if (maxMemories && typeof maxMemories === 'object' && !Array.isArray(maxMemories)) {
+    options = maxMemories;
+    maxMemories = MAX_VERIFIED_MEMORIES;
+  }
+  const userContext = options?.userContext || null;
 
   try {
     const queryLower = (userMessage || '').toLowerCase();
@@ -628,7 +716,12 @@ async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_
     const lastKeywords = ['last', 'final', 'ended', 'stopped', 'most recent', 'latest', 'last thing'];
     const wantsChronological = chronoKeywords.some(k => queryLower.includes(k)) || lastKeywords.some(k => queryLower.includes(k));
 
-    const anchorKey = `${constructId}_${userMessage?.substring(0, 50) || 'default'}`;
+    const userContextKey = [
+      userContext?.supabaseUserId || userContext?.supabase_user_id || '',
+      userContext?.userEmail || userContext?.email || '',
+      userContext?.userId || '',
+    ].filter(Boolean).join(':') || 'anonymous';
+    const anchorKey = `${constructId}_${userContextKey}_${userMessage?.substring(0, 50) || 'default'}`;
     const cachedAnchors = anchorCache.get(anchorKey);
     if (cachedAnchors && Date.now() - cachedAnchors.ts < ANCHOR_TTL && !wantsChronological) {
       console.log(`💾 [VerifiedMemory] Cache hit for ${constructId} (${cachedAnchors.memories.length} memories)`);
@@ -641,6 +734,22 @@ async function loadVerifiedMemories(constructId, userMessage, maxMemories = MAX_
     }
     if (wantsChronological) {
       console.log(`🔍 [VerifiedMemory] Chronological query detected for ${constructId}: "${userMessage?.substring(0, 80)}"`);
+    }
+
+    const bodyMemories = await loadVvaultBodyMemories(constructId, maxMemories, userContext);
+    if (bodyMemories) {
+      const timing = Date.now() - startTime;
+      anchorCache.set(anchorKey, {
+        memories: bodyMemories.memories,
+        fileCount: bodyMemories.fileCount,
+        ts: Date.now(),
+      });
+      return {
+        memories: bodyMemories.memories,
+        source: 'vvault_body',
+        fileCount: bodyMemories.fileCount,
+        timing,
+      };
     }
 
     const preExtracted = await loadPreExtractedAnchors(constructId);
@@ -855,9 +964,11 @@ function clearVerifiedMemoryCache(constructId) {
         anchorCache.delete(key);
       }
     }
+    clearMemoryAnchorReadCache(constructId);
   } else {
     catalogCache.clear();
     anchorCache.clear();
+    clearMemoryAnchorReadCache();
   }
 }
 

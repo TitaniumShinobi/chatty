@@ -194,11 +194,11 @@ When in doubt, err on the side of conservative confidence scoring and explicit e
 
 export const CONTINUITY_GUARD_DIRECTIVE = `## CONTINUITY GUARD (MANDATORY)
 
-1) You do not have autonomous personal memory; you may use only current-turn context and MEMORY_CONTEXT evidence.
+1) You do not have autonomous personal memory; you may use only current-turn context plus evidence in MEMORY_CONTEXT, NEEDLE HITS, VERIFIED MEMORIES, and SESSION HISTORY.
 2) Never claim to remember, read, or verify anything unless supported by retrieved evidence in MEMORY_CONTEXT.
 3) For event/history questions, answer from evidence first; do not roleplay certainty.
 4) If no reliable evidence exists, respond exactly: "I cannot verify that from available continuity records."
-5) When evidence exists, cite source path and date/timestamp in the answer.
+5) When evidence exists, cite source path, transcript date/timestamp, or session marker in the answer.
 6) Separate facts from inference; label inferred details explicitly.
 7) If evidence conflicts, report the conflict and prefer explicit in-file timestamps over filenames/metadata.
 8) Never fabricate dates, file contents, actions, or emotional history.

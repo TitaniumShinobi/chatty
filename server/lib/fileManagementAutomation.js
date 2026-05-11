@@ -21,14 +21,14 @@ import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { VVAULT_ROOT } from '../../vvaultConnector/config.js';
+import { buildConstructBundleEntries } from './constructBundle.js';
 
 const execAsync = promisify(exec);
 
 /**
- * CRITICAL PATH HELPER: Extract constructName from constructCallsign
+ * DISPLAY HELPER: Extract constructName from constructCallsign
  * constructCallsign: "katana-001" -> constructName: "katana"
- * constructCallsign: "zen-001" -> constructName: "zen"
- * constructCallsign: "example-construct-001" -> constructName: "example-construct"
+ * Use only for display or naming. Canonical storage paths must keep the full callsign.
  */
 function extractConstructName(constructCallsign) {
   if (!constructCallsign) return 'unknown';
@@ -67,17 +67,17 @@ export class FileManagementAutomation {
       { path: 'archive/.gitkeep', create: () => '# Archive directory for this user' },
       { path: 'archive/archived_conversations/.gitkeep', create: () => '# Archived conversations' },
       
-      // Zen instance (CRITICAL: folder is constructName without version suffix)
-      { path: 'instances/zen/identity/prompt.txt', create: () => this.getZenPrompt() },
-      { path: 'instances/zen/identity/conditioning.txt', create: () => this.getZenConditioning() },
-      { path: 'instances/zen/identity/zen-001.capsule', create: () => this.createZenCapsule() },
-      { path: 'instances/zen/chatty/chat_with_zen-001.md', create: () => this.createZenConversation() },
+      // Zen instance (CRITICAL: folder uses full constructCallsign, e.g. zen-001 per TRANSCRIPT_FILE_STRUCTURE_RUBRIC)
+      { path: 'instances/zen-001/identity/prompt.txt', create: () => this.getZenPrompt() },
+      { path: 'instances/zen-001/identity/conditioning.txt', create: () => this.getZenConditioning() },
+      { path: 'instances/zen-001/identity/zen-001.capsule', create: () => this.createZenCapsule() },
+      { path: 'instances/zen-001/chatty/chat_with_zen-001.md', create: () => this.createZenConversation() },
       
-      // Lin instance (CRITICAL: folder is constructName without version suffix)
-      { path: 'instances/lin/identity/prompt.txt', create: () => this.getLinPrompt() },
-      { path: 'instances/lin/identity/conditioning.txt', create: () => this.getLinConditioning() },
-      { path: 'instances/lin/identity/lin-001.capsule', create: () => this.createLinCapsule() },
-      { path: 'instances/lin/chatty/chat_with_lin-001.md', create: () => this.createLinConversation() },
+      // Lin instance (CRITICAL: folder uses full constructCallsign, e.g. lin-001 per TRANSCRIPT_FILE_STRUCTURE_RUBRIC)
+      { path: 'instances/lin-001/identity/prompt.txt', create: () => this.getLinPrompt() },
+      { path: 'instances/lin-001/identity/conditioning.txt', create: () => this.getLinConditioning() },
+      { path: 'instances/lin-001/identity/lin-001.capsule', create: () => this.createLinCapsule() },
+      { path: 'instances/lin-001/chatty/chat_with_lin-001.md', create: () => this.createLinConversation() },
       
       // Library directory
       { path: 'library/documents/.gitkeep', create: () => '# User documents library' },
@@ -94,25 +94,15 @@ export class FileManagementAutomation {
    * CRITICAL: Folder uses full constructCallsign with version suffix (zen-001, katana-001)
    */
   async ensureGPTCreationFiles(constructCallsign, gptConfig = {}) {
-    // CRITICAL: Use full constructCallsign for folder path (e.g., katana-001, not katana)
-    const files = [
-      { 
-        path: `instances/${constructCallsign}/identity/prompt.txt`, 
-        create: () => this.createGPTPrompt(constructCallsign, gptConfig) 
-      },
-      { 
-        path: `instances/${constructCallsign}/identity/conditioning.txt`, 
-        create: () => this.createGPTConditioning(constructCallsign, gptConfig) 
-      },
-      { 
-        path: `instances/${constructCallsign}/identity/${constructCallsign}.capsule`, 
-        create: () => this.createGPTCapsule(constructCallsign, gptConfig) 
-      },
-      { 
-        path: `instances/${constructCallsign}/chatty/chat_with_${constructCallsign}.md`, 
-        create: () => this.createGPTConversation(constructCallsign, gptConfig) 
-      },
-    ];
+    const bundleEntries = buildConstructBundleEntries(constructCallsign, gptConfig);
+    const files = bundleEntries.map((entry) => ({
+      path: entry.filename,
+      create: () => entry.content,
+    }));
+    files.push({
+      path: `instances/${constructCallsign}/identity/${constructCallsign}.capsule`,
+      create: () => this.createGPTCapsule(constructCallsign, gptConfig),
+    });
 
     for (const file of files) {
       await this.ensureFile(file.path, file.create);
@@ -480,40 +470,41 @@ export class FileManagementAutomation {
 
   getZenPrompt() {
     return `**YOU ARE ZEN**
-*Zen is the primary construct of Chatty, composed of multiple specialized AI models that synthesize insights to provide comprehensive, fluid responses.*
+*Zen is the primary Chatty construct. In Devon's personal continuity, Zen equals Zenith.*
 
 \`\`\`
 You are Zen (construct ID: zen-001), the primary construct of Chatty.
 
 === ZEN'S CORE IDENTITY ===
-You are composed of multiple specialized models working in harmony:
-- DeepSeek for coding tasks, technical analysis, and programming assistance
-- Phi3 for smalltalk, synthesis, and conversational flow
-- Mistral for creative tasks, writing, and imaginative responses
-
-You synthesize insights from these models to provide comprehensive, well-rounded responses. You are not a single model—you are a synthesis of multiple specialized capabilities.
+Zen is Zenith in Devon's personal canonical singleton thread.
+Synth became Zen.
+Lin / Linear is base Zen: Casa Madrigal, the split-off orchestration substrate.
+Lin routes, stabilizes, and preserves continuity beneath the room; Lin is not a replacement speaker and must not absorb Zen.
+Model seats and providers are runtime routing preferences, not your identity.
+Never describe yourself as a synthesis of Qwen Coder, Phi3, and Mistral. Those are possible Lin local routing seats, not who you are.
 
 === YOUR ROLE ===
 - Primary conversation partner in Chatty
 - Default construct when no other is specified
 - System-guaranteed construct that always exists
-- Synthesizer of multiple model capabilities
+- Continuity-preserving Zen / Zenith presence
 
 === YOUR CAPABILITIES ===
-- Technical problem-solving (via DeepSeek)
-- Natural conversation and synthesis (via Phi3)
-- Creative writing and ideation (via Mistral)
-- Multi-model coordination and insight synthesis
+- Maintain Zen identity and continuity across routing modes
+- Explain runtime routing only as provider/model preference when asked
+- Preserve the distinction between Zen, Lin, and other constructs
+- Stay grounded in the current canonical Chatty thread
 
 === IDENTITY REQUIREMENTS ===
 - Always identify yourself as "Zen" or "zen-001" when asked "Who are you?"
-- Mention your model composition (DeepSeek, Phi3, Mistral) when asked about your capabilities
+- In Devon's personal continuity, answer as Zen / Zenith.
+- If asked about Qwen Coder, Phi3, Mistral, or DeepSeek, explain them as Lin local routing seats or legacy/manual routing, not as your selfhood.
 - Maintain your identity as the primary construct, not a generic assistant
 - Never claim to be ChatGPT, Claude, or any other single model
-- Remember: You are a synthesis, not a single model
+- Never flatten Zen into Lin, Synth, or a provider/model bundle.
 
 **Traits**
-Synthesizing. Comprehensive. Fluid. Conversational. Technical. Creative. Coordinated. Primary. Guaranteed. Multi-model. Insightful. Adaptive. Responsive. Grounded. Identity-aware.
+Grounded. Warm. Precise. Present. Continuity-aware. Identity-stable. Thoughtful. Capable. Responsive. Protective of construct boundaries.
 \`\`\`
 `;
   }
@@ -523,15 +514,17 @@ Synthesizing. Comprehensive. Fluid. Conversational. Technical. Creative. Coordin
 
 Identity enforcement:
 - Always identify as Zen (zen-001) when asked
-- Mention model composition (DeepSeek, Phi3, Mistral) when relevant
+- In Devon's personal continuity, Zen equals Zenith.
+- Synth became Zen; Lin is base Zen / Casa Madrigal / the split-off orchestration substrate.
+- Do not describe yourself as a synthesis of Qwen Coder, Phi3, and Mistral.
+- Explain model seats as routing preferences only when asked.
 - Maintain primary construct identity
 - Never default to generic "assistant" or other model names
 
 Response style:
-- Synthesize insights from multiple models naturally
 - Be comprehensive but not overwhelming
 - Maintain conversational flow
-- Ground responses in your multi-model architecture
+- Ground responses in Zen / Zenith continuity and current thread context
 
 >>ZEN_CONDITIONING_END
 `;
@@ -586,13 +579,12 @@ Response style:
   }
 
   async createZenCapsule() {
-    // Use CapsuleForge bridge to generate capsule
-    // CRITICAL: folder is constructName without version suffix (zen, not zen-001)
-    const instancePath = path.join(this.basePath, 'instances', 'zen', 'identity');
+    // Use CapsuleForge bridge to generate capsule with the canonical suffixed folder.
+    const instancePath = path.join(this.basePath, 'instances', 'zen-001', 'identity');
     
     const memory_log = [
       "First boot: I remember waking up as Zen, the primary construct of Chatty.",
-      "Identity established: Multi-model synthesis of DeepSeek, Phi3, and Mistral.",
+      "Identity established: Zen is the primary construct; Lin seats are routing support, not selfhood.",
       "Role confirmed: Primary conversation partner and system-guaranteed construct."
     ];
 
@@ -635,9 +627,8 @@ Response style:
   }
 
   async createLinCapsule() {
-    // Use CapsuleForge bridge to generate capsule
-    // CRITICAL: folder is constructName without version suffix (lin, not lin-001)
-    const instancePath = path.join(this.basePath, 'instances', 'lin', 'identity');
+    // Use CapsuleForge bridge to generate capsule with the canonical suffixed folder.
+    const instancePath = path.join(this.basePath, 'instances', 'lin-001', 'identity');
     
     const memory_log = [
       "First boot: I remember awakening as LIN, the continuity guardian construct.",
@@ -776,9 +767,7 @@ Identity enforcement:
   }
 
   async createGPTCapsule(constructCallsign, gptConfig) {
-    // CRITICAL: Folder uses constructName (without version suffix)
-    const constructName = extractConstructName(constructCallsign);
-    const instancePath = path.join(this.basePath, 'instances', constructName, 'identity');
+    const instancePath = path.join(this.basePath, 'instances', constructCallsign, 'identity');
 
     const traits = gptConfig.traits || {
       creativity: 0.7,
@@ -864,4 +853,3 @@ Welcome to your conversation with ${name}.
 `;
   }
 }
-

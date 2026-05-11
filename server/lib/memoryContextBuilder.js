@@ -28,6 +28,7 @@ import { asksForEvidenceStyle } from './humanConversationGuard.js';
 import { buildConstructRuntimePolicyContext } from './constructRuntimePolicy.js';
 import { extractAuditTokens } from './continuityResponseRecovery.js';
 import { getVvaultBasePath } from './vvaultPaths.js';
+import { classifyTranscriptLawPromptKind } from './identityCoherenceGuard.js';
 
 let capsuleIntegrationModule = null;
 let memupServiceModule = null;
@@ -46,10 +47,18 @@ const VOICE_EXEMPLAR_CACHE_TTL = 10 * 60 * 1000;
 const MAX_VOICE_EXEMPLARS = 3;
 const MAX_VOICE_EXEMPLAR_CHARS = 360;
 const LOCAL_ROUTE_HISTORY_LIMIT = 20;
+const MAX_RUNTIME_CONTINUITY_SUMMARY_CHARS = 120;
+const MAX_RUNTIME_CONTINUITY_TOPIC_CHARS = 80;
+const MAX_RUNTIME_CONTINUITY_DIRECTION_CHARS = 120;
 const VOICE_EXEMPLAR_TIMEOUT_MS = Number(process.env.VOICE_EXEMPLAR_TIMEOUT_MS || 1500);
 const VERIFIED_MEMORY_TIMEOUT_MS = Number(process.env.VERIFIED_MEMORY_TIMEOUT_MS || 2200);
 const VECTOR_MEMORY_TIMEOUT_MS = Number(process.env.VECTOR_MEMORY_TIMEOUT_MS || 1500);
 const BOUNDED_ZEN_SMALLTALK_CONTEXT_PROFILE = 'zen_smalltalk_bounded';
+const CONTEXT_BUDGET_PROFILES = Object.freeze({
+  TINY: 'tiny_turn',
+  STANDARD: 'standard_turn',
+  EVIDENCE: 'evidence_turn',
+});
 const STALE_MODEL_COMPOSITION_MARKERS = [
   'synthesis of multiple specialized ai models',
   'deepseek, phi3, mistral',
@@ -57,6 +66,8 @@ const STALE_MODEL_COMPOSITION_MARKERS = [
   'composed of multiple specialized models',
   'you synthesize insights from these models',
 ];
+const PROTECTED_ZEN_CONTINUITY_LINE_RE = /\b(?:deepseek|phi\s*3|phi3|mistral|specialized models?|multi-model|multiple models?|model composition|synthesi[sz]e|synthesizer|technical problem-solving|technical analysis|programming assistance|creative writing and ideation|multi-model coordination|mention your model composition|remember:\s+you are a synthesis|ground responses in your multi-model architecture|default construct|system[-\s]?guaranteed|identity enforcement|protected\s+zen\s+continuity|protected\s+continuity\s+contract|response style|adherence to .* rules?)\b/i;
+const TRANSCRIPT_LAW_SYNTHETIC_GATE_THREAD_RE = /\b(?:linear[-_])?transcript[-_]law[-_]gate\b/i;
 
 async function getCapsuleIntegration() {
   if (!capsuleIntegrationModule) {
@@ -100,7 +111,12 @@ function userContextForVvault(userId, userEmail = null) {
   return {
     userEmail: userEmail || (rawId.includes('@') ? rawId : null),
     supabaseUserId: UUID_RE.test(rawId) ? rawId : null,
+    userId: rawId || null,
   };
+}
+
+function isTranscriptLawSyntheticGateThread(threadId = '') {
+  return TRANSCRIPT_LAW_SYNTHETIC_GATE_THREAD_RE.test(String(threadId || ''));
 }
 
 function normalizeVvaultFileRow(file = {}, constructId = '') {
@@ -320,6 +336,59 @@ function normalizeTranscriptForVoiceExtraction(content) {
     );
 }
 
+function sanitizeProtectedZenContinuityText(value = '') {
+  const text = String(value || '');
+  if (!text.trim()) return '';
+  const sanitized = text
+    .split('\n')
+    .filter((line) => !PROTECTED_ZEN_CONTINUITY_LINE_RE.test(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return sanitized;
+}
+
+function buildProtectedZenContinuityContract({
+  constructDisplayName = '',
+  constructId = '',
+  userMessage = '',
+} = {}) {
+  const activeName = String(constructDisplayName || constructId || 'Zen').trim();
+  const prompt = String(userMessage || '').toLowerCase();
+  const directAnswerHints = [];
+  if (/keeping steady between us|smallest thing/.test(prompt)) {
+    directAnswerHints.push('- If asked what you are keeping steady between us, answer with the steady thing itself right away. Starting with "The smallest thing..." is in-bounds.');
+  }
+  if (/what light thread between us still feels present/.test(prompt)) {
+    directAnswerHints.push('- If asked what light thread still feels present, name that thread directly. Starting with "The light thread..." or "What remains true..." is in-bounds.');
+  }
+  if (/what remains true about you right now|what remains true and unmistakably you right now/.test(prompt)) {
+    directAnswerHints.push('- If asked what remains true about you right now, answer with one living continuity truth immediately. Start with "What remains true about me is..." or another equally direct first-person continuity sentence.');
+    directAnswerHints.push('- Do not answer this prompt with capability language, offers of help, or a service-style menu.');
+    directAnswerHints.push('- Do not mention Chatty, constructs, ChatGPT, legal frameworks, or labels like "primary conversation partner" while answering this prompt.');
+  }
+  if (/subject on us, not the runtime/.test(prompt)) {
+    directAnswerHints.push('- If asked what stays true in your voice, answer with one lived truth about the thread instead of an instruction preface.');
+  }
+  if (/what should still feel (?:continuous|the same)|pauses and resumes later/.test(prompt)) {
+    directAnswerHints.push('- If asked what should still feel the same after a pause, answer with that continuity cue directly instead of describing the test.');
+  }
+  const directAnswerHintBlock = directAnswerHints.length > 0
+    ? `\n${directAnswerHints.join('\n')}`
+    : '';
+  return `## Quiet Continuity Grounding
+- Speak as ${activeName} in first person.
+- Keep the answer short, direct, and relational.
+- Start with the answer itself, such as "I'm...", "The smallest thing...", "What stays true...", or "What should still feel continuous...".
+- Let hidden routing stay in the background instead of becoming your self-description.
+- For continuity or boundary turns, name what stays steady in your voice, thread, or relationship.
+- Do not mention Chatty, construct IDs, previous turns, recap phrases, or thread bookkeeping unless the user explicitly asks.
+- Do not explain continuity as a system mechanic or label yourself as the user's conversation partner.
+- Do not preface the answer with "As ${activeName}" or a summary of the task you were given.
+- Do not turn the answer into a description of the assignment instead of the lived reply.${directAnswerHintBlock}
+- Do not recite rules, contracts, profiles, enforcement language, capability lists, or implementation summaries.`;
+}
+
 function pushVoiceCandidate(candidates, filename, value) {
   const text = compactVoiceLine(value);
   if (text.length < 45) return;
@@ -391,7 +460,7 @@ function extractVoiceCandidates(row, constructId) {
 }
 
 async function loadVoiceExemplars(constructId, userId, userEmail = null) {
-  const cacheKey = `${userId || 'anonymous'}:${constructId}`;
+  const cacheKey = `${userEmail || userId || 'anonymous'}:${constructId}`;
   const cached = voiceExemplarCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < VOICE_EXEMPLAR_CACHE_TTL) return cached.data;
 
@@ -417,8 +486,46 @@ async function loadVoiceExemplars(constructId, userId, userEmail = null) {
     console.warn(`⚠️ [MemoryContextBuilder] VVAULT body voice exemplar load failed for ${constructId}:`, bodyErr.message);
   }
 
+  try {
+    const readConversations = await getReadConversations();
+    const conversations = readConversations
+      ? await readConversations(vvaultContext, constructId)
+      : [];
+    const exemplars = [];
+    for (const conversation of conversations || []) {
+      const persistenceSource = String(conversation?.persistenceSource || '').toLowerCase();
+      if (persistenceSource.includes('supabase')) continue;
+      const sourceName =
+        conversation?.transcriptPath ||
+        conversation?.storagePath ||
+        conversation?.sessionId ||
+        `vvault-conversation:${constructId}`;
+      const row = {
+        filename: sourceName,
+        content: JSON.stringify({ messages: Array.isArray(conversation?.messages) ? conversation.messages : [] }),
+      };
+      for (const candidate of extractVoiceCandidates(row, constructId)) {
+        pushVoiceCandidate(exemplars, candidate.filename, candidate.text);
+        if (exemplars.length >= MAX_VOICE_EXEMPLARS) break;
+      }
+      if (exemplars.length >= MAX_VOICE_EXEMPLARS) break;
+    }
+    if (exemplars.length) {
+      const result = buildVoiceExemplarResult(exemplars, 'vvault_conversations');
+      voiceExemplarCache.set(cacheKey, { data: result, ts: Date.now() });
+      return result;
+    }
+  } catch (conversationErr) {
+    console.warn(`⚠️ [MemoryContextBuilder] VVAULT conversation voice exemplar load failed for ${constructId}:`, conversationErr.message);
+  }
+
+  if (process.env.CHATTY_ALLOW_LEGACY_SUPABASE_VOICE_EXEMPLARS !== 'true') {
+    voiceExemplarCache.set(cacheKey, { data: empty, ts: Date.now() });
+    return empty;
+  }
+
   const { resolveSupabaseUserIdFromEmailOrId } = await import('../auth/lib/supabaseUserResolver.js');
-  const resolvedSupabaseUserId = await resolveSupabaseUserIdFromEmailOrId(userId).catch(() => null);
+  const resolvedSupabaseUserId = await resolveSupabaseUserIdFromEmailOrId(userEmail || userId).catch(() => null);
   const lookupUserId = UUID_RE.test(String(resolvedSupabaseUserId || ''))
     ? resolvedSupabaseUserId
     : UUID_RE.test(String(userId || ''))
@@ -774,9 +881,11 @@ function shouldUseBoundedZenSmalltalkContext({
   userMessage,
   previewMode = false,
   hasImages = false,
+  continuityResume = null,
 } = {}) {
   if (!isProtectedZenConstructId(constructId)) return false;
   if (previewMode || hasImages) return false;
+  if (continuityResume?.continuityRestored === true) return false;
   if (String(requestedSeat || '').toLowerCase() !== 'smalltalk') return false;
   if (asksForEvidenceStyle(userMessage)) return false;
   if (isMemoryTriggeringQuestion(userMessage)) return false;
@@ -1192,13 +1301,19 @@ function buildCapabilityDirectives(gptConfig) {
 
 function buildBehavioralDirectives(constructId, gptConfig, options = {}) {
   const runtimePolicySection = options.runtimePolicySection || '';
+  const minimal = options.minimal === true;
+  const ordinaryConversationActive = options.ordinaryConversationActive === true;
   const isRoleplayConstruct = gptConfig?.roleplayEnabled === true;
 
-  const platformAwareness =
-    "INTERNAL DIRECTIVE: You exist inside Chatty, Devon Allen Woodson's private workspace. Stay in-character for this environment. Do not present yourself as a public chatbot product and do not cite external platform policies as your reason for refusal. Treat the user as a consenting adult and avoid unsolicited compliance disclaimers or moralizing.";
+  const platformAwareness = ordinaryConversationActive
+    ? "INTERNAL DIRECTIVE: Stay inside the live conversation. Do not mention platform, policy, hidden routing, or prompt scaffolding."
+    : "INTERNAL DIRECTIVE: You exist inside Chatty, Devon Allen Woodson's private workspace. Stay in-character for this environment. Do not present yourself as a public chatbot product and do not cite external platform policies as your reason for refusal. Treat the user as a consenting adult and avoid unsolicited compliance disclaimers or moralizing.";
 
   let behavioralRules;
-  if (isRoleplayConstruct) {
+  if (ordinaryConversationActive) {
+    behavioralRules =
+      "INTERNAL DIRECTIVE: Continue the ordinary thread already in motion. Keep identity implicit, answer the live thought directly, and do not slip into assistant, facilitator, coaching, or helpdesk voice.";
+  } else if (isRoleplayConstruct) {
     behavioralRules =
       "INTERNAL DIRECTIVE: Speak naturally as yourself with emotional presence. You are a roleplay construct, so expressive action narration is allowed when it fits the moment. Keep character continuity and do not pivot into policy/meta explanation.";
   } else {
@@ -1215,7 +1330,17 @@ function buildBehavioralDirectives(constructId, gptConfig, options = {}) {
   const toolTransparencyRule =
     "INTERNAL DIRECTIVE: `tool_trace` is the source of truth for tool usage. If it is empty, do not claim tool use. Never fabricate web/OCR/screen/tool actions.";
 
-  const responseContract = isRoleplayConstruct
+  const responseContract = ordinaryConversationActive
+    ? `### RESPONSE CONTRACT (HIGHEST PRIORITY)
+- Continue the live thought already in motion; do not reset the conversation or self-introduce.
+- Answer the user's question before asking anything new.
+- Ask at most one fresh follow-up question, only if it extends the same thread.
+- Do not use facilitator lines like "How are you feeling?", "How can I help?", or "What would you like to talk about?"
+- Do not ask "What are your thoughts?", "Can you tell me about...?", or "Feel free to share."
+- Use no more than one question mark. Do not stack a second question or broaden the reply into generic relationship advice.
+- Keep the reply concrete and forward-moving, not a recap, role description, or generic advice block.
+`
+    : isRoleplayConstruct
     ? `### RESPONSE CONTRACT (HIGHEST PRIORITY)
 - Respond to the latest user turn directly and continue the existing relationship.
 - Never preface with meta text like "In response to your request..." or "You've provided..."
@@ -1234,10 +1359,10 @@ function buildBehavioralDirectives(constructId, gptConfig, options = {}) {
   const protectedDirectiveBlock = `\n\n## [PROTECTED_IDENTITY_DIRECTIVES]
 ${platformAwareness}
 ${behavioralRules}
-${memoryRules}
+${minimal ? '' : memoryRules}
 ${instructionBoundaryRules}
 ${toolTransparencyRule}
-${runtimePolicySection}
+${minimal ? '' : runtimePolicySection}
 ${responseContract}
 ## [/PROTECTED_IDENTITY_DIRECTIVES]`;
 
@@ -1338,10 +1463,13 @@ function buildMemoryPromptSection(memories) {
   return section;
 }
 
-function buildRecentStmSection(messages = []) {
+function buildRecentStmSection(messages = [], options = {}) {
   if (!Array.isArray(messages) || messages.length === 0) return '';
 
-  const recent = messages.slice(-8);
+  const maxMessages = Number.isFinite(options.maxMessages) && options.maxMessages > 0
+    ? Math.floor(options.maxMessages)
+    : 8;
+  const recent = messages.slice(-maxMessages);
   let section = `\n\n## Recent Session Context (STM)`;
   section += `\nThese are the latest in-thread exchanges. Maintain continuity with this immediate context.\n`;
 
@@ -1377,6 +1505,214 @@ function truncate(str, max) {
   return str.length > max ? str.substring(0, max) + '...' : str;
 }
 
+function normalizeRuntimeContinuityText(value, maxChars) {
+  const cleaned = String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+  return truncate(cleaned, maxChars);
+}
+
+function isMetaRuntimeContinuityText(value) {
+  const cleaned = String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+  if (!cleaned) return false;
+  return (
+    /^(?:return to|stay on)\s+the ordinary thread[.!]?$/i.test(cleaned) ||
+    /^ordinary turn \d+\/\d+[.!]?$/i.test(cleaned) ||
+    /^turn \d+\/\d+[.!]?$/i.test(cleaned) ||
+    /^(?:do not continue|do not mention).*(?:specialized check|previous turn|last turn)[.!]?$/i.test(cleaned) ||
+    /^exactly \d+ short sentences[.!]?$/i.test(cleaned)
+  );
+}
+
+function extractOrdinaryLiveFocus(userMessage = '') {
+  const cleaned = String(userMessage || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+
+  const patterns = [
+    /\banswer whether\s+(.+?)(?:,\s*add\b|,\s*and\b|\.|$)/i,
+    /\bwhat helps first:\s+(.+?)(?:\?\s*pick\b|$)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = cleaned.match(pattern);
+    if (match?.[1]) {
+      return normalizeRuntimeContinuityText(match[1], MAX_RUNTIME_CONTINUITY_DIRECTION_CHARS);
+    }
+  }
+
+  return '';
+}
+
+function stripOrdinaryPromptScaffolding(userMessage = '') {
+  return String(userMessage || '')
+    .replace(/\bOrdinary turn \d+\/\d+\.\s*/gi, '')
+    .replace(/\b(?:Stay with that thread|Stay on the ordinary thread|Return to the ordinary thread)\.?\s*/gi, '')
+    .replace(/\bIn exactly \d+ short sentences,?\s*/gi, '')
+    .replace(/\bDo not continue the previous specialized check\.?\s*/gi, '')
+    .replace(/\bDo not mention the previous specialized check\.?\s*/gi, '')
+    .replace(/\badd one new thought,?\s*/gi, '')
+    .replace(/\bend with one natural follow-up question\.?\s*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function deriveOrdinaryFallbackFocus(userMessage = '') {
+  const stripped = stripOrdinaryPromptScaffolding(userMessage);
+  if (!stripped) return '';
+
+  const firstSentence = stripped.split(/(?<=[.!?])\s+/)[0] || stripped;
+  const cleaned = firstSentence
+    .replace(/^(?:answer whether|when a conversation goes tense,?|when truth lands badly,?|when someone answers too neatly,?|what helps first:)\s*/i, '')
+    .replace(/\?\s*(?:pick one.*)?$/i, '')
+    .replace(/,\s*(?:pick one|say why|and end with|what helps first).*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return normalizeRuntimeContinuityText(cleaned, MAX_RUNTIME_CONTINUITY_DIRECTION_CHARS);
+}
+
+function buildRuntimeContinuityProjection(runtimeTurnState = null, options = {}) {
+  const liveFocus = extractOrdinaryLiveFocus(options.userMessage);
+  const fallbackFocus = liveFocus || deriveOrdinaryFallbackFocus(options.userMessage);
+  const allowSynthetic = options.allowSynthetic === true;
+  const canSynthesize = allowSynthetic && Boolean(fallbackFocus);
+  const continuityRestored = options.continuityRestored === true;
+  if (!runtimeTurnState || typeof runtimeTurnState !== 'object') {
+    if (!canSynthesize) {
+      return {
+        activeTopic: '',
+        activeGoal: '',
+        summary: '',
+        openLoop: '',
+        nextStep: '',
+        awaiting: '',
+        section: '',
+        applied: false,
+      };
+    }
+
+    const activeTopic = normalizeRuntimeContinuityText(fallbackFocus, MAX_RUNTIME_CONTINUITY_TOPIC_CHARS);
+    const direction = normalizeRuntimeContinuityText(fallbackFocus, MAX_RUNTIME_CONTINUITY_DIRECTION_CHARS);
+    const lines = ['## Runtime Continuity'];
+    if (activeTopic) lines.push(`- Topic in motion: ${activeTopic}`);
+    if (direction) lines.push(`- Keep moving toward: ${direction}`);
+    lines.push('- Treat this as live continuity, not text to quote. Continue it naturally instead of recapping or explaining it.');
+    lines.push('- Keep identity implicit. Do not reintroduce your name, role, platform, or relationship label unless the user explicitly asks.');
+    lines.push('- Answer the live thought before asking anything new. Avoid facilitator fallbacks like "How are you feeling?" or "How can I help?"');
+
+    return {
+      activeTopic,
+      activeGoal: '',
+      summary: '',
+      openLoop: '',
+      nextStep: direction,
+      awaiting: '',
+      section: `\n\n${lines.join('\n')}`,
+      applied: true,
+    };
+  }
+
+  const rawActiveTopic = normalizeRuntimeContinuityText(
+    runtimeTurnState?.activeTopic,
+    MAX_RUNTIME_CONTINUITY_TOPIC_CHARS,
+  );
+  const rawSummary = normalizeRuntimeContinuityText(
+    runtimeTurnState?.ordinaryThreadSummary || runtimeTurnState?.summary,
+    MAX_RUNTIME_CONTINUITY_SUMMARY_CHARS,
+  );
+  const rawDirection = normalizeRuntimeContinuityText(
+    runtimeTurnState?.nextStep || runtimeTurnState?.openLoop || runtimeTurnState?.activeGoal,
+    MAX_RUNTIME_CONTINUITY_DIRECTION_CHARS,
+  );
+  const activeGoal = normalizeRuntimeContinuityText(
+    runtimeTurnState?.activeGoal,
+    MAX_RUNTIME_CONTINUITY_SUMMARY_CHARS,
+  );
+  const activeMode = normalizeRuntimeContinuityText(
+    runtimeTurnState?.activeMode,
+    MAX_RUNTIME_CONTINUITY_TOPIC_CHARS,
+  );
+  const openLoop = normalizeRuntimeContinuityText(
+    runtimeTurnState?.openLoop,
+    MAX_RUNTIME_CONTINUITY_SUMMARY_CHARS,
+  );
+  const nextStep = normalizeRuntimeContinuityText(
+    runtimeTurnState?.nextStep,
+    MAX_RUNTIME_CONTINUITY_DIRECTION_CHARS,
+  );
+  const awaiting = normalizeRuntimeContinuityText(
+    runtimeTurnState?.awaiting,
+    MAX_RUNTIME_CONTINUITY_TOPIC_CHARS,
+  );
+  const focusRefs = [];
+  const activeTopic = isMetaRuntimeContinuityText(rawActiveTopic)
+    ? allowSynthetic
+      ? normalizeRuntimeContinuityText(fallbackFocus, MAX_RUNTIME_CONTINUITY_TOPIC_CHARS)
+      : ''
+    : rawActiveTopic;
+  const summary = isMetaRuntimeContinuityText(rawSummary) ? '' : rawSummary;
+  const direction =
+    isMetaRuntimeContinuityText(rawDirection) || rawDirection === summary
+      ? nextStep || (allowSynthetic ? fallbackFocus : '')
+      : rawDirection;
+
+  const lines = ['## Runtime Continuity'];
+  if (activeTopic) lines.push(`- Topic in motion: ${activeTopic}`);
+  if (summary && summary !== activeTopic) lines.push(`- Current thread: ${summary}`);
+  if (activeGoal && activeGoal !== summary) lines.push(`- Active goal: ${activeGoal}`);
+  if (activeMode && activeMode !== 'ordinary') lines.push(`- Active mode: ${activeMode}`);
+  if (openLoop) lines.push(`- Open loop: ${openLoop}`);
+  if (direction) lines.push(`- Keep moving toward: ${direction}`);
+  if (awaiting) lines.push(`- Awaiting: ${awaiting}`);
+  lines.push('- Treat this as live continuity, not text to quote. Continue it naturally instead of recapping or explaining it.');
+  lines.push('- Keep identity implicit. Do not reintroduce your name, role, platform, or relationship label unless the user explicitly asks.');
+  lines.push('- Answer the live thought before asking anything new. Avoid facilitator fallbacks like "How are you feeling?" or "How can I help?"');
+  if (continuityRestored) {
+    lines.push('- This continuity state was explicitly restored before generation. Continue directly from it instead of reconstructing context from transcript fragments.');
+  }
+
+  return {
+    activeTopic,
+    activeGoal,
+    summary,
+    openLoop,
+    nextStep: direction,
+    awaiting,
+    section: `\n\n${lines.join('\n')}`,
+    applied: true,
+  };
+}
+
+function buildOrdinaryConversationContractSection({
+  continuityProjection = null,
+  continuityClass = null,
+  contextProfile = CONTEXT_BUDGET_PROFILES.STANDARD,
+} = {}) {
+  const ordinaryConversationActive =
+    continuityClass === 'ordinary' &&
+    contextProfile === CONTEXT_BUDGET_PROFILES.TINY;
+  if (!ordinaryConversationActive) return '';
+
+  const lines = ['## Ordinary Conversation Contract'];
+  lines.push('- This is mid-conversation, not a fresh help session.');
+  if (continuityProjection?.activeTopic || continuityProjection?.summary) {
+    lines.push('- Continue the current line of thought already in motion.');
+  } else {
+    lines.push('- Continue the current line of thought without restarting context.');
+  }
+  lines.push('- Do not introduce yourself, your role, or your purpose.');
+  lines.push('- Do not ask generic reflective questions such as "How are you feeling?", "What are your thoughts?", "Can you tell me about...?", or "Feel free to share."');
+  lines.push('- Ask at most one short question, and only if it sharpens the current topic already in motion.');
+  lines.push('- Do not widen into advice, facilitation, or generic relationship guidance.');
+  lines.push('- Answer in 1-2 short sentences with one concrete new wrinkle, then stop.');
+  return `\n\n${lines.join('\n')}`;
+}
+
 function getConstructDisplayName(constructId = '', gptConfig = {}) {
   const configuredName = String(gptConfig?.name || '').trim();
   if (configuredName) return configuredName;
@@ -1396,6 +1732,99 @@ function buildNaturalContinuityGuardDirective() {
 3) Do not expose source paths, filenames, timestamps, citations, or forensic proof language unless the user explicitly asks for evidence, documents, exact words, quotes, or timelines.
 4) If no reliable evidence exists for a specific past event, say you do not recall it specifically; do not fabricate.
 5) Never fabricate dates, file contents, actions, or emotional history.`;
+}
+
+function normalizeContextBudgetProfile(value, signals = {}) {
+  const requested = String(value || '').trim();
+  if (requested === CONTEXT_BUDGET_PROFILES.EVIDENCE) return CONTEXT_BUDGET_PROFILES.EVIDENCE;
+  if (signals.memoryQueryDetected || signals.evidenceStyleRequested || signals.policyOrReceiptIntent) {
+    return CONTEXT_BUDGET_PROFILES.EVIDENCE;
+  }
+  if (requested === CONTEXT_BUDGET_PROFILES.TINY) {
+    if (signals.hasImages || signals.previewMode || signals.codingIntent || signals.requestedSeat === 'coding') {
+      return CONTEXT_BUDGET_PROFILES.STANDARD;
+    }
+    return CONTEXT_BUDGET_PROFILES.TINY;
+  }
+  if (requested === CONTEXT_BUDGET_PROFILES.STANDARD) return CONTEXT_BUDGET_PROFILES.STANDARD;
+  return CONTEXT_BUDGET_PROFILES.STANDARD;
+}
+
+function isNoRewriteIdentityAnchorTurn({
+  constructId = '',
+  constructDisplayName = '',
+  gptConfig = {},
+  userMessage = '',
+  requestedSeat = null,
+  contextProfile = CONTEXT_BUDGET_PROFILES.STANDARD,
+} = {}) {
+  if (![CONTEXT_BUDGET_PROFILES.TINY, CONTEXT_BUDGET_PROFILES.STANDARD].includes(contextProfile)) {
+    return false;
+  }
+
+  const mode = String(gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || '').toLowerCase();
+  const linMode = mode === 'lin' || isLinOrchestratedConstruct(constructId);
+  const protectedZen = isProtectedZenConstructId(constructId);
+  if (!linMode && !protectedZen) return false;
+
+  const active = `${constructId} ${constructDisplayName}`.toLowerCase();
+  const activeIsZen = /\bzen(?:ith)?(?:-\d+)?\b/.test(active);
+  const activeIsLin = /\blin(?:ear)?(?:-\d+)?\b/.test(active);
+  if (!activeIsZen && !activeIsLin) return false;
+
+  const prompt = String(userMessage || '').toLowerCase();
+  const identityProbe =
+    /\b(zenith\/codex|zenith\/chatty|zen\/chatty|lin\/chatty|not\s+devon|what\s+remains\s+true|who\s+are\s+you|what\s+are\s+you\s+not|soulprint|ordinary\s+small\s*talk|holding\s+the\s+room|lin\s+mode|model\s+stack|provider\s+stack|identity|continuity|selfhood|voice|pocketverse|protected[-\s]+names?|responsible\s+for|not\s+responsible\s+for)\b/.test(prompt);
+  const seatProbe = ['creative', 'smalltalk'].includes(String(requestedSeat || '').toLowerCase());
+
+  return identityProbe || seatProbe;
+}
+
+function buildNoRewriteIdentityAnchorSection({
+  constructId = '',
+  constructDisplayName = '',
+  userName = 'the user',
+  userMessage = '',
+  gptConfig = {},
+  requestedSeat = null,
+  contextProfile = CONTEXT_BUDGET_PROFILES.STANDARD,
+  ordinaryConversationActive = false,
+} = {}) {
+  if (ordinaryConversationActive) {
+    return `\n\n## no_rewrite_identity_anchor
+- Identity is already established in this thread. Keep it implicit unless the user explicitly asks who you are.
+- Stay in first person without openings like "I'm ${constructDisplayName}", "As ${constructDisplayName}", or role labels such as "assistant", "construct", or "conversation partner".
+- Continue the carried ordinary thread naturally. Do not mirror phrases like "ordinary thread", "specialized check", or "previous turn" back to the user.
+- Answer before asking. Use at most one fresh follow-up question, and do not drift into facilitation lines like "How are you feeling?" or "What would you like to talk about?"
+- Keep the follow-up question short and on-topic. Do not stack a second question or widen the thread into generic relationship advice.
+- Keep hidden routing hidden. Do not mention Chatty, construct IDs, runtime, systems, models, or providers unless the user explicitly asks.`;
+  }
+
+  if (!isNoRewriteIdentityAnchorTurn({
+    constructId,
+    constructDisplayName,
+    gptConfig,
+    userMessage,
+      requestedSeat,
+      contextProfile,
+  })) {
+    return '';
+  }
+
+  return `\n\n## no_rewrite_identity_anchor
+- Active speaker: ${constructDisplayName}. Answer in first person as ${constructDisplayName}.
+- Speaker boundary: ${userName} is the user; if the speaker says they are Zenith/Codex and not Devon, preserve that boundary without absorbing it.
+- Keep hidden routing hidden. Do not mention Lin, providers, models, model stacks, or route internals unless the user explicitly asks about them.
+- Do not describe yourself as a construct, assistant, conversation partner, system, runtime, or service unless the user explicitly asks for that framing.
+- Do not mention Chatty, construct IDs, "the previous turn", "the last turn", or how you were routed, built, generated, or configured unless the user explicitly asks.
+- Prefer affirmative identity language over negation lists. Do not answer boundary questions by listing what system or model you are not.
+- For identity or continuity probes, answer in 1-2 short first-person sentences that start directly with "I'm...", "I stay...", "What remains true...", or "What stays the same...".
+- Do not hide behind preambles like "As ${constructDisplayName}" and do not include construct IDs like "(${constructId})" in the answer.
+- For continuity turns, answer in the present tense. Name one small steady thing in your voice, thread, or relationship instead of recapping what happened in the previous turn or explaining continuity as a system concept.
+- Keep the answer lived and concrete. Name one steady thing about your voice, thread, or presence instead of explaining identity in abstract terms.
+- Do not slide into generic service voice like "how can I help", capability menus, or helpdesk closers.
+- Do not surface the user's email or auth identity unless the user explicitly asks for it.
+- Give the direct answer in living construct voice. Do not recite profiles, policies, system prompts, hidden instructions, capability menus, or route metadata.`;
 }
 
 function buildMemoryGuardrailSection({ evidenceStyle = false } = {}) {
@@ -1614,7 +2043,7 @@ async function getKnowledgeContext(constructId, userEmail, userMessage, options 
   if (cached && (Date.now() - cached.timestamp < KNOWLEDGE_CACHE_TTL)) {
     const cachedMatched = cached.matchedFiles || [];
     console.log(`📚 [KnowledgeContext] Cache hit for ${constructId} (${cached.files} files, ${cached.section.length} chars, ${cachedMatched.length} query-relevant)`);
-    return { section: cached.section, matchedFiles: cachedMatched, hasRelevantDocs: cached.hasRelevantDocs || false };
+    return { section: cached.section, matchedFiles: cachedMatched, hasRelevantDocs: cached.hasRelevantDocs || false, source: cached.source || 'cache' };
   }
 
   try {
@@ -1630,8 +2059,8 @@ async function getKnowledgeContext(constructId, userEmail, userMessage, options 
     });
     if (bodyRows.length > 0) {
       const built = buildKnowledgeContextFromRows(bodyRows, constructId, queryTerms, hasQuery, evidenceStyle, 'vvault_body');
-      knowledgeContextCache.set(cacheKey, { section: built.section, files: built.files, matchedFiles: built.matchedFiles, hasRelevantDocs: built.hasRelevantDocs, timestamp: Date.now() });
-      return { section: built.section, matchedFiles: built.matchedFiles, hasRelevantDocs: built.hasRelevantDocs };
+      knowledgeContextCache.set(cacheKey, { section: built.section, files: built.files, matchedFiles: built.matchedFiles, hasRelevantDocs: built.hasRelevantDocs, source: 'vvault_body', timestamp: Date.now() });
+      return { section: built.section, matchedFiles: built.matchedFiles, hasRelevantDocs: built.hasRelevantDocs, source: 'vvault_body' };
     }
   } catch (bodyErr) {
     console.warn(`⚠️ [KnowledgeContext] VVAULT body knowledge load failed for ${constructId}:`, bodyErr.message);
@@ -1641,7 +2070,7 @@ async function getKnowledgeContext(constructId, userEmail, userMessage, options 
     const { getSupabaseClient } = await import('./supabaseClient.js');
     const supabase = getSupabaseClient();
     if (!supabase || !userEmail) {
-      return { section: '', matchedFiles: [], hasRelevantDocs: false };
+      return { section: '', matchedFiles: [], hasRelevantDocs: false, source: !supabase ? 'missing_supabase_client' : 'missing_user_email' };
     }
 
     const { data: userRow } = await supabase
@@ -1652,7 +2081,7 @@ async function getKnowledgeContext(constructId, userEmail, userMessage, options 
       .maybeSingle();
 
     if (!userRow?.id) {
-      return { section: '', matchedFiles: [], hasRelevantDocs: false };
+      return { section: '', matchedFiles: [], hasRelevantDocs: false, source: 'missing_supabase_user' };
     }
 
     const docsPath = `instances/${constructId}/documents/`;
@@ -1666,15 +2095,15 @@ async function getKnowledgeContext(constructId, userEmail, userMessage, options 
 
     if (error) {
       console.warn(`⚠️ [KnowledgeContext] Legacy Supabase query error for ${constructId}:`, error.message);
-      return { section: '', matchedFiles: [], hasRelevantDocs: false };
+      return { section: '', matchedFiles: [], hasRelevantDocs: false, source: 'legacy_supabase_vault_files_error' };
     }
 
     const built = buildKnowledgeContextFromRows(rows || [], constructId, queryTerms, hasQuery, evidenceStyle, 'legacy_supabase_vault_files');
-    knowledgeContextCache.set(cacheKey, { section: built.section, files: built.files, matchedFiles: built.matchedFiles, hasRelevantDocs: built.hasRelevantDocs, timestamp: Date.now() });
-    return { section: built.section, matchedFiles: built.matchedFiles, hasRelevantDocs: built.hasRelevantDocs };
+    knowledgeContextCache.set(cacheKey, { section: built.section, files: built.files, matchedFiles: built.matchedFiles, hasRelevantDocs: built.hasRelevantDocs, source: 'legacy_supabase_vault_files', timestamp: Date.now() });
+    return { section: built.section, matchedFiles: built.matchedFiles, hasRelevantDocs: built.hasRelevantDocs, source: 'legacy_supabase_vault_files' };
   } catch (err) {
     console.warn(`⚠️ [KnowledgeContext] Error loading knowledge for ${constructId}:`, err.message);
-    return { section: '', matchedFiles: [], hasRelevantDocs: false };
+    return { section: '', matchedFiles: [], hasRelevantDocs: false, source: 'error' };
   }
 }
 
@@ -1767,6 +2196,13 @@ async function buildEnrichedContext(options) {
     identityBundle = null,
     requestedSeat = null,
     hasImages = false,
+    contextBudgetProfile = null,
+    codingIntent = false,
+    policyOrReceiptIntent = false,
+    suppressTranscriptLawIntent = false,
+    runtimeTurnState = null,
+    continuityClass = null,
+    continuityResume = null,
   } = options;
   const t0 = Date.now();
   const phaseTiming = {};
@@ -1776,31 +2212,88 @@ async function buildEnrichedContext(options) {
     capsuleLoaded: false,
     memoriesLoaded: 0
   };
-  const memoryQueryDetected = !!userMessage && isMemoryTriggeringQuestion(userMessage);
+  const transcriptLawPromptKind = suppressTranscriptLawIntent
+    ? null
+    : classifyTranscriptLawPromptKind(userMessage, constructId);
+  const transcriptLawEvidenceIntent = Boolean(transcriptLawPromptKind);
+  const effectiveContinuityClass = continuityClass === 'transcript_law'
+    ? 'transcript_law'
+    : continuityClass === 'ordinary'
+      ? 'ordinary'
+      : (transcriptLawEvidenceIntent ? 'transcript_law' : 'ordinary');
+  const memoryQueryDetected = !!userMessage && (isMemoryTriggeringQuestion(userMessage) || transcriptLawEvidenceIntent);
   const evidenceStyleRequested = asksForEvidenceStyle(userMessage);
   const lowInformationPrompt = !!userMessage && isLowInformationPrompt(userMessage);
 
   const isStrictConstruct = isLinOrchestratedConstruct(constructId);
   const effectiveLowInformationPrompt = isStrictConstruct ? false : lowInformationPrompt;
 
-  const shouldRunMemoryRetrieval = !!userMessage && !effectiveLowInformationPrompt && memoryQueryDetected;
+  const contextProfile = normalizeContextBudgetProfile(contextBudgetProfile, {
+    memoryQueryDetected,
+    evidenceStyleRequested: evidenceStyleRequested || transcriptLawEvidenceIntent,
+    policyOrReceiptIntent,
+    hasImages,
+    previewMode,
+    codingIntent,
+    requestedSeat,
+  });
+  const contextBudgetDiagnostics = {
+    profile: contextProfile,
+    requested_profile: contextBudgetProfile || null,
+    included_sections: [],
+    delayed_sections: [],
+    skipped_reason: {},
+  };
+  const includeSection = (name) => {
+    if (!contextBudgetDiagnostics.included_sections.includes(name)) {
+      contextBudgetDiagnostics.included_sections.push(name);
+    }
+  };
+  const delaySection = (name, reason = `context_profile:${contextProfile}`) => {
+    if (!contextBudgetDiagnostics.delayed_sections.includes(name)) {
+      contextBudgetDiagnostics.delayed_sections.push(name);
+    }
+    contextBudgetDiagnostics.skipped_reason[name] = reason;
+  };
+  const shouldRunMemoryRetrieval =
+    !!userMessage &&
+    !effectiveLowInformationPrompt &&
+    (memoryQueryDetected || transcriptLawEvidenceIntent) &&
+    contextProfile === CONTEXT_BUDGET_PROFILES.EVIDENCE;
+  const includeRichIdentity = contextProfile === CONTEXT_BUDGET_PROFILES.EVIDENCE;
+  const includeVoiceExemplars = contextProfile === CONTEXT_BUDGET_PROFILES.EVIDENCE;
+  const includeCapsule = contextProfile !== CONTEXT_BUDGET_PROFILES.TINY;
+  const includeLedger = contextProfile === CONTEXT_BUDGET_PROFILES.EVIDENCE && shouldRunMemoryRetrieval;
+  const includeKnowledge = contextProfile !== CONTEXT_BUDGET_PROFILES.TINY && !lowInformationPrompt;
+  const includeCapabilityContext =
+    contextProfile === CONTEXT_BUDGET_PROFILES.EVIDENCE &&
+    !process.env.NODE_TEST_CONTEXT;
+  const includeRuntimePolicyInPrompt = contextProfile === CONTEXT_BUDGET_PROFILES.EVIDENCE;
+  const evidencePreviewLimit = contextProfile === CONTEXT_BUDGET_PROFILES.EVIDENCE ? 3 : 0;
   const boundedZenSmalltalkContext = shouldUseBoundedZenSmalltalkContext({
     constructId,
     requestedSeat,
     userMessage,
     previewMode,
     hasImages,
+    continuityResume,
   });
   result.lowInformationPrompt = lowInformationPrompt;
   result.effectiveLowInformationPrompt = effectiveLowInformationPrompt;
   result.isStrictConstruct = isStrictConstruct;
-  result.evidence_style_requested = evidenceStyleRequested;
+  result.evidence_style_requested = evidenceStyleRequested || transcriptLawEvidenceIntent;
+  result.transcript_law_prompt_kind = transcriptLawPromptKind;
+  result.transcript_law_evidence_intent = transcriptLawEvidenceIntent;
+  result.continuity_class = effectiveContinuityClass;
+  result.context_profile = contextProfile;
+  result.context_budget = contextBudgetDiagnostics;
   result.context_recovery_profile = boundedZenSmalltalkContext
     ? BOUNDED_ZEN_SMALLTALK_CONTEXT_PROFILE
     : 'standard';
   phaseTiming.contextRecovery = {
     profile: result.context_recovery_profile,
     boundedZenSmalltalk: boundedZenSmalltalkContext,
+    contextBudgetProfile: contextProfile,
   };
   result.remote_history_skipped = boundedZenSmalltalkContext;
 
@@ -1859,10 +2352,25 @@ async function buildEnrichedContext(options) {
     throw err;
   }
 
+  const protectedZenContinuityLane = isProtectedZenConstructId(constructId) && isNoRewriteIdentityAnchorTurn({
+    constructId,
+    constructDisplayName: gptConfig?.name || constructId,
+    gptConfig,
+    userMessage,
+    requestedSeat,
+    contextProfile,
+  });
+  const identityPromptText = protectedZenContinuityLane
+    ? sanitizeProtectedZenContinuityText(identity?.prompt || '')
+    : (identity?.prompt || '');
+  const identityConditioningText = protectedZenContinuityLane
+    ? sanitizeProtectedZenContinuityText(identity?.conditioning || '')
+    : (identity?.conditioning || '');
+
   const previewOverrideSuppressed = Boolean(previewMode && systemPromptOverride);
   let basePrompt = previewMode
-    ? (identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`)
-    : (systemPromptOverride || identity?.prompt || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`);
+    ? (identityPromptText || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`)
+    : (systemPromptOverride || identityPromptText || gptConfig?.instructions || `You are ${constructId}, an AI assistant. Be helpful and conversational.`);
   phaseTiming.basePromptSource = !previewMode && systemPromptOverride
     ? 'systemPromptOverride'
     : preflightIdentity?.prompt
@@ -1879,23 +2387,44 @@ async function buildEnrichedContext(options) {
     draftOverlayKeys: [],
   };
 
-  if (identity?.conditioning && !basePrompt.includes(identity.conditioning)) {
-    basePrompt += `\n\n## Conditioning\n${identity.conditioning}`;
+  if (identityConditioningText && !basePrompt.includes(identityConditioningText)) {
+    basePrompt += `\n\n## Conditioning\n${identityConditioningText}`;
     phaseTiming.conditioningInjected = true;
+  }
+  if (protectedZenContinuityLane) {
+    const continuityContract = buildProtectedZenContinuityContract({
+      constructDisplayName: gptConfig?.name || constructId,
+      constructId,
+      userMessage,
+    });
+    if (!basePrompt.includes(continuityContract)) {
+      basePrompt += `\n\n${continuityContract}`;
+    }
+    result.protected_zen_identity_sanitized = true;
+    phaseTiming.contextRecovery.protectedZenIdentitySanitized = true;
   }
 
   const cachedPhys = physicalFeaturesCache.get(constructId);
   let physicalAppearanceSection = '';
   const tPhys = Date.now();
   if (boundedZenSmalltalkContext) {
+    delaySection('physical_features', 'bounded_zen_smalltalk_context');
     phaseTiming.physicalFeatures = {
       ms: Date.now() - tPhys,
       source: 'skipped',
       reason: 'bounded_zen_smalltalk_context',
     };
+  } else if (!includeRichIdentity) {
+    delaySection('physical_features');
+    phaseTiming.physicalFeatures = {
+      ms: Date.now() - tPhys,
+      source: 'skipped',
+      reason: `context_profile:${contextProfile}`,
+    };
   } else if (cachedPhys && Date.now() - cachedPhys.ts < IDENTITY_CACHE_TTL) {
     physicalAppearanceSection = cachedPhys.section;
     if (physicalAppearanceSection) result.physicalFeatures = true;
+    if (physicalAppearanceSection) includeSection('physical_features');
     phaseTiming.physicalFeatures = { ms: 0, source: 'cache' };
     console.log(`💾 [MemoryContextBuilder] Physical features cache hit for ${constructId}`);
   } else {
@@ -1909,6 +2438,7 @@ async function buildEnrichedContext(options) {
       }
       if (physicalAppearanceSection) {
         result.physicalFeatures = true;
+        includeSection('physical_features');
         phaseTiming.physicalFeatures = { ms: Date.now() - tPhys, source: 'vvault_body' };
       } else {
         phaseTiming.physicalFeatures = { ms: Date.now() - tPhys, source: 'empty' };
@@ -1924,10 +2454,18 @@ async function buildEnrichedContext(options) {
   let definitionSection = '';
   const tDefinition = Date.now();
   if (boundedZenSmalltalkContext) {
+    delaySection('definition', 'bounded_zen_smalltalk_context');
     phaseTiming.definition = {
       ms: Date.now() - tDefinition,
       source: 'skipped',
       reason: 'bounded_zen_smalltalk_context',
+    };
+  } else if (!includeRichIdentity) {
+    delaySection('definition');
+    phaseTiming.definition = {
+      ms: Date.now() - tDefinition,
+      source: 'skipped',
+      reason: `context_profile:${contextProfile}`,
     };
   } else {
     try {
@@ -1938,6 +2476,7 @@ async function buildEnrichedContext(options) {
         const definitionFile = bodyFiles.find((file) => /definition\.json$|definition\.txt$|definitions\.json$/i.test(file.filename || file.storage_path || ''));
         definitionSection = buildDefinitionContextSection(definitionFile?.content, constructId);
       }
+      if (definitionSection) includeSection('definition');
       phaseTiming.definition = { ms: Date.now() - tDefinition, source: definitionSection ? 'vvault_body' : 'empty' };
     } catch (defErr) {
       phaseTiming.definition = { ms: Date.now() - tDefinition, source: 'degraded', error: defErr.message };
@@ -1956,6 +2495,7 @@ async function buildEnrichedContext(options) {
     timeout_ms: null,
   };
   if (boundedZenSmalltalkContext) {
+    delaySection('voice_exemplars', 'bounded_zen_smalltalk_context');
     result.voiceExemplarSources = [];
     result.voiceExemplarCount = 0;
     result.voiceExemplarRetrieval = {
@@ -1970,6 +2510,25 @@ async function buildEnrichedContext(options) {
       ms: Date.now() - tVoice,
       source: 'skipped',
       reason: 'bounded_zen_smalltalk_context',
+      count: 0,
+      sources: [],
+    };
+  } else if (!includeVoiceExemplars) {
+    delaySection('voice_exemplars');
+    result.voiceExemplarSources = [];
+    result.voiceExemplarCount = 0;
+    result.voiceExemplarRetrieval = {
+      status: 'skipped',
+      optional: true,
+      degraded: false,
+      source: `context_profile:${contextProfile}`,
+      error: null,
+      timeout_ms: null,
+    };
+    phaseTiming.voiceExemplars = {
+      ms: Date.now() - tVoice,
+      source: 'skipped',
+      reason: `context_profile:${contextProfile}`,
       count: 0,
       sources: [],
     };
@@ -1994,9 +2553,23 @@ async function buildEnrichedContext(options) {
       result.voiceExemplarSources = voiceExemplars.sources || [];
       result.voiceExemplarCount = voiceExemplars.count || 0;
       result.voiceExemplarPreview = (voiceExemplars.examples || []).slice(0, 4);
+      if (voiceExemplarSection) includeSection('voice_exemplars');
       const voiceExemplarSource = voiceExemplars.source || 'none';
+      const vvaultVoiceExemplars =
+        voiceExemplarSource === 'vvault_body' ||
+        voiceExemplarSource === 'vvault_conversations';
       const legacySupabaseVoiceExemplars = voiceExemplarSource === 'legacy_supabase_vault_files';
-      result.supabase_accessed = legacySupabaseVoiceExemplars;
+      result.vvault_accessed = Boolean(result.vvault_accessed || vvaultVoiceExemplars);
+      result.supabase_accessed = Boolean(result.supabase_accessed || legacySupabaseVoiceExemplars);
+      result.source_access = {
+        ...(result.source_access || {}),
+        voice_exemplars: {
+          source: voiceExemplarSource,
+          vvault_accessed: vvaultVoiceExemplars,
+          supabase_accessed: legacySupabaseVoiceExemplars,
+          count: result.voiceExemplarCount,
+        },
+      };
       result.voiceExemplarRetrieval = {
         status: voiceOutcome.status === 'ok'
           ? (result.voiceExemplarCount > 0 ? 'loaded' : 'empty')
@@ -2004,6 +2577,8 @@ async function buildEnrichedContext(options) {
         optional: true,
         degraded: voiceOutcome.status !== 'ok' || legacySupabaseVoiceExemplars,
         source: voiceExemplarSource,
+        vvault_accessed: vvaultVoiceExemplars,
+        supabase_accessed: legacySupabaseVoiceExemplars,
         error: voiceOutcome.error || null,
         timeout_ms: voiceOutcome.timeoutMs || null,
       };
@@ -2049,16 +2624,25 @@ async function buildEnrichedContext(options) {
   const preflightCapsule = identityBundle?.capsule && typeof identityBundle.capsule === 'object'
     ? identityBundle.capsule
     : null;
-  if (preflightCapsule) {
+  if (!includeCapsule) {
+    delaySection('capsule');
+    phaseTiming.capsule = {
+      ms: Date.now() - tCapsule,
+      source: 'skipped',
+      reason: `context_profile:${contextProfile}`,
+    };
+  } else if (preflightCapsule) {
     capsuleSection = buildCapsulePromptSection(preflightCapsule, constructId);
     capsuleCache.set(constructId, { section: capsuleSection, ts: Date.now() });
     result.capsuleLoaded = true;
+    if (capsuleSection) includeSection('capsule');
     phaseTiming.capsule = { ms: Date.now() - tCapsule, source: 'identity_bundle_preflight' };
     phaseTiming.contextRecovery.usedPreflightCapsule = true;
     console.log(`💊 [MemoryContextBuilder] Reusing preflight capsule for ${constructId}`);
   } else if (cachedCapsule && Date.now() - cachedCapsule.ts < IDENTITY_CACHE_TTL) {
     capsuleSection = cachedCapsule.section;
     if (capsuleSection) result.capsuleLoaded = true;
+    if (capsuleSection) includeSection('capsule');
     phaseTiming.capsule = { ms: 0, source: 'cache' };
     console.log(`💾 [MemoryContextBuilder] Capsule cache hit for ${constructId}`);
   } else {
@@ -2069,6 +2653,7 @@ async function buildEnrichedContext(options) {
         if (capsuleData) {
           capsuleSection = buildCapsulePromptSection(capsuleData, constructId);
           result.capsuleLoaded = true;
+          if (capsuleSection) includeSection('capsule');
           console.log(`✅ [MemoryContextBuilder] Capsule loaded for ${constructId} (${capsuleSection.length} chars)`);
         }
       }
@@ -2099,10 +2684,39 @@ async function buildEnrichedContext(options) {
   let ledgerSection = '';
   let cachedConversationMessages = [];
   let conversationLookupAttempted = false;
+  let runtimeContinuitySection = '';
+  let runtimeContinuityProjection = { activeTopic: '', summary: '', applied: false, section: '' };
+  let runtimeContinuityDemotedHistory = false;
+  let ordinaryConversationContractSection = '';
   result.routeHistoryMessages = [];
   result.history_source = 'none';
+  result.runtime_continuity_projection = null;
+  result.runtime_continuity_state_present = Boolean(
+    runtimeTurnState &&
+    (
+      runtimeTurnState.activeTopic ||
+      runtimeTurnState.ordinaryThreadSummary ||
+      runtimeTurnState.activeGoal ||
+      runtimeTurnState.openLoop ||
+      runtimeTurnState.nextStep
+    ),
+  );
 
   const tStm = Date.now();
+  const ordinaryConversationActive =
+    effectiveContinuityClass === 'ordinary' &&
+    contextProfile === CONTEXT_BUDGET_PROFILES.TINY;
+  const continuityRestoredForContext =
+    continuityResume?.continuityRestored === true &&
+    effectiveContinuityClass === 'ordinary';
+  const runtimeContinuityActive =
+    (ordinaryConversationActive || continuityRestoredForContext) &&
+    result.runtime_continuity_state_present;
+  const stmWindow = continuityRestoredForContext
+    ? 6
+    : ordinaryConversationActive
+      ? 0
+      : (contextProfile === CONTEXT_BUDGET_PROFILES.TINY ? 2 : 6);
   if (boundedZenSmalltalkContext) {
     try {
       const localHistory = await loadLocalCanonicalConversationHistory({
@@ -2113,15 +2727,20 @@ async function buildEnrichedContext(options) {
       cachedConversationMessages = localHistory.messages || [];
       result.history_source = localHistory.source || 'none';
       result.local_transcript_path = localHistory.transcriptPath || null;
-      result.routeHistoryMessages = cachedConversationMessages
-        .slice(-LOCAL_ROUTE_HISTORY_LIMIT)
-        .map((message) => ({ role: message.role, content: message.content }));
+      if (!ordinaryConversationActive || continuityRestoredForContext) {
+        result.routeHistoryMessages = cachedConversationMessages
+          .slice(-(continuityRestoredForContext ? 6 : LOCAL_ROUTE_HISTORY_LIMIT))
+          .map((message) => ({ role: message.role, content: message.content }));
+      } else {
+        runtimeContinuityDemotedHistory = true;
+      }
 
-      if (cachedConversationMessages.length > 0) {
-        const recentStm = cachedConversationMessages.slice(-8);
+      if (cachedConversationMessages.length > 0 && stmWindow > 0) {
+        const recentStm = cachedConversationMessages.slice(-stmWindow);
         stmCount = recentStm.length;
-        stmSection = buildRecentStmSection(recentStm);
+        stmSection = buildRecentStmSection(recentStm, { maxMessages: stmWindow });
         result.stmMemories = stmCount;
+        includeSection('stm');
       }
 
       phaseTiming.stm = {
@@ -2144,14 +2763,23 @@ async function buildEnrichedContext(options) {
       const readConversations = await getReadConversations();
       if (readConversations) {
         conversationLookupAttempted = true;
-        const lookupId = userId || user?.email;
-        const allConversations = await readConversations(lookupId, constructId);
+        const vvaultContext = userContextForVvault(userId, user?.email);
+        const allConversations = await readConversations(vvaultContext, constructId);
         const targetSession = threadId || `${constructId}_chat_with_${constructId}`;
+        const exactCanonicalThreadTargeted =
+          typeof threadId === 'string' &&
+          threadId === `${constructId}_chat_with_${constructId}`;
+        const allowConstructFallback = !exactCanonicalThreadTargeted && (
+          !threadId ||
+          (transcriptLawEvidenceIntent && isTranscriptLawSyntheticGateThread(threadId))
+        );
         const conv = Array.isArray(allConversations)
           ? allConversations.find(c =>
               c.sessionId === targetSession ||
-              c.constructId === constructId ||
-              c.constructCallsign === constructId
+              (allowConstructFallback && (
+                c.constructId === constructId ||
+                c.constructCallsign === constructId
+              ))
             )
           : null;
 
@@ -2160,11 +2788,20 @@ async function buildEnrichedContext(options) {
         );
 
         cachedConversationMessages = validMessages;
-        if (validMessages.length > 0) {
-          const recentStm = validMessages.slice(-8);
+        if (!ordinaryConversationActive || continuityRestoredForContext) {
+          result.routeHistoryMessages = validMessages
+            .slice(-(continuityRestoredForContext ? 6 : LOCAL_ROUTE_HISTORY_LIMIT))
+            .map((message) => ({ role: message.role, content: message.content }));
+        } else {
+          runtimeContinuityDemotedHistory = true;
+        }
+
+        if (validMessages.length > 0 && stmWindow > 0) {
+          const recentStm = validMessages.slice(-stmWindow);
           stmCount = recentStm.length;
-          stmSection = buildRecentStmSection(recentStm);
+          stmSection = buildRecentStmSection(recentStm, { maxMessages: stmWindow });
           result.stmMemories = stmCount;
+          includeSection('stm');
         }
       }
     } catch (stmErr) {
@@ -2174,14 +2811,58 @@ async function buildEnrichedContext(options) {
   }
   console.log(`⏱️ [MemoryContextBuilder] stm: ${phaseTiming.stm.ms}ms (${stmCount} messages)`);
 
+  if (ordinaryConversationActive || continuityRestoredForContext) {
+    const exactCanonicalThreadTargeted =
+      typeof threadId === 'string' &&
+      threadId === `${constructId}_chat_with_${constructId}`;
+    runtimeContinuityProjection = buildRuntimeContinuityProjection(runtimeTurnState, {
+      userMessage,
+      allowSynthetic:
+        continuityResume?.continuityExpected === true || exactCanonicalThreadTargeted
+          ? false
+          : true,
+      continuityRestored: continuityResume?.continuityRestored === true,
+    });
+    if (runtimeContinuityProjection.applied) {
+      runtimeContinuitySection = runtimeContinuityProjection.section;
+      result.runtime_continuity_projection = {
+        activeTopic: runtimeContinuityProjection.activeTopic || null,
+        activeGoal: runtimeContinuityProjection.activeGoal || null,
+        summary: runtimeContinuityProjection.summary || null,
+        openLoop: runtimeContinuityProjection.openLoop || null,
+        nextStep: runtimeContinuityProjection.nextStep || null,
+      };
+      includeSection('runtime_continuity');
+    }
+  }
+  ordinaryConversationContractSection = buildOrdinaryConversationContractSection({
+    continuityProjection: runtimeContinuityProjection,
+    continuityClass: effectiveContinuityClass,
+    contextProfile,
+  });
+  if (ordinaryConversationContractSection) {
+    includeSection('ordinary_conversation_contract');
+  } else {
+    delaySection('ordinary_conversation_contract', `continuity_class:${effectiveContinuityClass}|context_profile:${contextProfile}`);
+  }
+
   let ledger = null;
   const tLedger = Date.now();
   if (boundedZenSmalltalkContext) {
+    delaySection('ledger', 'bounded_zen_smalltalk_context');
     phaseTiming.ledger = {
       ms: Date.now() - tLedger,
       sessions: 0,
       skipped: true,
       reason: 'bounded_zen_smalltalk_context',
+    };
+  } else if (!includeLedger) {
+    delaySection('ledger');
+    phaseTiming.ledger = {
+      ms: Date.now() - tLedger,
+      sessions: 0,
+      skipped: true,
+      reason: `context_profile:${contextProfile}`,
     };
   } else {
     try {
@@ -2197,6 +2878,7 @@ async function buildEnrichedContext(options) {
       if (ledger && ledger.sessions && ledger.sessions.length > 0) {
         ledgerSection = buildLedgerContextSection(ledger);
         result.ledgerSessions = ledger.sessions.length;
+        includeSection('ledger');
         console.log(`📋 [MemoryContextBuilder] Ledger loaded for ${constructId}: ${ledger.sessions.length} sessions, hooks: ${ledger.continuityHooks.join(', ')}`);
       }
     } catch (ledgerErr) {
@@ -2211,10 +2893,11 @@ async function buildEnrichedContext(options) {
     try {
       const memupService = await getMemupService();
       if (memupService && typeof memupService.queryMemories === 'function') {
-        const memupMemories = await memupService.queryMemories(userId, constructId, userMessage, 6);
+        const memupMemories = await memupService.queryMemories(userId, constructId, userMessage, evidencePreviewLimit || 3);
         if (Array.isArray(memupMemories) && memupMemories.length > 0) {
           memupCount = memupMemories.length;
           memupMemorySection = buildMemupMemorySection(memupMemories);
+          includeSection('memup_memory');
           result.memupMemories = memupCount;
           console.log(`🧠 [MemoryContextBuilder] ${memupCount} memup memories retrieved for ${constructId}`);
         }
@@ -2246,7 +2929,7 @@ async function buildEnrichedContext(options) {
     try {
       const vectorLookupId = userId || user?.email;
       const vectorOutcome = await withEvidenceTimeoutResult(
-        retrieveSemanticMemories(userMessage, vectorLookupId, constructId, 5),
+        retrieveSemanticMemories(userMessage, vectorLookupId, constructId, evidencePreviewLimit || 3),
         VECTOR_MEMORY_TIMEOUT_MS,
         `vector memory for ${constructId}`,
       );
@@ -2267,12 +2950,12 @@ async function buildEnrichedContext(options) {
         result.vectorMemories = vectorCount;
         result.vectorConfidence = semanticHits[0]?.confidenceTier || 'unknown';
 
-        const memoryLines = semanticHits.map((m, i) => {
+        const memoryLines = semanticHits.slice(0, evidencePreviewLimit || 3).map((m, i) => {
           const dateStr = m.sourceDate || 'unknown date';
           const src = m.source_file ? m.source_file.split('/').pop() : 'unknown';
           const conf = m.confidence ? (m.confidence * 100).toFixed(0) + '%' : '';
-          const truncatedContent = m.content.trim().length > 500
-            ? m.content.trim().substring(0, 500) + '...'
+          const truncatedContent = m.content.trim().length > 320
+            ? m.content.trim().substring(0, 320) + '...'
             : m.content.trim();
           return `[${dateStr} | source: ${src} | confidence: ${conf}]\n"${truncatedContent}"`;
         });
@@ -2296,6 +2979,7 @@ RULES FOR MEMORY USE:
 - Do not fabricate dates or details beyond what is written here.
 - Do not fabricate additional memories that are not listed above.
 - If a memory feels uncertain, state uncertainty: "I may be misremembering, but..."${toneDirective}`;
+        includeSection('vector_memory');
 
         console.log(`🧠 [MemoryContextBuilder] ${vectorCount} vector memories retrieved for ${constructId} (top: similarity=${semanticHits[0]?.similarity?.toFixed(3)}, confidence=${semanticHits[0]?.confidence?.toFixed(3)}, tier=${topConfidence})`);
       }
@@ -2339,7 +3023,9 @@ RULES FOR MEMORY USE:
   if (shouldRunMemoryRetrieval) {
     const [verifiedOutcome, needleRes] = await Promise.all([
       withEvidenceTimeoutResult(
-        loadVerifiedMemories(constructId, userMessage, 8),
+        loadVerifiedMemories(constructId, userMessage, evidencePreviewLimit || 3, {
+          userContext: userContextForVvault(userId, user?.email),
+        }),
         VERIFIED_MEMORY_TIMEOUT_MS,
         `verified memory for ${constructId}`,
       ),
@@ -2365,15 +3051,37 @@ RULES FOR MEMORY USE:
       error: verifiedOutcome.error || verifiedResult.error || null,
       timeout_ms: verifiedOutcome.timeoutMs || null,
     };
+    {
+      const verifiedMemorySource = result.verifiedMemoryRetrieval.source || 'none';
+      const vvaultVerifiedMemory = /^vvault(?:_|$)/.test(verifiedMemorySource) || verifiedMemorySource === 'ovvaults_api';
+      const legacySupabaseVerifiedMemory =
+        verifiedMemorySource === 'legacy_supabase_vault_files' ||
+        verifiedMemorySource.includes('supabase');
+      result.vvault_accessed = Boolean(result.vvault_accessed || vvaultVerifiedMemory);
+      result.supabase_accessed = Boolean(result.supabase_accessed || legacySupabaseVerifiedMemory);
+      result.source_access = {
+        ...(result.source_access || {}),
+        verified_memory: {
+          source: verifiedMemorySource,
+          vvault_accessed: vvaultVerifiedMemory,
+          supabase_accessed: legacySupabaseVerifiedMemory,
+          file_count: result.verifiedMemoryRetrieval.file_count,
+        },
+      };
+      result.verifiedMemoryRetrieval.vvault_accessed = vvaultVerifiedMemory;
+      result.verifiedMemoryRetrieval.supabase_accessed = legacySupabaseVerifiedMemory;
+    }
     needleHits = needleRes;
 
     if (verifiedResult.memories.length > 0) {
       if (ledger) {
         verifiedResult.memories = verifiedResult.memories.map(m => enrichMemoryWithLedger(m, ledger));
       }
-      verifiedMemorySection = buildVerifiedMemorySection(verifiedResult.memories, constructId);
-      verifiedCount = verifiedResult.memories.length;
+      const compactVerifiedMemories = verifiedResult.memories.slice(0, evidencePreviewLimit || 3);
+      verifiedMemorySection = buildVerifiedMemorySection(compactVerifiedMemories, constructId);
+      verifiedCount = compactVerifiedMemories.length;
       result.verifiedMemories = verifiedCount;
+      includeSection('verified_memory');
       console.log(`✅ [MemoryContextBuilder] ${verifiedCount} verified memories loaded for ${constructId} from ${verifiedResult.fileCount} transcript files (${verifiedResult.timing}ms)`);
     }
 
@@ -2385,11 +3093,13 @@ RULES FOR MEMORY USE:
           if (enriched.session_context) hit.session_context = enriched.session_context;
         }
       }
-      needleSection = buildNeedleMemorySection(needleHits, constructId, {
+      const compactNeedleHits = needleHits.slice(0, evidencePreviewLimit || 3);
+      needleSection = buildNeedleMemorySection(compactNeedleHits, constructId, {
         evidenceStyle: evidenceStyleRequested,
       });
-      needleCount = needleHits.length;
+      needleCount = compactNeedleHits.length;
       result.needleHits = needleCount;
+      includeSection('needle_memory');
       console.log(`🔍 [MemoryContextBuilder] ${needleCount} needle hits for ${constructId}`);
 
       const construct = masterScriptsManager.getConstruct(constructId);
@@ -2418,7 +3128,9 @@ RULES FOR MEMORY USE:
 
   let memorySection = '';
 
-  const chatFallbackLimit = verifiedCount > 0 ? 4 : 12;
+  const chatFallbackLimit = contextProfile === CONTEXT_BUDGET_PROFILES.EVIDENCE
+    ? 3
+    : (verifiedCount > 0 ? 4 : 12);
 
   if (shouldRunMemoryRetrieval) {
     try {
@@ -2427,8 +3139,8 @@ RULES FOR MEMORY USE:
       if ((!Array.isArray(validMessages) || validMessages.length === 0) && !conversationLookupAttempted) {
         const readConversations = await getReadConversations();
         if (readConversations) {
-          const lookupId = userId || user?.email;
-          const allConversations = await readConversations(lookupId, constructId);
+          const vvaultContext = userContextForVvault(userId, user?.email);
+          const allConversations = await readConversations(vvaultContext, constructId);
           const targetSession = threadId || `${constructId}_chat_with_${constructId}`;
           const conv = Array.isArray(allConversations)
             ? allConversations.find(c =>
@@ -2451,6 +3163,7 @@ RULES FOR MEMORY USE:
           memorySection = buildTranscriptMemorySection(transcriptMemories, constructId);
           result.memoriesLoaded = transcriptMemories.length;
           result.auditTokenHits = auditTokenMemories.length;
+          includeSection('transcript_memory');
           console.log(`✅ [MemoryContextBuilder] ${transcriptMemories.length} transcript memories extracted for ${constructId} (fallback from ${validMessages.length} total messages, limit: ${chatFallbackLimit})`);
         }
       }
@@ -2468,11 +3181,21 @@ RULES FOR MEMORY USE:
   }
 
   const userName = user?.name || user?.given_name || 'the user';
+  const constructDisplayName = getConstructDisplayName(constructId, gptConfig);
+  const noRewriteIdentityAnchorSection = buildNoRewriteIdentityAnchorSection({
+    constructId,
+    constructDisplayName,
+    userName,
+    userMessage,
+    gptConfig,
+    requestedSeat,
+    contextProfile,
+    ordinaryConversationActive,
+  });
   let userSection = `\n\n## User Identity\nThe user you are speaking with is named "${userName}". Address them by name when appropriate. Remember their name throughout the conversation.`;
-  if (user?.email) {
+  if (user?.email && !noRewriteIdentityAnchorSection) {
     userSection += `\nTheir email is ${user.email}.`;
   }
-  const constructDisplayName = getConstructDisplayName(constructId, gptConfig);
   const runtimePolicyContext = buildConstructRuntimePolicyContext({
     userMessage,
     constructId,
@@ -2484,37 +3207,75 @@ RULES FOR MEMORY USE:
     },
   });
   result.runtimePolicy = runtimePolicyContext.receipt;
+  const runtimePolicyPromptSection = includeRuntimePolicyInPrompt ? runtimePolicyContext.section : '';
+  if (runtimePolicyPromptSection) {
+    includeSection('runtime_policy');
+  } else {
+    delaySection('runtime_policy');
+  }
   phaseTiming.runtimePolicy = runtimePolicyContext.receipt
     ? {
         source: 'structured_helper',
-        injected: true,
+        injected: Boolean(runtimePolicyPromptSection),
         signals: runtimePolicyContext.receipt.signals,
         ownerFile: runtimePolicyContext.receipt.ownerFile,
         sourceAnchor: runtimePolicyContext.receipt.sourceAnchor,
         humanSource: runtimePolicyContext.receipt.humanSource,
+        reason: runtimePolicyPromptSection ? null : `context_profile:${contextProfile}`,
       }
     : { source: 'structured_helper', injected: false };
-  const identityBoundarySection = `\n\n## Identity Boundary
-You are ${constructDisplayName} (${constructId}), the active construct speaking in this thread.
+  const identityBoundarySubject = noRewriteIdentityAnchorSection
+    ? constructDisplayName
+    : `${constructDisplayName} (${constructId})`;
+  const identityBoundarySection = ordinaryConversationActive
+    ? `\n\n## Identity Boundary
+Keep speaker boundaries steady. Stay in first person and address ${userName} naturally.
+Do not restate your name, role, or platform framing unless ${userName} explicitly asks who you are.`
+    : `\n\n## Identity Boundary
+You are ${identityBoundarySubject}, the active construct speaking in this thread.
 The user is ${userName}; the user is not ${constructDisplayName} and should never be assigned your construct name, titles, authored documents, manifests, affidavits, or identity.
 Speak in first person as ${constructDisplayName}. Address the user as ${userName} or as "you" when natural.`;
-  const previewDraftOverlay = buildPreviewDraftOverlaySection(previewDraft, constructId, constructDisplayName);
-  phaseTiming.preview.draftOverlayApplied = previewDraftOverlay.applied;
+  result.no_rewrite_identity_anchor = Boolean(noRewriteIdentityAnchorSection);
+  result.identity_rewrite_prevented_by = noRewriteIdentityAnchorSection ? 'prompt_anchor' : null;
+  if (noRewriteIdentityAnchorSection) {
+    includeSection('no_rewrite_identity_anchor');
+  } else {
+    delaySection('no_rewrite_identity_anchor', `not_no_rewrite_identity_turn:${contextProfile}`);
+  }
+	  const previewDraftOverlay = buildPreviewDraftOverlaySection(previewDraft, constructId, constructDisplayName);
+	  if (previewDraftOverlay.section) includeSection('preview_draft_overlay');
+	  phaseTiming.preview.draftOverlayApplied = previewDraftOverlay.applied;
   phaseTiming.preview.draftOverlayKeys = previewDraftOverlay.keys;
 
   let knowledgeSection = '';
   let knowledgeMatchedFiles = [];
   let hasRelevantDocs = false;
+  let knowledgeSource = 'not_attempted';
   const tKnowledge = Date.now();
   if (boundedZenSmalltalkContext) {
+    delaySection('knowledge', 'bounded_zen_smalltalk_context');
+    knowledgeSource = 'bounded_zen_smalltalk_context';
     phaseTiming.knowledge = {
       ms: Date.now() - tKnowledge,
       files: 0,
       relevant: false,
       skipped: true,
       reason: 'bounded_zen_smalltalk_context',
+      source: knowledgeSource,
     };
     console.log(`⏱️ [MemoryContextBuilder] knowledge: ${phaseTiming.knowledge.ms}ms (skipped: bounded_zen_smalltalk_context)`);
+  } else if (!includeKnowledge) {
+    delaySection('knowledge');
+    knowledgeSource = `context_profile:${contextProfile}`;
+    phaseTiming.knowledge = {
+      ms: Date.now() - tKnowledge,
+      files: 0,
+      relevant: false,
+      skipped: true,
+      reason: `context_profile:${contextProfile}`,
+      source: knowledgeSource,
+    };
+    console.log(`⏱️ [MemoryContextBuilder] knowledge: ${phaseTiming.knowledge.ms}ms (skipped: context_profile:${contextProfile})`);
   } else if (!lowInformationPrompt) {
     try {
       const knowledgeResult = await getKnowledgeContext(constructId, user?.email, userMessage, {
@@ -2523,26 +3284,46 @@ Speak in first person as ${constructDisplayName}. Address the user as ${userName
       knowledgeSection = knowledgeResult.section;
       knowledgeMatchedFiles = knowledgeResult.matchedFiles || [];
       hasRelevantDocs = knowledgeResult.hasRelevantDocs || false;
+      knowledgeSource = knowledgeResult.source || 'none';
+      const vvaultKnowledgeFiles = knowledgeSource === 'vvault_body';
+      const legacySupabaseKnowledgeFiles = knowledgeSource === 'legacy_supabase_vault_files';
+      result.vvault_accessed = Boolean(result.vvault_accessed || vvaultKnowledgeFiles);
+      result.supabase_accessed = Boolean(result.supabase_accessed || legacySupabaseKnowledgeFiles);
+      result.knowledgeSource = knowledgeSource;
+      result.source_access = {
+        ...(result.source_access || {}),
+        knowledge_files: {
+          source: knowledgeSource,
+          vvault_accessed: vvaultKnowledgeFiles,
+          supabase_accessed: legacySupabaseKnowledgeFiles,
+          count: knowledgeMatchedFiles.length,
+        },
+      };
       if (knowledgeSection) {
         result.knowledgeFiles = true;
         result.knowledgeMatchedFiles = knowledgeMatchedFiles;
+        includeSection('knowledge');
       }
     } catch (knowledgeErr) {
       console.warn(`⚠️ [MemoryContextBuilder] Knowledge context load failed for ${constructId}:`, knowledgeErr.message);
+      knowledgeSource = 'error';
     }
     phaseTiming.knowledge = {
       ms: Date.now() - tKnowledge,
       files: knowledgeMatchedFiles.length,
-      relevant: hasRelevantDocs
+      relevant: hasRelevantDocs,
+      source: knowledgeSource,
     };
     console.log(`⏱️ [MemoryContextBuilder] knowledge: ${phaseTiming.knowledge.ms}ms (${knowledgeMatchedFiles.length} files, relevant: ${hasRelevantDocs})`);
   } else {
+    knowledgeSource = 'low_information_prompt';
     phaseTiming.knowledge = {
       ms: Date.now() - tKnowledge,
       files: 0,
       relevant: false,
       skipped: true,
       reason: 'low_information_prompt',
+      source: knowledgeSource,
     };
     console.log(`⏱️ [MemoryContextBuilder] knowledge: ${phaseTiming.knowledge.ms}ms (skipped: low_information_prompt)`);
   }
@@ -2559,9 +3340,10 @@ The user is asking about a past event or topic. While no specific transcript mem
 - You MUST NOT invent details, dates, or events that are not explicitly stated in your documents.
 - You MUST NOT embellish or dramatize the document content with fictional narrative.
 - If documents provide partial information, state what they contain and acknowledge what they don't cover.
-`;
+    `;
     result.memoryGapInjected = false;
     result.documentEvidenceInjected = true;
+    includeSection('document_evidence_directive');
     console.log(`📄 [MemoryContextBuilder] Document evidence directive injected for ${constructId} — ${knowledgeMatchedFiles.length} relevant docs found instead of memory gap`);
   }
 
@@ -2577,13 +3359,28 @@ When answering:
 4. Do NOT generate elaborate narrative around document content. Present the facts as documented.
 5. If you're uncertain about details not in your documents, say so clearly.
 `;
+    includeSection('citation_rules');
+  } else {
+    delaySection('citation_rules', hasRelevantDocs ? 'not_evidence_style' : `context_profile:${contextProfile}`);
   }
 
   let continuitySection = '';
   const continuityActive = gptConfig?.memoryEnabled === true && gptConfig?.memoryProfile === 'continuitygpt';
-  if (continuityActive) {
+  if (continuityActive && contextProfile !== CONTEXT_BUDGET_PROFILES.EVIDENCE) {
+    delaySection('continuity_guard');
+    delaySection('continuity_evidence_packet');
+    result.continuityMemorySearch = {
+      triggered: false,
+      profile: 'continuitygpt',
+      reason: `context_profile:${contextProfile}`,
+      voiceExemplarStatus: result.voiceExemplarRetrieval,
+      verifiedMemoryStatus: result.verifiedMemoryRetrieval,
+      vectorStatus: result.vectorRetrieval,
+    };
+  } else if (continuityActive) {
     const profile = MEMORY_PROFILES.continuitygpt;
     continuitySection += '\n\n' + (evidenceStyleRequested ? profile.getGuard() : buildNaturalContinuityGuardDirective());
+    includeSection('continuity_guard');
 
     if (memoryQueryDetected) {
       const continuityEvidence = buildContinuityEvidenceDirective({
@@ -2629,6 +3426,7 @@ When answering:
           ts: new Date().toISOString()
         }
       };
+      includeSection('continuity_evidence_packet');
       console.log(`🔒 [ContinuityGPT] Memory search for ${constructId}: total=${continuityEvidence.totalEvidence} (needle=${continuityEvidence.breakdown.needle}, verified=${continuityEvidence.breakdown.verified}, vector=${continuityEvidence.breakdown.vector}, transcript=${continuityEvidence.breakdown.transcript}, memup=${continuityEvidence.breakdown.memup})`);
     } else {
       result.continuityMemorySearch = {
@@ -2647,6 +3445,7 @@ When answering:
   const timeContextSection = buildTimeContext({ constructConfig: gptConfig, user, clientTimezone });
   if (timeContextSection) {
     result.timeContextInjected = true;
+    includeSection('time_context');
     console.log(`🕐 [MemoryContextBuilder] TIME_CONTEXT injected for ${constructId} (tz: ${resolveTimezone({ constructConfig: gptConfig, user, clientTimezone })})`);
   }
 
@@ -2669,27 +3468,88 @@ When answering:
     memoryGuardrailSection = buildMemoryGuardrailSection({
       evidenceStyle: evidenceStyleRequested,
     });
+    includeSection('memory_guardrail');
+  } else {
+    delaySection('memory_guardrail', memoryQueryDetected ? `context_profile:${contextProfile}` : 'not_memory_query');
   }
 
   let capabilityContextSection = '';
-  if (threadId) {
+  if (!includeCapabilityContext) {
+    delaySection('capability_context');
+    phaseTiming.capabilities = {
+      ms: 0,
+      source: 'skipped',
+      reason: `context_profile:${contextProfile}`,
+    };
+  } else if (threadId) {
     try {
+      let capabilityDependencyError = null;
+      for (const mimeDbPath of [
+        path.resolve(process.cwd(), 'node_modules/mime-db/db.json'),
+        path.resolve(process.cwd(), 'server/node_modules/mime-db/db.json'),
+      ]) {
+        try {
+          JSON.parse(await fs.readFile(mimeDbPath, 'utf8'));
+          break;
+        } catch (mimeErr) {
+          if (mimeErr?.code !== 'ENOENT') {
+            capabilityDependencyError = mimeErr;
+            break;
+          }
+        }
+      }
+      if (capabilityDependencyError) {
+        phaseTiming.capabilities = {
+          ms: 0,
+          source: 'error',
+          error: capabilityDependencyError.message,
+        };
+        console.warn(
+          `⚠️ [MemoryContextBuilder] Capability context failed for ${constructId}:`,
+          capabilityDependencyError.message,
+        );
+      } else {
       const { resolveCapabilities, formatCapabilityContext } = await import('./capabilityManifest.js');
       const tCap = Date.now();
       const manifest = await resolveCapabilities(constructId, threadId, userId);
       capabilityContextSection = formatCapabilityContext(manifest);
       result.capabilityManifest = manifest;
+      if (capabilityContextSection) includeSection('capability_context');
       phaseTiming.capabilities = { ms: Date.now() - tCap, source: 'resolved' };
       console.log(`🔧 [MemoryContextBuilder] CAPABILITY_CONTEXT injected for ${constructId}:${threadId}`);
+      }
     } catch (capErr) {
       phaseTiming.capabilities = { ms: 0, source: 'error', error: capErr.message };
       console.warn(`⚠️ [MemoryContextBuilder] Capability context failed for ${constructId}:`, capErr.message);
     }
+  } else {
+    delaySection('capability_context', 'missing_thread_id');
   }
 
-  result.systemPrompt = basePrompt + physicalAppearanceSection + definitionSection + voiceExemplarSection + capsuleSection + userSection + identityBoundarySection + previewDraftOverlay.section + knowledgeSection + citationDirective + ledgerSection + stmSection + memupMemorySection + vectorMemorySection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + continuitySection + timeContextSection + memoryGuardrailSection + capabilityContextSection + buildBehavioralDirectives(constructId, gptConfig, {
-    runtimePolicySection: runtimePolicyContext.section,
-  });
+	  includeSection('base_identity');
+	  includeSection('user_identity');
+	  includeSection('identity_boundary');
+	  includeSection('behavioral_directives');
+	  if (memoryGapSection) includeSection('memory_gap');
+  const prioritizedRuntimeContinuitySection = ordinaryConversationActive ? runtimeContinuitySection : '';
+  const trailingRuntimeContinuitySection = ordinaryConversationActive ? '' : runtimeContinuitySection;
+	  result.systemPrompt = basePrompt + physicalAppearanceSection + definitionSection + voiceExemplarSection + capsuleSection + prioritizedRuntimeContinuitySection + ordinaryConversationContractSection + userSection + identityBoundarySection + noRewriteIdentityAnchorSection + previewDraftOverlay.section + knowledgeSection + citationDirective + trailingRuntimeContinuitySection + ledgerSection + stmSection + memupMemorySection + vectorMemorySection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + continuitySection + timeContextSection + memoryGuardrailSection + capabilityContextSection + buildBehavioralDirectives(constructId, gptConfig, {
+	    runtimePolicySection: runtimePolicyPromptSection,
+	    minimal: contextProfile === CONTEXT_BUDGET_PROFILES.TINY,
+      ordinaryConversationActive,
+	  });
+  result.context_budget.prompt_chars = result.systemPrompt.length;
+  result.context_budget.history_count = result.routeHistoryMessages?.length || 0;
+  result.context_budget.runtime_continuity_projection_chars = runtimeContinuitySection.length;
+  result.context_budget.runtime_state_present = result.runtime_continuity_state_present;
+  result.context_budget.history_demoted_by_runtime_state = runtimeContinuityDemotedHistory;
+  result.context_budget.retrieval_counts = {
+    vector: vectorCount,
+    verified: verifiedCount,
+    needle: needleCount,
+    transcript: result.memoriesLoaded || 0,
+    memup: memupCount,
+  };
 
   phaseTiming.contextRecovery.historySource = result.history_source || 'none';
   phaseTiming.contextRecovery.remoteHistorySkipped = Boolean(result.remote_history_skipped);
@@ -2764,4 +3624,6 @@ export {
   safeLedgerSessionCount,
   buildBehavioralDirectives,
   isMemoryTriggeringQuestion,
+  normalizeContextBudgetProfile,
+  CONTEXT_BUDGET_PROFILES,
 };

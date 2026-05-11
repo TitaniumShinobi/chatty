@@ -75,3 +75,17 @@ GitHub/
 
 Press `Ctrl+C` to stop all services. The script will kill all processes together.
 
+## Ollama Sim Build
+
+For VM-side per-construct Ollama model generation from mounted VVAULT identities, use:
+
+```bash
+python3 scripts/build_sims.py --dry-run
+python3 scripts/build_sims.py
+```
+
+Canonical identity prompt source for sim builds:
+- `instances/<callsign>/identity/prompt.json` (primary)
+- `instances/<callsign>/identity/prompt.txt` (legacy fallback only)
+
+Full details: `docs/implementation/ollama-sim-build-pipeline.md`

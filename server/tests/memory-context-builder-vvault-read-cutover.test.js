@@ -14,8 +14,18 @@ describe('memoryContextBuilder VVAULT-first read cutover', () => {
     assert.ok(fn.indexOf('loadTranscriptRowsFromVvault') > -1);
     assert.ok(text.indexOf("source: 'vvault_body'") > -1);
     assert.match(fn, /const vvaultContext = userContextForVvault\(userId, userEmail\)/);
+    assert.ok(fn.indexOf('readConversations') > fn.indexOf('loadTranscriptRowsFromVvault'));
+    assert.match(fn, /buildVoiceExemplarResult\(exemplars, 'vvault_conversations'\)/);
     assert.match(fn, /buildVoiceExemplarResult\(exemplars, 'legacy_supabase_vault_files'\)/);
-    assert.ok(fn.indexOf('resolveSupabaseUserIdFromEmailOrId') > fn.indexOf('loadTranscriptRowsFromVvault'));
+    assert.ok(fn.indexOf('resolveSupabaseUserIdFromEmailOrId') > fn.indexOf('readConversations'));
+  });
+
+  it('passes email-bearing VVAULT lookup context into readConversations instead of a bare Chatty id string', () => {
+    const text = source();
+    const stm = text.slice(text.indexOf('const tStm'), text.indexOf('let ledger = null'));
+    assert.match(stm, /const vvaultContext = userContextForVvault\(userId, user\?\.email\)/);
+    assert.match(stm, /readConversations\(vvaultContext, constructId\)/);
+    assert.doesNotMatch(stm, /const lookupId = userId \|\| user\?\.email/);
   });
 
   it('normalizes timestamped VVAULT body transcript headers before assistant voice extraction', () => {

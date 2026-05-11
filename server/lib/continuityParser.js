@@ -1,4 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
+import {
+  matchesHistoricalSourcePolicy,
+  rankHistoricalSource,
+} from './constructMemoryPolicy.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -224,23 +228,32 @@ async function getTranscriptFiles(constructId) {
     return [];
   }
 
-  return (data || []).filter(f => {
-    if (!f.filename) return false;
-    const lower = f.filename.toLowerCase();
-    if (lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') ||
-        lower.endsWith('.gif') || lower.endsWith('.webp') || lower.endsWith('.pdf') ||
-        lower.endsWith('.capsule') || lower.endsWith('.json') ||
-        lower === '.ds_store') return false;
-    if (lower.includes('memory_anchors') || lower.includes('continuity_ledger')) return false;
-    if (lower === 'prompt.txt' || lower === 'conditioning.txt' || lower === 'capsule.log' ||
-        lower.includes('/avatar') || lower.includes('knowledge_base') ||
-        lower.endsWith('.capsule')) return false;
-    const isTranscript = lower.includes('chat') || lower.includes('transcript') ||
-        lower.includes('character_ai') || lower.includes('character.ai') || lower.includes('chatgpt') ||
-        lower.includes('conversation') || lower.includes('continuity') ||
-        lower.endsWith('.md') || lower.endsWith('.log') || lower.endsWith('.txt');
-    return isTranscript;
-  });
+  return (data || [])
+    .filter(f => {
+      if (!f.filename) return false;
+      const lower = f.filename.toLowerCase();
+      if (lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') ||
+          lower.endsWith('.gif') || lower.endsWith('.webp') || lower.endsWith('.pdf') ||
+          lower.endsWith('.capsule') || lower.endsWith('.json') ||
+          lower === '.ds_store') return false;
+      if (lower.includes('memory_anchors') || lower.includes('continuity_ledger')) return false;
+      if (lower === 'prompt.txt' || lower === 'conditioning.txt' || lower === 'capsule.log' ||
+          lower.includes('/avatar') || lower.includes('knowledge_base') ||
+          lower.endsWith('.capsule')) return false;
+      const isTranscript = lower.includes('chat') || lower.includes('transcript') ||
+          lower.includes('character_ai') || lower.includes('character.ai') || lower.includes('chatgpt') ||
+          lower.includes('conversation') || lower.includes('continuity') || lower.includes('validation') ||
+          lower.endsWith('.md') || lower.endsWith('.log') || lower.endsWith('.txt');
+      if (!isTranscript) return false;
+      return matchesHistoricalSourcePolicy(f, constructId);
+    })
+    .sort((a, b) => {
+      const rankDelta = rankHistoricalSource(a, constructId) - rankHistoricalSource(b, constructId);
+      if (rankDelta !== 0) return rankDelta;
+      const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return aTime - bTime;
+    });
 }
 
 async function generateLedger(constructId) {

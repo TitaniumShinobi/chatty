@@ -9,13 +9,105 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { getSupabaseClient } from './supabaseClient.js';
+import { findConstructIdentityDir } from './vvaultPaths.js';
 
 // VVAULT user directory structure - use env vars with local dev fallbacks
-const VVAULT_BASE = process.env.VVAULT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+const VVAULT_BASE = process.env.VVAULT_PATH || process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
 const USER_SHARD = process.env.VVAULT_SHARD || 'shard_0000';
-const USER_ID = process.env.VVAULT_USER_ID || 'devon_woodson_1762969514958';
+const USER_ID = process.env.VVAULT_USER_ID || 'devon_woodson_1774390416168';
 const USER_CAPSULES_DIR = path.join(VVAULT_BASE, 'users', USER_SHARD, USER_ID, 'capsules');
 const USER_INSTANCES_DIR = path.join(VVAULT_BASE, 'users', USER_SHARD, USER_ID, 'instances');
+
+function normalizeCallsign(constructId) {
+  return constructId && constructId.match(/-\d+$/) ? constructId : `${constructId}-001`;
+}
+
+function isProtectedZenCallsign(constructId) {
+  return String(constructId || '').toLowerCase() === 'zen-001';
+}
+
+function looksLikeTransientUpstreamError(message = '') {
+  return /\b(522|timeout|timed out|etimedout|fetch failed|network|gateway|upstream|econnreset)\b/i.test(String(message || ''));
+}
+
+function normalizeTimeoutMs(value, fallback) {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.floor(parsed);
+  }
+  return fallback;
+}
+
+async function withTimeoutResult(promise, timeoutMs, label) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      Promise.resolve(promise)
+        .then((value) => ({ status: 'ok', value }))
+        .catch((error) => ({
+          status: 'error',
+          error: error instanceof Error ? error.message : String(error),
+        })),
+      new Promise((resolve) => {
+        timer = setTimeout(() => {
+          resolve({
+            status: 'timeout',
+            error: `${label} timed out after ${timeoutMs}ms`,
+          });
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function buildSyntheticCapsulePayload({
+  callsign,
+  promptData = null,
+  conditioningText = '',
+  personalityData = null,
+  generator = 'CapsuleIntegration',
+  vaultSource = 'unknown',
+}) {
+  const constructName = String(callsign || '').replace(/-\d+$/, '');
+  const displayName = constructName.charAt(0).toUpperCase() + constructName.slice(1);
+
+  return {
+    metadata: {
+      instance_name: promptData?.name || displayName,
+      uuid: callsign,
+      timestamp: new Date().toISOString(),
+      capsule_version: '1.0.0-synthetic',
+      generator,
+      vault_source: vaultSource,
+    },
+    traits: personalityData?.traits || {
+      creativity: 0.7,
+      persistence: 0.8,
+      empathy: 0.6,
+      curiosity: 0.7,
+      organization: 0.8,
+    },
+    personality: personalityData?.personality || {
+      personality_type: 'INFJ',
+      communication_style: personalityData?.communication_style || 'adaptive',
+    },
+    memory_log: [],
+    identity: {
+      name: promptData?.name || displayName,
+      description: promptData?.description || '',
+      instructions: promptData?.instructions || '',
+      conditioning: conditioningText,
+    },
+    environment: {
+      context_awareness: 0.8,
+      session_continuity: 0.9,
+    },
+  };
+}
+
+export { buildSyntheticCapsulePayload };
 
 export class CapsuleIntegration {
   constructor() {
@@ -114,6 +206,123 @@ export class CapsuleIntegration {
       console.timeEnd(`🕐 [LOAD] Total capsule load for ${constructId}`);
       return null;
     }
+  }
+
+  async loadCapsuleWithDiagnostics(constructId, options = {}) {
+    const callsign = normalizeCallsign(constructId);
+    const cacheEntry = this.memoryCache.get(constructId);
+    if (cacheEntry?.capsule) {
+      cacheEntry.accessCount++;
+      cacheEntry.lastAccessed = Date.now();
+      return {
+        ok: true,
+        capsule: cacheEntry.capsule,
+        source: 'memory_cache',
+        recovery: { attempted: false, applied: false, kind: null },
+        transientFailure: null,
+      };
+    }
+
+    try {
+      const capsuleFile = await this.findLatestCapsule(constructId);
+      if (capsuleFile) {
+        const capsule = JSON.parse(await fs.readFile(capsuleFile, 'utf8'));
+        return {
+          ok: true,
+          capsule,
+          source: 'filesystem_capsule',
+          recovery: { attempted: false, applied: false, kind: null },
+          transientFailure: null,
+          capsulePath: capsuleFile,
+        };
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        capsule: null,
+        source: 'filesystem_capsule',
+        errorCategory: 'filesystem_capsule_invalid',
+        errorMessage: error.message,
+        recovery: { attempted: false, applied: false, kind: null },
+        transientFailure: null,
+      };
+    }
+
+    const shouldBoundSupabaseLoad =
+      Boolean(options.allowZenLocalIdentityFallback) &&
+      isProtectedZenCallsign(callsign);
+    const supabaseTimeoutMs = normalizeTimeoutMs(
+      options.supabaseTimeoutMs,
+      normalizeTimeoutMs(process.env.ZEN_BOUNDED_CAPSULE_TIMEOUT_MS, 2500),
+    );
+    const supabaseOutcome = shouldBoundSupabaseLoad
+      ? await withTimeoutResult(
+          this.loadCapsuleFromSupabaseWithDiagnostics(constructId),
+          supabaseTimeoutMs,
+          'bounded_zen_capsule_supabase',
+        )
+      : {
+          status: 'ok',
+          value: await this.loadCapsuleFromSupabaseWithDiagnostics(constructId),
+        };
+    const supabaseResult = supabaseOutcome.status === 'ok'
+      ? supabaseOutcome.value
+      : {
+          capsule: null,
+          source: 'supabase_capsule',
+          errorCategory: 'transient_upstream_failure',
+          errorMessage: supabaseOutcome.error || `bounded_zen_capsule_supabase ${supabaseOutcome.status}`,
+          transientFailure: {
+            category: 'transient_upstream_failure',
+            message: supabaseOutcome.error || `bounded_zen_capsule_supabase ${supabaseOutcome.status}`,
+          },
+        };
+    if (supabaseResult.capsule) {
+      return {
+        ok: true,
+        capsule: supabaseResult.capsule,
+        source: supabaseResult.source,
+        recovery: { attempted: false, applied: false, kind: null },
+        transientFailure: supabaseResult.transientFailure || null,
+      };
+    }
+
+    const allowLocalZenRecovery =
+      Boolean(options.allowZenLocalIdentityFallback) &&
+      isProtectedZenCallsign(callsign) &&
+      Boolean(supabaseResult.transientFailure);
+
+    if (allowLocalZenRecovery) {
+      const localFallback = await this.buildCapsuleFromLocalIdentityDir(callsign, options);
+      if (localFallback.capsule) {
+        return {
+          ok: true,
+          capsule: localFallback.capsule,
+          source: 'filesystem_identity_synthetic_capsule',
+          recovery: {
+            attempted: true,
+            applied: true,
+            kind: 'local_identity_dir',
+            identityDir: localFallback.identityDir,
+          },
+          transientFailure: supabaseResult.transientFailure,
+        };
+      }
+    }
+
+    return {
+      ok: false,
+      capsule: null,
+      source: supabaseResult.source || 'capsule_unavailable',
+      errorCategory: supabaseResult.errorCategory || 'capsule_missing',
+      errorMessage: supabaseResult.errorMessage || null,
+      recovery: {
+        attempted: allowLocalZenRecovery,
+        applied: false,
+        kind: allowLocalZenRecovery ? 'local_identity_dir' : null,
+      },
+      transientFailure: supabaseResult.transientFailure || null,
+    };
   }
 
   /**
@@ -237,7 +446,16 @@ export class CapsuleIntegration {
       const constructName = constructId.split('-')[0];
       
       // Look for capsule files in the user's capsules directory (fallback)
-      const files = await fs.readdir(USER_CAPSULES_DIR);
+      let files;
+      try {
+        files = await fs.readdir(USER_CAPSULES_DIR);
+      } catch (err) {
+        if (err && err.code === 'ENOENT') {
+          console.log(`📦 [CapsuleIntegration] No capsules directory for ${constructId}; skipping`);
+          return null;
+        }
+        throw err;
+      }
       const capsuleFiles = files
         .filter(file => file.startsWith(constructName) && file.endsWith('.capsule'))
         .map(file => ({
@@ -322,6 +540,129 @@ export class CapsuleIntegration {
     }
   }
 
+  async loadCapsuleFromSupabaseWithDiagnostics(constructId) {
+    try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        console.log(`⚠️ [CapsuleIntegration] Supabase not available for capsule lookup`);
+        return {
+          capsule: null,
+          source: 'supabase_unavailable',
+          errorCategory: 'supabase_client_missing',
+          errorMessage: 'Supabase client not initialized',
+          transientFailure: null,
+        };
+      }
+
+      const callsign = normalizeCallsign(constructId);
+
+      const { data, error } = await supabase
+        .from('vault_files')
+        .select('filename, content, storage_path, file_type')
+        .eq('construct_id', callsign)
+        .like('filename', `%${callsign}%.capsule`)
+        .order('filename', { ascending: false })
+        .limit(1);
+
+      if (error) {
+        const transient = looksLikeTransientUpstreamError(error.message);
+        console.error(`❌ [CapsuleIntegration] Supabase capsule query error:`, error.message);
+        return {
+          capsule: null,
+          source: 'supabase_capsule',
+          errorCategory: transient ? 'transient_upstream_failure' : 'supabase_query_error',
+          errorMessage: error.message,
+          transientFailure: transient ? { category: 'transient_upstream_failure', message: error.message } : null,
+        };
+      }
+
+      if (!data || data.length === 0) {
+        const { data: memupData, error: memupError } = await supabase
+          .from('vault_files')
+          .select('filename, content, storage_path, file_type')
+          .eq('construct_id', callsign)
+          .like('filename', `%.capsule`)
+          .order('filename', { ascending: false })
+          .limit(1);
+
+        if (memupError) {
+          const transient = looksLikeTransientUpstreamError(memupError.message);
+          return {
+            capsule: null,
+            source: 'supabase_capsule',
+            errorCategory: transient ? 'transient_upstream_failure' : 'supabase_query_error',
+            errorMessage: memupError.message,
+            transientFailure: transient ? { category: 'transient_upstream_failure', message: memupError.message } : null,
+          };
+        }
+
+        if (memupData && memupData.length > 0) {
+          const memupCapsule = await this._parseCapsuleRow(supabase, memupData[0], 'memup');
+          if (memupCapsule) {
+            return {
+              capsule: memupCapsule,
+              source: 'supabase_capsule_memup',
+              transientFailure: null,
+            };
+          }
+        }
+
+        const syntheticCapsule = await this.buildCapsuleFromIdentityFiles(supabase, callsign);
+        if (syntheticCapsule) {
+          return {
+            capsule: syntheticCapsule,
+            source: 'supabase_identity_files',
+            transientFailure: null,
+          };
+        }
+
+        return {
+          capsule: null,
+          source: 'supabase_capsule',
+          errorCategory: 'capsule_missing',
+          errorMessage: 'No capsule or identity-file fallback found in Supabase',
+          transientFailure: null,
+        };
+      }
+
+      const capsuleData = await this._parseCapsuleRow(supabase, data[0], 'primary');
+      if (capsuleData) {
+        return {
+          capsule: capsuleData,
+          source: 'supabase_capsule',
+          transientFailure: null,
+        };
+      }
+
+      const syntheticCapsule = await this.buildCapsuleFromIdentityFiles(supabase, callsign);
+      if (syntheticCapsule) {
+        return {
+          capsule: syntheticCapsule,
+          source: 'supabase_identity_files',
+          transientFailure: null,
+        };
+      }
+
+      return {
+        capsule: null,
+        source: 'supabase_capsule',
+        errorCategory: 'capsule_missing',
+        errorMessage: 'Capsule row was unusable and no identity-file fallback was found',
+        transientFailure: null,
+      };
+    } catch (error) {
+      const transient = looksLikeTransientUpstreamError(error.message);
+      console.error(`❌ [CapsuleIntegration] Supabase capsule load failed:`, error.message);
+      return {
+        capsule: null,
+        source: 'supabase_capsule',
+        errorCategory: transient ? 'transient_upstream_failure' : 'capsule_loader_exception',
+        errorMessage: error.message,
+        transientFailure: transient ? { category: 'transient_upstream_failure', message: error.message } : null,
+      };
+    }
+  }
+
   async _parseCapsuleRow(supabase, row, source) {
     try {
       if (row.content && typeof row.content === 'string') {
@@ -388,47 +729,83 @@ export class CapsuleIntegration {
         return null;
       }
 
-      const constructName = callsign.replace(/-\d+$/, '');
-      const displayName = constructName.charAt(0).toUpperCase() + constructName.slice(1);
-
-      const syntheticCapsule = {
-        metadata: {
-          instance_name: promptData?.name || displayName,
-          uuid: callsign,
-          timestamp: new Date().toISOString(),
-          capsule_version: '1.0.0-synthetic',
-          generator: 'CapsuleIntegration-Supabase',
-          vault_source: 'Supabase'
-        },
-        traits: personalityData?.traits || {
-          creativity: 0.7,
-          persistence: 0.8,
-          empathy: 0.6,
-          curiosity: 0.7,
-          organization: 0.8
-        },
-        personality: personalityData?.personality || {
-          personality_type: 'INFJ',
-          communication_style: personalityData?.communication_style || 'adaptive'
-        },
-        memory_log: [],
-        identity: {
-          name: promptData?.name || displayName,
-          description: promptData?.description || '',
-          instructions: promptData?.instructions || '',
-          conditioning: conditioningText
-        },
-        environment: {
-          context_awareness: 0.8,
-          session_continuity: 0.9
-        }
-      };
+      const syntheticCapsule = buildSyntheticCapsulePayload({
+        callsign,
+        promptData,
+        conditioningText,
+        personalityData,
+        generator: 'CapsuleIntegration-Supabase',
+        vaultSource: 'Supabase',
+      });
 
       console.log(`✅ [CapsuleIntegration] Built synthetic capsule from identity files for ${callsign}`);
       return syntheticCapsule;
     } catch (error) {
       console.error(`❌ [CapsuleIntegration] Failed to build capsule from identity files:`, error.message);
       return null;
+    }
+  }
+
+  async buildCapsuleFromLocalIdentityDir(constructId, options = {}) {
+    try {
+      const callsign = normalizeCallsign(constructId);
+      const identityDir = await findConstructIdentityDir({
+        constructId: callsign,
+        userId: options.userId || null,
+        supabaseUserId: options.supabaseUserId || null,
+      });
+
+      if (!identityDir) {
+        return { capsule: null, identityDir: null };
+      }
+
+      const [promptJsonText, promptTxtText, conditioningText, personalityJsonText] = await Promise.all([
+        fs.readFile(path.join(identityDir, 'prompt.json'), 'utf8').catch(() => null),
+        fs.readFile(path.join(identityDir, 'prompt.txt'), 'utf8').catch(() => null),
+        fs.readFile(path.join(identityDir, 'conditioning.txt'), 'utf8').catch(() => null),
+        Promise.any([
+          fs.readFile(path.join(identityDir, '..', 'config', 'personality.json'), 'utf8'),
+          fs.readFile(path.join(identityDir, 'personality.json'), 'utf8'),
+        ]).catch(() => null),
+      ]);
+
+      let promptData = null;
+      let personalityData = null;
+
+      if (promptJsonText) {
+        try { promptData = JSON.parse(promptJsonText); } catch {}
+      }
+      if (!promptData && promptTxtText) {
+        try { promptData = JSON.parse(promptTxtText); } catch {
+          const lines = promptTxtText.split('\n');
+          promptData = {
+            name: lines[0]?.replace(/^#\s*/, '').trim(),
+            instructions: promptTxtText,
+          };
+        }
+      }
+      if (personalityJsonText) {
+        try { personalityData = JSON.parse(personalityJsonText); } catch {}
+      }
+
+      if (!promptData && !conditioningText) {
+        return { capsule: null, identityDir };
+      }
+
+      const capsule = buildSyntheticCapsulePayload({
+        callsign,
+        promptData,
+        conditioningText: conditioningText || '',
+        personalityData,
+        generator: 'CapsuleIntegration-LocalIdentity',
+        vaultSource: 'filesystem_identity',
+      });
+
+      console.log(`✅ [CapsuleIntegration] Built synthetic capsule from local identity directory for ${callsign}: ${identityDir}`);
+      return { capsule, identityDir };
+    } catch (error) {
+      console.error(`❌ [CapsuleIntegration] Failed to build capsule from local identity directory:`, error.message);
+      return { capsule: null, identityDir: null, errorMessage: error.message };
     }
   }
 
@@ -638,10 +1015,8 @@ export class CapsuleIntegration {
         organization: 0.8
       },
       personality: {
-        personality_type: constructName === 'katana' ? 'INTJ' : 'INFJ',
-        mbti_breakdown: constructName === 'katana' ? {
-          E: 0.2, I: 0.8, N: 0.7, S: 0.3, T: 0.9, F: 0.1, J: 0.8, P: 0.2
-        } : {
+        personality_type: 'INFJ',
+        mbti_breakdown: {
           E: 0.3, I: 0.7, N: 0.8, S: 0.2, T: 0.4, F: 0.6, J: 0.7, P: 0.3
         }
       },
@@ -1545,17 +1920,31 @@ export class CapsuleIntegration {
 
         const { data: existing } = await supabase
           .from('vault_files')
-          .select('id')
+          .select('id, metadata')
           .eq('construct_id', callsign)
           .like('filename', `%${callsign}.capsule`)
           .limit(1);
 
         if (existing && existing.length > 0) {
+          const existingMetaRaw = existing[0].metadata;
+          const existingMeta = typeof existingMetaRaw === 'string'
+            ? (() => {
+                try {
+                  return JSON.parse(existingMetaRaw);
+                } catch {
+                  return {};
+                }
+              })()
+            : (existingMetaRaw || {});
           await supabase
             .from('vault_files')
             .update({
               content: JSON.stringify(capsuleData, null, 2),
-              updated_at: new Date().toISOString()
+              metadata: {
+                ...existingMeta,
+                source: 'chatty-role-sync',
+                updatedAt: new Date().toISOString()
+              }
             })
             .eq('id', existing[0].id);
           console.log(`💾 [RoleSync] Updated capsule in Supabase vault_files: ${existing[0].id}`);

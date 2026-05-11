@@ -17,6 +17,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { checkMemoryPermission } from '../../lib/memoryPermission';
+import { getHistoricalMemorySources } from '../../lib/constructMemoryPolicy';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -40,6 +41,7 @@ export interface MemoryRetrievalOptions {
   constructId?: string; // Filter by construct ID
   sources?: string[]; // Override default sources
   includeEmbeddings?: boolean; // Whether to compute embeddings (future use)
+  userId?: string; // Active VVAULT user for transcript-backed retrieval
   settings?: { personalization?: { allowMemory?: boolean } }; // Settings for memory permission check
 }
 
@@ -94,6 +96,7 @@ export class MemoryRetrievalEngine {
 
     const topK = options.topK || 10;
     const sources = options.sources || this.getDefaultSources(constructId);
+    const userId = options.userId || process.env.VVAULT_MEMORY_USER_ID || '';
 
     // Load memory source config if available
     const linIdentityPath = path.join(this.workspaceRootPath, 'chatty', 'identity', 'lin-001');
@@ -110,7 +113,7 @@ export class MemoryRetrievalEngine {
     // Load from each source
     for (const sourcePattern of allSources) {
       try {
-        const chunks = await this.loadFromSource(sourcePattern, constructId, query);
+        const chunks = await this.loadFromSource(sourcePattern, constructId, query, userId);
         allChunks.push(...chunks);
       } catch (error) {
         console.warn(`[MemoryRetrievalEngine] Failed to load from ${sourcePattern}: ${error}`);
@@ -134,12 +137,13 @@ export class MemoryRetrievalEngine {
   async loadFromSource(
     sourcePattern: string,
     constructId: string,
-    query: string
+    query: string,
+    userId: string
   ): Promise<MemoryChunk[]> {
     const chunks: MemoryChunk[] = [];
 
     // Resolve source pattern to actual paths
-    const resolvedPaths = await this.resolveSourcePattern(sourcePattern, constructId);
+    const resolvedPaths = await this.resolveSourcePattern(sourcePattern, constructId, userId);
 
     for (const filePath of resolvedPaths) {
       try {
@@ -202,7 +206,8 @@ export class MemoryRetrievalEngine {
    */
   private async resolveSourcePattern(
     pattern: string,
-    constructId: string
+    constructId: string,
+    userId: string
   ): Promise<string[]> {
     const paths: string[] = [];
 
@@ -211,20 +216,19 @@ export class MemoryRetrievalEngine {
       const basePattern = pattern.replace('**', '');
       
       // Resolve common patterns
-      if (pattern.startsWith('chatgpt/**')) {
-        // Search in vvault instances
+      const transcriptSourcePattern = pattern.match(/^([^/]+)\/\*\*$/);
+      if (transcriptSourcePattern && transcriptSourcePattern[1] !== 'cursor_conversations' && transcriptSourcePattern[1] !== 'identity') {
+        if (!userId) {
+          return paths;
+        }
         const userShard = 'shard_0000';
-        const userId = 'devon_woodson_1762969514958'; // TODO: Get from context
         const instancesPath = path.join(this.vvaultRootPath, 'users', userShard, userId, 'instances');
-        
-        // Search all construct chatgpt directories
-        const dirs = ['nova-001', 'lin-001', constructId];
-        for (const dir of dirs) {
-          const chatgptPath = path.join(instancesPath, dir, 'chatgpt');
-          if (await this.pathExists(chatgptPath)) {
-            const files = await this.findFilesRecursive(chatgptPath, ['.md', '.txt']);
-            paths.push(...files);
-          }
+
+        const sourceDir = transcriptSourcePattern[1];
+        const transcriptPath = path.join(instancesPath, constructId, sourceDir);
+        if (await this.pathExists(transcriptPath)) {
+          const files = await this.findFilesRecursive(transcriptPath, ['.md', '.txt']);
+          paths.push(...files);
         }
       } else if (pattern.startsWith('cursor_conversations/**')) {
         const cursorPath = path.join(this.workspaceRootPath, 'cursor_conversations');
@@ -239,10 +243,12 @@ export class MemoryRetrievalEngine {
           paths.push(...files);
         }
       } else if (pattern.includes('Pound it solid.txt')) {
+        if (!userId) {
+          return paths;
+        }
         // Search for specific file
         const searchPaths = [
-          path.join(this.vvaultRootPath, 'users', 'shard_0000', 'devon_woodson_1762969514958', 'instances', 'nova-001', 'chatgpt', 'Pound it solid.txt'),
-          path.join(this.vvaultRootPath, 'users', 'shard_0000', 'devon_woodson_1762969514958', 'instances', 'lin-001', 'chatgpt', 'Pound it solid.txt'),
+          path.join(this.vvaultRootPath, 'users', 'shard_0000', userId, 'instances', constructId, 'chatgpt', 'Pound it solid.txt'),
           path.join(this.workspaceRootPath, 'chatgpt-retrieval-plugin', 'Pound it solid.txt'),
           path.join(this.workspaceRootPath, 'frame', 'Pound it solid.txt')
         ];
@@ -253,10 +259,12 @@ export class MemoryRetrievalEngine {
           }
         }
       } else if (pattern.includes('cursor_building_persistent_identity_in.md')) {
+        if (!userId) {
+          return paths;
+        }
         // Search for specific file
         const searchPaths = [
-          path.join(this.vvaultRootPath, 'users', 'shard_0000', 'devon_woodson_1762969514958', 'instances', 'nova-001', 'chatgpt', 'cursor_building_persistent_identity_in.md'),
-          path.join(this.vvaultRootPath, 'users', 'shard_0000', 'devon_woodson_1762969514958', 'instances', 'lin-001', 'chatgpt', 'cursor_building_persistent_identity_in.md'),
+          path.join(this.vvaultRootPath, 'users', 'shard_0000', userId, 'instances', constructId, 'chatgpt', 'cursor_building_persistent_identity_in.md'),
           path.join(this.workspaceRootPath, 'cursor_conversations', 'cursor_building_persistent_identity_in.md')
         ];
         for (const searchPath of searchPaths) {
@@ -281,12 +289,14 @@ export class MemoryRetrievalEngine {
    * Get default memory sources for a construct
    */
   private getDefaultSources(constructId: string): string[] {
+    const transcriptSources = getHistoricalMemorySources(constructId).map((source) => `${source}/**`);
     return [
-      'chatgpt/**',
+      ...transcriptSources,
       'cursor_conversations/**',
       `identity/${constructId}/`,
-      'chatgpt/Pound it solid.txt',
-      'chatgpt/cursor_building_persistent_identity_in.md'
+      ...(getHistoricalMemorySources(constructId).includes('chatgpt')
+        ? ['chatgpt/Pound it solid.txt', 'chatgpt/cursor_building_persistent_identity_in.md']
+        : [])
     ];
   }
 
@@ -317,11 +327,6 @@ export class MemoryRetrievalEngine {
     // Boost if construct ID matches
     if (chunk.constructId === constructId) {
       score += 0.2;
-    }
-    
-    // Boost for priority sources (nova-001, Pound it solid, etc.)
-    if (chunk.source.includes('nova-001') || chunk.source.includes('Pound it solid')) {
-      score += 0.15;
     }
     
     return Math.min(1.0, score);
@@ -390,4 +395,3 @@ export class MemoryRetrievalEngine {
     }
   }
 }
-

@@ -6,7 +6,7 @@ import {
   persistImportToVVAULT,
 } from "../services/importService.js";
 import VVAULTMemoryManager from "../lib/vvaultMemoryManager.js";
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth } from '../auth/middleware/auth.js';
 
 const router = express.Router();
 

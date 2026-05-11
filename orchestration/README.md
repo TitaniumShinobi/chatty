@@ -1,10 +1,23 @@
 # Agent Squad Orchestration Framework Integration
 
+> Status: legacy/reference
+>
+> This directory documents an optional Python orchestration bridge and placeholder-agent integration layer. It is **not** Chatty's current canonical orchestration contract or construct-quality route.
+>
+> Treat `orchestration/cli.py` as `dangerous residue / misleading surface` for current canon work. It is not the promoted `chatty-cli` path.
+>
+> Current orchestration canon lives in:
+> - [docs/standards/orchestration-canon-rubric.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-canon-rubric.md)
+> - [docs/standards/orchestration-surface-inventory.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-surface-inventory.md)
+> - [docs/standards/orchestration-runtime-checklist.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-runtime-checklist.md)
+> - [docs/standards/lin-three-i-seat-canon.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/lin-three-i-seat-canon.md)
+> - [docs/standards/lin-seat-cross-repo-reconciliation.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/lin-seat-cross-repo-reconciliation.md)
+
 This directory contains the integration layer for the Agent Squad orchestration framework (via `orchestration-framework` Python package) into Chatty's TypeScript/JavaScript codebase.
 
 ## Overview
 
-The orchestration framework provides a bridge layer that allows Chatty to optionally route messages through a Python-based multi-agent orchestration system. This enables coordination between zen and lin constructs without replacing existing processors.
+The orchestration framework provides a bridge layer that allows Chatty to optionally route messages through a Python-based multi-agent orchestration system. This enables coordination experiments between zen and lin constructs without replacing existing processors.
 
 ## Architecture
 
@@ -254,4 +267,3 @@ If orchestration times out:
 - `server/routes/orchestration.js` - API routes
 - `src/lib/aiService.ts` - AIService integration
 - `server/routes/conversations.js` - Conversations API integration
-

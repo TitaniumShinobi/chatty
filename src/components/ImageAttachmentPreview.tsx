@@ -74,7 +74,7 @@ export default function ImageAttachmentPreview({ files, onRemove }: ImageAttachm
           <img
             src={previews[0]}
             alt={imageFiles[0].name}
-            className="max-w-full max-h-[70vh] w-auto h-auto object-contain rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+            className="w-24 h-24 object-cover rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
             onClick={() => openLightbox(0)}
           />
           <button

@@ -12,6 +12,7 @@ import type { PersonalityBlueprint, MemoryAnchor } from '../transcript/types';
 import type { EmotionalState } from './types';
 import { DeepTranscriptParser } from '../transcript/DeepTranscriptParser';
 import { IdentityMatcher } from './IdentityMatcher';
+import { LIN_MODEL_DEFAULTS } from '../../config/linModelDefaults';
 
 export interface PersonaSignal {
   constructId: string;
@@ -58,7 +59,7 @@ export class PersonaDetectionEngine {
 
   constructor(vvaultRoot?: string) {
     this.identityMatcher = new IdentityMatcher(vvaultRoot);
-    this.transcriptParser = new DeepTranscriptParser('phi3:latest');
+    this.transcriptParser = new DeepTranscriptParser(LIN_MODEL_DEFAULTS.conversation);
   }
 
   /**

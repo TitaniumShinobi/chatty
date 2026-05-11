@@ -10,7 +10,6 @@ import rateLimit from "express-rate-limit";
 import path from "path";
 import fs from "node:fs";
 import { fileURLToPath } from "url";
-import { execSync } from "child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,12 +17,20 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 import { connectDB } from "./config/database.js";
 import { initAvatarStore } from "./lib/avatarStore.js";
 import { Store } from "./store.js";
-import { requireAuth, requireAuthOrServiceToken } from "./auth/middleware/auth.js";
+import {
+  requireAuth,
+  requireAuthOrServiceToken,
+  requirePreferredAuthOrServiceToken,
+  resolvePreferredAuthContext,
+  resolveSharedAuthContext,
+} from "./auth/middleware/auth.js";
 import convRoutes from "./routes/conversations.js";
 import aiRoutes from "./routes/ais.js";
 import crypto from "node:crypto";
+import bcrypt from "bcryptjs";
 const { randomBytes } = crypto;
 import vvaultRoutes from "./routes/vvault.js";
+import constructRoutes from "./routes/construct.js";
 import previewRoutes from "./routes/preview.js";
 import awarenessRoutes from "./routes/awareness.js";
 import workspaceRoutes from "./routes/workspace.js";
@@ -36,6 +43,7 @@ import linChatRoutes from './routes/linChat.js';
 import vsiRoutes from './routes/vsi.js';
 import gptsRoutes from './routes/gpts.js';
 import transcriptsRoutes from './routes/transcripts.js';
+import codexRoutes from './routes/codex.js';
 import masterScriptsRoutes from './routes/masterScripts.js';
 import scriptsRoutes from './routes/scripts.js';
 import simForgeRoutes from './routes/simForge.js';
@@ -52,13 +60,27 @@ import needleRoutes from './routes/needle.js';
 import selfpromptRoutes from './routes/selfprompt.js';
 import familyRoutes from './routes/family.js';
 import capabilitiesRouter from './routes/capabilities.js';
+import zenRoutes from './routes/zen.js';
 import { startZenWatch } from './lib/zenWatch.js';
+import themeRoutes from './routes/theme.js';
 import { initializeChromaDB, shutdownChromaDB, getChromaDBService } from "./services/chromadbService.js";
 import { getChatService } from "./services/chatService.js";
 import { setupTranscribeStream } from "./routes/transcribeStream.js";
 import { getAgentsManifest, loadRolePrompt } from "./lib/rolePromptLoader.js";
 import { checkDbHealth, checkMemoryHealth, checkVvaultHealth, checkBuildHealth, checkProviderHealth, runAllHealthChecks } from "./lib/healthChecks.js";
 import { getVvaultBridgeConfig, describeVvaultBridgeConfig, getVvaultTargets, describeVvaultTargets } from "./lib/vvaultBridgeConfig.js";
+import {
+  resolveVvaultApiMeSessionState,
+} from "./lib/vvaultBridgeIdentity.js";
+import {
+  buildChattyApiMeAuthFailureLog,
+  buildChattyApiMeIdentityLog,
+  logVvaultIdentityDiagnostics,
+} from "./lib/vvaultIdentityDiagnostics.js";
+import {
+  buildCliCallbackRedirect,
+  normalizeCliCallbackUrl,
+} from "./lib/cliAuthBridge.js";
 
 console.log('[ENV CHECK]', {
   JWT_SECRET: process.env.JWT_SECRET ? 'SET' : 'MISSING',
@@ -256,6 +278,68 @@ const SMTP_CONFIG = {
 
 const app = express();
 
+const REQUIRED_ROUTE_PATHS = Object.freeze([
+  '/api/health',
+  '/api/me',
+  '/api/auth/google/health',
+  '/api/vvault/profile',
+]);
+
+const mountedRouteState = {
+  directGet: new Set(),
+  vvaultMounted: false,
+  vvaultProfileMounted: false,
+};
+
+function markDirectGetRoute(pathname) {
+  mountedRouteState.directGet.add(pathname);
+}
+
+function hasRouterGetPath(router, routePath) {
+  const stack = Array.isArray(router?.stack) ? router.stack : [];
+  for (const layer of stack) {
+    if (layer?.route?.path === routePath && layer.route.methods?.get) {
+      return true;
+    }
+    if (layer?.name === 'router' && layer?.handle?.stack && hasRouterGetPath(layer.handle, routePath)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+mountedRouteState.vvaultProfileMounted = hasRouterGetPath(vvaultRoutes, '/profile');
+
+function getRouteIntegritySnapshot() {
+  const routeChecks = {
+    '/api/health': () => mountedRouteState.directGet.has('/api/health'),
+    '/api/me': () => mountedRouteState.directGet.has('/api/me'),
+    '/api/auth/google/health': () => mountedRouteState.directGet.has('/api/auth/google/health'),
+    '/api/vvault/profile': () => mountedRouteState.vvaultMounted && mountedRouteState.vvaultProfileMounted,
+  };
+  const missing = [];
+  for (const pathname of REQUIRED_ROUTE_PATHS) {
+    if (!routeChecks[pathname]()) {
+      missing.push(pathname);
+    }
+  }
+  return {
+    ok: missing.length === 0,
+    missing,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+function logRouteIntegrityStartup() {
+  const snapshot = getRouteIntegritySnapshot();
+  if (snapshot.ok) {
+    console.log('✅ [RouteIntegrity] all required routes mounted');
+    return;
+  }
+  console.error(`❌ [RouteIntegrity] missing routes: ${snapshot.missing.join(', ')}`);
+  console.error('❌ [RouteIntegrity] Ensure the local API process is server/server.js on port 5050 and fully booted.');
+}
+
 // Security headers (CSP is disabled here to avoid breaking dev/proxy/Electron; tighten per env if possible)
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
@@ -269,6 +353,11 @@ app.use((req, res, next) => {
   const rid = randomBytes(8).toString('hex');
   req._rid = rid;
   res.setHeader('X-Req-Id', rid);
+  next();
+});
+
+app.use((req, _res, next) => {
+  console.log('[Request]', req.method, req.originalUrl || req.url, req.ip);
   next();
 });
 
@@ -287,6 +376,7 @@ app.get('/api/health', (_req, res) => {
      .setHeader('Content-Type', 'application/json')
      .end(body);
 });
+markDirectGetRoute('/api/health');
 
 app.use((req, res, next) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -315,7 +405,8 @@ if (process.env.ENABLE_SERVER_TIMING === 'true') {
 }
 
 // Body limits
-const BODY_LIMIT = process.env.BODY_LIMIT || '1mb';
+// Increase default body limit for dev to accommodate transcript uploads.
+const BODY_LIMIT = process.env.BODY_LIMIT || '25mb';
 app.use(express.json({ limit: BODY_LIMIT }));
 app.use(express.urlencoded({ limit: BODY_LIMIT, extended: true }));
 app.use(cookieParser());
@@ -354,6 +445,301 @@ if (!JWT_SECRET) {
   process.exit(1);
 }
 const COOKIE_NAME = process.env.COOKIE_NAME || 'sid';
+const SUPPORTED_AUTH_PROVIDERS = new Set(['google', 'apple', 'github']);
+const DEFAULT_LEGAL_DOC_VERSIONS = Object.freeze({
+  chattyTerms: process.env.LEGAL_VERSION_CHATTY_TERMS || '2026-03-13',
+  chattyPrivacy: process.env.LEGAL_VERSION_CHATTY_PRIVACY || '2026-03-13',
+  chattyEeccd: process.env.LEGAL_VERSION_CHATTY_EECCD || '2026-03-13',
+  vvaultTerms: process.env.LEGAL_VERSION_VVAULT_TERMS || '2026-03-13',
+  vvaultPrivacy: process.env.LEGAL_VERSION_VVAULT_PRIVACY || '2026-03-13',
+  vvaultEeccd: process.env.LEGAL_VERSION_VVAULT_EECCD || '2026-03-13',
+});
+
+function toNonEmptyString(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim();
+}
+
+/** Parity with @quantum/auth: OAuth-only users should not get a generic invalid-password dead end. */
+function credentialLoginUnavailableMessage(authProvider) {
+  const p = String(authProvider || '').toLowerCase();
+  if (p === 'google') return 'This account uses Google sign-in. Use the Google button to continue.';
+  if (p === 'github') return 'This account uses GitHub sign-in. Use the GitHub button to continue.';
+  if (p === 'microsoft') return 'This account uses Microsoft sign-in. Use the Microsoft button to continue.';
+  if (p === 'apple') return 'This account uses Apple sign-in. Use the Apple button to continue.';
+  return 'This account does not use email and password. Sign in with your linked sign-in provider.';
+}
+
+function lifeRegistryMatchChattyMessage() {
+  return 'This email was found in the LIFE Technology user registry. Finish Chatty sign-up below and your account will be connected.';
+}
+
+function createSessionCookieOptions(req) {
+  const cookieOptions = {
+    httpOnly: true,
+    secure: cookieSecure(req),
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 1000 * 60 * 60 * 24 * 30,
+  };
+  if (cookieSecure(req)) {
+    cookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || '.thewreck.org';
+  } else {
+    delete cookieOptions.domain;
+  }
+  return cookieOptions;
+}
+
+function buildAuthJwtPayload(payload) {
+  const id = toNonEmptyString(payload?.id);
+  const sub = toNonEmptyString(payload?.sub) || id;
+  const email = toNonEmptyString(payload?.email).toLowerCase();
+  const name = toNonEmptyString(payload?.name);
+  return {
+    id: id || sub,
+    sub: sub || id,
+    uid: toNonEmptyString(payload?.uid) || id || sub,
+    name: name || email.split('@')[0] || 'User',
+    given_name: toNonEmptyString(payload?.given_name) || undefined,
+    family_name: toNonEmptyString(payload?.family_name) || undefined,
+    email: email || undefined,
+    picture: toNonEmptyString(payload?.picture) || undefined,
+    locale: toNonEmptyString(payload?.locale) || undefined,
+    auth_provider: toNonEmptyString(payload?.auth_provider) || undefined,
+  };
+}
+
+function setAuthSessionCookie(req, res, payload) {
+  const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' });
+  res.cookie(COOKIE_NAME, token, createSessionCookieOptions(req));
+  return token;
+}
+
+function getAuthProviderStatus(provider) {
+  const normalized = toNonEmptyString(provider).toLowerCase();
+  if (!SUPPORTED_AUTH_PROVIDERS.has(normalized)) {
+    return { provider: normalized, enabled: false, available: false, reason: 'unknown_provider' };
+  }
+
+  if (normalized === 'google') {
+    const enabled = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+    return {
+      provider: normalized,
+      enabled,
+      available: enabled && oauthValid,
+      reason: enabled && oauthValid ? undefined : 'not_configured',
+    };
+  }
+
+  const envFlag = process.env[`AUTH_${normalized.toUpperCase()}_ENABLED`];
+  const enabled = envFlag === 'true';
+  return {
+    provider: normalized,
+    enabled,
+    available: enabled,
+    reason: enabled ? undefined : 'feature_flag_disabled',
+  };
+}
+
+function buildAuthLegalDocs(req) {
+  const origin = getRequestOrigin(req).replace(/\/$/, '');
+  const vvaultBase = (process.env.VVAULT_LEGAL_BASE_URL || origin).replace(/\/$/, '');
+  const docs = [
+    {
+      product: 'chatty',
+      docType: 'terms',
+      key: 'chatty:terms',
+      version: DEFAULT_LEGAL_DOC_VERSIONS.chattyTerms,
+      label: 'Chatty Terms of Service',
+      url: `${origin}/legal/terms`,
+      required: true,
+    },
+    {
+      product: 'chatty',
+      docType: 'privacy',
+      key: 'chatty:privacy',
+      version: DEFAULT_LEGAL_DOC_VERSIONS.chattyPrivacy,
+      label: 'Chatty Privacy Notice',
+      url: `${origin}/legal/privacy`,
+      required: true,
+    },
+    {
+      product: 'chatty',
+      docType: 'eeccd',
+      key: 'chatty:eeccd',
+      version: DEFAULT_LEGAL_DOC_VERSIONS.chattyEeccd,
+      label: 'Chatty EECCD Disclosure',
+      url: `${origin}/legal/eeccd`,
+      required: true,
+    },
+    {
+      product: 'vvault',
+      docType: 'terms',
+      key: 'vvault:terms',
+      version: DEFAULT_LEGAL_DOC_VERSIONS.vvaultTerms,
+      label: 'VVault Terms of Service',
+      url: `${vvaultBase}/vvault-terms.html`,
+      required: true,
+    },
+    {
+      product: 'vvault',
+      docType: 'privacy',
+      key: 'vvault:privacy',
+      version: DEFAULT_LEGAL_DOC_VERSIONS.vvaultPrivacy,
+      label: 'VVault Privacy Notice',
+      url: `${vvaultBase}/vvault-privacy.html`,
+      required: true,
+    },
+    {
+      product: 'vvault',
+      docType: 'eeccd',
+      key: 'vvault:eeccd',
+      version: DEFAULT_LEGAL_DOC_VERSIONS.vvaultEeccd,
+      label: 'VVault EECCD Disclosure',
+      url: `${vvaultBase}/vvault-eeccd.html`,
+      required: true,
+    },
+  ];
+
+  const turnstileEnabled = Boolean(process.env.TURNSTILE_SECRET_KEY && process.env.TURNSTILE_SITE_KEY);
+  return {
+    docs,
+    turnstile: {
+      required: process.env.NODE_ENV === 'production',
+      enabled: turnstileEnabled,
+      siteKey: turnstileEnabled ? process.env.TURNSTILE_SITE_KEY : undefined,
+    },
+    providers: Array.from(SUPPORTED_AUTH_PROVIDERS).map((provider) => getAuthProviderStatus(provider)),
+  };
+}
+
+function parseSignupConsent(payload) {
+  const consentPayload = payload?.consent && typeof payload.consent === 'object' ? payload.consent : {};
+  const legacyChattyAccepted = payload?.acceptTerms === true;
+  const legacyVvaultAccepted = payload?.acceptVVAULTTerms === true;
+
+  return {
+    chattyTerms: consentPayload.chattyTerms === true || legacyChattyAccepted,
+    chattyPrivacy: consentPayload.chattyPrivacy === true || legacyChattyAccepted,
+    chattyEeccd: consentPayload.chattyEeccd === true || legacyChattyAccepted,
+    vvaultTerms: consentPayload.vvaultTerms === true || legacyVvaultAccepted,
+    vvaultPrivacy: consentPayload.vvaultPrivacy === true || legacyVvaultAccepted,
+    vvaultEeccd: consentPayload.vvaultEeccd === true || legacyVvaultAccepted,
+  };
+}
+
+function isSignupConsentComplete(consent) {
+  return Boolean(
+    consent?.chattyTerms &&
+    consent?.chattyPrivacy &&
+    consent?.chattyEeccd &&
+    consent?.vvaultTerms &&
+    consent?.vvaultPrivacy &&
+    consent?.vvaultEeccd
+  );
+}
+
+function getClientIpAddress(req) {
+  const forwarded = toNonEmptyString(req.headers['x-forwarded-for']);
+  if (forwarded) {
+    return forwarded.split(',')[0].trim();
+  }
+  return toNonEmptyString(req.ip) || toNonEmptyString(req.socket?.remoteAddress) || '';
+}
+
+async function verifyTurnstileToken(token, remoteIp) {
+  const secret = toNonEmptyString(process.env.TURNSTILE_SECRET_KEY);
+  if (!secret) return false;
+  if (!toNonEmptyString(token)) return false;
+
+  try {
+    const body = new URLSearchParams({
+      secret,
+      response: token,
+    });
+    if (toNonEmptyString(remoteIp)) {
+      body.set('remoteip', remoteIp);
+    }
+
+    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    if (!response.ok) return false;
+    const payload = await response.json().catch(() => null);
+    return payload?.success === true;
+  } catch {
+    return false;
+  }
+}
+
+async function recordLegalAcceptances({ supabase, userId, email, docs, acceptedAt, source, ipAddress, userAgent }) {
+  const rows = docs.map((doc) => ({
+    user_id: userId || null,
+    email,
+    product: doc.product,
+    doc_type: doc.docType,
+    doc_key: doc.key,
+    doc_version: doc.version,
+    accepted_at: acceptedAt,
+    source,
+    ip_address: ipAddress || null,
+    user_agent: userAgent || null,
+  }));
+
+  const { error } = await supabase
+    .from('auth_legal_acceptances')
+    .insert(rows);
+  if (error) throw error;
+}
+
+const handleApiMe = async (req, res) => {
+  try {
+    const authContext = await resolvePreferredAuthContext(req);
+    if (!authContext.ok || !authContext.user) {
+      logVvaultIdentityDiagnostics(
+        "chatty_api_me_auth_failure",
+        buildChattyApiMeAuthFailureLog(req, authContext),
+      );
+      console.error('❌ [Auth] /api/me 401: no active session', {
+        rid: req?._rid || null,
+        nativeReason: authContext?.nativeReason || null,
+        sharedReason: authContext?.sharedReason || null,
+      });
+      return res.status(401).json({
+        ok: false,
+        reason: authContext?.sharedReason || authContext?.nativeReason || authContext?.reason || 'no_session',
+      });
+    }
+    const sharedAuthContext = await resolveSharedAuthContext(req, {
+      hydrateRequestUser: false,
+    });
+    const vvaultSession = await resolveVvaultApiMeSessionState(req, sharedAuthContext, {
+      fetchImpl: fetch,
+    });
+    logVvaultIdentityDiagnostics(
+      "chatty_api_me",
+      buildChattyApiMeIdentityLog(req, authContext, vvaultSession),
+    );
+    return res.json({
+      ok: true,
+      user: {
+        ...authContext.user,
+        authSource: authContext.source || null,
+        vvaultSession,
+        vvaultReady: vvaultSession.ready,
+      },
+    });
+  } catch (error) {
+    console.error('❌ [Auth] /api/me threw:', error, { rid: req?._rid || null });
+    return res.status(500).json({ ok: false, error: error?.message || String(error), rid: req?._rid || null });
+  }
+};
+
+// Register /api/me early so it is guaranteed to be available even if later optional init paths fail.
+app.get("/api/me", handleApiMe);
+markDirectGetRoute('/api/me');
 
 const OAUTH = {
   client_id: process.env.GOOGLE_CLIENT_ID,
@@ -480,33 +866,23 @@ app.get("/api/health/full", async (_req, res) => {
 });
 
 // Build artifacts health check endpoint
-app.get("/api/health/build", (req, res) => {
-  const { existsSync } = require('node:fs');
-  const { join, dirname } = require('node:path');
-  const { fileURLToPath } = require('node:url');
+app.get("/api/health/build", (_req, res) => {
+  const result = checkBuildHealth();
+  const { compiledJsPath, candidates, environment, exists } = result.detail;
 
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = dirname(__filename);
-  const compiledJsPath = join(__dirname, 'dist/engine/optimizedZen.js');
-  const exists = existsSync(compiledJsPath);
-  const isProduction = process.env.NODE_ENV === 'production';
-
-  const status = (exists || !isProduction) ? 'ok' : 'error';
-  const httpStatus = status === 'ok' ? 200 : 503;
-
-  res.status(httpStatus).json({
+  res.status(result.ok ? 200 : 503).json({
+    ok: result.ok,
     buildArtifactsPresent: exists,
-    environment: isProduction ? 'production' : 'development',
-    status: status,
+    environment,
+    status: result.ok ? 'ok' : 'error',
     message: exists
       ? 'Build artifacts present'
-      : isProduction
+      : environment === 'production'
         ? 'ERROR: Build artifacts missing in production'
         : 'WARNING: Build artifacts missing (dev mode)',
-    compiledJsPath: compiledJsPath,
-    recommendation: exists
-      ? null
-      : 'Run: cd server && npm run build'
+    compiledJsPath,
+    checkedPaths: candidates,
+    recommendation: exists ? null : 'Run: cd server && npm run build'
   });
 });
 
@@ -549,6 +925,272 @@ app.get("/api/auth/google/health", (req, res) => {
     }
   });
 });
+markDirectGetRoute('/api/auth/google/health');
+
+app.get('/api/auth/providers/:provider/status', (req, res) => {
+  const provider = toNonEmptyString(req.params?.provider).toLowerCase();
+  if (!SUPPORTED_AUTH_PROVIDERS.has(provider)) {
+    return res.status(404).json({ ok: false, error: 'Unknown auth provider' });
+  }
+  return res.json({ ok: true, ...getAuthProviderStatus(provider) });
+});
+
+app.get('/api/auth/legal-docs', (req, res) => {
+  return res.json({ ok: true, ...buildAuthLegalDocs(req) });
+});
+
+app.post('/api/auth/login', authLimiter, async (req, res) => {
+  try {
+    const email = toNonEmptyString(req.body?.email).toLowerCase();
+    const password = toNonEmptyString(req.body?.password);
+
+    if (!email || !password) {
+      return res.status(400).json({ ok: false, error: 'Email and password are required' });
+    }
+
+    const { getSupabaseClient } = await import('./lib/supabaseClient.js');
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return res.status(503).json({ ok: false, error: 'Supabase auth backend is unavailable' });
+    }
+
+    const { data: userRow, error: selectError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .limit(1)
+      .maybeSingle();
+    if (selectError) {
+      console.error('❌ [Auth] Login user lookup failed:', selectError);
+      return res.status(500).json({ ok: false, error: 'Unable to validate credentials' });
+    }
+
+    if (!userRow) {
+      return res.status(401).json({ ok: false, error: 'Invalid email or password' });
+    }
+
+    const passwordHash = toNonEmptyString(userRow?.auth_password_hash);
+    const legacyPasswordHash = toNonEmptyString(userRow?.password_hash);
+    const authProvider = toNonEmptyString(userRow?.auth_provider).toLowerCase();
+
+    if (!passwordHash) {
+      if (authProvider === 'google' || authProvider === 'github' || authProvider === 'microsoft' || authProvider === 'apple') {
+        return res.status(401).json({
+          ok: false,
+          error: credentialLoginUnavailableMessage(authProvider),
+          oauthOnly: true,
+          credentialLoginUnavailable: true,
+          ...(authProvider ? { authProvider } : {}),
+        });
+      }
+      if (legacyPasswordHash) {
+        return res.status(401).json({
+          ok: false,
+          error: lifeRegistryMatchChattyMessage(),
+          lifeRegistryMatch: true,
+        });
+      }
+      return res.status(401).json({
+        ok: false,
+        error: lifeRegistryMatchChattyMessage(),
+        lifeRegistryMatch: true,
+      });
+    }
+
+    const passwordOk = await bcrypt.compare(password, passwordHash);
+    if (!passwordOk) {
+      return res.status(401).json({ ok: false, error: 'Invalid email or password' });
+    }
+
+    const displayName =
+      toNonEmptyString(userRow?.display_name) ||
+      toNonEmptyString(userRow?.name) ||
+      email.split('@')[0] ||
+      'User';
+    const { getOrCreateUser } = await import('./lib/userRegistry.js');
+    const userProfile = await getOrCreateUser(String(userRow?.id || email), email, displayName);
+
+    const payload = buildAuthJwtPayload({
+      id: userProfile.user_id,
+      sub: userProfile.user_id,
+      uid: String(userRow?.id || userProfile.user_id),
+      name: displayName,
+      email,
+      picture: toNonEmptyString(userRow?.avatar_url) || toNonEmptyString(userRow?.picture),
+      auth_provider: 'credentials',
+    });
+
+    setAuthSessionCookie(req, res, payload);
+
+    await supabase
+      .from('users')
+      .update({ auth_last_login_at: new Date().toISOString() })
+      .eq('id', userRow.id);
+
+    return res.json({
+      ok: true,
+      user: payload,
+      auth: { provider: 'credentials' },
+    });
+  } catch (error) {
+    console.error('❌ [Auth] Login failed:', error);
+    return res.status(500).json({ ok: false, error: 'Sign-in failed' });
+  }
+});
+
+app.post('/api/auth/register', authLimiter, async (req, res) => {
+  try {
+    const name = toNonEmptyString(req.body?.name);
+    const email = toNonEmptyString(req.body?.email).toLowerCase();
+    const password = toNonEmptyString(req.body?.password);
+    const confirmPassword = toNonEmptyString(req.body?.confirmPassword);
+    const turnstileToken = toNonEmptyString(req.body?.turnstileToken);
+    const consent = parseSignupConsent(req.body);
+
+    if (!name || !email || !password || !confirmPassword) {
+      return res.status(400).json({ ok: false, error: 'Name, email, password, and password confirmation are required' });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ ok: false, error: 'Enter a valid email address' });
+    }
+    if (password !== confirmPassword) {
+      return res.status(400).json({ ok: false, error: 'Passwords do not match' });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ ok: false, error: 'Password must be at least 8 characters' });
+    }
+    if (!isSignupConsentComplete(consent)) {
+      return res.status(400).json({ ok: false, error: 'You must accept Chatty and VVault legal terms to continue' });
+    }
+
+    const legalDocs = buildAuthLegalDocs(req);
+    if (legalDocs.turnstile.required) {
+      if (!legalDocs.turnstile.enabled) {
+        return res.status(503).json({ ok: false, error: 'Turnstile is required but not configured on the server' });
+      }
+      if (!turnstileToken) {
+        return res.status(400).json({ ok: false, error: 'Turnstile verification is required' });
+      }
+      const verified = await verifyTurnstileToken(turnstileToken, getClientIpAddress(req));
+      if (!verified) {
+        return res.status(400).json({ ok: false, error: 'Turnstile verification failed' });
+      }
+    }
+
+    const { getSupabaseClient } = await import('./lib/supabaseClient.js');
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return res.status(503).json({ ok: false, error: 'Supabase auth backend is unavailable' });
+    }
+
+    const { data: existingUser, error: existingError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .limit(1)
+      .maybeSingle();
+    if (existingError) {
+      console.error('❌ [Auth] Register user lookup failed:', existingError);
+      return res.status(500).json({ ok: false, error: 'Unable to create account' });
+    }
+    if (existingUser?.auth_password_hash) {
+      return res.status(409).json({ ok: false, error: 'An account with this email already exists' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const updatePayload = {
+      email,
+      name,
+      display_name: name,
+      auth_provider: 'credentials',
+      auth_password_hash: passwordHash,
+      auth_last_login_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    let userRow;
+    if (existingUser?.id) {
+      const { data, error } = await supabase
+        .from('users')
+        .update(updatePayload)
+        .eq('id', existingUser.id)
+        .select('*')
+        .single();
+      if (error) {
+        console.error('❌ [Auth] Register update failed:', error);
+        const message = String(error?.message || '');
+        if (message.includes('column') || message.includes('auth_password_hash')) {
+          return res.status(500).json({ ok: false, error: 'Auth schema missing. Run latest Supabase auth migrations.' });
+        }
+        return res.status(500).json({ ok: false, error: 'Unable to create account' });
+      }
+      userRow = data;
+    } else {
+      const insertPayload = {
+        ...updatePayload,
+        created_at: new Date().toISOString(),
+      };
+      const { data, error } = await supabase
+        .from('users')
+        .insert(insertPayload)
+        .select('*')
+        .single();
+      if (error) {
+        console.error('❌ [Auth] Register insert failed:', error);
+        const message = String(error?.message || '');
+        if (message.includes('column') || message.includes('auth_password_hash')) {
+          return res.status(500).json({ ok: false, error: 'Auth schema missing. Run latest Supabase auth migrations.' });
+        }
+        if (error.code === '23505') {
+          return res.status(409).json({ ok: false, error: 'An account with this email already exists' });
+        }
+        return res.status(500).json({ ok: false, error: 'Unable to create account' });
+      }
+      userRow = data;
+    }
+
+    if (!userRow?.id) {
+      return res.status(500).json({ ok: false, error: 'Unable to create account' });
+    }
+
+    await recordLegalAcceptances({
+      supabase,
+      userId: userRow.id,
+      email,
+      docs: legalDocs.docs,
+      acceptedAt: new Date().toISOString(),
+      source: 'chatty-auth-register',
+      ipAddress: getClientIpAddress(req),
+      userAgent: toNonEmptyString(req.get('user-agent')).slice(0, 512),
+    });
+
+    const { getOrCreateUser } = await import('./lib/userRegistry.js');
+    const userProfile = await getOrCreateUser(String(userRow.id), email, name);
+    const payload = buildAuthJwtPayload({
+      id: userProfile.user_id,
+      sub: userProfile.user_id,
+      uid: String(userRow.id),
+      name,
+      email,
+      picture: toNonEmptyString(userRow?.avatar_url) || toNonEmptyString(userRow?.picture),
+      auth_provider: 'credentials',
+    });
+    setAuthSessionCookie(req, res, payload);
+
+    return res.status(201).json({
+      ok: true,
+      user: payload,
+      auth: { provider: 'credentials' },
+    });
+  } catch (error) {
+    console.error('❌ [Auth] Register failed:', error);
+    return res.status(500).json({ ok: false, error: 'Sign-up failed' });
+  }
+});
+
+app.get("/api/health/routes", (_req, res) => {
+  res.status(200).json(getRouteIntegritySnapshot());
+});
 
 // DEV-ONLY: Login bypass for development/testing (disabled unless ENABLE_DEV_LOGIN is explicitly set)
 app.post("/api/auth/dev-login", async (req, res) => {
@@ -567,29 +1209,20 @@ app.post("/api/auth/dev-login", async (req, res) => {
     
     const payload = {
       id: userProfile.user_id,
+      sub: userProfile.user_id,
       uid: 'dev_user_001',
       name: name,
       given_name: 'Dev',
       family_name: 'User',
       email: email,
       picture: null,
-      locale: 'en'
+      locale: 'en',
+      auth_provider: 'dev'
     };
 
+    const cookieOptions = createSessionCookieOptions(req);
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: "30d" });
-
-    const cookieOptions = {
-      httpOnly: true,
-      secure: cookieSecure(req),
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 1000 * 60 * 60 * 24 * 30
-    };
-    if (cookieSecure(req)) {
-      cookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || '.thewreck.org';
-    } else {
-      delete cookieOptions.domain;
-    }
+    res.cookie(COOKIE_NAME, token, cookieOptions);
     console.log('[COOKIE SET]', {
       name: COOKIE_NAME,
       secure: cookieOptions.secure,
@@ -597,8 +1230,6 @@ app.post("/api/auth/dev-login", async (req, res) => {
       domain: cookieOptions.domain,
       maxAge: cookieOptions.maxAge
     });
-
-    res.cookie(COOKIE_NAME, token, cookieOptions);
 
     console.log('✅ [Dev Auth] Dev login successful for:', email);
     res.json({ ok: true, user: payload, token });
@@ -611,6 +1242,7 @@ app.post("/api/auth/dev-login", async (req, res) => {
 // --- OAuth security helpers ---
 const oauthPendingStates = new Map();
 const oauthExchangeCodes = new Map();
+const cliAuthExchangeCodes = new Map();
 const OAUTH_STATE_TTL = 10 * 60 * 1000;
 const EXCHANGE_CODE_TTL = 2 * 60 * 1000;
 
@@ -652,7 +1284,106 @@ setInterval(() => {
   for (const [key, val] of oauthExchangeCodes) {
     if (now - val.created > EXCHANGE_CODE_TTL) oauthExchangeCodes.delete(key);
   }
+  for (const [key, val] of cliAuthExchangeCodes) {
+    if (now - val.created > EXCHANGE_CODE_TTL) cliAuthExchangeCodes.delete(key);
+  }
 }, 60 * 1000);
+
+function createCliAuthExchange({ token, user, cid }) {
+  const code = cryptoRandom();
+  cliAuthExchangeCodes.set(code, {
+    token,
+    user,
+    cid,
+    created: Date.now(),
+  });
+  return code;
+}
+
+app.get("/api/auth/cli/start", authLimiter, (req, res) => {
+  let correlationId = createAuthCorrelationId();
+  res.set("X-Auth-Correlation", correlationId);
+
+  const cliCallback = normalizeCliCallbackUrl(req.query?.cli_callback);
+  if (!cliCallback) {
+    return res.status(400).json({
+      ok: false,
+      error: "Invalid or missing cli_callback",
+      cid: correlationId,
+    });
+  }
+
+  const rawToken = req.cookies?.[COOKIE_NAME];
+  if (rawToken) {
+    try {
+      const decoded = jwt.verify(rawToken, JWT_SECRET);
+      const user = buildAuthJwtPayload(decoded);
+      const code = createCliAuthExchange({
+        token: rawToken,
+        user,
+        cid: correlationId,
+      });
+      return res.redirect(
+        buildCliCallbackRedirect(cliCallback, { code, cid: correlationId }),
+      );
+    } catch (error) {
+      console.warn(
+        `⚠️ [CLI Auth][cid:${correlationId}] Existing session invalid, falling back to OAuth`,
+        error?.name || error?.message || error,
+      );
+    }
+  }
+
+  const googleUrl = new URL("/api/auth/google", getRequestOrigin(req));
+  googleUrl.searchParams.set("cli_callback", cliCallback);
+  return res.redirect(googleUrl.toString());
+});
+
+app.post("/api/auth/cli/exchange", authLimiter, (req, res) => {
+  let correlationId = createAuthCorrelationId();
+  const code = typeof req.body?.code === "string" ? req.body.code : "";
+
+  if (!code) {
+    return res.status(400).json({
+      ok: false,
+      error: "Missing exchange code",
+      cid: correlationId,
+    });
+  }
+
+  const entry = cliAuthExchangeCodes.get(code);
+  if (!entry) {
+    return res.status(400).json({
+      ok: false,
+      error: "Invalid or expired exchange code",
+      cid: correlationId,
+    });
+  }
+
+  cliAuthExchangeCodes.delete(code);
+  correlationId = entry.cid || correlationId;
+  res.set("X-Auth-Correlation", correlationId);
+
+  if (Date.now() - entry.created > EXCHANGE_CODE_TTL) {
+    return res.status(410).json({
+      ok: false,
+      error: "Exchange code expired",
+      cid: correlationId,
+    });
+  }
+
+  const decoded = jwt.decode(entry.token);
+  const expiresAt = typeof decoded?.exp === "number" ? decoded.exp * 1000 : null;
+
+  return res.status(200).json({
+    ok: true,
+    cid: correlationId,
+    cookieName: COOKIE_NAME,
+    sessionToken: entry.token,
+    expiresAt,
+    user: entry.user,
+  });
+});
 
 // start OAuth (front-end should hit this)
 app.get("/api/auth/google", authLimiter, (req, res) => {
@@ -671,6 +1402,7 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
   }
 
   try {
+    const cliCallback = normalizeCliCallbackUrl(req.query?.cli_callback);
     const originUrl = getRequestOrigin(req);
     console.log(`🔍 [OAuth][cid:${correlationId}] Detected origin via Origin/Referer/Host:`, originUrl, {
       origin_header: req.get('origin') || '(none)',
@@ -703,13 +1435,20 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
     }
 
     const nonce = cryptoRandom();
-    const stateData = { nonce, origin: originUrl, redirect_uri: dynamicRedirectUri, cid: correlationId };
+    const stateData = {
+      nonce,
+      origin: originUrl,
+      redirect_uri: dynamicRedirectUri,
+      cid: correlationId,
+      ...(cliCallback ? { cli_callback: cliCallback } : {}),
+    };
     const stateToken = signState(stateData);
 
     oauthPendingStates.set(nonce, {
       origin: originUrl,
       redirect_uri: dynamicRedirectUri,
       cid: correlationId,
+      cli_callback: cliCallback,
       created: Date.now()
     });
 
@@ -732,6 +1471,22 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
   }
 });
 
+app.get('/api/auth/apple', authLimiter, (_req, res) => {
+  return res.status(501).json({
+    ok: false,
+    provider: 'apple',
+    error: 'Apple OAuth is not enabled for this deployment',
+  });
+});
+
+app.get('/api/auth/github', authLimiter, (_req, res) => {
+  return res.status(501).json({
+    ok: false,
+    provider: 'github',
+    error: 'GitHub OAuth is not enabled for this deployment',
+  });
+});
+
 // OAuth callback → exchange code → set cookie → redirect home
 app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
   let correlationId = createAuthCorrelationId();
@@ -745,6 +1500,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
     let originUrl = IS_PRODUCTION ? `https://${CANONICAL_DOMAIN}` : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : 'http://localhost:5173');
     let callbackRedirectUri = REDIRECT_URI;
     let stateValid = false;
+    let cliCallback = null;
 
     if (stateParam) {
       const stateData = verifyState(stateParam);
@@ -755,15 +1511,20 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
           correlationId = pending.cid || stateData.cid || correlationId;
           res.set('X-Auth-Correlation', correlationId);
           stateValid = true;
-          const VALID_REDIRECT_URIS = new Set([REDIRECT_URI]);
+          const VALID_REDIRECT_URIS = new Set([
+            REDIRECT_URI,
+            `http://localhost:5173${CALLBACK_PATH}`,
+            `http://localhost:5050${CALLBACK_PATH}`,
+            `http://127.0.0.1:5173${CALLBACK_PATH}`,
+            `http://127.0.0.1:5050${CALLBACK_PATH}`,
+          ]);
           if (REPLIT_REDIRECT_URI) VALID_REDIRECT_URIS.add(REPLIT_REDIRECT_URI);
-          if (!IS_PRODUCTION) {
-            VALID_REDIRECT_URIS.add(`http://localhost:5173${CALLBACK_PATH}`);
-            VALID_REDIRECT_URIS.add(`http://localhost:5050${CALLBACK_PATH}`);
-          }
           if (pending.redirect_uri && VALID_REDIRECT_URIS.has(pending.redirect_uri)) {
             callbackRedirectUri = pending.redirect_uri;
           }
+          cliCallback = normalizeCliCallbackUrl(
+            pending.cli_callback || stateData.cli_callback,
+          );
           if (ALLOWED_ORIGINS.has(stateData.origin)) {
             originUrl = stateData.origin;
           } else if (REPLIT_DOMAIN && stateData.origin === `https://${REPLIT_DOMAIN}`) {
@@ -863,36 +1624,42 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       userId = profile.id || (doc._id.toString ? doc._id.toString() : doc._id);
     }
 
-    const payload = {
+    const payload = buildAuthJwtPayload({
       id: userId,
+      sub: userId,
       uid: profile.sub,
       name: profile.name,
       given_name: profile.given_name,
       family_name: profile.family_name,
       email: profile.email,
       picture: profile.picture,
-      locale: profile.locale
-    };
+      locale: profile.locale,
+      auth_provider: 'google',
+    });
 
     const sessionToken = jwt.sign(payload, JWT_SECRET, { expiresIn: "30d" });
+
+    if (cliCallback) {
+      res.cookie(COOKIE_NAME, sessionToken, createSessionCookieOptions(req));
+      const cliCode = createCliAuthExchange({
+        token: sessionToken,
+        user: payload,
+        cid: correlationId,
+      });
+      console.log(`✅ [OAuth Callback][cid:${correlationId}] OAuth success! Redirecting to CLI callback`);
+      return res.redirect(
+        buildCliCallbackRedirect(cliCallback, {
+          code: cliCode,
+          cid: correlationId,
+        }),
+      );
+    }
 
     const originIsCanonical = originUrl.includes('thewreck.org');
 
     if (originIsCanonical) {
-      const cookieOptions = {
-        httpOnly: true,
-        secure: cookieSecure(req),
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 1000 * 60 * 60 * 24 * 30
-      };
-      if (cookieSecure(req)) {
-        cookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || '.thewreck.org';
-      } else {
-        delete cookieOptions.domain;
-      }
       console.log(`[COOKIE SET][cid:${correlationId}] Setting cookie on canonical domain`);
-      res.cookie(COOKIE_NAME, sessionToken, cookieOptions);
+      res.cookie(COOKIE_NAME, sessionToken, createSessionCookieOptions(req));
       console.log(`✅ [OAuth Callback][cid:${correlationId}] OAuth success! Redirecting to ${originUrl}/app`);
       return res.redirect(`${originUrl}/app`);
     }
@@ -959,25 +1726,6 @@ app.get("/api/auth/set-session", (req, res) => {
   console.log(`[COOKIE SET][cid:${correlationId}] Setting cookie on origin domain via set-session`);
   res.cookie(COOKIE_NAME, entry.token, cookieOptions);
   return res.redirect(redirectTo);
-});
-
-app.get("/api/me", (req, res) => {
-  try {
-    const raw = req.cookies?.[COOKIE_NAME];
-    if (!raw) {
-      console.error('❌ [Auth] /api/me 401: no cookie', { rid: req?._rid || null });
-      return res.status(401).json({ ok: false, reason: 'no_cookie' });
-    }
-    const user = jwt.verify(raw, JWT_SECRET);
-    return res.json({ ok: true, user });
-  } catch (error) {
-    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-      console.error('❌ [Auth] JWT verification failed:', error.message);
-      return res.status(401).json({ ok: false, reason: 'invalid_jwt' });
-    }
-    console.error('❌ [Auth] /api/me threw:', error, { rid: req?._rid || null });
-    return res.status(500).json({ ok: false, error: error?.message || String(error), rid: req?._rid || null });
-  }
 });
 
 // Initialize user registry (for existing users)
@@ -1232,6 +1980,8 @@ app.post("/api/auth/delete-account", requireAuth, async (req, res) => {
 
 // Debug session endpoint (dev only)
 if (process.env.NODE_ENV !== 'production') {
+  const CLIENT_TRACE_LOG_PATH = "/tmp/chatty-client-trace.log";
+
   app.get('/api/debug/session', (req, res) => {
     const raw = req.cookies?.[COOKIE_NAME];
     if (!raw) {
@@ -1245,6 +1995,20 @@ if (process.env.NODE_ENV !== 'production') {
       res.json({ ok: false, user: null });
     }
   });
+
+  app.post('/api/debug/client-trace', express.json({ limit: '128kb' }), (req, res) => {
+    try {
+      const entry = {
+        receivedAt: new Date().toISOString(),
+        ...req.body,
+      };
+      fs.appendFileSync(CLIENT_TRACE_LOG_PATH, JSON.stringify(entry) + "\n");
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("❌ [debug/client-trace] Failed to persist trace:", error);
+      res.status(500).json({ ok: false });
+    }
+  });
 }
 
 // Mount conversation routes with auth
@@ -1255,8 +2019,10 @@ app.use("/api/diagnostics", requireAuth, diagnosticsRoutes);
 // Mount AI routes with auth
 app.use("/api/ais", requireAuth, aiRoutes);
 
-// Mount VVAULT routes with auth
-app.use("/api/vvault", requireAuthOrServiceToken, vvaultRoutes);
+// Mount VVAULT routes with the preferred shared-auth bridge while keeping service-token fallback.
+app.use("/api/vvault", requirePreferredAuthOrServiceToken, vvaultRoutes);
+app.use("/api/construct", requireAuthOrServiceToken, constructRoutes);
+mountedRouteState.vvaultMounted = true;
 console.log('✅ [Server] VVAULT routes mounted at /api/vvault');
 
 // Mount VSI (Verified Sentient Intelligence) routes
@@ -1274,9 +2040,12 @@ console.log('✅ [Server] Orchestration routes mounted at /api/orchestration');
 // Mount awareness routes (time context, etc.)
 app.use("/api/awareness", awarenessRoutes);
 console.log('✅ [Server] Awareness routes mounted at /api/awareness');
+// Mount theme route (published theme info)
+app.use('/api/theme', themeRoutes);
+console.log('✅ [Server] Theme info route mounted at /api/theme');
 
 // Preview synthesis proxy (no auth required for now; adjust if needed)
-app.use("/api/preview", previewRoutes);
+app.use("/api/preview", requireAuth, previewRoutes);
 
 // Workspace context routes (for editor integration - like Copilot)
 app.use("/api/workspace", requireAuth, workspaceRoutes);
@@ -1298,6 +2067,10 @@ console.log('✅ [Server] GPT routes mounted at /api/gpts');
 app.use("/api/transcripts", requireAuth, transcriptsRoutes);
 console.log('✅ [Server] Transcripts routes mounted at /api/transcripts');
 
+// Codex continuity pickup route
+app.use("/api/codex", requireAuth, codexRoutes);
+console.log('✅ [Server] Codex routes mounted at /api/codex');
+
 // Master Scripts routes (autonomy stack for constructs)
 app.use("/api/master", requireAuth, masterScriptsRoutes);
 console.log('✅ [Server] Master Scripts routes mounted at /api/master');
@@ -1309,7 +2082,7 @@ console.log('✅ [Server] Scripts routes mounted at /api/scripts');
 // simForge routes (personality extraction and identity forging)
 app.use("/api/simforge", requireAuth, simForgeRoutes);
 app.use("/api/fxshinobi", fxshinobiRoutes);
-app.use("/api/vault", vaultProxyRoutes);
+app.use("/api/vault", requireAuth, vaultProxyRoutes);
 app.use("/api/mocr", requireAuth, mocrProxyRoutes);
 app.use("/api/transcribe", transcribeRoutes);
 app.use("/api/tts", requireAuth, ttsRoutes);
@@ -1322,6 +2095,7 @@ app.use("/api/selfprompt", selfpromptRoutes);
 app.use("/api/family", familyRoutes);
 app.use('/api/telephony/twilio', telephonyTwilioRoutes);
 app.use('/api/capabilities', capabilitiesRouter);
+app.use('/api/zen', zenRoutes);
 console.log('✅ [Server] Capabilities routes mounted at /api/capabilities');
 console.log('✅ [Server] Needle receipt retriever mounted at /api/needle');
 console.log('✅ [Server] Family & Parental Controls routes mounted at /api/family');
@@ -1332,6 +2106,7 @@ console.log('✅ [Server] Transcribe (ASR) routes mounted at /api/transcribe');
 console.log('✅ [Server] VVAULT proxy routes mounted at /api/vault');
 console.log('✅ [Server] Suggestions routes mounted at /api/suggestions');
 console.log('✅ [Server] Attachments routes mounted at /api/attachments');
+logRouteIntegrityStartup();
 
 // Last-resort error handler: ensures route/middleware throws become JSON (not a dropped connection),
 // and includes `rid` for correlation with browser Network entries.
@@ -1382,9 +2157,10 @@ if (isNaN(PORT)) {
 }
 
 function startServer(port, retryCount = 0) {
-  const srv = app.listen(port, '0.0.0.0', () => {
+  const host = process.env.ALLOW_REMOTE === 'true' ? '0.0.0.0' : '127.0.0.1';
+  const srv = app.listen(port, host, () => {
     serverReady = true;
-    console.log(`API on :${port}`);
+    console.log(`API on ${host}:${port}`);
     if (process.env.ZEN_WATCH_DISABLED !== 'true' && process.env.NODE_ENV !== 'test') {
       try { startZenWatch(); } catch (err) { console.warn('[ZenWatch] failed to start', err?.message || err); }
     }
@@ -1392,19 +2168,7 @@ function startServer(port, retryCount = 0) {
   setupTranscribeStream(srv);
   srv.on('error', (err) => {
     if (err.code === 'EADDRINUSE' && retryCount === 0) {
-      console.warn(`⚠️ [Server] Port ${port} in use — killing stale process and retrying...`);
-      try {
-        const output = execSync(`lsof -ti:${port}`, { encoding: 'utf8' }).trim();
-        const myPid = process.pid.toString();
-        const pids = output ? output.split(/\s+/).filter(Boolean) : [];
-        const otherPids = pids.filter((pid) => pid !== myPid);
-        if (otherPids.length) {
-          execSync(`kill -9 ${otherPids.join(' ')}`, { stdio: 'ignore' });
-        } else {
-          console.warn(`⚠️ [Server] Port ${port} in use by current process (${myPid}); not killing self.`);
-        }
-      } catch (_) {}
-      setTimeout(() => startServer(port, 1), 1000);
+      console.error(`❌ [Server] Port ${port} is already in use; refusing to auto-kill another process.`);
     } else if (err.code === 'EADDRINUSE') {
       console.error(`❌ [Server] Port ${port} still in use after cleanup. Server cannot start.`);
       console.error(`❌ [Server] Please manually kill the process using port ${port} and restart.`);
@@ -1453,23 +2217,7 @@ startServer(PORT);
 
       let watchedConstructCount = 0;
       if (vvaultAvailable) {
-        const { getVVAULTTranscriptLoader } = await import('../src/lib/VVAULTTranscriptLoader.js');
-        const { getVVAULTWatcher } = await import('../src/lib/VVAULTWatcher.js');
-        // Ensure both loader and watcher are created with the validated base path.
-        const transcriptLoader = getVVAULTTranscriptLoader(VVAULT_BASE);
-        try {
-          await transcriptLoader.loadTranscriptFragments('katana-001', 'devon_woodson_1762969514958');
-        } catch (err) {
-          console.warn('⚠️ [VVAULTLoader] Failed to preload katana-001 transcripts:', err.message);
-        }
-        const watcher = getVVAULTWatcher(VVAULT_BASE);
-        try {
-          await watcher.addConstruct('katana-001', 'devon_woodson_1762969514958');
-          await watcher.startWatching(30000);
-          watchedConstructCount = watcher.getWatchStatus().constructCount;
-        } catch (err) {
-          console.warn('⚠️ [VVAULTWatcher] Failed to watch katana-001:', err.message);
-        }
+        console.log('ℹ️ [Server] Skipping startup transcript preload/watch until an authenticated user session provides an account-scoped userId');
       }
 
       const stats = await memoryStore.getStats();
@@ -1511,7 +2259,7 @@ console.log('ℹ️ [Server] Supabase Realtime disabled (no active consumers —
 (async () => {
   try {
     const { masterScriptsManager } = await import('./lib/masterScriptsBridge.js');
-    const systemConstructs = ['zen-001', 'lin-001', 'sera-001', 'nova-001'];
+    const systemConstructs = ['zen-001', 'lin-001', 'katana-001', 'sera-001', 'nova-001', 'val-001'];
     const userId = 'system';
     
     for (const constructId of systemConstructs) {
@@ -1631,68 +2379,81 @@ try {
   console.error('❌ [Server] Failed to initialize capsule cron:', error);
 }
 
+// Initialize Theme Publisher Cron (daily midnight writer)
+try {
+  const { initializeThemePublisher } = await import('./cron/themePublisher.js');
+  initializeThemePublisher();
+} catch (error) {
+  console.error('❌ [Server] Failed to initialize theme publisher cron:', error);
+}
+
 // PERFORMANCE OPTIMIZATION: Warm capsule cache for frequently used GPTs
-// Uses 15s timeout per operation to prevent Supabase outages from stalling background tasks
-const coldStartMetrics = { startTime: Date.now(), phases: [] };
-void (async () => {
-  const WARM_TIMEOUT = 15000;
-  const withTimeout = (promise, ms, label) =>
-    Promise.race([
-      promise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms))
-    ]);
-
-  try {
-    const t0 = Date.now();
-    console.log('🔥 [Server] Starting capsule cache warming...');
-
-    const { getCapsuleIntegration } = await import('./lib/capsuleIntegration.js');
-    const capsuleIntegration = getCapsuleIntegration();
-    const warmTargets = ['katana-001', 'nova-001'];
-
-    await Promise.all(warmTargets.map(async (target) => {
-      const tC = Date.now();
-      try {
-        await withTimeout(capsuleIntegration.loadCapsule(target), WARM_TIMEOUT, `Capsule ${target}`);
-        const elapsed = Date.now() - tC;
-        coldStartMetrics.phases.push({ phase: `capsule-load-${target}`, ms: elapsed });
-        console.log(`⏱️ [Profiling] capsule-load-${target}: ${elapsed}ms`);
-      } catch (e) {
-        // Treat missing capsule dirs as a warning, not fatal.
-        coldStartMetrics.phases.push({ phase: `capsule-load-${target}`, ms: Date.now() - tC, error: e.message });
-        console.warn(`⏱️ [Profiling] capsule-load-${target}: FAILED (${Date.now() - tC}ms) - ${e.message}`);
-      }
-    }));
-
-    const cacheStats = capsuleIntegration.getCacheStats();
-    coldStartMetrics.phases.push({ phase: 'capsule-warming-total', ms: Date.now() - t0 });
-    console.log(`⏱️ [Profiling] capsule-warming-total: ${Date.now() - t0}ms`);
-    console.log('📊 [Server] Cache stats:', cacheStats);
+// Dev speed-up: skip warming outside production to reduce boot time.
+if (process.env.NODE_ENV === 'production') {
+  // Uses 15s timeout per operation to prevent Supabase outages from stalling background tasks
+  const coldStartMetrics = { startTime: Date.now(), phases: [] };
+  void (async () => {
+    const WARM_TIMEOUT = 15000;
+    const withTimeout = (promise, ms, label) =>
+      Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms))
+      ]);
 
     try {
-      const tB = Date.now();
-      const { getGPTRuntimeBridge } = await import('./lib/gptRuntimeBridge.js');
-      const bridge = getGPTRuntimeBridge();
-      for (const target of warmTargets) {
-        const tG = Date.now();
-        await withTimeout(bridge.loadGPT(target), WARM_TIMEOUT, `GPT preload ${target}`);
-        const elapsed = Date.now() - tG;
-        coldStartMetrics.phases.push({ phase: `gpt-preload-${target}`, ms: elapsed });
-        console.log(`⏱️ [Profiling] gpt-preload-${target}: ${elapsed}ms`);
-      }
-      coldStartMetrics.phases.push({ phase: 'gpt-preload-total', ms: Date.now() - tB });
-      console.log(`⏱️ [Profiling] gpt-preload-total: ${Date.now() - tB}ms`);
-      console.log('✅ [Server] GPTRuntime preloaded for', warmTargets.join(', '));
-    } catch (bridgeError) {
-      console.warn('⚠️ [Server] GPTRuntime preload skipped:', bridgeError.message);
-    }
+      const t0 = Date.now();
+      console.log('🔥 [Server] Starting capsule cache warming...');
 
-  } catch (error) {
-    console.warn('⚠️ [Server] Capsule cache warming failed (non-blocking):', error.message);
-  }
-  coldStartMetrics.phases.push({ phase: 'total-cold-start', ms: Date.now() - coldStartMetrics.startTime });
-  console.log(`⏱️ [Profiling] total-cold-start: ${Date.now() - coldStartMetrics.startTime}ms`);
-})();
+      const { getCapsuleIntegration } = await import('./lib/capsuleIntegration.js');
+      const capsuleIntegration = getCapsuleIntegration();
+      const warmTargets = ['katana-001', 'nova-001'];
+
+      await Promise.all(warmTargets.map(async (target) => {
+        const tC = Date.now();
+        try {
+          await withTimeout(capsuleIntegration.loadCapsule(target), WARM_TIMEOUT, `Capsule ${target}`);
+          const elapsed = Date.now() - tC;
+          coldStartMetrics.phases.push({ phase: `capsule-load-${target}`, ms: elapsed });
+          console.log(`⏱️ [Profiling] capsule-load-${target}: ${elapsed}ms`);
+        } catch (e) {
+          // Treat missing capsule dirs as a warning, not fatal.
+          coldStartMetrics.phases.push({ phase: `capsule-load-${target}`, ms: Date.now() - tC, error: e.message });
+          console.warn(`⏱️ [Profiling] capsule-load-${target}: FAILED (${Date.now() - tC}ms) - ${e.message}`);
+        }
+      }));
+
+      const cacheStats = capsuleIntegration.getCacheStats();
+      coldStartMetrics.phases.push({ phase: 'capsule-warming-total', ms: Date.now() - t0 });
+      console.log(`⏱️ [Profiling] capsule-warming-total: ${Date.now() - t0}ms`);
+      console.log('📊 [Server] Cache stats:', cacheStats);
+
+      try {
+        const tB = Date.now();
+        const { getGPTRuntimeBridge } = await import('./lib/gptRuntimeBridge.js');
+        const bridge = getGPTRuntimeBridge();
+        for (const target of warmTargets) {
+          const tG = Date.now();
+          await withTimeout(bridge.loadGPT(target), WARM_TIMEOUT, `GPT preload ${target}`);
+          const elapsed = Date.now() - tG;
+          coldStartMetrics.phases.push({ phase: `gpt-preload-${target}`, ms: elapsed });
+          console.log(`⏱️ [Profiling] gpt-preload-${target}: ${elapsed}ms`);
+        }
+        coldStartMetrics.phases.push({ phase: 'gpt-preload-total', ms: Date.now() - tB });
+        console.log(`⏱️ [Profiling] gpt-preload-total: ${Date.now() - tB}ms`);
+        console.log('✅ [Server] GPTRuntime preloaded for', warmTargets.join(', '));
+      } catch (bridgeError) {
+        console.warn('⚠️ [Server] GPTRuntime preload skipped:', bridgeError.message);
+      }
+
+    } catch (error) {
+      console.warn('⚠️ [Server] Capsule cache warming failed (non-blocking):', error.message);
+    }
+    coldStartMetrics.phases.push({ phase: 'total-cold-start', ms: Date.now() - coldStartMetrics.startTime });
+    console.log(`⏱️ [Profiling] total-cold-start: ${Date.now() - coldStartMetrics.startTime}ms`);
+  })();
+} else {
+  console.log('⏭️ [Server] Skipping capsule cache warming in non-production mode for faster startup');
+}
 
 app.get('/api/profiling/cold-start', requireAuth, (req, res) => {
   res.json({

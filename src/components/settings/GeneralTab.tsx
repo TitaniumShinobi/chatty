@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Palette,
   Globe,
@@ -10,9 +10,20 @@ import {
   Sunrise,
   Sparkles,
   TreePine,
+  Heart,
+  Clover,
 } from "lucide-react";
 import { useSettings } from "../../context/SettingsContext";
 import { useTheme } from "../../lib/ThemeContext";
+import {
+  speakPremium,
+} from "../../lib/tts";
+import {
+  getZenVoicePresets,
+  getLinVoicePresets,
+  resolveSystemVoicePreset,
+  migrateLegacyVoiceValueToPresetId,
+} from "../../lib/systemVoicePresets";
 import StarToggleWithAssets from "../StarToggleWithAssets";
 import { Z_LAYERS } from "../../lib/zLayers";
 
@@ -28,6 +39,7 @@ const GeneralTab: React.FC = () => {
     activeThemeScript,
   } = useTheme();
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState<"zen" | "lin" | null>(null);
 
   const themeOptions = [
     { value: "Auto", label: "Auto", icon: Sunrise },
@@ -67,15 +79,75 @@ const GeneralTab: React.FC = () => {
     { value: "Korean", label: "Korean" },
   ];
 
-  const voiceOptions = [
-    { value: "Maple", label: "Maple" },
-    { value: "Alloy", label: "Alloy" },
-    { value: "Echo", label: "Echo" },
-    { value: "Fable", label: "Fable" },
-    { value: "Onyx", label: "Onyx" },
-    { value: "Nova", label: "Nova" },
-    { value: "Shimmer", label: "Shimmer" },
-  ];
+  // One-time migration: if stored zenVoice/linVoice are legacy (sage, coral, etc.), persist preset id
+  useEffect(() => {
+    const zenPresetId = migrateLegacyVoiceValueToPresetId("zen", settings.general.zenVoice);
+    if (zenPresetId && zenPresetId !== settings.general.zenVoice) {
+      updateGeneral({ zenVoice: zenPresetId });
+    }
+    const linPresetId = migrateLegacyVoiceValueToPresetId("lin", settings.general.linVoice);
+    if (linPresetId && linPresetId !== settings.general.linVoice) {
+      updateGeneral({ linVoice: linPresetId });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount to migrate legacy values
+  }, []);
+
+  const zenVoiceOptions = useMemo(
+    () => getZenVoicePresets().map((p) => ({ value: p.id, label: p.label })),
+    [],
+  );
+
+  const linVoiceOptions = useMemo(
+    () => getLinVoicePresets().map((p) => ({ value: p.id, label: p.label })),
+    [],
+  );
+
+  const getZenVoiceDisplay = (storedValue: string) => {
+    const resolved = resolveSystemVoicePreset("zen", storedValue);
+    const preset = getZenVoicePresets().find((p) => p.id === resolved.presetId);
+    return preset?.label ?? (resolved.presetId || "Zen Primary");
+  };
+
+  const getLinVoiceDisplay = (storedValue: string) => {
+    const resolved = resolveSystemVoicePreset("lin", storedValue);
+    const preset = getLinVoicePresets().find((p) => p.id === resolved.presetId);
+    return preset?.label ?? (resolved.presetId || "Lin Primary");
+  };
+
+  const previewVoice = async (kind: "zen" | "lin") => {
+    const storedValue =
+      kind === "zen" ? settings.general.zenVoice : settings.general.linVoice;
+    const options = kind === "zen" ? zenVoiceOptions : linVoiceOptions;
+    const inList = options.some((opt) => opt.value === storedValue);
+    if (!inList && options.length > 0) return;
+    if (kind === "zen" && !resolveSystemVoicePreset("zen", storedValue).openvoiceVoice) return;
+    if (kind === "lin" && !resolveSystemVoicePreset("lin", storedValue).openvoiceVoice) return;
+
+    const sample =
+      kind === "zen"
+        ? "Hello. I'm Zen. I'm here with you."
+        : "Hey. It's Lin. I'm ready when you are.";
+
+    setPreviewing(kind);
+    try {
+      const resolved =
+        kind === "zen"
+          ? resolveSystemVoicePreset("zen", storedValue)
+          : resolveSystemVoicePreset("lin", storedValue);
+      const syntheticThreadId =
+        kind === "zen" ? "zen-001_chat_with_zen-001" : "lin-001_chat_with_lin-001";
+      await speakPremium(sample, {
+        voice: resolved.openvoiceVoice ?? undefined,
+        threadId: syntheticThreadId,
+        style: resolved.style ?? undefined,
+        speechProfile: resolved.speechProfile ?? undefined,
+      });
+    } catch (error) {
+      console.warn(`[GeneralTab] ${kind} voice preview failed`, error);
+    } finally {
+      setPreviewing((current) => (current === kind ? null : current));
+    }
+  };
 
   const handleDropdownToggle = (dropdown: string) => {
     setOpenDropdown(openDropdown === dropdown ? null : dropdown);
@@ -335,7 +407,7 @@ const GeneralTab: React.FC = () => {
               {availableThemeScripts.map((script) => (
                 <div
                   key={script.id}
-                  className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-100 transition-colors"
+                  className="flex items-center justify-between p-3 cursor-pointer transition-colors hover:bg-[var(--chatty-highlight)]/40"
                   style={{
                     backgroundColor:
                       themeScriptSetting === script.id
@@ -348,10 +420,22 @@ const GeneralTab: React.FC = () => {
                   }}
                 >
                   <div className="flex items-center gap-3">
-                    <TreePine
-                      size={16}
-                      style={{ color: "#228B22", opacity: 0.9 }}
-                    />
+                    {script.id === "valentines" ? (
+                      <Heart
+                        size={16}
+                        style={{ color: "#d4005f", opacity: 0.9 }}
+                      />
+                    ) : script.id === "stpatrick" ? (
+                      <Clover
+                        size={16}
+                        style={{ color: "#228B22", opacity: 0.9 }}
+                      />
+                    ) : (
+                      <TreePine
+                        size={16}
+                        style={{ color: "#228B22", opacity: 0.9 }}
+                      />
+                    )}
                     <div>
                       <span
                         className="text-sm"
@@ -363,7 +447,13 @@ const GeneralTab: React.FC = () => {
                         className="text-xs"
                         style={{ color: "var(--chatty-text)", opacity: 0.6 }}
                       >
-                        Fri Dec 25
+                        {script.id === "christmas"
+                          ? "Fri Dec 25"
+                          : script.id === "valentines"
+                            ? "Sat Feb 14"
+                            : script.id === "stpatrick"
+                              ? "Tue Mar 17"
+                              : ""}
                       </p>
                     </div>
                   </div>
@@ -600,11 +690,11 @@ const GeneralTab: React.FC = () => {
           </p>
         </div>
 
-        {/* Voice */}
+        {/* Zen voice */}
         <div className="relative dropdown-container">
           <div
             className="flex items-center justify-between p-3 cursor-pointer transition-colors"
-            onClick={() => handleDropdownToggle("voice")}
+            onClick={() => handleDropdownToggle("zenVoice")}
           >
             <div className="flex items-center gap-3">
               <Volume2
@@ -615,7 +705,7 @@ const GeneralTab: React.FC = () => {
                 className="text-sm transition-colors hover:opacity-80"
                 style={{ color: "var(--chatty-text)" }}
               >
-                Voice
+                Zen voice
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -623,9 +713,15 @@ const GeneralTab: React.FC = () => {
                 className="p-1 rounded hover:bg-gray-100 transition-colors"
                 onClick={(e) => {
                   e.stopPropagation();
-                  // TODO: Implement voice preview
-                  console.log("Playing voice preview");
+                  void previewVoice("zen");
                 }}
+                disabled={
+                  previewing === "zen" ||
+                  !zenVoiceOptions.some(
+                    (option) => option.value === settings.general.zenVoice,
+                  )
+                }
+                title="Preview Zen voice (uses same engine as conversation)"
               >
                 <Play size={12} style={{ color: "var(--chatty-text)" }} />
               </button>
@@ -633,14 +729,14 @@ const GeneralTab: React.FC = () => {
                 className="text-sm"
                 style={{ color: "var(--chatty-text)", opacity: 0.7 }}
               >
-                {settings.general.voice}
+                {getZenVoiceDisplay(settings.general.zenVoice)}
               </span>
               <span style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
                 ›
               </span>
             </div>
           </div>
-          {openDropdown === "voice" && (
+          {openDropdown === "zenVoice" && (
             <div
               className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-lg border w-48"
               style={{
@@ -649,17 +745,21 @@ const GeneralTab: React.FC = () => {
                 zIndex: Z_LAYERS.popover,
               }}
             >
-              {voiceOptions.map((option) => (
+              {zenVoiceOptions.map((option) => (
                 <div
                   key={option.value}
                   className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-100 transition-colors"
                   style={{
                     backgroundColor:
-                      settings.general.voice === option.value
+                      settings.general.zenVoice === option.value ||
+                      resolveSystemVoicePreset("zen", settings.general.zenVoice).presetId === option.value
                         ? "var(--chatty-highlight)"
                         : "transparent",
                   }}
-                  onClick={() => handleOptionSelect("voice", option.value)}
+                  onClick={() => {
+                    updateGeneral({ zenVoice: option.value });
+                    setOpenDropdown(null);
+                  }}
                 >
                   <span
                     className="text-sm"
@@ -667,13 +767,113 @@ const GeneralTab: React.FC = () => {
                   >
                     {option.label}
                   </span>
-                  {settings.general.voice === option.value && (
+                  {(settings.general.zenVoice === option.value ||
+                    resolveSystemVoicePreset("zen", settings.general.zenVoice).presetId === option.value) && (
                     <Check size={16} style={{ color: "var(--chatty-text)" }} />
                   )}
                 </div>
               ))}
             </div>
           )}
+          <p
+            className="text-xs mt-1 px-3"
+            style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+          >
+            Preview uses the same server voice as in conversation.
+          </p>
+        </div>
+
+        {/* Lin voice */}
+        <div className="relative dropdown-container">
+          <div
+            className="flex items-center justify-between p-3 cursor-pointer transition-colors"
+            onClick={() => handleDropdownToggle("linVoice")}
+          >
+            <div className="flex items-center gap-3">
+              <Volume2
+                size={16}
+                style={{ color: "var(--chatty-icon)", opacity: 0.7 }}
+              />
+              <span
+                className="text-sm transition-colors hover:opacity-80"
+                style={{ color: "var(--chatty-text)" }}
+              >
+                Lin voice
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                className="p-1 rounded hover:bg-gray-100 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void previewVoice("lin");
+                }}
+                disabled={
+                  previewing === "lin" ||
+                  !linVoiceOptions.some(
+                    (option) => option.value === settings.general.linVoice,
+                  )
+                }
+                title="Preview Lin voice (uses same engine as conversation)"
+              >
+                <Play size={12} style={{ color: "var(--chatty-text)" }} />
+              </button>
+              <span
+                className="text-sm"
+                style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+              >
+                {getLinVoiceDisplay(settings.general.linVoice)}
+              </span>
+              <span style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
+                ›
+              </span>
+            </div>
+          </div>
+          {openDropdown === "linVoice" && (
+            <div
+              className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-lg border w-48"
+              style={{
+                backgroundColor: "var(--chatty-bg-main)",
+                borderColor: "var(--chatty-line)",
+                zIndex: Z_LAYERS.popover,
+              }}
+            >
+              {linVoiceOptions.map((option) => (
+                <div
+                  key={option.value}
+                  className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-100 transition-colors"
+                  style={{
+                    backgroundColor:
+                      settings.general.linVoice === option.value ||
+                      resolveSystemVoicePreset("lin", settings.general.linVoice).presetId === option.value
+                        ? "var(--chatty-highlight)"
+                        : "transparent",
+                  }}
+                  onClick={() => {
+                    updateGeneral({ linVoice: option.value });
+                    setOpenDropdown(null);
+                  }}
+                >
+                  <span
+                    className="text-sm"
+                    style={{ color: "var(--chatty-text)" }}
+                  >
+                    {option.label}
+                  </span>
+                  {(settings.general.linVoice === option.value ||
+                    resolveSystemVoicePreset("lin", settings.general.linVoice).presetId === option.value) && (
+                    <Check size={16} style={{ color: "var(--chatty-text)" }} />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          <p
+            className="text-xs mt-1 px-3"
+            style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+          >
+            Preview uses the same server voice as in conversation.
+          </p>
         </div>
 
         {/* Show Additional Models */}

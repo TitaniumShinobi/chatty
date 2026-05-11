@@ -19,6 +19,7 @@ interface TranscriptFolderTreeProps {
   transcripts: TranscriptFile[];
   onFileClick?: (file: TranscriptFile) => void;
   onMoveFile?: (file: TranscriptFile, year: string | null, month: string | null, source?: string) => void;
+  onDeleteFile?: (file: TranscriptFile) => void;
 }
 
 interface FolderNode {
@@ -337,6 +338,7 @@ function FolderItem({
   depth,
   onFileClick,
   onMoveFile,
+  onDeleteFile,
   existingYears,
   existingSources,
 }: {
@@ -344,6 +346,7 @@ function FolderItem({
   depth: number;
   onFileClick?: (file: TranscriptFile) => void;
   onMoveFile?: (file: TranscriptFile, year: string | null, month: string | null, source?: string) => void;
+  onDeleteFile?: (file: TranscriptFile) => void;
   existingYears: string[];
   existingSources: string[];
 }) {
@@ -394,6 +397,18 @@ function FolderItem({
             }}
           >
             <MoveRight size={12} style={{ color: "var(--chatty-text)", opacity: 0.7 }} />
+          </button>
+        )}
+        {onDeleteFile && node.file && (
+          <button
+            className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-white/20 transition-opacity"
+            title="Remove transcript"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteFile(node.file);
+            }}
+          >
+            <X size={12} style={{ color: "var(--chatty-text)", opacity: 0.7 }} />
           </button>
         )}
         {showMoveDialog && node.file && onMoveFile && (
@@ -467,17 +482,18 @@ function FolderItem({
               depth={depth + 1}
               onFileClick={onFileClick}
               onMoveFile={onMoveFile}
+              onDeleteFile={onDeleteFile}
               existingYears={existingYears}
               existingSources={existingSources}
             />
           ))}
         </div>
       )}
-    </div>
-  );
+  </div>
+);
 }
 
-export function TranscriptFolderTree({ transcripts, onFileClick, onMoveFile }: TranscriptFolderTreeProps) {
+export function TranscriptFolderTree({ transcripts, onFileClick, onMoveFile, onDeleteFile }: TranscriptFolderTreeProps) {
   const tree = useMemo(() => buildFolderTree(transcripts), [transcripts]);
 
   const existingYears = useMemo(() => {
@@ -538,6 +554,7 @@ export function TranscriptFolderTree({ transcripts, onFileClick, onMoveFile }: T
           depth={0}
           onFileClick={onFileClick}
           onMoveFile={onMoveFile}
+          onDeleteFile={onDeleteFile}
           existingYears={existingYears}
           existingSources={existingSources}
         />

@@ -1,5 +1,5 @@
 import express from 'express';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth } from '../auth/middleware/auth.js';
 import { resolveUserId } from '../lib/resolveUserId.js';
 import { resolveCapabilities, formatCapabilityContext } from '../lib/capabilityManifest.js';
 import { setMirrorSession, clearMirrorSession } from '../lib/mirrorSessionTracker.js';
@@ -20,7 +20,7 @@ router.get('/:constructId/:threadId', async (req, res) => {
   }
 });
 
-router.post('/mirror/state', async (req, res) => {
+async function updateScreenshareState(req, res) {
   try {
     const userId = resolveUserId(req.user);
     if (!userId) return res.status(401).json({ ok: false, error: 'Unable to identify user.' });
@@ -33,12 +33,15 @@ router.post('/mirror/state', async (req, res) => {
     } else {
       clearMirrorSession(constructId, threadId, userId);
     }
-    console.log(`[Mirror] Session ${active ? 'started' : 'stopped'} for ${constructId}:${threadId} by ${userId} (${permission || 'n/a'})`);
+    console.log(`[Screenshare] Session ${active ? 'started' : 'stopped'} for ${constructId}:${threadId} by ${userId} (${permission || 'n/a'})`);
     res.json({ ok: true });
   } catch (error) {
-    console.error('[Mirror] State update error:', error);
-    res.status(500).json({ ok: false, error: 'Failed to update mirror state' });
+    console.error('[Screenshare] State update error:', error);
+    res.status(500).json({ ok: false, error: 'Failed to update screenshare state' });
   }
-});
+}
+
+router.post('/screenshare/state', updateScreenshareState);
+router.post('/mirror/state', updateScreenshareState);
 
 export default router;

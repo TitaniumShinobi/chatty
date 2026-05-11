@@ -77,9 +77,9 @@ const ActionMenu: React.FC<ActionMenuProps> = ({ onAction, disabled = false }) =
       color: 'text-orange-500'
     },
     {
-      id: 'deep-research',
-      title: 'Deep research',
-      description: 'Get a detailed report on any topic',
+      id: 'research',
+      title: 'Research',
+      description: 'Gather evidence and build a sourced answer',
       icon: <Brain size={20} />,
       color: 'text-indigo-500'
     },
@@ -100,8 +100,8 @@ const ActionMenu: React.FC<ActionMenuProps> = ({ onAction, disabled = false }) =
       color: 'text-pink-500'
     },
     {
-      id: 'mirror',
-      title: 'Mirror',
+      id: 'screenshare',
+      title: 'Screenshare',
       description: 'Share your screen for AI-assisted analysis',
       icon: <Monitor size={20} />,
       color: 'text-emerald-500'

@@ -15,11 +15,13 @@ describe("SendButton", () => {
       onClick: () => {},
       disabled: false,
       animating: false,
+      soft: false,
       ariaLabel: "Send message",
     };
     expect(props.onClick).toBeDefined();
     expect(props.disabled).toBe(false);
     expect(props.animating).toBe(false);
+    expect(props.soft).toBe(false);
     expect(props.ariaLabel).toBe("Send message");
   });
 

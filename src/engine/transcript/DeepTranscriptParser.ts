@@ -33,11 +33,12 @@ import type {
 } from './types';
 import { detectTone, type ToneLabel } from '../../lib/toneDetector';
 import type { EmotionalState } from '../character/types';
+import { LIN_MODEL_DEFAULTS } from '../../config/linModelDefaults';
 
 export class DeepTranscriptParser {
   private readonly model: string;
 
-  constructor(model: string = 'phi3:latest') {
+  constructor(model: string = LIN_MODEL_DEFAULTS.conversation) {
     this.model = model;
   }
 

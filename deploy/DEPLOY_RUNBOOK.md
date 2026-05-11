@@ -14,9 +14,9 @@ sudo cp /opt/chatty/deploy/chatty.nginx /etc/nginx/sites-available/chatty
 # Verify the proxy_pass port matches what Chatty is listening on
 # Check current port:
 grep -i "PORT" /opt/chatty/server/.env
-# If PORT=5050, the nginx config is correct as-is
-# If PORT=5000, edit the config:
-# sudo sed -i 's/127.0.0.1:5050/127.0.0.1:5000/' /etc/nginx/sites-available/chatty
+# If PORT=5050, the nginx config is correct as-is (both `location /` and `location /assets/` must use the same port).
+# If PORT=5000, edit the config so every proxy_pass matches:
+# sudo sed -i 's/127.0.0.1:5050/127.0.0.1:5000/g' /etc/nginx/sites-available/chatty
 
 # Enable the site
 sudo ln -sf /etc/nginx/sites-available/chatty /etc/nginx/sites-enabled/chatty
@@ -33,7 +33,29 @@ Verify: `curl -H "Host: chatty.thewreck.org" http://127.0.0.1/` should return HT
 
 ---
 
-## Task 2: Add Cloudflare DNS A record
+## Task 2: Bootstrap Ollama + construct sims (Zen/Aurora/Monday)
+
+```bash
+cd /opt/chatty
+sudo ./deploy/scripts/bootstrap_ollama_sims.sh
+```
+
+Expected result:
+
+- Ollama installed and running via systemd
+- Base model pulled (`qwen2.5:7b` by default)
+- Construct models created from VVAULT identities: `zen`, `aurora`, `monday`
+
+Quick verification:
+
+```bash
+ollama list
+curl -s http://127.0.0.1:11434/api/tags | jq '.models[].name' | grep -E '^("zen"|"aurora"|"monday")$'
+```
+
+---
+
+## Task 3: Add Cloudflare DNS A record
 
 In the Cloudflare dashboard for thewreck.org:
 
@@ -45,7 +67,7 @@ In the Cloudflare dashboard for thewreck.org:
 
 ---
 
-## Task 3: Configure Cloudflare SSL/TLS
+## Task 4: Configure Cloudflare SSL/TLS
 
 In Cloudflare dashboard > SSL/TLS > Overview:
 
@@ -54,12 +76,13 @@ In Cloudflare dashboard > SSL/TLS > Overview:
 - This is correct because we don't have an SSL cert on the origin — Cloudflare handles HTTPS for visitors
 
 Optional but recommended:
+
 - SSL/TLS > Edge Certificates > Always Use HTTPS: ON
 - SSL/TLS > Edge Certificates > Automatic HTTPS Rewrites: ON
 
 ---
 
-## Task 4: Verify environment variables
+## Task 5: Verify environment variables
 
 The file `/opt/chatty/server/.env` must contain all of these. Check and fill in any missing ones:
 
@@ -103,6 +126,7 @@ VVAULT_URL=https://vvault.thewreck.org
 ```
 
 Generate secrets if needed:
+
 ```bash
 echo "SESSION_SECRET=$(openssl rand -hex 32)"
 echo "JWT_SECRET=$(openssl rand -hex 32)"
@@ -110,16 +134,18 @@ echo "JWT_SECRET=$(openssl rand -hex 32)"
 
 ---
 
-## Task 5: Update Google OAuth
+## Task 6: Update Google OAuth
 
 In Google Cloud Console > APIs & Services > Credentials > OAuth 2.0 Client:
 
 **Authorized JavaScript origins** — add:
+
 ```
 https://chatty.thewreck.org
 ```
 
 **Authorized redirect URIs** — add:
+
 ```
 https://chatty.thewreck.org/api/auth/google/callback
 ```
@@ -140,6 +166,7 @@ sudo journalctl -u chatty -f --no-pager -n 50
 ```
 
 Expected output should show:
+
 - `API on :5050` (or :5000)
 - No crash loops
 - Supabase client initialized
@@ -179,22 +206,27 @@ curl https://chatty.thewreck.org/api/health
 ## Troubleshooting
 
 **502 Bad Gateway:** Chatty isn't running or wrong port in nginx config
+
 ```bash
 sudo systemctl status chatty
 sudo journalctl -u chatty --no-pager -n 30
 ```
 
 **SSL errors / redirect loops:** Cloudflare SSL mode is wrong
+
 - Set to "Full" (not Flexible, not Full Strict)
 
 **OAuth callback fails:** Redirect URI mismatch
+
 - Check Google Console URIs match exactly: `https://chatty.thewreck.org/api/auth/google/callback`
 - Check `PUBLIC_CALLBACK_BASE` in .env is `https://chatty.thewreck.org`
 
 **CORS errors in browser:** CORS_ORIGIN doesn't match
+
 - Ensure `CORS_ORIGIN=https://chatty.thewreck.org` in .env (no trailing slash)
 
 **OOM during build:** Swap not active
+
 ```bash
 sudo swapon --show
 # If empty, re-enable: sudo swapon /swapfile

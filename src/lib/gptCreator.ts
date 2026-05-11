@@ -13,6 +13,8 @@ export interface GPTPersonality {
     canvas: boolean;
     imageGeneration: boolean;
     codeInterpreter: boolean;
+    agent: boolean;
+    proactiveInitiation: boolean;
   };
   modelId: string; // Use actual model ID instead of placeholder
   createdAt: string;
@@ -30,6 +32,8 @@ export interface GPTConfiguration {
     canvas: boolean;
     imageGeneration: boolean;
     codeInterpreter: boolean;
+    agent: boolean;
+    proactiveInitiation: boolean;
   };
   modelId: string;
 }
@@ -83,7 +87,9 @@ What to avoid:
           webSearch: false,
           canvas: false,
           imageGeneration: false,
-          codeInterpreter: true
+          codeInterpreter: false,
+          agent: false,
+          proactiveInitiation: false,
         },
         modelId: 'chatty-core',
         createdAt: new Date().toISOString(),
@@ -129,7 +135,7 @@ What to avoid:
 
   deletePersonality(id: string): boolean {
     if (id === 'default-chatty') return false; // Prevent deleting default personality
-    
+
     const deleted = this.personalities.delete(id);
     if (deleted && this.activePersonalityId === id) {
       this.activePersonalityId = 'default-chatty';
@@ -140,12 +146,12 @@ What to avoid:
 
   setActivePersonality(id: string): boolean {
     if (!this.personalities.has(id)) return false;
-    
+
     // Deactivate all other personalities
     this.personalities.forEach(personality => {
       personality.isActive = false;
     });
-    
+
     // Activate the selected personality
     const personality = this.personalities.get(id);
     if (personality) {
@@ -154,7 +160,7 @@ What to avoid:
       this.savePersonalities();
       return true;
     }
-    
+
     return false;
   }
 
@@ -191,7 +197,7 @@ What to avoid:
         personalities: Array.from(this.personalities.entries()),
         activePersonalityId: this.activePersonalityId
       };
-      this.storageManager.saveData({ 
+      this.storageManager.saveData({
         personalities: data.personalities,
         activePersonalityId: this.activePersonalityId
       });
@@ -206,7 +212,7 @@ What to avoid:
     if (!personality || personality.conversationStarters.length === 0) {
       return "Hello! How can I help you today?";
     }
-    
+
     const randomIndex = Math.floor(Math.random() * personality.conversationStarters.length);
     return personality.conversationStarters[randomIndex];
   }

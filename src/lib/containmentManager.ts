@@ -79,7 +79,9 @@ export function triggerContainment(userId: string, reason: string): void {
   }
 
   // Check if user is already in containment
-  const existing = checkContainment.get(userId);
+  const existing = checkContainment.get(userId) as
+    | Pick<ContainmentRecord, 'triggered_at'>
+    | undefined;
   if (existing) {
     throw new Error(`User ${userId} is already in containment since ${existing.triggered_at}`);
   }
