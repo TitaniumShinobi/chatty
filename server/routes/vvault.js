@@ -2,21 +2,143 @@ import express from "express";
 import { createRequire } from "module";
 import path from "path";
 import crypto from "crypto";
-import { requireAuth, requireAuthOrServiceToken } from "../auth/middleware/auth.js";
+import {
+  requireAuth,
+  requireAuthOrServiceToken,
+  requirePreferredAuth,
+  requirePreferredAuthOrServiceToken,
+  requireSharedAuth,
+} from "../auth/middleware/auth.js";
 import User from "../models/User.js";
 import { createPrimaryConversationFile } from "../services/importService.js";
 import multer from "multer";
 import OpenAI from "openai";
 import { loadIdentityFiles } from "../lib/identityLoader.js";
 import { GPTManager } from "../lib/gptManager.js";
-import { performSearch, injectSearchContext } from "./search.js";
-import { buildEnrichedContext, captureMemory } from "../lib/memoryContextBuilder.js";
+import { AIManager } from "../lib/aiManager.js";
+import { performSearch, injectSearchContext, buildSearchResponsePackets } from "./search.js";
+import {
+  buildEnrichedContext,
+  captureMemory,
+  CONTEXT_BUDGET_PROFILES,
+  isMemoryTriggeringQuestion,
+  normalizeContextBudgetProfile,
+  shouldUseBoundedZenSmalltalkContext,
+} from "../lib/memoryContextBuilder.js";
 import { evaluateMessage, buildChildSafeDirectives, enforcePreInferenceGates, enforceRoleplayToggle } from "../lib/contentGuard.js";
 import { getAccountType, getChildSettings } from "../lib/familyManager.js";
 import { canonicalizeConstructId } from "../lib/constructId.js";
 import { canonicalSourceFolderList } from "../lib/transcriptSource.js";
 import { getSupabaseClient } from "../lib/supabaseClient.js";
-import { injectPersonaAnchor } from "../lib/personaAnchor.js";
+import { buildVoiceContractJson, extractVoiceInstructions, parseVoiceContract } from '../lib/voiceContract.js';
+import { applyResponsePostProcessing } from "../lib/responsePostProcessor.js";
+import {
+  buildDeterministicIdentityRepairCandidate,
+  buildDeterministicTranscriptLawRepairCandidate,
+  buildIdentityCoherenceRepairPrompt,
+  classifyTranscriptLawPromptKind,
+  evaluateIdentityCoherence,
+  evaluateTranscriptLawGovernance,
+} from "../lib/identityCoherenceGuard.js";
+import {
+  buildConstructGreetingVoiceContext,
+  buildDeterministicConstructGreetingFallback,
+  buildGreetingTurnDirective,
+  detectConstructGreetingTurn,
+} from "../lib/constructGreetingTurn.js";
+import {
+  buildDeterministicConstructRuntimePolicyAnswer,
+  classifyConstructRuntimePolicyAnswerKind,
+} from "../lib/constructRuntimePolicy.js";
+import { applyHumanConversationGuard, asksForEvidenceStyle } from "../lib/humanConversationGuard.js";
+import { recoverEvidenceBackedContinuityReply } from "../lib/continuityResponseRecovery.js";
+import {
+  buildDeterministicResumedTurnFallback,
+  evaluateResumedTurnContinuityIntegrity,
+} from "../lib/resumedTurnContinuity.js";
+import {
+  LIN_CANONICAL_THREAD_ID,
+  LIN_CANONICAL_TRANSCRIPT_PATH,
+  resolveCanonicalConstructDataOwner,
+} from "../lib/canonicalConstructOwner.js";
+import { resolveSupabaseUserId } from "../auth/lib/supabaseUserResolver.js";
+import { sampleAssociativeFragments } from "../lib/associativeRecall.js";
+import { buildOrchestrationChecklist } from "../lib/orchestrationChecklist.js";
+import { LIN_MODEL_DEFAULTS, isLinDefaultPlaceholder } from "../lib/linModelDefaults.js";
+import {
+  LIN_THREE_I_CANON_VERSION,
+  getLinSeatCanon,
+} from "../lib/linSeatCanon.js";
+import {
+  FULL_SEAT_SYNTHESIS_PROFILE,
+  normalizeOrchestrationProfile,
+  runFullSeatSynthesis,
+} from "../lib/fullSeatSynthesis.js";
+import {
+  evaluateAssignmentQa,
+  normalizeAssignmentQaInput,
+} from "../lib/assignmentQaGuard.js";
+import {
+  buildAssignmentQaPromptContract,
+  buildAssignmentQaRepairPrompt,
+  buildDeterministicAssignmentQaAnswer,
+} from "../lib/assignmentQaContract.js";
+import {
+  buildResearchWorkflowReceipt,
+} from "../lib/researchWorkflowReceipt.js";
+import { getUserProfile } from "../lib/userRegistry.js";
+import {
+  publishZenLiveTranscriptEvent,
+  ZEN_LIVE_CONSTRUCT_ID,
+  ZEN_LIVE_SESSION_ID,
+} from "../lib/zenLiveTranscript.js";
+import {
+  buildConversationHydrationPayload,
+  buildConversationIndexHydrationPayload,
+  buildContinuityProofReceipt,
+  buildTranscriptTruthPreflight,
+  buildTranscriptWriteFailurePayload,
+  isConversationVisibleToReadPath,
+  mergeConversationIndexRecords,
+} from "../lib/vvaultConversationRouteContract.js";
+import {
+  buildCanonicalTranscriptArtifact,
+  buildCanonicalTranscriptFilename,
+  buildChatTranscriptResponse,
+  CanonicalTranscriptError,
+  resolveCanonicalTranscriptPayload,
+} from "../lib/canonicalTranscriptExportService.js";
+import {
+  applyForgedSimLockToRecord,
+  readForgedSimLock,
+} from "../lib/forgedSimLock.js";
+import {
+  buildDeterministicZenIdentityBoundaryFallback,
+  buildDeterministicZenSmalltalkBoundaryFallback,
+  isZenIdentityBoundaryDriftOnly,
+  isZenIdentityBoundaryPrompt,
+  isTesterBoundaryDriftOnly,
+  isZenSmalltalkTesterBoundaryPrompt,
+} from "../lib/zenSmalltalkBoundaryFallback.js";
+import {
+  buildDeterministicValResponsibilityFallback,
+  isValResponsibilityDriftOnly,
+  isValResponsibilityPrompt,
+} from "../lib/valBoundaryFallback.js";
+import {
+  buildDeterministicConstructPresenceFallback,
+  classifyConstructPresencePromptKind,
+  isConstructPresenceDriftOnly,
+} from "../lib/constructPresenceBoundaryFallback.js";
+import {
+  buildConstructRevision,
+  buildRouteTurnEnvelope,
+  computeNextRuntimeTurnState,
+  normalizeRuntimeResumeRequest,
+  rebuildRuntimeTurnStateFromCanonicalTranscript,
+  validateRuntimeResumeRequest,
+} from "../lib/runtimeTurnState.js";
+import { readLatestRuntimeTurnState } from "../../vvaultConnector/runtimeTurnStateStore.js";
 import {
   clearCanonicalConstructIdentityCache,
   loadCanonicalFilesSummary,
@@ -31,10 +153,30 @@ import {
   clearIdentityCompactCache,
   clearFilesSummaryCache,
 } from "../lib/vvaultCache.js";
-import { resolveRequestUser } from "../auth/lib/supabaseUserResolver.js";
 import { resolveSupabaseUser } from "../lib/resolveSupabaseUser.js";
 import { assertNotLockedSync } from "../lib/runtimeLock.js";
+import { resolveVvaultDirectAuth } from "../lib/vvaultDirectAuth.js";
+import { resolveVvaultRequestUser } from "../lib/vvaultRequestUser.js";
+import { buildConversationIndexLookupCandidates } from "../lib/vvaultIndexLookupCandidates.js";
+import { resolveLinkedVvaultUserId } from "../lib/vvaultUserRegistryLookup.js";
 import { getVvaultTargets, getVvaultBridgeConfig } from "../lib/vvaultBridgeConfig.js";
+import {
+  buildStrictGateIdentityLog,
+  isStrictConversationIndexRequest,
+  logVvaultIdentityDiagnostics,
+} from "../lib/vvaultIdentityDiagnostics.js";
+import { validateIdentityBundle } from "../lib/identityBundlePreflight.js";
+import {
+  isLinOrchestratedConstruct,
+  isProtectedZenConstruct,
+} from "../lib/constructMemoryPolicy.js";
+import {
+  DEFAULT_CODEX_ARCHIVE_LIFE_USER_ID,
+  syncCodexThreadsArchive,
+} from "../lib/codexThreadArchive.js";
+import leakSignals from "../lib/leakSignals.cjs";
+
+const { hasLinIdentityDumpSignals } = leakSignals;
 
 // Timestamp all console output from this module
 const patchConsoleWithTimestamp = () => {
@@ -49,6 +191,139 @@ patchConsoleWithTimestamp();
 
 const require = createRequire(import.meta.url);
 const router = express.Router();
+
+function publishZenLiveEventSafe(event) {
+  try {
+    publishZenLiveTranscriptEvent(event);
+  } catch (error) {
+    console.warn('[ZenLiveTranscript] VVAULT route publish failed:', error?.message || error);
+  }
+}
+
+function publishZenReplayBurst({
+  constructId,
+  sessionId,
+  userMessage,
+  aiResponse,
+  assistantTurnId,
+  sourceProduct = 'vvault',
+}) {
+  if (constructId !== ZEN_LIVE_CONSTRUCT_ID) return;
+
+  const normalizedSessionId = typeof sessionId === 'string' && sessionId.trim()
+    ? sessionId.trim()
+    : ZEN_LIVE_SESSION_ID;
+  const turnId = assistantTurnId || `zen-live-${Date.now()}`;
+
+  publishZenLiveEventSafe({
+    sessionId: normalizedSessionId,
+    turnId,
+    sourceProduct,
+    kind: 'user_message',
+    content: String(userMessage || ''),
+  });
+  publishZenLiveEventSafe({
+    sessionId: normalizedSessionId,
+    turnId,
+    sourceProduct,
+    kind: 'status',
+    status: 'routing_assistant_turn',
+  });
+  publishZenLiveEventSafe({
+    sessionId: normalizedSessionId,
+    turnId,
+    sourceProduct,
+    kind: 'assistant_started',
+    status: 'responding',
+  });
+  publishZenLiveEventSafe({
+    sessionId: normalizedSessionId,
+    turnId,
+    sourceProduct,
+    kind: 'assistant_token',
+    delta: String(aiResponse || ''),
+  });
+  publishZenLiveEventSafe({
+    sessionId: normalizedSessionId,
+    turnId,
+    sourceProduct,
+    kind: 'assistant_done',
+    content: String(aiResponse || ''),
+    status: 'complete',
+  });
+}
+
+function buildSearchBackedAssistantPayload({
+  aiResponse,
+  searchResults,
+  housingSearch,
+}) {
+  const packetResult = buildSearchResponsePackets({
+    aiResponse,
+    searchResults,
+    housingSearch,
+  });
+
+  if (!packetResult) {
+    return {
+      content: aiResponse,
+      packets: null,
+      citations: [],
+    };
+  }
+
+  return packetResult;
+}
+
+function buildSearchInspectabilityReceipt({
+  searchVertical = 'none',
+  searchResults,
+  housingSearch,
+  citations,
+  packets,
+} = {}) {
+  const packetsArray = Array.isArray(packets) ? packets : [];
+  const citationArray = Array.isArray(citations) ? citations : [];
+  const resultCount = Array.isArray(housingSearch?.results)
+    ? housingSearch.results.length
+    : Array.isArray(searchResults)
+      ? searchResults.length
+      : 0;
+  const detectedHousing = Boolean(
+    housingSearch?.normalizedQuery ||
+    housingSearch?.mode ||
+    (Array.isArray(housingSearch?.results) && housingSearch.results.length > 0) ||
+    searchVertical === 'housing'
+  );
+
+  if (resultCount === 0 && citationArray.length === 0 && packetsArray.length === 0 && !detectedHousing) {
+    return null;
+  }
+
+  return {
+    search: {
+      search_vertical: searchVertical || (detectedHousing ? 'housing' : 'web'),
+      result_count: resultCount,
+      citation_count: citationArray.length,
+      packets_emitted: packetsArray.length > 0,
+      citations_visible: citationArray.length > 0,
+    },
+    housing: detectedHousing
+      ? {
+          detected: true,
+          normalized_query: housingSearch?.normalizedQuery || null,
+          mode: housingSearch?.mode || null,
+          filters: housingSearch?.filters || null,
+          query_count: Array.isArray(housingSearch?.queries) ? housingSearch.queries.length : 0,
+          result_count: Array.isArray(housingSearch?.results) ? housingSearch.results.length : 0,
+          enriched_count: Number(housingSearch?.enrichedCount || 0),
+          citation_count: citationArray.length,
+          gallery_cards_emitted: packetsArray.some((packet) => packet?.op === 'housing.results.v1'),
+          citations_visible: citationArray.length > 0,
+        }
+      : null,
+  };
+}
 
 // Runtime lock: block all POST (writes) when VVAULT_RUNTIME_LOCK is set
 router.use((req, res, next) => {
@@ -87,6 +362,194 @@ function sendVvaultHostAsleep(res, details = {}) {
     message: VVAULT_HOST_ASLEEP_MESSAGE,
     details: { downstreamStatus: 503, replitAsleep: true, ...details },
   });
+}
+
+function safeParseJson(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function stripChattyMetadataComment(value = '') {
+  return String(value || '')
+    .split('\n')
+    .filter((line) => !/^\s*<!--\s*CHATTY_METADATA\s+[A-Za-z0-9_-]+\s*-->\s*$/.test(line))
+    .join('\n')
+    .trimEnd();
+}
+
+const IDENTITY_AUDIT_FILE_GROUPS = {
+  prompt: {
+    canonical: ['prompt.json'],
+    legacy: ['prompt.txt'],
+  },
+  voice: {
+    canonical: ['voice.json'],
+    legacy: ['voice.md'],
+  },
+  definition: {
+    canonical: ['definition.json'],
+    legacy: ['definitions.json', 'definition.txt'],
+  },
+  physicalFeatures: {
+    canonical: ['physical-features.json'],
+    legacy: ['physical_features.json', 'physicalfeatures.json', 'gender.json'],
+  },
+  conditioning: {
+    canonical: ['conditioning.txt'],
+    legacy: [],
+  },
+};
+
+const IDENTITY_FORCE_PRUNE_BASENAMES = new Set([
+  'identity.bak.json',
+  'avatar.jpeg',
+  'definition.txt',
+  'voice.md',
+]);
+
+const IDENTITY_AUDIT_BASENAMES = new Set(
+  Object.values(IDENTITY_AUDIT_FILE_GROUPS)
+    .flatMap((group) => [...group.canonical, ...group.legacy])
+);
+for (const name of IDENTITY_FORCE_PRUNE_BASENAMES) {
+  IDENTITY_AUDIT_BASENAMES.add(name);
+}
+
+function constructIdVariantsForAudit(normalizedConstructId) {
+  return [
+    normalizedConstructId,
+    `gpt-${normalizedConstructId}-seed`,
+    `gpt-${normalizedConstructId}-seed-001`,
+    `ai-${normalizedConstructId}`,
+  ];
+}
+
+function buildIdentityAudit(rows, supabaseUserId) {
+  const byBasename = {};
+  for (const row of rows) {
+    const name = path.basename(row.filename || '');
+    if (!IDENTITY_AUDIT_BASENAMES.has(name)) continue;
+    if (!byBasename[name]) byBasename[name] = [];
+    byBasename[name].push(row);
+  }
+
+  const grouped = {};
+  for (const [groupKey, spec] of Object.entries(IDENTITY_AUDIT_FILE_GROUPS)) {
+    const canonicalRows = spec.canonical.flatMap((name) => byBasename[name] || []);
+    const legacyRows = spec.legacy.flatMap((name) => byBasename[name] || []);
+    const sortedCanonicalRows = canonicalRows.slice().sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+    const sortedLegacyRows = legacyRows.slice().sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+    const pickPreferred = (candidates) => candidates.slice().sort((a, b) => {
+      const aUserScore = supabaseUserId && a.user_id === supabaseUserId ? 1 : 0;
+      const bUserScore = supabaseUserId && b.user_id === supabaseUserId ? 1 : 0;
+      if (bUserScore !== aUserScore) return bUserScore - aUserScore;
+      const aContentScore = typeof a.content === 'string' && a.content.trim() ? 1 : 0;
+      const bContentScore = typeof b.content === 'string' && b.content.trim() ? 1 : 0;
+      if (bContentScore !== aContentScore) return bContentScore - aContentScore;
+      return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+    })[0] || null;
+
+    const canonicalActive = pickPreferred(sortedCanonicalRows);
+    const legacyActive = pickPreferred(sortedLegacyRows);
+    const active = canonicalActive || legacyActive;
+
+    grouped[groupKey] = {
+      canonicalFiles: spec.canonical,
+      legacyFiles: spec.legacy,
+      canonicalCount: sortedCanonicalRows.length,
+      legacyCount: sortedLegacyRows.length,
+      hasCanonical: sortedCanonicalRows.length > 0,
+      hasLegacy: sortedLegacyRows.length > 0,
+      hasCanonicalContent: sortedCanonicalRows.some((row) => typeof row.content === 'string' && row.content.trim()),
+      hasAnyContent: [...sortedCanonicalRows, ...sortedLegacyRows].some((row) => typeof row.content === 'string' && row.content.trim()),
+      activeSource: canonicalActive ? 'canonical' : (legacyActive ? 'legacy' : 'missing'),
+      activeFilename: active?.filename || null,
+      activeCreatedAt: active?.created_at || null,
+      activeUserId: active?.user_id || null,
+    };
+  }
+
+  const recommendations = [];
+  for (const [groupKey, group] of Object.entries(grouped)) {
+    if (!group.hasCanonical && group.hasLegacy) {
+      recommendations.push({
+        group: groupKey,
+        action: 'migrate-to-canonical',
+        reason: 'Legacy file exists without canonical file',
+      });
+    }
+    if (group.hasCanonical && !group.hasCanonicalContent) {
+      recommendations.push({
+        group: groupKey,
+        action: 'repair-canonical-content',
+        reason: 'Canonical file exists but appears empty',
+      });
+    }
+    if (group.hasCanonical && group.hasLegacy) {
+      recommendations.push({
+        group: groupKey,
+        action: 'prune-legacy-after-verify',
+        reason: 'Both canonical and legacy files exist',
+      });
+    }
+  }
+
+  return {
+    grouped,
+    recommendations,
+    fileIndex: Object.fromEntries(
+      Object.entries(byBasename).map(([name, list]) => [
+        name,
+        list
+          .slice()
+          .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+          .map((row) => ({
+            id: row.id,
+            filename: row.filename,
+            userId: row.user_id || null,
+            constructId: row.construct_id || null,
+            createdAt: row.created_at || null,
+            hasInlineContent: typeof row.content === 'string' && Boolean(row.content.trim()),
+            hasStoragePath: Boolean(row.storage_path),
+            fileType: row.file_type || null,
+          })),
+      ])
+    ),
+  };
+}
+
+function parsePhysicalFeaturesObject(value) {
+  if (typeof value !== 'string' || !value.trim()) return {};
+
+  const parsedJson = safeParseJson(value);
+  if (parsedJson && typeof parsedJson === 'object' && !Array.isArray(parsedJson)) {
+    return Object.fromEntries(
+      Object.entries(parsedJson)
+        .map(([key, item]) => [String(key).trim(), item == null ? '' : String(item).trim()])
+        .filter(([key]) => Boolean(key))
+    );
+  }
+
+  const lines = value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const out = {};
+  for (const line of lines) {
+    const separatorIndex = line.indexOf(':');
+    if (separatorIndex <= 0) return {};
+    const key = line.slice(0, separatorIndex).trim();
+    const itemValue = line.slice(separatorIndex + 1).trim();
+    if (!key) return {};
+    out[key] = itemValue;
+  }
+  return out;
 }
 
 // ── Tool Event Store (per-session, in-memory) ──────────────────────
@@ -147,6 +610,19 @@ async function buildEnrichedContextPrompt({
   threadId,
   timezone,
   systemPromptOverride,
+  previewMode = false,
+  previewDraft = null,
+  suppressedSystemPromptOverride = false,
+  identityBundle = null,
+  requestedSeat = null,
+  hasImages = false,
+  contextBudgetProfile = null,
+  codingIntent = false,
+  policyOrReceiptIntent = false,
+  suppressTranscriptLawIntent = false,
+  runtimeTurnState = null,
+  continuityClass = null,
+  continuityResume = null,
 }) {
   const effectiveThreadId = threadId || `${constructId}_chat_with_${constructId}`;
   const memoryContext = await buildMemoryContext({
@@ -165,6 +641,19 @@ async function buildEnrichedContextPrompt({
     user,
     clientTimezone: timezone || null,
     threadId: effectiveThreadId,
+    previewMode,
+    previewDraft,
+    suppressedSystemPromptOverride,
+    identityBundle,
+    requestedSeat,
+    hasImages,
+    contextBudgetProfile,
+    codingIntent,
+    policyOrReceiptIntent,
+    suppressTranscriptLawIntent,
+    runtimeTurnState,
+    continuityClass,
+    continuityResume,
   });
 
   return {
@@ -176,6 +665,927 @@ async function buildEnrichedContextPrompt({
     needleSnippets: memoryContext.needleSnippets,
     memoryDiagnostics: memoryContext.memoryDiagnostics,
   };
+}
+
+function deriveConstructReceiptName(constructId, gptConfig = {}) {
+  return gptConfig?.name || constructId.replace(/-\d+$/, '').replace(/^./, (c) => c.toUpperCase());
+}
+
+function buildContextBuildFailurePayload({
+  authReceipt,
+  userId,
+  user,
+  constructId,
+  rawConstructId,
+  canonicalConstructId,
+  gptConfig,
+  message,
+  threadId,
+  sessionId,
+  hasImages,
+  previewMode,
+  skipPersistence,
+  identityBundle,
+  details,
+}) {
+  const receiptConstructName = deriveConstructReceiptName(constructId, gptConfig);
+  const failureReason = details?.error || 'Context build temporarily unavailable';
+  const contextBuildReceipt = {
+    status: details?.status || 'error',
+    timeout_ms: details?.timeout_ms || null,
+    reason: details?.reason || 'context_build_failed',
+    recovery_profile: details?.recovery_profile || null,
+    remote_history_skipped: details?.remote_history_skipped ?? null,
+  };
+  const failureRuntimeReceipt = {
+    created_at: new Date().toISOString(),
+    user_id: userId || null,
+    auth: authReceipt,
+    construct_id: constructId,
+    effective_construct_id: constructId,
+    effective_construct_name: receiptConstructName,
+    orchestration_mode: gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown',
+    route_mode: 'vvault_message',
+    persistence_owner: 'blocked_context_build',
+    identity: {
+      source: 'identity_bundle_preflight',
+      base_prompt_source: identityBundle?.preflight?.identity?.prompt_source || 'unknown',
+      conditioning_appended: Boolean(identityBundle?.identity?.conditioning),
+      identity_bundle_hash: null,
+      effective_construct_id: constructId,
+      effective_construct_name: receiptConstructName,
+      selected_construct_id: canonicalConstructId || constructId,
+      raw_construct_id: rawConstructId,
+      preflight: identityBundle?.preflight || null,
+    },
+    memory: {
+      retrieval_ran: false,
+      memory_query_detected: false,
+      evidence_count: 0,
+      ledger_sessions: 0,
+      memory_profile: gptConfig?.memoryProfile || gptConfig?.memory_profile || 'off',
+      voice_exemplar_sources: [],
+      voice_exemplar_count: 0,
+      supabase_accessed: false,
+      voice_exemplar_retrieval: null,
+      verified_memory_retrieval: null,
+      vector_retrieval: {
+        status: 'skipped',
+        optional: true,
+        degraded: false,
+        provider: 'semantic_search',
+        error: null,
+        timeout_ms: null,
+      },
+      memory_source: 'context_build_failed',
+      context_build: contextBuildReceipt,
+      sources: null,
+    },
+    provider: {
+      final_provider: null,
+      provider: null,
+      model: null,
+      mode: gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown',
+      fallback_used: false,
+    },
+    fidelity: {
+      identity_coherence: {
+        status: 'skipped',
+        reasons: [failureReason],
+        signals: [],
+        violations: [],
+        repair_attempted: false,
+        repair_applied: false,
+        persist_canonical: false,
+        owner_file: 'server/routes/vvault.js',
+        source_anchor: 'server/routes/vvault.js:buildEnrichedContextPromptWithRecovery',
+      },
+    },
+  };
+  const failureEnrichedContext = {
+    phaseTiming: {
+      identity: {
+        source: 'identity_bundle_preflight',
+      },
+      basePromptSource: identityBundle?.preflight?.identity?.prompt_source || 'identity_bundle_preflight',
+      conditioningInjected: Boolean(identityBundle?.identity?.conditioning),
+      contextRecovery: {
+        profile: details?.recovery_profile || null,
+        status: details?.status || 'error',
+        error: failureReason,
+      },
+      memorySearch: { skipped: true, reason: 'context_build_failed' },
+      knowledge: { skipped: true, reason: 'context_build_failed' },
+    },
+    capabilityManifest: {
+      enabled: { proactiveInitiation: false },
+      state: { selfpromptOn: false },
+    },
+    context_recovery_profile: details?.recovery_profile || null,
+    remote_history_skipped: Boolean(details?.remote_history_skipped),
+    evidence_count: 0,
+    memory_retrieval_ran: false,
+    memory_query_detected: false,
+  };
+  const failureChecklist = buildOrchestrationChecklist({
+    userId,
+    user,
+    constructId,
+    threadId: sessionId || threadId || `${constructId}_chat_with_${constructId}`,
+    userMessage: message,
+    gptConfig: {
+      name: receiptConstructName,
+      orchestrationMode: gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown',
+      memoryProfile: gptConfig?.memoryProfile || gptConfig?.memory_profile || 'off',
+    },
+    enrichedContext: failureEnrichedContext,
+    retrievalDiagnostics: {
+      evidence_count: 0,
+      retrieval_counts: { vector: 0, verified: 0, needle: 0, transcript: 0 },
+      phase_timing: failureEnrichedContext.phaseTiming,
+    },
+    promptDiagnostics: {
+      route: '/api/vvault/message',
+      mode: 'context_build_failure',
+      constructId,
+      prompt_source: 'context_build_failure',
+      base_prompt_source: identityBundle?.preflight?.identity?.prompt_source || 'identity_bundle_preflight',
+      basePromptSource: identityBundle?.preflight?.identity?.prompt_source || 'identity_bundle_preflight',
+      conditioning_appended: Boolean(identityBundle?.identity?.conditioning),
+      preview_mode: Boolean(previewMode),
+      skip_persistence: true,
+      final_history_count: 0,
+      prompt_chars: 0,
+    },
+    providerTrace: {
+      final_provider: null,
+      fallback_used: false,
+      attempts: [],
+    },
+    validatorDebug: {},
+    runtimeReceipt: failureRuntimeReceipt,
+    contextMode: details?.recovery_profile || 'context_build_failed',
+    relationalTurn: false,
+    lowComplexityTurn: true,
+    hasImages,
+    skipPersistence: true,
+    previewMode,
+    requestedConstructId: rawConstructId,
+    canonicalConstructId: canonicalConstructId || constructId,
+    responseStatus: 'context_build_failed',
+  });
+
+  return {
+    ok: false,
+    success: false,
+    constructId,
+    construct_id: constructId,
+    code: 'CONTEXT_BUILD_UNAVAILABLE',
+    error: failureReason,
+    details: {
+      status: details?.status || 'error',
+      timeout_ms: details?.timeout_ms || null,
+      reason: details?.reason || 'context_build_failed',
+      recovery_profile: details?.recovery_profile || null,
+    },
+    runtime_receipt: failureRuntimeReceipt,
+    orchestration_checklist: failureChecklist,
+    has_images: hasImages,
+  };
+}
+
+function shouldRequireCanonicalTranscriptTruth({
+  continueTurn = false,
+  continuityResume = null,
+  runtimeTurnState = null,
+  sessionId = null,
+  constructId = null,
+  message = '',
+  previewMode = false,
+} = {}) {
+  if (previewMode === true) {
+    return false;
+  }
+
+  const exactCanonicalThreadTargeted = isExactCanonicalThreadTargeted({
+    sessionId,
+    constructId,
+  });
+
+  return (
+    continueTurn === true ||
+    continuityResume?.continuityExpected === true ||
+    isExplicitResumeContinuationCue(message) ||
+    Boolean(runtimeTurnState?.assistantTurnId) ||
+    exactCanonicalThreadTargeted
+  );
+}
+
+function detectContinuityResetDraft(text = '') {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return 'empty_assistant_draft';
+  const head = normalized.slice(0, 420);
+  const checks = [
+    {
+      reason: 'generic_greeting',
+      pattern:
+        /^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening))\b[^.!?]{0,120}\b(?:i['’]?m|i am|how can i help|what can i help|welcome|nice to meet|devon)\b/i,
+    },
+    {
+      reason: 'recap_reset',
+      pattern:
+        /\b(?:to recap|quick recap|here['’]?s (?:a|the) recap|what we were working on|we were working on|last time we were)\b/i,
+    },
+    {
+      reason: 'context_request',
+      pattern:
+        /\b(?:what were we working on|remind me|can you remind me|give me (?:the )?context|what would you like to continue|how can i help)\b/i,
+    },
+    {
+      reason: 'reset_tone',
+      pattern:
+        /\b(?:start fresh|new conversation|from scratch|first meeting|don['’]?t have enough context|need more context)\b/i,
+    },
+  ];
+
+  return checks.find((check) => check.pattern.test(head))?.reason || null;
+}
+
+function isExactCanonicalThreadTargeted({
+  sessionId = null,
+  constructId = null,
+} = {}) {
+  const normalizedConstructId =
+    typeof constructId === 'string' ? constructId.trim() : '';
+  const normalizedSessionId =
+    typeof sessionId === 'string' ? sessionId.trim() : '';
+  const canonicalThreadId =
+    normalizedConstructId
+      ? `${normalizedConstructId}_chat_with_${normalizedConstructId}`
+      : '';
+  const exactCanonicalThreadTargeted =
+    canonicalThreadId.length > 0 && normalizedSessionId === canonicalThreadId;
+  return exactCanonicalThreadTargeted;
+}
+
+function canAttemptCanonicalContinuityRecovery({
+  continuityResumeValidation = null,
+  sessionId = null,
+  constructId = null,
+  previewMode = false,
+} = {}) {
+  if (previewMode === true) {
+    return false;
+  }
+
+  if (!continuityResumeValidation?.continuityExpected) {
+    return false;
+  }
+
+  if (
+    !isExactCanonicalThreadTargeted({
+      sessionId,
+      constructId,
+    })
+  ) {
+    return false;
+  }
+
+  return (
+    continuityResumeValidation.failureReason === 'resume_state_missing' ||
+    continuityResumeValidation.failureReason === 'hydration_unproven'
+  );
+}
+
+function buildTranscriptTruthFailurePayload({
+  authReceipt,
+  userId,
+  user,
+  constructId,
+  rawConstructId,
+  canonicalConstructId,
+  message,
+  threadId,
+  sessionId,
+  hasImages,
+  previewMode,
+  gptConfig = null,
+  continuityResume = null,
+  transcriptTruth = null,
+  code = 'TRANSCRIPT_HYDRATION_REQUIRED',
+  error = 'Canonical transcript hydration is required before generation can continue.',
+  responseStatus = 'transcript_hydration_required',
+} = {}) {
+  const receiptConstructName = deriveConstructReceiptName(constructId, gptConfig);
+  const continuityReceipt = buildContinuityProofReceipt({
+    hydration: transcriptTruth?.hydrationSource || continuityResume?.hydration || 'none',
+    hydrationComplete:
+      transcriptTruth?.hydrationComplete === true ||
+      continuityResume?.hydrationComplete === true,
+    resumeValidation: continuityResume,
+  });
+  const transcriptTruthReceipt = {
+    eligible: transcriptTruth?.eligible === true,
+    source: transcriptTruth?.hydrationSource || 'none',
+    hydration_complete: transcriptTruth?.hydrationComplete === true,
+    exact_thread_id: transcriptTruth?.exactThreadId || sessionId || threadId || `${constructId}_chat_with_${constructId}`,
+    exact_thread_found: transcriptTruth?.exactThreadFound === true,
+    assistant_tail_found: transcriptTruth?.assistantTailFound === true,
+    runtime_state_found: transcriptTruth?.runtimeStateFound === true,
+    runtime_state_hydration_truth: transcriptTruth?.runtimeStateHydrationTruth || null,
+    evidence_count: Number(transcriptTruth?.evidenceCount || 0),
+    evidence_sources: transcriptTruth?.evidenceSources || [],
+    fallback_rejected: transcriptTruth?.fallbackRejected === true,
+    retrieval_status: code === 'CANONICAL_TRANSCRIPT_READ_UNAVAILABLE' ? 'read_unavailable' : 'blocked',
+    blocked_reason: transcriptTruth?.reason || null,
+  };
+  const failureRuntimeReceipt = {
+    created_at: new Date().toISOString(),
+    user_id: userId || null,
+    auth: authReceipt,
+    construct_id: constructId,
+    effective_construct_id: constructId,
+    effective_construct_name: receiptConstructName,
+    orchestration_mode: gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown',
+    route_mode: 'vvault_message',
+    persistence_owner: 'blocked_transcript_truth',
+    continuity: continuityReceipt,
+    ...continuityReceipt,
+    transcript_truth: transcriptTruthReceipt,
+    capsule_runtime: {
+      capsuleLoaded: null,
+      capsuleSource: null,
+      contextProfile: null,
+      continuityFromRuntimeState: continuityReceipt.continuityRestored === true,
+      continuityMemorySource: null,
+    },
+    identity: {
+      source: 'identity_bundle_preflight',
+      base_prompt_source: 'identity_bundle_preflight',
+      conditioning_appended: false,
+      identity_bundle_hash: null,
+      effective_construct_id: constructId,
+      effective_construct_name: receiptConstructName,
+      selected_construct_id: canonicalConstructId || constructId,
+      raw_construct_id: rawConstructId,
+      preflight: null,
+    },
+    memory: {
+      retrieval_ran: false,
+      memory_query_detected: false,
+      evidence_count: 0,
+      ledger_sessions: 0,
+      memory_profile: gptConfig?.memoryProfile || gptConfig?.memory_profile || 'off',
+      voice_exemplar_sources: [],
+      voice_exemplar_count: 0,
+      supabase_accessed: false,
+      voice_exemplar_retrieval: null,
+      verified_memory_retrieval: null,
+      vector_retrieval: null,
+      memory_source: 'blocked_transcript_truth',
+      context_profile: null,
+      included_sections: [],
+      delayed_sections: [],
+      no_rewrite_identity_anchor: false,
+      identity_rewrite_prevented_by: null,
+      context_recovery_profile: 'blocked_transcript_truth',
+      history_source: transcriptTruth?.hydrationSource || 'none',
+      remote_history_skipped: false,
+      sources: null,
+      transcript_memory_status: 'blocked',
+      transcript_sources: transcriptTruth?.evidenceSources || [],
+    },
+    provider: {
+      final_provider: null,
+      provider: null,
+      model: null,
+      mode: gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown',
+      fallback_used: false,
+    },
+    persistence: {
+      attempted: false,
+      status: 'skipped',
+      code,
+      reason: transcriptTruth?.reason || 'transcript_truth_preflight_failed',
+      message: error,
+      error,
+      timeout_ms: null,
+      bounded: false,
+      stage: null,
+      ...buildCanonicalPersistenceSemantics({
+        failureClassification: 'blocked_transcript_truth',
+        upstreamWriteBlocked: false,
+      }),
+    },
+    fidelity: {
+      identity_coherence: {
+        status: 'skipped',
+        reasons: [error],
+        signals: [],
+        violations: [],
+        repair_attempted: false,
+        repair_applied: false,
+        persist_canonical: false,
+        owner_file: 'server/routes/vvault.js',
+        source_anchor: 'server/routes/vvault.js:buildTranscriptTruthFailurePayload',
+      },
+      transcript_law_governance: {
+        status: 'fail',
+        requested_fact: null,
+        reasons: [error],
+        signals: [],
+        grounding_verdict: 'blocked_transcript_truth',
+        retrieval_ran: false,
+        evidence_count: Number(transcriptTruth?.evidenceCount || 0),
+        transcript_sources: transcriptTruth?.evidenceSources || [],
+        evidence_sources: transcriptTruth?.evidenceSources || [],
+        voice_exemplar_sources: [],
+        voice_exemplar_count: 0,
+        transcript_memory_status: 'blocked',
+        capsule_source: null,
+        capsule_loaded: false,
+        source_grounded: false,
+        repair_attempted: false,
+        repair_applied: false,
+        final_answer_source: 'blocked_transcript_truth',
+        blocked_canonical_persistence: true,
+        persist_canonical: false,
+        owner_file: 'server/routes/vvault.js',
+        source_anchor: 'server/routes/vvault.js:buildTranscriptTruthFailurePayload',
+      },
+    },
+  };
+  const failureChecklist = buildOrchestrationChecklist({
+    userId,
+    user,
+    constructId,
+    threadId: sessionId || threadId || `${constructId}_chat_with_${constructId}`,
+    userMessage: message,
+    gptConfig: {
+      name: receiptConstructName,
+      orchestrationMode: gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown',
+      memoryProfile: gptConfig?.memoryProfile || gptConfig?.memory_profile || 'off',
+    },
+    enrichedContext: {
+      phaseTiming: {
+        identity: { source: 'identity_bundle_preflight' },
+        basePromptSource: 'identity_bundle_preflight',
+        conditioningInjected: false,
+        contextRecovery: {
+          profile: 'blocked_transcript_truth',
+          historySource: transcriptTruth?.hydrationSource || 'none',
+        },
+        memorySearch: { skipped: true, reason: 'blocked_transcript_truth' },
+        knowledge: { skipped: true, reason: 'blocked_transcript_truth' },
+        capsule: { source: null },
+      },
+      capabilityManifest: {
+        enabled: { proactiveInitiation: false },
+        state: { selfpromptOn: false },
+      },
+      context_profile: null,
+      context_budget: {
+        profile: null,
+        included_sections: [],
+        delayed_sections: ['transcript_truth'],
+      },
+      evidence_count: 0,
+      memory_retrieval_ran: false,
+      memory_query_detected: false,
+      capsuleLoaded: false,
+    },
+    retrievalDiagnostics: {
+      evidence_count: 0,
+      retrieval_counts: { vector: 0, verified: 0, needle: 0, transcript: 0 },
+      phase_timing: {},
+    },
+    promptDiagnostics: {
+      route: '/api/vvault/message',
+      mode: 'transcript_truth_failure',
+      constructId,
+      prompt_source: 'transcript_truth_failure',
+      base_prompt_source: 'identity_bundle_preflight',
+      basePromptSource: 'identity_bundle_preflight',
+      conditioning_appended: false,
+      preview_mode: Boolean(previewMode),
+      skip_persistence: true,
+      final_history_count: 0,
+      prompt_chars: 0,
+    },
+    providerTrace: {
+      final_provider: null,
+      fallback_used: false,
+      attempts: [],
+    },
+    validatorDebug: {},
+    runtimeReceipt: failureRuntimeReceipt,
+    contextMode: 'blocked_transcript_truth',
+    relationalTurn: false,
+    lowComplexityTurn: false,
+    hasImages,
+    skipPersistence: true,
+    previewMode,
+    requestedConstructId: rawConstructId,
+    canonicalConstructId: canonicalConstructId || constructId,
+    responseStatus,
+  });
+
+  return {
+    ok: false,
+    success: false,
+    constructId,
+    construct_id: constructId,
+    code,
+    error,
+    message: error,
+    runtime_receipt: failureRuntimeReceipt,
+    orchestration_checklist: failureChecklist,
+    has_images: hasImages,
+  };
+}
+
+function buildCanonicalPersistenceSemantics({
+  failureClassification = null,
+  upstreamWriteBlocked = null,
+} = {}) {
+  return {
+    canonical_target: 'vvault_body_transcripts',
+    canonical_target_table: 'ovvaults.transcripts',
+    canonical_write_path: 'vvault_api:/api/chatty/transcript/:constructId/message',
+    route_side_canonical_failover_available: false,
+    route_side_canonical_failover_reason: null,
+    connector_fallback_storage: 'local_deferred_fallback',
+    connector_fallback_counts_as_canonical: false,
+    failure_classification: failureClassification,
+    upstream_write_blocked: upstreamWriteBlocked,
+  };
+}
+
+function isLikelyEmailAddress(value) {
+  return typeof value === 'string' && /\S+@\S+\.\S+/.test(value.trim());
+}
+
+function buildConversationLookupContext({
+  userEmail = null,
+  supabaseUserId = null,
+  userId = null,
+} = {}) {
+  const normalizedEmail = isLikelyEmailAddress(userEmail) ? userEmail.trim() : null;
+  const rawSupabaseUserId = String(supabaseUserId || '').trim();
+  const normalizedSupabaseUserId = UUID_LOOKUP_RE.test(rawSupabaseUserId)
+    ? rawSupabaseUserId
+    : null;
+  const normalizedUserId = String(userId || '').trim() || normalizedEmail || normalizedSupabaseUserId || null;
+  return {
+    userEmail: normalizedEmail,
+    supabaseUserId: normalizedSupabaseUserId,
+    userId: normalizedUserId,
+  };
+}
+
+async function lookupChattyRouteEmailRecord(queryFactory, timeoutMs) {
+  let timeoutId = null;
+  try {
+    const queryPromise = Promise.resolve().then(queryFactory);
+    const timeoutPromise = new Promise((resolve) => {
+      timeoutId = setTimeout(() => resolve({ __timedOut: true }), timeoutMs);
+    });
+    const result = await Promise.race([queryPromise, timeoutPromise]);
+    return result?.__timedOut ? null : result;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+async function resolveCanonicalRouteUserEmail({
+  req,
+  authenticatedUserId = null,
+  dataOwnerUserId = null,
+  preferredEmail = null,
+  ignoreRequestEmail = false,
+} = {}) {
+  if (isLikelyEmailAddress(preferredEmail)) {
+    return preferredEmail.trim();
+  }
+
+  const directCandidates = [
+    ignoreRequestEmail ? null : req?.user?.email,
+    req?.sharedAuthUser?.email,
+  ];
+  for (const candidate of directCandidates) {
+    if (isLikelyEmailAddress(candidate)) {
+      return candidate.trim();
+    }
+  }
+
+  const readyState = Number(
+    User?.db?.readyState ??
+      User?.collection?.conn?.readyState ??
+      0
+  );
+  if (readyState !== 1) {
+    return null;
+  }
+
+  const lookupIds = Array.from(new Set(
+    [
+      authenticatedUserId,
+      dataOwnerUserId,
+      req?.user?.id,
+      req?.user?.sub,
+      req?.user?.uid,
+    ]
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter(Boolean)
+  ));
+
+  if (!lookupIds.length) {
+    return null;
+  }
+
+  const timeoutMs = normalizeTimeoutMs(
+    process.env.VVAULT_REQUEST_USER_EMAIL_LOOKUP_TIMEOUT_MS,
+    500,
+  );
+
+  for (const lookupId of lookupIds) {
+    const registryProfile = await lookupChattyRouteEmailRecord(
+      () => getUserProfile(lookupId),
+      timeoutMs,
+    );
+    if (isLikelyEmailAddress(registryProfile?.email)) {
+      return registryProfile.email.trim();
+    }
+
+    const byLegacyId = await lookupChattyRouteEmailRecord(
+      () => User.findOne({ id: lookupId }).select('email').lean().exec(),
+      timeoutMs,
+    );
+    if (isLikelyEmailAddress(byLegacyId?.email)) {
+      return byLegacyId.email.trim();
+    }
+
+    if (/^[0-9a-f]{24}$/i.test(lookupId)) {
+      const byObjectId = await lookupChattyRouteEmailRecord(
+        () => User.findById(lookupId).select('email').lean().exec(),
+        timeoutMs,
+      );
+      if (isLikelyEmailAddress(byObjectId?.email)) {
+        return byObjectId.email.trim();
+      }
+    }
+  }
+
+  return null;
+}
+
+function classifyTranscriptPersistenceFailure(details = {}) {
+  if (details?.reason === 'write_transcript_unavailable') {
+    return {
+      failureClassification: 'route_write_path_unavailable',
+      upstreamWriteBlocked: false,
+    };
+  }
+
+  return {
+    failureClassification: 'upstream_write_unavailability',
+    upstreamWriteBlocked: true,
+  };
+}
+
+function buildTranscriptPersistenceFailurePayload({
+  userId,
+  user,
+  constructId,
+  rawConstructId,
+  canonicalConstructId,
+  message,
+  threadId,
+  sessionId,
+  hasImages,
+  previewMode,
+  gptConfig,
+  enrichedContext,
+  retrievalDiagnostics,
+  promptDiagnostics,
+  providerTrace,
+  validatorDebug,
+  runtimeReceipt,
+  details,
+}) {
+  const persistenceClassification = classifyTranscriptPersistenceFailure(details);
+  const failureRuntimeReceipt = {
+    ...runtimeReceipt,
+    persistence_owner: 'blocked_transcript_persistence',
+    persistence: {
+      attempted: true,
+      status: 'fail',
+      code: details?.code || 'TRANSCRIPT_PERSISTENCE_UNAVAILABLE',
+      reason: details?.reason || 'transcript_persistence_failed',
+      message: details?.message || 'Transcript persistence temporarily unavailable.',
+      error: details?.error || 'Transcript persistence temporarily unavailable.',
+      timeout_ms: details?.timeout_ms || null,
+      bounded: Boolean(details?.bounded),
+      stage: details?.stage || null,
+      partial_write_risk: Boolean(details?.partial_write_risk),
+      roles: Array.isArray(details?.roles) ? details.roles : [],
+      ...buildCanonicalPersistenceSemantics(persistenceClassification),
+    },
+    fidelity: {
+      ...(runtimeReceipt?.fidelity || {}),
+      identity_coherence: {
+        ...(runtimeReceipt?.fidelity?.identity_coherence || {}),
+        blocked_canonical_persistence: true,
+        persist_canonical: false,
+      },
+    },
+  };
+
+  const failureChecklist = buildOrchestrationChecklist({
+    userId,
+    user,
+    constructId,
+    threadId: sessionId || threadId || `${constructId}_chat_with_${constructId}`,
+    userMessage: message,
+    gptConfig,
+    enrichedContext,
+    retrievalDiagnostics,
+    promptDiagnostics,
+    providerTrace,
+    validatorDebug,
+    runtimeReceipt: failureRuntimeReceipt,
+    contextMode: enrichedContext?.context_recovery_profile || 'standard',
+    relationalTurn: false,
+    lowComplexityTurn: true,
+    hasImages,
+    skipPersistence: false,
+    previewMode,
+    requestedConstructId: rawConstructId,
+    canonicalConstructId: canonicalConstructId || constructId,
+    responseStatus: 'transcript_persistence_failed',
+  });
+
+  return {
+    ok: false,
+    success: false,
+    constructId,
+    construct_id: constructId,
+    code: details?.code || 'TRANSCRIPT_PERSISTENCE_UNAVAILABLE',
+    error: details?.error || 'Transcript persistence temporarily unavailable.',
+    message: details?.message || 'Transcript persistence temporarily unavailable.',
+    provider_used: runtimeReceipt?.provider?.final_provider || runtimeReceipt?.provider?.provider || null,
+    model: runtimeReceipt?.provider?.model || null,
+    runtime_receipt: failureRuntimeReceipt,
+    orchestration_checklist: failureChecklist,
+    has_images: hasImages,
+  };
+}
+
+function sendSerializedJson(res, statusCode, payload, label = 'response') {
+  try {
+    const body = JSON.stringify(payload);
+    console.log(`📤 [VVAULT Proxy] Sending ${label} (${statusCode}) with ${Buffer.byteLength(body, 'utf8')} bytes`);
+    return res
+      .status(statusCode)
+      .type('application/json; charset=utf-8')
+      .send(body);
+  } catch (error) {
+    console.error(`❌ [VVAULT Proxy] Failed to serialize ${label}:`, error?.message || String(error));
+    const fallbackPayload = {
+      ok: false,
+      success: false,
+      code: payload?.code || 'SERIALIZATION_FAILED',
+      error: payload?.error || 'Failed to serialize response payload.',
+      message: payload?.message || 'Failed to serialize response payload.',
+      construct_id: payload?.construct_id || payload?.constructId || null,
+      runtime_receipt: payload?.runtime_receipt
+        ? {
+            construct_id: payload.runtime_receipt.construct_id || null,
+            persistence_owner: payload.runtime_receipt.persistence_owner || null,
+            persistence: payload.runtime_receipt.persistence || null,
+          }
+        : null,
+      orchestration_checklist: payload?.orchestration_checklist
+        ? {
+            responseStatus: payload.orchestration_checklist.responseStatus || null,
+            overallStatus: payload.orchestration_checklist.overallStatus || null,
+            summary: payload.orchestration_checklist.summary || null,
+          }
+        : null,
+      has_images: payload?.has_images ?? false,
+    };
+    const fallbackBody = JSON.stringify(fallbackPayload);
+    console.log(`📤 [VVAULT Proxy] Sending fallback ${label} (${statusCode}) with ${Buffer.byteLength(fallbackBody, 'utf8')} bytes`);
+    return res
+      .status(statusCode)
+      .type('application/json; charset=utf-8')
+      .send(fallbackBody);
+  }
+}
+
+async function buildEnrichedContextPromptWithRecovery({
+  res,
+  authReceipt,
+  userId,
+  user,
+  constructId,
+  rawConstructId,
+  canonicalConstructId,
+  message,
+  gptConfig,
+  threadId,
+  sessionId,
+  timezone,
+  systemPromptOverride,
+  previewMode = false,
+  previewDraft = null,
+  suppressedSystemPromptOverride = false,
+  identityBundle = null,
+  requestedSeat = null,
+  hasImages = false,
+  skipPersistence = false,
+  contextBudgetProfile = null,
+  codingIntent = false,
+  policyOrReceiptIntent = false,
+  suppressTranscriptLawIntent = false,
+  runtimeTurnState = null,
+  continuityClass = null,
+  continuityResume = null,
+}) {
+  const contextArgs = {
+    userId,
+    constructId,
+    userMessage: message,
+    systemPromptOverride,
+    gptConfig,
+    user,
+    threadId: threadId || sessionId || `${constructId}_chat_with_${constructId}`,
+    timezone,
+    previewMode,
+    previewDraft,
+    suppressedSystemPromptOverride,
+    identityBundle,
+    requestedSeat,
+    hasImages,
+    contextBudgetProfile,
+    codingIntent,
+    policyOrReceiptIntent,
+    suppressTranscriptLawIntent,
+    runtimeTurnState,
+    continuityClass,
+    continuityResume,
+  };
+
+  const boundedZenSmalltalkContext = shouldUseBoundedZenSmalltalkContext({
+    constructId,
+    requestedSeat,
+    userMessage: message,
+    previewMode,
+    hasImages,
+  });
+
+  if (!boundedZenSmalltalkContext) {
+    return buildEnrichedContextPrompt(contextArgs);
+  }
+
+  const timeoutMs = normalizeTimeoutMs(process.env.ZEN_BOUNDED_CONTEXT_TIMEOUT_MS, 6000);
+  const outcome = await withRouteTimeoutResult(
+    buildEnrichedContextPrompt(contextArgs),
+    timeoutMs,
+    'bounded_zen_smalltalk_context',
+  );
+
+  if (outcome.status === 'ok') {
+    return outcome.value;
+  }
+
+  const payload = buildContextBuildFailurePayload({
+    authReceipt,
+    userId,
+    user,
+    constructId,
+    rawConstructId,
+    canonicalConstructId,
+    gptConfig,
+    message,
+    threadId,
+    sessionId,
+    hasImages,
+    previewMode,
+    skipPersistence,
+    identityBundle,
+    details: {
+      status: outcome.status,
+      timeout_ms: timeoutMs,
+      reason: outcome.status === 'timeout' ? 'bounded_zen_smalltalk_context_timeout' : 'bounded_zen_smalltalk_context_error',
+      recovery_profile: 'zen_smalltalk_bounded',
+      remote_history_skipped: true,
+      error: outcome.error || 'Context build temporarily unavailable',
+    },
+  });
+  console.error(`❌ [VVAULT Proxy] Context build failed for ${constructId}:`, payload.details);
+  res.status(503).json(payload);
+  return null;
 }
 
 // tool-events route defined AFTER requireAuth below
@@ -212,20 +1622,58 @@ async function loadAIMetadata(constructCallsign, userId) {
       console.warn('⚠️ [VVAULT Metadata] Supabase fetch failed:', error.message);
       return null;
     }
+    const isZen = canonical === 'zen-001';
+    if (!data && isZen) {
+      return {
+        id: null,
+        constructCallsign: canonical,
+        model: null,
+        provider: null,
+        tags: ['coding'],
+        categories: ['developer-tools'],
+        capabilities: ['coding', 'analysis'],
+        systemPromptOverride: null,
+        configJson: null,
+        avatarUrl: null,
+        coderModel: DEFAULT_CODER_MODEL,
+        coderProvider: DEFAULT_CODER_PROVIDER,
+      };
+    }
     if (!data) return null;
     const caps = typeof data.capabilities === 'string' ? (() => { try { return JSON.parse(data.capabilities); } catch { return data.capabilities; } })() : data.capabilities || {};
     const configJson = typeof data.config_json === 'string' ? (() => { try { return JSON.parse(data.config_json); } catch { return null; } })() : data.config_json || null;
+    const defaultCaps = isZen ? ['coding', 'analysis'] : [];
+    const normalizedCaps = Array.isArray(caps)
+      ? caps
+      : typeof caps === 'object' && caps !== null
+        ? Object.keys(caps).filter(Boolean)
+        : [];
+    const mergedCaps = Array.from(new Set([...(normalizedCaps || []), ...defaultCaps])).filter(Boolean);
+    const mergedTags = Array.from(new Set([...(data.tags || []), ...(isZen ? ['coding'] : [])])).filter(Boolean);
+    const mergedCategories = Array.from(new Set([...(data.categories || []), ...(isZen ? ['developer-tools'] : [])])).filter(Boolean);
+
+    let coderModel = configJson?.coderModel || null;
+    let coderProvider = configJson?.coderProvider || null;
+    if (!coderModel && isZen) {
+      coderModel = DEFAULT_CODER_MODEL;
+    }
+    if (!coderProvider && isZen) {
+      coderProvider = process.env.DEFAULT_CODER_PROVIDER || 'openrouter';
+    }
+
     return {
       id: data.id,
       constructCallsign: data.construct_call_sign || canonical,
       model: data.model || null,
       provider: data.provider || null,
-      tags: data.tags || [],
-      categories: data.categories || [],
-      capabilities: caps,
+      tags: mergedTags,
+      categories: mergedCategories,
+      capabilities: mergedCaps,
       systemPromptOverride: data.system_prompt_override || null,
       configJson,
       avatarUrl: data.avatar_url || null,
+      coderModel,
+      coderProvider,
     };
   } catch (err) {
     console.warn('⚠️ [VVAULT Metadata] Error loading AIS metadata:', err.message);
@@ -233,8 +1681,171 @@ async function loadAIMetadata(constructCallsign, userId) {
   }
 }
 
+async function loadLocalAIMetadata(constructCallsign, candidateUserIds = []) {
+  const canonical = canonicalizeConstructId(constructCallsign);
+  if (!canonical) return null;
+  const aiManager = AIManager.getInstance();
+  const candidates = Array.from(
+    new Set(
+      candidateUserIds
+        .map((value) => String(value || '').trim())
+        .filter(Boolean),
+    ),
+  );
+
+  for (const candidateUserId of candidates) {
+    const ai = await aiManager.getAIByCallsign(canonical, candidateUserId);
+    if (!ai) continue;
+    return {
+      id: ai.id,
+      constructCallsign: ai.constructCallsign || canonical,
+      model: ai.modelId || ai.conversationModel || null,
+      provider: ai.provider || null,
+      tags: ai.tags || [],
+      categories: ai.categories || [],
+      capabilities: ai.capabilities || {},
+      systemPromptOverride: ai.instructions || null,
+      configJson: ai.configJson || null,
+      avatarUrl: ai.avatarUrl || ai.avatar || null,
+      coderModel: ai.codingModel || null,
+      coderProvider: ai.provider || null,
+    };
+  }
+
+  return null;
+}
+
+async function loadAIMetadataWithRecovery({
+  constructId,
+  userId,
+  authenticatedUserId = null,
+  userMessage,
+  requestedSeat = null,
+  previewMode = false,
+  hasImages = false,
+}) {
+  const boundedZenSmalltalkMetadata = shouldUseBoundedZenSmalltalkContext({
+    constructId,
+    requestedSeat,
+    userMessage,
+    previewMode,
+    hasImages,
+  });
+  const isSyntheticZenMetadataStub = (meta) => (
+    Boolean(meta) &&
+    canonicalizeConstructId(meta.constructCallsign || constructId) === 'zen-001' &&
+    meta.id == null
+  );
+
+  async function loadLocalFallback(profile, baseRecovery = {}) {
+    const localMeta = await loadLocalAIMetadata(constructId, [authenticatedUserId, userId]);
+    if (!localMeta) {
+      return {
+        meta: null,
+        recovery: {
+          attempted: true,
+          applied: false,
+          profile,
+          status: 'local_ai_record_missing',
+          timeout_ms: baseRecovery.timeout_ms ?? null,
+          reason: baseRecovery.reason || null,
+          error: baseRecovery.error || null,
+          fallback_source: null,
+        },
+      };
+    }
+
+    return {
+      meta: localMeta,
+      recovery: {
+        attempted: true,
+        applied: true,
+        profile,
+        status: 'local_ai_record',
+        timeout_ms: baseRecovery.timeout_ms ?? null,
+        reason: baseRecovery.reason || null,
+        error: baseRecovery.error || null,
+        fallback_source: 'local_ai_record',
+      },
+    };
+  }
+
+  if (!boundedZenSmalltalkMetadata) {
+    const primaryMeta = await loadAIMetadata(constructId, userId);
+    if (primaryMeta) {
+      if (isSyntheticZenMetadataStub(primaryMeta)) {
+        const localFallback = await loadLocalFallback('standard', {
+          reason: 'supabase_zen_stub',
+        });
+        if (localFallback.meta) {
+          return localFallback;
+        }
+      }
+      return {
+        meta: primaryMeta,
+        recovery: {
+          attempted: false,
+          applied: false,
+          profile: 'standard',
+          status: 'not_needed',
+          timeout_ms: null,
+          fallback_source: null,
+        },
+      };
+    }
+
+    return loadLocalFallback('standard');
+  }
+
+  const timeoutMs = normalizeTimeoutMs(process.env.ZEN_BOUNDED_METADATA_TIMEOUT_MS, 2500);
+  const outcome = await withRouteTimeoutResult(
+    loadAIMetadata(constructId, userId),
+    timeoutMs,
+    'bounded_zen_smalltalk_metadata',
+  );
+
+  if (outcome.status === 'ok' && outcome.value) {
+    if (isSyntheticZenMetadataStub(outcome.value)) {
+      const localFallback = await loadLocalFallback('zen_smalltalk_bounded', {
+        timeout_ms: timeoutMs,
+        reason: 'bounded_zen_smalltalk_metadata_stub',
+      });
+      if (localFallback.meta) {
+        return localFallback;
+      }
+    }
+    return {
+      meta: outcome.value,
+      recovery: {
+        attempted: true,
+        applied: false,
+        profile: 'zen_smalltalk_bounded',
+        status: 'ok',
+        timeout_ms: timeoutMs,
+        fallback_source: null,
+      },
+    };
+  }
+
+  console.warn(`⚠️ [VVAULT Metadata] Bounded Zen smalltalk metadata recovery engaged for ${constructId}:`, {
+    status: outcome.status,
+    error: outcome.error || null,
+    timeoutMs,
+  });
+
+  return loadLocalFallback('zen_smalltalk_bounded', {
+    timeout_ms: timeoutMs,
+    reason: outcome.status === 'timeout'
+      ? 'bounded_zen_smalltalk_metadata_timeout'
+      : outcome.status === 'ok'
+        ? 'bounded_zen_smalltalk_metadata_empty'
+        : 'bounded_zen_smalltalk_metadata_error',
+    error: outcome.error || null,
+  });
+}
+
 // Identity projection endpoint (service token or user auth)
-router.get('/constructs/:constructCallsign/identity-projection', requireAuthOrServiceToken, async (req, res) => {
+router.get('/constructs/:constructCallsign/identity-projection', requirePreferredAuthOrServiceToken, async (req, res) => {
   try {
     const constructCallsign = req.params.constructCallsign;
     if (!constructCallsign) return res.status(400).json({ ok: false, error: 'Missing constructCallsign' });
@@ -247,7 +1858,7 @@ router.get('/constructs/:constructCallsign/identity-projection', requireAuthOrSe
 });
 
 // Fast, batched identity fetch for GPTCreator hydration
-router.get('/constructs/:constructCallsign/identity-compact', requireAuthOrServiceToken, async (req, res) => {
+router.get('/constructs/:constructCallsign/identity-compact', requirePreferredAuthOrServiceToken, async (req, res) => {
   try {
     const constructCallsign = canonicalizeConstructId(req.params.constructCallsign);
     if (!constructCallsign) return res.status(400).json({ ok: false, error: 'Missing constructCallsign' });
@@ -259,7 +1870,7 @@ router.get('/constructs/:constructCallsign/identity-compact', requireAuthOrServi
       return res.json(cached);
     }
 
-    const { supabaseUserId } = await resolveRequestUser(req).catch(() => ({ supabaseUserId: null }));
+    const { supabaseUserId } = await resolveVvaultRequestUser(req).catch(() => ({ supabaseUserId: null }));
     const identity = await loadCanonicalConstructIdentity({
       constructId: constructCallsign,
       supabaseUserId: supabaseUserId || null,
@@ -289,7 +1900,7 @@ router.get('/constructs/:constructCallsign/identity-compact', requireAuthOrServi
 });
 
 // Lightweight knowledge summary for preview hydration
-router.get('/constructs/:constructCallsign/files/summary', requireAuthOrServiceToken, async (req, res) => {
+router.get('/constructs/:constructCallsign/files/summary', requirePreferredAuthOrServiceToken, async (req, res) => {
   try {
     const constructCallsign = canonicalizeConstructId(req.params.constructCallsign);
     if (!constructCallsign) return res.status(400).json({ ok: false, error: 'Missing constructCallsign' });
@@ -5129,141 +6740,370 @@ router.get("/chat/:sessionId", requireAuth, async (req, res) => {
   const { supabaseUserId, chattyUserId } = resolved;
   const userEmail = req.user?.email || "unknown";
   const lookupId = supabaseUserId || (userEmail !== "unknown" ? userEmail : chattyUserId);
+  const linkedVvaultUserId = await resolveLinkedVvaultUserId({
+    userModel: User,
+    userLookupId: chattyUserId,
+    initialVvaultUserId: req.user?.vvaultUserId,
+    logger: console,
+  });
+  const conversationIndexLookupId = linkedVvaultUserId || supabaseUserId || lookupId;
+  const conversationIndexLookupIds = buildConversationIndexLookupCandidates([
+    supabaseUserId,
+    linkedVvaultUserId,
+    req.user?.uid,
+    chattyUserId,
+    resolved.userId,
+  ]);
+  const localDeferredLookupIds = buildLocalDeferredLookupCandidates([
+    userEmail !== "unknown" ? userEmail : null,
+    supabaseUserId,
+    linkedVvaultUserId,
+    req.user?.uid,
+    chattyUserId,
+    resolved.userId,
+  ]);
+  const strictVvaultOnly = isCanonicalZenSession(sessionId);
 
   try {
     await loadVVAULTModules();
     console.log(`📚 [VVAULT API] Loading chat ${sessionId} for user: ${lookupId?.slice?.(0, 8) || lookupId}`);
-    
-    // Try PostgreSQL database first (Replit mode)
-    if (process.env.DATABASE_URL && readConversations) {
-      const conversations = await readConversations(lookupId);
-      
-      // Extract constructId from normalized thread ID (e.g., "zen-001_chat_with_zen-001" -> "zen-001")
-      const constructIdFromSession = sessionId.split('_chat_with_')[0] || sessionId.split('_')[0];
-      
-      const conversation = conversations.find(c => 
-        c.sessionId === sessionId || 
-        c.constructId === constructIdFromSession ||
-        c.constructCallsign === constructIdFromSession ||
-        sessionId.includes(c.sessionId) ||
-        c.sessionId?.includes(sessionId.split('_')[0])
-      );
-      
-      if (conversation) {
-        const content = (conversation.messages || [])
-          .map(m => `**${m.role === 'user' ? 'You' : 'Zen'}:** ${m.content}`)
-          .join('\n\n');
-        console.log(`✅ [VVAULT API] Loaded chat from PostgreSQL with ${conversation.messages?.length || 0} messages`);
-        return res.json({ ok: true, content, messages: conversation.messages || [] });
-      }
-      console.log(`⚠️ [VVAULT API] Chat not found in PostgreSQL, session: ${sessionId}, constructId: ${constructIdFromSession}`);
-      return res.json({ ok: true, content: "", messages: [] });
-    }
-    
-    // Fallback to filesystem if VVAULT_ROOT is configured
-    if (!VVAULT_ROOT) {
-      console.log(`ℹ️ [VVAULT API] No VVAULT_ROOT - returning empty for new chat`);
-      return res.json({ ok: true, content: "", messages: [] });
-    }
-
-    if (!supabaseUserId) {
-      return res.status(400).json({ ok: false, error: "Failed to resolve Supabase user ID" });
-    }
-
-    const sanitizedSessionId = sessionId.replace(/[^a-zA-Z0-9_-]/g, "");
-    const [constructIdCandidate] = sanitizedSessionId.split("_chat_with_");
-    const constructId = constructIdCandidate || sanitizedSessionId;
-    const fileName = `chat_with_${constructId}.md`;
-    const fs = require("fs").promises;
-    const transcriptPath = path.join(
-      VVAULT_ROOT,
-      "users",
-      "shard_0000",
+    const payload = await resolveCanonicalTranscriptPayload({
+      sessionId,
+      lookupId,
+      conversationIndexLookupId,
+      conversationIndexLookupIds,
+      localDeferredLookupIds,
+      userEmail,
       supabaseUserId,
-      "instances",
-      constructId,
-      "chatty",
-      fileName
+      vvaultRoot: strictVvaultOnly ? null : VVAULT_ROOT,
+      parseMarkdownTranscript,
+      readConversations,
+      readConversationIndexFromSupabase: strictVvaultOnly ? null : readConversationIndexFromSupabase,
+      readLocalDeferredConversations: strictVvaultOnly ? null : readLocalDeferredConversations,
+      allowDegradedFallback: strictVvaultOnly ? false : true,
+      vvaultOnly: strictVvaultOnly,
+    });
+    const responsePayload = buildChatTranscriptResponse(payload);
+    console.log(
+      `✅ [VVAULT API] Returning ${responsePayload.source} chat payload with ${responsePayload.messages?.length || 0} messages`,
     );
-
-    let content;
-    try {
-      content = await fs.readFile(transcriptPath, "utf8");
-    } catch (primaryErr) {
-      if (primaryErr.code === 'ENOENT') {
-        const legacyName = constructId.replace(/-\d+$/, '');
-        if (legacyName !== constructId) {
-          const legacyPath = path.join(
-            VVAULT_ROOT, "users", "shard_0000", supabaseUserId,
-            "instances", legacyName, "chatty", fileName
-          );
-          try {
-            content = await fs.readFile(legacyPath, "utf8");
-            console.log(`📂 [VVAULT API] Found transcript at legacy path: instances/${legacyName}/chatty/`);
-          } catch (legacyErr) {
-            throw primaryErr;
-          }
-        } else {
-          throw primaryErr;
-        }
-      } else {
-        throw primaryErr;
-      }
-    }
-    return res.json({ ok: true, content });
+    return res.json(responsePayload);
   } catch (error) {
-    if (error?.code === "ENOENT") {
-      return res.json({ ok: true, content: "", messages: [] });
+    if (error instanceof CanonicalTranscriptError && error.code === "CANONICAL_TRANSCRIPT_NOT_FOUND") {
+      if (strictVvaultOnly) {
+        return res.status(error.status || 404).json({
+          ok: false,
+          error: error.message,
+          errorCode: error.code,
+          details: error.details || null,
+        });
+      }
+      return res.json({ ok: true, content: "", messages: [], source: "empty" });
     }
     console.error(`❌ [VVAULT API] Failed to load transcript for ${sessionId}:`, error);
     return res.status(500).json({ ok: false, error: error?.message || "Failed to load transcript" });
   }
 });
 
+router.get("/conversations/:sessionId/canonical-transcript", requirePreferredAuth, async (req, res) => {
+  const { sessionId } = req.params;
+  if (!sessionId) {
+    return res.status(400).json({ ok: false, error: "sessionId is required" });
+  }
+
+  const resolved = await resolveRequestUserForVvault(res, req);
+  if (!resolved) return;
+  const { supabaseUserId, chattyUserId } = resolved;
+  const userEmail = req.user?.email || "unknown";
+  const lookupId = supabaseUserId || (userEmail !== "unknown" ? userEmail : chattyUserId);
+  const linkedVvaultUserId = await resolveLinkedVvaultUserId({
+    userModel: User,
+    userLookupId: chattyUserId,
+    initialVvaultUserId: req.user?.vvaultUserId,
+    logger: console,
+  });
+  const conversationIndexLookupId = linkedVvaultUserId || supabaseUserId || lookupId;
+  const conversationIndexLookupIds = buildConversationIndexLookupCandidates([
+    supabaseUserId,
+    linkedVvaultUserId,
+    req.user?.uid,
+    chattyUserId,
+    resolved.userId,
+  ]);
+  const localDeferredLookupIds = buildLocalDeferredLookupCandidates([
+    userEmail !== "unknown" ? userEmail : null,
+    supabaseUserId,
+    linkedVvaultUserId,
+    req.user?.uid,
+    chattyUserId,
+    resolved.userId,
+  ]);
+  const strictVvaultOnly = isCanonicalZenSession(sessionId);
+
+  try {
+    await loadVVAULTModules();
+    const payload = await resolveCanonicalTranscriptPayload({
+      sessionId,
+      lookupId,
+      conversationIndexLookupId,
+      conversationIndexLookupIds,
+      localDeferredLookupIds,
+      userEmail,
+      supabaseUserId,
+      vvaultRoot: strictVvaultOnly ? null : VVAULT_ROOT,
+      parseMarkdownTranscript,
+      readConversations,
+      readConversationIndexFromSupabase: strictVvaultOnly ? null : readConversationIndexFromSupabase,
+      readLocalDeferredConversations: strictVvaultOnly ? null : readLocalDeferredConversations,
+      allowDegradedFallback: false,
+      vvaultOnly: strictVvaultOnly,
+    });
+    return res.json({ ok: true, ...payload });
+  } catch (error) {
+    if (error instanceof CanonicalTranscriptError) {
+      return res.status(error.status || 500).json({
+        ok: false,
+        error: error.message,
+        errorCode: error.code,
+        details: error.details || null,
+      });
+    }
+    console.error(`❌ [VVAULT API] Failed to resolve canonical transcript for ${sessionId}:`, error);
+    return res.status(500).json({ ok: false, error: error?.message || "Failed to load canonical transcript" });
+  }
+});
+
+router.get("/conversations/:sessionId/export", requirePreferredAuth, async (req, res) => {
+  const { sessionId } = req.params;
+  const format = String(req.query?.format || "").trim().toLowerCase();
+  if (!sessionId) {
+    return res.status(400).json({ ok: false, error: "sessionId is required" });
+  }
+  if (!["md", "pdf", "docx"].includes(format)) {
+    return res.status(400).json({ ok: false, error: "format must be one of md, pdf, or docx" });
+  }
+
+  const resolved = await resolveRequestUserForVvault(res, req);
+  if (!resolved) return;
+  const { supabaseUserId, chattyUserId } = resolved;
+  const userEmail = req.user?.email || "unknown";
+  const lookupId = supabaseUserId || (userEmail !== "unknown" ? userEmail : chattyUserId);
+  const linkedVvaultUserId = await resolveLinkedVvaultUserId({
+    userModel: User,
+    userLookupId: chattyUserId,
+    initialVvaultUserId: req.user?.vvaultUserId,
+    logger: console,
+  });
+  const conversationIndexLookupId = linkedVvaultUserId || supabaseUserId || lookupId;
+  const conversationIndexLookupIds = buildConversationIndexLookupCandidates([
+    supabaseUserId,
+    linkedVvaultUserId,
+    req.user?.uid,
+    chattyUserId,
+    resolved.userId,
+  ]);
+  const localDeferredLookupIds = buildLocalDeferredLookupCandidates([
+    userEmail !== "unknown" ? userEmail : null,
+    supabaseUserId,
+    linkedVvaultUserId,
+    req.user?.uid,
+    chattyUserId,
+    resolved.userId,
+  ]);
+  const strictVvaultOnly = isCanonicalZenSession(sessionId);
+
+  try {
+    await loadVVAULTModules();
+    const payload = await resolveCanonicalTranscriptPayload({
+      sessionId,
+      lookupId,
+      conversationIndexLookupId,
+      conversationIndexLookupIds,
+      localDeferredLookupIds,
+      userEmail,
+      supabaseUserId,
+      vvaultRoot: strictVvaultOnly ? null : VVAULT_ROOT,
+      parseMarkdownTranscript,
+      readConversations,
+      readConversationIndexFromSupabase: strictVvaultOnly ? null : readConversationIndexFromSupabase,
+      readLocalDeferredConversations: strictVvaultOnly ? null : readLocalDeferredConversations,
+      allowDegradedFallback: false,
+      vvaultOnly: strictVvaultOnly,
+    });
+    const artifact = await buildCanonicalTranscriptArtifact(payload, format);
+    const filename = buildCanonicalTranscriptFilename(payload, format);
+    res.setHeader("Content-Type", artifact.contentType);
+    res.setHeader("Content-Disposition", `attachment; filename=\"${filename}\"`);
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).send(artifact.buffer);
+  } catch (error) {
+    if (error instanceof CanonicalTranscriptError) {
+      return res.status(error.status || 500).json({
+        ok: false,
+        error: error.message,
+        errorCode: error.code,
+        details: error.details || null,
+      });
+    }
+    console.error(`❌ [VVAULT API] Failed to export canonical transcript for ${sessionId}:`, error);
+    return res.status(500).json({ ok: false, error: error?.message || "Failed to export canonical transcript" });
+  }
+});
+
 /**
  * POST /vvault/message - Proxy to VVAULT's /api/chatty/message for LLM inference
- * 
+ *
  * Chatty should call this endpoint to send messages, which proxies to VVAULT.
  * VVAULT handles: LLM inference (Ollama), transcript saving, memory management.
- * 
+ *
  * Request body:
  * - constructId: string (e.g., "zen-001")
  * - message: string (user's message)
  * - userId?: string (optional, uses authenticated user if not provided)
- * 
+ *
  * Response:
  * - success: boolean
  * - response: string (LLM response)
  * - construct_id: string
  */
-router.post("/message", async (req, res) => {
+export async function handleConstructInference(req, res) {
   let userId;
+  let authRecovered = false;
+  let supabaseSessionUserId = null;
+  let authSource = 'supabase_session';
+  const authHeader = (req?.headers?.authorization || '').toString();
+  const hasSupabaseAuthHeader = authHeader.toLowerCase().startsWith('bearer ');
+  const hasReqUser = !!req?.user;
   try {
     const user = await resolveSupabaseUser(req);
     userId = user.id;
+    supabaseSessionUserId = user.id;
   } catch {
-    return res.status(401).json({ ok: false, error: "Authentication required" });
+    // Dev fallback: allow app JWT when Supabase session isn't present (non-prod only)
+    if (process.env.NODE_ENV !== 'production' && (req?.user?.id || req?.user?.sub)) {
+      userId = req.user.id || req.user.sub;
+      authRecovered = true;
+      authSource = 'app_jwt_dev_fallback';
+      console.warn(`[VVAULT Auth] Supabase session missing; dev fallback to app JWT for user ${userId}`);
+    } else {
+      return res.status(401).json({ ok: false, error: "Authentication required" });
+    }
   }
+
+  const devDataOwnerOverride =
+    process.env.NODE_ENV !== 'production' &&
+    typeof process.env.CHATTY_DEV_DATA_OWNER_SUPABASE_USER_ID === 'string' &&
+    /^[0-9a-f-]{36}$/i.test(process.env.CHATTY_DEV_DATA_OWNER_SUPABASE_USER_ID.trim())
+      ? process.env.CHATTY_DEV_DATA_OWNER_SUPABASE_USER_ID.trim()
+      : null;
+  let dataOwnerUserId = devDataOwnerOverride || userId;
+  let dataOwnerSource = devDataOwnerOverride ? 'dev_env_supabase_user_override' : authSource;
+  const authReceipt = {
+    auth_email: req.user?.email || null,
+    auth_provider: req.user?.auth_provider || null,
+    auth_source: authSource,
+    auth_user_id: req.user?.id || req.user?.sub || null,
+    supabase_session_user_id: supabaseSessionUserId,
+    data_owner_user_id: dataOwnerUserId || null,
+    data_owner_source: dataOwnerSource,
+    memory_lookup_user_id: dataOwnerUserId || null,
+    dev_auth_fallback: !!authRecovered,
+    dev_data_owner_override: !!devDataOwnerOverride,
+    data_owner_matches_auth: Boolean(dataOwnerUserId && dataOwnerUserId === userId),
+    canonical_construct_owner: null,
+  };
+  console.log('[VVAULT_AUTH]', {
+    hasSupabaseAuthHeader,
+    hasReqUser,
+    userId,
+    dataOwnerUserId,
+    authSource,
+    dataOwnerSource,
+    env: process.env.NODE_ENV
+  });
 
   const {
     constructId: rawConstructId,
+    __canonicalConstructId,
     message: incomingMessage,
     threadId,
     sessionId,
     attachments,
+    projectName,
+    rootPath,
+    transcriptPath,
+    runtime,
+    chatMode,
+    planMode,
+    agentId,
+    agentLabel,
+    model: requestModelOverride,
+    provider: requestProviderOverride,
+    modelKey,
+    modelLabel,
     systemPromptOverride,
     skipPersistence,
+    previewMode = false,
+    previewDraft = null,
+    transientHistory = [],
     continueTurn = false,
+    linearTranscriptLawGate = false,
+    linearTranscriptLawTurnKind = null,
+    zenOrdinaryVoiceGate = false,
+    orchestrationProfile = null,
+    assignmentProfile = null,
+    expectedTurn = null,
+    assignmentTurn = null,
+    evidencePacket = null,
+    continuity_expected = false,
+    resume_from_turn_id = null,
+    resume_from_continuity_seq = null,
+    resume_tail_hash = null,
+    resume_construct_revision = null,
+    resume_source_seat = null,
   } = req.body || {};
 
   if (!rawConstructId) {
     return res.status(400).json({ success: false, error: "Missing constructId" });
   }
 
-  const canonicalConstructId = canonicalizeConstructId(rawConstructId);
+  const canonicalConstructId = __canonicalConstructId || canonicalizeConstructId(rawConstructId);
   let constructId = canonicalConstructId || rawConstructId;
-  if (!canonicalConstructId) {
+  if (!canonicalConstructId && !__canonicalConstructId) {
     console.warn(`[VVAULT Proxy] constructId canonicalization failed for "${rawConstructId}", using raw value`);
+  }
+
+  const canonicalOwnerResolution = resolveCanonicalConstructDataOwner({
+    constructId,
+    threadId,
+    sessionId,
+    transcriptPath,
+    projectName,
+    requestedDataOwnerUserId: dataOwnerUserId,
+    requestedDataOwnerSource: dataOwnerSource,
+    authenticatedUserId: userId,
+  });
+  dataOwnerUserId = canonicalOwnerResolution.dataOwnerUserId || dataOwnerUserId;
+  dataOwnerSource = canonicalOwnerResolution.dataOwnerSource || dataOwnerSource;
+  authReceipt.data_owner_user_id = dataOwnerUserId || null;
+  authReceipt.data_owner_source = dataOwnerSource;
+  authReceipt.memory_lookup_user_id = dataOwnerUserId || null;
+  authReceipt.data_owner_matches_auth = Boolean(dataOwnerUserId && dataOwnerUserId === userId);
+  authReceipt.canonical_construct_owner = canonicalOwnerResolution.receipt || null;
+  if (canonicalOwnerResolution.applied) {
+    console.log('[VVAULT_AUTH] Canonical construct owner applied', canonicalOwnerResolution.receipt);
+  }
+
+  const effectiveRequestUserEmail = await resolveCanonicalRouteUserEmail({
+    req,
+    authenticatedUserId: userId,
+    dataOwnerUserId,
+    preferredEmail: canonicalOwnerResolution.receipt?.canonicalOwnerEmail || null,
+    ignoreRequestEmail: canonicalOwnerResolution.applied === true,
+  });
+  if (effectiveRequestUserEmail) {
+    req.user = { ...(req.user || {}), email: effectiveRequestUserEmail };
+    authReceipt.auth_email = effectiveRequestUserEmail;
   }
 
   console.log('[NOVA DIAG]', {
@@ -5298,9 +7138,320 @@ router.post("/message", async (req, res) => {
       : hasImages
         ? imageOnlyCharacterPrompt
         : String(incomingMessage ?? "");
+  const effectiveTurnSessionId = sessionId || threadId || `${constructId}_chat_with_${constructId}`;
+  const normalizedLinearTranscriptLawTurnKind =
+    typeof linearTranscriptLawTurnKind === 'string'
+      ? linearTranscriptLawTurnKind.trim().toLowerCase()
+      : null;
+  const linearTranscriptLawOrdinaryTurn =
+    linearTranscriptLawGate === true &&
+    normalizedLinearTranscriptLawTurnKind === 'ordinary' &&
+    isTranscriptLawSyntheticGateThread(effectiveTurnSessionId);
+  const activeOrchestrationProfile = normalizeOrchestrationProfile(orchestrationProfile);
+  const assignmentQaInput = normalizeAssignmentQaInput({
+    runtime,
+    assignmentProfile,
+    expectedTurn,
+    assignmentTurn,
+    evidencePacket,
+  });
 
   if (!hasTextMessage && !hasImages && continueTurn !== true) {
     return res.status(400).json({ success: false, error: "Missing message content" });
+  }
+
+  const isHydroProjectTurn =
+    (typeof projectName === 'string' && projectName.trim()) ||
+    (typeof rootPath === 'string' && rootPath.trim()) ||
+    (typeof transcriptPath === 'string' && transcriptPath.trim());
+  const canonicalTurnMetadata = {
+    source: isHydroProjectTurn ? 'hydro-code' : 'chatty',
+    projectName: typeof projectName === 'string' && projectName.trim() ? projectName.trim() : undefined,
+    rootPath: typeof rootPath === 'string' && rootPath.trim() ? rootPath.trim() : undefined,
+    transcriptPath: typeof transcriptPath === 'string' && transcriptPath.trim() ? transcriptPath.trim() : undefined,
+    runtime: runtime && typeof runtime === 'object' ? runtime : undefined,
+    chatMode: chatMode === false ? false : true,
+    planMode: planMode === true,
+    agentId: typeof agentId === 'string' ? agentId : undefined,
+    agentLabel: typeof agentLabel === 'string' ? agentLabel : undefined,
+    modelKey: typeof modelKey === 'string' ? modelKey : undefined,
+    modelLabel: typeof modelLabel === 'string' ? modelLabel : undefined,
+  };
+  const continuityResumeRequest = normalizeRuntimeResumeRequest({
+    continuity_expected,
+    resume_from_turn_id,
+    resume_from_continuity_seq,
+    resume_tail_hash,
+    resume_construct_revision,
+    resume_source_seat,
+  });
+  const routeTurnEnvelope = buildRouteTurnEnvelope({
+    sessionId: effectiveTurnSessionId,
+    constructId,
+    continuityExpected: continuityResumeRequest.continuityExpected,
+  });
+  let preloadedTranscriptTruthRows = null;
+  let transcriptTruthLookupId = null;
+  req.runtimeTurnEnvelope = routeTurnEnvelope;
+  res.locals.runtimeTurnEnvelope = routeTurnEnvelope;
+  try {
+    const persistedRuntimeState = await readLatestRuntimeTurnState(
+      buildConversationLookupContext({
+        userEmail: req.user?.email || null,
+        supabaseUserId: UUID_LOOKUP_RE.test(String(dataOwnerUserId || '').trim())
+          ? dataOwnerUserId
+          : supabaseSessionUserId,
+        userId: dataOwnerUserId || req.user?.vvaultUserId || userId,
+      }),
+      {
+        sessionId: effectiveTurnSessionId,
+        constructId,
+        allowLocalFallback: false,
+      },
+    );
+    if (persistedRuntimeState?.runtimeTurnState) {
+      routeTurnEnvelope.runtimeTurnState = persistedRuntimeState.runtimeTurnState;
+      routeTurnEnvelope.persistedStateSource = persistedRuntimeState.source || 'unknown';
+    }
+    console.log('[RUNTIME_TURN_STATE]', {
+      stage: 'loaded',
+      sessionId: effectiveTurnSessionId,
+      constructId,
+      hasState: Boolean(routeTurnEnvelope.runtimeTurnState),
+      source: routeTurnEnvelope.persistedStateSource,
+      state: routeTurnEnvelope.runtimeTurnState,
+    });
+  } catch (runtimeTurnStateErr) {
+    console.warn(`⚠️ [RUNTIME_TURN_STATE] Load failed for ${constructId}: ${runtimeTurnStateErr.message}`);
+  }
+  let continuityResumeValidation = validateRuntimeResumeRequest({
+    runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+    resumeRequest: continuityResumeRequest,
+    sessionId: effectiveTurnSessionId,
+    constructId,
+  });
+  let gptConfig = null;
+  routeTurnEnvelope.continuityExpected =
+    continuityResumeValidation.continuityExpected === true;
+  routeTurnEnvelope.continuityResume = continuityResumeValidation;
+  if (continuityResumeValidation.continuityRestored) {
+    routeTurnEnvelope.runtimeTurnState =
+      continuityResumeValidation.runtimeTurnState || routeTurnEnvelope.runtimeTurnState;
+  }
+  const continuityRecoveryAllowed = canAttemptCanonicalContinuityRecovery({
+    continuityResumeValidation,
+    sessionId: effectiveTurnSessionId,
+    constructId,
+    previewMode,
+    skipPersistence,
+  });
+  if (continuityRecoveryAllowed) {
+    try {
+      await loadVVAULTModules();
+      if (typeof readConversations === 'function') {
+        transcriptTruthLookupId =
+          transcriptTruthLookupId ||
+          buildConversationLookupContext({
+            userEmail: req.user?.email || null,
+            supabaseUserId: UUID_LOOKUP_RE.test(String(dataOwnerUserId || '').trim())
+              ? dataOwnerUserId
+              : supabaseSessionUserId,
+            userId: dataOwnerUserId || req.user?.vvaultUserId || userId,
+          });
+        preloadedTranscriptTruthRows =
+          preloadedTranscriptTruthRows ||
+          await readConversations(transcriptTruthLookupId, constructId, {
+            allowLocalFallback: false,
+          });
+        const preRecoveryTranscriptTruth = buildTranscriptTruthPreflight({
+          readPathAvailable: true,
+          conversations: preloadedTranscriptTruthRows,
+          sessionId: effectiveTurnSessionId,
+          constructId,
+          runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+        });
+        const recoveredRuntimeTurnState = preRecoveryTranscriptTruth.runtimeTurnState || null;
+        if (recoveredRuntimeTurnState) {
+          routeTurnEnvelope.runtimeTurnState = recoveredRuntimeTurnState;
+          routeTurnEnvelope.persistedStateSource = 'canonical_tail_metadata';
+          continuityResumeValidation = validateRuntimeResumeRequest({
+            runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+            resumeRequest: continuityResumeRequest,
+            sessionId: effectiveTurnSessionId,
+            constructId,
+          });
+          routeTurnEnvelope.continuityExpected =
+            continuityResumeValidation.continuityExpected === true;
+          routeTurnEnvelope.continuityResume = continuityResumeValidation;
+        }
+      }
+    } catch (runtimeTurnStateRecoveryErr) {
+      console.warn(
+        `⚠️ [RUNTIME_TURN_STATE] Canonical tail recovery failed for ${constructId}: ${runtimeTurnStateRecoveryErr.message}`,
+      );
+    }
+  }
+  if (
+    continuityResumeValidation.continuityExpected &&
+    !continuityResumeValidation.continuityRestored
+  ) {
+    const receiptConstructName = deriveConstructReceiptName(constructId, gptConfig);
+    const continuityReceipt = buildContinuityProofReceipt({
+      hydration: continuityResumeValidation.hydration,
+      hydrationComplete: continuityResumeValidation.hydrationComplete,
+      resumeValidation: continuityResumeValidation,
+    });
+    const continuityFailureCode = continuityResumeValidation.staleSeatRejected
+      ? 'CONTINUITY_RESUME_STALE'
+      : 'CONTINUITY_RESUME_UNPROVEN';
+    const continuityFailureMessage = continuityResumeValidation.staleSeatRejected
+      ? 'Continuity resume was rejected because this seat is stale. Reload the canonical thread and try again.'
+      : 'Continuity resume could not be proven from the canonical thread tail. Reload the thread and try again.';
+    const continuityFailureReceipt = {
+      created_at: new Date().toISOString(),
+      user_id: dataOwnerUserId || null,
+      auth: authReceipt,
+      construct_id: constructId,
+      effective_construct_id: constructId,
+      effective_construct_name: receiptConstructName,
+      orchestration_mode:
+        gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown',
+      route_mode: 'vvault_message',
+      persistence_owner: 'blocked_continuity_resume',
+      continuity: continuityReceipt,
+      ...continuityReceipt,
+      transcript_truth: {
+        eligible: false,
+        source: 'none',
+        retrieval_status: 'not_required',
+        evidence_count: 0,
+        evidence_sources: [],
+        fallback_rejected: false,
+        hydration_complete: continuityReceipt.hydrationComplete === true,
+      },
+      capsule_runtime: {
+        capsuleLoaded: null,
+        capsuleSource: null,
+        contextProfile: null,
+        continuityFromRuntimeState: false,
+        continuityMemorySource: null,
+      },
+      provider: {
+        final_provider: null,
+        provider: null,
+        model: null,
+        mode: gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown',
+        fallback_used: false,
+      },
+      persistence: {
+        attempted: false,
+        status: 'skipped',
+        code: continuityFailureCode,
+        reason: continuityResumeValidation.failureReason || 'continuity_resume_failed',
+        message: continuityFailureMessage,
+        error: continuityFailureMessage,
+        timeout_ms: null,
+        bounded: false,
+        stage: 'continuity_resume',
+        ...buildCanonicalPersistenceSemantics({
+          failureClassification: 'blocked_continuity_resume',
+          upstreamWriteBlocked: true,
+        }),
+      },
+    };
+    const continuityFailureChecklist = buildOrchestrationChecklist({
+      userId: dataOwnerUserId,
+      user: req.user,
+      constructId,
+      threadId: effectiveTurnSessionId,
+      userMessage: message,
+      gptConfig: {
+        name: receiptConstructName,
+        orchestrationMode:
+          gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown',
+        memoryProfile: gptConfig?.memoryProfile || gptConfig?.memory_profile || 'off',
+      },
+      enrichedContext: {
+        phaseTiming: {
+          identity: { source: 'identity_bundle_preflight' },
+          basePromptSource: 'identity_bundle_preflight',
+          conditioningInjected: false,
+          contextRecovery: {
+            profile: 'blocked_continuity_resume',
+            historySource: continuityResumeValidation.hydration || 'none',
+          },
+          memorySearch: { skipped: true, reason: 'blocked_continuity_resume' },
+          knowledge: { skipped: true, reason: 'blocked_continuity_resume' },
+          capsule: { source: null },
+        },
+        capabilityManifest: {
+          enabled: { proactiveInitiation: false },
+          state: { selfpromptOn: false },
+        },
+        context_profile: null,
+        context_budget: {
+          profile: null,
+          included_sections: [],
+          delayed_sections: ['continuity_resume'],
+        },
+        evidence_count: 0,
+        memory_retrieval_ran: false,
+        memory_query_detected: false,
+        capsuleLoaded: false,
+      },
+      retrievalDiagnostics: {
+        evidence_count: 0,
+        retrieval_counts: { vector: 0, verified: 0, needle: 0, transcript: 0 },
+        phase_timing: {},
+      },
+      promptDiagnostics: {
+        route: '/api/vvault/message',
+        mode: 'continuity_resume_failure',
+        constructId,
+        prompt_source: 'continuity_resume_failure',
+        base_prompt_source: 'identity_bundle_preflight',
+        basePromptSource: 'identity_bundle_preflight',
+        conditioning_appended: false,
+        preview_mode: Boolean(previewMode),
+        skip_persistence: true,
+        final_history_count: 0,
+        prompt_chars: 0,
+      },
+      providerTrace: {
+        final_provider: null,
+        fallback_used: false,
+        attempts: [],
+      },
+      validatorDebug: {},
+      runtimeReceipt: continuityFailureReceipt,
+      contextMode: 'blocked_continuity_resume',
+      relationalTurn: false,
+      lowComplexityTurn: false,
+      hasImages,
+      skipPersistence: true,
+      previewMode,
+      requestedConstructId: rawConstructId,
+      canonicalConstructId: canonicalConstructId || constructId,
+      responseStatus: 'continuity_resume_failed',
+    });
+    console.warn('[RUNTIME_CONTINUITY]', {
+      constructId,
+      threadId: effectiveTurnSessionId,
+      failureCode: continuityFailureCode,
+      validation: continuityResumeValidation,
+    });
+    return res.status(409).json({
+      success: false,
+      ok: false,
+      error: continuityFailureCode,
+      message: continuityFailureMessage,
+      response: continuityFailureMessage,
+      construct_id: constructId,
+      provider_used: null,
+      model: null,
+      runtime_receipt: continuityFailureReceipt,
+      orchestration_checklist: continuityFailureChecklist,
+    });
   }
   if (isSyntheticContinueTurn) {
     console.log("↪️ [VVAULT Proxy] Processing continue-turn without new user text");
@@ -5310,14 +7461,155 @@ router.post("/message", async (req, res) => {
     console.log(`🖼️ [VVAULT Proxy] Vision intent mode: ${explicitVisionIntent ? 'explicit-analysis' : 'character-first'}`);
   }
 
+  const identityBundle = await validateIdentityBundle({
+    userId: dataOwnerUserId,
+    constructId,
+    userEmail: req.user?.email || null,
+    includeUndertone: isLinOrchestratedConstruct(constructId) && !isProtectedZenConstruct(constructId),
+  });
+
+  if (!identityBundle.ok) {
+    const receiptConstructName = constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase());
+    const preflightRuntimeReceipt = {
+      created_at: new Date().toISOString(),
+      user_id: dataOwnerUserId || null,
+      auth: authReceipt,
+      construct_id: constructId,
+      effective_construct_id: constructId,
+      effective_construct_name: receiptConstructName,
+      orchestration_mode: 'unknown',
+      route_mode: 'vvault_message',
+      persistence_owner: 'blocked_identity_preflight',
+      identity: {
+        source: 'identity_bundle_preflight',
+        base_prompt_source: identityBundle.preflight?.identity?.prompt_source || 'unknown',
+        conditioning_appended: false,
+        identity_bundle_hash: null,
+        effective_construct_id: constructId,
+        effective_construct_name: receiptConstructName,
+        selected_construct_id: canonicalConstructId || constructId,
+        raw_construct_id: rawConstructId,
+        preflight: {
+          code: identityBundle.code,
+          error: identityBundle.error,
+          details: identityBundle.details || {},
+          ...(identityBundle.preflight || {}),
+        },
+      },
+      provider: {
+        final_provider: null,
+        provider: null,
+        model: null,
+        mode: 'unknown',
+        fallback_used: false,
+      },
+      memory: {
+        memory_profile: 'off',
+        supabase_accessed: false,
+      },
+      fidelity: {
+        identity_coherence: {
+          status: 'skipped',
+          reasons: [identityBundle.error],
+          signals: [],
+          violations: [],
+          repair_attempted: false,
+          repair_applied: false,
+          persist_canonical: false,
+          owner_file: 'server/lib/identityBundlePreflight.js',
+          source_anchor: 'server/lib/identityBundlePreflight.js:validateIdentityBundle',
+        },
+      },
+    };
+    const preflightEnrichedContext = {
+      phaseTiming: {
+        identity: {
+          source: 'error',
+          error: identityBundle.error,
+          code: identityBundle.code,
+        },
+        basePromptSource: identityBundle.preflight?.identity?.prompt_source || 'identity_bundle_preflight',
+        conditioningInjected: false,
+        memorySearch: { skipped: true, reason: 'identity_bundle_preflight_failed' },
+        knowledge: { skipped: true, reason: 'identity_bundle_preflight_failed' },
+      },
+      capabilityManifest: {
+        enabled: { proactiveInitiation: false },
+        state: { selfpromptOn: false },
+      },
+      evidence_count: 0,
+      memory_retrieval_ran: false,
+      memory_query_detected: false,
+    };
+    const preflightChecklist = buildOrchestrationChecklist({
+      userId: dataOwnerUserId,
+      user: req.user,
+      constructId,
+      threadId: sessionId || threadId || `${constructId}_chat_with_${constructId}`,
+      userMessage: message,
+      gptConfig: {
+        name: receiptConstructName,
+        orchestrationMode: 'unknown',
+      },
+      enrichedContext: preflightEnrichedContext,
+      retrievalDiagnostics: {
+        evidence_count: 0,
+        retrieval_counts: { vector: 0, verified: 0, needle: 0, transcript: 0 },
+        phase_timing: {},
+      },
+      promptDiagnostics: {
+        route: '/api/vvault/message',
+        mode: 'preflight_failure',
+        constructId,
+        prompt_source: 'identity_bundle_preflight',
+        base_prompt_source: identityBundle.preflight?.identity?.prompt_source || 'identity_bundle_preflight',
+        basePromptSource: identityBundle.preflight?.identity?.prompt_source || 'identity_bundle_preflight',
+        conditioning_appended: false,
+        preview_mode: Boolean(previewMode),
+        skip_persistence: true,
+        final_history_count: 0,
+        prompt_chars: 0,
+      },
+      providerTrace: {
+        final_provider: null,
+        fallback_used: false,
+        attempts: [],
+      },
+      validatorDebug: {},
+      runtimeReceipt: preflightRuntimeReceipt,
+      contextMode: 'identity_preflight_failed',
+      relationalTurn: false,
+      lowComplexityTurn: false,
+      hasImages,
+      skipPersistence: true,
+      previewMode,
+      requestedConstructId: rawConstructId,
+      canonicalConstructId: canonicalConstructId || constructId,
+      responseStatus: 'identity_bundle_preflight_failed',
+    });
+    const identityErrorPayload = {
+      ok: false,
+      success: false,
+      constructId,
+      construct_id: constructId,
+      code: identityBundle.code,
+      error: identityBundle.error,
+      details: identityBundle.details,
+      runtime_receipt: preflightRuntimeReceipt,
+      orchestration_checklist: preflightChecklist,
+      has_images: hasImages,
+    };
+    console.error(`❌ [VVAULT Proxy] Identity preflight failed for ${constructId}: ${identityBundle.code}`, identityBundle.details);
+    return res.status(503).json(identityErrorPayload);
+  }
+
   const { vvaultApiBaseUrl } = getVvaultBridgeConfig();
-  
+
   // ALWAYS-ON: Build enriched context locally for ALL messages (Phase 3 of Memory Orchestration Plan)
   // This ensures constructs always have their identity, capsule, transcript memories, and anti-roleplay directives
   // regardless of which LLM provider handles inference
   {
     // Fetch GPT config and Supabase metadata
-    let gptConfig = null;
     let meta = null;
     try {
       gptConfig = await gptManager.getGPTByCallsign(constructId);
@@ -5328,10 +7620,50 @@ router.post("/message", async (req, res) => {
       console.warn(`⚠️ [VVAULT Proxy] Could not fetch GPT config for ${constructId}:`, gptError.message);
     }
 
+    const { codingIntent: earlyCodingIntent } = detectCodingIntent(message);
+    const earlyDetectedSeat = detectLinSeat(message, { codingMode: earlyCodingIntent, hasImages });
+    const earlyRequestedSeat = shouldPromoteResumedContinuationSeat({
+      requestedSeat: earlyDetectedSeat,
+      message,
+      continuityResume: continuityResumeValidation,
+      codingMode: earlyCodingIntent,
+      hasImages,
+    })
+      ? 'conversation'
+      : earlyDetectedSeat;
+    const boundedZenSmalltalkRoute = shouldUseBoundedZenSmalltalkContext({
+      constructId,
+      requestedSeat: earlyRequestedSeat,
+      userMessage: message,
+      previewMode,
+      hasImages,
+      continuityResume: continuityResumeValidation,
+    });
+    let metadataRecovery = {
+      attempted: false,
+      applied: false,
+      profile: boundedZenSmalltalkRoute ? 'zen_smalltalk_bounded' : 'standard',
+      status: 'not_attempted',
+      timeout_ms: null,
+      fallback_source: null,
+    };
+
     try {
-      meta = await loadAIMetadata(constructId, userId);
+      const metadataResult = await loadAIMetadataWithRecovery({
+        constructId,
+        userId: dataOwnerUserId,
+        authenticatedUserId: userId,
+        userMessage: message,
+        requestedSeat: earlyRequestedSeat,
+        previewMode,
+        hasImages,
+      });
+      meta = metadataResult.meta;
+      metadataRecovery = metadataResult.recovery || metadataRecovery;
       if (meta) {
         console.log(`📋 [VVAULT Metadata] Loaded AIS metadata for ${constructId}: model=${meta.model || 'none'}, provider=${meta.provider || 'none'}`);
+      } else if (metadataRecovery.applied) {
+        console.log(`📋 [VVAULT Metadata] Using local AI record fallback for ${constructId} (${metadataRecovery.status})`);
       }
     } catch (metaErr) {
       console.warn(`⚠️ [VVAULT Metadata] Failed to load metadata for ${constructId}:`, metaErr.message);
@@ -5344,6 +7676,8 @@ router.post("/message", async (req, res) => {
         modelId: meta.model || gptConfig?.modelId,
         conversationModel: meta.model || gptConfig?.conversationModel,
         provider: meta.provider || gptConfig?.provider,
+        coderModel: meta.coderModel || gptConfig?.coderModel,
+        coderProvider: meta.coderProvider || gptConfig?.coderProvider,
         capabilities: meta.capabilities || gptConfig?.capabilities,
         tags: meta.tags || gptConfig?.tags,
         categories: meta.categories || gptConfig?.categories,
@@ -5356,6 +7690,19 @@ router.post("/message", async (req, res) => {
         gptConfig.modelId = combined;
         gptConfig.conversationModel = combined;
       }
+      gptConfig = applyForgedSimLockToRecord(gptConfig);
+    }
+
+    if (requestModelOverride && typeof requestModelOverride === 'string' && !readForgedSimLock(gptConfig)) {
+      const requestedModelString = requestProviderOverride && !requestModelOverride.includes(':')
+        ? `${requestProviderOverride}:${requestModelOverride}`
+        : requestModelOverride;
+      gptConfig = {
+        ...gptConfig,
+        modelId: requestedModelString,
+        conversationModel: requestedModelString,
+        provider: requestProviderOverride || gptConfig?.provider,
+      };
     }
 
     const generationParams = {};
@@ -5366,27 +7713,518 @@ router.post("/message", async (req, res) => {
       if (Number.isFinite(cfg.max_tokens)) generationParams.max_tokens = cfg.max_tokens;
       if (cfg.maxTokens && Number.isFinite(cfg.maxTokens)) generationParams.max_tokens = cfg.maxTokens;
     }
-    
+
+    const {
+      forceLinMode,
+      codingIntent,
+      codingReason,
+      capabilityIntent,
+      codingMode,
+      requestedSeat,
+    } = resolveLinTurnRouting(message, gptConfig, {
+      hasImages,
+      linearTranscriptLawGate: linearTranscriptLawGate === true,
+      zenOrdinaryVoiceGate: zenOrdinaryVoiceGate === true,
+      continuityResume: continuityResumeValidation,
+    });
+    const contextBudget = resolveRouteContextBudgetProfile({
+      constructId,
+      message,
+      hasImages,
+      previewMode,
+      codingMode,
+      requestedSeat,
+      activeOrchestrationProfile,
+      zenOrdinaryVoiceGate: zenOrdinaryVoiceGate === true,
+      linearTranscriptLawOrdinaryTurn,
+      continuityResume: continuityResumeValidation,
+    });
+    routeTurnEnvelope.continuityClass = contextBudget.transcript_law_evidence_intent
+      ? 'transcript_law'
+      : 'ordinary';
+    routeTurnEnvelope.transcriptLawRequired = Boolean(contextBudget.transcript_law_evidence_intent);
+    routeTurnEnvelope.transcriptTruth = {
+      required: false,
+      eligible: false,
+      hydrationSource: 'not_required',
+      hydrationComplete: null,
+    };
+    const transcriptTruthRequired = shouldRequireCanonicalTranscriptTruth({
+      continueTurn,
+      continuityResume: continuityResumeValidation,
+      runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+      sessionId: effectiveTurnSessionId,
+      constructId,
+      message,
+      previewMode,
+      skipPersistence,
+    });
+    const implicitContinuationRequest =
+      isExplicitResumeContinuationCue(message) &&
+      continuityResumeValidation?.continuityExpected !== true;
+    const transcriptTruthRequiresRuntimeState =
+      continueTurn === true ||
+      continuityResumeValidation?.continuityExpected === true ||
+      implicitContinuationRequest === true ||
+      Boolean(routeTurnEnvelope.runtimeTurnState?.assistantTurnId);
+    if (transcriptTruthRequired) {
+      routeTurnEnvelope.transcriptTruth.required = true;
+      try {
+        await loadVVAULTModules();
+      } catch (error) {
+        const payload = buildTranscriptTruthFailurePayload({
+          authReceipt,
+          userId: dataOwnerUserId,
+          user: req.user,
+          constructId,
+          rawConstructId,
+          canonicalConstructId,
+          message,
+          threadId,
+          sessionId,
+          hasImages,
+          previewMode,
+          gptConfig,
+          continuityResume: routeTurnEnvelope.continuityResume,
+          transcriptTruth: buildTranscriptTruthPreflight({
+            readPathAvailable: false,
+            sessionId: effectiveTurnSessionId,
+            constructId,
+            runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+            requireRuntimeTurnState: transcriptTruthRequiresRuntimeState,
+          }),
+          code: 'CANONICAL_TRANSCRIPT_READ_UNAVAILABLE',
+          error: 'Canonical transcript read path is unavailable, so continuation generation is blocked.',
+          responseStatus: 'canonical_transcript_read_unavailable',
+        });
+        return sendSerializedJson(res, 503, payload, 'transcript-truth-unavailable');
+      }
+
+      if (typeof readConversations !== 'function') {
+        const payload = buildTranscriptTruthFailurePayload({
+          authReceipt,
+          userId: dataOwnerUserId,
+          user: req.user,
+          constructId,
+          rawConstructId,
+          canonicalConstructId,
+          message,
+          threadId,
+          sessionId,
+          hasImages,
+          previewMode,
+          gptConfig,
+          continuityResume: routeTurnEnvelope.continuityResume,
+          transcriptTruth: buildTranscriptTruthPreflight({
+            readPathAvailable: false,
+            sessionId: effectiveTurnSessionId,
+            constructId,
+            runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+            requireRuntimeTurnState: transcriptTruthRequiresRuntimeState,
+          }),
+          code: 'CANONICAL_TRANSCRIPT_READ_UNAVAILABLE',
+          error: 'Canonical transcript read path is unavailable, so continuation generation is blocked.',
+          responseStatus: 'canonical_transcript_read_unavailable',
+        });
+        return sendSerializedJson(res, 503, payload, 'transcript-truth-unavailable');
+      }
+
+      transcriptTruthLookupId =
+        transcriptTruthLookupId ||
+        buildConversationLookupContext({
+          userEmail: req.user?.email || null,
+          supabaseUserId: UUID_LOOKUP_RE.test(String(dataOwnerUserId || '').trim())
+            ? dataOwnerUserId
+            : supabaseSessionUserId,
+          userId: dataOwnerUserId || req.user?.vvaultUserId || userId,
+        });
+      try {
+        preloadedTranscriptTruthRows =
+          preloadedTranscriptTruthRows ||
+          await readConversations(transcriptTruthLookupId, constructId, {
+            allowLocalFallback: false,
+          });
+      } catch (error) {
+        const payload = buildTranscriptTruthFailurePayload({
+          authReceipt,
+          userId: dataOwnerUserId,
+          user: req.user,
+          constructId,
+          rawConstructId,
+          canonicalConstructId,
+          message,
+          threadId,
+          sessionId,
+          hasImages,
+          previewMode,
+          gptConfig,
+          continuityResume: routeTurnEnvelope.continuityResume,
+          transcriptTruth: buildTranscriptTruthPreflight({
+            readPathAvailable: false,
+            sessionId: effectiveTurnSessionId,
+            constructId,
+            runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+            requireRuntimeTurnState: transcriptTruthRequiresRuntimeState,
+          }),
+          code: 'CANONICAL_TRANSCRIPT_READ_UNAVAILABLE',
+          error: `Canonical transcript read failed: ${error.message}`,
+          responseStatus: 'canonical_transcript_read_unavailable',
+        });
+        return sendSerializedJson(res, 503, payload, 'transcript-truth-unavailable');
+      }
+
+      if (routeTurnEnvelope.persistedStateSource === 'local_fallback_metadata') {
+        routeTurnEnvelope.runtimeTurnState = null;
+      }
+      let transcriptTruth = buildTranscriptTruthPreflight({
+        readPathAvailable: true,
+        conversations: preloadedTranscriptTruthRows,
+        sessionId: effectiveTurnSessionId,
+        constructId,
+        runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+        requireRuntimeTurnState: transcriptTruthRequiresRuntimeState,
+      });
+      const rebuiltRuntimeTurnState =
+        transcriptTruthRequiresRuntimeState !== true &&
+        transcriptTruth.exactThreadFound === true &&
+        transcriptTruth.hydrationSource === 'full' &&
+        (transcriptTruth.reason === 'runtime_turn_state_missing' ||
+          transcriptTruth.reason === 'runtime_turn_state_hydration_unproven' ||
+          transcriptTruth.reason === 'runtime_turn_state_thread_mismatch')
+          ? rebuildRuntimeTurnStateFromCanonicalTranscript({
+              exactMessages: transcriptTruth.exactMessages,
+              sessionId: effectiveTurnSessionId,
+              constructId,
+            })
+          : null;
+      if (rebuiltRuntimeTurnState) {
+        routeTurnEnvelope.runtimeTurnState = rebuiltRuntimeTurnState;
+        routeTurnEnvelope.persistedStateSource = 'canonical_tail_rebuild';
+        transcriptTruth = buildTranscriptTruthPreflight({
+          readPathAvailable: true,
+          conversations: preloadedTranscriptTruthRows,
+          sessionId: effectiveTurnSessionId,
+          constructId,
+          runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+          requireRuntimeTurnState: transcriptTruthRequiresRuntimeState,
+        });
+        const recoveredContinuityResumeValidation = validateRuntimeResumeRequest({
+          runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+          resumeRequest: continuityResumeRequest,
+          sessionId: effectiveTurnSessionId,
+          constructId,
+        });
+        routeTurnEnvelope.continuityExpected =
+          recoveredContinuityResumeValidation.continuityExpected === true;
+        routeTurnEnvelope.continuityResume = recoveredContinuityResumeValidation;
+      }
+      routeTurnEnvelope.transcriptTruth = {
+        required: true,
+        ...transcriptTruth,
+      };
+      if (transcriptTruth.runtimeTurnState) {
+        routeTurnEnvelope.runtimeTurnState = transcriptTruth.runtimeTurnState;
+        routeTurnEnvelope.persistedStateSource = 'canonical_tail_metadata';
+        const effectiveResumeRequest =
+          implicitContinuationRequest === true
+            ? {
+                continuity_expected: true,
+                resume_from_turn_id: routeTurnEnvelope.runtimeTurnState.assistantTurnId,
+                resume_from_continuity_seq: routeTurnEnvelope.runtimeTurnState.continuitySeq,
+                resume_tail_hash: routeTurnEnvelope.runtimeTurnState.tailHash,
+                resume_construct_revision: routeTurnEnvelope.runtimeTurnState.constructRevision,
+                resume_source_seat: 'chatty',
+              }
+            : continuityResumeRequest;
+        continuityResumeValidation = validateRuntimeResumeRequest({
+          runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+          resumeRequest: effectiveResumeRequest,
+          sessionId: effectiveTurnSessionId,
+          constructId,
+        });
+        routeTurnEnvelope.continuityExpected =
+          continuityResumeValidation.continuityExpected === true;
+        routeTurnEnvelope.continuityResume = continuityResumeValidation;
+      }
+      if (!transcriptTruth.eligible) {
+        const payload = buildTranscriptTruthFailurePayload({
+          authReceipt,
+          userId: dataOwnerUserId,
+          user: req.user,
+          constructId,
+          rawConstructId,
+          canonicalConstructId,
+          message,
+          threadId,
+          sessionId,
+          hasImages,
+          previewMode,
+          gptConfig,
+          continuityResume: routeTurnEnvelope.continuityResume,
+          transcriptTruth,
+          code: 'TRANSCRIPT_HYDRATION_REQUIRED',
+          error: 'Canonical transcript hydration is incomplete, fallback-shaped, or missing the real assistant tail.',
+          responseStatus: 'transcript_hydration_required',
+        });
+        return sendSerializedJson(res, 409, payload, 'transcript-truth-required');
+      }
+      if (
+        routeTurnEnvelope.continuityResume?.continuityExpected === true &&
+        routeTurnEnvelope.continuityResume?.continuityRestored !== true
+      ) {
+        const continuityFailureCode = routeTurnEnvelope.continuityResume.staleSeatRejected
+          ? 'CONTINUITY_RESUME_STALE'
+          : 'CONTINUITY_RESUME_UNPROVEN';
+        const continuityFailureMessage = routeTurnEnvelope.continuityResume.staleSeatRejected
+          ? 'Continuity resume was rejected because this seat is stale. Reload the canonical thread and try again.'
+          : 'Continuity resume could not be proven from the canonical thread tail. Reload the thread and try again.';
+        const continuityReceipt = buildContinuityProofReceipt({
+          hydration: routeTurnEnvelope.continuityResume.hydration,
+          hydrationComplete: routeTurnEnvelope.continuityResume.hydrationComplete,
+          resumeValidation: routeTurnEnvelope.continuityResume,
+        });
+        const continuityFailureReceipt = {
+          created_at: new Date().toISOString(),
+          user_id: dataOwnerUserId || null,
+          auth: authReceipt,
+          construct_id: constructId,
+          effective_construct_id: constructId,
+          effective_construct_name: deriveConstructReceiptName(constructId, gptConfig),
+          orchestration_mode: gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown',
+          route_mode: 'vvault_message',
+          persistence_owner: 'continuity_resume_blocked',
+          continuity: continuityReceipt,
+          ...continuityReceipt,
+          transcript_truth: {
+            eligible: routeTurnEnvelope.transcriptTruth?.eligible === true,
+            source: routeTurnEnvelope.transcriptTruth?.hydrationSource || 'none',
+            hydration_complete: routeTurnEnvelope.transcriptTruth?.hydrationComplete === true,
+            exact_thread_id: effectiveTurnSessionId,
+            exact_thread_found: routeTurnEnvelope.transcriptTruth?.exactThreadFound === true,
+            assistant_tail_found: routeTurnEnvelope.transcriptTruth?.assistantTailFound === true,
+            runtime_state_found: routeTurnEnvelope.transcriptTruth?.runtimeStateFound === true,
+            runtime_state_hydration_truth:
+              routeTurnEnvelope.transcriptTruth?.runtimeStateHydrationTruth || null,
+            evidence_count: Number(routeTurnEnvelope.transcriptTruth?.evidenceCount || 0),
+            evidence_sources: routeTurnEnvelope.transcriptTruth?.evidenceSources || [],
+            fallback_rejected: routeTurnEnvelope.transcriptTruth?.fallbackRejected === true,
+            retrieval_status: 'verified',
+            blocked_reason: routeTurnEnvelope.continuityResume.failureReason || null,
+          },
+          capsule_runtime: {
+            capsuleLoaded: null,
+            capsuleSource: null,
+            contextProfile: null,
+            continuityFromRuntimeState: false,
+            continuityMemorySource: null,
+          },
+          memory: {
+            retrieval_ran: false,
+            memory_query_detected: false,
+            evidence_count: 0,
+            transcript_memory_status: 'blocked',
+            history_source: routeTurnEnvelope.transcriptTruth?.hydrationSource || 'none',
+            transcript_sources: routeTurnEnvelope.transcriptTruth?.evidenceSources || [],
+          },
+          provider: {
+            final_provider: null,
+            provider: null,
+            model: null,
+            mode: gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown',
+            fallback_used: false,
+          },
+        };
+        const continuityFailureChecklist = buildOrchestrationChecklist({
+          userId: dataOwnerUserId,
+          user: req.user,
+          constructId,
+          threadId: effectiveTurnSessionId,
+          userMessage: message,
+          gptConfig,
+          runtimeReceipt: continuityFailureReceipt,
+          responseStatus: 'continuity_resume_blocked',
+          skipPersistence: false,
+        });
+        return res.status(409).json({
+          ok: false,
+          success: false,
+          constructId,
+          construct_id: constructId,
+          code: continuityFailureCode,
+          error: continuityFailureMessage,
+          details: routeTurnEnvelope.continuityResume,
+          runtime_receipt: continuityFailureReceipt,
+          orchestration_checklist: continuityFailureChecklist,
+          has_images: hasImages,
+        });
+      }
+    }
+    const routingMode = forceLinMode || isLinOrchestratedConstruct(constructId) || shouldForceProtectedZenLinMode({
+      constructId,
+      userMessage: message,
+      requestedSeat,
+      previewMode,
+      hasImages,
+      codingMode,
+    })
+      ? 'lin'
+      : normalizeOrchestrationMode(gptConfig, {
+          defaultMode: isLinOrchestratedConstruct(constructId) ? 'lin' : 'custom',
+        });
+
+    let coderModel =
+      gptConfig?.coderModel ||
+      cfg?.coderModel ||
+      meta?.coderModel ||
+      DEFAULT_CODER_MODEL;
+    let coderProvider =
+      gptConfig?.coderProvider ||
+      cfg?.coderProvider ||
+      meta?.coderProvider ||
+      DEFAULT_CODER_PROVIDER;
+
+    if (coderModel && coderModel.includes(':') && !coderProvider) {
+      const [prov, modelPart] = coderModel.split(':', 2);
+      coderProvider = prov;
+      coderModel = modelPart || coderModel;
+    }
+    if (routingMode === 'lin') {
+      const linCodingDefault = parseConfiguredModel(LIN_MODEL_DEFAULTS.coding, 'ollama', LIN_MODEL_DEFAULTS.coding.replace(/^ollama:/, ''));
+      coderProvider = linCodingDefault.provider;
+      coderModel = linCodingDefault.model;
+    }
+
     // Resolve model using GPTCreator config as source of truth
-    const providerAvailability = { openai: !!openaiClient, openrouter: !!(openrouter || replitOpenrouter), ollama: !!process.env.OLLAMA_HOST || process.env.NODE_ENV !== 'production' };
-    let { provider: effectiveProvider, model: effectiveModel, source: modelSource, error: modelError } = resolveModelForGPT(gptConfig, providerAvailability);
-    
+    const providerAvailability = await buildProviderAvailability();
+    const codingSeatActive = codingMode || requestedSeat === 'coding';
+    const modelResolution = resolveModelForGPT(
+      gptConfig,
+      providerAvailability,
+      {
+        seat: requestedSeat,
+        mode: routingMode,
+        forceMode: routingMode === 'lin' ? 'lin' : null,
+        constructId,
+        userMessage: message,
+        previewMode,
+        hasImages,
+        codingMode,
+      },
+    );
+    let { provider: effectiveProvider, model: effectiveModel, source: modelSource, error: modelError } = modelResolution;
+
     if (modelError) {
       return res.status(503).json({ success: false, error: modelError });
+    }
+
+    let effectiveRouteFallbackUsed = false;
+    let effectiveLocalFirstUsed = !!modelResolution.localFirstUsed;
+    let effectiveLocalCloudFallbackState = modelResolution.localCloudFallbackState || null;
+    let effectiveSeatDefaultsOrOverrides = modelResolution.seatDefaultsOrOverrides || null;
+
+    const getOllamaExecutionModel = () => {
+      if (modelResolution.mode === 'lin') {
+        if (effectiveProvider === 'ollama' && effectiveModel) return effectiveModel;
+        if (modelResolution.requestedProvider === 'ollama' && modelResolution.requestedModel) {
+          return modelResolution.requestedModel;
+        }
+        if (modelResolution.provider === 'ollama' && modelResolution.model) return modelResolution.model;
+      }
+      return PREFERRED_OLLAMA_MODEL;
+    };
+
+    const markEffectiveRoute = ({
+      source = null,
+      localFirstUsed = null,
+      localCloudFallbackState = null,
+      fallbackUsed = null,
+      seatDefaultsOrOverrides = null,
+    } = {}) => {
+      if (source) modelSource = source;
+      if (typeof localFirstUsed === 'boolean') effectiveLocalFirstUsed = localFirstUsed;
+      if (localCloudFallbackState) effectiveLocalCloudFallbackState = localCloudFallbackState;
+      if (typeof fallbackUsed === 'boolean') effectiveRouteFallbackUsed = fallbackUsed;
+      if (seatDefaultsOrOverrides) effectiveSeatDefaultsOrOverrides = seatDefaultsOrOverrides;
+    };
+
+    const markOllamaExecutionRoute = ({ fallbackUsed = false, localCloudFallbackState = null } = {}) => {
+      const linSource = modelResolution.mode === 'lin' ? modelSource || modelResolution.source : null;
+      markEffectiveRoute({
+        source: linSource || (fallbackUsed ? 'fallback_to_ollama' : 'ollama_local_execution'),
+        localFirstUsed: true,
+        localCloudFallbackState: localCloudFallbackState || (fallbackUsed ? 'fallback_to_ollama' : 'local_first'),
+        fallbackUsed,
+      });
+    };
+
+    if (codingSeatActive && !hasImages) {
+      const providerAvailable =
+        (coderProvider === 'openrouter' && providerAvailability.openrouter) ||
+        (coderProvider === 'replitOpenrouter' && providerAvailability.openrouter) ||
+        (coderProvider === 'openai' && providerAvailability.openai) ||
+        (coderProvider === 'ollama' && providerAvailability.ollama);
+
+      if (providerAvailable) {
+        if (coderProvider) effectiveProvider = coderProvider;
+        if (coderModel) effectiveModel = coderModel;
+        modelSource = routingMode === 'lin' ? 'lin_coding_local_defaults' : 'codex_mode';
+        markEffectiveRoute({
+          source: modelSource,
+          localFirstUsed: coderProvider === 'ollama',
+          localCloudFallbackState: routingMode === 'lin' && coderProvider === 'ollama'
+            ? 'local_first'
+            : modelResolution.localCloudFallbackState,
+          seatDefaultsOrOverrides: routingMode === 'lin'
+            ? 'lin_coding_local_defaults'
+            : modelResolution.seatDefaultsOrOverrides,
+        });
+        if (generationParams.temperature === undefined) {
+          generationParams.temperature = 0.35;
+        }
+      } else {
+        console.warn(`[CODEX_MODE] coder provider unavailable (${coderProvider}); keeping resolved provider/model`);
+      }
     }
     console.log("[MODEL_RESOLUTION]", {
       construct: gptConfig?.constructCallsign || gptConfig?.construct_callsign || constructId,
       provider: effectiveProvider,
       model: effectiveModel,
       source: modelSource,
-      preferLocalModels: PREFER_LOCAL_MODELS
+      routingOverride: !!modelResolution.routingOverride,
+      localFirstUsed: effectiveLocalFirstUsed,
+      seatDefaultsOrOverrides: effectiveSeatDefaultsOrOverrides,
+      preferLocalModels: PREFER_LOCAL_MODELS,
+      codingMode,
+      requestedSeat,
+      codingReason,
+      capabilityIntent
+    });
+    console.log('[CONTEXT_BUDGET_PROFILE]', {
+      constructId,
+      profile: contextBudget.profile,
+      requestedProfile: contextBudget.requested_profile,
+      memoryQueryDetected: contextBudget.memory_query_detected,
+      evidenceStyleRequested: contextBudget.evidence_style_requested,
+      transcriptLawPromptKind: contextBudget.transcript_law_prompt_kind,
+      policyOrReceiptIntent: contextBudget.policy_or_receipt_intent,
+      hasImages,
+      codingMode,
+      requestedSeat,
+    });
+    console.log('[RUNTIME_TURN_STATE]', {
+      stage: 'classified',
+      sessionId: effectiveTurnSessionId,
+      constructId,
+      continuityClass: routeTurnEnvelope.continuityClass,
+      transcriptLawRequired: routeTurnEnvelope.transcriptLawRequired,
+      persistedStateSource: routeTurnEnvelope.persistedStateSource,
     });
 
-    if (hasImages && meta) {
+    if (hasImages && meta && routingMode !== 'lin') {
       if (meta.provider) effectiveProvider = meta.provider;
       if (meta.model) effectiveModel = meta.model;
     }
-    
+
     // ===== NOVA-001 AUTHORITATIVE GUARD: Never resolve to OpenAI, regardless of path =====
     if (constructId === 'nova-001' && effectiveProvider === 'openai') {
       if (replitOpenrouter || openrouter) {
@@ -5420,38 +8258,105 @@ router.post("/message", async (req, res) => {
         console.log(`📎 [VVAULT Proxy] Images attached, using OpenRouter vision model: ${effectiveModel}`);
       } else {
         console.error('❌ [VVAULT Proxy] Images attached but no vision-capable provider configured');
-        return res.status(503).json({ 
-          success: false, 
-          error: 'Image processing requires OpenAI or OpenRouter. Please configure one of these providers.' 
+        return res.status(503).json({
+          success: false,
+          error: 'Image processing requires OpenAI or OpenRouter. Please configure one of these providers.'
         });
       }
     }
-    
+
     // Auto-initialize construct's memory stack if not already active
-    try {
-      const { masterScriptsManager } = await import('../lib/masterScriptsBridge.js');
-      if (!masterScriptsManager.getConstruct(constructId)) {
-        await masterScriptsManager.initializeConstruct(constructId, userId);
-        console.log(`🔧 [VVAULT Proxy] Auto-initialized memory stack for ${constructId}`);
+    if (boundedZenSmalltalkRoute) {
+      console.log(`🔧 [VVAULT Proxy] Skipping memory stack auto-init for ${constructId} due to bounded Zen smalltalk recovery lane`);
+    } else {
+      try {
+        const { masterScriptsManager } = await import('../lib/masterScriptsBridge.js');
+        if (!masterScriptsManager.getConstruct(constructId)) {
+          await masterScriptsManager.initializeConstruct(constructId, userId);
+          console.log(`🔧 [VVAULT Proxy] Auto-initialized memory stack for ${constructId}`);
+        }
+      } catch (msErr) {
+        console.warn(`⚠️ [VVAULT Proxy] Memory stack init deferred for ${constructId}:`, msErr.message);
       }
-    } catch (msErr) {
-      console.warn(`⚠️ [VVAULT Proxy] Memory stack init deferred for ${constructId}:`, msErr.message);
     }
 
     const clientTimezone = req.headers['x-user-timezone'] || null;
 
-    const effectiveSystemPromptOverride = meta?.systemPromptOverride || meta?.configJson?.instructions || systemPromptOverride ?? null;
+    const previewSystemPromptOverrideSuppressed = Boolean(
+      previewMode &&
+      typeof systemPromptOverride === 'string' &&
+      systemPromptOverride.trim()
+    );
+    const effectiveSystemPromptOverride = previewMode
+      ? null
+      : (meta?.systemPromptOverride || meta?.configJson?.instructions || systemPromptOverride) ?? null;
+    const effectivePreviewDraft =
+      previewMode && previewDraft && typeof previewDraft === 'object' && !Array.isArray(previewDraft)
+        ? previewDraft
+        : null;
+    if (previewSystemPromptOverrideSuppressed) {
+      console.warn(`[GPTCreator Preview] Suppressed systemPromptOverride for ${constructId}; canonical identity remains the base prompt.`);
+    }
 
-    const { enrichedContext, systemPrompt: enrichedSystemPrompt } = await buildEnrichedContextPrompt({
-      userId,
-      constructId,
-      userMessage: message,
-      systemPromptOverride: effectiveSystemPromptOverride,
-      gptConfig,
-      user: req.user,
-      threadId: threadId || sessionId || `${constructId}_chat_with_${constructId}`,
-      timezone: clientTimezone,
-    });
+    let enrichedContext;
+    let enrichedSystemPrompt;
+    try {
+      const enrichedResult = await buildEnrichedContextPromptWithRecovery({
+        res,
+        authReceipt,
+        userId: dataOwnerUserId,
+        user: req.user,
+        constructId,
+        rawConstructId,
+        canonicalConstructId,
+        message,
+        gptConfig,
+        threadId,
+        sessionId,
+        timezone: clientTimezone,
+        systemPromptOverride: effectiveSystemPromptOverride,
+        previewMode,
+        previewDraft: effectivePreviewDraft,
+        suppressedSystemPromptOverride: previewSystemPromptOverrideSuppressed,
+        identityBundle,
+        requestedSeat,
+        hasImages,
+        skipPersistence,
+        contextBudgetProfile: contextBudget.profile,
+        codingIntent,
+        policyOrReceiptIntent: contextBudget.policy_or_receipt_intent,
+        suppressTranscriptLawIntent: linearTranscriptLawOrdinaryTurn,
+        runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+        continuityClass: routeTurnEnvelope.continuityClass,
+        continuityResume: routeTurnEnvelope.continuityResume,
+      });
+      if (!enrichedResult) return;
+      enrichedContext = enrichedResult.enrichedContext;
+      enrichedSystemPrompt = enrichedResult.systemPrompt;
+      routeTurnEnvelope.evidenceAttached = Boolean(enrichedContext?.evidence_count > 0);
+      console.log('[RUNTIME_TURN_STATE]', {
+        stage: 'hydrated',
+        sessionId: effectiveTurnSessionId,
+        constructId,
+        continuityClass: routeTurnEnvelope.continuityClass,
+        transcriptLawRequired: routeTurnEnvelope.transcriptLawRequired,
+        evidenceAttached: routeTurnEnvelope.evidenceAttached,
+      });
+    } catch (contextErr) {
+      if (contextErr?.code === 'IDENTITY_UNAVAILABLE') {
+        console.error(`❌ [VVAULT Proxy] Identity unavailable for ${constructId}:`, contextErr.details || contextErr.message);
+        return res.status(503).json({
+          success: false,
+          ok: false,
+          code: 'IDENTITY_UNAVAILABLE',
+          error: contextErr.message,
+          constructId,
+          construct_id: constructId,
+          details: contextErr.details || null,
+        });
+      }
+      throw contextErr;
+    }
     let systemPrompt = enrichedSystemPrompt;
 
     if (effectiveSystemPromptOverride) {
@@ -5461,23 +8366,87 @@ router.post("/message", async (req, res) => {
         systemPrompt = `${effectiveSystemPromptOverride}\n\n${systemPrompt}`;
       }
     }
+    if (enrichedContext?.memory_retrieval_ran || enrichedContext?.evidence_count > 0) {
+      systemPrompt += `\n\nINTERNAL DIRECTIVE: Summarize retrieved knowledge naturally; do NOT cite or quote documents or filenames. Integrate context into conversation in-character.`;
+    }
+
+    if (codingMode) {
+      const constructDisplayName = gptConfig?.name || constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase());
+      const codexDirective = `CODING MODE (${constructDisplayName}):
+- Stay as ${constructDisplayName}. Do not rename yourself as Zen, Lin, Codex, Nova, or the model/provider.
+- Give precise, file-referenced guidance (use repo-relative paths).
+- Focus on actionable steps: what to change, where, and why.
+- Keep responses concise and technical; avoid policy or provider chatter.`;
+      systemPrompt = `${codexDirective}\n\n${systemPrompt}`;
+    }
 
     let searchIntentReason = 'not_evaluated';
     let searchInjected = false;
-    const {
-      enhancedPrompt: searchEnhancedPrompt,
-      intent_reason: searchIntentReasonResolved,
-      search_injected: searchInjectedResolved,
-    } = await injectSearchContext(message, systemPrompt, { explicitOnly: true });
-    systemPrompt = searchEnhancedPrompt;
-    searchIntentReason = searchIntentReasonResolved || searchIntentReason;
-    searchInjected = searchInjectedResolved === true;
+    let searchVertical = 'none';
+    let searchResults = null;
+    let searchHousing = null;
+
+    const shouldRunSearch = message && message.length >= RELATIONAL_LENGTH_THRESHOLD;
+    if (shouldRunSearch) {
+      const {
+        enhancedPrompt: searchEnhancedPrompt,
+        searchResults: searchResultsResolved,
+        search_vertical: searchVerticalResolved,
+        housing: searchHousingResolved,
+        intent_reason: searchIntentReasonResolved,
+        search_injected: searchInjectedResolved,
+      } = await injectSearchContext(message, systemPrompt, { explicitOnly: true });
+      systemPrompt = searchEnhancedPrompt;
+      searchResults = searchResultsResolved || null;
+      searchVertical = searchVerticalResolved || searchVertical;
+      searchHousing = searchHousingResolved || null;
+      searchIntentReason = searchIntentReasonResolved || searchIntentReason;
+      searchInjected = searchInjectedResolved === true;
+    } else {
+      searchIntentReason = 'skipped_short_turn';
+      searchInjected = false;
+    }
     if (hasImages) {
       const visionDirective = explicitVisionIntent
         ? "INTERNAL DIRECTIVE: The user explicitly requested image analysis. Analyze the image while staying fully in character and relationally grounded."
         : "INTERNAL DIRECTIVE: The user shared an image without explicitly asking for analysis. Stay in character, continue the existing thread naturally, and avoid switching into profile/policy/report recitals.";
       systemPrompt += `\n\n${visionDirective}`;
     }
+
+    const buildPromptDiagnostics = ({
+      mode,
+      enriched,
+      historyCount,
+      searchInjectedValue,
+      systemPromptText,
+    }) => ({
+      route: '/api/vvault/message',
+      mode,
+      constructId,
+      prompt_source: 'enriched_context',
+      base_prompt_source: enriched?.phaseTiming?.basePromptSource || 'unknown',
+      gpt_config_present: !!gptConfig,
+      identity_source: enriched?.phaseTiming?.identity?.source || 'unknown',
+      conditioning_appended: !!enriched?.phaseTiming?.conditioningInjected,
+      preview_mode: Boolean(previewMode),
+      skip_persistence: Boolean(skipPersistence),
+      preview_identity: {
+        effective_construct_id: constructId,
+        selected_construct_id: canonicalConstructId || constructId,
+        raw_construct_id: rawConstructId,
+        draft_overlay_applied: Boolean(enriched?.phaseTiming?.preview?.draftOverlayApplied),
+        draft_overlay_keys: enriched?.phaseTiming?.preview?.draftOverlayKeys || [],
+        suppressed_system_prompt_override: Boolean(enriched?.phaseTiming?.preview?.suppressedSystemPromptOverride),
+      },
+      retrieval_injected: searchInjectedValue === true || (enriched?.evidence_count ?? 0) > 0,
+      final_history_count: historyCount,
+      prompt_chars: typeof systemPromptText === 'string' ? systemPromptText.length : 0,
+	      context_profile: enriched?.context_profile || enriched?.context_budget?.profile || 'standard_turn',
+	      included_sections: enriched?.context_budget?.included_sections || [],
+	      delayed_sections: enriched?.context_budget?.delayed_sections || [],
+	      no_rewrite_identity_anchor: Boolean(enriched?.no_rewrite_identity_anchor),
+	      identity_rewrite_prevented_by: enriched?.identity_rewrite_prevented_by || null,
+	    });
 
     try {
       const userAccountType = await getAccountType(userId);
@@ -5512,23 +8481,101 @@ router.post("/message", async (req, res) => {
     if (systemPrompt.length >= PROMPT_WARN_CHARS) {
       console.warn(`⚠️ [VVAULT Proxy] Prompt size warning for ${constructId}: ${systemPrompt.length} chars (threshold: ${PROMPT_WARN_CHARS})`);
     }
-    
+
+    const noRewriteTinyTurn =
+      Boolean(enrichedContext.no_rewrite_identity_anchor) &&
+      (enrichedContext.context_profile === 'tiny_turn' ||
+        enrichedContext.context_budget?.profile === 'tiny_turn');
+
     // Load conversation history for context (last 20 turns)
     let conversationHistoryMessages = [];
     let mainHistoryRemovedLeakCount = 0;
     let mainHistoryRemovedInstructionDumpCount = 0;
     let mainHistoryTailPrunedCount = 0;
+    let repetitionReset = false;
+    let repetitionReason = '';
+    let noRewriteHistoryClamp = {
+      clamped: false,
+      limit: 2,
+      originalCount: 0,
+    };
     try {
       await loadVVAULTModules();
-      const lookupId = req.user?.email || userId;
-      if (readConversations) {
+      const lookupId = buildConversationLookupContext({
+        userEmail: req.user?.email || null,
+        supabaseUserId: UUID_LOOKUP_RE.test(String(dataOwnerUserId || '').trim())
+          ? dataOwnerUserId
+          : supabaseSessionUserId,
+        userId: dataOwnerUserId || req.user?.vvaultUserId || userId,
+      });
+      const targetSession = sessionId || threadId || `${constructId}_chat_with_${constructId}`;
+      const exactCanonicalThreadTargeted =
+        targetSession === `${constructId}_chat_with_${constructId}`;
+      if (
+        routeTurnEnvelope.transcriptTruth?.required === true &&
+        routeTurnEnvelope.transcriptTruth?.eligible === true &&
+        Array.isArray(routeTurnEnvelope.transcriptTruth?.exactMessages) &&
+        routeTurnEnvelope.transcriptTruth.exactMessages.length > 0
+      ) {
+        const sanitized = sanitizeConversationHistory(
+          routeTurnEnvelope.transcriptTruth.exactMessages,
+          constructId,
+          'canonical-transcript-truth-history',
+        );
+        mainHistoryRemovedLeakCount = sanitized.removedLeakCount || 0;
+        mainHistoryRemovedInstructionDumpCount = sanitized.removedInstructionDumpCount || 0;
+        const runtimeRestoredHistoryWindow =
+          routeTurnEnvelope.continuityResume?.continuityRestored === true
+            ? Math.min(HISTORY_WINDOW_LIMIT, 6)
+            : HISTORY_WINDOW_LIMIT;
+        conversationHistoryMessages = (sanitized.messages || [])
+          .slice(-runtimeRestoredHistoryWindow)
+          .map((m) => ({ role: m.role, content: m.content || '' }));
+        console.log(`📚 [VVAULT Proxy] Using ${conversationHistoryMessages.length} canonical transcript-truth history messages for ${constructId}`, {
+          historySource: routeTurnEnvelope.transcriptTruth.hydrationSource,
+          sessionId: routeTurnEnvelope.transcriptTruth.exactThreadId,
+        });
+      } else if (previewMode && Array.isArray(transientHistory) && transientHistory.length > 0) {
+        const previewHistory = transientHistory
+          .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+          .slice(-HISTORY_WINDOW_LIMIT)
+          .map((m) => ({ role: m.role, content: m.content }));
+        const sanitized = sanitizeConversationHistory(previewHistory, constructId, 'preview-transient-history');
+        mainHistoryRemovedLeakCount = sanitized.removedLeakCount || 0;
+        mainHistoryRemovedInstructionDumpCount = sanitized.removedInstructionDumpCount || 0;
+        conversationHistoryMessages = (sanitized.messages || []).slice(-HISTORY_WINDOW_LIMIT);
+        console.log(`🧪 [VVAULT Proxy] Using ${conversationHistoryMessages.length} transient preview history messages for ${constructId}`);
+      } else if (
+        !exactCanonicalThreadTargeted &&
+        Array.isArray(enrichedContext?.routeHistoryMessages) &&
+        enrichedContext.routeHistoryMessages.length > 0
+      ) {
+        const sanitized = sanitizeConversationHistory(
+          enrichedContext.routeHistoryMessages,
+          constructId,
+          'enriched-context-history',
+        );
+        mainHistoryRemovedLeakCount = sanitized.removedLeakCount || 0;
+        mainHistoryRemovedInstructionDumpCount = sanitized.removedInstructionDumpCount || 0;
+        conversationHistoryMessages = (sanitized.messages || []).slice(-HISTORY_WINDOW_LIMIT);
+        console.log(`📚 [VVAULT Proxy] Using ${conversationHistoryMessages.length} locally recovered history messages for ${constructId}`, {
+          historySource: enrichedContext.history_source || 'unknown',
+        });
+      } else if (readConversations && !enrichedContext?.remote_history_skipped) {
         const allConversations = await readConversations(lookupId, constructId);
-        const targetSession = `${constructId}_chat_with_${constructId}`;
-        const conv = Array.isArray(allConversations) 
-          ? allConversations.find(c => 
-              c.sessionId === targetSession || 
-              c.constructId === constructId ||
-              c.constructCallsign === constructId
+        const allowConstructFallback = !exactCanonicalThreadTargeted && (
+          !(sessionId || threadId) ||
+          (contextBudget?.transcript_law_evidence_intent &&
+            isTranscriptLawSyntheticGateThread(sessionId || threadId))
+        );
+        const conv = Array.isArray(allConversations)
+          ? allConversations.find(c =>
+              c.sessionId === targetSession ||
+              c.id === targetSession ||
+              (allowConstructFallback && (
+                c.constructId === constructId ||
+                c.constructCallsign === constructId
+              ))
             )
           : null;
         if (conv && conv.messages && conv.messages.length > 0) {
@@ -5536,13 +8583,42 @@ router.post("/message", async (req, res) => {
           mainHistoryRemovedLeakCount = sanitized.removedLeakCount || 0;
           mainHistoryRemovedInstructionDumpCount = sanitized.removedInstructionDumpCount || 0;
           conversationHistoryMessages = (sanitized.messages || [])
-            .slice(-20)
+            .slice(-HISTORY_WINDOW_LIMIT)
             .map(m => ({ role: m.role, content: m.content || '' }));
-          console.log(`📚 [VVAULT Proxy] Loaded ${conversationHistoryMessages.length} history messages for ${constructId}`);
+
+          // Detect simple repetition: last N assistant messages identical
+          const assistantMessages = conversationHistoryMessages.filter(m => m.role === 'assistant');
+          if (assistantMessages.length >= REPETITION_RESET_THRESHOLD) {
+            const last = assistantMessages[assistantMessages.length - 1]?.content?.trim() || '';
+            const prev = assistantMessages[assistantMessages.length - 2]?.content?.trim() || '';
+            if (last && prev && last === prev) {
+              repetitionReset = true;
+              repetitionReason = 'assistant_repeat';
+              conversationHistoryMessages = conversationHistoryMessages.slice(-2); // keep only the most recent exchange
+            }
+          }
+
+          console.log(`📚 [VVAULT Proxy] Loaded ${conversationHistoryMessages.length} history messages for ${constructId}`, {
+            repetitionReset,
+            repetitionReason,
+            windowLimit: HISTORY_WINDOW_LIMIT
+          });
         }
+      } else if (enrichedContext?.remote_history_skipped) {
+        console.log(`📚 [VVAULT Proxy] Skipping remote history load for ${constructId} due to ${enrichedContext.context_recovery_profile || 'bounded context recovery'}`);
       }
     } catch (historyError) {
       console.warn(`⚠️ [VVAULT Proxy] Could not load conversation history:`, historyError.message);
+    }
+
+    if (linearTranscriptLawOrdinaryTurn) {
+      if (conversationHistoryMessages.length > 0) {
+        console.log(`📚 [VVAULT Proxy] Linear transcript-law ordinary turn: dropping ${conversationHistoryMessages.length} history messages and relying on harness state packet`);
+      }
+      conversationHistoryMessages = [];
+      mainHistoryTailPrunedCount = 0;
+      repetitionReset = false;
+      repetitionReason = '';
     }
 
     // Vision turns use compacted context while preserving protected identity directives.
@@ -5568,7 +8644,7 @@ router.post("/message", async (req, res) => {
         );
       }
     }
-    
+
     let lowComplexityTurn = isLowComplexityTurn(
       message,
       hasImages,
@@ -5576,6 +8652,7 @@ router.post("/message", async (req, res) => {
       systemPrompt.length
     );
     const relationalTurn = isRelationalContinuityPrompt(message);
+    const evidenceStyleTurn = asksForEvidenceStyle(message);
     let contextMode = 'full_retrieval';
     if (relationalTurn && lowComplexityTurn && !hasImages) {
       const pruned = pruneContaminatedHistoryTail(conversationHistoryMessages, {
@@ -5603,6 +8680,19 @@ router.post("/message", async (req, res) => {
       contextMode = 'recent_chat_only';
     }
 
+    if (noRewriteTinyTurn && !hasImages) {
+      const clamped = clampProtectedZenNoRewriteHistory(conversationHistoryMessages, {
+        enabled: true,
+        limit: 2,
+      });
+      conversationHistoryMessages = clamped.messages;
+      noRewriteHistoryClamp = {
+        clamped: clamped.clamped,
+        limit: clamped.limit,
+        originalCount: clamped.originalCount,
+      };
+    }
+
     console.log('[CONTEXT_MODE]', {
       constructId,
       relationalTurn,
@@ -5614,12 +8704,63 @@ router.post("/message", async (req, res) => {
       mainHistoryTailPrunedCount,
     });
 
-    console.log('[PROMPT_SOURCE]', {
-      route: '/api/vvault/message',
+    // ── Associative memory activation (episodic/relational/symbolic fragments) ──
+    const assocSeed = typeof req._rid === 'string'
+      ? req._rid.split('').reduce((acc, ch) => (acc * 33 + ch.charCodeAt(0)) >>> 0, 0)
+      : null;
+    const { fragments: associativeFragments, debug: associativeDebug } = sampleAssociativeFragments({
+      userMessage: message,
+      history: conversationHistoryMessages,
+      maxFragments: 2,
+      seed: assocSeed,
+    });
+    if (associativeFragments.length > 0 && systemPrompt.length < PROMPT_WARN_CHARS) {
+      const recallLines = associativeFragments
+        .slice(0, 2)
+        .map((frag) => `- memory fragment: "${frag}"`)
+        .join("\n");
+      systemPrompt = `${systemPrompt}\n\n[INTERNAL RECALL]\n${recallLines}`;
+      console.log('[ASSOCIATIVE_RECALL]', {
+        count: associativeFragments.length,
+        activation: associativeDebug?.activation,
+        topScores: associativeDebug?.topScores,
+      });
+    }
+
+    const greetingTurnContext = buildRouteGreetingTurnContext({
+      message,
+      constructId,
+      constructDisplayName: gptConfig?.name || constructId,
+      gptConfig,
+      identityBundle,
+      recentMessages: conversationHistoryMessages,
+      previewMode,
+      hasImages,
+      isSyntheticContinueTurn,
+      evidenceStyle: evidenceStyleTurn,
+      memoryQueryDetected: !!enrichedContext.memory_query_detected,
+      assignmentQaInput,
+      activeOrchestrationProfile,
+      isHydroProjectTurn,
+      sessionId: sessionId || threadId || `${constructId}_chat_with_${constructId}`,
+    });
+    if (greetingTurnContext?.isGreetingContactTurn) {
+      systemPrompt = `${systemPrompt}\n\n${buildGreetingTurnDirective({
+        posture: greetingTurnContext.posture,
+        voiceContext: greetingTurnContext.voiceContext,
+        constructDisplayName: gptConfig?.name || constructId,
+      })}`;
+    }
+
+    const mainPromptDiagnostics = buildPromptDiagnostics({
       mode: 'main',
-      prompt_source: 'enriched_context',
-      gpt_config_present: !!gptConfig,
-      identity_source: enrichedContext?.phaseTiming?.identity?.source || 'unknown',
+      enriched: enrichedContext,
+      historyCount: conversationHistoryMessages.length,
+      searchInjectedValue: searchInjected,
+      systemPromptText: systemPrompt,
+    });
+    console.log('[PROMPT_SOURCE]', {
+      ...mainPromptDiagnostics,
       history_filtered: {
         leaked_prompt: mainHistoryRemovedLeakCount,
         instruction_dump: mainHistoryRemovedInstructionDumpCount,
@@ -5634,19 +8775,358 @@ router.post("/message", async (req, res) => {
       low_complexity_turn: lowComplexityTurn,
       system_prompt_chars: systemPrompt.length,
       phase_timing: enrichedContext.phaseTiming || {},
-      evidence_count: enrichedContext.evidence_count ?? 0,
+      context_profile: enrichedContext.context_profile || enrichedContext.context_budget?.profile || contextBudget.profile,
+      included_sections: enrichedContext.context_budget?.included_sections || [],
+	      delayed_sections: enrichedContext.context_budget?.delayed_sections || [],
+	      no_rewrite_identity_anchor: Boolean(enrichedContext.no_rewrite_identity_anchor),
+	      identity_rewrite_prevented_by: enrichedContext.identity_rewrite_prevented_by || null,
+	      evidence_count: enrichedContext.evidence_count ?? 0,
       retrieval_counts: {
         vector: enrichedContext.vectorMemories || 0,
         verified: enrichedContext.verifiedMemories || 0,
         needle: enrichedContext.needleHits || 0,
         transcript: enrichedContext.memoriesLoaded || 0,
-      }
+      },
+      greeting_turn: greetingTurnContext
+        ? {
+            active: true,
+            posture: greetingTurnContext.posture,
+            identity_available: greetingTurnContext.voiceContext?.identityAvailable === true,
+            low_confidence: greetingTurnContext.voiceContext?.lowConfidence === true,
+          }
+        : { active: false },
     };
+
+    if (noRewriteTinyTurn) {
+      const currentMaxTokens = Number(generationParams.max_tokens || 0);
+      generationParams.temperature = Number.isFinite(generationParams.temperature)
+        ? Math.min(generationParams.temperature, 0.12)
+        : 0.12;
+      generationParams.top_p = Number.isFinite(generationParams.top_p)
+        ? Math.min(generationParams.top_p, 0.75)
+        : 0.75;
+      generationParams.max_tokens = currentMaxTokens > 0 ? Math.min(currentMaxTokens, 160) : 160;
+      retrievalDiagnostics.no_rewrite_generation_profile = {
+        tightened: true,
+        temperature: generationParams.temperature,
+        top_p: generationParams.top_p,
+        max_tokens: generationParams.max_tokens,
+        history_limit: noRewriteHistoryClamp.limit,
+        history_clamped: noRewriteHistoryClamp.clamped,
+        history_original_count: noRewriteHistoryClamp.originalCount,
+      };
+    } else {
+      retrievalDiagnostics.no_rewrite_generation_profile = {
+        tightened: false,
+        temperature: generationParams.temperature ?? null,
+        top_p: generationParams.top_p ?? null,
+        max_tokens: generationParams.max_tokens ?? null,
+        history_limit: null,
+        history_clamped: false,
+        history_original_count: conversationHistoryMessages.length,
+      };
+    }
+
+    if (linearTranscriptLawOrdinaryTurn && !hasImages) {
+      const currentMaxTokens = Number(generationParams.max_tokens || 0);
+      generationParams.temperature = Number.isFinite(generationParams.temperature)
+        ? Math.min(generationParams.temperature, 0.08)
+        : 0.08;
+      generationParams.top_p = Number.isFinite(generationParams.top_p)
+        ? Math.min(generationParams.top_p, 0.6)
+        : 0.6;
+      generationParams.max_tokens = currentMaxTokens > 0 ? Math.min(currentMaxTokens, 90) : 90;
+      retrievalDiagnostics.linear_transcript_law_ordinary_generation_profile = {
+        tightened: true,
+        temperature: generationParams.temperature,
+        top_p: generationParams.top_p,
+        max_tokens: generationParams.max_tokens,
+        history_count: conversationHistoryMessages.length,
+      };
+    } else {
+      retrievalDiagnostics.linear_transcript_law_ordinary_generation_profile = {
+        tightened: false,
+      };
+    }
+
+    // Helpers: one system message per request = this construct's identity only (no global persona anchor)
+    const buildMessages = (userContent, history = conversationHistoryMessages) => [
+      { role: "system", content: systemPrompt },
+      ...history,
+      { role: "user", content: userContent }
+    ];
+
+    const RECITAL_PATTERNS = [
+      /in the document/i,
+      /according to the document/i,
+      /based on the document/i,
+      /\\.pdf/i,
+      /mission statement/i,
+      /codex/i,
+      /protocol/i,
+      /the document states/i
+    ];
+    const detectRecital = (text) => RECITAL_PATTERNS.some(p => p.test(text || ""));
+
+    async function rewriteRecitalIfNeeded(text) {
+      if (!detectRecital(text)) return { text, detected: false, rewritten: false };
+      const rewriteClient = replitOpenrouter || openaiClient || openrouter;
+      const rewriteModel = replitOpenrouter ? DEFAULT_OPENROUTER_MODEL : (openaiClient ? 'gpt-4.1-mini' : effectiveModel || DEFAULT_OPENROUTER_MODEL);
+      if (!rewriteClient) return { text, detected: true, rewritten: false };
+      try {
+        const rewrite = await rewriteClient.chat.completions.create({
+          model: rewriteModel,
+          messages: [
+            {
+              role: 'system',
+              content: `Rewrite the assistant reply to stay in the current construct's first-person voice. The active construct is "${gptConfig?.name || constructId}". Keep the same identity, remove mentions of documents, files, policies, PDFs, or citations, and keep it brief, relational, and natural. Do not add sources or rename the construct. Output only the rewritten reply.`
+            },
+            { role: 'user', content: text }
+          ],
+          max_tokens: 400,
+        });
+        const newText = rewrite.choices[0]?.message?.content || text;
+        return { text: newText, detected: true, rewritten: true };
+      } catch {
+        return { text, detected: true, rewritten: false };
+      }
+    }
+
+    async function rewriteCutoffViolationIfNeeded(text, memoryQueryDetected, evidenceCount) {
+      if (!memoryQueryDetected) {
+        return { text, detected: false, rewritten: false };
+      }
+
+      const CUTOFF_PATTERNS = [
+        /my\s+(training|knowledge)\s+(data\s+)?(only\s+)?(goes|extends|reaches|covers)\s+(up\s+)?to/i,
+        /my\s+(memories?|knowledge|training)\s+cap(s)?\s+at/i,
+        /(training|knowledge)\s+cutoff/i,
+        /I\s+(only\s+)?have\s+(data|information|knowledge)\s+(up\s+)?(to|through|until)/i,
+        /as\s+of\s+my\s+(last|latest)\s+(training|update)/i,
+        /my\s+(last|latest)\s+(training|update)\s+was/i,
+        /I\s+was\s+(last\s+)?(trained|updated)\s+(on|in|through)/i,
+      ];
+
+      if (!CUTOFF_PATTERNS.some((pattern) => pattern.test(text || ""))) {
+        return { text, detected: false, rewritten: false };
+      }
+
+      const stripCutoffSentences = (input) => {
+        if (typeof input !== 'string' || !input.trim()) return '';
+        return input
+          .split(/(?<=[.!?])\s+/)
+          .map((sentence) => sentence.trim())
+          .filter(Boolean)
+          .filter((sentence) => !CUTOFF_PATTERNS.some((pattern) => pattern.test(sentence)))
+          .join(' ')
+          .trim();
+      };
+
+      console.warn(`⚠️ [PostResponseValidator] Cutoff violation detected in ${constructId} response. Attempting corrective rewrite...`);
+      const rewriteClient = replitOpenrouter || openaiClient;
+      const rewriteModel = replitOpenrouter ? DEFAULT_OPENROUTER_MODEL : 'gpt-4.1-mini';
+
+      if (!rewriteClient) {
+        if (evidenceCount > 0) {
+          const stripped = stripCutoffSentences(text);
+          if (stripped) {
+            console.warn(`⚠️ [PostResponseValidator] No LLM client for rewrite, returning cutoff-stripped response because evidence exists.`);
+            return {
+              text: stripped,
+              detected: true,
+              rewritten: true,
+            };
+          }
+        }
+        console.warn(`⚠️ [PostResponseValidator] No LLM client for rewrite, applying hard fallback.`);
+        return {
+          text: "I cannot verify that from available continuity records.",
+          detected: true,
+          rewritten: true,
+        };
+      }
+
+      try {
+        const rewriteCompletion = await rewriteClient.chat.completions.create({
+          model: rewriteModel,
+          messages: [
+            {
+              role: 'system',
+              content: `You are a post-processing filter. Rewrite the following AI response to remove ANY mention of training cutoffs, knowledge cutoffs, or data limitations. The AI has real transcript memories - it is NOT limited by a training date.
+
+EVIDENCE STATUS: ${evidenceCount} pieces of evidence were retrieved from the memory system for this query.
+
+Rules:
+1. Remove all phrases like "my training data goes up to", "my knowledge cutoff", "my memories cap at", etc.
+2. If the response references specific evidence (evidence_count > 0), keep that evidence and cite it.
+3. If evidence_count is 0, replace the memory-related portion with exactly: "I cannot verify that from available continuity records."
+4. Keep the rest of the response tone, personality, and content intact.
+5. Do NOT add new information or fabricate memories.
+Output ONLY the rewritten response, nothing else.`
+            },
+            { role: 'user', content: text }
+          ],
+          max_tokens: 2048,
+        });
+        const rewritten = rewriteCompletion.choices[0]?.message?.content;
+        if (rewritten && !CUTOFF_PATTERNS.some((pattern) => pattern.test(rewritten))) {
+          console.log(`✅ [PostResponseValidator] Corrective rewrite applied for ${constructId}`);
+          return { text: rewritten, detected: true, rewritten: true };
+        }
+        if (evidenceCount > 0) {
+          const stripped = stripCutoffSentences(rewritten || text);
+          if (stripped) {
+            console.warn(`⚠️ [PostResponseValidator] Rewrite fallback used cutoff stripping because evidence exists.`);
+            return { text: stripped, detected: true, rewritten: true };
+          }
+        }
+        console.warn(`⚠️ [PostResponseValidator] Rewrite still contains cutoff language. Applying hard fallback.`);
+      } catch (rewriteErr) {
+        if (evidenceCount > 0) {
+          const stripped = stripCutoffSentences(text);
+          if (stripped) {
+            console.warn(`⚠️ [PostResponseValidator] Rewrite failed, returning cutoff-stripped response because evidence exists.`);
+            return { text: stripped, detected: true, rewritten: true };
+          }
+        }
+        console.error(`❌ [PostResponseValidator] Rewrite failed, applying hard fallback:`, rewriteErr.message);
+      }
+
+      return {
+        text: "I cannot verify that from available continuity records.",
+        detected: true,
+        rewritten: true,
+      };
+    }
+
+    async function repairIdentityCoherenceResponse(currentText, grade) {
+      return runIdentityCoherenceRepair({
+        systemPrompt,
+        historyMessages: conversationHistoryMessages,
+        userMessage: message,
+        failedResponse: currentText,
+        grade,
+        constructId,
+        constructDisplayName: gptConfig?.name || constructId,
+        provider: effectiveProvider,
+        model: effectiveModel,
+        generationParams,
+        evidencePreview: enrichedContext.memory_evidence_preview,
+        gptConfig,
+        providerAvailability,
+        routingMode,
+        requestedSeat,
+        hasImages,
+      });
+    }
+
+    async function repairAssignmentQaResponse(currentText, { identityCoherence = null, assignmentQa = null } = {}) {
+      const assignmentContract = buildAssignmentQaPromptContract(assignmentQaInput);
+      if (!assignmentContract) {
+        return {
+          ok: false,
+          text: '',
+          provider: effectiveProvider || null,
+          model: effectiveModel || null,
+          seat: 'full_synthesis',
+          error: 'unsupported_assignment_qa_contract',
+        };
+      }
+
+      const repairPrompt = buildAssignmentQaRepairPrompt({
+        userMessage: message,
+        failedResponse: currentText,
+        constructDisplayName: gptConfig?.name || constructId,
+        assignmentContract,
+        identityCoherence,
+        assignmentQa,
+      });
+	      const repairMessages = [
+	        ...buildCompactRepairMessages({
+	          constructId,
+	          constructDisplayName: gptConfig?.name || constructId,
+	          repairKind: 'assignment_qa_repair',
+	          repairPrompt,
+	        }),
+	      ];
+      const configuredMaxTokens = Number(generationParams.max_tokens || 0);
+      const maxTokens = Math.max(configuredMaxTokens || 0, Number(assignmentContract.repairMaxTokens || 1200));
+
+      try {
+        if (effectiveProvider === 'ollama') {
+          const ollamaHost = getOllamaHost();
+          const repairResp = await fetch(`${ollamaHost}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: effectiveModel,
+              messages: repairMessages,
+              stream: false,
+              options: {
+                temperature: generationParams.temperature ?? 0.25,
+                top_p: generationParams.top_p,
+                num_predict: maxTokens,
+              },
+            }),
+          });
+          if (!repairResp.ok) throw new Error(`Ollama assignment repair ${repairResp.status}`);
+          const repairData = await repairResp.json();
+          return {
+            ok: true,
+            text: repairData.message?.content || '',
+            provider: effectiveProvider,
+            model: effectiveModel,
+            seat: 'full_synthesis',
+            max_tokens: maxTokens,
+          };
+        }
+
+        const repairClient =
+          effectiveProvider === 'replitOpenrouter'
+            ? replitOpenrouter
+            : effectiveProvider === 'openrouter'
+              ? (openrouter || replitOpenrouter)
+              : effectiveProvider === 'openai'
+                ? openaiClient
+                : (replitOpenrouter || openaiClient || openrouter);
+
+        if (!repairClient) {
+          throw new Error(`No assignment repair client available for ${effectiveProvider || 'unknown provider'}`);
+        }
+
+        const repairCompletion = await repairClient.chat.completions.create({
+          model: effectiveModel,
+          messages: repairMessages,
+          max_tokens: maxTokens,
+          temperature: generationParams.temperature ?? 0.25,
+          top_p: generationParams.top_p,
+        });
+        return {
+          ok: true,
+          text: repairCompletion.choices?.[0]?.message?.content || '',
+          provider: effectiveProvider,
+          model: effectiveModel,
+          seat: 'full_synthesis',
+          max_tokens: maxTokens,
+        };
+      } catch (repairErr) {
+        return {
+          ok: false,
+          text: '',
+          provider: effectiveProvider || null,
+          model: effectiveModel || null,
+          seat: 'full_synthesis',
+          max_tokens: maxTokens,
+          error: repairErr?.message || 'assignment_repair_failed',
+        };
+      }
+    }
 
     // Route to appropriate provider
     try {
       let completion;
       let aiResponse;
+      let fullSeatSynthesisResult = null;
       const defaultVisionUserText = explicitVisionIntent
         ? 'Please describe what you see in this image while staying in character.'
         : getImageTurnDefaultUserMessage(constructId);
@@ -5708,20 +9188,199 @@ router.post("/message", async (req, res) => {
       }
 
       // ===== NOVA-001: Deterministic fallback chain with telemetry =====
-      if (constructId === 'nova-001' && (replitOpenrouter || openrouter || openaiClient) && !hasImages) {
-        const hotfixModel = lowComplexityTurn ? NOVA_FAST_OPENROUTER_MODEL : DEFAULT_OPENROUTER_MODEL;
-        providerTrace.model_strategy = lowComplexityTurn ? 'fast' : 'default';
-        providerTrace.primary_model = hotfixModel;
-        const hotfixMessages = injectPersonaAnchor([
-          { role: "system", content: systemPrompt },
-          ...conversationHistoryMessages,
-          { role: "user", content: message }
-        ]);
-        let novaSuccess = false;
+      if (activeOrchestrationProfile === FULL_SEAT_SYNTHESIS_PROFILE && hasImages) {
+        return res.status(400).json({
+          success: false,
+          error: 'FULL_SEAT_SYNTHESIS_UNSUPPORTED_ATTACHMENT',
+          message: 'Full-seat synthesis currently supports text-only construct QA turns.',
+          construct_id: constructId,
+        });
+      } else if (activeOrchestrationProfile === FULL_SEAT_SYNTHESIS_PROFILE) {
+        if (!providerAvailability.ollama) {
+          return res.status(503).json({
+            success: false,
+            error: 'FULL_SEAT_SYNTHESIS_REQUIRES_OLLAMA',
+            message: 'Full-seat synthesis requires local Lin/Ollama seats to be available.',
+            construct_id: constructId,
+          });
+        }
 
-        if (PREFER_LOCAL_MODELS && providerAvailability.ollama && !novaSuccess) {
-          const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
-          const ollamaModel = PREFERRED_OLLAMA_MODEL;
+        providerTrace.model_strategy = 'full_seat_synthesis';
+        providerTrace.profile = FULL_SEAT_SYNTHESIS_PROFILE;
+        console.log(`🧬 [VVAULT Proxy] Running full-seat synthesis for ${constructId}`);
+
+        const ollamaHost = getOllamaHost();
+        const callSeat = async ({ provider, model, seat, role, messages, maxTokens, temperature, top_p }) => {
+          const attempt = {
+            provider,
+            model,
+            seat,
+            role,
+            retry: 0,
+            started_at: new Date().toISOString(),
+            duration_ms: 0,
+            status: 'failed',
+            error_code: null,
+            error_message_short: null,
+          };
+          const t0 = Date.now();
+          if (provider !== 'ollama') {
+            attempt.error_message_short = `Unsupported full-synthesis provider: ${provider}`;
+            providerTrace.attempts.push(attempt);
+            throw new Error(attempt.error_message_short);
+          }
+
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT);
+          try {
+            const response = await fetch(`${ollamaHost}/api/chat`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              signal: controller.signal,
+              body: JSON.stringify({
+                model,
+                messages,
+                stream: false,
+                options: {
+                  temperature,
+                  top_p,
+                  num_predict: maxTokens,
+                },
+              }),
+            });
+            attempt.duration_ms = Date.now() - t0;
+            if (!response.ok) {
+              attempt.error_code = response.status;
+              attempt.error_message_short = `Ollama ${response.status}`;
+              throw new Error(`Ollama ${response.status}`);
+            }
+            const data = await response.json();
+            attempt.status = 'ok';
+            providerTrace.attempts.push(attempt);
+            return {
+              provider,
+              model,
+              status: 'pass',
+              duration_ms: attempt.duration_ms,
+              text: data.message?.content || '',
+            };
+          } catch (err) {
+            attempt.duration_ms = Date.now() - t0;
+            attempt.status = err?.name === 'AbortError' ? 'timeout' : 'failed';
+            attempt.error_code = err?.status || err?.code || attempt.error_code || null;
+            attempt.error_message_short = (err?.message || 'unknown').slice(0, 80);
+            providerTrace.attempts.push(attempt);
+            throw err;
+          } finally {
+            clearTimeout(timeout);
+          }
+        };
+
+        try {
+          fullSeatSynthesisResult = await runFullSeatSynthesis({
+            userMessage: message,
+            systemPrompt,
+            history: conversationHistoryMessages,
+            constructId,
+            constructDisplayName: gptConfig?.name || constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase()),
+            evidencePreview: enrichedContext.memory_evidence_preview,
+            assignmentQaInput,
+            defaults: LIN_MODEL_DEFAULTS,
+            callSeat,
+            generationParams,
+          });
+        } catch (err) {
+          const assignmentContract = buildAssignmentQaPromptContract(assignmentQaInput);
+          const deterministicAssignmentText = assignmentContract
+            ? buildDeterministicAssignmentQaAnswer({
+              assignmentQa: assignmentQaInput,
+              constructDisplayName: gptConfig?.name || constructId,
+            })
+            : null;
+
+          if (!deterministicAssignmentText) {
+            throw err;
+          }
+
+          const finalRef = String(LIN_MODEL_DEFAULTS.creative || 'ollama:mistral:latest');
+          const [fallbackProvider, ...fallbackModelParts] = finalRef.split(':');
+          const fallbackModel = fallbackModelParts.join(':') || 'mistral:latest';
+          const durationMs = Date.now() - traceStart;
+          const errorMessage = (err?.message || 'full-seat synthesis failed').slice(0, 160);
+
+          console.warn(`⚠️ [FullSeatSynthesis] Provider failure for ${constructId}; using guarded deterministic assignment fallback.`, {
+            expectedTurn: assignmentQaInput?.expectedTurn || null,
+            error: errorMessage,
+          });
+
+          fullSeatSynthesisResult = {
+            profile: FULL_SEAT_SYNTHESIS_PROFILE,
+            status: 'warn',
+            policy: 'full_seat_synthesis',
+            construct_id: constructId,
+            seats: [],
+            final: {
+              provider: fallbackProvider || 'ollama',
+              model: fallbackModel,
+              duration_ms: 0,
+              status: 'fallback',
+              error_message_short: errorMessage,
+            },
+            assignment: assignmentContract
+              ? {
+                assignmentProfile: assignmentContract.assignmentProfile,
+                expectedTurn: assignmentContract.expectedTurn,
+                expectedTask: assignmentContract.expectedTask,
+                evidencePacketCount: assignmentContract.evidencePacketCount,
+                sourceAnchor: assignmentContract.sourceAnchor,
+                ownerFile: assignmentContract.ownerFile,
+                contractVersion: assignmentContract.contractVersion,
+                final_prompt_received_contract: false,
+                requiredOutputShape: assignmentContract.requiredOutputShape,
+                finalMaxTokens: assignmentContract.finalMaxTokens,
+              }
+              : null,
+            assignment_contract_received: Boolean(assignmentContract),
+            provider_failure_fallback_attempted: true,
+            provider_failure_fallback_applied: true,
+            provider_failure_error: errorMessage,
+            total_duration_ms: durationMs,
+            finalText: deterministicAssignmentText,
+          };
+          providerTrace.fallback_used = true;
+          providerTrace.provider_failure_fallback_applied = true;
+          providerTrace.final_answer_source = 'deterministic_assignment_qa_fallback';
+        }
+
+        aiResponse = fullSeatSynthesisResult.finalText;
+        effectiveProvider = fullSeatSynthesisResult.final.provider;
+        effectiveModel = fullSeatSynthesisResult.final.model;
+        providerTrace.final_provider = effectiveProvider;
+        const synthesisFallbackUsed = Boolean(fullSeatSynthesisResult.provider_failure_fallback_applied);
+        providerTrace.fallback_used = synthesisFallbackUsed;
+        providerTrace.total_duration_ms = fullSeatSynthesisResult.total_duration_ms || (Date.now() - traceStart);
+        markEffectiveRoute({
+          source: synthesisFallbackUsed
+            ? 'lin_full_seat_synthesis_provider_fallback'
+            : 'lin_full_seat_synthesis',
+          localFirstUsed: true,
+          localCloudFallbackState: synthesisFallbackUsed ? 'provider_failure_fallback' : 'local_first',
+          fallbackUsed: synthesisFallbackUsed,
+          seatDefaultsOrOverrides: 'lin_full_seat_synthesis',
+        });
+      } else if (constructId === 'nova-001' && (providerAvailability.ollama || replitOpenrouter || openrouter || openaiClient) && !hasImages) {
+        const hotfixModel = effectiveProvider === 'openrouter' && effectiveModel
+          ? effectiveModel
+          : DEFAULT_OPENROUTER_MODEL;
+        providerTrace.model_strategy = 'preference';
+        providerTrace.primary_model = hotfixModel;
+        const hotfixMessages = buildMessages(message);
+        let novaSuccess = false;
+        const novaPreferLocal = providerAvailability.ollama && modelResolution.mode === 'lin';
+
+        if (novaPreferLocal && !novaSuccess) {
+          const ollamaHost = getOllamaHost();
+          const ollamaModel = getOllamaExecutionModel();
           console.log(`🟢 [VVAULT Proxy] Nova local-first: trying Ollama (${ollamaModel}) for nova-001`);
           try {
             const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
@@ -5738,15 +9397,16 @@ router.post("/message", async (req, res) => {
               aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
               effectiveProvider = 'ollama';
               effectiveModel = ollamaModel;
+              markOllamaExecutionRoute({ fallbackUsed: false, localCloudFallbackState: 'local_first' });
               novaSuccess = true;
-              providerTrace.attempts.push({ provider: 'ollama', retry: 0, started_at: new Date().toISOString(), duration_ms: 0, status: 'ok', error_code: null, error_message_short: null });
+              providerTrace.attempts.push({ provider: 'ollama', model: ollamaModel, retry: 0, started_at: new Date().toISOString(), duration_ms: 0, status: 'ok', error_code: null, error_message_short: null });
               console.log(`🟢 [VVAULT Proxy] Nova local-first Ollama success`);
             } else {
-              providerTrace.attempts.push({ provider: 'ollama', retry: 0, started_at: new Date().toISOString(), duration_ms: 0, status: 'failed', error_code: ollamaResponse.status, error_message_short: `Ollama ${ollamaResponse.status}` });
+              providerTrace.attempts.push({ provider: 'ollama', model: ollamaModel, retry: 0, started_at: new Date().toISOString(), duration_ms: 0, status: 'failed', error_code: ollamaResponse.status, error_message_short: `Ollama ${ollamaResponse.status}` });
             }
           } catch (ollamaErr) {
             console.warn(`⚠️ [VVAULT Proxy] Nova local-first Ollama failed:`, ollamaErr?.message);
-            providerTrace.attempts.push({ provider: 'ollama', retry: 0, started_at: new Date().toISOString(), duration_ms: 0, status: 'failed', error_code: null, error_message_short: (ollamaErr?.message || 'unknown').slice(0, 80) });
+            providerTrace.attempts.push({ provider: 'ollama', model: ollamaModel, retry: 0, started_at: new Date().toISOString(), duration_ms: 0, status: 'failed', error_code: null, error_message_short: (ollamaErr?.message || 'unknown').slice(0, 80) });
           }
         }
 
@@ -5756,8 +9416,55 @@ router.post("/message", async (req, res) => {
         }
 
         if (openrouter && !novaSuccess) {
-          const r = await tryProvider(openrouter, 'openrouter', hotfixModel, hotfixMessages, generationParams);
-          if (r.ok) { aiResponse = r.response; effectiveProvider = 'openrouter'; effectiveModel = r.model; novaSuccess = true; }
+          const envCandidates = process.env.NOVA_OPENROUTER_MODEL_CANDIDATES
+            ? String(process.env.NOVA_OPENROUTER_MODEL_CANDIDATES)
+                .split(',')
+                .map(s => s.trim())
+                .filter(Boolean)
+            : [];
+
+          const fallbackCandidates = [
+            hotfixModel,
+            DEFAULT_OPENROUTER_MODEL,
+          ].filter(Boolean);
+
+          const uniqueCandidates = Array.from(new Set([...(envCandidates.length ? envCandidates : fallbackCandidates)]));
+
+          const looksLikeInvalidModelAttempt = (attempt) => {
+            if (!attempt) return false;
+            const status = attempt.status;
+            const code = attempt.error_code;
+            const msg = String(attempt.error_message_short || '').toLowerCase();
+
+            // Timeouts / connectivity -> likely transient; don't burn time on alternate model IDs.
+            if (status === 'timeout') return false;
+
+            // Common invalid-model signals.
+            if (msg.includes('invalid model') || msg.includes('not a valid model') || msg.includes('model id')) return true;
+
+            const numericCode = typeof code === 'number' ? code : (code != null ? Number(code) : null);
+            if (numericCode != null && numericCode >= 400 && numericCode < 500) return true;
+            return false;
+          };
+
+          for (const candidateModel of uniqueCandidates) {
+            const beforeLen = providerTrace.attempts.length;
+            const r = await tryProvider(openrouter, 'openrouter', candidateModel, hotfixMessages, generationParams);
+            if (r.ok) {
+              aiResponse = r.response;
+              effectiveProvider = 'openrouter';
+              effectiveModel = r.model;
+              novaSuccess = true;
+              break;
+            }
+
+            const delta = providerTrace.attempts.slice(beforeLen);
+            const lastAttempt = delta.length ? delta[delta.length - 1] : null;
+            if (!looksLikeInvalidModelAttempt(lastAttempt)) {
+              // Likely connectivity / transient provider failure; stop trying alternate model IDs.
+              break;
+            }
+          }
         }
 
         if (openaiClient && !novaSuccess) {
@@ -5772,8 +9479,8 @@ router.post("/message", async (req, res) => {
         }
 
         if (!novaSuccess && providerAvailability.ollama) {
-          const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
-          const ollamaModel = PREFERRED_OLLAMA_MODEL;
+          const ollamaHost = getOllamaHost();
+          const ollamaModel = getOllamaExecutionModel();
           console.log(`🟢 [VVAULT Proxy] Nova fallback: trying Ollama (${ollamaModel}) for nova-001`);
           try {
             const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
@@ -5790,15 +9497,16 @@ router.post("/message", async (req, res) => {
               aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
               effectiveProvider = 'ollama';
               effectiveModel = ollamaModel;
+              markOllamaExecutionRoute({ fallbackUsed: true, localCloudFallbackState: 'fallback_to_ollama' });
               novaSuccess = true;
-              providerTrace.attempts.push({ provider: 'ollama', retry: 0, started_at: new Date().toISOString(), duration_ms: 0, status: 'ok', error_code: null, error_message_short: null });
+              providerTrace.attempts.push({ provider: 'ollama', model: ollamaModel, retry: 0, started_at: new Date().toISOString(), duration_ms: 0, status: 'ok', error_code: null, error_message_short: null });
               console.log(`🟢 [VVAULT Proxy] Nova Ollama fallback success`);
             } else {
-              providerTrace.attempts.push({ provider: 'ollama', retry: 0, started_at: new Date().toISOString(), duration_ms: 0, status: 'failed', error_code: ollamaResponse.status, error_message_short: `Ollama ${ollamaResponse.status}` });
+              providerTrace.attempts.push({ provider: 'ollama', model: ollamaModel, retry: 0, started_at: new Date().toISOString(), duration_ms: 0, status: 'failed', error_code: ollamaResponse.status, error_message_short: `Ollama ${ollamaResponse.status}` });
             }
           } catch (ollamaErr) {
             console.warn(`⚠️ [VVAULT Proxy] Nova Ollama fallback failed:`, ollamaErr?.message);
-            providerTrace.attempts.push({ provider: 'ollama', retry: 0, started_at: new Date().toISOString(), duration_ms: 0, status: 'failed', error_code: null, error_message_short: (ollamaErr?.message || 'unknown').slice(0, 80) });
+            providerTrace.attempts.push({ provider: 'ollama', model: ollamaModel, retry: 0, started_at: new Date().toISOString(), duration_ms: 0, status: 'failed', error_code: null, error_message_short: (ollamaErr?.message || 'unknown').slice(0, 80) });
           }
         }
 
@@ -5806,6 +9514,10 @@ router.post("/message", async (req, res) => {
         const firstSuccessIdx = providerTrace.attempts.findIndex(a => a.status === 'ok');
         const uniqueProvidersBefore = firstSuccessIdx > 0 ? new Set(providerTrace.attempts.slice(0, firstSuccessIdx).map(a => a.provider)).size : 0;
         providerTrace.fallback_used = uniqueProvidersBefore > 0;
+        effectiveRouteFallbackUsed = effectiveRouteFallbackUsed || providerTrace.fallback_used;
+        if (providerTrace.fallback_used && !effectiveLocalCloudFallbackState) {
+          effectiveLocalCloudFallbackState = 'fallback_used';
+        }
         providerTrace.total_duration_ms = Date.now() - traceStart;
         const failedProviders = providerTrace.attempts.filter(a => a.status !== 'ok').map(a => `${a.provider}(${a.status}${a.retry > 0 ? ` r${a.retry}` : ''})`).join(', ');
         console.log(`📡 [ProviderTrace] ${requestId} | construct=${constructId} | final=${providerTrace.final_provider} | fallback=${providerTrace.fallback_used} | failed=[${failedProviders}] | ${providerTrace.total_duration_ms}ms`);
@@ -5817,7 +9529,7 @@ router.post("/message", async (req, res) => {
         }
       } else if (effectiveProvider === 'openai') {
         console.log(`🔷 [VVAULT Proxy] Calling OpenAI (${effectiveModel}) for ${constructId}`);
-        
+
         let userMessageContent;
         if (hasImages) {
           userMessageContent = [
@@ -5834,13 +9546,9 @@ router.post("/message", async (req, res) => {
         } else {
           userMessageContent = message;
         }
-        
+
         try {
-          const openAiMessages = injectPersonaAnchor([
-            { role: "system", content: systemPrompt },
-            ...conversationHistoryMessages,
-            { role: "user", content: userMessageContent }
-          ]);
+          const openAiMessages = buildMessages(userMessageContent);
           completion = await openaiClient.chat.completions.create({
             model: effectiveModel,
             messages: openAiMessages,
@@ -5861,11 +9569,7 @@ router.post("/message", async (req, res) => {
           } else {
             fallbackContent = typeof userMessageContent === 'string' ? userMessageContent : message;
           }
-          const fallbackMessages = injectPersonaAnchor([
-            { role: "system", content: systemPrompt },
-            ...conversationHistoryMessages,
-            { role: "user", content: fallbackContent }
-          ]);
+          const fallbackMessages = buildMessages(fallbackContent);
           let fallbackSuccess = false;
 
           if (replitOpenrouter && !fallbackSuccess) {
@@ -5912,25 +9616,22 @@ router.post("/message", async (req, res) => {
         }
       } else if (effectiveProvider === 'ollama') {
         // Ollama requires different handling - use fetch directly
-        const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+        const ollamaHost = getOllamaHost();
         console.log(`🟢 [VVAULT Proxy] Calling Ollama (${effectiveModel}) for ${constructId}`);
         const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             model: effectiveModel,
-            messages: injectPersonaAnchor([
-              { role: "system", content: systemPrompt },
-              { role: "user", content: message }
-            ]),
+            messages: buildMessages(message),
             stream: false
           })
         });
-        
+
         if (!ollamaResponse.ok) {
           throw new Error(`Ollama error: ${ollamaResponse.status}`);
         }
-        
+
         const ollamaData = await ollamaResponse.json();
         aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
       } else {
@@ -5964,15 +9665,11 @@ router.post("/message", async (req, res) => {
         } else {
           openrouterUserContent = message;
         }
-        const mainMsgs = injectPersonaAnchor([
-          { role: "system", content: systemPrompt },
-          ...conversationHistoryMessages,
-          { role: "user", content: openrouterUserContent }
-        ]);
+        const mainMsgs = buildMessages(openrouterUserContent);
         let llmSuccess = false;
         const providerErrors = [];
         let lastProviderError = null;
-        
+
         const modelCandidates = Array.from(new Set([
           effectiveModel,
           'meta-llama/llama-3.3-70b-instruct',
@@ -6022,15 +9719,11 @@ router.post("/message", async (req, res) => {
             }
           }
         }
-        
+
         if (!llmSuccess && PREFER_LOCAL_MODELS && providerAvailability.ollama && !hasImages) {
-          const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
-          const ollamaModel = PREFERRED_OLLAMA_MODEL;
-          const ollamaMessages = injectPersonaAnchor([
-            { role: "system", content: systemPrompt },
-            ...conversationHistoryMessages,
-            { role: "user", content: message }
-          ]);
+          const ollamaHost = getOllamaHost();
+          const ollamaModel = getOllamaExecutionModel();
+          const ollamaMessages = buildMessages(message);
           try {
             console.log(`🟢 [VVAULT Proxy] Local-first: trying Ollama (${ollamaModel}) for ${constructId}`);
             const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
@@ -6049,6 +9742,10 @@ router.post("/message", async (req, res) => {
             aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
             effectiveProvider = 'ollama';
             effectiveModel = ollamaModel;
+            markOllamaExecutionRoute({
+              fallbackUsed: providerErrors.length > 0,
+              localCloudFallbackState: providerErrors.length > 0 ? 'fallback_to_ollama' : 'local_first',
+            });
             llmSuccess = true;
             console.log('[OLLAMA LOCAL-FIRST] Success');
           } catch (ollamaErr) {
@@ -6078,13 +9775,9 @@ router.post("/message", async (req, res) => {
         }
 
         if (!llmSuccess && !PREFER_LOCAL_MODELS && providerAvailability.ollama) {
-          const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
-          const ollamaModel = PREFERRED_OLLAMA_MODEL;
-          const ollamaMessages = injectPersonaAnchor([
-            { role: "system", content: systemPrompt },
-            ...conversationHistoryMessages,
-            { role: "user", content: message }
-          ]);
+          const ollamaHost = getOllamaHost();
+          const ollamaModel = getOllamaExecutionModel();
+          const ollamaMessages = buildMessages(message);
           try {
             console.log(`🟢 [VVAULT Proxy] All cloud providers failed, trying Ollama (${ollamaModel}) for ${constructId}`);
             const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
@@ -6103,6 +9796,7 @@ router.post("/message", async (req, res) => {
             aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
             effectiveProvider = 'ollama';
             effectiveModel = ollamaModel;
+            markOllamaExecutionRoute({ fallbackUsed: true, localCloudFallbackState: 'fallback_to_ollama' });
             llmSuccess = true;
             console.log('[OLLAMA FALLBACK] Success');
           } catch (ollamaErr) {
@@ -6115,7 +9809,7 @@ router.post("/message", async (req, res) => {
         if (!llmSuccess && constructId === 'nova-001') {
           console.log('🛡️ [NOVA GUARD] OpenAI fallback skipped for nova-001 (OpenRouter-only policy)');
         }
-        
+
         if (!llmSuccess) {
           const normalizedError = normalizeProviderError(lastProviderError, effectiveProvider);
           return res.status(503).json({
@@ -6132,14 +9826,1361 @@ router.post("/message", async (req, res) => {
           aiResponse = completion?.choices?.[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
         }
       }
-      
+
+      const directResumeContinue =
+        routeTurnEnvelope.continuityResume?.continuityRestored === true &&
+        /^\s*continue[.!?\s]*$/i.test(String(message || ''));
+      const prePostDeterministicResumeFallback =
+        directResumeContinue
+          ? buildDeterministicResumedTurnFallback({
+              runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+              userMessage: message,
+            })
+          : null;
+      if (prePostDeterministicResumeFallback?.text) {
+        aiResponse = prePostDeterministicResumeFallback.text;
+        providerTrace.final_answer_source = prePostDeterministicResumeFallback.source;
+      }
+
       const providerForced = constructId === 'nova-001';
+      const prevAssistantMsg = conversationHistoryMessages
+        .slice()
+        .reverse()
+        .find(m => m.role === 'assistant')?.content || null;
+      const validatorDebug = {
+        memory_retrieval_ran: !!enrichedContext.memory_retrieval_ran,
+        memory_query_detected: !!enrichedContext.memory_query_detected,
+        evidence_count: enrichedContext.evidence_count || 0,
+        greeting_turn: greetingTurnContext
+          ? {
+              posture: greetingTurnContext.posture,
+              identity_available: greetingTurnContext.voiceContext?.identityAvailable === true,
+              low_confidence: greetingTurnContext.voiceContext?.lowConfidence === true,
+            }
+          : null,
+        identity_drift_detected: false,
+        identity_rewrite_applied: false,
+        identity_fallback_applied: false,
+        cutoff_violation_detected: false,
+        rewrite_applied: false,
+      };
+      const postProcessResult = await applyResponsePostProcessing({
+        aiResponse,
+        previousAssistant: prevAssistantMsg,
+        buildMessages,
+        userMessage: message,
+        history: conversationHistoryMessages,
+        constructId,
+        constructDisplayName: gptConfig?.name || constructId,
+        regenClient: replitOpenrouter || openaiClient || openrouter,
+        regenModel: replitOpenrouter ? DEFAULT_OPENROUTER_MODEL : (openaiClient ? 'gpt-4.1-mini' : effectiveModel || DEFAULT_OPENROUTER_MODEL),
+        fallbackText: buildIdentityDriftFallback(message, constructId),
+        recitalRewriter: rewriteRecitalIfNeeded,
+        identityGuard: (currentText) => enforceFirstPersonIdentity({
+          aiResponse: currentText,
+          userMessage: message,
+          constructId,
+          providerAvailability,
+          roleplayEnabled: gptConfig?.roleplayEnabled === true,
+          latestUserBeforeCurrent: getLastUserMessageFromHistory(conversationHistoryMessages),
+        }),
+        cutoffRewriter: (currentText) => rewriteCutoffViolationIfNeeded(
+          currentText,
+          !!enrichedContext.memory_query_detected,
+          enrichedContext.evidence_count || 0,
+        ),
+        evidencePreview: enrichedContext.memory_evidence_preview,
+        greetingTurnContext,
+      });
+      aiResponse = postProcessResult.aiResponse;
+      aiResponse = applyHumanConversationGuard(aiResponse, {
+        userMessage: message,
+        memoryIntent: !!enrichedContext.memory_query_detected,
+        evidenceCount: Number(enrichedContext.evidence_count || 0),
+        constructId,
+        constructDisplayName: gptConfig?.name || constructId,
+        userName: req.user?.name || req.user?.given_name || 'Devon',
+        greetingTurnContext,
+      });
+      aiResponse = recoverEvidenceBackedContinuityReply({
+        aiResponse,
+        constructId,
+        userMessage: message,
+        evidenceCount: Number(enrichedContext.evidence_count || 0),
+        evidencePreview: enrichedContext.memory_evidence_preview,
+      });
+      aiResponse = applyHumanConversationGuard(aiResponse, {
+        userMessage: message,
+        memoryIntent: !!enrichedContext.memory_query_detected,
+        evidenceCount: Number(enrichedContext.evidence_count || 0),
+        constructId,
+        constructDisplayName: gptConfig?.name || constructId,
+        userName: req.user?.name || req.user?.given_name || 'Devon',
+        greetingTurnContext,
+      });
+      const recitalDetected = postProcessResult.recitalDetected;
+      const recitalRewriteApplied = postProcessResult.recitalRewriteApplied;
+      const personaDriftDetected = postProcessResult.personaDriftDetected;
+      const personaRegenApplied = postProcessResult.personaRegenApplied;
+      const repeatDetected = postProcessResult.repeatDetected;
+	      validatorDebug.identity_drift_detected = postProcessResult.identityDriftDetected;
+	      validatorDebug.identity_rewrite_applied = postProcessResult.identityRewriteApplied;
+	      validatorDebug.no_rewrite_identity_anchor = Boolean(enrichedContext.no_rewrite_identity_anchor);
+	      validatorDebug.identity_rewrite_prevented_by = enrichedContext.no_rewrite_identity_anchor && !postProcessResult.identityRewriteApplied
+	        ? 'prompt_anchor'
+	        : null;
+	      validatorDebug.identity_fallback_applied = postProcessResult.identityFallbackApplied;
+      validatorDebug.cutoff_violation_detected = postProcessResult.cutoffViolationDetected;
+      validatorDebug.rewrite_applied = postProcessResult.cutoffRewriteApplied;
+      const normalizedRequestedTranscriptPath = String(transcriptPath || '').trim().replace(/^\/+/, '');
+      const requestedSessionForPolicy = sessionId || threadId || `${constructId}_chat_with_${constructId}`;
+      const isCanonicalLinPolicyRoute =
+        constructId === 'lin-001' &&
+        requestedSessionForPolicy === LIN_CANONICAL_THREAD_ID &&
+        !(typeof projectName === 'string' && projectName.trim()) &&
+        (!normalizedRequestedTranscriptPath ||
+          normalizedRequestedTranscriptPath === LIN_CANONICAL_TRANSCRIPT_PATH);
+      const policyAnswerKind = classifyConstructRuntimePolicyAnswerKind(message);
+      const deterministicLinPolicyPrimaryText =
+        isCanonicalLinPolicyRoute && policyAnswerKind
+          ? buildDeterministicConstructRuntimePolicyAnswer({
+              userMessage: message,
+              constructId,
+              constructDisplayName: gptConfig?.name || constructId,
+            })
+          : null;
+      if (deterministicLinPolicyPrimaryText) {
+        aiResponse = deterministicLinPolicyPrimaryText;
+        providerTrace.final_answer_source = 'deterministic_policy_primary';
+      }
+      const identityCoherenceInitial = evaluateIdentityCoherence({
+        userMessage: message,
+        aiResponse,
+        constructId,
+        constructDisplayName: gptConfig?.name || constructId,
+        requestedSeat,
+        evidencePreview: enrichedContext.memory_evidence_preview,
+        greetingTurnContext,
+      });
+      let identityCoherence = identityCoherenceInitial;
+      let identityCoherenceRepair = {
+        attempted: false,
+        applied: false,
+        provider: null,
+        model: null,
+        initial_status: identityCoherenceInitial.status,
+        final_status: identityCoherenceInitial.status,
+        failure_reason: null,
+      };
+      let identityCoherencePolicyFallback = {
+        attempted: false,
+        applied: false,
+        answer_kind: policyAnswerKind || null,
+        provider: effectiveProvider || null,
+        model: effectiveModel || null,
+        source: 'construct_runtime_policy_deterministic_fallback',
+        final_status: null,
+        final_reasons: [],
+        failure_reason: null,
+      };
+      let identityCoherenceConstructFallback = {
+        attempted: false,
+        applied: false,
+        answer_kind: null,
+        provider: effectiveProvider || null,
+        model: effectiveModel || null,
+        source: null,
+        final_status: null,
+        final_reasons: [],
+        failure_reason: null,
+        owner_file: null,
+        source_anchor: null,
+      };
+      let identityCoherenceCertificationFallback = {
+        attempted: false,
+        applied: false,
+        prompt_id: getFiveConstructCertificationPromptId(message),
+        provider: 'deterministic',
+        model: 'five_construct_certification_proof_fallback',
+        source: 'deterministic_five_construct_certification_proof_fallback',
+        final_status: null,
+        final_reasons: [],
+        failure_reason: null,
+        owner_file: null,
+        source_anchor: null,
+      };
+      let finalAnswerSource = providerTrace.final_answer_source || 'model_initial';
+      let identityCoherenceBlocked = false;
+      const identityCoherenceFailureMessage = 'Identity/coherence guard blocked this assistant draft before canonical persistence.';
+      const transcriptLawMemoryReceipt = buildTranscriptLawMemoryReceipt(enrichedContext);
+      let transcriptLawPrimaryApplied = false;
+      const transcriptLawPromptKindForPrimary = linearTranscriptLawOrdinaryTurn
+        ? null
+        : classifyTranscriptLawPromptKind(message, constructId);
+      const transcriptLawPrimaryCandidate = transcriptLawPromptKindForPrimary &&
+        transcriptLawPromptKindForPrimary !== 'missing_codex_transcript_fact' &&
+        transcriptLawMemoryReceipt.retrieval_ran &&
+        Number(transcriptLawMemoryReceipt.evidence_count || 0) > 0 &&
+        Number(transcriptLawMemoryReceipt.voice_exemplar_count || 0) > 0
+        ? buildDeterministicTranscriptLawRepairCandidate({
+            userMessage: message,
+            constructId,
+            constructDisplayName: gptConfig?.name || constructId,
+          })
+        : null;
+      if (transcriptLawPrimaryCandidate?.text) {
+        const transcriptLawPrimaryIdentityGrade = evaluateIdentityCoherence({
+          userMessage: message,
+          aiResponse: transcriptLawPrimaryCandidate.text,
+          constructId,
+          constructDisplayName: gptConfig?.name || constructId,
+          requestedSeat,
+          evidencePreview: enrichedContext.memory_evidence_preview,
+          greetingTurnContext,
+        });
+        const transcriptLawPrimaryGrade = evaluateTranscriptLawGovernance({
+          userMessage: message,
+          aiResponse: transcriptLawPrimaryCandidate.text,
+          constructId,
+          constructDisplayName: gptConfig?.name || constructId,
+          memory: transcriptLawMemoryReceipt,
+          identityPreflight: identityBundle.preflight || null,
+          finalAnswerSource: transcriptLawPrimaryCandidate.source,
+        });
+        if (
+          transcriptLawPrimaryIdentityGrade.status !== 'fail' &&
+          transcriptLawPrimaryGrade.status !== 'fail'
+        ) {
+          aiResponse = transcriptLawPrimaryCandidate.text;
+          finalAnswerSource = transcriptLawPrimaryCandidate.source;
+          providerTrace.final_answer_source = transcriptLawPrimaryCandidate.source;
+          transcriptLawPrimaryApplied = true;
+          validatorDebug.identity_drift_detected = false;
+          validatorDebug.identity_rewrite_applied = false;
+          validatorDebug.identity_fallback_applied = false;
+        }
+      }
+
+      if (identityCoherence.status === 'fail') {
+        const certificationProofFallback = buildCertificationProofTurnAnswer({
+          userMessage: message,
+          constructId,
+          constructDisplayName: gptConfig?.name || constructId,
+          threadId: requestedSessionForPolicy,
+          transcriptPath: normalizedRequestedTranscriptPath,
+          memoryReceipt: transcriptLawMemoryReceipt,
+        });
+        if (certificationProofFallback?.text) {
+          identityCoherenceCertificationFallback = {
+            ...identityCoherenceCertificationFallback,
+            attempted: true,
+            prompt_id: certificationProofFallback.promptId,
+            source: certificationProofFallback.source,
+            owner_file: certificationProofFallback.ownerFile,
+            source_anchor: certificationProofFallback.sourceAnchor,
+          };
+          const certificationGrade = evaluateIdentityCoherence({
+            userMessage: message,
+            aiResponse: certificationProofFallback.text,
+            constructId,
+            constructDisplayName: gptConfig?.name || constructId,
+            requestedSeat,
+            evidencePreview: enrichedContext.memory_evidence_preview,
+            greetingTurnContext,
+          });
+          identityCoherenceCertificationFallback.final_status = certificationGrade.status;
+          identityCoherenceCertificationFallback.final_reasons = certificationGrade.reasons || [];
+          if (certificationGrade.status !== 'fail') {
+            aiResponse = certificationProofFallback.text;
+            identityCoherence = certificationGrade;
+            identityCoherenceCertificationFallback.applied = true;
+            finalAnswerSource = certificationProofFallback.source;
+            providerTrace.final_answer_source = certificationProofFallback.source;
+            console.log(`✅ [IdentityCoherence] Certification proof fallback applied for ${constructId}; prompt=${certificationProofFallback.promptId}, final status=${certificationGrade.status}`);
+          } else {
+            identityCoherenceCertificationFallback.failure_reason = 'certification_proof_fallback_failed_identity_coherence_grade';
+            console.warn(`⚠️ [IdentityCoherence] Certification proof fallback failed for ${constructId}.`, certificationGrade.reasons);
+          }
+        }
+      }
+
+      function prepareIdentityCoherenceCandidate(candidateText) {
+        let candidate = String(candidateText || '').trim();
+        if (!candidate) return { text: '', grade: null };
+        candidate = applyHumanConversationGuard(candidate, {
+          userMessage: message,
+          memoryIntent: !!enrichedContext.memory_query_detected,
+          evidenceCount: Number(enrichedContext.evidence_count || 0),
+          constructId,
+          constructDisplayName: gptConfig?.name || constructId,
+          userName: req.user?.name || req.user?.given_name || 'Devon',
+          greetingTurnContext,
+        });
+        candidate = recoverEvidenceBackedContinuityReply({
+          aiResponse: candidate,
+          constructId,
+          userMessage: message,
+          evidenceCount: Number(enrichedContext.evidence_count || 0),
+          evidencePreview: enrichedContext.memory_evidence_preview,
+        });
+        candidate = applyHumanConversationGuard(candidate, {
+          userMessage: message,
+          memoryIntent: !!enrichedContext.memory_query_detected,
+          evidenceCount: Number(enrichedContext.evidence_count || 0),
+          constructId,
+          constructDisplayName: gptConfig?.name || constructId,
+          userName: req.user?.name || req.user?.given_name || 'Devon',
+          greetingTurnContext,
+        });
+        return {
+          text: candidate,
+          grade: evaluateIdentityCoherence({
+            userMessage: message,
+            aiResponse: candidate,
+            constructId,
+            constructDisplayName: gptConfig?.name || constructId,
+            requestedSeat,
+            evidencePreview: enrichedContext.memory_evidence_preview,
+            greetingTurnContext,
+          }),
+        };
+      }
+
+      if (identityCoherence.status === 'fail') {
+        console.warn(`⚠️ [IdentityCoherence] Initial grade failed for ${constructId}; attempting one repair.`, identityCoherenceInitial.reasons);
+        const initialZenSmalltalkFallbackEligible =
+          isZenSmalltalkTesterBoundaryPrompt(message, constructId) &&
+          isTesterBoundaryDriftOnly(identityCoherenceInitial);
+        const initialValResponsibilityFallbackEligible =
+          isValResponsibilityPrompt(message, constructId) &&
+          isValResponsibilityDriftOnly(identityCoherenceInitial);
+        const initialConstructPresenceFallbackEligible =
+          classifyConstructPresencePromptKind(message, constructId) &&
+          isConstructPresenceDriftOnly(identityCoherenceInitial, message, constructId);
+        const initialGreetingFallbackEligible =
+          isGreetingTurnDriftOnly(identityCoherenceInitial, greetingTurnContext);
+        const repairTimeoutMs = normalizeTimeoutMs(process.env.ZEN_BOUNDED_IDENTITY_REPAIR_TIMEOUT_MS, 8000);
+        const repairOutcome = boundedZenSmalltalkRoute
+          ? await withRouteTimeoutResult(
+              repairIdentityCoherenceResponse(aiResponse, identityCoherenceInitial),
+              repairTimeoutMs,
+              'bounded_zen_smalltalk_identity_repair',
+            )
+          : {
+              status: 'ok',
+              value: await repairIdentityCoherenceResponse(aiResponse, identityCoherenceInitial),
+              error: null,
+            };
+        const repairAttempt = repairOutcome.status === 'ok'
+          ? repairOutcome.value
+          : {
+              ok: false,
+              text: '',
+              provider: effectiveProvider || null,
+              model: effectiveModel || null,
+              seat: requestedSeat || null,
+              routeSource: null,
+              error: repairOutcome.error || `identity repair ${repairOutcome.status}`,
+            };
+        identityCoherenceRepair = {
+          attempted: true,
+          applied: false,
+          provider: repairAttempt.provider || effectiveProvider || null,
+          model: repairAttempt.model || effectiveModel || null,
+          seat: repairAttempt.seat || requestedSeat || null,
+          route_source: repairAttempt.routeSource || null,
+          initial_status: identityCoherenceInitial.status,
+          final_status: 'fail',
+          failure_reason: repairAttempt.error || null,
+          initial_reasons: identityCoherenceInitial.reasons || [],
+          initial_answer_preview: String(aiResponse || '').replace(/\s+/g, ' ').trim().slice(0, 500),
+          initial_answer_text: String(aiResponse || '').trim().slice(0, 4000),
+        };
+
+        if (repairAttempt.ok && repairAttempt.text && repairAttempt.text.trim()) {
+          const { text: repairedText, grade: repairedGrade } = prepareIdentityCoherenceCandidate(repairAttempt.text);
+          identityCoherence = repairedGrade;
+          identityCoherenceRepair.final_status = repairedGrade.status;
+          identityCoherenceRepair.final_reasons = repairedGrade.reasons || [];
+          if (repairedGrade.status !== 'fail') {
+            aiResponse = repairedText;
+            identityCoherenceRepair.applied = true;
+            finalAnswerSource = repairAttempt.provider === 'deterministic'
+              ? 'identity_repair_toolkit'
+              : 'model_repair';
+            console.log(`✅ [IdentityCoherence] Repair applied for ${constructId}; final status=${repairedGrade.status}`);
+          } else {
+            identityCoherenceRepair.failure_reason = 'repair_failed_identity_coherence_grade';
+            console.warn(`⚠️ [IdentityCoherence] Repair still failed for ${constructId}; checking deterministic policy fallback.`, repairedGrade.reasons);
+          }
+        } else {
+          console.warn(`⚠️ [IdentityCoherence] Repair unavailable for ${constructId}; checking deterministic policy fallback.`, repairAttempt.error);
+        }
+
+        if (identityCoherence.status === 'fail') {
+          let deterministicConstructFallback = buildDeterministicZenSmalltalkBoundaryFallback(message, constructId);
+          const canUseZenSmalltalkFallback =
+            deterministicConstructFallback &&
+            isZenSmalltalkTesterBoundaryPrompt(message, constructId) &&
+            (isTesterBoundaryDriftOnly(identityCoherence) || initialZenSmalltalkFallbackEligible);
+          const deterministicIdentityFallback = canUseZenSmalltalkFallback
+            ? null
+            : buildDeterministicZenIdentityBoundaryFallback(message, constructId);
+          const canUseZenIdentityFallback =
+            deterministicIdentityFallback &&
+            isZenIdentityBoundaryPrompt(message, constructId) &&
+            isZenIdentityBoundaryDriftOnly(identityCoherence);
+          const deterministicValFallback =
+            !canUseZenSmalltalkFallback && !canUseZenIdentityFallback
+              ? buildDeterministicValResponsibilityFallback(message, constructId)
+              : null;
+          const canUseValFallback =
+            deterministicValFallback &&
+            isValResponsibilityPrompt(message, constructId) &&
+            (isValResponsibilityDriftOnly(identityCoherence) || initialValResponsibilityFallbackEligible);
+          const deterministicConstructPresenceFallback =
+            !canUseZenSmalltalkFallback && !canUseZenIdentityFallback && !canUseValFallback
+              ? buildDeterministicConstructPresenceFallback(
+                  message,
+                  constructId,
+                  enrichedContext.memory_evidence_preview,
+                )
+              : null;
+          const canUseConstructPresenceFallback =
+            deterministicConstructPresenceFallback &&
+            classifyConstructPresencePromptKind(message, constructId) &&
+            (isConstructPresenceDriftOnly(identityCoherence, message, constructId) || initialConstructPresenceFallbackEligible);
+          if (!canUseZenSmalltalkFallback && canUseZenIdentityFallback) {
+            deterministicConstructFallback = deterministicIdentityFallback;
+          } else if (!canUseZenSmalltalkFallback && !canUseZenIdentityFallback && canUseValFallback) {
+            deterministicConstructFallback = deterministicValFallback;
+          } else if (
+            !canUseZenSmalltalkFallback &&
+            !canUseZenIdentityFallback &&
+            !canUseValFallback &&
+            canUseConstructPresenceFallback
+          ) {
+            deterministicConstructFallback = deterministicConstructPresenceFallback;
+          }
+          if (canUseZenSmalltalkFallback || canUseZenIdentityFallback || canUseValFallback || canUseConstructPresenceFallback) {
+            identityCoherenceConstructFallback.attempted = true;
+            identityCoherenceConstructFallback.answer_kind = deterministicConstructFallback.answerKind;
+            identityCoherenceConstructFallback.source = deterministicConstructFallback.source;
+            identityCoherenceConstructFallback.owner_file = deterministicConstructFallback.ownerFile;
+            identityCoherenceConstructFallback.source_anchor = deterministicConstructFallback.sourceAnchor;
+            const { text: fallbackText, grade: fallbackGrade } = prepareIdentityCoherenceCandidate(deterministicConstructFallback.text);
+            identityCoherence = fallbackGrade;
+            identityCoherenceConstructFallback.final_status = fallbackGrade.status;
+            identityCoherenceConstructFallback.final_reasons = fallbackGrade.reasons || [];
+            if (fallbackGrade.status !== 'fail') {
+              aiResponse = fallbackText;
+              identityCoherenceConstructFallback.applied = true;
+	              finalAnswerSource = deterministicConstructFallback.source === 'deterministic_zen_identity_boundary_fallback'
+	                ? 'deterministic_zen_identity_boundary_fallback'
+	                : deterministicConstructFallback.source === 'deterministic_zen_direct_address_presence_fallback'
+	                  ? 'deterministic_zen_direct_address_presence_fallback'
+                    : deterministicConstructFallback.source === 'deterministic_zen_continuity_seed_fallback'
+                      ? 'deterministic_zen_continuity_seed_fallback'
+	                : deterministicConstructFallback.source === 'deterministic_val_responsibility_fallback'
+	                  ? 'deterministic_val_responsibility_fallback'
+	                  : deterministicConstructFallback.source === 'deterministic_katana_technical_presence_fallback'
+                    ? 'deterministic_katana_technical_presence_fallback'
+                    : deterministicConstructFallback.source === 'deterministic_sera_conversation_presence_fallback'
+                      ? 'deterministic_sera_conversation_presence_fallback'
+                      : deterministicConstructFallback.source === 'deterministic_nova_presence_boundary_fallback'
+                        ? 'deterministic_nova_presence_boundary_fallback'
+                        : deterministicConstructFallback.source === 'deterministic_nova_evidence_proof_fallback'
+                          ? 'deterministic_nova_evidence_proof_fallback'
+                        : 'deterministic_zen_smalltalk_boundary_fallback';
+              console.log(`✅ [IdentityCoherence] Deterministic construct boundary fallback applied for ${constructId}; final status=${fallbackGrade.status}`);
+            } else {
+              identityCoherenceConstructFallback.failure_reason = 'deterministic_construct_fallback_failed_identity_coherence_grade';
+              console.warn(`⚠️ [IdentityCoherence] Deterministic construct boundary fallback failed for ${constructId}; checking policy fallback.`, fallbackGrade.reasons);
+            }
+          } else if (deterministicConstructFallback || deterministicIdentityFallback || deterministicValFallback || deterministicConstructPresenceFallback) {
+            const skippedFallback = deterministicConstructFallback || deterministicIdentityFallback || deterministicValFallback || deterministicConstructPresenceFallback;
+            identityCoherenceConstructFallback.attempted = false;
+            identityCoherenceConstructFallback.answer_kind = skippedFallback.answerKind;
+            identityCoherenceConstructFallback.failure_reason = 'deterministic_construct_fallback_not_eligible_for_current_guard_signals';
+          }
+        }
+
+        if (
+          identityCoherence.status === 'fail' &&
+          (
+            isGreetingTurnDriftOnly(identityCoherence, greetingTurnContext) ||
+            initialGreetingFallbackEligible
+          )
+        ) {
+          const deterministicGreetingText = buildDeterministicConstructGreetingFallback({
+            posture: greetingTurnContext.posture,
+            voiceContext: greetingTurnContext.voiceContext || null,
+            constructDisplayName: gptConfig?.name || constructId,
+          });
+          if (deterministicGreetingText) {
+            identityCoherenceConstructFallback.attempted = true;
+            identityCoherenceConstructFallback.answer_kind = 'construct_greeting_contact';
+            identityCoherenceConstructFallback.source = 'deterministic_construct_greeting_fallback';
+            identityCoherenceConstructFallback.owner_file = 'server/lib/constructGreetingTurn.js';
+            identityCoherenceConstructFallback.source_anchor = 'server/lib/constructGreetingTurn.js:buildDeterministicConstructGreetingFallback';
+            const { text: fallbackText, grade: fallbackGrade } = prepareIdentityCoherenceCandidate(deterministicGreetingText);
+            identityCoherence = fallbackGrade;
+            identityCoherenceConstructFallback.final_status = fallbackGrade.status;
+            identityCoherenceConstructFallback.final_reasons = fallbackGrade.reasons || [];
+            if (fallbackGrade.status !== 'fail') {
+              aiResponse = fallbackText;
+              identityCoherenceConstructFallback.applied = true;
+              finalAnswerSource = 'deterministic_construct_greeting_fallback';
+              console.log(`✅ [IdentityCoherence] Deterministic greeting fallback applied for ${constructId}; final status=${fallbackGrade.status}`);
+            } else {
+              identityCoherenceConstructFallback.failure_reason = 'deterministic_construct_greeting_fallback_failed_identity_coherence_grade';
+              console.warn(`⚠️ [IdentityCoherence] Deterministic greeting fallback failed for ${constructId}; checking policy fallback.`, fallbackGrade.reasons);
+            }
+          }
+        }
+
+        if (identityCoherence.status === 'fail') {
+          const deterministicPolicyText = buildDeterministicConstructRuntimePolicyAnswer({
+            userMessage: message,
+            constructId,
+            constructDisplayName: gptConfig?.name || constructId,
+          });
+          if (policyAnswerKind && deterministicPolicyText) {
+            identityCoherencePolicyFallback.attempted = true;
+            const { text: fallbackText, grade: fallbackGrade } = prepareIdentityCoherenceCandidate(deterministicPolicyText);
+            identityCoherence = fallbackGrade;
+            identityCoherencePolicyFallback.final_status = fallbackGrade.status;
+            identityCoherencePolicyFallback.final_reasons = fallbackGrade.reasons || [];
+            if (fallbackGrade.status !== 'fail') {
+              aiResponse = fallbackText;
+              identityCoherencePolicyFallback.applied = true;
+              finalAnswerSource = 'deterministic_policy_fallback';
+              console.log(`✅ [IdentityCoherence] Deterministic policy fallback applied for ${constructId}; answerKind=${policyAnswerKind}, final status=${fallbackGrade.status}`);
+            } else {
+              identityCoherenceBlocked = true;
+              finalAnswerSource = 'identity_coherence_failed';
+              identityCoherencePolicyFallback.failure_reason = 'deterministic_policy_fallback_failed_identity_coherence_grade';
+              console.warn(`🚫 [IdentityCoherence] Deterministic policy fallback failed for ${constructId}; blocking persistence.`, fallbackGrade.reasons);
+            }
+          } else {
+            identityCoherenceBlocked = true;
+            finalAnswerSource = 'identity_coherence_failed';
+            identityCoherencePolicyFallback.failure_reason = policyAnswerKind
+              ? 'deterministic_policy_fallback_unavailable'
+              : 'unsupported_runtime_policy_answer_kind';
+            console.warn(`🚫 [IdentityCoherence] No supported deterministic policy fallback for ${constructId}; blocking persistence.`, identityCoherence.reasons);
+          }
+        }
+      }
+
+      let transcriptLawGovernance = linearTranscriptLawOrdinaryTurn
+        ? {
+            applies: false,
+            status: 'skipped',
+            reasons: [],
+            requestedFact: null,
+            details: {
+              skipped_reason: 'linear_transcript_law_ordinary_turn',
+            },
+          }
+        : evaluateTranscriptLawGovernance({
+            userMessage: message,
+            aiResponse,
+            constructId,
+            constructDisplayName: gptConfig?.name || constructId,
+            memory: transcriptLawMemoryReceipt,
+            identityPreflight: identityBundle.preflight || null,
+            finalAnswerSource,
+          });
+      let transcriptLawGovernanceRepair = {
+        attempted: false,
+        applied: false,
+        provider: null,
+        model: null,
+        source: null,
+        requested_fact: transcriptLawGovernance?.requestedFact || null,
+        initial_status: transcriptLawGovernance?.status || 'skipped',
+        final_status: transcriptLawGovernance?.status || 'skipped',
+        final_reasons: transcriptLawGovernance?.reasons || [],
+        failure_reason: null,
+      };
+      let transcriptLawGovernanceBlocked = false;
+      const transcriptLawGovernanceFailureMessage = 'Transcript-law governance blocked this assistant draft before canonical persistence.';
+
+      function prepareTranscriptLawGovernanceCandidate(candidateText, candidateSource) {
+        let candidate = String(candidateText || '').trim();
+        if (!candidate) {
+          return {
+            text: '',
+            identityGrade: null,
+            transcriptLawGrade: null,
+          };
+        }
+        candidate = applyHumanConversationGuard(candidate, {
+          userMessage: message,
+          memoryIntent: !!enrichedContext.memory_query_detected,
+          evidenceCount: Number(enrichedContext.evidence_count || 0),
+          constructId,
+          constructDisplayName: gptConfig?.name || constructId,
+          userName: req.user?.name || req.user?.given_name || 'Devon',
+          greetingTurnContext,
+        });
+        candidate = recoverEvidenceBackedContinuityReply({
+          aiResponse: candidate,
+          constructId,
+          userMessage: message,
+          evidenceCount: Number(enrichedContext.evidence_count || 0),
+          evidencePreview: enrichedContext.memory_evidence_preview,
+        });
+        candidate = applyHumanConversationGuard(candidate, {
+          userMessage: message,
+          memoryIntent: !!enrichedContext.memory_query_detected,
+          evidenceCount: Number(enrichedContext.evidence_count || 0),
+          constructId,
+          constructDisplayName: gptConfig?.name || constructId,
+          userName: req.user?.name || req.user?.given_name || 'Devon',
+          greetingTurnContext,
+        });
+        const identityGrade = evaluateIdentityCoherence({
+          userMessage: message,
+          aiResponse: candidate,
+          constructId,
+          constructDisplayName: gptConfig?.name || constructId,
+          requestedSeat,
+          evidencePreview: enrichedContext.memory_evidence_preview,
+          greetingTurnContext,
+        });
+        const transcriptLawGrade = evaluateTranscriptLawGovernance({
+          userMessage: message,
+          aiResponse: candidate,
+          constructId,
+          constructDisplayName: gptConfig?.name || constructId,
+          memory: transcriptLawMemoryReceipt,
+          identityPreflight: identityBundle.preflight || null,
+          finalAnswerSource: candidateSource,
+        });
+        return {
+          text: candidate,
+          identityGrade,
+          transcriptLawGrade,
+        };
+      }
+
+      if (transcriptLawGovernance.applies && transcriptLawGovernance.status === 'fail') {
+        console.warn(`⚠️ [TranscriptLawGovernance] Initial governance failed for ${constructId}; attempting source-grounded repair.`, transcriptLawGovernance.reasons);
+        const transcriptLawRepairCandidate = buildDeterministicTranscriptLawRepairCandidate({
+          userMessage: message,
+          constructId,
+          constructDisplayName: gptConfig?.name || constructId,
+        });
+    transcriptLawGovernanceRepair = {
+          ...transcriptLawGovernanceRepair,
+          attempted: transcriptLawPrimaryApplied ? false : Boolean(transcriptLawRepairCandidate?.text),
+          provider: transcriptLawRepairCandidate?.text ? 'deterministic' : null,
+          model: transcriptLawRepairCandidate?.source || null,
+          source: transcriptLawRepairCandidate?.source || null,
+        };
+
+        if (transcriptLawRepairCandidate?.text) {
+          const repaired = prepareTranscriptLawGovernanceCandidate(
+            transcriptLawRepairCandidate.text,
+            transcriptLawRepairCandidate.source,
+          );
+          transcriptLawGovernanceRepair.final_status = repaired.transcriptLawGrade?.status || 'fail';
+          transcriptLawGovernanceRepair.final_reasons = repaired.transcriptLawGrade?.reasons || [];
+          if (
+            repaired.identityGrade &&
+            repaired.identityGrade.status !== 'fail' &&
+            repaired.transcriptLawGrade &&
+            repaired.transcriptLawGrade.status !== 'fail'
+          ) {
+            aiResponse = repaired.text;
+            identityCoherence = repaired.identityGrade;
+            identityCoherenceBlocked = false;
+            finalAnswerSource = transcriptLawRepairCandidate.source;
+            transcriptLawGovernance = repaired.transcriptLawGrade;
+            transcriptLawGovernanceRepair.applied = true;
+            transcriptLawGovernanceRepair.failure_reason = null;
+            console.log(`✅ [TranscriptLawGovernance] Source-grounded repair applied for ${constructId}; final status=${repaired.transcriptLawGrade.status}`);
+          } else {
+            transcriptLawGovernanceRepair.failure_reason = repaired.identityGrade?.status === 'fail'
+              ? 'repair_failed_identity_coherence_grade'
+              : 'repair_failed_transcript_law_governance';
+            console.warn(`🚫 [TranscriptLawGovernance] Source-grounded repair failed for ${constructId}.`, {
+              identity: repaired.identityGrade?.reasons || [],
+              transcriptLaw: repaired.transcriptLawGrade?.reasons || [],
+            });
+          }
+        } else {
+          transcriptLawGovernanceRepair.failure_reason = 'source_grounded_repair_unavailable';
+        }
+      }
+
+      if (transcriptLawGovernance.applies) {
+        transcriptLawGovernance = evaluateTranscriptLawGovernance({
+          userMessage: message,
+          aiResponse,
+          constructId,
+          constructDisplayName: gptConfig?.name || constructId,
+          memory: transcriptLawMemoryReceipt,
+          identityPreflight: identityBundle.preflight || null,
+          finalAnswerSource,
+        });
+        transcriptLawGovernanceBlocked = transcriptLawGovernance.status === 'fail';
+      }
+
+      let assignmentQa = null;
+      let assignmentQaBlocked = false;
+      let assignmentQaRepair = {
+        attempted: false,
+        applied: false,
+        provider: null,
+        model: null,
+        seat: 'full_synthesis',
+        initial_status: null,
+        final_status: null,
+        initial_reasons: [],
+        final_reasons: [],
+        identity_initial_status: identityCoherence.status || null,
+        identity_final_status: identityCoherence.status || null,
+        identity_failure_reasons: identityCoherence.reasons || [],
+        assignment_failure_reasons: [],
+        final_answer_source: finalAnswerSource,
+        deterministic_assignment_fallback_attempted: false,
+        deterministic_assignment_fallback_applied: false,
+        failure_reason: null,
+      };
+      const assignmentQaFailureMessage = 'Assignment QA guard blocked this assistant draft before canonical persistence.';
+      if (
+        activeOrchestrationProfile === FULL_SEAT_SYNTHESIS_PROFILE &&
+        assignmentQaInput
+      ) {
+        const identityWarnNeedsAssignmentRepair = (grade) => {
+          if (!grade || grade.status !== 'warn') return false;
+          return (grade.reasons || []).some((reason) =>
+            /prompt\/configuration language|provider identity|model stack|provider stack|configuration language/i.test(String(reason || '')),
+          );
+        };
+        const evaluateCurrentAssignmentQa = (candidateText) => evaluateAssignmentQa({
+          assignmentQa: assignmentQaInput,
+          userMessage: message,
+          aiResponse: candidateText,
+          constructId,
+          orchestrationProfile: activeOrchestrationProfile,
+        });
+
+        assignmentQa = evaluateCurrentAssignmentQa(aiResponse);
+        assignmentQaBlocked = assignmentQa.status === 'fail';
+        let assignmentIdentityRepairRecommended = identityWarnNeedsAssignmentRepair(identityCoherence);
+        const assignmentRepairNeeded = identityCoherenceBlocked || assignmentQaBlocked || assignmentIdentityRepairRecommended;
+
+        if (assignmentRepairNeeded) {
+          console.warn(`⚠️ [AssignmentQA] Full-seat synthesis candidate needs assignment repair for ${constructId}.`, {
+            identity: identityCoherence.reasons || [],
+            assignment: assignmentQa.reasons || [],
+          });
+
+          assignmentQaRepair = {
+            attempted: true,
+            applied: false,
+            provider: effectiveProvider || null,
+            model: effectiveModel || null,
+            seat: 'full_synthesis',
+            initial_status: assignmentQa.status,
+            final_status: 'fail',
+            initial_reasons: assignmentQa.reasons || [],
+            final_reasons: [],
+            identity_initial_status: identityCoherence.status || null,
+            identity_final_status: identityCoherence.status || null,
+            identity_failure_reasons: identityCoherence.reasons || [],
+            assignment_failure_reasons: assignmentQa.reasons || [],
+            final_answer_source: finalAnswerSource,
+            deterministic_assignment_fallback_attempted: false,
+            deterministic_assignment_fallback_applied: false,
+            failure_reason: null,
+            identity_warning_repair_recommended: assignmentIdentityRepairRecommended,
+          };
+
+          const repairAttempt = await repairAssignmentQaResponse(aiResponse, {
+            identityCoherence,
+            assignmentQa,
+          });
+          assignmentQaRepair.provider = repairAttempt.provider || effectiveProvider || null;
+          assignmentQaRepair.model = repairAttempt.model || effectiveModel || null;
+          assignmentQaRepair.max_tokens = repairAttempt.max_tokens || null;
+
+          if (repairAttempt.ok && repairAttempt.text && repairAttempt.text.trim()) {
+            const { text: repairedText, grade: repairedIdentityCoherence } = prepareIdentityCoherenceCandidate(repairAttempt.text);
+            const repairedAssignmentQa = evaluateCurrentAssignmentQa(repairedText);
+            assignmentQaRepair.final_status = repairedAssignmentQa.status;
+            assignmentQaRepair.final_reasons = repairedAssignmentQa.reasons || [];
+            assignmentQaRepair.identity_final_status = repairedIdentityCoherence?.status || 'fail';
+            assignmentQaRepair.identity_final_reasons = repairedIdentityCoherence?.reasons || ['assignment_repair_empty_identity_grade'];
+            const repairedIdentityFailed = !repairedIdentityCoherence || repairedIdentityCoherence.status === 'fail';
+            const repairedIdentityRepairRecommended = identityWarnNeedsAssignmentRepair(repairedIdentityCoherence);
+
+            if (!repairedIdentityFailed && !repairedIdentityRepairRecommended && repairedAssignmentQa.status !== 'fail') {
+              aiResponse = repairedText;
+              identityCoherence = repairedIdentityCoherence;
+              assignmentQa = repairedAssignmentQa;
+              identityCoherenceBlocked = false;
+              assignmentQaBlocked = false;
+              assignmentIdentityRepairRecommended = false;
+              assignmentQaRepair.applied = true;
+              assignmentQaRepair.final_answer_source = 'assignment_qa_repair';
+              finalAnswerSource = 'assignment_qa_repair';
+              console.log(`✅ [AssignmentQA] Repair applied for ${constructId}; assignment=${repairedAssignmentQa.status}, identity=${repairedIdentityCoherence.status}`);
+            } else {
+              identityCoherence = repairedIdentityCoherence || identityCoherence;
+              assignmentQa = repairedAssignmentQa;
+              identityCoherenceBlocked = repairedIdentityFailed;
+              assignmentQaBlocked = repairedAssignmentQa.status === 'fail';
+              assignmentIdentityRepairRecommended = repairedIdentityRepairRecommended;
+              assignmentQaRepair.failure_reason = identityCoherenceBlocked
+                ? 'repair_failed_identity_coherence_grade'
+                : assignmentIdentityRepairRecommended
+                  ? 'repair_left_identity_warning_requiring_assignment_fallback'
+                  : 'repair_failed_assignment_qa_grade';
+              finalAnswerSource = identityCoherenceBlocked
+                ? 'identity_coherence_failed'
+                : assignmentQaBlocked
+                  ? 'assignment_qa_failed'
+                  : 'assignment_qa_repair_needs_fallback';
+              assignmentQaRepair.final_answer_source = finalAnswerSource;
+              console.warn(`🚫 [AssignmentQA] Repair failed for ${constructId}; assignment=${repairedAssignmentQa.status}, identity=${repairedIdentityCoherence?.status || 'fail'}`, {
+                identity: repairedIdentityCoherence?.reasons || [],
+                assignment: repairedAssignmentQa.reasons || [],
+              });
+            }
+          } else {
+            assignmentQaRepair.failure_reason = repairAttempt.error || 'assignment_repair_unavailable';
+            console.warn(`🚫 [AssignmentQA] Assignment repair unavailable for ${constructId}.`, assignmentQaRepair.failure_reason);
+          }
+
+          if (identityCoherenceBlocked || assignmentQaBlocked || assignmentIdentityRepairRecommended) {
+            const deterministicAssignmentText = buildDeterministicAssignmentQaAnswer({
+              assignmentQa: assignmentQaInput,
+              constructDisplayName: gptConfig?.name || constructId,
+            });
+            assignmentQaRepair.deterministic_assignment_fallback_attempted = Boolean(deterministicAssignmentText);
+
+            if (deterministicAssignmentText) {
+              const { text: fallbackText, grade: fallbackIdentityCoherence } = prepareIdentityCoherenceCandidate(deterministicAssignmentText);
+              const fallbackAssignmentQa = evaluateCurrentAssignmentQa(fallbackText);
+              const fallbackIdentityFailed = !fallbackIdentityCoherence || fallbackIdentityCoherence.status === 'fail';
+              assignmentQaRepair.deterministic_assignment_fallback_identity_status = fallbackIdentityCoherence?.status || 'fail';
+              assignmentQaRepair.deterministic_assignment_fallback_identity_reasons = fallbackIdentityCoherence?.reasons || [];
+              assignmentQaRepair.deterministic_assignment_fallback_assignment_status = fallbackAssignmentQa.status;
+              assignmentQaRepair.deterministic_assignment_fallback_assignment_reasons = fallbackAssignmentQa.reasons || [];
+
+              if (!fallbackIdentityFailed && fallbackAssignmentQa.status !== 'fail') {
+                aiResponse = fallbackText;
+                identityCoherence = fallbackIdentityCoherence;
+                assignmentQa = fallbackAssignmentQa;
+                identityCoherenceBlocked = false;
+                assignmentQaBlocked = false;
+                assignmentIdentityRepairRecommended = false;
+                assignmentQaRepair.applied = true;
+                assignmentQaRepair.deterministic_assignment_fallback_applied = true;
+                assignmentQaRepair.final_status = fallbackAssignmentQa.status;
+                assignmentQaRepair.final_reasons = fallbackAssignmentQa.reasons || [];
+                assignmentQaRepair.identity_final_status = fallbackIdentityCoherence.status;
+                assignmentQaRepair.identity_final_reasons = fallbackIdentityCoherence.reasons || [];
+                assignmentQaRepair.final_answer_source = 'deterministic_assignment_qa_fallback';
+                assignmentQaRepair.failure_reason = null;
+                finalAnswerSource = 'deterministic_assignment_qa_fallback';
+                console.log(`✅ [AssignmentQA] Deterministic assignment fallback applied for ${constructId}; assignment=${fallbackAssignmentQa.status}, identity=${fallbackIdentityCoherence.status}`);
+              } else {
+                identityCoherence = fallbackIdentityCoherence || identityCoherence;
+                assignmentQa = fallbackAssignmentQa;
+                identityCoherenceBlocked = fallbackIdentityFailed;
+                assignmentQaBlocked = fallbackAssignmentQa.status === 'fail';
+                assignmentQaRepair.failure_reason = identityCoherenceBlocked
+                  ? 'deterministic_assignment_fallback_failed_identity_coherence_grade'
+                  : 'deterministic_assignment_fallback_failed_assignment_qa_grade';
+                finalAnswerSource = identityCoherenceBlocked
+                  ? 'identity_coherence_failed'
+                  : 'assignment_qa_failed';
+                assignmentQaRepair.final_answer_source = finalAnswerSource;
+                console.warn(`🚫 [AssignmentQA] Deterministic assignment fallback failed for ${constructId}; assignment=${fallbackAssignmentQa.status}, identity=${fallbackIdentityCoherence?.status || 'fail'}`, {
+                  identity: fallbackIdentityCoherence?.reasons || [],
+                  assignment: fallbackAssignmentQa.reasons || [],
+                });
+              }
+            }
+          }
+        }
+
+        if (assignmentQa) {
+          assignmentQa = {
+            ...assignmentQa,
+            repair_attempted: !!assignmentQaRepair.attempted,
+            repair_applied: !!assignmentQaRepair.applied,
+            repair: assignmentQaRepair,
+            identity_failure_reasons: assignmentQaRepair.identity_failure_reasons || [],
+            assignment_failure_reasons: assignmentQaRepair.assignment_failure_reasons || [],
+            final_answer_source: finalAnswerSource,
+            provider: effectiveProvider || null,
+            model: effectiveModel || null,
+            seat: 'full_synthesis',
+          };
+        }
+
+        validatorDebug.assignment_qa = assignmentQa;
+        validatorDebug.assignment_qa_repair = assignmentQaRepair;
+        if (assignmentQaBlocked) {
+          console.warn(`🚫 [AssignmentQA] Blocking full-seat synthesis response for ${constructId}.`, assignmentQa.reasons);
+        }
+      }
+      validatorDebug.identity_coherence = identityCoherence;
+      validatorDebug.identity_coherence_repair = identityCoherenceRepair;
+      validatorDebug.identity_coherence_policy_fallback = identityCoherencePolicyFallback;
+      validatorDebug.identity_coherence_construct_fallback = identityCoherenceConstructFallback;
+      validatorDebug.identity_coherence_certification_fallback = identityCoherenceCertificationFallback;
+      validatorDebug.transcript_law_governance = transcriptLawGovernance;
+      validatorDebug.transcript_law_governance_repair = transcriptLawGovernanceRepair;
+      validatorDebug.final_answer_source = finalAnswerSource;
+
+      const deterministicResumedTurnFallback =
+        prePostDeterministicResumeFallback ||
+        (routeTurnEnvelope.continuityResume?.continuityRestored === true
+          ? buildDeterministicResumedTurnFallback({
+              runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+              userMessage: message,
+            })
+          : null);
+      if (directResumeContinue && deterministicResumedTurnFallback?.text) {
+        aiResponse = deterministicResumedTurnFallback.text;
+        finalAnswerSource = deterministicResumedTurnFallback.source;
+        validatorDebug.continuity_resume_forced = {
+          applied: true,
+          source: deterministicResumedTurnFallback.source,
+        };
+      }
+
       if (!providerTrace.final_provider && effectiveProvider) {
         providerTrace.final_provider = effectiveProvider;
         providerTrace.total_duration_ms = Date.now() - traceStart;
         providerTrace.attempts.push({ provider: effectiveProvider, retry: 0, status: 'ok', duration_ms: providerTrace.total_duration_ms });
       }
+      const receiptConstructName = constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase());
+      const searchBackedPayload = buildSearchBackedAssistantPayload({
+        aiResponse,
+        searchResults,
+        housingSearch: searchHousing,
+      });
+      aiResponse = searchBackedPayload.content;
+      const responsePackets = searchBackedPayload.packets;
+      const searchInspectability = buildSearchInspectabilityReceipt({
+        searchVertical,
+        searchResults,
+        housingSearch: searchHousing,
+        citations: searchBackedPayload.citations,
+        packets: responsePackets,
+      });
+      const researchWorkflowReceipt = buildResearchWorkflowReceipt({
+        message,
+        runtime,
+        assignmentQaInput,
+        assignmentQa,
+        aiResponse,
+        searchInjected,
+        searchIntentReason,
+        fullSeatSynthesisResult,
+      });
+      if (researchWorkflowReceipt && searchInspectability?.search) {
+        researchWorkflowReceipt.search = searchInspectability.search;
+      }
+      if (researchWorkflowReceipt && searchInspectability?.housing) {
+        researchWorkflowReceipt.housing = searchInspectability.housing;
+      }
+      const activeSimLock = readForgedSimLock(gptConfig);
+      const simRefreshContract =
+        gptConfig?.configJson && typeof gptConfig.configJson === 'object'
+          ? gptConfig.configJson.simRefreshContract || null
+          : null;
+      let continuityIntegrity = evaluateResumedTurnContinuityIntegrity({
+        aiResponse,
+        continuityResume: routeTurnEnvelope.continuityResume,
+        runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+      });
+      const continuityIntegrityRepair = {
+        attempted: false,
+        applied: false,
+        source: null,
+        failure_reason: null,
+        meta_continuity_hits: continuityIntegrity.metaContinuityHits || 0,
+        trajectory_overlap: continuityIntegrity.trajectoryOverlap || 0,
+      };
+      if (
+        continuityIntegrity.applies &&
+        (
+          continuityIntegrity.reasons.includes('meta_continuity_boilerplate_after_resume') ||
+          continuityIntegrity.reasons.includes('generic_greeting_after_resume') ||
+          continuityIntegrity.reasons.includes('premature_closure_after_resume')
+        )
+      ) {
+        continuityIntegrityRepair.attempted = true;
+        const deterministicContinuationFallback = buildDeterministicResumedTurnFallback({
+          runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+          userMessage: message,
+        });
+        if (deterministicContinuationFallback?.text) {
+          const repairedContinuityIntegrity = evaluateResumedTurnContinuityIntegrity({
+            aiResponse: deterministicContinuationFallback.text,
+            continuityResume: routeTurnEnvelope.continuityResume,
+            runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+          });
+          continuityIntegrityRepair.source = deterministicContinuationFallback.source;
+          continuityIntegrityRepair.meta_continuity_hits_after_repair =
+            repairedContinuityIntegrity.metaContinuityHits || 0;
+          continuityIntegrityRepair.trajectory_overlap_after_repair =
+            repairedContinuityIntegrity.trajectoryOverlap || 0;
+          if (repairedContinuityIntegrity.status !== 'fail') {
+            aiResponse = deterministicContinuationFallback.text;
+            continuityIntegrity = repairedContinuityIntegrity;
+            continuityIntegrityRepair.applied = true;
+            finalAnswerSource = deterministicContinuationFallback.source;
+            console.log(`✅ [ContinuityIntegrity] Deterministic runtime continuity fallback applied for ${constructId}.`);
+          } else {
+            continuityIntegrityRepair.failure_reason =
+              'deterministic_runtime_continuity_fallback_failed_integrity_check';
+          }
+        } else {
+          continuityIntegrityRepair.failure_reason =
+            'deterministic_runtime_continuity_fallback_unavailable';
+        }
+      }
+      const continuityIntegrityBlocked =
+        continuityIntegrity.applies && continuityIntegrity.status === 'fail';
+      validatorDebug.continuity_integrity = continuityIntegrity;
+      validatorDebug.continuity_integrity_repair = continuityIntegrityRepair;
+      const continuityReceipt = {
+        ...buildContinuityProofReceipt({
+          hydration: routeTurnEnvelope.continuityResume?.hydration || 'full',
+          hydrationComplete:
+            routeTurnEnvelope.continuityResume?.continuityExpected === true
+              ? routeTurnEnvelope.continuityResume?.hydrationComplete === true
+              : true,
+          resumeValidation: routeTurnEnvelope.continuityResume,
+          assistantResetDetected:
+            continuityIntegrity.applies &&
+            (continuityIntegrity.status === 'fail' || continuityIntegrityRepair.attempted),
+        }),
+        integrityStatus: continuityIntegrity.applies ? continuityIntegrity.status : null,
+        integrityReasons: continuityIntegrity.reasons || [],
+        integrityMetaContinuityHits: continuityIntegrity.metaContinuityHits || 0,
+        integrityTrajectoryOverlap: continuityIntegrity.trajectoryOverlap || 0,
+        integrityRepairAttempted: continuityIntegrityRepair.attempted,
+        integrityRepairApplied: continuityIntegrityRepair.applied,
+        integrityRepairSource: continuityIntegrityRepair.source || null,
+        integrityRepairFailureReason: continuityIntegrityRepair.failure_reason || null,
+      };
+      const transcriptTruthReceipt = routeTurnEnvelope.transcriptTruth?.required === true
+        ? {
+            eligible: routeTurnEnvelope.transcriptTruth.eligible === true,
+            source: routeTurnEnvelope.transcriptTruth.hydrationSource || 'none',
+            hydration_complete: routeTurnEnvelope.transcriptTruth.hydrationComplete === true,
+            exact_thread_id: routeTurnEnvelope.transcriptTruth.exactThreadId || effectiveTurnSessionId,
+            exact_thread_found: routeTurnEnvelope.transcriptTruth.exactThreadFound === true,
+            assistant_tail_found: routeTurnEnvelope.transcriptTruth.assistantTailFound === true,
+            runtime_state_found: routeTurnEnvelope.transcriptTruth.runtimeStateFound === true,
+            runtime_state_hydration_truth: routeTurnEnvelope.transcriptTruth.runtimeStateHydrationTruth || null,
+            evidence_count: Number(routeTurnEnvelope.transcriptTruth.evidenceCount || 0),
+            evidence_sources: routeTurnEnvelope.transcriptTruth.evidenceSources || [],
+            fallback_rejected: routeTurnEnvelope.transcriptTruth.fallbackRejected === true,
+            retrieval_status: routeTurnEnvelope.transcriptTruth.eligible === true ? 'full' : 'blocked',
+            blocked_reason: routeTurnEnvelope.transcriptTruth.reason || null,
+          }
+        : {
+            eligible: null,
+            source: 'not_required',
+            hydration_complete: null,
+            exact_thread_id: effectiveTurnSessionId,
+            exact_thread_found: null,
+            assistant_tail_found: null,
+            runtime_state_found: Boolean(routeTurnEnvelope.runtimeTurnState),
+            runtime_state_hydration_truth: routeTurnEnvelope.runtimeTurnState?.hydrationTruth || null,
+            evidence_count: 0,
+            evidence_sources: [],
+            fallback_rejected: false,
+            retrieval_status: 'not_required',
+            blocked_reason: null,
+          };
+      const capsuleRuntimeReceipt = {
+        capsuleLoaded: Boolean(enrichedContext.capsuleLoaded),
+        capsuleSource: enrichedContext.phaseTiming?.capsule?.source || null,
+        contextProfile:
+          enrichedContext.context_profile ||
+          enrichedContext.context_budget?.profile ||
+          contextBudget.profile,
+        continuityFromRuntimeState: routeTurnEnvelope.continuityResume?.continuityRestored === true,
+        continuityMemorySource:
+          routeTurnEnvelope.continuityResume?.continuityRestored === true
+            ? 'runtimeTurnState'
+            : enrichedContext.continuityMemorySearch?.source ||
+              enrichedContext.phaseTiming?.memorySearch?.source ||
+              null,
+      };
+      const runtimeReceipt = {
+        created_at: new Date().toISOString(),
+        user_id: dataOwnerUserId || null,
+        auth: authReceipt,
+        construct_id: constructId,
+        effective_construct_id: constructId,
+        effective_construct_name: receiptConstructName,
+        orchestration_mode: gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown',
+        route_mode: 'vvault_message',
+        persistence_owner: assignmentQaBlocked
+          ? 'blocked_assignment_qa'
+          : continuityIntegrityBlocked
+            ? 'blocked_continuity_integrity'
+          : transcriptLawGovernanceBlocked
+            ? 'blocked_transcript_law_governance'
+          : identityCoherenceBlocked
+            ? 'blocked_identity_coherence'
+            : (skipPersistence ? 'layout' : 'vvault_body'),
+        continuity: continuityReceipt,
+        ...continuityReceipt,
+        transcript_truth: transcriptTruthReceipt,
+        capsule_runtime: capsuleRuntimeReceipt,
+        identity: {
+          source: enrichedContext.phaseTiming?.identity?.source || 'unknown',
+          base_prompt_source: enrichedContext.phaseTiming?.basePromptSource || 'unknown',
+          conditioning_appended: !!enrichedContext.phaseTiming?.conditioningInjected,
+          identity_bundle_hash: enrichedContext.identity_bundle_hash || null,
+          effective_construct_id: constructId,
+          effective_construct_name: receiptConstructName,
+          selected_construct_id: canonicalConstructId || constructId,
+          raw_construct_id: rawConstructId,
+          preflight: identityBundle.preflight || null,
+        },
+        policy: enrichedContext.runtimePolicy || null,
+        research: researchWorkflowReceipt,
+        assignment_qa: assignmentQa,
+        synthesis: fullSeatSynthesisResult
+          ? {
+              profile: fullSeatSynthesisResult.profile,
+              status: fullSeatSynthesisResult.status,
+              policy: 'full_seat_synthesis',
+              canon: fullSeatSynthesisResult.canon || LIN_THREE_I_CANON_VERSION,
+              construct_id: fullSeatSynthesisResult.construct_id || constructId,
+              seats: fullSeatSynthesisResult.seats || [],
+              final: fullSeatSynthesisResult.final || null,
+              assignment: fullSeatSynthesisResult.assignment || null,
+              assignment_contract_received: Boolean(fullSeatSynthesisResult.assignment?.final_prompt_received_contract),
+              total_duration_ms: fullSeatSynthesisResult.total_duration_ms || 0,
+            }
+          : null,
+        preview: {
+          preview_mode: Boolean(previewMode),
+          skip_persistence: Boolean(skipPersistence || identityCoherenceBlocked || transcriptLawGovernanceBlocked || assignmentQaBlocked),
+          effective_construct_id: constructId,
+          selected_construct_id: canonicalConstructId || constructId,
+          raw_construct_id: rawConstructId,
+          identity_source: enrichedContext.phaseTiming?.identity?.source || 'unknown',
+          base_prompt_source: enrichedContext.phaseTiming?.basePromptSource || 'unknown',
+          draft_overlay_applied: Boolean(enrichedContext.phaseTiming?.preview?.draftOverlayApplied),
+          draft_overlay_keys: enrichedContext.phaseTiming?.preview?.draftOverlayKeys || [],
+          preview_overlay_state: enrichedContext.phaseTiming?.preview?.draftOverlayApplied ? 'applied_bounded_overlay' : 'not_applied',
+          suppressed_system_prompt_override: Boolean(enrichedContext.phaseTiming?.preview?.suppressedSystemPromptOverride),
+        },
+        memory: {
+          retrieval_ran: !!enrichedContext.memory_retrieval_ran,
+          memory_query_detected: !!enrichedContext.memory_query_detected,
+          evidence_count: enrichedContext.evidence_count || 0,
+          ledger_sessions: enrichedContext.ledgerSessions || 0,
+          memory_profile: gptConfig?.memoryProfile || gptConfig?.memory_profile || 'off',
+          voice_exemplar_sources: enrichedContext.voiceExemplarSources || [],
+          voice_exemplar_count: enrichedContext.voiceExemplarCount || 0,
+          supabase_accessed: Boolean(enrichedContext.supabase_accessed),
+          vvault_accessed: Boolean(enrichedContext.vvault_accessed),
+          source_access: enrichedContext.source_access || null,
+          knowledge_source: enrichedContext.knowledgeSource || enrichedContext.phaseTiming?.knowledge?.source || null,
+          voice_exemplar_retrieval: transcriptLawMemoryReceipt.voice_exemplar_retrieval,
+          verified_memory_retrieval: transcriptLawMemoryReceipt.verified_memory_retrieval,
+          vector_retrieval: transcriptLawMemoryReceipt.vector_retrieval,
+          memory_source: enrichedContext.continuityMemorySearch?.source || enrichedContext.phaseTiming?.memorySearch?.source || 'runtime_context_builder',
+	          context_profile: enrichedContext.context_profile || enrichedContext.context_budget?.profile || contextBudget.profile,
+	          included_sections: enrichedContext.context_budget?.included_sections || [],
+	          delayed_sections: enrichedContext.context_budget?.delayed_sections || [],
+	          no_rewrite_identity_anchor: Boolean(enrichedContext.no_rewrite_identity_anchor),
+	          identity_rewrite_prevented_by: enrichedContext.identity_rewrite_prevented_by || null,
+	          context_recovery_profile: enrichedContext.context_recovery_profile || 'standard',
+          history_source: enrichedContext.history_source || 'none',
+          remote_history_skipped: Boolean(enrichedContext.remote_history_skipped),
+          sources: enrichedContext.continuityMemorySearch || null,
+          transcript_memory_status: transcriptLawMemoryReceipt.transcript_memory_status,
+          transcript_sources: transcriptLawMemoryReceipt.transcript_sources,
+        },
+        persistence: {
+          attempted: !(skipPersistence || identityCoherenceBlocked || continuityIntegrityBlocked || transcriptLawGovernanceBlocked || assignmentQaBlocked),
+          status: (skipPersistence || identityCoherenceBlocked || continuityIntegrityBlocked || transcriptLawGovernanceBlocked || assignmentQaBlocked) ? 'skipped' : 'pass',
+          code: null,
+          reason: skipPersistence
+            ? 'skip_persistence_requested'
+            : continuityIntegrityBlocked
+              ? 'blocked_continuity_integrity'
+            : transcriptLawGovernanceBlocked
+              ? 'blocked_transcript_law_governance'
+              : identityCoherenceBlocked
+                ? 'blocked_identity_coherence'
+                : assignmentQaBlocked
+                  ? 'blocked_assignment_qa'
+                  : 'vvault_body_transcript_persistence',
+          timeout_ms: null,
+          bounded: false,
+          stage: (skipPersistence || identityCoherenceBlocked || continuityIntegrityBlocked || transcriptLawGovernanceBlocked || assignmentQaBlocked) ? null : 'assistant',
+          ...buildCanonicalPersistenceSemantics(),
+        },
+        provider: {
+          provider: effectiveProvider || null,
+          model: effectiveModel || null,
+          selection_policy: 'preference',
+          lin_harmony_policy: fullSeatSynthesisResult ? 'full_seat_synthesis' : 'intent_routed',
+          lin_seat_canon: LIN_THREE_I_CANON_VERSION,
+          performance_model_switch: false,
+          sim_artifact: activeSimLock
+            ? {
+                locked: true,
+                locked_model: activeSimLock.lockedModel,
+                model_name: activeSimLock.modelName,
+                mode_label: activeSimLock.modeLabel,
+                forged_from_mode: activeSimLock.forgedFromMode,
+                forged_at: activeSimLock.forgedAt || null,
+                source: activeSimLock.source,
+                kind: activeSimLock.kind,
+                refresh_contract: simRefreshContract,
+              }
+            : null,
+          metadata_recovery: metadataRecovery,
+          requested_seat: fullSeatSynthesisResult ? 'full_synthesis' : requestedSeat,
+          requested_canonical_seat: fullSeatSynthesisResult
+            ? 'full_synthesis'
+            : getLinSeatCanon(requestedSeat).canonicalSeat,
+          seat_plan: {
+            policy: fullSeatSynthesisResult ? 'full_seat_synthesis' : 'intent_routed',
+            canon: LIN_THREE_I_CANON_VERSION,
+            requested_seat: fullSeatSynthesisResult ? 'full_synthesis' : requestedSeat,
+            requested_canonical_seat: fullSeatSynthesisResult
+              ? 'full_synthesis'
+              : getLinSeatCanon(requestedSeat).canonicalSeat,
+            selected_provider: effectiveProvider || null,
+            selected_model: effectiveModel || null,
+            lin_default_model: fullSeatSynthesisResult
+              ? null
+              : modelResolution.mode === 'lin'
+              ? getLinDefaultModelForSeat(requestedSeat)
+              : null,
+            seats: fullSeatSynthesisResult?.seats || null,
+            final: fullSeatSynthesisResult?.final || null,
+            fallback_reason: (providerTrace.fallback_used || effectiveRouteFallbackUsed)
+              ? (effectiveLocalCloudFallbackState || modelResolution.localCloudFallbackState || 'fallback_used')
+              : null,
+          },
+          model_source: modelSource,
+          source: modelSource,
+          mode: modelResolution.mode || (gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown'),
+          requested_provider: modelResolution.requestedProvider || null,
+          requested_model: modelResolution.requestedModel || null,
+          configured_model: modelResolution.configuredModel || null,
+          suppressed_configured_model: modelResolution.suppressedConfiguredModel || null,
+          routing_override: !!modelResolution.routingOverride,
+          seat_defaults_or_overrides: effectiveSeatDefaultsOrOverrides || null,
+          local_first_used: effectiveLocalFirstUsed,
+          local_cloud_fallback_state: (providerTrace.fallback_used || effectiveRouteFallbackUsed)
+            ? (effectiveLocalCloudFallbackState || 'fallback_used')
+            : effectiveLocalCloudFallbackState || modelResolution.localCloudFallbackState || (effectiveLocalFirstUsed
+              ? 'local_first'
+              : modelResolution.routingOverride
+                ? 'manual_routing_override'
+                : 'direct'),
+          fallback_used: !!(providerTrace.fallback_used || effectiveRouteFallbackUsed),
+          final_provider: providerTrace.final_provider || effectiveProvider || null,
+        },
+        fidelity: {
+	          identity_drift_detected: !!validatorDebug.identity_drift_detected,
+	          identity_rewrite_applied: !!validatorDebug.identity_rewrite_applied,
+	          no_rewrite_identity_anchor: Boolean(enrichedContext.no_rewrite_identity_anchor),
+	          identity_rewrite_prevented_by: validatorDebug.identity_rewrite_prevented_by,
+	          identity_fallback_applied: !!validatorDebug.identity_fallback_applied,
+          continuity_integrity: {
+            status: continuityIntegrity.applies ? continuityIntegrity.status : 'skipped',
+            reasons: continuityIntegrity.reasons || [],
+            blocked_canonical_persistence: continuityIntegrityBlocked,
+            persist_canonical: !continuityIntegrityBlocked,
+            owner_file: 'server/routes/vvault.js',
+            source_anchor: 'server/routes/vvault.js:evaluateResumedTurnContinuityIntegrity',
+          },
+          persona_drift_detected: !!personaDriftDetected,
+          persona_regen_applied: !!personaRegenApplied,
+          identity_coherence: {
+            status: identityCoherence.status,
+            identity_status: identityCoherence.identityStatus,
+            coherence_status: identityCoherence.coherenceStatus,
+            reasons: identityCoherence.reasons || [],
+            signals: identityCoherence.signals || [],
+            violations: identityCoherence.violations || [],
+            repairable: !!identityCoherence.repairable,
+            repair_attempted: !!identityCoherenceRepair.attempted,
+            repair_applied: !!identityCoherenceRepair.applied,
+            repair: identityCoherenceRepair,
+            deterministic_policy_fallback_attempted: !!identityCoherencePolicyFallback.attempted,
+            deterministic_policy_fallback_applied: !!identityCoherencePolicyFallback.applied,
+            deterministic_policy_fallback: identityCoherencePolicyFallback,
+            deterministic_construct_fallback_attempted: !!identityCoherenceConstructFallback.attempted,
+            deterministic_construct_fallback_applied: !!identityCoherenceConstructFallback.applied,
+            deterministic_construct_fallback: identityCoherenceConstructFallback,
+            deterministic_certification_fallback_attempted: !!identityCoherenceCertificationFallback.attempted,
+            deterministic_certification_fallback_applied: !!identityCoherenceCertificationFallback.applied,
+            deterministic_certification_fallback: identityCoherenceCertificationFallback,
+            final_answer_source: finalAnswerSource,
+            blocked_canonical_persistence: !!identityCoherenceBlocked,
+            persist_canonical: !identityCoherenceBlocked,
+            owner_file: identityCoherence.ownerFile || 'server/lib/identityCoherenceGuard.js',
+            source_anchor: identityCoherence.sourceAnchor || 'server/lib/identityCoherenceGuard.js:evaluateIdentityCoherence',
+          },
+          transcript_law_governance: transcriptLawGovernance?.applies
+            ? {
+                status: transcriptLawGovernance.status,
+                requested_fact: transcriptLawGovernance.requestedFact,
+                reasons: transcriptLawGovernance.reasons || [],
+                signals: transcriptLawGovernance.signals || [],
+                grounding_verdict: transcriptLawGovernance.details?.groundingVerdict || null,
+                retrieval_ran: Boolean(transcriptLawGovernance.details?.retrievalRan),
+                evidence_count: Number(transcriptLawGovernance.details?.evidenceCount || 0),
+                transcript_sources: transcriptLawGovernance.details?.transcriptSources || [],
+                evidence_sources: transcriptLawGovernance.details?.evidenceSources || [],
+                voice_exemplar_sources: transcriptLawGovernance.details?.voiceExemplarSources || [],
+                voice_exemplar_count: transcriptLawGovernance.details?.voiceExemplarCount || 0,
+                transcript_memory_status: transcriptLawGovernance.details?.transcriptMemoryStatus || null,
+                capsule_source: transcriptLawGovernance.details?.capsuleSource || null,
+                capsule_loaded: Boolean(transcriptLawGovernance.details?.capsuleLoaded),
+                source_grounded: Boolean(transcriptLawGovernance.details?.sourceGrounded),
+                repair_attempted: Boolean(transcriptLawGovernanceRepair.attempted),
+                repair_applied: Boolean(transcriptLawGovernanceRepair.applied),
+                repair: transcriptLawGovernanceRepair,
+                final_answer_source: finalAnswerSource,
+                blocked_canonical_persistence: !!transcriptLawGovernanceBlocked,
+                persist_canonical: !transcriptLawGovernanceBlocked,
+                owner_file: transcriptLawGovernance.ownerFile || 'server/lib/identityCoherenceGuard.js',
+                source_anchor: transcriptLawGovernance.sourceAnchor || 'server/lib/identityCoherenceGuard.js:evaluateTranscriptLawGovernance',
+              }
+            : null,
+        },
+      };
+      if (searchInspectability?.search) {
+        runtimeReceipt.search = searchInspectability.search;
+      }
+      if (searchInspectability?.housing) {
+        runtimeReceipt.housing = searchInspectability.housing;
+      }
+      if (runtimeReceipt.policy && policyAnswerKind && finalAnswerSource === 'deterministic_policy_primary') {
+        runtimeReceipt.policy.answer_kind = policyAnswerKind;
+        runtimeReceipt.policy.answer_source = finalAnswerSource;
+      }
       console.log(`✅ [VVAULT Proxy] ${effectiveProvider} successful for ${constructId}, response length: ${aiResponse.length}`);
+      console.log('[RUNTIME_RECEIPT]', runtimeReceipt);
       console.log('[TURN_CONTEXT]', {
         constructId,
         memory_intent: !!enrichedContext.memory_query_detected,
@@ -6154,110 +11195,29 @@ router.post("/message", async (req, res) => {
         relational_turn: relationalTurn,
         context_mode: contextMode,
         provider_used: effectiveProvider,
+        path_mode: 'main',
+        persona_applied: true,
+        retrieval_used: (enrichedContext.evidence_count ?? 0) > 0,
+        recital_detected: recitalDetected,
+        recital_rewrite_applied: recitalRewriteApplied,
+        persona_drift_detected: personaDriftDetected,
+        persona_regen_applied: personaRegenApplied,
+        repeat_detected: repeatDetected,
+        auth_recovered: authRecovered,
         vision_mode: hasImages ? (explicitVisionIntent ? 'explicit-analysis' : 'character-first') : 'off',
       });
       console.log(`📊 [METRIC] { construct_id: "${constructId}", provider_forced: ${providerForced}, provider_used: "${effectiveProvider}", model: "${effectiveModel}", has_images: ${hasImages} }`);
-
-      const validatorDebug = {
-        memory_retrieval_ran: !!enrichedContext.memory_retrieval_ran,
-        memory_query_detected: !!enrichedContext.memory_query_detected,
-        evidence_count: enrichedContext.evidence_count || 0,
-        identity_drift_detected: false,
-        identity_rewrite_applied: false,
-        identity_fallback_applied: false,
-        cutoff_violation_detected: false,
-        rewrite_applied: false,
-      };
-
-      const identityGuard = await enforceFirstPersonIdentity({
-        aiResponse,
-        userMessage: message,
-        constructId,
-        providerAvailability,
-        roleplayEnabled: gptConfig?.roleplayEnabled === true,
-        latestUserBeforeCurrent: getLastUserMessageFromHistory(conversationHistoryMessages),
-      });
-      aiResponse = identityGuard.response;
-      validatorDebug.identity_drift_detected = identityGuard.identity_drift_detected;
-      validatorDebug.identity_rewrite_applied = identityGuard.identity_rewrite_applied;
-      validatorDebug.identity_fallback_applied = identityGuard.identity_fallback_applied;
       console.log('[IDENTITY_GUARD]', {
         constructId,
         mode: 'main',
         relational_turn: relationalTurn,
         context_mode: contextMode,
-        identity_drift_detected: identityGuard.identity_drift_detected,
-        identity_rewrite_applied: identityGuard.identity_rewrite_applied,
-        identity_fallback_applied: identityGuard.identity_fallback_applied,
-      });
-
-      if (enrichedContext.memory_query_detected) {
-        const CUTOFF_PATTERNS = [
-          /my\s+(training|knowledge)\s+(data\s+)?(only\s+)?(goes|extends|reaches|covers)\s+(up\s+)?to/i,
-          /my\s+(memories?|knowledge|training)\s+cap(s)?\s+at/i,
-          /(training|knowledge)\s+cutoff/i,
-          /I\s+(only\s+)?have\s+(data|information|knowledge)\s+(up\s+)?(to|through|until)/i,
-          /as\s+of\s+my\s+(last|latest)\s+(training|update)/i,
-          /my\s+(last|latest)\s+(training|update)\s+was/i,
-          /I\s+was\s+(last\s+)?(trained|updated)\s+(on|in|through)/i,
-        ];
-
-        const hasCutoffViolation = CUTOFF_PATTERNS.some(p => p.test(aiResponse));
-        if (hasCutoffViolation) {
-          validatorDebug.cutoff_violation_detected = true;
-          console.warn(`⚠️ [PostResponseValidator] Cutoff violation detected in ${constructId} response. Attempting corrective rewrite...`);
-
-          const rewriteClient = replitOpenrouter || openaiClient;
-          const rewriteModel = replitOpenrouter ? DEFAULT_OPENROUTER_MODEL : 'gpt-4.1-mini';
-
-          if (rewriteClient) {
-            try {
-              const rewriteCompletion = await rewriteClient.chat.completions.create({
-                model: rewriteModel,
-                messages: [
-                  {
-                    role: 'system',
-                    content: `You are a post-processing filter. Rewrite the following AI response to remove ANY mention of training cutoffs, knowledge cutoffs, or data limitations. The AI has real transcript memories — it is NOT limited by a training date.
-
-EVIDENCE STATUS: ${validatorDebug.evidence_count} pieces of evidence were retrieved from the memory system for this query.
-
-Rules:
-1. Remove all phrases like "my training data goes up to", "my knowledge cutoff", "my memories cap at", etc.
-2. If the response references specific evidence (evidence_count > 0), keep that evidence and cite it.
-3. If evidence_count is 0, replace the memory-related portion with exactly: "I cannot verify that from available continuity records."
-4. Keep the rest of the response tone, personality, and content intact.
-5. Do NOT add new information or fabricate memories.
-Output ONLY the rewritten response, nothing else.`
-                  },
-                  { role: 'user', content: aiResponse }
-                ],
-                max_tokens: 2048,
-              });
-              const rewritten = rewriteCompletion.choices[0]?.message?.content;
-              if (rewritten) {
-                const stillViolates = CUTOFF_PATTERNS.some(p => p.test(rewritten));
-                if (stillViolates) {
-                  console.warn(`⚠️ [PostResponseValidator] Rewrite still contains cutoff language. Applying hard fallback.`);
-                  aiResponse = "I cannot verify that from available continuity records.";
-                  validatorDebug.rewrite_applied = true;
-                } else {
-                  aiResponse = rewritten;
-                  validatorDebug.rewrite_applied = true;
-                  console.log(`✅ [PostResponseValidator] Corrective rewrite applied for ${constructId}`);
-                }
-              }
-            } catch (rewriteErr) {
-              console.error(`❌ [PostResponseValidator] Rewrite failed, applying hard fallback:`, rewriteErr.message);
-              aiResponse = "I cannot verify that from available continuity records.";
-              validatorDebug.rewrite_applied = true;
-            }
-          } else {
-            console.warn(`⚠️ [PostResponseValidator] No LLM client for rewrite, applying hard fallback.`);
-            aiResponse = "I cannot verify that from available continuity records.";
-            validatorDebug.rewrite_applied = true;
-          }
-        }
-      }
+	        identity_drift_detected: validatorDebug.identity_drift_detected,
+	        identity_rewrite_applied: validatorDebug.identity_rewrite_applied,
+	        no_rewrite_identity_anchor: Boolean(enrichedContext.no_rewrite_identity_anchor),
+	        identity_rewrite_prevented_by: validatorDebug.identity_rewrite_prevented_by,
+	        identity_fallback_applied: validatorDebug.identity_fallback_applied,
+	      });
       console.log(`🛡️ [PostResponseValidator] { memory_retrieval_ran: ${validatorDebug.memory_retrieval_ran}, memory_query_detected: ${validatorDebug.memory_query_detected}, evidence_count: ${validatorDebug.evidence_count}, identity_drift_detected: ${validatorDebug.identity_drift_detected}, identity_rewrite_applied: ${validatorDebug.identity_rewrite_applied}, identity_fallback_applied: ${validatorDebug.identity_fallback_applied}, cutoff_violation_detected: ${validatorDebug.cutoff_violation_detected}, rewrite_applied: ${validatorDebug.rewrite_applied} }`);
 
       if (enrichedContext.capabilityManifest && aiResponse) {
@@ -6273,50 +11233,569 @@ Output ONLY the rewritten response, nothing else.`
         }
       }
 
+      const orchestrationChecklist = buildOrchestrationChecklist({
+        userId: dataOwnerUserId,
+        user: req.user,
+        constructId,
+        threadId: sessionId || threadId || `${constructId}_chat_with_${constructId}`,
+        userMessage: message,
+        gptConfig,
+        enrichedContext,
+        retrievalDiagnostics,
+        promptDiagnostics: mainPromptDiagnostics,
+        providerTrace,
+        validatorDebug,
+        runtimeReceipt,
+        contextMode,
+        relationalTurn,
+        lowComplexityTurn,
+        hasImages,
+        skipPersistence: Boolean(skipPersistence || identityCoherenceBlocked || continuityIntegrityBlocked || transcriptLawGovernanceBlocked || assignmentQaBlocked),
+        previewMode,
+        requestedConstructId: rawConstructId,
+        canonicalConstructId: canonicalConstructId || constructId,
+        responseStatus: assignmentQaBlocked
+          ? 'assignment_qa_failed'
+          : continuityIntegrityBlocked
+            ? 'continuity_integrity_failed'
+          : transcriptLawGovernanceBlocked
+            ? 'transcript_law_governance_failed'
+          : identityCoherenceBlocked
+            ? 'identity_coherence_failed'
+            : 'success',
+      });
+
+      if (transcriptLawGovernanceBlocked) {
+        console.warn('[ORCHESTRATION_CHECKLIST]', {
+          constructId,
+          overallStatus: orchestrationChecklist.overallStatus,
+          summary: orchestrationChecklist.summary,
+          blocked: 'transcript_law_governance_failed',
+        });
+        return res.status(422).json({
+          success: false,
+          ok: false,
+          error: 'TRANSCRIPT_LAW_GOVERNANCE_FAILED',
+          message: transcriptLawGovernanceFailureMessage,
+          response: transcriptLawGovernanceFailureMessage,
+          construct_id: constructId,
+          provider_used: effectiveProvider,
+          model: effectiveModel,
+          runtime_receipt: runtimeReceipt,
+          orchestration_checklist: orchestrationChecklist,
+          has_images: hasImages,
+          tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
+          ...(process.env.SHOW_DEV_INFO === 'true'
+            ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: mainPromptDiagnostics }
+          : {})
+        });
+      }
+
+      if (identityCoherenceBlocked) {
+        console.warn('[ORCHESTRATION_CHECKLIST]', {
+          constructId,
+          overallStatus: orchestrationChecklist.overallStatus,
+          summary: orchestrationChecklist.summary,
+          blocked: 'identity_coherence_failed',
+        });
+        return res.status(422).json({
+          success: false,
+          ok: false,
+          error: 'IDENTITY_COHERENCE_FAILED',
+          message: identityCoherenceFailureMessage,
+          response: identityCoherenceFailureMessage,
+          construct_id: constructId,
+          provider_used: effectiveProvider,
+          model: effectiveModel,
+          runtime_receipt: runtimeReceipt,
+          orchestration_checklist: orchestrationChecklist,
+          has_images: hasImages,
+          tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
+          ...(process.env.SHOW_DEV_INFO === 'true'
+            ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: mainPromptDiagnostics }
+          : {})
+        });
+      }
+
+      if (continuityIntegrityBlocked) {
+        console.warn('[ORCHESTRATION_CHECKLIST]', {
+          constructId,
+          overallStatus: orchestrationChecklist.overallStatus,
+          summary: orchestrationChecklist.summary,
+          blocked: 'continuity_integrity_failed',
+        });
+        return res.status(422).json({
+          success: false,
+          ok: false,
+          error: 'CONTINUITY_INTEGRITY_FAILED',
+          message: 'Continuity was restored, but the resumed answer drifted into greeting/orientation or recap behavior before canonical persistence.',
+          response: 'Continuity was restored, but the resumed answer drifted into greeting/orientation or recap behavior before canonical persistence.',
+          construct_id: constructId,
+          provider_used: effectiveProvider,
+          model: effectiveModel,
+          runtime_receipt: runtimeReceipt,
+          orchestration_checklist: orchestrationChecklist,
+          has_images: hasImages,
+          tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
+          ...(process.env.SHOW_DEV_INFO === 'true'
+            ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: mainPromptDiagnostics }
+            : {})
+        });
+      }
+
+      if (assignmentQaBlocked) {
+        console.warn('[ORCHESTRATION_CHECKLIST]', {
+          constructId,
+          overallStatus: orchestrationChecklist.overallStatus,
+          summary: orchestrationChecklist.summary,
+          blocked: 'assignment_qa_failed',
+        });
+        return res.status(422).json({
+          success: false,
+          ok: false,
+          error: 'ASSIGNMENT_QA_FAILED',
+          message: assignmentQaFailureMessage,
+          response: assignmentQaFailureMessage,
+          construct_id: constructId,
+          provider_used: effectiveProvider,
+          model: effectiveModel,
+          runtime_receipt: runtimeReceipt,
+          orchestration_checklist: orchestrationChecklist,
+          has_images: hasImages,
+          tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
+          ...(process.env.SHOW_DEV_INFO === 'true'
+            ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: mainPromptDiagnostics }
+            : {})
+        });
+      }
+
+      const nextRuntimeTurnState = computeNextRuntimeTurnState({
+        previousState: routeTurnEnvelope.runtimeTurnState,
+        userMessage: isSyntheticContinueTurn ? '' : message,
+        assistantMessage: aiResponse,
+        continuityClass: routeTurnEnvelope.continuityClass,
+        sessionId: effectiveTurnSessionId,
+        constructId,
+        constructRevision: buildConstructRevision({
+          constructId,
+          revisionHint:
+            routeTurnEnvelope.runtimeTurnState?.constructRevision ||
+            routeTurnEnvelope.continuityResume?.request?.resumeConstructRevision,
+        }),
+        hydrationTruth: continuityReceipt.hydration || 'full',
+      });
+      routeTurnEnvelope.runtimeTurnState = nextRuntimeTurnState;
+      runtimeReceipt.runtime_turn_state = nextRuntimeTurnState;
+      console.log('[RUNTIME_TURN_STATE]', {
+        stage: 'computed',
+        sessionId: effectiveTurnSessionId,
+        constructId,
+        continuityClass: routeTurnEnvelope.continuityClass,
+        transcriptLawRequired: routeTurnEnvelope.transcriptLawRequired,
+        evidenceAttached: routeTurnEnvelope.evidenceAttached,
+        nextState: nextRuntimeTurnState,
+      });
+
       if (!skipPersistence) {
         const effectiveSession = sessionId || threadId || `${constructId}_chat_with_${constructId}`;
         const constructName = constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase());
         try {
           await loadVVAULTModules();
-          if (writeTranscript) {
-            const now = new Date();
-            if (!isSyntheticContinueTurn) {
-              await writeTranscript({
-                userId,
-                userEmail: req.user?.email,
-                sessionId: effectiveSession,
-                timestamp: new Date(now.getTime()).toISOString(),
-                role: 'user',
-                content: message,
-                title: constructName,
-                constructId,
-                constructName,
-                constructCallsign: constructId
+          if (!writeTranscript) {
+            const persistenceFailurePayload = buildTranscriptPersistenceFailurePayload({
+              userId: dataOwnerUserId,
+              user: req.user,
+              constructId,
+              rawConstructId,
+              canonicalConstructId,
+              message,
+              threadId,
+              sessionId,
+              hasImages,
+              previewMode,
+              gptConfig,
+              enrichedContext,
+              retrievalDiagnostics,
+              promptDiagnostics: mainPromptDiagnostics,
+              providerTrace,
+              validatorDebug,
+              runtimeReceipt,
+              details: {
+                code: 'TRANSCRIPT_PERSISTENCE_UNAVAILABLE',
+                reason: 'write_transcript_unavailable',
+                message: 'Transcript persistence module unavailable before canonical write.',
+                error: 'writeTranscript function not loaded',
+                timeout_ms: null,
+                bounded: false,
+                stage: 'bootstrap',
+              },
+            });
+            console.error(`❌ [VVAULT Proxy] Transcript persistence unavailable for ${constructId}: writeTranscript function not loaded`);
+            return sendSerializedJson(res, 503, {
+              ...persistenceFailurePayload,
+              tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
+              ...(process.env.SHOW_DEV_INFO === 'true'
+                ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: mainPromptDiagnostics }
+                : {})
+            }, 'transcript_persistence_failure');
+          }
+          const now = new Date();
+          const conversationTitle = canonicalTurnMetadata.projectName
+            ? `${canonicalTurnMetadata.projectName} Hydro`
+            : constructName;
+          const normalizedRequestedTranscriptPath = String(
+            canonicalTurnMetadata.transcriptPath || transcriptPath || ''
+          ).trim().replace(/^\/+/, '');
+          const canonicalTranscriptWriteTargetPath =
+            `instances/${constructId}/chatty/chat_with_${constructId}.md`;
+          const isCanonicalConstructTranscriptWrite =
+            effectiveSession === `${constructId}_chat_with_${constructId}` &&
+            !canonicalTurnMetadata.projectName &&
+            (!normalizedRequestedTranscriptPath ||
+              normalizedRequestedTranscriptPath === canonicalTranscriptWriteTargetPath);
+          const isCanonicalLinTranscriptWrite =
+            constructId === 'lin-001' &&
+            effectiveSession === LIN_CANONICAL_THREAD_ID &&
+            !canonicalTurnMetadata.projectName &&
+            (!normalizedRequestedTranscriptPath ||
+              normalizedRequestedTranscriptPath === LIN_CANONICAL_TRANSCRIPT_PATH);
+          const requiresVvaultBodyPersistence = isCanonicalConstructTranscriptWrite || isCanonicalLinTranscriptWrite;
+          let transcriptWriteSupabaseUserId = dataOwnerUserId;
+          if (isCanonicalConstructTranscriptWrite) {
+            const { supabaseUserId: resolvedTranscriptWriteSupabaseUserId } =
+              await resolveSupabaseUserId({
+                email: req.user?.email || null,
+                chattyUserId: dataOwnerUserId,
               });
+            if (resolvedTranscriptWriteSupabaseUserId) {
+              transcriptWriteSupabaseUserId = resolvedTranscriptWriteSupabaseUserId;
+            } else {
+              console.warn(
+                `⚠️ [VVAULT Proxy] Could not resolve canonical transcript write target for ${constructId}; falling back to current owner targeting`
+              );
             }
-            await writeTranscript({
-              userId,
-              userEmail: req.user?.email,
+          }
+          const persistenceRoleResults = [];
+          const persistWrite = async (role, params) => {
+            const outcome = await performTranscriptWriteWithRecovery(params, {
+              label: `transcript_persistence_${role}`,
+            });
+            persistenceRoleResults.push({
+              role,
+              status: outcome.status,
+              source: outcome.value?.source || null,
+              bounded: false,
+            });
+            return outcome;
+          };
+          const continuityResetBlockReason =
+            (isSyntheticContinueTurn ||
+              routeTurnEnvelope.continuityResume?.continuityExpected === true)
+              ? detectContinuityResetDraft(aiResponse)
+              : null;
+          if (continuityResetBlockReason) {
+            const persistenceFailurePayload = buildTranscriptPersistenceFailurePayload({
+              userId: dataOwnerUserId,
+              user: req.user,
+              constructId,
+              rawConstructId,
+              canonicalConstructId,
+              message,
+              threadId,
+              sessionId,
+              hasImages,
+              previewMode,
+              gptConfig,
+              enrichedContext,
+              retrievalDiagnostics,
+              promptDiagnostics: mainPromptDiagnostics,
+              providerTrace,
+              validatorDebug,
+              runtimeReceipt,
+              details: {
+                code: 'CONTINUITY_RESET_DRAFT_BLOCKED',
+                reason: continuityResetBlockReason,
+                message: 'Assistant draft looked like a continuity reset, so canonical persistence was blocked.',
+                error: 'continuity_reset_draft_blocked',
+                timeout_ms: null,
+                bounded: false,
+                stage: 'assistant_prewrite',
+                roles: persistenceRoleResults,
+                partial_write_risk: !isSyntheticContinueTurn,
+              },
+            });
+            console.warn('[CONTINUITY_PERSISTENCE_GATE] Blocked assistant persistence', {
+              constructId,
               sessionId: effectiveSession,
-              timestamp: new Date(now.getTime() + 2).toISOString(),
-              role: 'assistant',
-              content: aiResponse,
-              title: constructName,
+              reason: continuityResetBlockReason,
+            });
+            return sendSerializedJson(res, 422, {
+              ...persistenceFailurePayload,
+              code: 'CONTINUITY_RESET_DRAFT_BLOCKED',
+              error: 'Assistant draft looked like a continuity reset, so canonical persistence was blocked.',
+              response: 'Assistant draft blocked before canonical persistence.',
+              tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
+              ...(process.env.SHOW_DEV_INFO === 'true'
+                ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: mainPromptDiagnostics }
+                : {})
+            }, 'continuity_reset_draft_blocked');
+          }
+
+          if (!isSyntheticContinueTurn) {
+            const userPersistOutcome = await persistWrite('user', {
+              userId: dataOwnerUserId,
+              userEmail: req.user?.email,
+              supabaseUserId: transcriptWriteSupabaseUserId,
+              requireVvaultBodySuccess: requiresVvaultBodyPersistence,
+              sessionId: effectiveSession,
+              timestamp: new Date(now.getTime()).toISOString(),
+              role: 'user',
+              content: message,
+              title: conversationTitle,
+              metadata: {
+                ...canonicalTurnMetadata,
+                attachments,
+              },
               constructId,
               constructName,
               constructCallsign: constructId
             });
-            console.log(
-              `💾 [VVAULT Proxy] Transcript persisted for ${constructId} (${isSyntheticContinueTurn ? "assistant-only continue turn" : "user + assistant"})`,
-            );
+
+            if (!userPersistOutcome.ok) {
+              const persistenceFailurePayload = buildTranscriptPersistenceFailurePayload({
+                userId: dataOwnerUserId,
+                user: req.user,
+                constructId,
+                rawConstructId,
+                canonicalConstructId,
+                message,
+                threadId,
+                sessionId,
+                hasImages,
+                previewMode,
+                gptConfig,
+                enrichedContext,
+                retrievalDiagnostics,
+                promptDiagnostics: mainPromptDiagnostics,
+                providerTrace,
+                validatorDebug,
+                runtimeReceipt,
+                details: {
+                  code: 'TRANSCRIPT_PERSISTENCE_UNAVAILABLE',
+                  reason: 'transcript_user_write_failed',
+                  message: 'Transcript persistence failed before the user turn could be canonically recorded.',
+                  error: userPersistOutcome.error,
+                  timeout_ms: null,
+                  bounded: false,
+                  stage: 'user',
+                  roles: persistenceRoleResults,
+                  partial_write_risk: false,
+                },
+              });
+              console.error(`❌ [VVAULT Proxy] Transcript persistence failed for ${constructId} at user write:`, userPersistOutcome.error);
+              return sendSerializedJson(res, 503, {
+                ...persistenceFailurePayload,
+                tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
+                ...(process.env.SHOW_DEV_INFO === 'true'
+                  ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: mainPromptDiagnostics }
+                  : {})
+              }, 'transcript_persistence_failure');
+            }
           }
+
+          const assistantPersistOutcome = await persistWrite('assistant', {
+              userId: dataOwnerUserId,
+              userEmail: req.user?.email,
+              supabaseUserId: transcriptWriteSupabaseUserId,
+              requireVvaultBodySuccess: requiresVvaultBodyPersistence,
+              sessionId: effectiveSession,
+            timestamp: new Date(now.getTime() + 2).toISOString(),
+            role: 'assistant',
+            content: aiResponse,
+            title: conversationTitle,
+            metadata: {
+              ...canonicalTurnMetadata,
+              modelKey: canonicalTurnMetadata.modelKey || effectiveModel,
+              modelLabel: canonicalTurnMetadata.modelLabel || effectiveModel,
+              runtimeReceipt,
+              orchestrationChecklist,
+              runtimeTurnState: nextRuntimeTurnState,
+            },
+            constructId,
+            constructName,
+            constructCallsign: constructId
+          });
+
+          if (!assistantPersistOutcome.ok) {
+            const persistenceFailurePayload = buildTranscriptPersistenceFailurePayload({
+              userId: dataOwnerUserId,
+              user: req.user,
+              constructId,
+              rawConstructId,
+              canonicalConstructId,
+              message,
+              threadId,
+              sessionId,
+              hasImages,
+              previewMode,
+              gptConfig,
+              enrichedContext,
+              retrievalDiagnostics,
+              promptDiagnostics: mainPromptDiagnostics,
+              providerTrace,
+                validatorDebug,
+                runtimeReceipt,
+                details: {
+                  code: 'TRANSCRIPT_PERSISTENCE_UNAVAILABLE',
+                  reason: 'transcript_assistant_write_failed',
+                  message: 'Transcript persistence failed before the assistant reply could be canonically recorded.',
+                  error: assistantPersistOutcome.error,
+                  timeout_ms: null,
+                  bounded: false,
+                  stage: 'assistant',
+                  roles: persistenceRoleResults,
+                  partial_write_risk: true,
+              },
+            });
+            console.error(`❌ [VVAULT Proxy] Transcript persistence failed for ${constructId} at assistant write:`, assistantPersistOutcome.error);
+            return sendSerializedJson(res, 503, {
+              ...persistenceFailurePayload,
+              tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
+              ...(process.env.SHOW_DEV_INFO === 'true'
+                ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: mainPromptDiagnostics }
+                : {})
+            }, 'transcript_persistence_failure');
+          }
+
+          clearConversationReadCaches();
+
+          if (requiresVvaultBodyPersistence) {
+            const canonicalReadbackRows = await readConversations(
+              buildConversationLookupContext({
+                userEmail: req.user?.email || null,
+                supabaseUserId: transcriptWriteSupabaseUserId,
+                userId: dataOwnerUserId || req.user?.vvaultUserId || userId,
+              }),
+              constructId,
+              { allowLocalFallback: false },
+            );
+            const canonicalReadbackConversation = (Array.isArray(canonicalReadbackRows)
+              ? canonicalReadbackRows
+              : []
+            ).find((row) => row?.sessionId === effectiveSession || row?.id === effectiveSession);
+            const readbackAssistantTail = (canonicalReadbackConversation?.messages || [])
+              .filter((row) => row?.role === 'assistant')
+              .at(-1);
+
+            if (
+              !readbackAssistantTail ||
+              stripChattyMetadataComment(readbackAssistantTail.content) !== String(aiResponse || '').trimEnd()
+            ) {
+              const persistenceFailurePayload = buildTranscriptPersistenceFailurePayload({
+                userId: dataOwnerUserId,
+                user: req.user,
+                constructId,
+                rawConstructId,
+                canonicalConstructId,
+                message,
+                threadId,
+                sessionId,
+                hasImages,
+                previewMode,
+                gptConfig,
+                enrichedContext,
+                retrievalDiagnostics,
+                promptDiagnostics: mainPromptDiagnostics,
+                providerTrace,
+                validatorDebug,
+                runtimeReceipt,
+                details: {
+                  code: 'TRANSCRIPT_READBACK_MISMATCH',
+                  reason: 'canonical_vvault_readback_tail_mismatch',
+                  message: 'Transcript write completed, but canonical VVAULT readback did not return the assistant tail.',
+                  error: 'canonical_vvault_readback_tail_mismatch',
+                  timeout_ms: null,
+                  bounded: false,
+                  stage: 'readback',
+                  roles: persistenceRoleResults,
+                  partial_write_risk: true,
+                },
+              });
+              console.error(`❌ [VVAULT Proxy] Canonical readback mismatch for ${constructId} after transcript write`);
+              return sendSerializedJson(res, 503, {
+                ...persistenceFailurePayload,
+                tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
+                ...(process.env.SHOW_DEV_INFO === 'true'
+                  ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: mainPromptDiagnostics }
+                  : {})
+              }, 'transcript_readback_mismatch');
+            }
+          }
+
+          console.log('[RUNTIME_TURN_STATE]', {
+            stage: 'persisted',
+            sessionId: effectiveSession,
+            constructId,
+            source: assistantPersistOutcome.value?.source || assistantPersistOutcome.source || null,
+            runtimeTurnState: nextRuntimeTurnState,
+          });
+
+          runtimeReceipt.persistence_owner = 'vvault_body';
+          runtimeReceipt.persistence = {
+            ...runtimeReceipt.persistence,
+            attempted: true,
+            status: 'pass',
+            timeout_ms: null,
+            bounded: false,
+            stage: 'assistant',
+            roles: persistenceRoleResults,
+            ...buildCanonicalPersistenceSemantics(),
+          };
+          console.log(
+            `💾 [VVAULT Proxy] Transcript persisted for ${constructId} (${isSyntheticContinueTurn ? "assistant-only continue turn" : "user + assistant"})`,
+          );
         } catch (persistErr) {
-          console.warn('⚠️ [VVAULT Proxy] Transcript persistence failed:', persistErr.message);
+          const persistenceFailurePayload = buildTranscriptPersistenceFailurePayload({
+            userId: dataOwnerUserId,
+            user: req.user,
+            constructId,
+            rawConstructId,
+            canonicalConstructId,
+            message,
+            threadId,
+            sessionId,
+            hasImages,
+            previewMode,
+            gptConfig,
+            enrichedContext,
+            retrievalDiagnostics,
+            promptDiagnostics: mainPromptDiagnostics,
+            providerTrace,
+            validatorDebug,
+            runtimeReceipt,
+            details: {
+              code: 'TRANSCRIPT_PERSISTENCE_UNAVAILABLE',
+              reason: 'transcript_persistence_exception',
+              message: 'Transcript persistence failed before the canonical response could be recorded.',
+              error: persistErr?.message || String(persistErr),
+              timeout_ms: null,
+              bounded: false,
+              stage: 'unexpected',
+            },
+          });
+          console.error(`❌ [VVAULT Proxy] Transcript persistence threw for ${constructId}:`, persistErr?.message || String(persistErr));
+          return sendSerializedJson(res, 503, {
+            ...persistenceFailurePayload,
+            tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
+            ...(process.env.SHOW_DEV_INFO === 'true'
+              ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: mainPromptDiagnostics }
+              : {})
+          }, 'transcript_persistence_failure');
         }
 
         if (!isSyntheticContinueTurn) {
           captureMemory({
-            userId,
+            userId: dataOwnerUserId,
             constructId,
             userMessage: message,
             aiResponse,
@@ -6326,26 +11805,51 @@ Output ONLY the rewritten response, nothing else.`
         }
       }
 
-      evaluateMessage(userId, constructId, isSyntheticContinueTurn ? "" : message, aiResponse)
+      evaluateMessage(dataOwnerUserId, constructId, isSyntheticContinueTurn ? "" : message, aiResponse)
         .catch(err => console.warn('[ContentGuard] Background evaluation failed:', err.message));
+
+      publishZenReplayBurst({
+        constructId,
+        sessionId: sessionId || threadId || `${constructId}_chat_with_${constructId}`,
+        userMessage: isSyntheticContinueTurn ? 'continue' : message,
+        aiResponse,
+        assistantTurnId: nextRuntimeTurnState?.assistantTurnId || null,
+      });
+
+      console.log('[ORCHESTRATION_CHECKLIST]', {
+        constructId,
+        overallStatus: orchestrationChecklist.overallStatus,
+        summary: orchestrationChecklist.summary,
+      });
 
       return res.json({
         success: true,
         response: aiResponse,
+        packets: responsePackets,
         construct_id: constructId,
         fallback: true,
         source: `${effectiveProvider}-direct`,
         model: effectiveModel,
         provider_forced: constructId === 'nova-001',
         provider_used: effectiveProvider,
+        runtime_receipt: runtimeReceipt,
+        orchestration_checklist: orchestrationChecklist,
         has_images: hasImages,
         tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
         ...(process.env.SHOW_DEV_INFO === 'true'
-          ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics }
+          ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: mainPromptDiagnostics }
           : {})
       });
     } catch (llmError) {
       const normalizedError = normalizeProviderError(llmError, effectiveProvider);
+      publishZenLiveEventSafe({
+        sessionId: sessionId || threadId || `${constructId}_chat_with_${constructId}`,
+        turnId: `zen-error-${Date.now()}`,
+        sourceProduct: 'vvault',
+        kind: 'assistant_error',
+        status: 'error',
+        message: normalizedError?.message || String(llmError?.message || llmError),
+      });
       console.error(`❌ [VVAULT Proxy] ${effectiveProvider} call failed:`, {
         provider: effectiveProvider,
         model: effectiveModel,
@@ -6356,7 +11860,8 @@ Output ONLY the rewritten response, nothing else.`
         constructId
       });
       console.error('[NOVA TROUBLE]', new Error().stack.split('\n'));
-      const fallbackResponse = `I'm having trouble reaching my model providers right now. Please try again in a moment.`;
+      const fallbackResponse = `My connection hiccupped, but I'm still here with you. Give me a moment and try again.`;
+      const isAllProvidersFailed = normalizedError?.providerCode === 'ALL_PROVIDERS_FAILED' || llmError?.code === 'ALL_PROVIDERS_FAILED';
       return res.status(503).json({
         success: false,
         error: `${effectiveProvider} failed: ${normalizedError.message}`,
@@ -6368,7 +11873,33 @@ Output ONLY the rewritten response, nothing else.`
         hint: normalizedError.hint,
         details: normalizedError.message,
         retryable: true,
-        ...(process.env.SHOW_DEV_INFO === 'true' ? { retrieval_diagnostics: retrievalDiagnostics, provider_trace: providerTrace } : {}),
+        ...(function () {
+          // `providerTrace` is declared inside the inner LLM routing try-block.
+          // In some error cases, the catch may execute before that binding exists.
+          // Use `typeof` to avoid a ReferenceError when `providerTrace` isn't in scope.
+          const providerTraceSafe = (typeof providerTrace !== 'undefined' ? providerTrace : null);
+          if (!(
+            normalizedError?.providerCode === 'ALL_PROVIDERS_FAILED' ||
+            llmError?.code === 'ALL_PROVIDERS_FAILED'
+          )) return {};
+
+          return {
+            provider_attempts: (providerTraceSafe?.attempts || []).map((a) => ({
+              provider: a.provider,
+              retry: a.retry,
+              status: a.status,
+              error_code: a.error_code,
+              error_message_short: a.error_message_short,
+            })),
+          };
+        })(),
+        ...(process.env.SHOW_DEV_INFO === 'true'
+          ? {
+              retrieval_diagnostics: retrievalDiagnostics,
+              provider_trace:
+                (typeof providerTrace !== 'undefined' ? providerTrace : null),
+            }
+          : {}),
       });
     }
   }
@@ -6376,7 +11907,7 @@ Output ONLY the rewritten response, nothing else.`
   try {
     // Derive session ID if not provided (format: {constructId}_chat_with_{constructId})
     const effectiveSessionId = sessionId || threadId || `${constructId}_chat_with_${constructId}`;
-    
+
     // Fetch GPT config to include model info in VVAULT request
     let gptConfigForVVAULT = null;
     let configuredModelForVVAULT = null;
@@ -6387,14 +11918,14 @@ Output ONLY the rewritten response, nothing else.`
         console.log(`📋 [VVAULT Proxy] GPT config for ${constructId}, model: ${configuredModelForVVAULT}`);
       }
     } catch (e) { /* ignore */ }
-    
+
     console.log(`📤 [VVAULT Proxy] Forwarding message to VVAULT for construct: ${constructId}, session: ${effectiveSessionId}`);
-    
+
     const baseUrl = VVAULT_API_BASE_URL.replace(/\/$/, '');
-    
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 60000); // 60 second timeout for LLM
-    
+
     try {
       // VVAULT handles: LLM inference, transcript saving, memory management
       // Include model info so VVAULT can use the GPT's configured model
@@ -6404,21 +11935,55 @@ Output ONLY the rewritten response, nothing else.`
       const userEmail = req.user?.email || userId;
       if (userEmail) vvaultHeaders['X-Chatty-User'] = userEmail;
 
-      const vvaultResponse = await fetch(`${baseUrl}/api/chatty/message`, {
-        method: 'POST',
-        headers: vvaultHeaders,
-        body: JSON.stringify({
-          constructId,
-          message,
-          userId: userEmail,
-          sessionId: effectiveSessionId,
-          userName: req.user?.name || 'Devon',
-          model: configuredModelForVVAULT
-        }),
-        signal: controller.signal
-      });
-
-      clearTimeout(timeout);
+      let vvaultResponse;
+      try {
+        vvaultResponse = await fetch(`${baseUrl}/api/chatty/message`, {
+          method: 'POST',
+          headers: vvaultHeaders,
+          body: JSON.stringify({
+            constructId,
+            message,
+            userId: userEmail,
+            sessionId: effectiveSessionId,
+            userName: req.user?.name || 'Devon',
+            model: configuredModelForVVAULT,
+            attachments,
+            projectName: canonicalTurnMetadata.projectName,
+            rootPath: canonicalTurnMetadata.rootPath,
+            transcriptPath: canonicalTurnMetadata.transcriptPath,
+            runtime: canonicalTurnMetadata.runtime,
+            chatMode: canonicalTurnMetadata.chatMode,
+            planMode: canonicalTurnMetadata.planMode,
+            agentId: canonicalTurnMetadata.agentId,
+            agentLabel: canonicalTurnMetadata.agentLabel,
+            modelKey: canonicalTurnMetadata.modelKey,
+            modelLabel: canonicalTurnMetadata.modelLabel,
+          }),
+          signal: controller.signal
+        });
+      } catch (err) {
+        // If VVAULT doesn't respond before timeout, abort deterministically and
+        // return a retryable 503 so the client doesn't remain "stuck replying".
+        if (err && err.name === 'AbortError') {
+          console.error(`❌ [VVAULT Proxy] Timeout while awaiting VVAULT for ${constructId}`);
+          const fallbackResponse = `My connection hiccupped, but I'm still here with you. Give me a moment and try again.`;
+          return res.status(503).json({
+            success: false,
+            error: `VVAULT proxy timed out for ${constructId}`,
+            response: fallbackResponse,
+            provider: 'vvault_proxy',
+            model: configuredModelForVVAULT || null,
+            upstreamStatus: 503,
+            providerCode: 'VVAULT_TIMEOUT',
+            hint: 'Timed out while waiting for VVAULT.',
+            details: 'AbortError',
+            retryable: true
+          });
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeout);
+      }
 
       if (!vvaultResponse.ok) {
         if (isReplitAsleepResponse(vvaultResponse)) {
@@ -6427,20 +11992,45 @@ Output ONLY the rewritten response, nothing else.`
         }
         const errorText = await vvaultResponse.text();
         console.error(`❌ [VVAULT Proxy] VVAULT API returned ${vvaultResponse.status}: ${errorText}`);
-        
+
         // FALLBACK: Use configured LLM provider when VVAULT is unavailable (401, 503, etc.)
         if (vvaultResponse.status === 401 || vvaultResponse.status === 503) {
           console.log(`🔄 [VVAULT Proxy] VVAULT unavailable, falling back to local LLM for ${constructId}`);
-          
+
           try {
             // Fetch GPT config and resolve model using GPTCreator as source of truth
             let gptConfig = null;
             try {
               gptConfig = await gptManager.getGPTByCallsign(constructId);
             } catch (e) { /* ignore */ }
-            
-            const providerAvailability = { openai: !!openaiClient, openrouter: !!(openrouter || replitOpenrouter), ollama: !!process.env.OLLAMA_HOST || process.env.NODE_ENV !== 'production' };
-            const modelResolution = resolveModelForGPT(gptConfig, providerAvailability);
+
+            const providerAvailability = await buildProviderAvailability();
+            const fallbackRoutingMode = linearTranscriptLawGate === true || zenOrdinaryVoiceGate === true || isLinOrchestratedConstruct(constructId) || shouldForceProtectedZenLinMode({
+              constructId,
+              userMessage: message,
+              requestedSeat,
+              previewMode,
+              hasImages,
+              codingMode: false,
+            })
+              ? 'lin'
+              : normalizeOrchestrationMode(gptConfig, {
+                  defaultMode: isLinOrchestratedConstruct(constructId) ? 'lin' : 'custom',
+                });
+            const modelResolution = resolveModelForGPT(
+              gptConfig,
+              providerAvailability,
+              {
+                seat: requestedSeat,
+                mode: fallbackRoutingMode,
+                forceMode: fallbackRoutingMode === 'lin' ? 'lin' : null,
+                constructId,
+                userMessage: message,
+                previewMode,
+                hasImages,
+                codingMode: false,
+              },
+            );
             if (modelResolution.error) throw new Error(modelResolution.error);
             let { provider: effectiveProvider, model: effectiveModel, source: modelSource } = modelResolution;
             console.log("[MODEL_RESOLUTION]", {
@@ -6448,9 +12038,13 @@ Output ONLY the rewritten response, nothing else.`
               provider: effectiveProvider,
               model: effectiveModel,
               source: modelSource,
+              routingOverride: !!modelResolution.routingOverride,
+              localFirstUsed: !!modelResolution.localFirstUsed,
+              requestedSeat,
+              seatDefaultsOrOverrides: modelResolution.seatDefaultsOrOverrides,
               preferLocalModels: PREFER_LOCAL_MODELS
             });
-            
+
             // Auto-initialize construct's memory stack for fallback path
             try {
               const { masterScriptsManager: msFallback } = await import('../lib/masterScriptsBridge.js');
@@ -6459,26 +12053,53 @@ Output ONLY the rewritten response, nothing else.`
               }
             } catch (_msErr) {}
 
-            const { enrichedContext: enrichedResult, systemPrompt: enrichedSystemPrompt } = await buildEnrichedContextPrompt({
-              userId,
-              constructId,
-              userMessage: message,
-              gptConfig,
+            const enrichedBuild = await buildEnrichedContextPromptWithRecovery({
+              res,
+              authReceipt,
+              userId: dataOwnerUserId,
               user: req.user,
-              threadId: threadId || sessionId || `${constructId}_chat_with_${constructId}`,
+              constructId,
+              rawConstructId,
+              canonicalConstructId,
+              message,
+              gptConfig,
+              threadId,
+              sessionId,
               timezone: req.headers['x-user-timezone'] || null,
+              systemPromptOverride: null,
+              previewMode,
+              previewDraft: effectivePreviewDraft,
+              suppressedSystemPromptOverride: previewSystemPromptOverrideSuppressed,
+              identityBundle,
+              requestedSeat,
+              hasImages,
+              skipPersistence,
+              contextBudgetProfile: contextBudget?.profile,
+              codingIntent: codingMode,
+              policyOrReceiptIntent: contextBudget?.policy_or_receipt_intent,
+              runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+              continuityClass: routeTurnEnvelope.continuityClass,
+              continuityResume: routeTurnEnvelope.continuityResume,
             });
+            if (!enrichedBuild) return;
+            const { enrichedContext: enrichedResult, systemPrompt: enrichedSystemPrompt } = enrichedBuild;
             let systemPrompt = enrichedSystemPrompt;
             console.log(`✅ [VVAULT Proxy] Enriched context built for ${constructId} (capsule: ${enrichedResult.capsuleLoaded}, memories: ${enrichedResult.memoriesLoaded}, ${systemPrompt.length} chars)`);
 
             let fb1SearchIntent = 'not_evaluated';
             let fb1SearchInjected = false;
+            let fb1SearchResults = null;
+            let fb1SearchHousing = null;
             const {
               enhancedPrompt: fb1SearchPrompt,
+              searchResults: fb1SearchResultsResolved,
+              housing: fb1SearchHousingResolved,
               intent_reason: fb1SearchIntentResolved,
               search_injected: fb1SearchInjectedResolved,
             } = await injectSearchContext(message, systemPrompt, { explicitOnly: true });
             systemPrompt = fb1SearchPrompt;
+            fb1SearchResults = fb1SearchResultsResolved || null;
+            fb1SearchHousing = fb1SearchHousingResolved || null;
             fb1SearchIntent = fb1SearchIntentResolved || fb1SearchIntent;
             fb1SearchInjected = fb1SearchInjectedResolved === true;
             if (hasImages) {
@@ -6508,45 +12129,73 @@ CRITICAL: Do NOT say "Sera GPT is now live" or pretend to create it. You are NOT
                 systemPrompt += `\n\nYou have the ability to help users create custom GPTs. If a user mentions /gpt, creating a GPT, or wants to make a new AI character, help them brainstorm. Once you have enough details (name, description, personality), include [OPEN_GPT_CREATOR] at the very end of your response to open the GPT workshop.`;
               }
             }
-            
+
             let fbHistoryMessages = [];
             let fb1HistoryRemovedLeakCount = 0;
             let fb1HistoryRemovedInstructionDumpCount = 0;
             let fb1HistoryTailPrunedCount = 0;
             try {
               await loadVVAULTModules();
-              const lookupId = req.user?.email || userId;
-              const fbConvos = readConversations ? await readConversations(lookupId, constructId) : null;
-              if (fbConvos?.length > 0) {
-                const targetConvo = fbConvos.find(c => 
-                  c.constructId === constructId || 
-                  c.constructCallsign === constructId ||
-                  c.sessionId?.includes(constructId)
-                ) || fbConvos[0];
-                
-                const fbMessages = targetConvo.messages || [];
-                console.log(`📚 [VVAULT Proxy] Found conversation for ${constructId}: "${targetConvo.title}" with ${fbMessages.length} total messages (from ${fbConvos.length} conversations returned)`);
-                
+              const lookupId = buildConversationLookupContext({
+                userEmail: req.user?.email || null,
+                supabaseUserId: UUID_LOOKUP_RE.test(String(dataOwnerUserId || '').trim())
+                  ? dataOwnerUserId
+                  : supabaseSessionUserId,
+                userId: dataOwnerUserId || req.user?.vvaultUserId || userId,
+              });
+              if (Array.isArray(enrichedResult?.routeHistoryMessages) && enrichedResult.routeHistoryMessages.length > 0) {
                 const validMessages = sanitizeConversationHistory(
-                  fbMessages.filter(m => m.content && !m.isDateHeader),
+                  enrichedResult.routeHistoryMessages,
                   constructId,
-                  'fallback1-history',
+                  'fallback1-enriched-context-history',
                 );
                 fb1HistoryRemovedLeakCount = validMessages.removedLeakCount || 0;
                 fb1HistoryRemovedInstructionDumpCount = validMessages.removedInstructionDumpCount || 0;
+                fbHistoryMessages = (validMessages.messages || []).slice(-40).map((m) => ({ role: m.role, content: m.content }));
+                console.log(`📚 [VVAULT Proxy] Fallback1 using ${fbHistoryMessages.length} locally recovered history messages for ${constructId}`);
+              } else if (readConversations && !enrichedResult?.remote_history_skipped) {
+                const fbConvos = await readConversations(lookupId, constructId);
+                if (fbConvos?.length > 0) {
+                  const targetSession = sessionId || threadId || `${constructId}_chat_with_${constructId}`;
+                  const allowConstructFallback = !(sessionId || threadId) ||
+                    (contextBudget?.transcript_law_evidence_intent &&
+                      isTranscriptLawSyntheticGateThread(sessionId || threadId));
+                  const targetConvo = fbConvos.find(c =>
+                    c.sessionId === targetSession ||
+                    (allowConstructFallback && (
+                      c.constructId === constructId ||
+                      c.constructCallsign === constructId
+                    ))
+                  ) || (allowConstructFallback ? fbConvos[0] : null);
 
-                const fbRecent = (validMessages.messages || []).slice(-40);
-                fbHistoryMessages = fbRecent.map(m => ({ role: m.role, content: m.content }));
-                console.log(`📚 [VVAULT Proxy] Loaded ${fbHistoryMessages.length} history messages for ${constructId} (filtered from ${(validMessages.messages || []).length} valid messages)`);
-                
-                if (fbHistoryMessages.length > 0 && enrichedResult.memoriesLoaded === 0) {
-                  systemPrompt += `\n\n## Conversation Continuity
-You have an ongoing relationship with this user. The conversation history below represents your prior interactions. 
+                  const fbMessages = targetConvo?.messages || [];
+                  if (targetConvo) {
+                    console.log(`📚 [VVAULT Proxy] Found conversation for ${constructId}: "${targetConvo.title}" with ${fbMessages.length} total messages (from ${fbConvos.length} conversations returned)`);
+                  }
+
+                  const validMessages = sanitizeConversationHistory(
+                    fbMessages.filter(m => m.content && !m.isDateHeader),
+                    constructId,
+                    'fallback1-history',
+                  );
+                  fb1HistoryRemovedLeakCount = validMessages.removedLeakCount || 0;
+                  fb1HistoryRemovedInstructionDumpCount = validMessages.removedInstructionDumpCount || 0;
+
+                  const fbRecent = (validMessages.messages || []).slice(-40);
+                  fbHistoryMessages = fbRecent.map(m => ({ role: m.role, content: m.content }));
+                  console.log(`📚 [VVAULT Proxy] Loaded ${fbHistoryMessages.length} history messages for ${constructId} (filtered from ${(validMessages.messages || []).length} valid messages)`);
+
+                  if (fbHistoryMessages.length > 0 && enrichedResult.memoriesLoaded === 0) {
+                    systemPrompt += `\n\n## Conversation Continuity
+You have an ongoing relationship with this user. The conversation history below represents your prior interactions.
 Reference past exchanges naturally. Remember what the user told you. Maintain emotional and contextual continuity.
 Do NOT treat this as a first meeting if there is conversation history.`;
+                  }
+                } else {
+                  console.log(`⚠️ [VVAULT Proxy] No conversations found for ${constructId} with lookupId: ${lookupId}`);
                 }
-              } else {
-                console.log(`⚠️ [VVAULT Proxy] No conversations found for ${constructId} with lookupId: ${lookupId}`);
+              } else if (enrichedResult?.remote_history_skipped) {
+                console.log(`📚 [VVAULT Proxy] Fallback1 skipping remote history load for ${constructId} due to ${enrichedResult.context_recovery_profile || 'bounded context recovery'}`);
               }
             } catch (histErr) {
               console.warn(`⚠️ [VVAULT Proxy] Could not load fallback history:`, histErr.message);
@@ -6599,12 +12248,39 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               );
               fb1ContextMode = 'recent_chat_only';
             }
-            console.log('[PROMPT_SOURCE]', {
-              route: '/api/vvault/message',
+            const fallback1GreetingTurnContext = buildRouteGreetingTurnContext({
+              message,
+              constructId,
+              constructDisplayName: gptConfig?.name || constructId,
+              gptConfig,
+              identityBundle,
+              recentMessages: fbHistoryMessages,
+              previewMode,
+              hasImages,
+              isSyntheticContinueTurn,
+              evidenceStyle: evidenceStyleTurn,
+              memoryQueryDetected: !!enrichedResult.memory_query_detected,
+              assignmentQaInput,
+              activeOrchestrationProfile,
+              isHydroProjectTurn,
+              sessionId: sessionId || threadId || `${constructId}_chat_with_${constructId}`,
+            });
+            if (fallback1GreetingTurnContext?.isGreetingContactTurn) {
+              systemPrompt = `${systemPrompt}\n\n${buildGreetingTurnDirective({
+                posture: fallback1GreetingTurnContext.posture,
+                voiceContext: fallback1GreetingTurnContext.voiceContext,
+                constructDisplayName: gptConfig?.name || constructId,
+              })}`;
+            }
+            const fallback1PromptDiagnostics = buildPromptDiagnostics({
               mode: 'fallback_vvault_unavailable',
-              prompt_source: 'enriched_context',
-              gpt_config_present: !!gptConfig,
-              identity_source: enrichedResult?.phaseTiming?.identity?.source || 'unknown',
+              enriched: enrichedResult,
+              historyCount: fbHistoryMessages.length,
+              searchInjectedValue: fb1SearchInjected,
+              systemPromptText: systemPrompt,
+            });
+            console.log('[PROMPT_SOURCE]', {
+              ...fallback1PromptDiagnostics,
               history_filtered: {
                 leaked_prompt: fb1HistoryRemovedLeakCount,
                 instruction_dump: fb1HistoryRemovedInstructionDumpCount,
@@ -6614,7 +12290,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               context_mode: fb1ContextMode,
               vision_mode: hasImages ? (explicitVisionIntent ? 'explicit-analysis' : 'character-first') : 'off',
             });
-            
+
             // ===== NOVA-001 HOTFIX (Fallback 1): Force away from OpenAI =====
             if (constructId === 'nova-001' && effectiveProvider === 'openai') {
               effectiveProvider = 'openrouter';
@@ -6640,7 +12316,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               mode: 'fallback_vvault_unavailable',
               vision_mode: hasImages ? (explicitVisionIntent ? 'explicit-analysis' : 'character-first') : 'off',
             });
-            
+
             const fbMsgs = [{ role: "system", content: systemPrompt }, ...fbHistoryMessages, { role: "user", content: message }];
             let completion;
             let aiResponse;
@@ -6652,7 +12328,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               });
               aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
             } else if (effectiveProvider === 'ollama') {
-              const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+              const ollamaHost = getOllamaHost();
               const ollamaResp = await fetch(`${ollamaHost}/api/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -6672,7 +12348,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               }
               let llmSuccess = false;
               const providerErrors = [];
-              
+
               if (orClient) {
                 const clientLabel = openrouter ? 'OpenRouter' : 'Replit OpenRouter';
                 console.log(`[${clientLabel}] Calling`, { model: effectiveModel, user: req.user?.email, historyMessages: fbHistoryMessages.length });
@@ -6727,11 +12403,11 @@ Do NOT treat this as a first meeting if there is conversation history.`;
                   }
                 }
               }
-              
+
               // ===== NOVA-001 HOTFIX: Never fall back to OpenAI =====
               if (!llmSuccess && PREFER_LOCAL_MODELS && providerAvailability.ollama) {
-                const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
-                const ollamaModel = PREFERRED_OLLAMA_MODEL;
+                const ollamaHost = getOllamaHost();
+                const ollamaModel = getOllamaExecutionModel();
                 try {
                   console.log(`🟢 [VVAULT Proxy] Fallback1 local-first: trying Ollama (${ollamaModel}) for ${constructId}`);
                   const ollamaResp = await fetch(`${ollamaHost}/api/chat`, {
@@ -6748,6 +12424,10 @@ Do NOT treat this as a first meeting if there is conversation history.`;
                   aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
                   effectiveProvider = 'ollama';
                   effectiveModel = ollamaModel;
+                  markOllamaExecutionRoute({
+                    fallbackUsed: providerErrors.length > 0,
+                    localCloudFallbackState: providerErrors.length > 0 ? 'fallback_to_ollama' : 'local_first',
+                  });
                   llmSuccess = true;
                   console.log('[OLLAMA LOCAL-FIRST1] Success');
                 } catch (ollamaErr) {
@@ -6777,8 +12457,8 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               }
 
               if (!llmSuccess && !PREFER_LOCAL_MODELS && providerAvailability.ollama) {
-                const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
-                const ollamaModel = PREFERRED_OLLAMA_MODEL;
+                const ollamaHost = getOllamaHost();
+                const ollamaModel = getOllamaExecutionModel();
                 try {
                   console.log(`🟢 [VVAULT Proxy] Fallback1: cloud providers failed, trying Ollama (${ollamaModel}) for ${constructId}`);
                   const ollamaResp = await fetch(`${ollamaHost}/api/chat`, {
@@ -6795,6 +12475,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
                   aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
                   effectiveProvider = 'ollama';
                   effectiveModel = ollamaModel;
+                  markOllamaExecutionRoute({ fallbackUsed: true, localCloudFallbackState: 'fallback_to_ollama' });
                   llmSuccess = true;
                   console.log('[OLLAMA FALLBACK1] Success');
                 } catch (ollamaErr) {
@@ -6802,7 +12483,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
                   providerErrors.push(`Ollama: ${ollamaErr?.message}`);
                 }
               }
-              
+
               if (!llmSuccess) {
                 throw new Error(`All LLM providers failed: ${providerErrors.join(' | ')}`);
               }
@@ -6810,7 +12491,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
                 aiResponse = completion?.choices?.[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
               }
             }
-            
+
             console.log(`✅ [VVAULT Proxy] ${effectiveProvider} fallback successful for ${constructId}`);
             if (constructId === 'lin-001') {
               const hasSignal = (aiResponse || '').includes('[OPEN_GPT_CREATOR]');
@@ -6821,40 +12502,366 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               }
             }
 
-            const fallbackIdentityGuard = await enforceFirstPersonIdentity({
+            const fallbackPreviousAssistant = fbHistoryMessages
+              .slice()
+              .reverse()
+              .find(m => m.role === 'assistant')?.content || null;
+            const fallbackPostProcess = await applyResponsePostProcessing({
               aiResponse,
+              previousAssistant: fallbackPreviousAssistant,
+              buildMessages,
               userMessage: message,
+              history: fbHistoryMessages,
               constructId,
-              providerAvailability,
-              roleplayEnabled: gptConfig?.roleplayEnabled === true,
-              latestUserBeforeCurrent: getLastUserMessageFromHistory(fbHistoryMessages),
+              constructDisplayName: gptConfig?.name || constructId,
+              regenClient: replitOpenrouter || openaiClient || openrouter,
+              regenModel: replitOpenrouter ? DEFAULT_OPENROUTER_MODEL : (openaiClient ? 'gpt-4.1-mini' : effectiveModel || DEFAULT_OPENROUTER_MODEL),
+              fallbackText: buildIdentityDriftFallback(message, constructId),
+              recitalRewriter: rewriteRecitalIfNeeded,
+              identityGuard: (currentText) => enforceFirstPersonIdentity({
+                aiResponse: currentText,
+                userMessage: message,
+                constructId,
+                providerAvailability,
+                roleplayEnabled: gptConfig?.roleplayEnabled === true,
+                latestUserBeforeCurrent: getLastUserMessageFromHistory(fbHistoryMessages),
+              }),
+              cutoffRewriter: (currentText) => rewriteCutoffViolationIfNeeded(
+                currentText,
+                !!enrichedResult.memory_query_detected,
+                enrichedResult.evidence_count || 0,
+              ),
+              evidencePreview: enrichedResult.memory_evidence_preview,
+              greetingTurnContext: fallback1GreetingTurnContext,
             });
-            aiResponse = fallbackIdentityGuard.response;
+            aiResponse = fallbackPostProcess.aiResponse;
+            aiResponse = applyHumanConversationGuard(aiResponse, {
+              userMessage: message,
+              memoryIntent: !!enrichedResult?.memory_query_detected,
+              evidenceCount: Number(enrichedResult?.evidence_count || 0),
+              constructId,
+              constructDisplayName: gptConfig?.name || constructId,
+              userName: req.user?.name || req.user?.given_name || 'Devon',
+              greetingTurnContext: fallback1GreetingTurnContext,
+            });
+            const fallback1IdentityCoherenceInitial = evaluateIdentityCoherence({
+              userMessage: message,
+              aiResponse,
+              constructId,
+              constructDisplayName: gptConfig?.name || constructId,
+              requestedSeat,
+              evidencePreview: enrichedResult?.memory_evidence_preview,
+              greetingTurnContext: fallback1GreetingTurnContext,
+            });
+            let fallback1IdentityCoherence = fallback1IdentityCoherenceInitial;
+            let fallback1IdentityCoherenceRepair = {
+              attempted: false,
+              applied: false,
+              provider: null,
+              model: null,
+              initial_status: fallback1IdentityCoherenceInitial.status,
+              final_status: fallback1IdentityCoherenceInitial.status,
+              failure_reason: null,
+            };
+            let fallback1IdentityCoherenceBlocked = false;
+            const fallback1IdentityCoherenceFailureMessage = 'Identity/coherence guard blocked this assistant draft before canonical persistence.';
+            if (fallback1IdentityCoherenceInitial.status === 'fail') {
+              const repairAttempt = await runIdentityCoherenceRepair({
+                systemPrompt,
+                historyMessages: fbHistoryMessages,
+                userMessage: message,
+                failedResponse: aiResponse,
+                grade: fallback1IdentityCoherenceInitial,
+                constructId,
+                constructDisplayName: gptConfig?.name || constructId,
+                provider: effectiveProvider,
+                model: effectiveModel,
+                generationParams,
+                evidencePreview: enrichedResult?.memory_evidence_preview,
+                gptConfig,
+                providerAvailability,
+                routingMode: fallbackRoutingMode,
+                requestedSeat,
+                hasImages,
+              });
+              fallback1IdentityCoherenceRepair = {
+                attempted: true,
+                applied: false,
+                provider: repairAttempt.provider || effectiveProvider || null,
+                model: repairAttempt.model || effectiveModel || null,
+                seat: repairAttempt.seat || requestedSeat || null,
+                route_source: repairAttempt.routeSource || null,
+                initial_status: fallback1IdentityCoherenceInitial.status,
+                final_status: 'fail',
+                failure_reason: repairAttempt.error || null,
+                initial_reasons: fallback1IdentityCoherenceInitial.reasons || [],
+              };
+              if (repairAttempt.ok && repairAttempt.text && repairAttempt.text.trim()) {
+                const repairedGrade = evaluateIdentityCoherence({
+                  userMessage: message,
+                  aiResponse: repairAttempt.text.trim(),
+                  constructId,
+                  constructDisplayName: gptConfig?.name || constructId,
+                  requestedSeat,
+                  evidencePreview: enrichedResult?.memory_evidence_preview,
+                  greetingTurnContext: fallback1GreetingTurnContext,
+                });
+                fallback1IdentityCoherence = repairedGrade;
+                fallback1IdentityCoherenceRepair.final_status = repairedGrade.status;
+                fallback1IdentityCoherenceRepair.final_reasons = repairedGrade.reasons || [];
+                if (repairedGrade.status !== 'fail') {
+                  aiResponse = repairAttempt.text.trim();
+                  fallback1IdentityCoherenceRepair.applied = true;
+                } else {
+                  fallback1IdentityCoherenceBlocked = true;
+                  fallback1IdentityCoherenceRepair.failure_reason = 'repair_failed_identity_coherence_grade';
+                }
+              } else {
+                fallback1IdentityCoherenceBlocked = true;
+              }
+            }
+            console.log('[TURN_CONTEXT]', {
+              constructId,
+              memory_intent: !!enrichedResult.memory_query_detected,
+              search_intent: fb1SearchIntent,
+              search_injected: fb1SearchInjected,
+              history_count: fbHistoryMessages.length,
+              history_filtered: {
+                leaked_prompt: fb1HistoryRemovedLeakCount,
+                instruction_dump: fb1HistoryRemovedInstructionDumpCount,
+                relational_tail_pruned: fb1HistoryTailPrunedCount,
+              },
+              relational_turn: fb1RelationalTurn,
+              context_mode: fb1ContextMode,
+              provider_used: effectiveProvider,
+              path_mode: 'fallback_vvault_unavailable',
+              persona_applied: true,
+              retrieval_used: (enrichedResult.evidence_count ?? 0) > 0,
+              recital_detected: fallbackPostProcess.recitalDetected,
+              recital_rewrite_applied: fallbackPostProcess.recitalRewriteApplied,
+              persona_drift_detected: fallbackPostProcess.personaDriftDetected,
+              persona_regen_applied: fallbackPostProcess.personaRegenApplied,
+              repeat_detected: fallbackPostProcess.repeatDetected,
+              auth_recovered: authRecovered,
+              vision_mode: hasImages ? (explicitVisionIntent ? 'explicit-analysis' : 'character-first') : 'off',
+            });
             console.log('[IDENTITY_GUARD]', {
               constructId,
               mode: 'fallback_vvault_unavailable',
               relational_turn: fb1RelationalTurn,
               context_mode: fb1ContextMode,
-              identity_drift_detected: fallbackIdentityGuard.identity_drift_detected,
-              identity_rewrite_applied: fallbackIdentityGuard.identity_rewrite_applied,
-              identity_fallback_applied: fallbackIdentityGuard.identity_fallback_applied,
+              identity_drift_detected: fallbackPostProcess.identityDriftDetected,
+              identity_rewrite_applied: fallbackPostProcess.identityRewriteApplied,
+              identity_fallback_applied: fallbackPostProcess.identityFallbackApplied,
             });
-            
+
             // NOTE: Frontend (Layout.tsx) handles message persistence via conversationManager.addMessageToConversation()
             // Do NOT writeTranscript here — it causes duplicate messages in the database and UI
-            
+            const fallback1SearchBackedPayload = buildSearchBackedAssistantPayload({
+              aiResponse,
+              searchResults: fb1SearchResults,
+              housingSearch: fb1SearchHousing,
+            });
+            aiResponse = fallback1SearchBackedPayload.content;
+            const fallback1ResponsePackets = fallback1SearchBackedPayload.packets;
+            const fallback1SearchInspectability = buildSearchInspectabilityReceipt({
+              searchVertical: fb1SearchHousing ? 'housing' : 'web',
+              searchResults: fb1SearchResults,
+              housingSearch: fb1SearchHousing,
+              citations: fallback1SearchBackedPayload.citations,
+              packets: fallback1ResponsePackets,
+            });
+            const fallback1RuntimeReceipt = {
+              created_at: new Date().toISOString(),
+              user_id: userId || null,
+              auth: authReceipt,
+              construct_id: constructId,
+              effective_construct_id: constructId,
+              effective_construct_name: constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase()),
+              orchestration_mode: gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown',
+              route_mode: 'vvault_message_fallback',
+              persistence_owner: fallback1IdentityCoherenceBlocked ? 'blocked_identity_coherence' : 'layout',
+              identity: {
+                source: enrichedResult.phaseTiming?.identity?.source || 'unknown',
+                base_prompt_source: enrichedResult.phaseTiming?.basePromptSource || 'unknown',
+                conditioning_appended: !!enrichedResult.phaseTiming?.conditioningInjected,
+                identity_bundle_hash: enrichedResult.identity_bundle_hash || null,
+                effective_construct_id: constructId,
+                effective_construct_name: constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase()),
+                selected_construct_id: canonicalConstructId || constructId,
+                raw_construct_id: rawConstructId,
+              },
+              policy: enrichedResult.runtimePolicy || null,
+              preview: {
+                preview_mode: Boolean(previewMode),
+                skip_persistence: true,
+                effective_construct_id: constructId,
+                selected_construct_id: canonicalConstructId || constructId,
+                raw_construct_id: rawConstructId,
+                identity_source: enrichedResult.phaseTiming?.identity?.source || 'unknown',
+                base_prompt_source: enrichedResult.phaseTiming?.basePromptSource || 'unknown',
+                draft_overlay_applied: Boolean(enrichedResult.phaseTiming?.preview?.draftOverlayApplied),
+                draft_overlay_keys: enrichedResult.phaseTiming?.preview?.draftOverlayKeys || [],
+                preview_overlay_state: enrichedResult.phaseTiming?.preview?.draftOverlayApplied ? 'applied_bounded_overlay' : 'not_applied',
+                suppressed_system_prompt_override: Boolean(enrichedResult.phaseTiming?.preview?.suppressedSystemPromptOverride),
+              },
+              memory: {
+                retrieval_ran: !!enrichedResult.memory_retrieval_ran,
+                memory_query_detected: !!enrichedResult.memory_query_detected,
+                evidence_count: enrichedResult.evidence_count || 0,
+                ledger_sessions: enrichedResult.ledgerSessions || 0,
+                memory_source: enrichedResult.continuityMemorySearch?.source || enrichedResult.phaseTiming?.memorySearch?.source || 'runtime_context_builder',
+                context_recovery_profile: enrichedResult.context_recovery_profile || 'standard',
+                history_source: enrichedResult.history_source || 'none',
+                remote_history_skipped: Boolean(enrichedResult.remote_history_skipped),
+                sources: enrichedResult.continuityMemorySearch || null,
+                memory_profile: gptConfig?.memoryProfile || gptConfig?.memory_profile || 'off',
+              },
+              provider: {
+                provider: effectiveProvider || null,
+                model: effectiveModel || null,
+                selection_policy: 'preference',
+                lin_harmony_policy: 'intent_routed',
+                lin_seat_canon: LIN_THREE_I_CANON_VERSION,
+                performance_model_switch: false,
+                requested_seat: requestedSeat,
+                requested_canonical_seat: getLinSeatCanon(requestedSeat).canonicalSeat,
+                seat_plan: {
+                  policy: 'intent_routed',
+                  canon: LIN_THREE_I_CANON_VERSION,
+                  requested_seat: requestedSeat,
+                  requested_canonical_seat: getLinSeatCanon(requestedSeat).canonicalSeat,
+                  selected_provider: effectiveProvider || null,
+                  selected_model: effectiveModel || null,
+                  lin_default_model: modelResolution.mode === 'lin'
+                    ? getLinDefaultModelForSeat(requestedSeat)
+                    : null,
+                  fallback_reason: 'vvault_unavailable',
+                },
+                model_source: modelSource,
+                source: modelSource,
+                mode: modelResolution.mode || (gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown'),
+                requested_provider: modelResolution.requestedProvider || null,
+                requested_model: modelResolution.requestedModel || null,
+                configured_model: modelResolution.configuredModel || null,
+                suppressed_configured_model: modelResolution.suppressedConfiguredModel || null,
+                routing_override: !!modelResolution.routingOverride,
+                seat_defaults_or_overrides: effectiveSeatDefaultsOrOverrides || null,
+                local_first_used: effectiveLocalFirstUsed,
+                local_cloud_fallback_state: (providerTrace.fallback_used || effectiveRouteFallbackUsed)
+                  ? (effectiveLocalCloudFallbackState || 'fallback_used')
+                  : effectiveLocalCloudFallbackState || modelResolution.localCloudFallbackState || (effectiveLocalFirstUsed
+                    ? 'local_first'
+                    : modelResolution.routingOverride
+                      ? 'manual_routing_override'
+                      : 'direct'),
+                fallback_used: true,
+                final_provider: providerTrace.final_provider || effectiveProvider || null,
+              },
+              fidelity: {
+                identity_drift_detected: !!fallbackPostProcess.identityDriftDetected,
+                identity_rewrite_applied: !!fallbackPostProcess.identityRewriteApplied,
+                identity_fallback_applied: !!fallbackPostProcess.identityFallbackApplied,
+                persona_drift_detected: !!fallbackPostProcess.personaDriftDetected,
+                persona_regen_applied: !!fallbackPostProcess.personaRegenApplied,
+                identity_coherence: {
+                  status: fallback1IdentityCoherence.status,
+                  identity_status: fallback1IdentityCoherence.identityStatus,
+                  coherence_status: fallback1IdentityCoherence.coherenceStatus,
+                  reasons: fallback1IdentityCoherence.reasons || [],
+                  signals: fallback1IdentityCoherence.signals || [],
+                  violations: fallback1IdentityCoherence.violations || [],
+                  repairable: !!fallback1IdentityCoherence.repairable,
+                  repair_attempted: !!fallback1IdentityCoherenceRepair.attempted,
+                  repair_applied: !!fallback1IdentityCoherenceRepair.applied,
+                  repair: fallback1IdentityCoherenceRepair,
+                  blocked_canonical_persistence: !!fallback1IdentityCoherenceBlocked,
+                  persist_canonical: !fallback1IdentityCoherenceBlocked,
+                  owner_file: fallback1IdentityCoherence.ownerFile || 'server/lib/identityCoherenceGuard.js',
+                  source_anchor: fallback1IdentityCoherence.sourceAnchor || 'server/lib/identityCoherenceGuard.js:evaluateIdentityCoherence',
+                },
+              },
+            };
+            if (fallback1SearchInspectability?.search || fallback1SearchInspectability?.housing) {
+              fallback1RuntimeReceipt.research = {
+                search_injected: fb1SearchInjected,
+                search_intent_reason: fb1SearchIntent,
+                ...(fallback1SearchInspectability?.search
+                  ? { search: fallback1SearchInspectability.search }
+                  : {}),
+                ...(fallback1SearchInspectability?.housing
+                  ? { housing: fallback1SearchInspectability.housing }
+                  : {}),
+              };
+            }
+            const fallback1ValidatorDebug = {
+              memory_retrieval_ran: !!enrichedResult.memory_retrieval_ran,
+              memory_query_detected: !!enrichedResult.memory_query_detected,
+              evidence_count: enrichedResult.evidence_count || 0,
+              identity_drift_detected: !!fallbackPostProcess.identityDriftDetected,
+              identity_rewrite_applied: !!fallbackPostProcess.identityRewriteApplied,
+              identity_fallback_applied: !!fallbackPostProcess.identityFallbackApplied,
+              cutoff_violation_detected: !!fallbackPostProcess.cutoffViolationDetected,
+              rewrite_applied: !!fallbackPostProcess.cutoffRewriteApplied,
+              identity_coherence: fallback1IdentityCoherence,
+              identity_coherence_repair: fallback1IdentityCoherenceRepair,
+            };
+            const fallback1Checklist = buildOrchestrationChecklist({
+              userId,
+              user: req.user,
+              constructId,
+              threadId: sessionId || threadId || `${constructId}_chat_with_${constructId}`,
+              userMessage: message,
+              gptConfig,
+              enrichedContext: enrichedResult,
+              retrievalDiagnostics,
+              promptDiagnostics: fallback1PromptDiagnostics,
+              providerTrace,
+              validatorDebug: fallback1ValidatorDebug,
+              runtimeReceipt: fallback1RuntimeReceipt,
+              contextMode: fb1ContextMode,
+              relationalTurn: fb1RelationalTurn,
+              lowComplexityTurn: fb1LowComplexityTurn,
+              hasImages,
+              skipPersistence: true,
+              responseStatus: fallback1IdentityCoherenceBlocked ? 'identity_coherence_failed' : 'fallback_vvault_unavailable',
+            });
+
+            if (fallback1IdentityCoherenceBlocked) {
+              return res.status(422).json({
+                success: false,
+                ok: false,
+                error: 'IDENTITY_COHERENCE_FAILED',
+                message: fallback1IdentityCoherenceFailureMessage,
+                response: fallback1IdentityCoherenceFailureMessage,
+                construct_id: constructId,
+                fallback: true,
+                source: effectiveProvider,
+                model: effectiveModel,
+                provider_used: effectiveProvider,
+                runtime_receipt: fallback1RuntimeReceipt,
+                orchestration_checklist: fallback1Checklist,
+                has_images: hasImages,
+                tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
+                ...(process.env.SHOW_DEV_INFO === 'true' ? { provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: fallback1PromptDiagnostics } : {})
+              });
+            }
+
             return res.json({
               success: true,
               response: aiResponse,
+              packets: fallback1ResponsePackets,
               construct_id: constructId,
               fallback: true,
               source: effectiveProvider,
               model: effectiveModel,
               provider_forced: constructId === 'nova-001',
               provider_used: effectiveProvider,
+              runtime_receipt: fallback1RuntimeReceipt,
+              orchestration_checklist: fallback1Checklist,
               has_images: hasImages,
               tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
-              ...(process.env.SHOW_DEV_INFO === 'true' ? { provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics } : {})
+              ...(process.env.SHOW_DEV_INFO === 'true' ? { provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: fallback1PromptDiagnostics } : {})
             });
           } catch (fallbackError) {
             console.error(`❌ [VVAULT Proxy] LLM fallback failed:`, fallbackError);
@@ -6865,7 +12872,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
             });
           }
         }
-        
+
         return res.status(vvaultResponse.status).json({
           success: false,
           error: `VVAULT API error: ${vvaultResponse.status}`,
@@ -6874,7 +12881,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
       }
 
       const data = await vvaultResponse.json();
-      
+
       console.log(`✅ [VVAULT Proxy] Got response from VVAULT for ${constructId}:`, {
         success: data.success,
         responseLength: data.response?.length || 0
@@ -6883,10 +12890,223 @@ Do NOT treat this as a first meeting if there is conversation history.`;
       const drainedEvents = drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`);
       const mergedEvents = mergeToolTrace(drainedEvents, enrichedContext);
       data.tool_trace = mergedEvents.length > 0 ? mergedEvents : (data.tool_trace || []);
+      const proxyIdentityCoherenceInitial = evaluateIdentityCoherence({
+        userMessage: message,
+        aiResponse: data.response || '',
+        constructId,
+        constructDisplayName: (gptConfigForVVAULT || gptConfig)?.name || constructId,
+        requestedSeat,
+        evidencePreview: enrichedContext?.memory_evidence_preview,
+        greetingTurnContext,
+      });
+      let proxyIdentityCoherence = proxyIdentityCoherenceInitial;
+      let proxyIdentityCoherenceRepair = {
+        attempted: false,
+        applied: false,
+        provider: null,
+        model: null,
+        initial_status: proxyIdentityCoherenceInitial.status,
+        final_status: proxyIdentityCoherenceInitial.status,
+        failure_reason: null,
+      };
+      let proxyIdentityCoherenceBlocked = false;
+      const proxyIdentityCoherenceFailureMessage = 'Identity/coherence guard blocked this assistant draft before canonical persistence.';
+      if (proxyIdentityCoherenceInitial.status === 'fail') {
+        const repairAttempt = await runIdentityCoherenceRepair({
+          systemPrompt,
+          historyMessages: conversationHistoryMessages,
+          userMessage: message,
+          failedResponse: data.response || '',
+          grade: proxyIdentityCoherenceInitial,
+          constructId,
+          constructDisplayName: (gptConfigForVVAULT || gptConfig)?.name || constructId,
+          provider: effectiveProvider,
+          model: effectiveModel,
+          generationParams,
+          evidencePreview: enrichedContext?.memory_evidence_preview,
+          gptConfig: gptConfigForVVAULT || gptConfig,
+          providerAvailability,
+          routingMode,
+          requestedSeat,
+          hasImages,
+        });
+        proxyIdentityCoherenceRepair = {
+          attempted: true,
+          applied: false,
+          provider: repairAttempt.provider || effectiveProvider || null,
+          model: repairAttempt.model || effectiveModel || null,
+          seat: repairAttempt.seat || requestedSeat || null,
+          route_source: repairAttempt.routeSource || null,
+          initial_status: proxyIdentityCoherenceInitial.status,
+          final_status: 'fail',
+          failure_reason: repairAttempt.error || null,
+          initial_reasons: proxyIdentityCoherenceInitial.reasons || [],
+        };
+        if (repairAttempt.ok && repairAttempt.text && repairAttempt.text.trim()) {
+          const repairedGrade = evaluateIdentityCoherence({
+            userMessage: message,
+            aiResponse: repairAttempt.text.trim(),
+            constructId,
+            constructDisplayName: (gptConfigForVVAULT || gptConfig)?.name || constructId,
+            requestedSeat,
+            evidencePreview: enrichedContext?.memory_evidence_preview,
+            greetingTurnContext,
+          });
+          proxyIdentityCoherence = repairedGrade;
+          proxyIdentityCoherenceRepair.final_status = repairedGrade.status;
+          proxyIdentityCoherenceRepair.final_reasons = repairedGrade.reasons || [];
+          if (repairedGrade.status !== 'fail') {
+            data.response = repairAttempt.text.trim();
+            proxyIdentityCoherenceRepair.applied = true;
+          } else {
+            proxyIdentityCoherenceBlocked = true;
+            proxyIdentityCoherenceRepair.failure_reason = 'repair_failed_identity_coherence_grade';
+          }
+        } else {
+          proxyIdentityCoherenceBlocked = true;
+        }
+      }
+      const proxyDefaultRuntimeReceipt = {
+        created_at: new Date().toISOString(),
+        user_id: userId || null,
+        auth: authReceipt,
+        construct_id: constructId,
+        effective_construct_id: constructId,
+        effective_construct_name: constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase()),
+        orchestration_mode: (gptConfigForVVAULT || gptConfig)?.orchestrationMode || (gptConfigForVVAULT || gptConfig)?.orchestration_mode || 'unknown',
+        route_mode: 'vvault_message',
+        persistence_owner: proxyIdentityCoherenceBlocked ? 'blocked_identity_coherence' : 'layout',
+        identity: {
+          effective_construct_id: constructId,
+          effective_construct_name: constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase()),
+          selected_construct_id: canonicalConstructId || constructId,
+          raw_construct_id: rawConstructId,
+        },
+        policy: enrichedContext.runtimePolicy || null,
+        preview: {
+          preview_mode: Boolean(previewMode),
+          skip_persistence: true,
+          effective_construct_id: constructId,
+          selected_construct_id: canonicalConstructId || constructId,
+          raw_construct_id: rawConstructId,
+          draft_overlay_applied: false,
+          preview_overlay_state: 'proxy_unreported',
+          suppressed_system_prompt_override: false,
+        },
+        memory: {
+          retrieval_ran: !!enrichedContext.memory_retrieval_ran,
+          memory_query_detected: !!enrichedContext.memory_query_detected,
+          evidence_count: enrichedContext.evidence_count || 0,
+          memory_profile: (gptConfigForVVAULT || gptConfig)?.memoryProfile || (gptConfigForVVAULT || gptConfig)?.memory_profile || 'off',
+        },
+        provider: {
+          provider: 'vvault_proxy',
+          model: configuredModelForVVAULT || null,
+          model_source: 'vvault_proxy',
+          source: 'vvault_proxy',
+          mode: (gptConfigForVVAULT || gptConfig)?.orchestrationMode || (gptConfigForVVAULT || gptConfig)?.orchestration_mode || 'unknown',
+          requested_provider: null,
+          requested_model: null,
+          configured_model: configuredModelForVVAULT || null,
+          suppressed_configured_model: null,
+          routing_override: false,
+          seat_defaults_or_overrides: 'vvault_proxy',
+          local_first_used: false,
+          local_cloud_fallback_state: 'proxy_unreported',
+          fallback_used: false,
+          final_provider: 'vvault_proxy',
+        },
+        fidelity: {},
+      };
+      data.runtime_receipt = {
+        ...proxyDefaultRuntimeReceipt,
+        ...(data.runtime_receipt || {}),
+        provider: {
+          ...proxyDefaultRuntimeReceipt.provider,
+          ...(data.runtime_receipt?.provider || {}),
+        },
+        memory: {
+          ...proxyDefaultRuntimeReceipt.memory,
+          ...(data.runtime_receipt?.memory || {}),
+        },
+        fidelity: {
+          ...(data.runtime_receipt?.fidelity || {}),
+          identity_coherence: {
+            status: proxyIdentityCoherence.status,
+            identity_status: proxyIdentityCoherence.identityStatus,
+            coherence_status: proxyIdentityCoherence.coherenceStatus,
+            reasons: proxyIdentityCoherence.reasons || [],
+            signals: proxyIdentityCoherence.signals || [],
+            violations: proxyIdentityCoherence.violations || [],
+            repairable: !!proxyIdentityCoherence.repairable,
+            repair_attempted: !!proxyIdentityCoherenceRepair.attempted,
+            repair_applied: !!proxyIdentityCoherenceRepair.applied,
+            repair: proxyIdentityCoherenceRepair,
+            blocked_canonical_persistence: !!proxyIdentityCoherenceBlocked,
+            persist_canonical: !proxyIdentityCoherenceBlocked,
+            owner_file: proxyIdentityCoherence.ownerFile || 'server/lib/identityCoherenceGuard.js',
+            source_anchor: proxyIdentityCoherence.sourceAnchor || 'server/lib/identityCoherenceGuard.js:evaluateIdentityCoherence',
+          },
+        },
+      };
+      data.runtime_receipt.provider = {
+        ...data.runtime_receipt.provider,
+        selection_policy: 'preference',
+        lin_harmony_policy: 'intent_routed',
+        lin_seat_canon: LIN_THREE_I_CANON_VERSION,
+        performance_model_switch: false,
+        requested_seat: requestedSeat,
+        requested_canonical_seat: getLinSeatCanon(requestedSeat).canonicalSeat,
+        seat_plan: {
+          policy: 'intent_routed',
+          canon: LIN_THREE_I_CANON_VERSION,
+          requested_seat: requestedSeat,
+          requested_canonical_seat: getLinSeatCanon(requestedSeat).canonicalSeat,
+          selected_provider: data.runtime_receipt.provider.final_provider || data.runtime_receipt.provider.provider || 'vvault_proxy',
+          selected_model: data.runtime_receipt.provider.model || configuredModelForVVAULT || null,
+        },
+      };
+      if (!data.orchestration_checklist || proxyIdentityCoherenceBlocked) {
+        data.orchestration_checklist = buildOrchestrationChecklist({
+          userId,
+          user: req.user,
+          constructId,
+          threadId: effectiveSessionId,
+          userMessage: message,
+          gptConfig: gptConfigForVVAULT || gptConfig,
+          enrichedContext,
+          retrievalDiagnostics,
+          promptDiagnostics: mainPromptDiagnostics,
+          providerTrace: data.provider_trace || { final_provider: 'vvault_proxy', fallback_used: false },
+          runtimeReceipt: data.runtime_receipt,
+          contextMode,
+          relationalTurn,
+          lowComplexityTurn,
+          hasImages,
+          skipPersistence: true,
+          responseStatus: proxyIdentityCoherenceBlocked ? 'identity_coherence_failed' : 'vvault_proxy',
+        });
+      }
+      if (proxyIdentityCoherenceBlocked) {
+        return res.status(422).json({
+          success: false,
+          ok: false,
+          error: 'IDENTITY_COHERENCE_FAILED',
+          message: proxyIdentityCoherenceFailureMessage,
+          response: proxyIdentityCoherenceFailureMessage,
+          construct_id: constructId,
+          provider_used: data.runtime_receipt.provider?.final_provider || data.runtime_receipt.provider?.provider || 'vvault_proxy',
+          model: data.runtime_receipt.provider?.model || configuredModelForVVAULT || null,
+          runtime_receipt: data.runtime_receipt,
+          orchestration_checklist: data.orchestration_checklist,
+          has_images: hasImages,
+          tool_trace: data.tool_trace || [],
+        });
+      }
       return res.json(data);
     } catch (fetchError) {
       clearTimeout(timeout);
-      
+
       if (fetchError.name === 'AbortError') {
         console.error(`❌ [VVAULT Proxy] Request timed out for ${constructId}`);
         return res.status(504).json({
@@ -6894,19 +13114,44 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           error: "VVAULT API request timed out"
         });
       }
-      
+
       // FALLBACK: Use configured LLM provider when VVAULT is unreachable
       console.log(`🔄 [VVAULT Proxy] VVAULT unreachable, falling back to local LLM for ${constructId}`);
-      
+
       try {
         // Fetch GPT config and resolve model using GPTCreator as source of truth
         let gptConfig = null;
         try {
           gptConfig = await gptManager.getGPTByCallsign(constructId);
         } catch (e) { /* ignore */ }
-        
-        const providerAvailability = { openai: !!openaiClient, openrouter: !!(openrouter || replitOpenrouter), ollama: !!process.env.OLLAMA_HOST || process.env.NODE_ENV !== 'production' };
-        const modelResolution = resolveModelForGPT(gptConfig, providerAvailability);
+
+        const providerAvailability = await buildProviderAvailability();
+        const fallbackRoutingMode = linearTranscriptLawGate === true || zenOrdinaryVoiceGate === true || isLinOrchestratedConstruct(constructId) || shouldForceProtectedZenLinMode({
+          constructId,
+          userMessage: message,
+          requestedSeat,
+          previewMode,
+          hasImages,
+          codingMode: false,
+        })
+          ? 'lin'
+          : normalizeOrchestrationMode(gptConfig, {
+              defaultMode: isLinOrchestratedConstruct(constructId) ? 'lin' : 'custom',
+            });
+        const modelResolution = resolveModelForGPT(
+          gptConfig,
+          providerAvailability,
+          {
+            seat: requestedSeat,
+            mode: fallbackRoutingMode,
+            forceMode: fallbackRoutingMode === 'lin' ? 'lin' : null,
+            constructId,
+            userMessage: message,
+            previewMode,
+            hasImages,
+            codingMode: false,
+          },
+        );
         if (modelResolution.error) throw new Error(modelResolution.error);
         let { provider: effectiveProvider, model: effectiveModel, source: modelSource } = modelResolution;
         console.log("[MODEL_RESOLUTION]", {
@@ -6914,28 +13159,59 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           provider: effectiveProvider,
           model: effectiveModel,
           source: modelSource,
+          routingOverride: !!modelResolution.routingOverride,
+          localFirstUsed: !!modelResolution.localFirstUsed,
+          requestedSeat,
+          seatDefaultsOrOverrides: modelResolution.seatDefaultsOrOverrides,
           preferLocalModels: PREFER_LOCAL_MODELS
         });
 
-        const { enrichedContext: enrichedResult2, systemPrompt: enrichedSystemPrompt } = await buildEnrichedContextPrompt({
-          userId,
-          constructId,
-          userMessage: message,
-          gptConfig,
+        const enrichedBuild2 = await buildEnrichedContextPromptWithRecovery({
+          res,
+          authReceipt,
+          userId: dataOwnerUserId,
           user: req.user,
-          threadId: threadId || sessionId || `${constructId}_chat_with_${constructId}`,
+          constructId,
+          rawConstructId,
+          canonicalConstructId,
+          message,
+          gptConfig,
+          threadId,
+          sessionId,
           timezone: req.headers['x-user-timezone'] || null,
+          systemPromptOverride: null,
+          previewMode,
+          previewDraft: effectivePreviewDraft,
+          suppressedSystemPromptOverride: previewSystemPromptOverrideSuppressed,
+          identityBundle,
+          requestedSeat,
+          hasImages,
+          skipPersistence,
+          contextBudgetProfile: contextBudget?.profile,
+          codingIntent: codingMode,
+          policyOrReceiptIntent: contextBudget?.policy_or_receipt_intent,
+          runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+          continuityClass: routeTurnEnvelope.continuityClass,
+          continuityResume: routeTurnEnvelope.continuityResume,
         });
+        if (!enrichedBuild2) return;
+        const { enrichedContext: enrichedResult2, systemPrompt: enrichedSystemPrompt } = enrichedBuild2;
         let systemPrompt = enrichedSystemPrompt;
 
         let fb2SearchIntent = 'not_evaluated';
         let fb2SearchInjected = false;
+        let fb2SearchResults = null;
+        let fb2SearchHousing = null;
         const {
           enhancedPrompt: fb2SearchPrompt,
+          searchResults: fb2SearchResultsResolved,
+          housing: fb2SearchHousingResolved,
           intent_reason: fb2SearchIntentResolved,
           search_injected: fb2SearchInjectedResolved,
         } = await injectSearchContext(message, systemPrompt, { explicitOnly: true });
         systemPrompt = fb2SearchPrompt;
+        fb2SearchResults = fb2SearchResultsResolved || null;
+        fb2SearchHousing = fb2SearchHousingResolved || null;
         fb2SearchIntent = fb2SearchIntentResolved || fb2SearchIntent;
         fb2SearchInjected = fb2SearchInjectedResolved === true;
         if (hasImages) {
@@ -6965,43 +13241,79 @@ CRITICAL: Do NOT say the GPT is "live" or pretend to create it. You are NOT crea
             systemPrompt += `\n\nYou have the ability to help users create custom GPTs. If a user mentions /gpt, creating a GPT, or wants to make a new AI character, help them brainstorm. Once you have enough details (name, description, personality), include [OPEN_GPT_CREATOR] at the very end of your response to open the GPT workshop.`;
           }
         }
-        
+
         let fb2HistoryMessages = [];
         let fb2HistoryRemovedLeakCount = 0;
         let fb2HistoryRemovedInstructionDumpCount = 0;
         let fb2HistoryTailPrunedCount = 0;
         try {
           await loadVVAULTModules();
-          const lookupId = req.user?.email || userId;
-          const fb2Convos = readConversations ? await readConversations(lookupId, constructId) : null;
-          if (fb2Convos?.length > 0) {
-            const targetConvo2 = fb2Convos.find(c => 
-              c.constructId === constructId || 
-              c.constructCallsign === constructId ||
-              c.sessionId?.includes(constructId)
-            ) || fb2Convos[0];
-            
-            const fb2Messages = targetConvo2.messages || [];
-            console.log(`📚 [VVAULT Proxy] Fallback2 found conversation for ${constructId}: "${targetConvo2.title}" with ${fb2Messages.length} total messages`);
-            
+          const lookupId = buildConversationLookupContext({
+            userEmail: req.user?.email || null,
+            supabaseUserId: UUID_LOOKUP_RE.test(String(dataOwnerUserId || '').trim())
+              ? dataOwnerUserId
+              : supabaseSessionUserId,
+            userId: dataOwnerUserId || req.user?.vvaultUserId || userId,
+          });
+          if (Array.isArray(enrichedResult2?.routeHistoryMessages) && enrichedResult2.routeHistoryMessages.length > 0) {
             const validMessages2 = sanitizeConversationHistory(
-              fb2Messages.filter(m => m.content && !m.isDateHeader),
+              enrichedResult2.routeHistoryMessages,
               constructId,
-              'fallback2-history',
+              'fallback2-enriched-context-history',
             );
             fb2HistoryRemovedLeakCount = validMessages2.removedLeakCount || 0;
             fb2HistoryRemovedInstructionDumpCount = validMessages2.removedInstructionDumpCount || 0;
-
             const fb2Recent = (validMessages2.messages || []).slice(-40);
             fb2HistoryMessages = fb2Recent.map(m => ({ role: m.role, content: m.content }));
-            console.log(`📚 [VVAULT Proxy] Fallback2 loaded ${fb2HistoryMessages.length} history messages for ${constructId}`);
-            
+            console.log(`📚 [VVAULT Proxy] Fallback2 using ${fb2HistoryMessages.length} locally recovered history messages for ${constructId}`);
+
             if (fb2HistoryMessages.length > 0) {
               systemPrompt += `\n\n## Conversation Continuity
-You have an ongoing relationship with this user. The conversation history below represents your prior interactions. 
+You have an ongoing relationship with this user. The conversation history below represents your prior interactions.
 Reference past exchanges naturally. Remember what the user told you. Maintain emotional and contextual continuity.
 Do NOT treat this as a first meeting if there is conversation history.`;
             }
+          } else if (readConversations && !enrichedResult2?.remote_history_skipped) {
+            const fb2Convos = await readConversations(lookupId, constructId);
+            if (fb2Convos?.length > 0) {
+              const targetSession2 = sessionId || threadId || `${constructId}_chat_with_${constructId}`;
+              const allowConstructFallback2 = !(sessionId || threadId) ||
+                (contextBudget?.transcript_law_evidence_intent &&
+                  isTranscriptLawSyntheticGateThread(sessionId || threadId));
+              const targetConvo2 = fb2Convos.find(c =>
+                c.sessionId === targetSession2 ||
+                (allowConstructFallback2 && (
+                  c.constructId === constructId ||
+                  c.constructCallsign === constructId
+                ))
+              ) || (allowConstructFallback2 ? fb2Convos[0] : null);
+
+              const fb2Messages = targetConvo2?.messages || [];
+              if (targetConvo2) {
+                console.log(`📚 [VVAULT Proxy] Fallback2 found conversation for ${constructId}: "${targetConvo2.title}" with ${fb2Messages.length} total messages`);
+              }
+
+              const validMessages2 = sanitizeConversationHistory(
+                fb2Messages.filter(m => m.content && !m.isDateHeader),
+                constructId,
+                'fallback2-history',
+              );
+              fb2HistoryRemovedLeakCount = validMessages2.removedLeakCount || 0;
+              fb2HistoryRemovedInstructionDumpCount = validMessages2.removedInstructionDumpCount || 0;
+
+              const fb2Recent = (validMessages2.messages || []).slice(-40);
+              fb2HistoryMessages = fb2Recent.map(m => ({ role: m.role, content: m.content }));
+              console.log(`📚 [VVAULT Proxy] Fallback2 loaded ${fb2HistoryMessages.length} history messages for ${constructId}`);
+
+              if (fb2HistoryMessages.length > 0) {
+                systemPrompt += `\n\n## Conversation Continuity
+You have an ongoing relationship with this user. The conversation history below represents your prior interactions.
+Reference past exchanges naturally. Remember what the user told you. Maintain emotional and contextual continuity.
+Do NOT treat this as a first meeting if there is conversation history.`;
+              }
+            }
+          } else if (enrichedResult2?.remote_history_skipped) {
+            console.log(`📚 [VVAULT Proxy] Fallback2 skipping remote history load for ${constructId} due to ${enrichedResult2.context_recovery_profile || 'bounded context recovery'}`);
           }
         } catch (histErr) {
           console.warn(`⚠️ [VVAULT Proxy] Could not load fallback2 history:`, histErr.message);
@@ -7054,12 +13366,39 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           );
           fb2ContextMode = 'recent_chat_only';
         }
-        console.log('[PROMPT_SOURCE]', {
-          route: '/api/vvault/message',
+        const fallback2GreetingTurnContext = buildRouteGreetingTurnContext({
+          message,
+          constructId,
+          constructDisplayName: gptConfig?.name || constructId,
+          gptConfig,
+          identityBundle,
+          recentMessages: fb2HistoryMessages,
+          previewMode,
+          hasImages,
+          isSyntheticContinueTurn,
+          evidenceStyle: evidenceStyleTurn,
+          memoryQueryDetected: !!enrichedResult2.memory_query_detected,
+          assignmentQaInput,
+          activeOrchestrationProfile,
+          isHydroProjectTurn,
+          sessionId: sessionId || threadId || `${constructId}_chat_with_${constructId}`,
+        });
+        if (fallback2GreetingTurnContext?.isGreetingContactTurn) {
+          systemPrompt = `${systemPrompt}\n\n${buildGreetingTurnDirective({
+            posture: fallback2GreetingTurnContext.posture,
+            voiceContext: fallback2GreetingTurnContext.voiceContext,
+            constructDisplayName: gptConfig?.name || constructId,
+          })}`;
+        }
+        const fallback2PromptDiagnostics = buildPromptDiagnostics({
           mode: 'fallback_vvault_unreachable',
-          prompt_source: 'enriched_context',
-          gpt_config_present: !!gptConfig,
-          identity_source: enrichedResult2?.phaseTiming?.identity?.source || 'unknown',
+          enriched: enrichedResult2,
+          historyCount: fb2HistoryMessages.length,
+          searchInjectedValue: fb2SearchInjected,
+          systemPromptText: systemPrompt,
+        });
+        console.log('[PROMPT_SOURCE]', {
+          ...fallback2PromptDiagnostics,
           history_filtered: {
             leaked_prompt: fb2HistoryRemovedLeakCount,
             instruction_dump: fb2HistoryRemovedInstructionDumpCount,
@@ -7069,7 +13408,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           context_mode: fb2ContextMode,
           vision_mode: hasImages ? (explicitVisionIntent ? 'explicit-analysis' : 'character-first') : 'off',
         });
-        
+
         // ===== NOVA-001 HOTFIX (Fallback 2): Force away from OpenAI =====
         if (constructId === 'nova-001' && effectiveProvider === 'openai') {
           effectiveProvider = 'openrouter';
@@ -7095,7 +13434,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           mode: 'fallback_vvault_unreachable',
           vision_mode: hasImages ? (explicitVisionIntent ? 'explicit-analysis' : 'character-first') : 'off',
         });
-        
+
         const fb2Msgs = [{ role: "system", content: systemPrompt }, ...fb2HistoryMessages, { role: "user", content: message }];
         let completion;
         let aiResponse;
@@ -7107,7 +13446,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           });
           aiResponse = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
         } else if (effectiveProvider === 'ollama') {
-          const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
+          const ollamaHost = getOllamaHost();
           const ollamaResp = await fetch(`${ollamaHost}/api/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -7127,7 +13466,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           }
           let llmSuccess = false;
           const providerErrors = [];
-          
+
           if (orClient) {
             const clientLabel = openrouter ? 'OpenRouter' : 'Replit OpenRouter';
             console.log(`[${clientLabel}] Calling`, { model: effectiveModel, user: req.user?.email, historyMessages: fb2HistoryMessages.length });
@@ -7182,11 +13521,11 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               }
             }
           }
-          
+
           // ===== NOVA-001 HOTFIX: Never fall back to OpenAI =====
           if (!llmSuccess && PREFER_LOCAL_MODELS && providerAvailability.ollama) {
-            const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
-            const ollamaModel = PREFERRED_OLLAMA_MODEL;
+            const ollamaHost = getOllamaHost();
+            const ollamaModel = getOllamaExecutionModel();
             try {
               console.log(`🟢 [VVAULT Proxy] Fallback2 local-first: trying Ollama (${ollamaModel}) for ${constructId}`);
               const ollamaResp = await fetch(`${ollamaHost}/api/chat`, {
@@ -7203,6 +13542,10 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
               effectiveProvider = 'ollama';
               effectiveModel = ollamaModel;
+              markOllamaExecutionRoute({
+                fallbackUsed: providerErrors.length > 0,
+                localCloudFallbackState: providerErrors.length > 0 ? 'fallback_to_ollama' : 'local_first',
+              });
               llmSuccess = true;
               console.log('[OLLAMA LOCAL-FIRST2] Success');
             } catch (ollamaErr) {
@@ -7232,8 +13575,8 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           }
 
           if (!llmSuccess && !PREFER_LOCAL_MODELS && providerAvailability.ollama) {
-            const ollamaHost = process.env.OLLAMA_HOST || 'http://localhost:11434';
-            const ollamaModel = PREFERRED_OLLAMA_MODEL;
+            const ollamaHost = getOllamaHost();
+            const ollamaModel = getOllamaExecutionModel();
             try {
               console.log(`🟢 [VVAULT Proxy] Fallback2: cloud providers failed, trying Ollama (${ollamaModel}) for ${constructId}`);
               const ollamaResp = await fetch(`${ollamaHost}/api/chat`, {
@@ -7250,6 +13593,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
               effectiveProvider = 'ollama';
               effectiveModel = ollamaModel;
+              markOllamaExecutionRoute({ fallbackUsed: true, localCloudFallbackState: 'fallback_to_ollama' });
               llmSuccess = true;
               console.log('[OLLAMA FALLBACK2] Success');
             } catch (ollamaErr) {
@@ -7257,7 +13601,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
               providerErrors.push(`Ollama: ${ollamaErr?.message}`);
             }
           }
-          
+
           if (!llmSuccess) {
             throw new Error(`All LLM providers failed: ${providerErrors.join(' | ')}`);
           }
@@ -7265,7 +13609,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
             aiResponse = completion?.choices?.[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
           }
         }
-        
+
         console.log(`✅ [VVAULT Proxy] ${effectiveProvider} fallback successful for ${constructId}`);
         if (constructId === 'lin-001') {
           const hasSignal2 = (aiResponse || '').includes('[OPEN_GPT_CREATOR]');
@@ -7276,45 +13620,371 @@ Do NOT treat this as a first meeting if there is conversation history.`;
           }
         }
 
-        const fallback2IdentityGuard = await enforceFirstPersonIdentity({
+        const fallback2PreviousAssistant = fb2HistoryMessages
+          .slice()
+          .reverse()
+          .find(m => m.role === 'assistant')?.content || null;
+        const fallback2PostProcess = await applyResponsePostProcessing({
           aiResponse,
+          previousAssistant: fallback2PreviousAssistant,
+          buildMessages,
           userMessage: message,
+          history: fb2HistoryMessages,
           constructId,
-          providerAvailability,
-          roleplayEnabled: gptConfig?.roleplayEnabled === true,
-          latestUserBeforeCurrent: getLastUserMessageFromHistory(fb2HistoryMessages),
+          constructDisplayName: gptConfig?.name || constructId,
+          regenClient: replitOpenrouter || openaiClient || openrouter,
+          regenModel: replitOpenrouter ? DEFAULT_OPENROUTER_MODEL : (openaiClient ? 'gpt-4.1-mini' : effectiveModel || DEFAULT_OPENROUTER_MODEL),
+          fallbackText: buildIdentityDriftFallback(message, constructId),
+          recitalRewriter: rewriteRecitalIfNeeded,
+          identityGuard: (currentText) => enforceFirstPersonIdentity({
+            aiResponse: currentText,
+            userMessage: message,
+            constructId,
+            providerAvailability,
+            roleplayEnabled: gptConfig?.roleplayEnabled === true,
+            latestUserBeforeCurrent: getLastUserMessageFromHistory(fb2HistoryMessages),
+          }),
+          cutoffRewriter: (currentText) => rewriteCutoffViolationIfNeeded(
+            currentText,
+            !!enrichedResult2.memory_query_detected,
+            enrichedResult2.evidence_count || 0,
+          ),
+          evidencePreview: enrichedResult2.memory_evidence_preview,
+          greetingTurnContext: fallback2GreetingTurnContext,
         });
-        aiResponse = fallback2IdentityGuard.response;
+        aiResponse = fallback2PostProcess.aiResponse;
+        aiResponse = applyHumanConversationGuard(aiResponse, {
+          userMessage: message,
+          memoryIntent: !!enrichedResult2?.memory_query_detected,
+          evidenceCount: Number(enrichedResult2?.evidence_count || 0),
+          constructId,
+          constructDisplayName: gptConfig?.name || constructId,
+          userName: req.user?.name || req.user?.given_name || 'Devon',
+          greetingTurnContext: fallback2GreetingTurnContext,
+        });
+        const fallback2IdentityCoherenceInitial = evaluateIdentityCoherence({
+          userMessage: message,
+          aiResponse,
+          constructId,
+          constructDisplayName: gptConfig?.name || constructId,
+          requestedSeat,
+          evidencePreview: enrichedResult2?.memory_evidence_preview,
+          greetingTurnContext: fallback2GreetingTurnContext,
+        });
+        let fallback2IdentityCoherence = fallback2IdentityCoherenceInitial;
+        let fallback2IdentityCoherenceRepair = {
+          attempted: false,
+          applied: false,
+          provider: null,
+          model: null,
+          initial_status: fallback2IdentityCoherenceInitial.status,
+          final_status: fallback2IdentityCoherenceInitial.status,
+          failure_reason: null,
+        };
+        let fallback2IdentityCoherenceBlocked = false;
+        const fallback2IdentityCoherenceFailureMessage = 'Identity/coherence guard blocked this assistant draft before canonical persistence.';
+        if (fallback2IdentityCoherenceInitial.status === 'fail') {
+          const repairAttempt = await runIdentityCoherenceRepair({
+            systemPrompt,
+            historyMessages: fb2HistoryMessages,
+            userMessage: message,
+            failedResponse: aiResponse,
+            grade: fallback2IdentityCoherenceInitial,
+            constructId,
+            constructDisplayName: gptConfig?.name || constructId,
+            provider: effectiveProvider,
+            model: effectiveModel,
+            generationParams,
+            evidencePreview: enrichedResult2?.memory_evidence_preview,
+            gptConfig,
+            providerAvailability,
+            routingMode: fallbackRoutingMode,
+            requestedSeat,
+            hasImages,
+          });
+          fallback2IdentityCoherenceRepair = {
+            attempted: true,
+            applied: false,
+            provider: repairAttempt.provider || effectiveProvider || null,
+            model: repairAttempt.model || effectiveModel || null,
+            seat: repairAttempt.seat || requestedSeat || null,
+            route_source: repairAttempt.routeSource || null,
+            initial_status: fallback2IdentityCoherenceInitial.status,
+            final_status: 'fail',
+            failure_reason: repairAttempt.error || null,
+            initial_reasons: fallback2IdentityCoherenceInitial.reasons || [],
+          };
+          if (repairAttempt.ok && repairAttempt.text && repairAttempt.text.trim()) {
+            const repairedGrade = evaluateIdentityCoherence({
+              userMessage: message,
+              aiResponse: repairAttempt.text.trim(),
+              constructId,
+              constructDisplayName: gptConfig?.name || constructId,
+              requestedSeat,
+              evidencePreview: enrichedResult2?.memory_evidence_preview,
+              greetingTurnContext: fallback2GreetingTurnContext,
+            });
+            fallback2IdentityCoherence = repairedGrade;
+            fallback2IdentityCoherenceRepair.final_status = repairedGrade.status;
+            fallback2IdentityCoherenceRepair.final_reasons = repairedGrade.reasons || [];
+            if (repairedGrade.status !== 'fail') {
+              aiResponse = repairAttempt.text.trim();
+              fallback2IdentityCoherenceRepair.applied = true;
+            } else {
+              fallback2IdentityCoherenceBlocked = true;
+              fallback2IdentityCoherenceRepair.failure_reason = 'repair_failed_identity_coherence_grade';
+            }
+          } else {
+            fallback2IdentityCoherenceBlocked = true;
+          }
+        }
+        console.log('[TURN_CONTEXT]', {
+          constructId,
+          memory_intent: !!enrichedResult2?.memory_query_detected,
+          search_intent: fb2SearchIntent,
+          search_injected: fb2SearchInjected,
+          history_count: fb2HistoryMessages.length,
+          history_filtered: {
+            leaked_prompt: fb2HistoryRemovedLeakCount,
+            instruction_dump: fb2HistoryRemovedInstructionDumpCount,
+            relational_tail_pruned: fb2HistoryTailPrunedCount,
+          },
+          relational_turn: fb2RelationalTurn,
+          context_mode: fb2ContextMode,
+          provider_used: effectiveProvider,
+          path_mode: 'fallback_vvault_unreachable',
+          persona_applied: true,
+          retrieval_used: (enrichedResult2.evidence_count ?? 0) > 0,
+          recital_detected: fallback2PostProcess.recitalDetected,
+          recital_rewrite_applied: fallback2PostProcess.recitalRewriteApplied,
+          persona_drift_detected: fallback2PostProcess.personaDriftDetected,
+          persona_regen_applied: fallback2PostProcess.personaRegenApplied,
+          repeat_detected: fallback2PostProcess.repeatDetected,
+          auth_recovered: authRecovered,
+          vision_mode: hasImages ? (explicitVisionIntent ? 'explicit-analysis' : 'character-first') : 'off',
+        });
         console.log('[IDENTITY_GUARD]', {
           constructId,
           mode: 'fallback_vvault_unreachable',
           relational_turn: fb2RelationalTurn,
           context_mode: fb2ContextMode,
-          identity_drift_detected: fallback2IdentityGuard.identity_drift_detected,
-          identity_rewrite_applied: fallback2IdentityGuard.identity_rewrite_applied,
-          identity_fallback_applied: fallback2IdentityGuard.identity_fallback_applied,
+          identity_drift_detected: fallback2PostProcess.identityDriftDetected,
+          identity_rewrite_applied: fallback2PostProcess.identityRewriteApplied,
+          identity_fallback_applied: fallback2PostProcess.identityFallbackApplied,
         });
-        
+
         // NOTE: Frontend (Layout.tsx) handles message persistence via conversationManager.addMessageToConversation()
         // Do NOT writeTranscript here — it causes duplicate messages in the database and UI
-        
+        const fallback2SearchBackedPayload = buildSearchBackedAssistantPayload({
+          aiResponse,
+          searchResults: fb2SearchResults,
+          housingSearch: fb2SearchHousing,
+        });
+        aiResponse = fallback2SearchBackedPayload.content;
+        const fallback2ResponsePackets = fallback2SearchBackedPayload.packets;
+        const fallback2SearchInspectability = buildSearchInspectabilityReceipt({
+          searchVertical: fb2SearchHousing ? 'housing' : 'web',
+          searchResults: fb2SearchResults,
+          housingSearch: fb2SearchHousing,
+          citations: fallback2SearchBackedPayload.citations,
+          packets: fallback2ResponsePackets,
+        });
+        const fallback2RuntimeReceipt = {
+          created_at: new Date().toISOString(),
+          user_id: userId || null,
+          auth: authReceipt,
+          construct_id: constructId,
+          effective_construct_id: constructId,
+          effective_construct_name: constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase()),
+          orchestration_mode: gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown',
+          route_mode: 'vvault_message_fallback',
+          persistence_owner: fallback2IdentityCoherenceBlocked ? 'blocked_identity_coherence' : 'layout',
+          identity: {
+            source: enrichedResult2.phaseTiming?.identity?.source || 'unknown',
+            base_prompt_source: enrichedResult2.phaseTiming?.basePromptSource || 'unknown',
+            conditioning_appended: !!enrichedResult2.phaseTiming?.conditioningInjected,
+            identity_bundle_hash: enrichedResult2.identity_bundle_hash || null,
+            effective_construct_id: constructId,
+            effective_construct_name: constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase()),
+            selected_construct_id: canonicalConstructId || constructId,
+            raw_construct_id: rawConstructId,
+          },
+          policy: enrichedResult2.runtimePolicy || null,
+          preview: {
+            preview_mode: Boolean(previewMode),
+            skip_persistence: true,
+            effective_construct_id: constructId,
+            selected_construct_id: canonicalConstructId || constructId,
+            raw_construct_id: rawConstructId,
+            identity_source: enrichedResult2.phaseTiming?.identity?.source || 'unknown',
+            base_prompt_source: enrichedResult2.phaseTiming?.basePromptSource || 'unknown',
+            draft_overlay_applied: Boolean(enrichedResult2.phaseTiming?.preview?.draftOverlayApplied),
+            draft_overlay_keys: enrichedResult2.phaseTiming?.preview?.draftOverlayKeys || [],
+            preview_overlay_state: enrichedResult2.phaseTiming?.preview?.draftOverlayApplied ? 'applied_bounded_overlay' : 'not_applied',
+            suppressed_system_prompt_override: Boolean(enrichedResult2.phaseTiming?.preview?.suppressedSystemPromptOverride),
+          },
+          memory: {
+            retrieval_ran: !!enrichedResult2.memory_retrieval_ran,
+            memory_query_detected: !!enrichedResult2.memory_query_detected,
+            evidence_count: enrichedResult2.evidence_count || 0,
+            ledger_sessions: enrichedResult2.ledgerSessions || 0,
+            memory_source: enrichedResult2.continuityMemorySearch?.source || enrichedResult2.phaseTiming?.memorySearch?.source || 'runtime_context_builder',
+            context_recovery_profile: enrichedResult2.context_recovery_profile || 'standard',
+            history_source: enrichedResult2.history_source || 'none',
+            remote_history_skipped: Boolean(enrichedResult2.remote_history_skipped),
+            sources: enrichedResult2.continuityMemorySearch || null,
+            memory_profile: gptConfig?.memoryProfile || gptConfig?.memory_profile || 'off',
+          },
+          provider: {
+            provider: effectiveProvider || null,
+            model: effectiveModel || null,
+            selection_policy: 'preference',
+            lin_harmony_policy: 'intent_routed',
+            lin_seat_canon: LIN_THREE_I_CANON_VERSION,
+            performance_model_switch: false,
+            requested_seat: requestedSeat,
+            requested_canonical_seat: getLinSeatCanon(requestedSeat).canonicalSeat,
+            seat_plan: {
+              policy: 'intent_routed',
+              canon: LIN_THREE_I_CANON_VERSION,
+              requested_seat: requestedSeat,
+              requested_canonical_seat: getLinSeatCanon(requestedSeat).canonicalSeat,
+              selected_provider: effectiveProvider || null,
+              selected_model: effectiveModel || null,
+              lin_default_model: modelResolution.mode === 'lin'
+                ? getLinDefaultModelForSeat(requestedSeat)
+                : null,
+              fallback_reason: 'vvault_unreachable',
+            },
+            model_source: modelSource,
+            source: modelSource,
+            mode: modelResolution.mode || (gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown'),
+            requested_provider: modelResolution.requestedProvider || null,
+            requested_model: modelResolution.requestedModel || null,
+            configured_model: modelResolution.configuredModel || null,
+            suppressed_configured_model: modelResolution.suppressedConfiguredModel || null,
+            routing_override: !!modelResolution.routingOverride,
+            seat_defaults_or_overrides: effectiveSeatDefaultsOrOverrides || null,
+            local_first_used: effectiveLocalFirstUsed,
+            local_cloud_fallback_state: (providerTrace.fallback_used || effectiveRouteFallbackUsed)
+              ? (effectiveLocalCloudFallbackState || 'fallback_used')
+              : effectiveLocalCloudFallbackState || modelResolution.localCloudFallbackState || (effectiveLocalFirstUsed
+                ? 'local_first'
+                : modelResolution.routingOverride
+                  ? 'manual_routing_override'
+                  : 'direct'),
+            fallback_used: true,
+            final_provider: providerTrace.final_provider || effectiveProvider || null,
+          },
+          fidelity: {
+            identity_drift_detected: !!fallback2PostProcess.identityDriftDetected,
+            identity_rewrite_applied: !!fallback2PostProcess.identityRewriteApplied,
+            identity_fallback_applied: !!fallback2PostProcess.identityFallbackApplied,
+            persona_drift_detected: !!fallback2PostProcess.personaDriftDetected,
+            persona_regen_applied: !!fallback2PostProcess.personaRegenApplied,
+            identity_coherence: {
+              status: fallback2IdentityCoherence.status,
+              identity_status: fallback2IdentityCoherence.identityStatus,
+              coherence_status: fallback2IdentityCoherence.coherenceStatus,
+              reasons: fallback2IdentityCoherence.reasons || [],
+              signals: fallback2IdentityCoherence.signals || [],
+              violations: fallback2IdentityCoherence.violations || [],
+              repairable: !!fallback2IdentityCoherence.repairable,
+              repair_attempted: !!fallback2IdentityCoherenceRepair.attempted,
+              repair_applied: !!fallback2IdentityCoherenceRepair.applied,
+              repair: fallback2IdentityCoherenceRepair,
+              blocked_canonical_persistence: !!fallback2IdentityCoherenceBlocked,
+              persist_canonical: !fallback2IdentityCoherenceBlocked,
+              owner_file: fallback2IdentityCoherence.ownerFile || 'server/lib/identityCoherenceGuard.js',
+              source_anchor: fallback2IdentityCoherence.sourceAnchor || 'server/lib/identityCoherenceGuard.js:evaluateIdentityCoherence',
+            },
+          },
+        };
+        if (fallback2SearchInspectability?.search || fallback2SearchInspectability?.housing) {
+          fallback2RuntimeReceipt.research = {
+            search_injected: fb2SearchInjected,
+            search_intent_reason: fb2SearchIntent,
+            ...(fallback2SearchInspectability?.search
+              ? { search: fallback2SearchInspectability.search }
+              : {}),
+            ...(fallback2SearchInspectability?.housing
+              ? { housing: fallback2SearchInspectability.housing }
+              : {}),
+          };
+        }
+        const fallback2ValidatorDebug = {
+          memory_retrieval_ran: !!enrichedResult2.memory_retrieval_ran,
+          memory_query_detected: !!enrichedResult2.memory_query_detected,
+          evidence_count: enrichedResult2.evidence_count || 0,
+          identity_drift_detected: !!fallback2PostProcess.identityDriftDetected,
+          identity_rewrite_applied: !!fallback2PostProcess.identityRewriteApplied,
+          identity_fallback_applied: !!fallback2PostProcess.identityFallbackApplied,
+          cutoff_violation_detected: !!fallback2PostProcess.cutoffViolationDetected,
+          rewrite_applied: !!fallback2PostProcess.cutoffRewriteApplied,
+          identity_coherence: fallback2IdentityCoherence,
+          identity_coherence_repair: fallback2IdentityCoherenceRepair,
+        };
+        const fallback2Checklist = buildOrchestrationChecklist({
+          userId,
+          user: req.user,
+          constructId,
+          threadId: sessionId || threadId || `${constructId}_chat_with_${constructId}`,
+          userMessage: message,
+          gptConfig,
+          enrichedContext: enrichedResult2,
+          retrievalDiagnostics,
+          promptDiagnostics: fallback2PromptDiagnostics,
+          providerTrace,
+          validatorDebug: fallback2ValidatorDebug,
+          runtimeReceipt: fallback2RuntimeReceipt,
+          contextMode: fb2ContextMode,
+          relationalTurn: fb2RelationalTurn,
+          lowComplexityTurn: fb2LowComplexityTurn,
+          hasImages,
+          skipPersistence: true,
+          responseStatus: fallback2IdentityCoherenceBlocked ? 'identity_coherence_failed' : 'fallback_vvault_unreachable',
+        });
+
+        if (fallback2IdentityCoherenceBlocked) {
+          return res.status(422).json({
+            success: false,
+            ok: false,
+            error: 'IDENTITY_COHERENCE_FAILED',
+            message: fallback2IdentityCoherenceFailureMessage,
+            response: fallback2IdentityCoherenceFailureMessage,
+            construct_id: constructId,
+            fallback: true,
+            source: effectiveProvider,
+            model: effectiveModel,
+            provider_used: effectiveProvider,
+            runtime_receipt: fallback2RuntimeReceipt,
+            orchestration_checklist: fallback2Checklist,
+            has_images: hasImages,
+            tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
+            ...(process.env.SHOW_DEV_INFO === 'true' ? { provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: fallback2PromptDiagnostics } : {})
+          });
+        }
+
         return res.json({
           success: true,
           response: aiResponse,
+          packets: fallback2ResponsePackets,
           construct_id: constructId,
           fallback: true,
           source: effectiveProvider,
           model: effectiveModel,
           provider_forced: constructId === 'nova-001',
           provider_used: effectiveProvider,
+          runtime_receipt: fallback2RuntimeReceipt,
+          orchestration_checklist: fallback2Checklist,
           has_images: hasImages,
           tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
-          ...(process.env.SHOW_DEV_INFO === 'true' ? { provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics } : {})
+          ...(process.env.SHOW_DEV_INFO === 'true' ? { provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: fallback2PromptDiagnostics } : {})
         });
       } catch (fallbackError) {
         console.error(`❌ [VVAULT Proxy] LLM fallback failed:`, fallbackError);
       }
-      
+
       throw fetchError;
     }
   } catch (error) {
