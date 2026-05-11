@@ -74,10 +74,8 @@ web_modules/
 
 # dotenv environment variable files
 .env
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
+.env.*
+!.env.example
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -169,9 +167,99 @@ chatty.db.bak.*
 *.db
 *.db.bak.*
 
+# SQLite runtime artifacts
+*.db-shm
+*.db-wal
+.chatty.db.*
+
+# Local workspace/agent state
+.local/
+
+# local tooling/session state
+.zencoder/
+.zencoder 3/
+.zenflow 2/
+.vite 2/
+.playwright-cli/
+.config/pulse/
+tmp/
+cookie
+vite.config.ts.timestamp-*
+chatty_env*
+server/venv/
+
 # Temp upload directories
 server/temp-transcribe-uploads/
+server/temp-mocr-uploads/
+server/temp-voice-uploads/
+server/tmp/
 temp-mocr-uploads/
+temp-transcribe-uploads/
 MOCR-Service/temp-uploads/
 MOCR-Service/temp-audio/
 MOCR-Service/temp-frames/
+
+# Sensitive/user data (stop tracking)
+users.json
+family_data.json
+deploy/chatty.env
+
+# Numbered db artifacts (macOS duplicate variants)
+chatty 2.*
+chatty 3.*
+chatty 4.*
+chatty 5.*
+chatty 6.*
+chatty 7.*
+chatty 8.*
+chatty 9.*
+chatty 1[0-9].*
+
+# Replit config
+.replit
+.replit_integration_files/
+
+# Source hash artifacts
+source_sha256.eq.
+sourceSha256.eq.,metadata-
+
+# Agent/IDE runtime dirs
+.agents/
+.clinerules/
+.config/
+.ai/
+.zenflow/
+.playwright-cli/
+
+# Runtime data dirs
+constructs/
+chatty-conversations/
+output/
+users/
+documents/
+ai-uploads/
+gpt-uploads/
+launchd/
+memup/
+ollama/
+pocketverse/
+frame/
+tools/
+watchdog/
+temp-mocr-uploads/
+temp-transcribe-uploads/
+
+# Stale/debug content
+quarantine/
+qc-evidence/
+auth_evidence_capture.md
+HARDCODED_PATH_CLEANUP_DIFFS.md
+
+# Runtime settings
+chatty-cli-settings.json
+
+# Server temp files
+server/tmp-silence-*.wav
+
+# Production env example (no longer needed)
+production.env.example
