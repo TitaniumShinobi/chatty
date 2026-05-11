@@ -237,7 +237,7 @@ export default function App() {
     }
 
     try {
-      const u =
+      const authResult =
         mode === "login"
           ? await loginWithEmail(email, password)
           : await signupWithEmail(
@@ -248,10 +248,17 @@ export default function App() {
               turnstileToken,
             );
 
-      if (!u) {
+      if (!authResult) {
         throw new Error(
           mode === "login" ? "Invalid email or password" : "Signup failed",
         );
+      }
+
+      if ("ok" in authResult) {
+        if (!authResult.ok) {
+          throw new Error(authResult.error);
+        }
+        setUser(authResult.user);
       }
 
       if (mode === "signup") {
@@ -289,7 +296,9 @@ export default function App() {
         setLastEmailHint(email);
       }
 
-      setUser(u);
+      if (!("ok" in authResult)) {
+        setUser(authResult);
+      }
       setEmail("");
       setPassword("");
       setConfirmPassword("");
