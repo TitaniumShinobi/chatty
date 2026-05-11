@@ -10,7 +10,7 @@ Local files are ingest input, dev runtime artifacts, cache, or archive evidence 
 
 If VVAULT cannot be written to and read back from, the task is blocked. Do not create local folders or transcript files and call that a VVAULT sync.
 
-Authority contract: [docs/standards/vvault-authority-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/vvault-authority-contract.md).
+Authority contract: [docs/standards/vvault-authority-contract.md](docs/standards/vvault-authority-contract.md).
 
 ## VVAULT Authority Failures
 
@@ -40,17 +40,17 @@ Authority contract: [docs/standards/vvault-authority-contract.md](/Users/devonwo
 
 ## Docs
 
-- Main docs index: [docs/README.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/README.md)
-- Audit packet: [docs/README/README.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/README/README.md)
-- Backend runtime doc: [server/README.md](/Users/devonwoodson/Documents/GitHub/chatty/server/README.md)
+- Main docs index: [docs/README.md](docs/README.md)
+- Audit packet: [docs/README/README.md](docs/README/README.md)
+- Backend runtime doc: [server/README.md](server/README.md)
 
 ## Orchestration Start Here
 
-- Canonical orchestration/core split: [docs/standards/orchestration-canon-rubric.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-canon-rubric.md)
-- Explicit orchestration surface map: [docs/standards/orchestration-surface-inventory.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-surface-inventory.md)
-- Receipt-backed runtime contract: [docs/standards/orchestration-runtime-checklist.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-runtime-checklist.md)
-- Three I seat canon: [docs/standards/lin-three-i-seat-canon.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/lin-three-i-seat-canon.md)
-- Wrapper split and Lin substrate truth: [docs/reference/constructs-and-lin.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/reference/constructs-and-lin.md)
+- Canonical orchestration/core split: [docs/standards/orchestration-canon-rubric.md](docs/standards/orchestration-canon-rubric.md)
+- Explicit orchestration surface map: [docs/standards/orchestration-surface-inventory.md](docs/standards/orchestration-surface-inventory.md)
+- Receipt-backed runtime contract: [docs/standards/orchestration-runtime-checklist.md](docs/standards/orchestration-runtime-checklist.md)
+- Three I seat canon: [docs/standards/lin-three-i-seat-canon.md](docs/standards/lin-three-i-seat-canon.md)
+- Wrapper split and Lin substrate truth: [docs/reference/constructs-and-lin.md](docs/reference/constructs-and-lin.md)
 
 ### One-Word Trigger: `orchestration`
 
@@ -82,9 +82,9 @@ FINAL_VERDICT:
 
 ## Source-of-Truth Notes
 
-- Canonical orchestration and operator surface is `chatty-cli`, described in [docs/standards/orchestration-canon-rubric.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-canon-rubric.md) and mapped in [docs/standards/orchestration-surface-inventory.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-surface-inventory.md).
-- Canonical receipt-backed construct runtime route is `/api/vvault/message`, with proof in [docs/standards/orchestration-runtime-checklist.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-runtime-checklist.md).
+- Canonical orchestration and operator surface is `chatty-cli`, described in [docs/standards/orchestration-canon-rubric.md](docs/standards/orchestration-canon-rubric.md) and mapped in [docs/standards/orchestration-surface-inventory.md](docs/standards/orchestration-surface-inventory.md).
+- Canonical receipt-backed construct runtime route is `/api/vvault/message`, with proof in [docs/standards/orchestration-runtime-checklist.md](docs/standards/orchestration-runtime-checklist.md).
 - Chatty UI remains the visible Three I wrapper and Code remains the one-seat wrapper over that shared orchestration truth.
-- Runtime ports and launcher behavior are documented in [docs/reference/runtime-and-ports.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/reference/runtime-and-ports.md).
-- Auth and provider status are documented in [docs/reference/auth-and-oauth.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/reference/auth-and-oauth.md).
-- VVAULT path rules and current contradictions are documented in [docs/reference/vvault-and-storage.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/reference/vvault-and-storage.md) and [docs/README/contradictions.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/README/contradictions.md).
+- Runtime ports and launcher behavior are documented in [docs/reference/runtime-and-ports.md](docs/reference/runtime-and-ports.md).
+- Auth and provider status are documented in [docs/reference/auth-and-oauth.md](docs/reference/auth-and-oauth.md).
+- VVAULT path rules and current contradictions are documented in [docs/reference/vvault-and-storage.md](docs/reference/vvault-and-storage.md) and [docs/README/contradictions.md](docs/README/contradictions.md).
