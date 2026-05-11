@@ -34,6 +34,14 @@ declare global {
   }
 }
 
+function getRuntimeEnv(): Record<string, any> {
+  try {
+    return (0, eval)('typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {}');
+  } catch {
+    return typeof process !== "undefined" && process.env ? process.env : {};
+  }
+}
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -61,7 +69,7 @@ export default function App() {
   const [turnstileToken, setTurnstileToken] = useState<string>("");
   const [turnstileWidgetId, setTurnstileWidgetId] = useState<string>("");
   const [turnstileError, setTurnstileError] = useState("");
-  const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY as
+  const turnstileSiteKey = getRuntimeEnv().VITE_TURNSTILE_SITE_KEY as
     | string
     | undefined;
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
@@ -603,7 +611,7 @@ export default function App() {
   };
 
   // Redirect to /app when user is logged in (useEffect to prevent render loop)
-  const hasRedirectedRef = React.useRef(false);
+  const hasRedirectedRef = useRef(false);
   useEffect(() => {
     if (user && !isLoading && !hasRedirectedRef.current) {
       // Only redirect if we're on the root path
