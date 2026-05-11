@@ -800,7 +800,7 @@ Usage:
   chatty-cli [options]
   chatty-cli --once [options] <message>
   chatty-cli handoff [--latest-codex [--watch] [--poll-seconds <n>] | --from-file <absolute-path> | --stdin-json | --seed-only]
-  chatty-cli orchestration [--json] [--skip-persistence] [--constructs=zen-001,nova-001] [--no-browser] [--auth-timeout-ms=<ms>] [--out-dir=<path>]
+  chatty-cli orchestration [--json] [--skip-persistence] [--constructs=zen-001,nova-001] [--latest-codex] [--no-browser] [--auth-timeout-ms=<ms>] [--out-dir=<path>]
   npm run cli -- [options]
 
 Default route:
@@ -817,8 +817,8 @@ Options:
   --show-receipts         Print runtime receipt summary
   --show-checklist        Print runtime checklist summary
   --skip-persistence      Ask backend to skip canonical persistence
-  --latest-codex         Relay the newest local Codex rollout tail into Chatty
-  --watch                Keep syncing new Codex rollout turns into Chatty (latest-codex only)
+  --latest-codex         Use the newest local Codex rollout tail as handoff/proof context
+  --watch                Keep syncing Codex source transcripts to VVAULT and relay only after VVAULT readback proof (latest-codex only)
   --poll-seconds <n>     Poll interval for --watch mode (default 2)
   --from-file <path>      Codex export file for handoff relay
   --stdin-json            Read a JSON tail from stdin for handoff relay
@@ -1070,6 +1070,8 @@ async function runCliCodexHandoffCommand(): Promise<number> {
     console.log = () => {};
     console.warn = () => {};
     console.error = () => {};
+    // Handoff/watch uses server-side VVAULT authority config; load env before lazy server imports.
+    await import('../../server/loadEnv.js');
     const args = parseCliArgs(process.argv.slice(2));
     const handoffModeCount =
       Number(args.handoffLatestCodex) +
@@ -1091,16 +1093,19 @@ async function runCliCodexHandoffCommand(): Promise<number> {
 
     let result: any;
     if (args.handoffSeedOnly === true) {
+      // @ts-ignore Server continuity helper is CommonJS in this checkout.
       const { seedCodexContinuity } = await import('../../server/lib/codexContinuitySeed.js');
       result = await seedCodexContinuity();
     } else if (args.handoffLatestCodex === true) {
       if (args.handoffWatch === true) {
+        // @ts-ignore Server continuity helper is CommonJS in this checkout.
         const { runCodexContinuityWatch } = await import('../../server/lib/codexContinuityWatch.js');
         console.log = originalConsole.log;
         console.warn = originalConsole.warn;
         console.error = originalConsole.error;
         await runCodexContinuityWatch({
           pollSeconds: args.handoffPollSeconds,
+          syncSourceEvidenceToVvault: true,
           maxPolls:
             process.env.CHATTY_CLI_HANDOFF_WATCH_MAX_POLLS
               ? Number(process.env.CHATTY_CLI_HANDOFF_WATCH_MAX_POLLS)
@@ -1108,11 +1113,13 @@ async function runCliCodexHandoffCommand(): Promise<number> {
         });
         return 0;
       }
+      // @ts-ignore Server continuity helper is CommonJS in this checkout.
       const { relayCodexContinuity } = await import('../../server/lib/codexContinuityRelay.js');
       result = await relayCodexContinuity({
         latestCodex: true,
       });
     } else if (args.handoffFromFile) {
+      // @ts-ignore Server continuity helper is CommonJS in this checkout.
       const { relayCodexContinuity } = await import('../../server/lib/codexContinuityRelay.js');
       result = await relayCodexContinuity({
         fromFilePath: path.resolve(args.handoffFromFile),
@@ -1130,6 +1137,7 @@ async function runCliCodexHandoffCommand(): Promise<number> {
         process.stdin.on('end', () => resolve(buffer));
         process.stdin.on('error', reject);
       });
+      // @ts-ignore Server continuity helper is CommonJS in this checkout.
       const { relayCodexContinuity } = await import('../../server/lib/codexContinuityRelay.js');
       result = await relayCodexContinuity({
         stdinJson,
@@ -1186,6 +1194,7 @@ async function runCliOrchestrationProofCommand({
   skipPersistence,
   outDir,
   constructs,
+  latestCodex,
   noBrowser,
   authTimeoutMs,
 }: {
@@ -1194,6 +1203,7 @@ async function runCliOrchestrationProofCommand({
   skipPersistence: boolean;
   outDir?: string;
   constructs?: string;
+  latestCodex: boolean;
   noBrowser: boolean;
   authTimeoutMs?: number;
 }): Promise<number> {
@@ -1202,6 +1212,7 @@ async function runCliOrchestrationProofCommand({
   if (skipPersistence) args.push('--skip-persistence');
   if (outDir) args.push(`--out-dir=${outDir}`);
   if (constructs) args.push(`--constructs=${constructs}`);
+  if (latestCodex) args.push('--latest-codex');
   if (noBrowser) args.push('--no-browser');
   if (typeof authTimeoutMs === 'number' && Number.isFinite(authTimeoutMs) && authTimeoutMs > 0) {
     args.push(`--auth-timeout-ms=${Math.floor(authTimeoutMs)}`);
@@ -1555,6 +1566,7 @@ async function main() {
       skipPersistence,
       outDir: orchestrationOutDir,
       constructs: orchestrationConstructs,
+      latestCodex: parsedArgs.handoffLatestCodex,
       noBrowser: orchestrationNoBrowser,
       authTimeoutMs: orchestrationAuthTimeoutMs,
     });
@@ -1758,6 +1770,7 @@ Type /help to see all available commands.
   }
 
   if (runtimeMode === 'local') {
+    // @ts-ignore Local runtime is launched through tsx and imports the server entry directly.
     await import('../../server/chatty-api.ts');
   }
 

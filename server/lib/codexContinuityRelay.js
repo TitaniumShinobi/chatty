@@ -1,7 +1,9 @@
 import crypto from 'node:crypto';
+import fsNode from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 import { readConversations } from '../../vvaultConnector/readConversations.js';
@@ -60,11 +62,18 @@ const CONSOLE_NOISE_RE =
 const SHORT_TITLE_RE = /^[A-Z][\w\s/&:+-]{1,79}$/;
 const CODEX_CONTEXT_LIMIT_RE =
   /^Codex ran out of room in the model's context window\./i;
-const USER_MARKER_RE = /^(?:U|USER)$/i;
-const ASSISTANT_MARKER_RE = /^(?:AI|ASSISTANT)$/i;
+const USER_MARKER_RE = /^(?:#{1,6}\s*)?(?:U|USER)(?:\s*\([^)]*\))?$/i;
+const ASSISTANT_MARKER_RE = /^(?:#{1,6}\s*)?(?:AI|ASSISTANT)(?:\s*\([^)]*\))?$/i;
 const ASSISTANTISH_START_RE =
   /^(?:I\s(?:checked|read|updated|fixed|sent|verified|picked|am|can|did|just)|Here(?:’|')?s|The\s|That\s|Possible reasons|Added\b|Updated\b|Removed\b|Renamed\b|Fixed\b|Quick\b|Live verification\b|Verification\b|Current\b|Working now\b|Got it\b|No pause\b|Two parts\b|Concrete approach\b|What VVAULT is for\b|If you want\b|You can\b)/i;
 const DEFAULT_CODEX_SESSIONS_ROOT = path.join(os.homedir(), '.codex', 'sessions');
+const CODEX_RELAY_SCHEMA_VERSION = 1;
+const STRICT_CANONICAL_READ_OPTIONS = Object.freeze({ allowLocalFallback: false });
+const HIDDEN_CONTEXT_PREFIX_RE =
+  /^(?:<environment_context>|<system>|<developer>|<collaboration_mode>|<apps_instructions>|<skills_instructions>|<plugins_instructions>|<subagent_notification>|<proposed_plan>|<summary>|<heartbeat>|<oai-mem-citation>|========= MEMORY_SUMMARY BEGINS =========)/i;
+const HIDDEN_CONTEXT_MAX_CHARS = 8000;
+const HIDDEN_CONTEXT_BLOCK_RE =
+  /(?:<oai-mem-citation>[\s\S]*?<\/oai-mem-citation>|(?:^|\n)\s*<heartbeat>[\s\S]*?<\/heartbeat>\s*)/gi;
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -87,7 +96,6 @@ function normalizeTurnRole(role) {
 
 function shouldIncludeAssistantPhase(phase) {
   const normalized = normalizeString(phase).toLowerCase();
-  if (!normalized) return true;
   return normalized === 'final' || normalized === 'final_answer';
 }
 
@@ -316,11 +324,14 @@ function extractTerminalPairFromParagraphs(rawText, parseReport) {
   );
 }
 
-function extractMessageTextFromParts(content) {
+function extractMessageTextFromParts(content, role) {
   if (!Array.isArray(content)) return '';
   const parts = content
     .map((part) => {
       if (!part || typeof part !== 'object') return '';
+      const partType = normalizeString(part.type).toLowerCase();
+      if (role === 'user' && partType !== 'input_text') return '';
+      if (role === 'assistant' && partType !== 'output_text') return '';
       if (typeof part.text === 'string') return part.text;
       return '';
     })
@@ -328,11 +339,25 @@ function extractMessageTextFromParts(content) {
   return parts.join('\n\n').trim();
 }
 
-function shouldIgnoreLatestCodexUserText(text) {
+function shouldIgnoreHiddenCodexText(text) {
   const normalized = normalizeString(text);
   if (!normalized) return true;
-  if (normalized.startsWith('<environment_context>')) return true;
+  if (HIDDEN_CONTEXT_PREFIX_RE.test(normalized)) return true;
+  if (
+    normalized.length > HIDDEN_CONTEXT_MAX_CHARS &&
+    /<(?:environment_context|system|developer|apps_instructions|skills_instructions|plugins_instructions)\b/i.test(normalized)
+  ) {
+    return true;
+  }
   return false;
+}
+
+function sanitizeCodexMessageText(text) {
+  const normalized = normalizeString(text);
+  if (shouldIgnoreHiddenCodexText(normalized)) return null;
+  const stripped = normalized.replace(HIDDEN_CONTEXT_BLOCK_RE, '').trim();
+  if (shouldIgnoreHiddenCodexText(stripped)) return null;
+  return stripped;
 }
 
 function findLatestUserAssistantPair(messages = []) {
@@ -348,8 +373,10 @@ function findLatestUserAssistantPair(messages = []) {
   return null;
 }
 
-async function collectRolloutFiles(rootPath, { limit = 64 } = {}) {
+async function collectRolloutFiles(rootPath, { limit = Number.POSITIVE_INFINITY } = {}) {
   const files = [];
+  const effectiveLimit =
+    Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : null;
   const yearEntries = (await readDirSafe(rootPath))
     .filter(isDirectoryEntry)
     .sort((a, b) => b.name.localeCompare(a.name));
@@ -373,80 +400,118 @@ async function collectRolloutFiles(rootPath, { limit = 64 } = {}) {
           .sort((a, b) => b.name.localeCompare(a.name));
 
         for (const rolloutEntry of rolloutEntries) {
-          files.push({
-            path: path.join(dayPath, rolloutEntry.name),
-            mtimeMs: 0,
-          });
-          if (files.length >= limit) {
-            return files;
+          const rolloutPath = path.join(dayPath, rolloutEntry.name);
+          let mtimeMs = 0;
+          try {
+            const stat = await fs.stat(rolloutPath);
+            mtimeMs = Number.isFinite(stat?.mtimeMs) ? stat.mtimeMs : 0;
+          } catch {
+            mtimeMs = 0;
           }
+          files.push({
+            path: rolloutPath,
+            mtimeMs,
+          });
         }
       }
     }
   }
 
-  return files;
+  const sortedFiles = files.sort((left, right) => {
+    if (right.mtimeMs !== left.mtimeMs) {
+      return right.mtimeMs - left.mtimeMs;
+    }
+    return right.path.localeCompare(left.path);
+  });
+
+  return effectiveLimit ? sortedFiles.slice(0, effectiveLimit) : sortedFiles;
 }
 
-export function parseCodexRolloutJsonl(rawText, { sessionPath = null } = {}) {
-  const lines = String(rawText || '').replace(/\r\n/g, '\n').split('\n').filter(Boolean);
-  const messages = [];
-  let sessionMeta = null;
-  let skippedParseLines = 0;
+function createCodexRolloutParseState({ sessionPath = null } = {}) {
+  return {
+    sessionPath,
+    messages: [],
+    sessionMeta: null,
+    skippedParseLines: 0,
+    skippedHiddenContextMessages: 0,
+    skippedNonFinalAssistantMessages: 0,
+    lineCount: 0,
+  };
+}
 
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    let record;
-    try {
-      record = JSON.parse(line);
-    } catch {
-      skippedParseLines += 1;
-      continue;
-    }
-
-    if (record?.type === 'session_meta' && record?.payload && !sessionMeta) {
-      sessionMeta = record.payload;
-      continue;
-    }
-
-    if (record?.type !== 'response_item' || record?.payload?.type !== 'message') {
-      continue;
-    }
-
-    const role = normalizeTurnRole(record.payload.role);
-    if (!role) continue;
-    if (role === 'assistant' && !shouldIncludeAssistantPhase(record.payload.phase)) {
-      continue;
-    }
-
-    const text = extractMessageTextFromParts(record.payload.content);
-    if (!text) continue;
-    if (role === 'user' && shouldIgnoreLatestCodexUserText(text)) {
-      continue;
-    }
-
-    messages.push({
-      role,
-      content: text,
-      ts: normalizeString(record.timestamp) || null,
-      phase: normalizeString(record.payload.phase) || null,
-      sourceTurnIndex: index,
-    });
+function consumeCodexRolloutJsonlLine(state, line, index) {
+  if (!line) return;
+  state.lineCount += 1;
+  let record;
+  try {
+    record = JSON.parse(line);
+  } catch {
+    state.skippedParseLines += 1;
+    return;
   }
 
+  if (record?.type === 'session_meta' && record?.payload && !state.sessionMeta) {
+    state.sessionMeta = record.payload;
+    return;
+  }
+
+  if (record?.type !== 'response_item' || record?.payload?.type !== 'message') {
+    return;
+  }
+
+  const role = normalizeTurnRole(record.payload.role);
+  if (!role) return;
+  if (role === 'assistant' && !shouldIncludeAssistantPhase(record.payload.phase)) {
+    state.skippedNonFinalAssistantMessages += 1;
+    return;
+  }
+
+  const rawText = extractMessageTextFromParts(record.payload.content, role);
+  if (!rawText) return;
+  const text = sanitizeCodexMessageText(rawText);
+  if (!text) {
+    state.skippedHiddenContextMessages += 1;
+    return;
+  }
+
+  state.messages.push({
+    role,
+    content: text,
+    ts: normalizeString(record.timestamp) || null,
+    phase: normalizeString(record.payload.phase) || null,
+    sourceTurnIndex: index,
+  });
+}
+
+function finishCodexRolloutParseState(state, { requireTerminalPair = true } = {}) {
+  const messages = state.messages;
+  const sessionMeta = state.sessionMeta;
   const pair = findLatestUserAssistantPair(messages);
+  const latestMessage = messages.at(-1) || null;
   const parseReport = {
     sourceType: 'latest-codex',
-    sessionPath,
+    sessionPath: state.sessionPath,
     sessionId: sessionMeta?.id || null,
     cwd: sessionMeta?.cwd || null,
+    isSubagentSession: Boolean(sessionMeta?.source?.subagent),
     messageCount: messages.length,
-    skippedParseLines,
-    strategy: 'rollout-jsonl-terminal-pair',
+    skippedParseLines: state.skippedParseLines,
+    skippedHiddenContextMessages: state.skippedHiddenContextMessages,
+    skippedNonFinalAssistantMessages: state.skippedNonFinalAssistantMessages,
+    strategy: pair ? 'rollout-jsonl-terminal-pair' : 'rollout-jsonl-pending-tail',
     latestAssistantTimestamp: pair?.[1]?.ts || null,
+    latestMessageRole: latestMessage?.role || null,
+    latestMessageTimestamp: latestMessage?.ts || null,
   };
 
   if (!pair) {
+    if (!requireTerminalPair) {
+      return {
+        conversationTurns: messages,
+        turns: [],
+        parseReport,
+      };
+    }
     const error = new Error('Codex rollout does not contain a terminal user/assistant pair.');
     error.parseReport = parseReport;
     throw error;
@@ -457,6 +522,35 @@ export function parseCodexRolloutJsonl(rawText, { sessionPath = null } = {}) {
     turns: pair,
     parseReport,
   };
+}
+
+export function parseCodexRolloutJsonl(
+  rawText,
+  { sessionPath = null, requireTerminalPair = true } = {},
+) {
+  const lines = String(rawText || '').replace(/\r\n/g, '\n').split('\n').filter(Boolean);
+  const state = createCodexRolloutParseState({ sessionPath });
+
+  for (let index = 0; index < lines.length; index += 1) {
+    consumeCodexRolloutJsonlLine(state, lines[index], index);
+  }
+
+  return finishCodexRolloutParseState(state, { requireTerminalPair });
+}
+
+export async function parseCodexRolloutJsonlFile(sessionPath, { requireTerminalPair = true } = {}) {
+  const state = createCodexRolloutParseState({ sessionPath });
+  const stream = fsNode.createReadStream(sessionPath, { encoding: 'utf8' });
+  const rl = readline.createInterface({
+    input: stream,
+    crlfDelay: Number.POSITIVE_INFINITY,
+  });
+  let index = 0;
+  for await (const line of rl) {
+    consumeCodexRolloutJsonlLine(state, line, index);
+    index += 1;
+  }
+  return finishCodexRolloutParseState(state, { requireTerminalPair });
 }
 
 export async function readLatestCodexTail({
@@ -485,6 +579,9 @@ export async function readLatestCodexTail({
 
     try {
       const parsed = parseCodexRolloutJsonl(rawText, { sessionPath: file.path });
+      if (parsed.parseReport.isSubagentSession) {
+        continue;
+      }
       const candidate = {
         parsed,
         score: scoreCandidate(parsed, file),
@@ -685,10 +782,72 @@ function findConversationBySessionId(conversations = [], sessionId) {
   return (conversations || []).find((conversation) => conversation?.sessionId === sessionId) || null;
 }
 
+function assertCanonicalRelayConversation(conversation, { stage = 'readback' } = {}) {
+  if (!conversation) {
+    throw new Error(`Codex relay ${stage} did not return the singleton canonical Zen thread.`);
+  }
+  if (
+    conversation.localFallback === true ||
+    conversation.persistenceSource === 'local-deferred' ||
+    conversation.persistenceSource === 'local-fallback'
+  ) {
+    throw new Error(`Codex relay ${stage} resolved local fallback instead of canonical VVAULT truth.`);
+  }
+  return conversation;
+}
+
+function assertCanonicalRelayWriteResult(result, { role } = {}) {
+  if (!result || result.success === false) {
+    throw new Error(`Codex relay canonical ${role || 'turn'} write failed.`);
+  }
+  if (result.source === 'local-fallback' || result.source === 'local-deferred') {
+    throw new Error(`Codex relay canonical ${role || 'turn'} write resolved local fallback.`);
+  }
+  return result;
+}
+
+function assertCanonicalRelayReadback(conversation, {
+  incomingTurns = [],
+  latestRuntimeTurnState = null,
+} = {}) {
+  assertCanonicalRelayConversation(conversation, { stage: 'readback' });
+  const sequence = findDigestSequence(conversation.messages || [], incomingTurns);
+  if (!sequence) {
+    throw new Error('Codex relay readback did not include the just-written turn digest sequence.');
+  }
+  const latestAssistantMessage = resolveLatestAssistantMessage(sequence.messages);
+  if (!latestAssistantMessage?.metadata?.runtimeTurnState) {
+    throw new Error('Codex relay readback tail is missing assistant runtimeTurnState metadata.');
+  }
+  const readbackRuntimeTurnState = normalizeRuntimeTurnState(
+    latestAssistantMessage.metadata.runtimeTurnState,
+    {
+      sessionId: CODEX_CONTINUITY_SEED_DEFAULTS.sessionId,
+      constructId: CODEX_CONTINUITY_SEED_DEFAULTS.constructId,
+      hydrationTruth: 'full',
+      assistantTailContent: latestAssistantMessage.content,
+    },
+  );
+  if (
+    !latestRuntimeTurnState ||
+    readbackRuntimeTurnState.assistantTurnId !== latestRuntimeTurnState.assistantTurnId ||
+    readbackRuntimeTurnState.continuitySeq !== latestRuntimeTurnState.continuitySeq ||
+    readbackRuntimeTurnState.tailHash !== latestRuntimeTurnState.tailHash
+  ) {
+    throw new Error('Codex relay readback tail runtimeTurnState does not match the imported assistant tail.');
+  }
+  return {
+    sequence,
+    latestAssistantMessage,
+    runtimeTurnState: readbackRuntimeTurnState,
+  };
+}
+
 function findDigestSequence(messages = [], incomingTurns = []) {
   const digests = incomingTurns.map((turn) => turn.relayTurnDigest);
   if (digests.length === 0) return null;
 
+  let latestMatch = null;
   for (let start = 0; start <= messages.length - digests.length; start += 1) {
     let matched = true;
     for (let offset = 0; offset < digests.length; offset += 1) {
@@ -699,14 +858,14 @@ function findDigestSequence(messages = [], incomingTurns = []) {
       }
     }
     if (matched) {
-      return {
+      latestMatch = {
         start,
         messages: messages.slice(start, start + digests.length),
       };
     }
   }
 
-  return null;
+  return latestMatch;
 }
 
 function buildRelayTimestamps(turns = [], now = new Date().toISOString()) {
@@ -740,16 +899,25 @@ function buildRelayWriteParams({
       constructId,
       constructName,
       constructCallsign: constructId,
+      sourceProduct: 'codex',
       sourceSeat: 'codex',
+      relaySchemaVersion: CODEX_RELAY_SCHEMA_VERSION,
       relayImportedAt,
       relaySourcePath:
-        relaySource.type === 'file' || relaySource.type === 'latest-codex'
+        relaySource.type === 'file' ||
+        relaySource.type === 'latest-codex' ||
+        relaySource.type === 'rollout-file' ||
+        relaySource.type === 'vvault-archive'
           ? relaySource.path
           : null,
+      relaySourceSessionId: relaySource.parseReport?.sessionId || null,
+      relaySourceTimestamp: turn.ts || timestamp,
       relayBatchId,
       relayTurnDigest: turn.relayTurnDigest,
       relaySourceType: relaySource.type,
       relaySourceTurnIndex: turn.sourceTurnIndex,
+      relayConstructId: constructId,
+      relaySessionId: sessionId,
       ...(runtimeTurnState ? { runtimeTurnState } : {}),
     },
     constructId,
@@ -760,6 +928,8 @@ function buildRelayWriteParams({
 
 function buildRelaySourceDescriptor({
   fromFilePath = null,
+  fromRolloutPath = null,
+  fromVvaultStoragePath = null,
   useStdinJson = false,
   latestCodex = false,
   latestCodexPath = null,
@@ -776,6 +946,22 @@ function buildRelaySourceDescriptor({
       path: latestCodexPath,
       parseReport,
       selection: selection || 'terminal-rollout-pair',
+    };
+  }
+  if (fromRolloutPath) {
+    return {
+      type: 'rollout-file',
+      path: fromRolloutPath,
+      parseReport,
+      selection: selection || 'terminal-rollout-pair',
+    };
+  }
+  if (fromVvaultStoragePath) {
+    return {
+      type: 'vvault-archive',
+      path: fromVvaultStoragePath,
+      parseReport,
+      selection: selection || 'terminal-vvault-readback-pair',
     };
   }
   if (fromFilePath) {
@@ -814,6 +1000,29 @@ function resolveLatestAssistantMessage(messages = []) {
   return null;
 }
 
+function latestAssistantRuntimeTurnStateFromMessages(messages = []) {
+  const latestAssistantMessage = resolveLatestAssistantMessage(messages);
+  const runtimeTurnState = latestAssistantMessage?.metadata?.runtimeTurnState;
+  if (!runtimeTurnState || typeof runtimeTurnState !== 'object') {
+    return null;
+  }
+  return normalizeRuntimeTurnState(runtimeTurnState, {
+    sessionId: CODEX_CONTINUITY_SEED_DEFAULTS.sessionId,
+    constructId: CODEX_CONTINUITY_SEED_DEFAULTS.constructId,
+    hydrationTruth: 'full',
+    assistantTailContent: latestAssistantMessage.content,
+  });
+}
+
+function matchesAuthoritativeRuntimeTurnState(candidateState = null, authoritativeState = null) {
+  if (!candidateState || !authoritativeState) return false;
+  return (
+    candidateState.assistantTurnId === authoritativeState.assistantTurnId &&
+    candidateState.tailHash === authoritativeState.tailHash &&
+    candidateState.continuitySeq === authoritativeState.continuitySeq
+  );
+}
+
 export { buildRelaySourceDescriptor };
 
 export async function relayResolvedCodexTurns({
@@ -831,7 +1040,10 @@ export async function relayResolvedCodexTurns({
   validateRelayTurns(turns, { sourceType });
 
   const sourceIdentity =
-    relaySource?.type === 'file' || relaySource?.type === 'latest-codex'
+    relaySource?.type === 'file' ||
+    relaySource?.type === 'latest-codex' ||
+    relaySource?.type === 'rollout-file' ||
+    relaySource?.type === 'vvault-archive'
       ? relaySource.path
       : 'stdin-json';
   const incomingTurns = turns.map((turn, index) => ({
@@ -851,15 +1063,20 @@ export async function relayResolvedCodexTurns({
   const previousStateResult = await readLatestRuntimeTurnStateImpl(userContext, {
     sessionId: CODEX_CONTINUITY_SEED_DEFAULTS.sessionId,
     constructId: CODEX_CONTINUITY_SEED_DEFAULTS.constructId,
+    allowLocalFallback: false,
   });
   const canonicalConversations = await readConversationsImpl(
     userContext,
     CODEX_CONTINUITY_SEED_DEFAULTS.constructId,
+    STRICT_CANONICAL_READ_OPTIONS,
   );
   const canonicalConversation = findConversationBySessionId(
     canonicalConversations,
     CODEX_CONTINUITY_SEED_DEFAULTS.sessionId,
   );
+  if (canonicalConversation) {
+    assertCanonicalRelayConversation(canonicalConversation, { stage: 'initial read' });
+  }
   const existingMessages = canonicalConversation?.messages || [];
   const existingSequence = findDigestSequence(existingMessages, incomingTurns);
 
@@ -870,30 +1087,43 @@ export async function relayResolvedCodexTurns({
       ? normalizeRuntimeTurnState(latestAssistantMessage.metadata.runtimeTurnState, {
           sessionId: CODEX_CONTINUITY_SEED_DEFAULTS.sessionId,
           constructId: CODEX_CONTINUITY_SEED_DEFAULTS.constructId,
+          hydrationTruth: 'full',
+          assistantTailContent: latestAssistantMessage.content,
         })
       : null;
     if (!existingRuntimeTurnState) {
       throw new Error('Existing Codex relay tail is missing assistant runtimeTurnState metadata.');
     }
-    const resumeToken = buildCodexResumeToken(existingRuntimeTurnState, {
-      issuedAt: existingRuntimeTurnState.updatedAt || latestAssistantMessage?.timestamp || now,
-      threadId: CODEX_CONTINUITY_SEED_DEFAULTS.sessionId,
-    });
-    return {
-      source: relaySource,
-      constructId: CODEX_CONTINUITY_SEED_DEFAULTS.constructId,
-      threadId: CODEX_CONTINUITY_SEED_DEFAULTS.sessionId,
-      importedTurns: 0,
-      dedupedTurns: incomingTurns.length,
-      latestAssistantTurnId: existingRuntimeTurnState.assistantTurnId,
-      latestAssistantContent: latestAssistantMessage?.content || null,
-      latestUserContent: latestUserMessage?.content || null,
-      latestRuntimeTurnState: existingRuntimeTurnState,
-      relayedTurns: incomingTurns,
-      resumeTokenJson: resumeToken,
-      chattyResumeUrl: buildChattyResumeUrl(resumeToken, { frontendBaseUrl }),
-      canonicalReadback: canonicalConversation,
-    };
+    const authoritativeRuntimeTurnState =
+      latestAssistantRuntimeTurnStateFromMessages(existingMessages) ||
+      (previousStateResult?.runtimeTurnState
+        ? normalizeRuntimeTurnState(previousStateResult.runtimeTurnState, {
+            sessionId: CODEX_CONTINUITY_SEED_DEFAULTS.sessionId,
+            constructId: CODEX_CONTINUITY_SEED_DEFAULTS.constructId,
+            hydrationTruth: 'full',
+          })
+        : null);
+    if (matchesAuthoritativeRuntimeTurnState(existingRuntimeTurnState, authoritativeRuntimeTurnState)) {
+      const resumeToken = buildCodexResumeToken(existingRuntimeTurnState, {
+        issuedAt: existingRuntimeTurnState.updatedAt || latestAssistantMessage?.timestamp || now,
+        threadId: CODEX_CONTINUITY_SEED_DEFAULTS.sessionId,
+      });
+      return {
+        source: relaySource,
+        constructId: CODEX_CONTINUITY_SEED_DEFAULTS.constructId,
+        threadId: CODEX_CONTINUITY_SEED_DEFAULTS.sessionId,
+        importedTurns: 0,
+        dedupedTurns: incomingTurns.length,
+        latestAssistantTurnId: existingRuntimeTurnState.assistantTurnId,
+        latestAssistantContent: latestAssistantMessage?.content || null,
+        latestUserContent: latestUserMessage?.content || null,
+        latestRuntimeTurnState: existingRuntimeTurnState,
+        relayedTurns: incomingTurns,
+        resumeTokenJson: resumeToken,
+        chattyResumeUrl: buildChattyResumeUrl(resumeToken, { frontendBaseUrl }),
+        canonicalReadback: canonicalConversation,
+      };
+    }
   }
 
   const relayImportedAt = now;
@@ -913,6 +1143,7 @@ export async function relayResolvedCodexTurns({
         ? computeNextRuntimeTurnState({
             previousState,
             userMessage: previousUserTurn?.content || '',
+            assistantMessage: turn.content || '',
             continuityClass: 'ordinary',
             sessionId: CODEX_CONTINUITY_SEED_DEFAULTS.sessionId,
             constructId: CODEX_CONTINUITY_SEED_DEFAULTS.constructId,
@@ -930,7 +1161,11 @@ export async function relayResolvedCodexTurns({
       relayImportedAt,
       relaySource,
     });
-    await writeTranscriptImpl(params);
+    const writeResult = await writeTranscriptImpl({
+      ...params,
+      requireVvaultBodySuccess: true,
+    });
+    assertCanonicalRelayWriteResult(writeResult, { role: turn.role });
 
     if (turn.role === 'user') {
       previousUserTurn = turn;
@@ -953,11 +1188,16 @@ export async function relayResolvedCodexTurns({
   const readbackConversations = await readConversationsImpl(
     userContext,
     CODEX_CONTINUITY_SEED_DEFAULTS.constructId,
+    STRICT_CANONICAL_READ_OPTIONS,
   );
   const canonicalReadback = findConversationBySessionId(
     readbackConversations,
     CODEX_CONTINUITY_SEED_DEFAULTS.sessionId,
   );
+  assertCanonicalRelayReadback(canonicalReadback, {
+    incomingTurns,
+    latestRuntimeTurnState,
+  });
 
   return {
     source: relaySource,
@@ -978,6 +1218,9 @@ export async function relayResolvedCodexTurns({
 
 export async function relayCodexContinuity({
   fromFilePath = null,
+  fromRolloutPath = null,
+  fromVvaultArchiveContent = null,
+  fromVvaultStoragePath = null,
   stdinJson = null,
   latestCodex = false,
   codexSessionsRoot = process.env.CODEX_SESSIONS_ROOT || DEFAULT_CODEX_SESSIONS_ROOT,
@@ -990,9 +1233,27 @@ export async function relayCodexContinuity({
   readConversationsImpl = readConversations,
   writeTranscriptImpl = defaultWriteTranscript,
 } = {}) {
-  const sourceType = latestCodex ? 'latest-codex' : fromFilePath ? 'file' : 'stdin-json';
+  const sourceType = latestCodex
+    ? 'latest-codex'
+    : fromRolloutPath
+      ? 'rollout-file'
+      : fromVvaultArchiveContent !== null
+        ? 'vvault-archive'
+        : fromFilePath
+          ? 'file'
+          : 'stdin-json';
   let parsed;
-  if (fromFilePath) {
+  if (fromRolloutPath) {
+    if (!path.isAbsolute(fromRolloutPath)) {
+      throw new Error('Codex rollout pickup requires an absolute rollout path.');
+    }
+    parsed = await parseCodexRolloutJsonlFile(fromRolloutPath);
+  } else if (fromVvaultArchiveContent !== null) {
+    if (!fromVvaultStoragePath) {
+      throw new Error('Codex VVAULT archive pickup requires a VVAULT storage path.');
+    }
+    parsed = parseCodexExportText(fromVvaultArchiveContent, { sourcePath: fromVvaultStoragePath });
+  } else if (fromFilePath) {
     if (!path.isAbsolute(fromFilePath)) {
       throw new Error('chatty-cli handoff --from-file requires an absolute path.');
     }
@@ -1006,7 +1267,7 @@ export async function relayCodexContinuity({
   } else if (stdinJson !== null) {
     parsed = parseCodexJsonTail(stdinJson);
   } else {
-    throw new Error('chatty-cli handoff requires --latest-codex, --from-file, --stdin-json, or --seed-only.');
+    throw new Error('chatty-cli handoff requires --latest-codex, --from-file, --from-rollout, --stdin-json, or --seed-only.');
   }
 
   const selectedTurns = selectTurnsForRelay(parsed.turns, { sourceType });
@@ -1014,11 +1275,15 @@ export async function relayCodexContinuity({
 
   const relaySource = buildRelaySourceDescriptor({
     fromFilePath,
+    fromRolloutPath,
+    fromVvaultStoragePath,
     latestCodex,
     latestCodexPath: parsed.parseReport?.sessionPath || null,
     useStdinJson: stdinJson !== null,
     parseReport: parsed.parseReport,
-    selection: sourceType === 'latest-codex' ? 'terminal-rollout-pair' : null,
+    selection: sourceType === 'latest-codex' || sourceType === 'rollout-file'
+      ? 'terminal-rollout-pair'
+      : null,
   });
   return relayResolvedCodexTurns({
     turns: selectedTurns,
