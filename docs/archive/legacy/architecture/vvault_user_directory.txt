@@ -1,0 +1,19 @@
+# VVAULT USER WORKSPACE FILE DIRECTORY TEMPLATE
+
+`vvault/users/`
+shard_0000/
+- {userid}/
+-- account/
+--- profile.json
+--- {userID}.capsule (complete total life snapshot)
+-- instances/
+--- ...construct files...
+-- library/*
+--- assets/
+---- ...uploaded images (png, jpg, jpeg, svg)
+--- gallery/ (all chatty ai generated content) (not manually organized) (id-tags)
+--- documents/*
+---- ...raw files w/folder organization*
+--- ...finder...
+
+* = Manually organized

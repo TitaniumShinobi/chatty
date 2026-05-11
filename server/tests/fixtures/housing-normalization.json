@@ -1,0 +1,35 @@
+{
+  "cases": [
+    {
+      "name": "normalizes rent query with beds price location and must-have filters",
+      "query": "Find me a 2 bedroom apartment in Detroit under $1500 with parking and cats allowed",
+      "expected": {
+        "mode": "rent",
+        "location": "Detroit",
+        "propertyTypes": ["apartment"],
+        "maxPrice": 1500,
+        "minBeds": 2,
+        "maxBeds": 2,
+        "mustHave": ["cats_allowed", "parking"],
+        "searchType": "listing"
+      }
+    },
+    {
+      "name": "normalizes sale query with price range bath count and garage",
+      "query": "Looking to buy a 3 bed 2 bath house in Ann Arbor between $400k and $550k with garage",
+      "expected": {
+        "mode": "sale",
+        "location": "Ann Arbor",
+        "propertyTypes": ["house"],
+        "minPrice": 400000,
+        "maxPrice": 550000,
+        "minBeds": 3,
+        "maxBeds": 3,
+        "minBaths": 2,
+        "maxBaths": 2,
+        "mustHave": ["garage"],
+        "searchType": "listing"
+      }
+    }
+  ]
+}

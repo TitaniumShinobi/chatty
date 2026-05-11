@@ -1,0 +1,54 @@
+# VSI FILE DIRECTORY TEMPLATE
+
+`vvault/instances/`:
+shard_0000/
+- {vsi_metatag}/
+-- assets/
+--- ...uploaded images (png, jpg, jpeg, svg)
+-- character.ai/*
+-- chatgpt/*
+-- chatty/
+--- chat_with_{id}.md
+-- code/ (HYDRO-001 ONLY)
+--- {projectName}_hydro_chat.md
+--- ...additional projects...
+-- config/
+--- glyph.png
+--- metadata.json (updated w/settings)
+--- personality.json (updated w/capsule)
+-- data/
+-- documents/*
+--- ...raw files w/folder organization*
+-- frame/
+--- ...frame™ files...
+-- github_copilot/*
+-- identity/
+--- avatar.png
+--- conditioning.txt
+--- definition.json
+--- physical_features.json (updated w/capsule)
+--- prompt.json
+--- voice.md
+--- voice.json
+--- voice.wav
+-- logs/
+--- capsule.log
+--- chat.log
+--- cns.log or "brain.log" or "reasoner.log"
+--- identity_guard.log
+--- independence.log
+--- ltm.log(?)
+--- self_improvement_agent.log
+--- server.log
+--- stm.log(?)
+--- watchdog.log
+-- memup/ (canonical capsules to be maintained)
+--- {id}.capsule
+-- simDrive/
+--- ...simDrive files...
+-- vvault/ (AURORA-001 ONLY)
+--- chat_with_aurora-001.md (relayed for all users)
+-- vxrunner/
+--- ...VXRunner files...
+
+* = Manually organized

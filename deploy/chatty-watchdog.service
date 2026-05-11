@@ -1,0 +1,18 @@
+[Unit]
+Description=Chatty Self-Healing Watchdog
+After=network-online.target chatty.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=CHATTY_HEALTH_URL=http://127.0.0.1:5050/api/health
+Environment=PROVIDER_HEALTH_URL=http://127.0.0.1:5050/api/health/openrouter
+Environment=WATCHDOG_INTERVAL_MS=15000
+ExecStart=/usr/bin/env bash -lc 'cd /opt/chatty && npx tsx watchdog/index.ts'
+Restart=always
+RestartSec=5
+User=chatty
+Group=chatty
+
+[Install]
+WantedBy=multi-user.target

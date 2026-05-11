@@ -1,0 +1,39 @@
+{
+  "repo": "chatty",
+  "repoSlug": "TitaniumShinobi/chatty",
+  "stewardOwner": "@TitaniumShinobi/agent-stewards",
+  "artifactPath": "AGENT-AUDIT.json",
+  "schemaPath": ".github/agent-governance/AGENT-AUDIT.schema.json",
+  "forbiddenPaths": [
+    ".env",
+    ".env.local",
+    ".env.development",
+    ".env.production",
+    "secrets/**",
+    "infra/production/**",
+    ".github/workflows/release.yml"
+  ],
+  "runtimeProtectedPaths": [
+    "server/lib/vsi/**",
+    "server/routes/vsi.js",
+    "server/tests/vsi-governance.test.js"
+  ],
+  "validationCommands": [
+    "npm ci",
+    "node --test server/tests/vsi-governance.test.js"
+  ],
+  "heuristics": {
+    "labels": [
+      "agent-origin"
+    ],
+    "branchPrefixes": [
+      "codex/",
+      "agent/"
+    ],
+    "titleMarkers": [
+      "[agent]",
+      "agent:"
+    ],
+    "botActorSuffix": "[bot]"
+  }
+}

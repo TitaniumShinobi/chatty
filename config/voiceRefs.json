@@ -1,0 +1,5 @@
+{
+  "zen": { "refPath": "resources/voices/zen_ref.wav" },
+  "lin": { "refPath": "resources/voices/lin_ref.wav" },
+  "nova": { "refPath": "resources/voices/nova_ref.wav" }
+}

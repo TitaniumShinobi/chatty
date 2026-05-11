@@ -1,0 +1,14 @@
+{
+	"servers": {
+		"chrome": {
+			"type": "stdio",
+			"command": "npx",
+			"args": [
+				"-y",
+				"chrome-devtools-mcp@latest",
+				"--wsEndpoint=ws://127.0.0.1:9222/devtools/browser/0e285cd0-d1f1-4460-a7a5-a3e039cd3ab4"
+			]
+		}
+	},
+	"inputs": []
+}

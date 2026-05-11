@@ -1,0 +1,30 @@
+appId: com.life.chatty
+productName: Chatty Quantum
+directories:
+  output: build_electron
+  buildResources: electron/resources
+files:
+  - dist/**
+  - server/**
+  - public/**
+  - electron/dist/main.js
+  - package.json
+  - node_modules/**
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+  extendInfo: electron/info.plist
+win:
+  target:
+    - nsis
+  publisherName: "Life Technology"
+linux:
+  target:
+    - AppImage
+publish:
+  provider: generic
+  url: https://assets.thewreck.org/chatty/releases
+extraResources:
+  - from: electron/resources
+    to: resources

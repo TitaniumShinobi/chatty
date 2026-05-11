@@ -1,0 +1,30 @@
+name: agent_policy_check
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  agent_policy_check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Npm ci
+        run: npm ci
+      - name: Node --test server/tests/vsi-governance.test.js
+        run: node --test server/tests/vsi-governance.test.js
+      - name: Run policy scan
+        env:
+          AGENT_AUDIT_HMAC_SECRET: ${{ secrets.AGENT_AUDIT_HMAC_SECRET }}
+        run: bash scripts/policy_scan.sh

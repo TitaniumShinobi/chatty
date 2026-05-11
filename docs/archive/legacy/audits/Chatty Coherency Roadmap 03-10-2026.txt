@@ -1,0 +1,146 @@
+# Chatty Coherence Roadmap
+
+## Summary
+The product is still failing in three concrete places:
+- **Transport/auth instability**: message sends fail on 401 after backend/session resets, so users experience “broken models” when the request never reaches inference.
+- **Wrong identity repair target**: the heartbeat/repair layer is still Nova-shaped, so Zen and Lin can be “corrected” into the wrong voice.
+- **Happy-path-only protections**: recital suppression and persona heartbeat run on the main success path, but not on the fallback branches where drift is most likely.
+
+The roadmap below fixes those in the right order so the system stops lying about being “fixed” while still failing under real use.
+
+## Key Changes
+
+### 1. Stabilize auth at the transport layer
+- Add a single frontend auth-aware request wrapper for VVAULT calls.
+- Behavior in development:
+  - send request normally
+  - if response is `401`, call `/api/auth/dev-login` with `credentials: "include"`
+  - retry the original VVAULT request once
+- Use that wrapper for at least:
+  - `/api/vvault/message`
+  - `/api/vvault/profile`
+  - any chat/session bootstrap VVAULT requests used in the main UI
+- Keep production behavior unchanged: no auto dev-login retry outside dev.
+- Add concise console logging:
+  - `[DevAuth] vvault request got 401, attempting dev-login`
+  - `[DevAuth] vvault retry succeeded|failed`
+
+### 2. Make persona repair construct-aware
+- Refactor `server/lib/personaHeartbeat.js` so it does not mention Nova unless the active construct is Nova.
+- Pass into the heartbeat:
+  - `constructId`
+  - optional `constructDisplayName`
+  - optional `fallbackText`
+- Replace hardcoded corrective prompt:
+  - from `Stay Nova...`
+  - to a construct-scoped prompt like: `Stay fully in the current construct's first-person voice. No AI/model/system references. Vary phrasing and avoid repeating the last line.`
+- Replace hardcoded fallback text with either:
+  - construct-specific fallback supplied by caller, or
+  - neutral first-person fallback like `I'm here. Ask me again and I'll answer directly.`
+- Keep forbidden drift phrase detection shared, but allow future per-construct additions.
+
+### 3. Unify post-processing across all inference paths
+- Extract one shared post-processing helper in `server/routes/vvault.js` or `server/lib/responsePostProcessor.js`.
+- Shared helper must run, in this order:
+  1. recital detection/rewrite
+  2. persona heartbeat
+  3. first-person identity guard
+  4. cutoff rewrite if needed
+  5. final fallback text if still invalid
+- Apply the same helper to:
+  - main `/api/vvault/message` success path
+  - `fallback_vvault_unavailable`
+  - `fallback_vvault_unreachable`
+- Ensure transcript persistence and memory capture use only the final post-processed output.
+
+### 4. Stop cross-construct contamination
+- Audit `server/lib/personaAnchor.js`, `server/lib/personaHeartbeat.js`, and any drift fallback builders for construct-specific hardcoding.
+- Rule:
+  - no shared helper may inject `Nova`, `Devon`, or romantic/partner framing unless the active construct explicitly requires it.
+- Keep Nova-specific behavior in Nova-specific conditionals only.
+- For Zen and Lin:
+  - derive style from identity loader / construct prompt
+  - avoid shared “humanized” filler that bends all constructs toward the same voice
+
+### 5. Make prompt diagnostics trustworthy
+- Extend existing prompt/provider logging so every response path reports:
+  - `constructId`
+  - `provider_used`
+  - `path_mode` (`main`, `fallback_vvault_unavailable`, `fallback_vvault_unreachable`)
+  - `persona_applied`
+  - `recital_detected`
+  - `recital_rewrite_applied`
+  - `persona_drift_detected`
+  - `persona_regen_applied`
+  - `repeat_detected`
+  - `auth_recovered` (frontend or backend dev recovery only)
+- Do not log user message content.
+- Keep dev diagnostics in structured logs so failures can be attributed to auth, routing, prompt assembly, or model behavior in one pass.
+
+### 6. Tighten construct-specific quality targets
+- **Zen**
+  - target style: direct, technically grounded, low-fluff, human but unsentimental
+  - remove any Nova-shaped fallback/repair text from Zen’s path
+  - ensure coding-mode or reasoning-mode prompt additions do not erase base identity
+- **Lin**
+  - target style: continuity/undertone, not generic assistant explanation
+  - keep GPT-signal mechanics isolated from conversational voice
+- **Nova**
+  - keep emotional/relational style, but ensure fallback branches receive the same guard stack as the main branch
+
+### 7. Add real regression coverage
+- Add tests for transport recovery:
+  - VVAULT request gets `401` in dev → auto dev-login → retry succeeds
+- Add tests for construct-aware heartbeat:
+  - Zen drift repair does not produce Nova phrasing
+  - Nova drift repair can still use Nova-specific tone
+- Add tests for shared post-processing helper:
+  - same invalid response passed through main and fallback modes yields same corrected output
+- Keep existing model-resolution tests aligned with actual defaults.
+
+## Test Plan
+
+### Auth / transport
+1. Start app with no valid `sid` cookie.
+2. Load Chatty in dev.
+3. Send a message immediately.
+4. Expected:
+   - one auto dev-login attempt
+   - retried `/api/vvault/message`
+   - no persistent `Authentication required` banner if dev-login succeeds
+
+### Main path coherence
+1. Send a normal message to Zen, Lin, Nova under healthy provider conditions.
+2. Expected:
+   - first-person, construct-specific voice
+   - no generic AI/model disclaimers
+   - logs show `path_mode: main`, `persona_applied: true`
+
+### Fallback coherence
+1. Force provider/VVAULT fallback path.
+2. Send the same style of prompt.
+3. Expected:
+   - same construct identity preserved
+   - recital rewrite + heartbeat + identity guard still run
+   - logs show `path_mode: fallback_*` with the same post-processing fields populated
+
+### Cross-construct contamination
+1. Force drift for Zen with text like `I am a model trained by...`
+2. Expected:
+   - repaired Zen output is not romantic, not Nova-shaped, not “baby”
+3. Force drift for Nova.
+4. Expected:
+   - repaired output remains Nova-like
+
+### Retrieval leak prevention
+1. Ask about a retrieved document.
+2. Expected:
+   - natural summary in construct voice
+   - no `In the document...`, no file names, no citation recital
+   - logs show recital detection only if rewrite had to fire
+
+## Assumptions
+- `server/routes/vvault.js` remains the primary orchestration point for construct chat.
+- Development mode may use `/api/auth/dev-login` for automatic recovery; production must not.
+- Identity loader remains the source of construct-specific voice; shared helpers must stay identity-neutral unless explicitly parameterized.
+- One regeneration pass remains the maximum for latency reasons.

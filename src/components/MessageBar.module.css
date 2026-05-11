@@ -1,0 +1,53 @@
+.row {
+  display: flex;
+  width: 100%;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.messagePill {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  background-color: var(--chatty-hover);
+}
+
+.sideControl {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  background-color: transparent;
+  box-shadow: none;
+  opacity: 0.7;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease,
+    background-color 160ms ease;
+}
+
+.sideControl:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+  color: var(--chatty-accent);
+  opacity: 1;
+}
+
+.sideControl:focus-visible {
+  outline: 2px solid var(--chatty-accent, #6366f1);
+  outline-offset: 2px;
+}
+
+.rightControls {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
