@@ -57,7 +57,7 @@ function fakeManifest({ sourcePath, sourceSha256 = APPROVED_NOVA_PILOT_SOURCE_SH
           originalOwner: 'icloud:nova-001',
           originalRowId: null,
           sourceSha256,
-          targetLifeId: 'devon_woodson_1774390416168',
+          targetLifeId: 'test-user-001',
           legacyLifeAliases: ['devon_woodson_1762969514958'],
           plannedAt: '2026-04-16T00:00:00.000Z',
         },
@@ -103,7 +103,7 @@ function fakeCompleteManifest({ sourcePaths, supabaseUserId = null }) {
           originalOwner: 'icloud:nova-001',
           originalRowId: null,
           sourceSha256,
-          targetLifeId: 'devon_woodson_1774390416168',
+          targetLifeId: 'test-user-001',
           legacyLifeAliases: ['devon_woodson_1762969514958'],
           plannedAt: '2026-04-16T00:00:00.000Z',
         },
@@ -121,8 +121,8 @@ function fakeCompleteManifest({ sourcePaths, supabaseUserId = null }) {
 }
 
 const baseArgs = [
-  '--email', 'dwoodson92@gmail.com',
-  '--target-life-id', 'devon_woodson_1774390416168',
+  '--email', 'user@example.com',
+  '--target-life-id', 'test-user-001',
   '--legacy-life-alias', 'devon_woodson_1762969514958',
   '--construct-id', 'nova-001',
   '--source', 'chatgpt',
@@ -145,8 +145,8 @@ describe('sourceRecoveryPilotImport', () => {
 
   it('rejects unapproved source hashes', () => {
     assert.throws(() => parsePilotArgs([
-      '--email', 'dwoodson92@gmail.com',
-      '--target-life-id', 'devon_woodson_1774390416168',
+      '--email', 'user@example.com',
+      '--target-life-id', 'test-user-001',
       '--include-sha', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       '--include-sha', APPROVED_NOVA_PILOT_SOURCE_SHA256[1],
       '--include-sha', APPROVED_NOVA_PILOT_SOURCE_SHA256[2],
@@ -261,7 +261,7 @@ describe('sourceRecoveryPilotImport', () => {
       if (parsed.pathname.endsWith('/rest/v1/users')) {
         return new Response(JSON.stringify([{
           id: '7e34f6b8-e33a-48b5-8ddb-95b94d18e296',
-          email: 'dwoodson92@gmail.com',
+          email: 'user@example.com',
         }]), { status: 200 });
       }
       if (parsed.pathname.endsWith('/rest/v1/vault_files')) {
@@ -319,7 +319,7 @@ describe('sourceRecoveryPilotImport', () => {
     process.env.SUPABASE_URL = 'https://example.supabase.co';
     process.env.SUPABASE_SERVICE_KEY = 'service-key-for-test';
     try {
-      const user = await resolveSupabaseUserIdRest('dwoodson92@gmail.com', fakeFetch);
+      const user = await resolveSupabaseUserIdRest('user@example.com', fakeFetch);
       const duplicates = await fetchDuplicateRowsRest('nova-001', fakeFetch);
 
       assert.equal(user.supabaseUserId, 'user-id');
@@ -356,7 +356,7 @@ describe('sourceRecoveryPilotImport', () => {
       if (parsed.pathname.endsWith('/rest/v1/users')) {
         return new Response(JSON.stringify([{
           id: '7e34f6b8-e33a-48b5-8ddb-95b94d18e296',
-          email: 'dwoodson92@gmail.com',
+          email: 'user@example.com',
         }]), { status: 200 });
       }
       if (parsed.pathname.endsWith('/rest/v1/vault_files') && options.method === 'GET') {

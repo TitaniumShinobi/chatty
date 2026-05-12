@@ -124,7 +124,7 @@ const EmailVerification: React.FC = () => {
             </div>
             
             <p className="text-xs text-gray-500 mt-4">
-              Need help? Contact support at info@thewreck.org
+              Need help? Contact support at {import.meta.env.VITE_SUPPORT_EMAIL || 'support@example.com'}
             </p>
           </div>
         </div>

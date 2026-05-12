@@ -29,7 +29,7 @@ test('/api/codex/pickup blocks a synced transcript whose newest message is still
       latest: {
         sourceSessionId: '019da145-f041-7c32-b089-fe251bbf640e',
         sourceSessionPath:
-          '/Users/devonwoodson/.codex/sessions/2026/04/18/rollout-2026-04-18T11-46-48-019da145-f041-7c32-b089-fe251bbf640e.jsonl',
+          '/home/user/.codex/sessions/2026/04/18/rollout-2026-04-18T11-46-48-019da145-f041-7c32-b089-fe251bbf640e.jsonl',
         latestAssistantTimestamp: '2026-05-10T14:11:11.670Z',
         latestMessageRole: 'user',
         latestMessageTimestamp: '2026-05-10T15:48:32.539Z',
@@ -72,13 +72,13 @@ test('/api/codex/pickup blocks a synced transcript whose newest message is still
 
 test('/api/codex/pickup relays VVAULT readback content when the newest message is the completed assistant tail', async () => {
   const syncedPath =
-    '/Users/devonwoodson/.codex/sessions/2026/05/10/rollout-2026-05-10T08-17-52-019e11d2-8eab-75d2-b212-39ac5d96ef00.jsonl';
+    '/home/user/.codex/sessions/2026/05/10/rollout-2026-05-10T08-17-52-019e11d2-8eab-75d2-b212-39ac5d96ef00.jsonl';
   const vvaultStoragePath = 'instances/zen-001/codex/Backend continuity authority.md';
   const vvaultContent = [
     '# Backend continuity authority',
     '',
     '- sourceSessionId: 019e11d2-8eab-75d2-b212-39ac5d96ef00',
-    '- sourceSessionPath: /Users/devonwoodson/.codex/sessions/2026/05/10/rollout-2026-05-10T08-17-52-019e11d2-8eab-75d2-b212-39ac5d96ef00.jsonl',
+    '- sourceSessionPath: /home/user/.codex/sessions/2026/05/10/rollout-2026-05-10T08-17-52-019e11d2-8eab-75d2-b212-39ac5d96ef00.jsonl',
     '- latestAssistantTimestamp: 2026-05-10T15:38:21.289Z',
     '- turnCount: 2',
     '- digest: transcript-digest',
@@ -141,7 +141,7 @@ test('/api/codex/pickup relays VVAULT readback content when the newest message i
             latestAssistantTimestamp: '2026-05-10T15:38:21.289Z',
             sessionId: '019e11d2-8eab-75d2-b212-39ac5d96ef00',
             sourcePath: vvaultStoragePath,
-            cwd: '/Users/devonwoodson/Documents/GitHub/chatty',
+            cwd: '/home/user/projects/chatty',
           },
         },
         constructId: 'zen-001',

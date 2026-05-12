@@ -36,7 +36,7 @@ const zenResult = {
   answerReadbackFound: true,
   conversationsIndexVisible: true,
   contextSource: "latest-codex",
-  relaySourcePath: "/Users/devonwoodson/.codex/sessions/2026/05/09/rollout.jsonl",
+  relaySourcePath: "/home/user/.codex/sessions/2026/05/09/rollout.jsonl",
   relayImportedTurns: 2,
   relayDedupedTurns: 0,
   relayLatestAssistantTurnId: "rt_18_tail",

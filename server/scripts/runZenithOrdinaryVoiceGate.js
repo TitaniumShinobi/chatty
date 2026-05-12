@@ -32,7 +32,7 @@ const REQUEST_AUTH_USER_EMAIL =
   process.env.ZENITH_ORDINARY_ACTOR_EMAIL ||
   process.env.CANONICAL_PROBE_REQUEST_USER_EMAIL ||
   process.env.TEST_USER_EMAIL ||
-  'dwoodson92@gmail.com';
+  process.env.CHATTY_TEST_EMAIL || 'test@example.com';
 const REQUEST_TIMEOUT_MS = Number(process.env.ZENITH_ORDINARY_TIMEOUT_MS || 120000);
 
 function printHelp() {

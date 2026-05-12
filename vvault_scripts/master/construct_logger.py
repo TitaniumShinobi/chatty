@@ -86,7 +86,7 @@ def get_construct_logger(
         Logger instance
     """
     if vvault_root is None:
-        vvault_root = os.environ.get('VVAULT_ROOT', '/Users/devonwoodson/Documents/GitHub/vvault')
+        vvault_root = os.environ.get('VVAULT_ROOT', '')
         if not Path(vvault_root).exists():
             raise EnvironmentError("VVAULT_ROOT environment variable is not set and default path does not exist.")
 

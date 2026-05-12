@@ -24,7 +24,7 @@ export class VVAULTWatcher {
   private isWatching = false;
   private scanIntervalMs = 30000; // 30 seconds
 
-  constructor(private vvaultBasePath: string = '/Users/devonwoodson/Documents/GitHub/vvault') {}
+  constructor(private vvaultBasePath: string = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '') {}
 
   /**
    * Start watching transcript files for changes

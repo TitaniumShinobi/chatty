@@ -1,3 +1,15 @@
+/**
+ * /api/construct/:callsign
+ *
+ * CANONICAL ROUTE CLASSIFICATION: NONCANONICAL (delegates)
+ * This route delegates to /api/vvault/message (handleConstructInference) which is the
+ * canonical orchestration runtime path. All runtime_receipt and orchestration_checklist
+ * fields from the canonical path are forwarded transparently.
+ *
+ * RATIONALE: This is a legacy compatibility shim. New consumers should target
+ * /api/vvault/message directly.
+ */
+
 import express from 'express';
 import { assertNotLockedSync } from '../lib/runtimeLock.js';
 import { canonicalizeConstructId } from '../lib/constructId.js';
@@ -34,6 +46,10 @@ function normalizeConstructSuccess(payload, constructId) {
     model: payload?.model || null,
     tool_trace: payload?.tool_trace,
     deferred: payload?.deferred === true,
+    runtime_receipt: payload?.runtime_receipt || null,
+    orchestration_checklist: payload?.orchestration_checklist || null,
+    _noncanonical: true,
+    _canonical_path: '/api/vvault/message',
   };
 }
 
@@ -45,6 +61,10 @@ function normalizeConstructFailure(payload, constructId, fallbackError) {
     error: payload?.error || payload?.message || fallbackError || 'Construct inference failed',
     deferred: payload?.deferred === true,
     details: payload?.details,
+    runtime_receipt: payload?.runtime_receipt || null,
+    orchestration_checklist: payload?.orchestration_checklist || null,
+    _noncanonical: true,
+    _canonical_path: '/api/vvault/message',
   };
 }
 

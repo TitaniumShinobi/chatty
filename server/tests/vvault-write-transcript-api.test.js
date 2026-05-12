@@ -179,7 +179,7 @@ describe("writeTranscript VVAULT API path", { concurrency: false }, () => {
     };
 
     const result = await writeTranscript({
-      userId: "devon_woodson_1774390416168",
+      userId: "test-user-001",
       userEmail: "devon@example.com",
       supabaseUserId: "7e34f6b8-e33a-48b5-8ddb-95b94d18e296",
       sessionId: "lin-001_chat_with_lin-001",
@@ -209,7 +209,7 @@ describe("writeTranscript VVAULT API path", { concurrency: false }, () => {
     };
 
     const result = await writeTranscript({
-      userId: "devon_woodson_1774390416168",
+      userId: "test-user-001",
       userEmail: "devon@example.com",
       supabaseUserId: "7e34f6b8-e33a-48b5-8ddb-95b94d18e296",
       sessionId: "lin-001_chat_with_lin-001",
@@ -237,7 +237,7 @@ describe("writeTranscript VVAULT API path", { concurrency: false }, () => {
     delete process.env.DATABASE_URL;
 
     const result = await writeTranscript({
-      userId: "devon_woodson_1774390416168",
+      userId: "test-user-001",
       userEmail: "devon@example.com",
       supabaseUserId: "7e34f6b8-e33a-48b5-8ddb-95b94d18e296",
       sessionId: "nova-001_chat_with_nova-001",

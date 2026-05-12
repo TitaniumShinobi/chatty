@@ -63,14 +63,14 @@ describe("shared VVAULT auth identity", () => {
         {
           id: "life-user-vvault",
           uid: "life-user-vvault",
-          vvaultUserId: "devon_woodson_1774390416168",
+          vvaultUserId: "test-user-001",
         },
         "shared",
       ),
       {
         ready: true,
         authSource: "shared",
-        vvaultUserId: "devon_woodson_1774390416168",
+        vvaultUserId: "test-user-001",
         supabaseUserId: null,
         reason: null,
       },

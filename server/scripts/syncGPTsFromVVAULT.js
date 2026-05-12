@@ -217,7 +217,7 @@ async function syncGPTsToDatabase(userId) {
 
 // CLI usage
 if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('syncGPTsFromVVAULT.js')) {
-  const userId = process.argv[2] || process.env.VVAULT_USER_ID || 'devon_woodson_1774390416168';
+  const userId = process.argv[2] || process.env.VVAULT_USER_ID || '';
   
   syncGPTsToDatabase(userId)
     .then(result => {

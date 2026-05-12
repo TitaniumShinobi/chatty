@@ -14,6 +14,7 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '..');
+import { requestClock } from "./lib/requestClock.js";
 import { connectDB } from "./config/database.js";
 import { initAvatarStore } from "./lib/avatarStore.js";
 import { Store } from "./store.js";
@@ -133,9 +134,11 @@ function cookieSecure(req) {
   const host = req.get('host') || '';
   return !/^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host);
 }
-const CANONICAL_DOMAIN = process.env.CANONICAL_DOMAIN || 'chatty.thewreck.org';
+const CANONICAL_DOMAIN = process.env.CANONICAL_DOMAIN;
 const CALLBACK_PATH = process.env.CALLBACK_PATH || '/api/auth/google/callback';
-const REDIRECT_URI = `https://${CANONICAL_DOMAIN}${CALLBACK_PATH}`;
+const REDIRECT_URI = CANONICAL_DOMAIN
+  ? `https://${CANONICAL_DOMAIN}${CALLBACK_PATH}`
+  : `http://localhost:5050${CALLBACK_PATH}`;
 const GOOGLE_CALLBACK = REDIRECT_URI;
 
 const REPLIT_DOMAIN = process.env.REPLIT_DEV_DOMAIN || process.env.REPLIT_DOMAINS;
@@ -271,7 +274,7 @@ const SMTP_CONFIG = {
   port: parseInt(process.env.EMAIL_PORT || '587'),
   secure: false, // true for 465, false for other ports
   auth: {
-    user: process.env.EMAIL_USER || 'info@thewreck.org',
+    user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
   }
 };
@@ -413,10 +416,9 @@ app.use(cookieParser());
 app.set("trust proxy", 1);
 
 // CORS configuration (explicit allowlist in prod)
-const defaultOrigin = 'https://chatty.thewreck.org';
 const corsOrigin = process.env.NODE_ENV === 'production'
-  ? (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || defaultOrigin)
-  : (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:5173');
+  ? (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || process.env.PUBLIC_APP_URL || (() => { throw new Error('Missing required env var: PUBLIC_APP_URL or CORS_ORIGIN or FRONTEND_URL in production'); })())
+  : (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || process.env.PUBLIC_APP_URL || 'http://localhost:5173');
 
 app.use(cors({
   origin: corsOrigin,
@@ -483,7 +485,7 @@ function createSessionCookieOptions(req) {
     maxAge: 1000 * 60 * 60 * 24 * 30,
   };
   if (cookieSecure(req)) {
-    cookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || '.thewreck.org';
+    cookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || undefined;
   } else {
     delete cookieOptions.domain;
   }
@@ -1655,7 +1657,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       );
     }
 
-    const originIsCanonical = originUrl.includes('thewreck.org');
+    const originIsCanonical = process.env.PUBLIC_APP_URL ? originUrl.startsWith(process.env.PUBLIC_APP_URL) : false;
 
     if (originIsCanonical) {
       console.log(`[COOKIE SET][cid:${correlationId}] Setting cookie on canonical domain`);
@@ -1675,7 +1677,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
     res.redirect(`${originUrl}/api/auth/set-session?code=${encodeURIComponent(exchangeCode)}&cid=${encodeURIComponent(correlationId)}`);
   } catch (e) {
     console.error(`❌ [OAuth Callback][cid:${correlationId}] OAuth callback error:`, e);
-    const errorRedirect = IS_PRODUCTION ? `https://${CANONICAL_DOMAIN}` : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : 'http://localhost:5173');
+    const errorRedirect = IS_PRODUCTION ? (process.env.PUBLIC_APP_URL || `https://${CANONICAL_DOMAIN}`) : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : 'http://localhost:5173');
     res.redirect(`${errorRedirect}/?error=auth_failed`);
   }
 });
@@ -1714,7 +1716,7 @@ app.get("/api/auth/set-session", (req, res) => {
     maxAge: 1000 * 60 * 60 * 24 * 30
   };
   if (cookieSecure(req)) {
-    cookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || '.thewreck.org';
+    cookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || undefined;
   } else {
     delete cookieOptions.domain;
   }
@@ -1824,7 +1826,7 @@ app.post("/api/logout", (req, res) => {
     sameSite: 'lax'
   };
   if (cookieSecure(req)) {
-    clearCookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || '.thewreck.org';
+    clearCookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || undefined;
   }
   res.clearCookie(COOKIE_NAME, clearCookieOptions);
   res.json({ ok: true });
@@ -1961,7 +1963,7 @@ app.post("/api/auth/delete-account", requireAuth, async (req, res) => {
       sameSite: 'lax'
     };
     if (cookieSecure(req)) {
-      clearCookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || '.thewreck.org';
+      clearCookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || undefined;
     }
     res.clearCookie(COOKIE_NAME, clearCookieOptions);
 
@@ -2013,15 +2015,18 @@ if (process.env.NODE_ENV !== 'production') {
 
 // Mount conversation routes with auth
 app.use("/api/conversations", requireAuth, convRoutes);
-app.use("/api/diagnostics", requireAuth, diagnosticsRoutes);
+if (process.env.ENABLE_DIAGNOSTICS === 'true') {
+  app.use("/api/diagnostics", requireAuth, diagnosticsRoutes);
+  console.log('✅ [Server] Diagnostics routes mounted at /api/diagnostics (admin)');
+}
 
 
 // Mount AI routes with auth
 app.use("/api/ais", requireAuth, aiRoutes);
 
 // Mount VVAULT routes with the preferred shared-auth bridge while keeping service-token fallback.
-app.use("/api/vvault", requirePreferredAuthOrServiceToken, vvaultRoutes);
-app.use("/api/construct", requireAuthOrServiceToken, constructRoutes);
+app.use("/api/vvault", requestClock, requirePreferredAuthOrServiceToken, vvaultRoutes);
+app.use("/api/construct", requestClock, requireAuthOrServiceToken, constructRoutes);
 mountedRouteState.vvaultMounted = true;
 console.log('✅ [Server] VVAULT routes mounted at /api/vvault');
 
@@ -2072,18 +2077,28 @@ app.use("/api/codex", requireAuth, codexRoutes);
 console.log('✅ [Server] Codex routes mounted at /api/codex');
 
 // Master Scripts routes (autonomy stack for constructs)
-app.use("/api/master", requireAuth, masterScriptsRoutes);
-console.log('✅ [Server] Master Scripts routes mounted at /api/master');
+if (process.env.ENABLE_MASTER_SCRIPTS === 'true') {
+  app.use("/api/master", requireAuth, masterScriptsRoutes);
+  console.log('✅ [Server] Master Scripts routes mounted at /api/master (admin)');
+}
 
 // Scripts routes (GPTCreator compatibility)
-app.use("/api/scripts", requireAuth, scriptsRoutes);
-console.log('✅ [Server] Scripts routes mounted at /api/scripts');
+if (process.env.ENABLE_SCRIPTS === 'true') {
+  app.use("/api/scripts", requireAuth, scriptsRoutes);
+  console.log('✅ [Server] Scripts routes mounted at /api/scripts (admin)');
+}
 
 // simForge routes (personality extraction and identity forging)
 app.use("/api/simforge", requireAuth, simForgeRoutes);
-app.use("/api/fxshinobi", fxshinobiRoutes);
+if (process.env.ENABLE_FINANCE === 'true') {
+  app.use("/api/fxshinobi", fxshinobiRoutes);
+  console.log('✅ [Server] FXShinobi proxy routes mounted at /api/fxshinobi');
+}
 app.use("/api/vault", requireAuth, vaultProxyRoutes);
-app.use("/api/mocr", requireAuth, mocrProxyRoutes);
+if (process.env.ENABLE_MOCR === 'true') {
+  app.use("/api/mocr", requireAuth, mocrProxyRoutes);
+  console.log('✅ [Server] MOCR proxy routes mounted at /api/mocr');
+}
 app.use("/api/transcribe", transcribeRoutes);
 app.use("/api/tts", requireAuth, ttsRoutes);
 app.use("/api/voice", requireAuth, voiceUploadRoutes);
@@ -2092,16 +2107,19 @@ app.use("/api/attachments", requireAuth, attachmentsRoutes);
 app.use("/api/search", requireAuth, searchRoutes);
 app.use("/api/needle", requireAuth, needleRoutes);
 app.use("/api/selfprompt", selfpromptRoutes);
-app.use("/api/family", familyRoutes);
-app.use('/api/telephony/twilio', telephonyTwilioRoutes);
+if (process.env.ENABLE_FAMILY === 'true') {
+  app.use("/api/family", familyRoutes);
+  console.log('✅ [Server] Family & Parental Controls routes mounted at /api/family');
+}
+if (process.env.ENABLE_TELEPHONY === 'true') {
+  app.use('/api/telephony/twilio', telephonyTwilioRoutes);
+  console.log('✅ [Server] Telephony/Twilio routes mounted at /api/telephony/twilio');
+}
 app.use('/api/capabilities', capabilitiesRouter);
 app.use('/api/zen', zenRoutes);
 console.log('✅ [Server] Capabilities routes mounted at /api/capabilities');
 console.log('✅ [Server] Needle receipt retriever mounted at /api/needle');
-console.log('✅ [Server] Family & Parental Controls routes mounted at /api/family');
 console.log('✅ [Server] simForge routes mounted at /api/simforge');
-console.log('✅ [Server] FXShinobi proxy routes mounted at /api/fxshinobi');
-console.log('✅ [Server] MOCR proxy routes mounted at /api/mocr');
 console.log('✅ [Server] Transcribe (ASR) routes mounted at /api/transcribe');
 console.log('✅ [Server] VVAULT proxy routes mounted at /api/vault');
 console.log('✅ [Server] Suggestions routes mounted at /api/suggestions');
@@ -2206,7 +2224,7 @@ startServer(PORT);
       const memoryStore = getMemoryStore('./memory.db');
       await memoryStore.initialize();
 
-      const VVAULT_BASE = process.env.VVAULT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+      const VVAULT_BASE = process.env.VVAULT_PATH || process.env.VVAULT_ROOT_PATH || '';
       let vvaultAvailable = false;
       try {
         await import('fs').then(fs => fs.promises.access(VVAULT_BASE));

@@ -1,3 +1,14 @@
+/**
+ * /api/orchestration/*
+ *
+ * ROUTE CLASSIFICATION: NONCANONICAL (separate path)
+ * This route provides a separate orchestration entrypoint that does NOT route through
+ * the canonical /api/vvault/message runtime path. It emits skeleton runtime_receipt
+ * and orchestration_checklist fields for observability parity.
+ *
+ * New consumers should target /api/vvault/message for the canonical runtime path.
+ */
+
 import express from "express";
 import { routeViaOrchestration, isOrchestrationEnabled } from "../services/orchestrationBridge.js";
 
@@ -6,6 +17,9 @@ const router = express.Router();
 /**
  * POST /api/orchestration/route
  * Route a message through the orchestration framework
+ *
+ * NONCANONICAL: This endpoint bypasses the canonical runtime path.
+ * It emits stub runtime_receipt and orchestration_checklist for parity.
  */
 router.post("/route", async (req, res) => {
   try {
@@ -31,7 +45,9 @@ router.post("/route", async (req, res) => {
       return res.status(503).json({
         ok: false,
         error: "Orchestration is disabled. Set ENABLE_ORCHESTRATION=true to enable.",
-        status: "disabled"
+        status: "disabled",
+        _noncanonical: true,
+        _canonical_path: '/api/vvault/message',
       });
     }
     
@@ -46,7 +62,24 @@ router.post("/route", async (req, res) => {
     
     res.json({
       ok: true,
-      ...result
+      ...result,
+      runtime_receipt: {
+        created_at: new Date().toISOString(),
+        route_mode: 'orchestration_route',
+        agent_id,
+        _noncanonical: true,
+        _canonical_path: '/api/vvault/message',
+        _disclaimer: 'Stub receipt. Canonical runtime: /api/vvault/message.',
+      },
+      orchestration_checklist: {
+        responseStatus: result?.status || 'routed',
+        route: '/api/orchestration/route',
+        _noncanonical: true,
+        _canonical_path: '/api/vvault/message',
+        _disclaimer: 'Stub checklist. Canonical runtime: /api/vvault/message.',
+      },
+      _noncanonical: true,
+      _canonical_path: '/api/vvault/message',
     });
     
   } catch (error) {
@@ -54,7 +87,9 @@ router.post("/route", async (req, res) => {
     res.status(500).json({
       ok: false,
       error: error.message || "Failed to route message via orchestration",
-      status: "error"
+      status: "error",
+      _noncanonical: true,
+      _canonical_path: '/api/vvault/message',
     });
   }
 });

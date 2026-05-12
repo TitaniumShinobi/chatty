@@ -11,7 +11,7 @@ import { updateCapsuleMetadata } from './capsuleUpdater.js';
 
 export class CapsuleMaintenanceService {
     constructor(vvaultRoot) {
-        this.vvaultRoot = vvaultRoot || '/Users/devonwoodson/Documents/GitHub/vvault';
+        this.vvaultRoot = vvaultRoot || process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
     }
 
     /**

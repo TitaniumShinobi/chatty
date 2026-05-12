@@ -13,7 +13,7 @@ async function runDirectTest() {
 
     try {
         // Mock VVAULT_ROOT if needed, or point to actual
-        const vvaultRoot = '/Users/devonwoodson/Documents/GitHub/vvault';
+        const vvaultRoot = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
 
         const service = new CapsuleMaintenanceService(vvaultRoot);
 

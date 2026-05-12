@@ -22,8 +22,8 @@ const { GPTManager } = await import('../lib/gptManager.js');
 const gptManager = GPTManager.getInstance();
 
 const VVAULT_ROOT = path.join(__dirname, '../../../vvault');
-const USER_ID = process.env.VVAULT_USER_ID || 'devon_woodson_1774390416168';
-const USER_EMAIL = 'devon@thewreck.org';
+const USER_ID = process.env.VVAULT_USER_ID || '';
+const USER_EMAIL = process.env.USER_EMAIL || '';
 const PROVIDER = 'ChatGPT';
 
 async function findConversationsInVVAULT() {

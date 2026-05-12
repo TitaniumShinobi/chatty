@@ -7,9 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
 const REGISTRY_FILE = path.join(PROJECT_ROOT, 'users.json');
-const CANONICAL_EMAIL_LIFE_IDS = {
-  'dwoodson92@gmail.com': 'devon_woodson_1774390416168',
-};
+const CANONICAL_EMAIL_LIFE_IDS = {};
 
 /**
  * Generate LIFE format user ID (same as VVAULT)

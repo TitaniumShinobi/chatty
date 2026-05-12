@@ -53,6 +53,81 @@ function formatDetails(details?: Record<string, unknown>) {
   return text.length > 1400 ? `${text.slice(0, 1400)}\n...` : text;
 }
 
+type RuntimeTruthItem = {
+  id: string;
+  label: string;
+  value: string;
+  status: "pass" | "warn" | "fail" | "skipped";
+};
+
+const TRUTH_STYLE: Record<string, { dot: string; bg: string; border: string; text: string }> = {
+  pass: { dot: "bg-emerald-400", bg: "rgba(22, 101, 52, 0.20)", border: "rgba(34, 197, 94, 0.35)", text: "text-emerald-300" },
+  warn: { dot: "bg-amber-400", bg: "rgba(146, 64, 14, 0.20)", border: "rgba(245, 158, 11, 0.40)", text: "text-amber-300" },
+  fail: { dot: "bg-rose-400", bg: "rgba(127, 29, 29, 0.24)", border: "rgba(239, 68, 68, 0.45)", text: "text-rose-300" },
+  skipped: { dot: "bg-slate-500", bg: "rgba(51, 65, 85, 0.30)", border: "rgba(148, 163, 184, 0.25)", text: "text-slate-400" },
+};
+
+function extractRuntimeTruth(stages: ChecklistStage[]): RuntimeTruthItem[] {
+  const items: RuntimeTruthItem[] = [];
+  const map: Record<string, { label: string; extract: (s: ChecklistStage) => string }> = {
+    "chat-provider-model": { label: "Provider", extract: (s) => {
+      const p = s.details?.providerName as string;
+      const m = s.details?.modelId as string;
+      return p && m ? `${p} / ${m}` : p || "unset";
+    }},
+    "chat-canonical-route": { label: "Route", extract: (s) => s.details?.canonical ? "canonical" : "noncanonical" },
+    "persistence": { label: "Persistence", extract: (s) => s.status === "pass" ? "active" : s.status === "fail" ? "failed" : "pending" },
+    "chat-persistence": { label: "Persistence", extract: (s) => s.status === "pass" ? "active" : s.status === "fail" ? "failed" : "pending" },
+    "chat-fallback": { label: "Fallback", extract: (s) => s.status === "warn" ? "active" : "none" },
+    "chat-hydration": { label: "Hydration", extract: (s) => (s.details?.hydrationSource as string) || s.status },
+    "chat-identity-coherence": { label: "Identity", extract: (s) => s.status === "pass" ? "coherent" : s.status === "fail" ? "drifted" : "unchecked" },
+    "provider": { label: "Provider", extract: (s) => s.status === "pass" ? "resolved" : s.status === "fail" ? "failed" : "pending" },
+  };
+
+  const handled = new Set<string>();
+  for (const stage of stages) {
+    const entry = map[stage.id];
+    if (!entry || handled.has(stage.id)) continue;
+    handled.add(stage.id);
+    items.push({
+      id: stage.id,
+      label: entry.label,
+      value: entry.extract(stage),
+      status: stage.status as RuntimeTruthItem["status"],
+    });
+  }
+
+  return items;
+}
+
+function RuntimeTruthGrid({ stages }: { stages: ChecklistStage[] }) {
+  const items = extractRuntimeTruth(stages);
+  if (items.length === 0) return null;
+
+  return (
+    <div className="mb-3 rounded-lg border border-white/10 bg-white/[0.025] p-2.5">
+      <div className="mb-1.5 text-[10px] uppercase tracking-[0.18em] text-slate-500">Runtime Truth</div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {items.map((item) => {
+          const style = TRUTH_STYLE[item.status] || TRUTH_STYLE.skipped;
+          return (
+            <div
+              key={item.id}
+              className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px]"
+              style={{ background: style.bg, border: `1px solid ${style.border}` }}
+              title={`${item.label}: ${item.value}`}
+            >
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${style.dot}`} />
+              <span className="truncate text-slate-300">{item.label}</span>
+              <span className={`ml-auto shrink-0 font-semibold ${style.text}`}>{item.value}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ChecklistStages({
   stages,
   expanded,
@@ -192,6 +267,7 @@ export default function OrchestrationInspector({
         </div>
 
         <div className="max-h-[52vh] overflow-auto border-t border-white/10 px-3 pb-3 pt-2">
+          {hasChecklist && <RuntimeTruthGrid stages={visibleStages} />}
           {onToggleDiagnosticSend && (
             <div className="mb-3 rounded-lg border border-white/10 bg-white/[0.035] p-3">
               <div className="flex items-start justify-between gap-3">

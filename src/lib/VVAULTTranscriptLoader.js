@@ -9,9 +9,9 @@ import path from 'path';
 import crypto from 'crypto';
 import { getMemoryStore } from './MemoryStore.js';
 import { getHistoricalMemorySources } from './constructMemoryPolicy.js';
-const DEFAULT_LIFE_USER_ID = 'devon_woodson_1774390416168';
+const DEFAULT_LIFE_USER_ID = process.env.VVAULT_USER_ID || '';
 export class VVAULTTranscriptLoader {
-    constructor(vvaultBasePath = '/Users/devonwoodson/Documents/GitHub/vvault') {
+    constructor(vvaultBasePath = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '') {
         this.memoryStore = getMemoryStore();
         this.vvaultBasePath = vvaultBasePath;
     }

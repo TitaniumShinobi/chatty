@@ -1,7 +1,10 @@
-// /server/mongo.js
 import { MongoClient, ServerApiVersion } from 'mongodb';
 
-const uri = "mongodb+srv://dwoodson92_db_user:7Ez8fnZaWsrqQCo1@chatty.obnxwcm.mongodb.net/?retryWrites=true&w=majority&appName=Chatty";
+const uri = process.env.MONGODB_URI || '';
+
+if (!uri) {
+  console.error('❌ [MongoDB] MONGODB_URI is not set. MongoDB client will not connect.');
+}
 
 const client = new MongoClient(uri, {
   serverApi: {

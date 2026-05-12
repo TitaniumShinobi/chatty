@@ -552,7 +552,7 @@ def create_process_manager(project_dir: str) -> VVAULTProcessManager:
 
 def main():
     """Test the process manager"""
-    project_dir = "/Users/devonwoodson/Documents/GitHub/VVAULT"
+    project_dir = os.environ.get('VVAULT_ROOT', '')
     
     # Create process manager
     manager = create_process_manager(project_dir)

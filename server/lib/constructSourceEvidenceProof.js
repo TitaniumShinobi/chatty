@@ -3,7 +3,7 @@ const DEFAULT_SOURCE_EVIDENCE_CONSTRUCT = "zen-001";
 const DEFAULT_SOURCE_EVIDENCE_SOURCE = "codex";
 const DEFAULT_SOURCE_EVIDENCE_STORE = "postgres";
 const DEFAULT_SOURCE_EVIDENCE_ROW_LIMIT = 100;
-const CANONICAL_OWNER_LIFE_ID = "devon_woodson_1774390416168";
+const CANONICAL_OWNER_LIFE_ID = process.env.CANONICAL_OWNER_VVAULT_USER_ID || process.env.VVAULT_USER_ID || '';
 const SAFE_VAULT_FILE_COLUMNS = "id,user_id,filename,construct_id,file_type,created_at,metadata";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

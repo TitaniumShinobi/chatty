@@ -7,11 +7,11 @@ test('duplicate Devon email resolves to canonical active LIFE id', () => {
     users: {
       devon_woodson_1762969514958: {
         user_id: 'devon_woodson_1762969514958',
-        email: 'dwoodson92@gmail.com',
+        email: 'user@example.com',
       },
-      devon_woodson_1774390416168: {
-        user_id: 'devon_woodson_1774390416168',
-        email: 'dwoodson92@gmail.com',
+      test-user-001: {
+        user_id: 'test-user-001',
+        email: 'user@example.com',
       },
     },
   };
@@ -19,11 +19,11 @@ test('duplicate Devon email resolves to canonical active LIFE id', () => {
   const resolved = resolveLifeUserIdForLogin(
     registry,
     '507f1f77bcf86cd799439011',
-    'dwoodson92@gmail.com',
+    'user@example.com',
     'Devon Woodson'
   );
 
-  assert.equal(resolved, 'devon_woodson_1774390416168');
+  assert.equal(resolved, 'test-user-001');
 });
 
 test('existing LIFE id is preserved as an explicit user id', () => {
@@ -31,11 +31,11 @@ test('existing LIFE id is preserved as an explicit user id', () => {
     users: {
       devon_woodson_1762969514958: {
         user_id: 'devon_woodson_1762969514958',
-        email: 'dwoodson92@gmail.com',
+        email: 'user@example.com',
       },
-      devon_woodson_1774390416168: {
-        user_id: 'devon_woodson_1774390416168',
-        email: 'dwoodson92@gmail.com',
+      test-user-001: {
+        user_id: 'test-user-001',
+        email: 'user@example.com',
       },
     },
   };
@@ -43,7 +43,7 @@ test('existing LIFE id is preserved as an explicit user id', () => {
   const resolved = resolveLifeUserIdForLogin(
     registry,
     'devon_woodson_1762969514958',
-    'dwoodson92@gmail.com',
+    'user@example.com',
     'Devon Woodson'
   );
 

@@ -1,8 +1,9 @@
 export const DEFAULT_CANONICAL_OWNER_SUPABASE_USER_ID =
-  '7e34f6b8-e33a-48b5-8ddb-95b94d18e296';
-export const DEFAULT_CANONICAL_OWNER_EMAIL = 'dwoodson92@gmail.com';
+  process.env.CANONICAL_OWNER_SUPABASE_USER_ID || '';
+export const DEFAULT_CANONICAL_OWNER_EMAIL =
+  process.env.CANONICAL_OWNER_EMAIL || '';
 export const DEFAULT_CANONICAL_OWNER_VVAULT_USER_ID =
-  'devon_woodson_1774390416168';
+  process.env.CANONICAL_OWNER_VVAULT_USER_ID || '';
 
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 

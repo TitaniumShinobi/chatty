@@ -302,7 +302,7 @@ const AccountTab: React.FC<AccountTabProps> = ({ user, onLogout }) => {
           <h4 className="text-sm font-medium mb-3" style={{ color: 'var(--chatty-text)' }}>Email</h4>
           <div className="flex items-center gap-2 mb-3">
             <span className="text-sm">✉️</span>
-            <span className="text-sm" style={{ color: 'var(--chatty-text)' }}>{user?.email || 'devon@thewreck.org'}</span>
+            <span className="text-sm" style={{ color: 'var(--chatty-text)' }}>{user?.email || import.meta.env.VITE_SUPPORT_EMAIL || ''}</span>
           </div>
           <div className="flex items-center gap-2">
             <input

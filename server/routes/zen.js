@@ -1,3 +1,14 @@
+/**
+ * /api/zen/*
+ *
+ * ROUTE CLASSIFICATION: NONCANONICAL (separate path)
+ * These routes bypass the canonical /api/vvault/message runtime path.
+ * They use zenPipelineService directly and emit stub runtime_receipt
+ * and orchestration_checklist fields for observability parity.
+ *
+ * New consumers should target /api/vvault/message for the canonical runtime path.
+ */
+
 import express from 'express';
 import { requireAuth } from '../auth/middleware/auth.js';
 import {
@@ -123,14 +134,33 @@ router.post('/send', async (req, res) => {
     });
 
     if (!result.ok) {
-      return res.status(409).json(result);
+      return res.status(409).json({ ...result, _noncanonical: true, _canonical_path: '/api/vvault/message' });
     }
 
     if (result.deferred) {
-      return res.status(202).json(result);
+      return res.status(202).json({ ...result, _noncanonical: true, _canonical_path: '/api/vvault/message' });
     }
 
-    return res.json(result);
+    return res.json({
+      ...result,
+      runtime_receipt: {
+        created_at: new Date().toISOString(),
+        route_mode: 'zen_send',
+        construct_id: ZEN_CONSTRUCT_ID || 'zen-001',
+        _noncanonical: true,
+        _canonical_path: '/api/vvault/message',
+        _disclaimer: 'Stub receipt. Canonical runtime: /api/vvault/message.',
+      },
+      orchestration_checklist: {
+        responseStatus: result?.ok ? 'zen_routed' : 'zen_error',
+        route: '/api/zen/send',
+        _noncanonical: true,
+        _canonical_path: '/api/vvault/message',
+        _disclaimer: 'Stub checklist. Canonical runtime: /api/vvault/message.',
+      },
+      _noncanonical: true,
+      _canonical_path: '/api/vvault/message',
+    });
   } catch (error) {
     return res.status(500).json({ ok: false, error: error?.message || 'Failed to run zen turn' });
   }

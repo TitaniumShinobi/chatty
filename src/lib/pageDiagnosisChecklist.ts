@@ -7,6 +7,12 @@ type ThreadLike = {
   canonicalForRuntime?: string | null;
   isIndexHydrated?: boolean | null;
   messages?: unknown[] | null;
+  providerName?: string | null;
+  modelId?: string | null;
+  isFallback?: boolean | null;
+  hydrationSource?: string | null;
+  hydrationStatus?: string | null;
+  identityCoherent?: boolean | null;
 };
 
 type ChecklistStage = NonNullable<OrchestrationChecklist["stages"]>[number];
@@ -69,6 +75,13 @@ function chatChecklist(
   const hasRuntimeReceipt = Boolean(runtimeChecklist?.stages?.length);
   const hasMessages = Array.isArray(activeThread?.messages) && activeThread.messages.length > 0;
 
+  const providerName = activeThread?.providerName || null;
+  const modelId = activeThread?.modelId || null;
+  const isFallback = activeThread?.isFallback === true;
+  const hydrationSource = activeThread?.hydrationSource || null;
+  const hydrationStatus = activeThread?.hydrationStatus || null;
+  const identityCoherent = activeThread?.identityCoherent;
+
   return {
     title: "Chat page checklist",
     constructId: constructId || routeThreadId || "chat",
@@ -89,8 +102,64 @@ function chatChecklist(
         "chat-canonical-route",
         "Canonical Route",
         pathname.startsWith("/app/chat/") ? "pass" : "warn",
-        "Chat construct-quality sends must use /api/vvault/message through AIService.",
+        pathname.startsWith("/app/chat/")
+          ? "Route follows the canonical /app/chat/:threadId pattern."
+          : "Current route is noncanonical; construct-quality sends may not apply.",
         "src/lib/aiService.ts -> server/routes/vvault.js",
+        { canonical: pathname.startsWith("/app/chat/") },
+      ),
+      stage(
+        "chat-provider-model",
+        "Provider/Model",
+        providerName && modelId ? "pass" : providerName ? "warn" : "skipped",
+        providerName && modelId
+          ? `Runtime uses ${providerName} / ${modelId}.`
+          : providerName
+            ? `Provider set to ${providerName} but model is unknown.`
+            : "No provider or model has been recorded for this runtime.",
+        "src/lib/modelProviders.ts",
+        { providerName, modelId },
+      ),
+      stage(
+        "chat-fallback",
+        "Fallback",
+        isFallback ? "warn" : "pass",
+        isFallback
+          ? "Runtime is operating in browser fallback mode. Provider calls use stubs."
+          : "Runtime is operating with a live provider connection.",
+        "src/lib/automaticRuntimeOrchestrator.ts",
+        { isFallback },
+      ),
+      stage(
+        "chat-hydration",
+        "Hydration",
+        hydrationStatus === "ready" || hydrationStatus === "full" ? "pass"
+          : hydrationStatus === "error" || hydrationStatus === "missing" ? "fail"
+          : hydrationStatus === "partial" || hydrationSource?.includes("fallback") ? "warn"
+          : "skipped",
+        hydrationStatus === "ready" || hydrationStatus === "full"
+          ? `Conversation hydrated from ${hydrationSource || "full"} source.`
+          : hydrationStatus === "partial" || hydrationSource?.includes("fallback")
+            ? `Conversation using ${hydrationSource || "fallback"} hydration — not fully canonical.`
+            : hydrationStatus === "error" || hydrationStatus === "missing"
+              ? `Hydration ${hydrationStatus}: conversation data may be incomplete or unavailable.`
+              : "Hydration status has not been recorded for this thread.",
+        "src/lib/vvaultConversationHydration.ts",
+        { hydrationSource, hydrationStatus },
+      ),
+      stage(
+        "chat-identity-coherence",
+        "Identity Coherence",
+        identityCoherent === true ? "pass"
+          : identityCoherent === false ? "fail"
+          : "skipped",
+        identityCoherent === true
+          ? "Construct identity alignment held through the turn."
+          : identityCoherent === false
+            ? "Identity coherence check failed — construct may have drifted."
+            : "Identity coherence has not been verified for this thread.",
+        "server/lib/identityCoherenceGuard.js",
+        { identityCoherent },
       ),
       stage(
         "chat-runtime-receipt",

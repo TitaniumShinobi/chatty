@@ -22,8 +22,8 @@ export const APPROVED_NOVA_PILOT_SOURCE_SHA256 = Object.freeze([
 
 export const DEFAULT_PILOT_BATCH_ID = 'nova-001-chatgpt-pilot-20260416-01';
 export const DEFAULT_MAX_CONTENT_CHARS = 45000;
-const DEFAULT_ICLOUD_VAULT_ROOT = '/Users/devonwoodson/Library/Mobile Documents/com~apple~CloudDocs/Vault';
-const DEFAULT_VVAULT_ROOT = '/Users/devonwoodson/Documents/GitHub/vvault';
+const DEFAULT_ICLOUD_VAULT_ROOT = process.env.ICLOUD_VAULT_ROOT || '';
+const DEFAULT_VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
 const DEFAULT_SQLITE_PATH = path.join(REPO_ROOT, 'chatty.db');
 const REST_TIMEOUT_MS = Number(process.env.SOURCE_RECOVERY_REST_TIMEOUT_MS || 10000);
 let envLoaded = false;

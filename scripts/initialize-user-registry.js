@@ -29,7 +29,7 @@ async function initializeRegistry() {
       console.log('  2. Run: fetch("/api/me").then(r => r.json()).then(d => console.log(d.user))');
       console.log('  3. Use the "id", "email", and "name" from the response\n');
       console.log('Example:');
-      console.log('  node scripts/initialize-user-registry.js 109043688581425242997 dwoodson92@gmail.com "Devon Woodson"\n');
+      console.log('  node scripts/initialize-user-registry.js <userId> <email> <name>\n');
       process.exit(1);
     }
 

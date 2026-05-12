@@ -119,6 +119,7 @@ function safeParseJson(value) {
   try {
     return JSON.parse(value);
   } catch {
+    console.warn(`[ConstructIdentity] safeParseJson failed — expected JSON string, got malformed input`);
     return null;
   }
 }
@@ -366,6 +367,7 @@ async function getVvaultApiClient() {
   if (!vvaultApiClientPromise) {
     vvaultApiClientPromise = import('../../vvaultConnector/vvaultApiClient.js').catch((error) => {
       vvaultApiClientPromise = null;
+      console.warn(`⚠️ [Construct Identity] VVAULT API client import failed: ${error?.message || error}`);
       throw error;
     });
   }

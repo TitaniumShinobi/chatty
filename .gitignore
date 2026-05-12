@@ -169,7 +169,9 @@ chatty.db.bak.*
 
 # SQLite runtime artifacts
 *.db-shm
+*.db-shm.bak.*
 *.db-wal
+*.db-wal.bak.*
 .chatty.db.*
 
 # Local workspace/agent state
@@ -231,6 +233,9 @@ sourceSha256.eq.,metadata-
 .zenflow/
 .playwright-cli/
 
+# Vite dependency cache
+.vite/
+
 # Runtime data dirs
 constructs/
 chatty-conversations/
@@ -257,6 +262,10 @@ HARDCODED_PATH_CLEANUP_DIFFS.md
 
 # Runtime settings
 chatty-cli-settings.json
+
+# Backup files (any)
+*.bak
+*.bak.*
 
 # Server temp files
 server/tmp-silence-*.wav

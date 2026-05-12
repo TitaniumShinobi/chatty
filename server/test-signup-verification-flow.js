@@ -14,7 +14,7 @@ async function testSignupFlow() {
   console.log('🧪 TESTING COMPLETE SIGNUP AND VERIFICATION FLOW');
   console.log('================================================');
   
-  const testEmail = 'test-signup@thewreck.org';
+  const testEmail = 'test-signup@example.com';
   const testName = 'Test User';
   const testPassword = 'TestPassword123!';
   

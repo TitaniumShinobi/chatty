@@ -754,7 +754,7 @@ def main():
     root.title("Capsule Viewer Test")
     root.geometry("1000x700")
     
-    project_dir = "/Users/devonwoodson/Documents/GitHub/VVAULT"
+    project_dir = os.environ.get('VVAULT_ROOT', '')
     viewer = CapsuleViewer(root, project_dir)
     
     root.mainloop()

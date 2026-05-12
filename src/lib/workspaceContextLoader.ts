@@ -72,7 +72,7 @@ async function scanChatgptDirectories(vvaultBasePath: string, userId: string): P
 /**
  * Scan for chat_with_*.md files
  */
-async function scanChatWithFiles(workspaceRoot: string = '/Users/devonwoodson/Documents/GitHub'): Promise<Array<{ path: string; content: string; timestamp: string }>> {
+async function scanChatWithFiles(workspaceRoot: string = process.env.CHATTY_WORKSPACE_ROOT || process.cwd()): Promise<Array<{ path: string; content: string; timestamp: string }>> {
   const chatWithPattern = path.join(workspaceRoot, '**', 'chat_with_*.md');
 
   try {
@@ -194,8 +194,8 @@ function buildPassiveListeningContext(
  */
 export async function loadWorkspaceContext(
   userId: string,
-  vvaultBasePath: string = '/Users/devonwoodson/Documents/GitHub/vvault',
-  workspaceRoot: string = '/Users/devonwoodson/Documents/GitHub'
+  vvaultBasePath: string = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '',
+  workspaceRoot: string = process.env.CHATTY_WORKSPACE_ROOT || process.cwd()
 ): Promise<WorkspaceContext> {
   console.log(`🔄 [WorkspaceLoader] Loading workspace context for user: ${userId}`);
 

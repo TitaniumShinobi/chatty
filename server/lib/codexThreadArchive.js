@@ -6,13 +6,13 @@ import path from 'node:path';
 import { parseCodexRolloutJsonlFile } from './codexContinuityRelay.js';
 
 export const CODEX_THREAD_ARCHIVE_SCHEMA_VERSION = 1;
-export const DEFAULT_CODEX_ARCHIVE_LIFE_USER_ID = 'devon_woodson_1774390416168';
+export const DEFAULT_CODEX_ARCHIVE_LIFE_USER_ID = process.env.VVAULT_USER_ID || '';
 export const DEFAULT_CODEX_ARCHIVE_CONSTRUCT_ID = 'zen-001';
 export const DEFAULT_CODEX_ARCHIVE_THREAD_ID = 'zen-001_chat_with_zen-001';
 
 const DEFAULT_CODEX_SESSIONS_ROOT = path.join(os.homedir(), '.codex', 'sessions');
 const DEFAULT_CODEX_SESSION_INDEX_PATH = path.join(os.homedir(), '.codex', 'session_index.jsonl');
-const DEFAULT_VVAULT_ROOT = '/Users/devonwoodson/Documents/GitHub/vvault';
+const DEFAULT_VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';

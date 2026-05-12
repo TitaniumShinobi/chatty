@@ -119,7 +119,7 @@ def main():
     print("🎨 Creating VVAULT Glyph...")
     
     # Create assets directory
-    assets_dir = "/Users/devonwoodson/Documents/GitHub/VVAULT/assets"
+    assets_dir = os.environ.get('VVAULT_ROOT', '') + '/assets'
     os.makedirs(assets_dir, exist_ok=True)
     
     # Create the glyph

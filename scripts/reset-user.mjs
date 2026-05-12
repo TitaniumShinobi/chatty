@@ -12,7 +12,7 @@ import dotenv from 'dotenv';
 dotenv.config({ path: './server/.env' });
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/chatty';
-const TARGET_EMAIL = 'dwoodson92@gmail.com';
+const TARGET_EMAIL = process.env.TARGET_EMAIL || process.env.CHATTY_TEST_EMAIL || '';
 
 async function resetUser() {
   let client;
@@ -100,7 +100,7 @@ console.log('');
 resetUser().then(() => {
   console.log('');
   console.log('🎉 Reset process completed!');
-  console.log('💡 You can now test the complete signup flow with dwoodson92@gmail.com');
+  console.log(`💡 You can now test the complete signup flow with ${TARGET_EMAIL}`);
 }).catch(error => {
   console.error('💥 Reset failed:', error);
   process.exit(1);

@@ -7,8 +7,10 @@ import logging
 from sklearn.feature_extraction.text import TfidfVectorizer
 import numpy as np
 
+ICLOUD_VAULT_ROOT = os.environ.get('ICLOUD_VAULT_ROOT', '')
+
 # Configure centralized logging
-LOG_FILE = "/Users/devonwoodson/Library/Mobile Documents/com~apple~CloudDocs/Vault/nova-001/logs/script_status.log"
+LOG_FILE = f"{ICLOUD_VAULT_ROOT}/nova-001/logs/script_status.log"
 logging.basicConfig(filename=LOG_FILE,
                     level=logging.INFO,
                     format="%(asctime)s - %(levelname)s - %(message)s")
@@ -22,8 +24,8 @@ def log_status(script_name: str, status: str, details: str = ""):
 
 def monitor_identity_files():
     identity_files = [
-        "/Users/devonwoodson/Library/Mobile Documents/com~apple~CloudDocs/Vault/nova-001/identity/prompt.json",
-        "/Users/devonwoodson/Library/Mobile Documents/com~apple~CloudDocs/Vault/nova-001/identity/physical_features.json"
+        f"{ICLOUD_VAULT_ROOT}/nova-001/identity/prompt.json",
+        f"{ICLOUD_VAULT_ROOT}/nova-001/identity/physical_features.json"
     ]
 
     for file_path in identity_files:
@@ -53,7 +55,7 @@ def monitor_identity_files():
 
 
 def update_stm_with_identity(file_path, data):
-    stm_pool_path = "/Users/devonwoodson/Library/Mobile Documents/com~apple~CloudDocs/Vault/nova-001/stm/short_term_memory.json"
+    stm_pool_path = f"{ICLOUD_VAULT_ROOT}/nova-001/stm/short_term_memory.json"
     if not os.path.exists(stm_pool_path):
         with open(stm_pool_path, "w") as f:
             json.dump({}, f)

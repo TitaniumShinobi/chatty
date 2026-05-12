@@ -8,9 +8,9 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { getVVAULTTranscriptLoader } from './VVAULTTranscriptLoader.js';
 import { getHistoricalMemorySources } from './constructMemoryPolicy.js';
-const DEFAULT_LIFE_USER_ID = 'devon_woodson_1774390416168';
+const DEFAULT_LIFE_USER_ID = process.env.VVAULT_USER_ID || '';
 export class VVAULTWatcher {
-    constructor(vvaultBasePath = '/Users/devonwoodson/Documents/GitHub/vvault') {
+    constructor(vvaultBasePath = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '') {
         this.vvaultBasePath = vvaultBasePath;
         this.transcriptLoader = getVVAULTTranscriptLoader();
         this.watchedConstructs = new Map();

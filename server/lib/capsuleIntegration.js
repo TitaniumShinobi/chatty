@@ -12,9 +12,9 @@ import { getSupabaseClient } from './supabaseClient.js';
 import { findConstructIdentityDir } from './vvaultPaths.js';
 
 // VVAULT user directory structure - use env vars with local dev fallbacks
-const VVAULT_BASE = process.env.VVAULT_PATH || process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+const VVAULT_BASE = process.env.VVAULT_PATH || process.env.VVAULT_ROOT_PATH || '';
 const USER_SHARD = process.env.VVAULT_SHARD || 'shard_0000';
-const USER_ID = process.env.VVAULT_USER_ID || 'devon_woodson_1774390416168';
+const USER_ID = process.env.VVAULT_USER_ID || '';
 const USER_CAPSULES_DIR = path.join(VVAULT_BASE, 'users', USER_SHARD, USER_ID, 'capsules');
 const USER_INSTANCES_DIR = path.join(VVAULT_BASE, 'users', USER_SHARD, USER_ID, 'instances');
 

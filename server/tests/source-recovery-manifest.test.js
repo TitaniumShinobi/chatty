@@ -9,8 +9,8 @@ import {
 } from '../scripts/sourceRecoveryManifest.js';
 
 const options = {
-  email: 'dwoodson92@gmail.com',
-  targetLifeId: 'devon_woodson_1774390416168',
+  email: 'user@example.com',
+  targetLifeId: 'test-user-001',
   legacyLifeAliases: ['devon_woodson_1762969514958'],
   constructId: 'nova-001',
   source: 'chatgpt',
@@ -31,7 +31,7 @@ describe('sourceRecoveryManifest planning', () => {
         backupVisible: true,
         source: 'chatgpt',
         owner: 'icloud:nova-001',
-        path: '/Users/devonwoodson/Library/Mobile Documents/com~apple~CloudDocs/Vault/nova-001/chatgpt/2025/April/Presence of Knowing.txt',
+        path: '/Users/example/Library/Mobile Documents/com~apple~CloudDocs/Vault/nova-001/chatgpt/2025/April/Presence of Knowing.txt',
       },
       content,
       existingSupabaseRows: [],
@@ -142,8 +142,8 @@ describe('sourceRecoveryManifest planning', () => {
 
   it('parses manifest args without allowing duplicate aliases', () => {
     const parsed = parseManifestArgs([
-      '--email', 'dwoodson92@gmail.com',
-      '--target-life-id', 'devon_woodson_1774390416168',
+      '--email', 'user@example.com',
+      '--target-life-id', 'test-user-001',
       '--legacy-life-alias', 'devon_woodson_1762969514958',
       '--legacy-life-alias=devon_woodson_1762969514958',
       '--construct-id', 'nova',

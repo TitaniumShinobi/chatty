@@ -117,10 +117,10 @@ describe("Chat user markdown paragraph rendering", () => {
   it("converts imported markdown images into readable preview text", () => {
     expect(
       buildImportedCodexRelayPreview(
-        "![Image #1](/Users/devonwoodson/Desktop/Screenshot.png)\n\nconsole dump",
+        "![Image #1](/Users/example/Desktop/Screenshot.png)\n\nconsole dump",
         400,
       ),
-    ).toContain("[imported image: /Users/devonwoodson/Desktop/Screenshot.png]");
+    ).toContain("[imported image: /Users/example/Desktop/Screenshot.png]");
   });
 
   it("caps imported Codex handoff previews", () => {
@@ -138,7 +138,7 @@ describe("Chat user markdown paragraph rendering", () => {
     const hiddenTail = "RAW_IMPORTED_TAIL_SHOULD_NOT_RENDER";
     const importedText = [
       "Imported handoff opening line.",
-      "![Image #1](/Users/devonwoodson/Desktop/Screenshot.png)",
+      "![Image #1](/Users/example/Desktop/Screenshot.png)",
       "x".repeat(1500),
       hiddenTail,
     ].join("\n\n");
@@ -152,7 +152,7 @@ describe("Chat user markdown paragraph rendering", () => {
 
     expect(markup).toContain("Imported Codex handoff context");
     expect(markup).toContain("Imported handoff opening line.");
-    expect(markup).toContain("[imported image: /Users/devonwoodson/Desktop/Screenshot.png]");
+    expect(markup).toContain("[imported image: /Users/example/Desktop/Screenshot.png]");
     expect(markup).toContain("Full imported content remains in canonical storage.");
     expect(markup).not.toContain(hiddenTail);
     expect(markup).not.toContain("<pre");

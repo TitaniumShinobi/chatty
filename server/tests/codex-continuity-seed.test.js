@@ -19,10 +19,10 @@ import { readLatestRuntimeTurnState } from '../../vvaultConnector/runtimeTurnSta
 import { writeTranscript } from '../../vvaultConnector/writeTranscript.js';
 
 const canonicalUser = {
-  user_id: 'devon_woodson_1774390416168',
-  email: 'dwoodson92@gmail.com',
+  user_id: 'test-user-001',
+  email: 'user@example.com',
   name: 'Devon Woodson',
-  vvault_user_id: 'devon_woodson_1774390416168',
+  vvault_user_id: 'test-user-001',
 };
 
 describe('Codex continuity seed', () => {

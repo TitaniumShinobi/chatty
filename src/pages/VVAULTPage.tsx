@@ -141,7 +141,7 @@ export default function VVAULTPage() {
     // Open VVAULT login in new tab
     const vvaultUrl =
       (import.meta.env.VITE_VVAULT_URL as string | undefined) ||
-      (import.meta.env.DEV ? getDevVvaultOrigin() : 'https://vvault.thewreck.org')
+      (import.meta.env.DEV ? getDevVvaultOrigin() : (import.meta.env.VITE_VVAULT_API_BASE_URL as string) || '')
     window.open(`${vvaultUrl}/login`, '_blank')
     
     // Show instructions

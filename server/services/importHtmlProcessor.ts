@@ -83,7 +83,7 @@ export async function processConversationsHtml(
 
     // Detect construct name from conversation context (like ContinuityGPT)
     // Use first conversation to detect name, or scan all if needed
-    // Extract email handle from userEmail for fallback format (e.g., "devon" from "devon@thewreck.org")
+    // Extract email handle from userEmail for fallback format (e.g., "user" from "user@example.com")
     const emailHandle = context.userEmail?.split('@')[0] || null;
     let detectedConstructName = context.constructId || buildDefaultInstanceId(context.source || 'chatgpt', emailHandle); // Start with provided constructId
     

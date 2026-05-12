@@ -158,7 +158,7 @@ type Thread = {
   isIndexHydrated?: boolean;
 };
 
-const VVAULT_FILESYSTEM_ROOT = "/Users/devonwoodson/Documents/GitHub/vvault";
+const VVAULT_FILESYSTEM_ROOT = import.meta.env.VITE_VVAULT_ROOT_PATH || "";
 const DEFAULT_ZEN_CANONICAL_SESSION_ID = "zen-001_chat_with_zen-001";
 const DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID = "zen-001";
 const DEFAULT_ZEN_RUNTIME_ID = "zen-001";

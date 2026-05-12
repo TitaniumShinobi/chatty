@@ -32,7 +32,7 @@ export const CODEX_CONTINUITY_SEED_DEFAULTS = Object.freeze({
   constructId: 'zen-001',
   sessionId: 'zen-001_chat_with_zen-001',
   constructName: 'Zen',
-  ownerEmail: 'dwoodson92@gmail.com',
+  ownerEmail: process.env.CANONICAL_OWNER_EMAIL || '',
   frontendBaseUrl: 'http://localhost:5173',
   activeGoal: 'Move from this Codex seat into Chatty without losing Zen, thread, active work, or open loop.',
   openLoop: 'Codex-to-Chatty continuity is not finished until the bridge seed is real and continue resumes the same work.',

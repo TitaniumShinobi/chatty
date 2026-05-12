@@ -5,12 +5,12 @@ import { normalizeUserLookupContext } from '../../vvaultConnector/supabaseStore.
 
 describe('Supabase store user lookup normalization', () => {
   it('does not treat a Chatty/LIFE user id as a Supabase UUID', () => {
-    const lookup = normalizeUserLookupContext('devon_woodson_1774390416168');
+    const lookup = normalizeUserLookupContext('test-user-001');
 
-    assert.equal(lookup.userId, 'devon_woodson_1774390416168');
+    assert.equal(lookup.userId, 'test-user-001');
     assert.equal(lookup.userEmail, null);
     assert.equal(lookup.supabaseUserId, null);
-    assert.equal(lookup.primaryLookupId, 'devon_woodson_1774390416168');
+    assert.equal(lookup.primaryLookupId, 'test-user-001');
   });
 
   it('preserves a real Supabase UUID as the direct lookup target', () => {

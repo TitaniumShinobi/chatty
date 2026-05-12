@@ -6,8 +6,8 @@ import { buildOrchestrationChecklist } from '../lib/orchestrationChecklist.js';
 describe('orchestration checklist receipt', () => {
   it('does not crash when a VVAULT-backed turn has no GPT config object', () => {
     const checklist = buildOrchestrationChecklist({
-      userId: 'devon_woodson_1774390416168',
-      user: { email: 'dwoodson92@gmail.com' },
+      userId: 'test-user-001',
+      user: { email: 'user@example.com' },
       constructId: 'zen-001',
       threadId: 'zen-001_chat_with_zen-001',
       userMessage: 'continue',
@@ -21,7 +21,7 @@ describe('orchestration checklist receipt', () => {
       },
       providerTrace: { final_provider: 'ollama', fallback_used: false, attempts: [{ status: 'ok' }] },
       runtimeReceipt: {
-        auth: { auth_email: 'dwoodson92@gmail.com' },
+        auth: { auth_email: 'user@example.com' },
         provider: { provider: 'ollama', model: 'phi3:latest', final_provider: 'ollama' },
         fidelity: {},
         persistence: { status: 'pass', attempted: true, stage: 'assistant' },
@@ -37,8 +37,8 @@ describe('orchestration checklist receipt', () => {
 
   it('surfaces skipped transcript retrieval with responsible owner and reason', () => {
     const checklist = buildOrchestrationChecklist({
-      userId: 'devon_woodson_1774390416168',
-      user: { email: 'dwoodson92@gmail.com' },
+      userId: 'test-user-001',
+      user: { email: 'user@example.com' },
       constructId: 'nova-001',
       threadId: 'nova-001_chat_with_nova-001',
       userMessage: 'pound it',
@@ -101,8 +101,8 @@ describe('orchestration checklist receipt', () => {
 
   it('reports a no-rewrite anchored pass without blocking VVAULT-native persistence', () => {
     const checklist = buildOrchestrationChecklist({
-      userId: 'devon_woodson_1774390416168',
-      user: { email: 'dwoodson92@gmail.com' },
+      userId: 'test-user-001',
+      user: { email: 'user@example.com' },
       constructId: 'zen-001',
       threadId: 'zen-001_chat_with_zen-001',
       userMessage:

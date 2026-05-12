@@ -12,7 +12,7 @@ describe("AIs request identity", () => {
       authSource: "shared",
       user: {
         uid: "7e34f6b8-e33a-48b5-8ddb-95b94d18e296",
-        id: "devon_woodson_1774390416168",
+        id: "test-user-001",
         email: "devon@example.com",
       },
     };
@@ -23,7 +23,7 @@ describe("AIs request identity", () => {
     );
     assert.deepEqual(getAisRequestUserIds(req), {
       supabaseUserId: "7e34f6b8-e33a-48b5-8ddb-95b94d18e296",
-      chattyUserId: "devon_woodson_1774390416168",
+      chattyUserId: "test-user-001",
     });
   });
 
@@ -32,7 +32,7 @@ describe("AIs request identity", () => {
       authSource: "native",
       user: {
         supabase_user_id: "7e34f6b8-e33a-48b5-8ddb-95b94d18e296",
-        id: "devon_woodson_1774390416168",
+        id: "test-user-001",
         email: "devon@example.com",
       },
     };
@@ -47,7 +47,7 @@ describe("AIs request identity", () => {
     const req = {
       authSource: "native",
       user: {
-        id: "devon_woodson_1774390416168",
+        id: "test-user-001",
         email: "devon@example.com",
       },
     };

@@ -104,6 +104,9 @@ describe("OrchestrationLogSurface", () => {
     expect(html).toContain("Persistence receipt");
     expect(html).toContain("Probe send");
     expect(html).toContain("Arm next send");
+    expect(html).toContain("Runtime Truth");
+    expect(html).toContain("resolved");
+    expect(html).toContain("failed");
   });
 
   it("keeps the panel available as an options home before checklist data arrives", () => {
@@ -136,5 +139,32 @@ describe("OrchestrationLogSurface", () => {
     expect(html).toContain("Bridge");
     expect(html).toContain("Latest Chat Runtime Receipt");
     expect(html).toContain("Identity coherence");
+  });
+
+  it("renders runtime truth panel when checklist has stages", () => {
+    const html = renderToStaticMarkup(
+      <OrchestrationLogSurface
+        checklist={checklist}
+        visible={true}
+        onToggleVisibility={() => {}}
+        onToggleDiagnosticSend={() => {}}
+      />,
+    );
+
+    expect(html).toContain("Runtime Truth");
+  });
+
+  it("shows provider handoff status in runtime truth from checklist stages", () => {
+    const html = renderToStaticMarkup(
+      <OrchestrationLogSurface
+        checklist={checklist}
+        visible={true}
+        onToggleVisibility={() => {}}
+        onToggleDiagnosticSend={() => {}}
+      />,
+    );
+
+    expect(html).toContain("Provider");
+    expect(html).toContain("Persistence");
   });
 });

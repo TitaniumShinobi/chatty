@@ -33,7 +33,7 @@ export class VVAULTTranscriptLoader {
   private memoryStore = getMemoryStore();
   private vvaultBasePath: string;
 
-  constructor(vvaultBasePath: string = '/Users/devonwoodson/Documents/GitHub/vvault') {
+  constructor(vvaultBasePath: string = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '') {
     this.vvaultBasePath = vvaultBasePath;
   }
 

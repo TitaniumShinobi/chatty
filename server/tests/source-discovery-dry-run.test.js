@@ -79,8 +79,8 @@ describe('sourceDiscoveryDryRun classifier', () => {
       id: 'row-4',
       user_id: context.supabaseUserId,
       construct_id: 'nova-001',
-      filename: 'vvault/users/shard_0000/dwoodson92_7e34f6b8-e33a-48b5-8ddb-95b94d18e296/instances/nova-001/documents/Continuum Codex.md',
-      storage_path: 'vvault/users/shard_0000/dwoodson92_7e34f6b8-e33a-48b5-8ddb-95b94d18e296/instances/nova-001/documents/Continuum Codex.md',
+      filename: 'vvault/users/shard_0000/test-user_7e34f6b8-e33a-48b5-8ddb-95b94d18e296/instances/nova-001/documents/Continuum Codex.md',
+      storage_path: 'vvault/users/shard_0000/test-user_7e34f6b8-e33a-48b5-8ddb-95b94d18e296/instances/nova-001/documents/Continuum Codex.md',
       file_type: 'text/markdown',
       metadata: { folder: 'documents' },
       content: 'Nova continuity source text.',
@@ -116,7 +116,7 @@ describe('sourceDiscoveryDryRun classifier', () => {
       surface: 'icloud',
       kind: 'transcript_or_file',
       owner: 'icloud:nova-001',
-      filename: '/Users/devonwoodson/Library/Mobile Documents/com~apple~CloudDocs/Vault/nova-001/chatgpt/2025/April/Presence of Knowing.txt',
+      filename: '/Users/example/Library/Mobile Documents/com~apple~CloudDocs/Vault/nova-001/chatgpt/2025/April/Presence of Knowing.txt',
     }, context);
 
     assert.equal(result.source, 'chatgpt');
@@ -130,8 +130,8 @@ describe('sourceDiscoveryDryRun classifier', () => {
 
   it('parses repeatable aliases and defaults paths', () => {
     const parsed = parseArgs([
-      '--email', 'dwoodson92@gmail.com',
-      '--target-life-id', 'devon_woodson_1774390416168',
+      '--email', 'user@example.com',
+      '--target-life-id', 'test-user-001',
       '--legacy-life-alias', 'devon_woodson_1762969514958',
       '--legacy-life-alias=devon_woodson_1762969514958',
       '--construct-id', 'nova',
@@ -139,6 +139,6 @@ describe('sourceDiscoveryDryRun classifier', () => {
 
     assert.equal(parsed.constructId, 'nova-001');
     assert.deepEqual(parsed.legacyLifeAliases, ['devon_woodson_1762969514958']);
-    assert.equal(parsed.email, 'dwoodson92@gmail.com');
+    assert.equal(parsed.email, 'user@example.com');
   });
 });

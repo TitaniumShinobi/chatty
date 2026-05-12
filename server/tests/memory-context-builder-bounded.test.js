@@ -550,7 +550,7 @@ describe('bounded Zen smalltalk context recovery', () => {
         memoryEnabled: true,
         memoryProfile: 'continuitygpt',
       },
-      user: { name: 'Devon', email: 'dwoodson92@gmail.com' },
+      user: { name: 'Devon', email: 'user@example.com' },
       threadId: 'zen-001_chat_with_zen-001',
       identityBundle: {
         identity: {

@@ -1,6 +1,14 @@
 /**
  * Lin Chat Route - Multi-provider LLM routing with Memory Injection
  * 
+ * ROUTE CLASSIFICATION: NONCANONICAL (helper)
+ * This is a helper/dev route that bypasses the canonical orchestration runtime path
+ * (/api/vvault/message). It emits skeleton runtime_receipt and orchestration_checklist
+ * fields for observability parity but does NOT go through the full canonical pipeline
+ * (VVAULT proxy, transcript truth preflight, continuity recovery, identity coherence guard).
+ * 
+ * New consumers should target /api/vvault/message for the canonical runtime path.
+ * 
  * Supports both OpenRouter (cloud) and Ollama (self-hosted) models.
  * Model strings should be prefixed with their provider:
  *   - openrouter:provider/model-name -> Routes to OpenRouter API
@@ -576,18 +584,37 @@ router.post('/generate', async (req, res) => {
     }
     
     console.log(`✅ [Lin Chat] Response generated via ${provider} (${response.length} chars)`);
-    
-    res.json({ 
+
+    res.json({
       response,
       model: `${provider}:${model}`,
       provider,
-      seat
+      seat,
+      runtime_receipt: {
+        created_at: new Date().toISOString(),
+        route_mode: 'lin_generate',
+        provider: { provider, model, final_provider: provider },
+        _noncanonical: true,
+        _canonical_path: '/api/vvault/message',
+        _disclaimer: 'This is a stub receipt. The canonical runtime path is /api/vvault/message.',
+      },
+      orchestration_checklist: {
+        responseStatus: 'bypass_canonical',
+        route: '/api/lin/generate',
+        _noncanonical: true,
+        _canonical_path: '/api/vvault/message',
+        _disclaimer: 'This is a stub checklist. The canonical runtime path is /api/vvault/message.',
+      },
+      _noncanonical: true,
+      _canonical_path: '/api/vvault/message',
     });
   } catch (error) {
     console.error('❌ [Lin Chat] Error:', error.message);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to generate response',
-      details: error.message 
+      details: error.message,
+      _noncanonical: true,
+      _canonical_path: '/api/vvault/message',
     });
   }
 });

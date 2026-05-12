@@ -42,7 +42,7 @@ async function testImporter() {
 
   const context = {
     userId: 'devon_woodson_1762969514958',
-    email: 'devon@thewreck.org',
+    email: 'user@example.com',
     provider: 'chatgpt',
     // vvaultRoot will be auto-detected from config
   };

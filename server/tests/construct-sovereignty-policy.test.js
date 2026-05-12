@@ -25,7 +25,7 @@ describe('construct sovereignty policy', () => {
     const result = evaluateConstructSovereignty({
       name: 'Monday',
       constructCallsign: 'monday-001',
-      actor: { email: 'dwoodson92@gmail.com' },
+      actor: { email: 'user@example.com' },
       operation: 'gpt_create',
     });
 
@@ -51,7 +51,7 @@ describe('construct sovereignty policy', () => {
     const allowed = isStoreListingAllowed({
       name: 'Monday',
       constructCallsign: 'monday-001',
-      userId: 'devon_woodson_1774390416168',
+      userId: 'test-user-001',
     });
     assert.equal(allowed.allowed, true);
   });

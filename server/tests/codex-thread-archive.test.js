@@ -49,7 +49,7 @@ test('syncCodexThreadsArchive writes normalized Codex source-evidence files', as
         type: 'session_meta',
         payload: {
           id: '019e-test-session',
-          cwd: '/Users/devonwoodson/Documents/GitHub/chatty',
+          cwd: '/home/user/projects/chatty',
         },
       }),
       codexMessage({
@@ -87,7 +87,7 @@ test('syncCodexThreadsArchive writes normalized Codex source-evidence files', as
     codexSessionsRoot: sessionsRoot,
     sessionIndexPath,
     targetRoot: archiveRoot,
-    lifeUserId: 'devon_woodson_1774390416168',
+    lifeUserId: 'test-user-001',
     now: '2026-05-09T02:00:00.000Z',
   });
 
@@ -98,7 +98,7 @@ test('syncCodexThreadsArchive writes normalized Codex source-evidence files', as
   assert.equal(result.archiveRoot, archiveRoot);
 
   const index = JSON.parse(await fs.readFile(result.indexPath, 'utf8'));
-  assert.equal(index.lifeUserId, 'devon_woodson_1774390416168');
+  assert.equal(index.lifeUserId, 'test-user-001');
   assert.equal(index.constructId, 'zen-001');
   assert.equal(index.canonicalThreadId, 'zen-001_chat_with_zen-001');
   assert.equal(index.threadNamesResolved, 1);
@@ -162,7 +162,7 @@ test('syncCodexThreadsArchive can publish title-named transcript files into VVAU
         type: 'session_meta',
         payload: {
           id: '019e-visible-session',
-          cwd: '/Users/devonwoodson/Documents/GitHub/chatty',
+          cwd: '/home/user/projects/chatty',
         },
       }),
       codexMessage({

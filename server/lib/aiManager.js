@@ -290,9 +290,9 @@ export class AIManager {
     let VVAULT_ROOT;
     try {
       const config = await import('../../vvaultConnector/config.js');
-      VVAULT_ROOT = config.VVAULT_ROOT || process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+      VVAULT_ROOT = config.VVAULT_ROOT || process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
     } catch (error) {
-      VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+      VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
       console.warn(`⚠️ [AIManager] Could not load VVAULT_ROOT from config, using: ${VVAULT_ROOT}`);
     }
 
@@ -324,9 +324,9 @@ export class AIManager {
     let VVAULT_ROOT;
     try {
       const config = await import('../../vvaultConnector/config.js');
-      VVAULT_ROOT = config.VVAULT_ROOT || process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+      VVAULT_ROOT = config.VVAULT_ROOT || process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
     } catch (error) {
-      VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+      VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
       console.warn(`⚠️ [AIManager] Could not load VVAULT_ROOT from config, using: ${VVAULT_ROOT}`);
     }
 
@@ -1794,9 +1794,9 @@ export class AIManager {
                 let VVAULT_ROOT;
                 try {
                   const config = await import('../../vvaultConnector/config.js');
-                  VVAULT_ROOT = config.VVAULT_ROOT || process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+                  VVAULT_ROOT = config.VVAULT_ROOT || process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
                 } catch {
-                  VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+                  VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
                 }
 
                 const shard = 'shard_0000';

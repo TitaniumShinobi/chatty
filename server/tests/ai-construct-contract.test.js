@@ -14,8 +14,8 @@ test('buildAIQueryUserIds includes same-email legacy LIFE ids from registry', ()
     registryPath,
     JSON.stringify({
       users: {
-        devon_old: { user_id: 'devon_old', email: 'dwoodson92@gmail.com' },
-        devon_new: { user_id: 'devon_new', email: 'dwoodson92@gmail.com' },
+        devon_old: { user_id: 'devon_old', email: 'user@example.com' },
+        devon_new: { user_id: 'devon_new', email: 'user@example.com' },
         other_user: { user_id: 'other_user', email: 'other@example.com' },
       },
     }),
@@ -28,11 +28,11 @@ test('buildAIQueryUserIds includes same-email legacy LIFE ids from registry', ()
     const ids = buildAIQueryUserIds({
       userId: 'devon_new',
       originalUserId: 'chatty-sub-123',
-      email: 'dwoodson92@gmail.com',
+      email: 'user@example.com',
     });
     assert.deepEqual(
       new Set(ids),
-      new Set(['devon_old', 'devon_new', 'chatty-sub-123', 'dwoodson92@gmail.com']),
+      new Set(['devon_old', 'devon_new', 'chatty-sub-123', 'user@example.com']),
     );
   } finally {
     if (previous === undefined) {

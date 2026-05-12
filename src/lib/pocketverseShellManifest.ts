@@ -1,3 +1,4 @@
+import * as path from "path";
 import {
   ZEN_PRODUCT_REGISTRY,
   type ZenProductSurface,
@@ -238,19 +239,23 @@ export function validatePocketverseShellManifest(
   };
 }
 
+function siblingRepoRoot(repoName: string): string {
+  return process.env[`${repoName.toUpperCase()}_REPO_ROOT`] || path.resolve(process.cwd(), '..', repoName);
+}
+
 export const CHATTY_POCKETVERSE_SHELL_MANIFEST = buildShellManifest({
   shellId: "shell_chatty_git_repo_body",
   pocketverseId: "chatty-product-body-pocketverse",
   productId: "chatty",
   shellKind: "git-repo-body",
   displayName: "Chatty Repository Shell",
-  repoRoot: "/Users/devonwoodson/Documents/GitHub/chatty",
+  repoRoot: process.env.CHATTY_REPO_ROOT || process.cwd(),
   capsuleId: "capsule_chatty_product_body_seed",
   glyphId: "glyph:chatty:canonical-conversation-body:001",
   seedRef: "cloud-sealed-seed://chatty-product-body",
   source: {
     type: "local-snapshot",
-    ref: "/Users/devonwoodson/Documents/GitHub/chatty",
+    ref: process.env.CHATTY_REPO_ROOT || process.cwd(),
   },
   requiredFiles: [
     "package.json",
@@ -268,13 +273,13 @@ export const QUANTUM_POCKETVERSE_SHELL_MANIFEST = buildShellManifest({
   productId: "quantum",
   shellKind: "git-repo-body",
   displayName: "Quantum Repository Shell",
-  repoRoot: "/Users/devonwoodson/Documents/GitHub/quantum",
+  repoRoot: siblingRepoRoot('quantum'),
   capsuleId: "capsule_quantum_product_body_seed",
   glyphId: "glyph:quantum:browser-shell-body:001",
   seedRef: "cloud-sealed-seed://quantum-product-body",
   source: {
     type: "local-snapshot",
-    ref: "/Users/devonwoodson/Documents/GitHub/quantum",
+    ref: siblingRepoRoot('quantum'),
   },
   requiredFiles: [
     "package.json",
@@ -293,13 +298,13 @@ export const CODE_POCKETVERSE_SHELL_MANIFEST = buildShellManifest({
   productId: "code",
   shellKind: "git-repo-body",
   displayName: "Code Repository Shell",
-  repoRoot: "/Users/devonwoodson/Documents/GitHub/code",
+  repoRoot: siblingRepoRoot('code'),
   capsuleId: "capsule_code_product_body_seed",
   glyphId: "glyph:code:maintenance-rematerialization-body:001",
   seedRef: "cloud-sealed-seed://code-product-body",
   source: {
     type: "local-snapshot",
-    ref: "/Users/devonwoodson/Documents/GitHub/code",
+    ref: siblingRepoRoot('code'),
   },
   requiredFiles: [
     "package.json",
@@ -319,13 +324,13 @@ export const VVAULT_POCKETVERSE_SHELL_MANIFEST = buildShellManifest({
   productId: "vvault",
   shellKind: "git-repo-body",
   displayName: "VVAULT Repository Shell",
-  repoRoot: "/Users/devonwoodson/Documents/GitHub/vvault",
+  repoRoot: siblingRepoRoot('vvault'),
   capsuleId: "capsule_vvault_product_body_seed",
   glyphId: "glyph:vvault:continuity-vault-body:001",
   seedRef: "cloud-sealed-seed://vvault-product-body",
   source: {
     type: "local-snapshot",
-    ref: "/Users/devonwoodson/Documents/GitHub/vvault",
+    ref: siblingRepoRoot('vvault'),
   },
   requiredFiles: [
     "package.json",

@@ -52,7 +52,7 @@ export class CapsuleLockService {
 
     // Resolve paths
     const userShard = shard || 'shard_0000';
-    const vvaultUserId = userId || 'devon_woodson_1774390416168'; // Would be resolved from context
+    const vvaultUserId = userId || process.env.VVAULT_USER_ID || ''; // Would be resolved from context
     
     const instancePath = path.join(
       VVAULT_ROOT,

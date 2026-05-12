@@ -15,8 +15,8 @@ const path = require('path');
 const { VVAULT_ROOT } = require('../vvaultConnector/config');
 
 const SHARD = 'shard_0000';
-const CANONICAL_USER_ID = process.env.CANONICAL_USER_ID || process.env.VVAULT_USER_ID || 'devon_woodson_1774390416168';
-const DUPLICATE_USER_IDS = (process.env.DUPLICATE_USER_IDS || 'dwoodson92_1763971899858,dwoodson92_1763971899864')
+const CANONICAL_USER_ID = process.env.CANONICAL_USER_ID || process.env.VVAULT_USER_ID || '';
+const DUPLICATE_USER_IDS = (process.env.DUPLICATE_USER_IDS || '')
   .split(',')
   .map((userId) => userId.trim())
   .filter(Boolean);

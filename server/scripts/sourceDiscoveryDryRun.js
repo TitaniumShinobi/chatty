@@ -22,8 +22,8 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '../..');
-const DEFAULT_ICLOUD_VAULT_ROOT = '/Users/devonwoodson/Library/Mobile Documents/com~apple~CloudDocs/Vault';
-const DEFAULT_VVAULT_ROOT = '/Users/devonwoodson/Documents/GitHub/vvault';
+const DEFAULT_ICLOUD_VAULT_ROOT = process.env.ICLOUD_VAULT_ROOT || '';
+const DEFAULT_VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
 const DEFAULT_SQLITE_PATH = path.join(REPO_ROOT, 'chatty.db');
 const KNOWLEDGE_TEXT_EXTENSIONS = new Set(['.txt', '.md', '.json', '.csv', '.xml', '.yaml', '.yml', '.log', '.rtf', '.html', '.pdf']);
 const VERIFIED_EXCLUDED_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.pdf', '.gif', '.webp', '.capsule']);

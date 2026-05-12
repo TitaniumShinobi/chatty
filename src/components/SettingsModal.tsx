@@ -131,11 +131,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 <a
                   className="inline-flex items-center justify-center rounded transition-colors"
                   style={{ color: 'var(--chatty-text)' }}
-                  href="https://thewreck.org"
+                  href={import.meta.env.VITE_PROJECT_WEBSITE_URL || 'https://thewreck.org'}
                   target="_blank"
                   rel="noreferrer"
-                  aria-label="thewreck.org"
-                  title="thewreck.org"
+                  aria-label="Project website"
+                  title="Project website"
                   onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--chatty-highlight)'}
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                 >

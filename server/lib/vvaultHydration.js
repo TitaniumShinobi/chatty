@@ -19,6 +19,7 @@ function safeJson(value) {
   try {
     return JSON.parse(value);
   } catch {
+    console.warn(`[VVAULT Hydration] safeJson failed — malformed JSON string, returning null`);
     return null;
   }
 }
@@ -96,7 +97,7 @@ export async function mergeFromVVAULT(constructCallsign, userId = null, userEmai
     const conditioning = await loadConditioningTxt(userId || '', constructCallsign);
     if (!EMPTY(conditioning)) out.conditioning = conditioning;
   } catch {
-    // Identity loader failures should not block route hydration.
+    console.warn(`[VVAULT Hydration] Conditioning load skipped for ${constructCallsign} — non-blocking fallthrough`);
   }
 
   try {
@@ -105,7 +106,7 @@ export async function mergeFromVVAULT(constructCallsign, userId = null, userEmai
     if (!EMPTY(apiIdentity?.description)) out.description = apiIdentity.description;
     if (!EMPTY(apiIdentity?.instructions)) out.instructions = apiIdentity.instructions;
   } catch {
-    // Fallback to Supabase below.
+    console.warn(`[VVAULT Hydration] API identity unavailable for ${constructCallsign} — falling back to Supabase`);
   }
 
   const supabase = getSupabaseClient();

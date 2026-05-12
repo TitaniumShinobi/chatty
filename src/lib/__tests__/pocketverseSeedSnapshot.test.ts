@@ -253,9 +253,9 @@ describe("pocketverseSeedSnapshot", () => {
   it("does not mutate sibling repos while packing and wake-checking Chatty", async () => {
     const shell = cloneShell(CHATTY_POCKETVERSE_SHELL_MANIFEST);
     const siblingFiles = [
-      "/Users/devonwoodson/Documents/GitHub/quantum/package.json",
-      "/Users/devonwoodson/Documents/GitHub/code/package.json",
-      "/Users/devonwoodson/Documents/GitHub/vvault/package.json",
+      "/home/user/projects/quantum/package.json",
+      "/home/user/projects/code/package.json",
+      "/home/user/projects/vvault/package.json",
     ];
     const before = await Promise.all(siblingFiles.map((filePath) => fs.stat(filePath)));
     const files = await readRealChattySnapshotFiles(shell);

@@ -126,7 +126,7 @@ describe("VVAULT bridge identity resolution", () => {
           return new Response(
             JSON.stringify({
               success: true,
-              user_id: "devon_woodson_1774390416168",
+              user_id: "test-user-001",
             }),
             {
               status: 200,
@@ -142,7 +142,7 @@ describe("VVAULT bridge identity resolution", () => {
     assert.deepEqual(resolved, {
       ok: true,
       httpStatus: 200,
-      vvaultUserId: "devon_woodson_1774390416168",
+      vvaultUserId: "test-user-001",
       supabaseUserId: null,
       authMethod: "shared_auth_bridge",
       apiBaseUrl: "http://127.0.0.1:8000/api/vault",
@@ -156,7 +156,7 @@ describe("VVAULT bridge identity resolution", () => {
       {
         ready: true,
         authSource: "shared",
-        vvaultUserId: "devon_woodson_1774390416168",
+        vvaultUserId: "test-user-001",
         supabaseUserId: null,
         reason: null,
       },
@@ -238,7 +238,7 @@ describe("VVAULT bridge identity resolution", () => {
       {
         resolveBridgeIdentityImpl: async () => ({
           ok: true,
-          vvaultUserId: "devon_woodson_1774390416168",
+          vvaultUserId: "test-user-001",
           supabaseUserId: null,
         }),
       },
@@ -247,7 +247,7 @@ describe("VVAULT bridge identity resolution", () => {
     assert.deepEqual(vvaultSession, {
       ready: true,
       authSource: "shared",
-      vvaultUserId: "devon_woodson_1774390416168",
+      vvaultUserId: "test-user-001",
       supabaseUserId: null,
       reason: null,
     });

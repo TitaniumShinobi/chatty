@@ -63,6 +63,7 @@ async function fetchVvaultBodyMemoryAnchors(constructId) {
       source: 'vvault_body',
     };
   } catch (error) {
+    console.warn(`[MemoryAnchorStore] VVAULT body fetch failed for ${constructId}: ${error?.message || error}`);
     return null;
   }
 }
@@ -123,8 +124,8 @@ function selectLatestValidAnchorDocument(rows) {
           filename: row?.filename || latestRow?.filename || null,
         };
       }
-    } catch {
-      // Ignore invalid JSON rows and continue to the next candidate.
+    } catch (rowErr) {
+      console.warn(`[MemoryAnchorStore] Skipping row with unparseable content: ${rowErr?.message || rowErr}`);
     }
   }
 

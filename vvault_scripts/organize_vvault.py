@@ -34,11 +34,11 @@ def get_user_shard_sequential(user_id):
     return "shard_0000"
 
 # User info
-USER_NAME = "Devon Woodson"
-USER_EMAIL = "dwoodson92@gmail.com"
+USER_NAME = os.environ.get("USER_NAME", "")
+USER_EMAIL = os.environ.get("USER_EMAIL", "")
 
 # Old user ID (MongoDB ObjectId format)
-OLD_USER_ID = "690ec2d8c980c59365f284f5"
+OLD_USER_ID = os.environ.get("OLD_USER_ID", "")
 
 # Test/mock user IDs to remove
 TEST_USER_IDS = ["anonymous_user_789", "test_user_123", "user_123"]

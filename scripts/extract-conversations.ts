@@ -47,12 +47,11 @@ function parseArgs(): CLIArgs {
     console.error('\nUsage:');
     console.error('  node scripts/extract-conversations.js \\');
     console.error('    --src path/to/conversations.html \\');
-    console.error('    --userId "${VVAULT_USER_ID:-devon_woodson_1774390416168}" \\');
+    console.error('    --userId "${VVAULT_USER_ID}" \\');
     console.error('    --runtimeId chatgpt-devon \\');
     console.error('    --constructId chatgpt-devon-001 \\');
-    console.error('    --importedBy devon@thewreck.org \\');
-    console.error('    [--shardId shard_0000] \\');
-    console.error('    [--userEmail devon@thewreck.org] \\');
+    console.error('    --importedBy user@example.com \\');
+    console.error('    [--userEmail user@example.com] \\');
     console.error('    [--importSourceFilename conversations.html] \\');
     console.error('    [--destRoot /path/to/vvault] \\');
     console.error('    [--overwrite] \\');

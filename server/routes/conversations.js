@@ -1,3 +1,14 @@
+/**
+ * /api/conversations/*
+ *
+ * ROUTE CLASSIFICATION: NONCANONICAL (separate path)
+ * These routes bypass the canonical /api/vvault/message runtime path.
+ * They use gptRuntimeBridge directly and emit stub runtime_receipt
+ * and orchestration_checklist fields for observability parity.
+ *
+ * New consumers should target /api/vvault/message for the canonical runtime path.
+ */
+
 import express from "express";
 import { Store } from "../store.js";
 import { getGPTRuntimeBridge } from "../lib/gptRuntimeBridge.js";
@@ -818,7 +829,24 @@ r.post("/:id/messages", async (req, res) => {
         ok: true,
         message: userMessage,
         aiResponse: aiMessage,
-        content: guardedRuntimeResponse // For compatibility with test expectations
+        content: guardedRuntimeResponse, // For compatibility with test expectations
+        runtime_receipt: {
+          created_at: new Date().toISOString(),
+          route_mode: 'conversations_message',
+          construct_id: constructId,
+          _noncanonical: true,
+          _canonical_path: '/api/vvault/message',
+          _disclaimer: 'Stub receipt. Canonical runtime: /api/vvault/message.',
+        },
+        orchestration_checklist: {
+          responseStatus: 'conversations_routed',
+          route: '/api/conversations/:id/messages',
+          _noncanonical: true,
+          _canonical_path: '/api/vvault/message',
+          _disclaimer: 'Stub checklist. Canonical runtime: /api/vvault/message.',
+        },
+        _noncanonical: true,
+        _canonical_path: '/api/vvault/message',
       });
 
     } catch (aiError) {

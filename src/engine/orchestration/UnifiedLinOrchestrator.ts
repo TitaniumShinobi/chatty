@@ -47,7 +47,7 @@ const orchestratorConfig = {
   paths: {
     linIdentityCapsule: `${process.cwd()}/chatty/identity/lin-001/capsule.json`,
     linIdentityWeights: `${process.cwd()}/chatty/identity/lin-001`,
-    vvaultRoot: process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault',
+    vvaultRoot: process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '',
   },
   models: {
     toneDetection: LIN_MODEL_DEFAULTS.conversation,

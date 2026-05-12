@@ -15,10 +15,10 @@ import {
 } from '../lib/codexContinuityRelay.js';
 
 const canonicalUser = {
-  user_id: 'devon_woodson_1774390416168',
-  email: 'dwoodson92@gmail.com',
+  user_id: 'test-user-001',
+  email: 'user@example.com',
   name: 'Devon Woodson',
-  vvault_user_id: 'devon_woodson_1774390416168',
+  vvault_user_id: 'test-user-001',
 };
 
 const JSON_TAIL = [
@@ -162,8 +162,8 @@ Auto context
           type: 'session_meta',
           payload: {
             id: '019e-rollout',
-            cwd: '/Users/devonwoodson/Documents/GitHub/chatty',
-          },
+            cwd: '/home/user/projects/chatty',
+          }),
         }),
         JSON.stringify({
           timestamp: '2026-05-08T23:01:01.000Z',
@@ -171,7 +171,7 @@ Auto context
           payload: {
             type: 'message',
             role: 'user',
-            content: [{ type: 'input_text', text: '<environment_context>\n<cwd>/Users/devonwoodson/Documents/GitHub/chatty</cwd>' }],
+            content: [{ type: 'input_text', text: '<environment_context>\n<cwd>/home/user/projects/chatty</cwd>' }],
           },
         }),
         JSON.stringify({
@@ -241,7 +241,7 @@ Auto context
     assert.equal(parsed.turns[1].role, 'assistant');
     assert.equal(parsed.turns[1].content, 'Relay acknowledged and ready for Chatty continuation.');
     assert.equal(parsed.parseReport.strategy, 'rollout-jsonl-terminal-pair');
-    assert.equal(parsed.parseReport.cwd, '/Users/devonwoodson/Documents/GitHub/chatty');
+    assert.equal(parsed.parseReport.cwd, '/home/user/projects/chatty');
     assert.equal(parsed.parseReport.skippedHiddenContextMessages, 1);
     assert.equal(parsed.parseReport.skippedNonFinalAssistantMessages, 2);
   });
@@ -465,7 +465,7 @@ Verification: npm test passes.
         JSON.stringify({
           timestamp: '2026-05-07T20:00:00.000Z',
           type: 'session_meta',
-          payload: { id: 'old', cwd: '/Users/devonwoodson/Documents/GitHub/other' },
+          payload: { id: 'old', cwd: '/home/user/projects/other' },
         }),
         JSON.stringify({
           timestamp: '2026-05-07T20:00:01.000Z',

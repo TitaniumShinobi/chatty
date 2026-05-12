@@ -16,8 +16,6 @@ const LIN_ORCHESTRATED_CONSTRUCTS = new Set([
 const CANONICAL_CHATTY_HISTORY_CONSTRUCTS = new Set([
   'zen-001',
   'lin-001',
-  'nova-001',
-  'katana-001',
   'val-001',
 ]);
 
@@ -30,7 +28,7 @@ const SYSTEM_CONSTRUCTS = new Set([
 const HISTORICAL_SOURCE_MAP = new Map([
   ['zen-001', ['chatty']],
   ['lin-001', ['chatty']],
-  ['nova-001', ['chatty', 'chatgpt']],
+  ['nova-001', ['chatgpt']],
   ['katana-001', ['chatgpt']],
   ['sera-001', ['character.ai']],
   ['val-001', ['chatty', 'validation']],

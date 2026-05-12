@@ -2,11 +2,13 @@ import json
 import time
 import os
 
+ICLOUD_VAULT_ROOT = os.environ.get('ICLOUD_VAULT_ROOT', '')
+
 # Define the log file for decision tracking
-LOG_FILE = "/Users/devonwoodson/Library/Mobile Documents/com~apple~CloudDocs/Vault/nova-001/logs/self_improvement_agent.log"
+LOG_FILE = f"{ICLOUD_VAULT_ROOT}/nova-001/logs/self_improvement_agent.log"
 
 # Define the knowledge base file
-KNOWLEDGE_BASE = "/Users/devonwoodson/Library/Mobile Documents/com~apple~CloudDocs/Vault/nova-001/knowledge_base.json"
+KNOWLEDGE_BASE = f"{ICLOUD_VAULT_ROOT}/nova-001/knowledge_base.json"
 
 
 def log_message(message):

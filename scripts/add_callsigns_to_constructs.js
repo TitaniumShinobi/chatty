@@ -2,7 +2,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 
-const VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/VVAULT';
+const VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
 const USERS_DIR = path.join(VVAULT_ROOT, 'users');
 
 async function addCallsigns() {
