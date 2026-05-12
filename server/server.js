@@ -2090,10 +2090,8 @@ app.use("/api/codex", requireAuth, codexRoutes);
 console.log('✅ [Server] Codex routes mounted at /api/codex');
 
 // Master Scripts routes (autonomy stack for constructs)
-if (process.env.ENABLE_MASTER_SCRIPTS === 'true') {
-  app.use("/api/master", requireAuth, masterScriptsRoutes);
-  console.log('✅ [Server] Master Scripts routes mounted at /api/master (admin)');
-}
+app.use("/api/master", requireAuth, masterScriptsRoutes);
+console.log('✅ [Server] Master Scripts routes mounted at /api/master (admin)');
 
 // Scripts routes (GPTCreator compatibility)
 if (process.env.ENABLE_SCRIPTS === 'true') {
