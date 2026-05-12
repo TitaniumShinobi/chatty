@@ -31,8 +31,13 @@ export function applyCanonicalOwnerResolution({
   dataOwnerSource,
   userId,
 }) {
-  const resolvedOwnerUserId = canonicalOwnerResolution.dataOwnerUserId || dataOwnerUserId;
-  const resolvedOwnerSource = canonicalOwnerResolution.dataOwnerSource || dataOwnerSource;
+  const canonicalOwnerApplied = canonicalOwnerResolution?.applied === true;
+  const resolvedOwnerUserId = canonicalOwnerApplied
+    ? canonicalOwnerResolution.dataOwnerUserId || null
+    : canonicalOwnerResolution.dataOwnerUserId || dataOwnerUserId;
+  const resolvedOwnerSource = canonicalOwnerApplied
+    ? canonicalOwnerResolution.dataOwnerSource || dataOwnerSource
+    : canonicalOwnerResolution.dataOwnerSource || dataOwnerSource;
   const updatedAuthReceipt = {
     ...authReceipt,
     data_owner_user_id: resolvedOwnerUserId || null,

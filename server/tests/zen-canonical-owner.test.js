@@ -243,4 +243,23 @@ describe('Zen canonical owner resolution', () => {
     assert.equal(result.dataOwnerUserId, '11111111-2222-3333-4444-555555555555');
     assert.equal(result.receipt.finalDataOwnerUserId, '11111111-2222-3333-4444-555555555555');
   });
+
+  it('fails closed when the canonical Zen owner uuid is explicitly unavailable', () => {
+    const result = resolveCanonicalConstructDataOwner({
+      constructId: 'zen-001',
+      sessionId: ZEN_CANONICAL_THREAD_ID,
+      requestedDataOwnerUserId: 'qa-owner',
+      requestedDataOwnerSource: 'supabase_session',
+      env: {
+        CHATTY_ZEN_CANONICAL_OWNER_SUPABASE_USER_ID: '',
+        CANONICAL_OWNER_SUPABASE_USER_ID: '',
+      },
+    });
+
+    assert.equal(result.applied, true);
+    assert.equal(result.ready, false);
+    assert.equal(result.dataOwnerUserId, null);
+    assert.equal(result.receipt.finalDataOwnerUserId, null);
+    assert.equal(result.receipt.failureReason, 'canonical_owner_unconfigured');
+  });
 });

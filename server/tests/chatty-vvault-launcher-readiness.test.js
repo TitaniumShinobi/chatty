@@ -37,4 +37,16 @@ describe("Chatty VVAULT launcher readiness contract", () => {
     );
     assert.match(runtimeSupervisor, /SERVER_HEALTH_URL="http:\/\/127\.0\.0\.1:5050\/api\/health"/);
   });
+
+  it("targets the shared auth authority on port 1111 in the local managed launcher path", () => {
+    assert.match(
+      standaloneLauncher,
+      /CHATTY_AUTH_HEALTH_URL="\$\{CHATTY_AUTH_HEALTH_URL:-http:\/\/127\.0\.0\.1:1111\/health\}"/,
+    );
+    assert.match(
+      runtimeSupervisor,
+      /AUTH_HEALTH_URL="\$\{CHATTY_AUTH_HEALTH_URL:-http:\/\/127\.0\.0\.1:1111\/health\}"/,
+    );
+    assert.match(runtimeSupervisor, /AUTH_PORT_VALUE="\$\{AUTH_PORT:-1111\}"/);
+  });
 });

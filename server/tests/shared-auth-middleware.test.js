@@ -24,7 +24,7 @@ describe("shared auth middleware", () => {
   it("resolves a valid Chatty sid without consulting shared auth", async () => {
     process.env.COOKIE_NAME = "sid";
     process.env.JWT_SECRET = "test-chatty-secret";
-    process.env.AUTH_API_BASE_URL = "http://127.0.0.1:1122";
+    process.env.AUTH_API_BASE_URL = "http://127.0.0.1:1111";
 
     const token = jwt.sign(
       { id: "chatty-user-1", sub: "chatty-user-1", email: "chatty@example.com" },
@@ -54,11 +54,11 @@ describe("shared auth middleware", () => {
   });
 
   it("hydrates req.user from shared auth when sid is missing and auth_sid is valid", async () => {
-    process.env.AUTH_API_BASE_URL = "http://127.0.0.1:1122";
+    process.env.AUTH_API_BASE_URL = "http://127.0.0.1:1111";
     process.env.AUTH_COOKIE_NAME = "auth_sid";
 
     globalThis.fetch = async (url, init = {}) => {
-      assert.equal(url, "http://127.0.0.1:1122/api/me");
+      assert.equal(url, "http://127.0.0.1:1111/api/me");
       assert.match(init.headers.cookie, /auth_sid=shared-session-token/);
       return new Response(
         JSON.stringify({
@@ -95,7 +95,7 @@ describe("shared auth middleware", () => {
   });
 
   it("returns AUTH_REQUIRED when neither Chatty nor shared auth resolves a session", async () => {
-    process.env.AUTH_API_BASE_URL = "http://127.0.0.1:1122";
+    process.env.AUTH_API_BASE_URL = "http://127.0.0.1:1111";
     process.env.AUTH_COOKIE_NAME = "auth_sid";
 
     let nextCalled = false;
@@ -128,7 +128,7 @@ describe("shared auth middleware", () => {
   });
 
   it("fails closed when shared auth /api/me hangs", async () => {
-    process.env.AUTH_API_BASE_URL = "http://127.0.0.1:1122";
+    process.env.AUTH_API_BASE_URL = "http://127.0.0.1:1111";
     process.env.AUTH_COOKIE_NAME = "auth_sid";
     const originalWarn = console.warn;
     const warnCalls = [];
@@ -165,7 +165,7 @@ describe("shared auth middleware", () => {
   });
 
   it("accepts shared auth for shared-only VVAULT browser routes", async () => {
-    process.env.AUTH_API_BASE_URL = "http://127.0.0.1:1122";
+    process.env.AUTH_API_BASE_URL = "http://127.0.0.1:1111";
     process.env.AUTH_COOKIE_NAME = "auth_sid";
 
     globalThis.fetch = async () =>
@@ -213,7 +213,7 @@ describe("shared auth middleware", () => {
   it("rejects Chatty sid-only sessions for shared-only VVAULT browser routes", async () => {
     process.env.COOKIE_NAME = "sid";
     process.env.JWT_SECRET = "test-chatty-secret";
-    process.env.AUTH_API_BASE_URL = "http://127.0.0.1:1122";
+    process.env.AUTH_API_BASE_URL = "http://127.0.0.1:1111";
     process.env.AUTH_COOKIE_NAME = "auth_sid";
 
     const token = jwt.sign(
@@ -294,11 +294,11 @@ describe("shared auth middleware", () => {
   });
 
   it("surfaces bridge unavailability for shared-only routes when auth_sid cannot be resolved", async () => {
-    process.env.AUTH_API_BASE_URL = "http://127.0.0.1:1122";
+    process.env.AUTH_API_BASE_URL = "http://127.0.0.1:1111";
     process.env.AUTH_COOKIE_NAME = "auth_sid";
 
     globalThis.fetch = async () => {
-      throw new Error("connect ECONNREFUSED 127.0.0.1:1122");
+      throw new Error("connect ECONNREFUSED 127.0.0.1:1111");
     };
 
     let nextCalled = false;

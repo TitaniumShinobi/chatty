@@ -1,9 +1,17 @@
+const FALLBACK_CANONICAL_OWNER_SUPABASE_USER_ID =
+  '7e34f6b8-e33a-48b5-8ddb-95b94d18e296';
+const FALLBACK_CANONICAL_OWNER_EMAIL = 'dwoodson92@gmail.com';
+const FALLBACK_CANONICAL_OWNER_VVAULT_USER_ID = 'devon_woodson_1762969514958';
+
 export const DEFAULT_CANONICAL_OWNER_SUPABASE_USER_ID =
-  process.env.CANONICAL_OWNER_SUPABASE_USER_ID || '';
+  process.env.CANONICAL_OWNER_SUPABASE_USER_ID ||
+  FALLBACK_CANONICAL_OWNER_SUPABASE_USER_ID;
 export const DEFAULT_CANONICAL_OWNER_EMAIL =
-  process.env.CANONICAL_OWNER_EMAIL || '';
+  process.env.CANONICAL_OWNER_EMAIL || FALLBACK_CANONICAL_OWNER_EMAIL;
 export const DEFAULT_CANONICAL_OWNER_VVAULT_USER_ID =
-  process.env.CANONICAL_OWNER_VVAULT_USER_ID || '';
+  process.env.CANONICAL_OWNER_VVAULT_USER_ID ||
+  process.env.VVAULT_USER_ID ||
+  FALLBACK_CANONICAL_OWNER_VVAULT_USER_ID;
 
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 
@@ -82,15 +90,31 @@ function ownerIdentifierSet(env = process.env) {
   return new Set([...DEFAULT_CANONICAL_OWNER_IDENTIFIERS, ...configured].map(normalizePolicyToken));
 }
 
+function readCanonicalEnvValue(env, key, defaultValue = '') {
+  if (env && Object.prototype.hasOwnProperty.call(env, key)) {
+    return String(env[key] || '').trim();
+  }
+  return String(defaultValue || '').trim();
+}
+
+export function isCanonicalOwnerSupabaseUserId(value) {
+  return UUID_RE.test(String(value || '').trim());
+}
+
 export function resolveCanonicalOwnerSupabaseUserId(env = process.env) {
-  const configured = String(
-    env.CHATTY_CANONICAL_OWNER_SUPABASE_USER_ID ||
-      env.CHATTY_ZEN_CANONICAL_OWNER_SUPABASE_USER_ID ||
-      ''
-  ).trim();
-  return UUID_RE.test(configured)
-    ? configured
-    : DEFAULT_CANONICAL_OWNER_SUPABASE_USER_ID;
+  const configured =
+    readCanonicalEnvValue(env, 'CHATTY_CANONICAL_OWNER_SUPABASE_USER_ID') ||
+    readCanonicalEnvValue(env, 'CHATTY_ZEN_CANONICAL_OWNER_SUPABASE_USER_ID');
+  if (isCanonicalOwnerSupabaseUserId(configured)) {
+    return configured;
+  }
+
+  const fallback = readCanonicalEnvValue(
+    env,
+    'CANONICAL_OWNER_SUPABASE_USER_ID',
+    DEFAULT_CANONICAL_OWNER_SUPABASE_USER_ID,
+  );
+  return isCanonicalOwnerSupabaseUserId(fallback) ? fallback : '';
 }
 
 function collectActorIdentifiers(actor = {}) {

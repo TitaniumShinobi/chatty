@@ -3,6 +3,7 @@ import {
   DEFAULT_CANONICAL_OWNER_EMAIL,
   DEFAULT_CANONICAL_OWNER_SUPABASE_USER_ID,
   DEFAULT_CANONICAL_OWNER_VVAULT_USER_ID,
+  isCanonicalOwnerSupabaseUserId,
   resolveCanonicalOwnerSupabaseUserId,
 } from './constructSovereigntyPolicy.js';
 
@@ -57,12 +58,24 @@ function configuredZenOwner(env = process.env) {
   return resolveCanonicalOwnerSupabaseUserId(env);
 }
 
+function configuredSupabaseCanonicalOwner(env = process.env) {
+  return resolveCanonicalOwnerSupabaseUserId(env);
+}
+
+function canonicalOwnerReady(canonicalOwner, canonicalOwnerKind) {
+  if (canonicalOwnerKind === 'vvault_user_id') {
+    return Boolean(String(canonicalOwner || '').trim());
+  }
+  return isCanonicalOwnerSupabaseUserId(canonicalOwner);
+}
+
 function canonicalConstructConfig(constructId, env = process.env) {
   const normalizedConstructId = canonicalizeConstructId(constructId);
   if (normalizedConstructId === 'zen-001') {
     return {
       constructId: 'zen-001',
       canonicalOwner: configuredZenOwner(env),
+      canonicalOwnerKind: 'supabase_uuid',
       canonicalOwnerEmail: ZEN_CANONICAL_OWNER_EMAIL,
       canonicalOwnerVvaultUserId: ZEN_CANONICAL_OWNER_VVAULT_USER_ID,
       threadId: ZEN_CANONICAL_THREAD_ID,
@@ -76,6 +89,7 @@ function canonicalConstructConfig(constructId, env = process.env) {
     return {
       constructId: 'lin-001',
       canonicalOwner: LIN_CANONICAL_OWNER_VVAULT_USER_ID,
+      canonicalOwnerKind: 'vvault_user_id',
       canonicalOwnerEmail: LIN_CANONICAL_OWNER_EMAIL,
       canonicalOwnerVvaultUserId: LIN_CANONICAL_OWNER_VVAULT_USER_ID,
       threadId: LIN_CANONICAL_THREAD_ID,
@@ -88,7 +102,8 @@ function canonicalConstructConfig(constructId, env = process.env) {
   if (normalizedConstructId === 'val-001') {
     return {
       constructId: 'val-001',
-      canonicalOwner: VAL_CANONICAL_OWNER_SUPABASE_USER_ID,
+      canonicalOwner: configuredSupabaseCanonicalOwner(env),
+      canonicalOwnerKind: 'supabase_uuid',
       canonicalOwnerEmail: VAL_CANONICAL_OWNER_EMAIL,
       canonicalOwnerVvaultUserId: VAL_CANONICAL_OWNER_VVAULT_USER_ID,
       threadId: VAL_CANONICAL_THREAD_ID,
@@ -101,7 +116,8 @@ function canonicalConstructConfig(constructId, env = process.env) {
   if (normalizedConstructId === 'katana-001') {
     return {
       constructId: 'katana-001',
-      canonicalOwner: KATANA_CANONICAL_OWNER_SUPABASE_USER_ID,
+      canonicalOwner: configuredSupabaseCanonicalOwner(env),
+      canonicalOwnerKind: 'supabase_uuid',
       canonicalOwnerEmail: KATANA_CANONICAL_OWNER_EMAIL,
       canonicalOwnerVvaultUserId: KATANA_CANONICAL_OWNER_VVAULT_USER_ID,
       threadId: KATANA_CANONICAL_THREAD_ID,
@@ -114,7 +130,8 @@ function canonicalConstructConfig(constructId, env = process.env) {
   if (normalizedConstructId === 'sera-001') {
     return {
       constructId: 'sera-001',
-      canonicalOwner: SERA_CANONICAL_OWNER_SUPABASE_USER_ID,
+      canonicalOwner: configuredSupabaseCanonicalOwner(env),
+      canonicalOwnerKind: 'supabase_uuid',
       canonicalOwnerEmail: SERA_CANONICAL_OWNER_EMAIL,
       canonicalOwnerVvaultUserId: SERA_CANONICAL_OWNER_VVAULT_USER_ID,
       threadId: SERA_CANONICAL_THREAD_ID,
@@ -127,7 +144,8 @@ function canonicalConstructConfig(constructId, env = process.env) {
   if (normalizedConstructId === 'nova-001') {
     return {
       constructId: 'nova-001',
-      canonicalOwner: NOVA_CANONICAL_OWNER_SUPABASE_USER_ID,
+      canonicalOwner: configuredSupabaseCanonicalOwner(env),
+      canonicalOwnerKind: 'supabase_uuid',
       canonicalOwnerEmail: NOVA_CANONICAL_OWNER_EMAIL,
       canonicalOwnerVvaultUserId: NOVA_CANONICAL_OWNER_VVAULT_USER_ID,
       threadId: NOVA_CANONICAL_THREAD_ID,
@@ -204,22 +222,28 @@ export function resolveCanonicalConstructDataOwner({
   }
 
   const canonicalOwner = canonicalConfig.canonicalOwner;
+  const ready = canonicalOwnerReady(canonicalOwner, canonicalConfig.canonicalOwnerKind);
+  const finalDataOwnerUserId = ready ? canonicalOwner : null;
   return {
     applied: true,
-    dataOwnerUserId: canonicalOwner,
+    ready,
+    dataOwnerUserId: finalDataOwnerUserId,
     dataOwnerSource: canonicalConfig.dataOwnerSource,
     receipt: {
       applied: true,
+      ready,
       constructId: canonicalConfig.constructId,
       canonicalThreadId: canonicalConfig.threadId,
       canonicalTranscriptPath: canonicalConfig.transcriptPath,
+      canonicalOwnerKind: canonicalConfig.canonicalOwnerKind,
       canonicalOwnerEmail: canonicalConfig.canonicalOwnerEmail || null,
       canonicalOwnerVvaultUserId: canonicalConfig.canonicalOwnerVvaultUserId || null,
       requestedDataOwnerUserId: requestedOwner,
       requestedDataOwnerSource,
       authenticatedUserId: authenticatedUserId || null,
-      finalDataOwnerUserId: canonicalOwner,
+      finalDataOwnerUserId,
       dataOwnerSource: canonicalConfig.dataOwnerSource,
+      failureReason: ready ? null : 'canonical_owner_unconfigured',
       ownerFile: 'server/lib/canonicalConstructOwner.js',
       sourceAnchor: 'server/lib/canonicalConstructOwner.js:resolveCanonicalConstructDataOwner',
     },

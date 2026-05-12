@@ -9478,6 +9478,42 @@ export async function handleConstructInference(req, res) {
   if (canonicalOwnerResolution.applied) {
     console.log('[VVAULT_AUTH] Canonical construct owner applied', canonicalOwnerResolution.receipt);
   }
+  if (canonicalOwnerResolution.applied && canonicalOwnerResolution.ready === false) {
+    const payload = buildTranscriptTruthFailurePayload({
+      authReceipt,
+      userId: dataOwnerUserId,
+      user: req.user,
+      constructId,
+      rawConstructId,
+      canonicalConstructId,
+      message,
+      threadId,
+      sessionId,
+      hasImages,
+      previewMode,
+      gptConfig: null,
+      continuityResume: null,
+      transcriptTruth: {
+        eligible: false,
+        hydrationSource: 'owner-unconfigured',
+        hydrationComplete: false,
+        exactThreadId: effectiveTurnSessionId,
+        exactThreadFound: false,
+        assistantTailFound: false,
+        runtimeStateFound: false,
+        runtimeStateHydrationTruth: null,
+        evidenceCount: 0,
+        evidenceSources: [],
+        fallbackRejected: false,
+        reason: canonicalOwnerResolution.receipt?.failureReason || 'canonical_owner_unconfigured',
+      },
+      code: 'CANONICAL_OWNER_UNCONFIGURED',
+      error:
+        'Canonical owner configuration is required before protected canonical transcript generation can continue.',
+      responseStatus: 'canonical_owner_unconfigured',
+    });
+    return res.status(503).json(payload);
+  }
   if (effectiveRequestUserEmail) {
     req.user = { ...(req.user || {}), email: effectiveRequestUserEmail };
     authReceipt.auth_email = effectiveRequestUserEmail;
@@ -9755,6 +9791,9 @@ export async function handleConstructInference(req, res) {
       ? 'transcript_law'
       : 'ordinary';
     routeTurnEnvelope.transcriptLawRequired = Boolean(contextBudget.transcript_law_evidence_intent);
+    if (typeof readConversations !== 'function') {
+      await loadVVAULTModules();
+    }
     const transcriptTruthResult = await processCanonicalTranscriptTruth({
       req,
       res,
@@ -9815,12 +9854,10 @@ export async function handleConstructInference(req, res) {
 
     let coderModel =
       gptConfig?.coderModel ||
-      cfg?.coderModel ||
       meta?.coderModel ||
       DEFAULT_CODER_MODEL;
     let coderProvider =
       gptConfig?.coderProvider ||
-      cfg?.coderProvider ||
       meta?.coderProvider ||
       DEFAULT_CODER_PROVIDER;
 
@@ -10160,7 +10197,7 @@ export async function handleConstructInference(req, res) {
       systemPrompt += `\n\n${visionDirective}`;
     }
 
-    const buildPromptDiagnostics = (opts) => buildPromptDiagnostics({
+    const buildPromptDiagnosticsForTurn = (opts) => buildPromptDiagnostics({
       ...opts,
       constructId,
       canonicalConstructId,
@@ -10474,7 +10511,7 @@ export async function handleConstructInference(req, res) {
       })}`;
     }
 
-    const mainPromptDiagnostics = buildPromptDiagnostics({
+    const mainPromptDiagnostics = buildPromptDiagnosticsForTurn({
       mode: 'main',
       enriched: enrichedContext,
       historyCount: conversationHistoryMessages.length,
@@ -13289,7 +13326,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
                 constructDisplayName: gptConfig?.name || constructId,
               })}`;
             }
-            const fallback1PromptDiagnostics = buildPromptDiagnostics({
+            const fallback1PromptDiagnostics = buildPromptDiagnosticsForTurn({
               mode: 'fallback_vvault_unavailable',
               enriched: enrichedResult,
               historyCount: fbHistoryMessages.length,
@@ -14407,7 +14444,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
             constructDisplayName: gptConfig?.name || constructId,
           })}`;
         }
-        const fallback2PromptDiagnostics = buildPromptDiagnostics({
+        const fallback2PromptDiagnostics = buildPromptDiagnosticsForTurn({
           mode: 'fallback_vvault_unreachable',
           enriched: enrichedResult2,
           historyCount: fb2HistoryMessages.length,

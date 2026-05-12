@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  isCanonicalOwnerSupabaseUserId,
+  resolveCanonicalOwnerSupabaseUserId,
+} from './constructSovereigntyPolicy.js';
 import { getVvaultBasePath } from './vvaultPaths.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -77,6 +81,20 @@ export async function checkProviderHealth() {
   };
 }
 
+export function checkCanonicalOwnerHealth(env = process.env) {
+  const canonicalOwnerSupabaseUserId = resolveCanonicalOwnerSupabaseUserId(env);
+  const ok = isCanonicalOwnerSupabaseUserId(canonicalOwnerSupabaseUserId);
+  return {
+    ok,
+    detail: {
+      canonicalOwnerSupabaseUserId: canonicalOwnerSupabaseUserId || null,
+      configured: ok,
+      source: ok ? 'construct_sovereignty_policy' : 'missing_or_invalid',
+    },
+    latencyMs: 0,
+  };
+}
+
 export async function runAllHealthChecks(includeProvider = true) {
   const components = {
     app: { ok: true, detail: 'server alive', latencyMs: 0 },
@@ -84,6 +102,7 @@ export async function runAllHealthChecks(includeProvider = true) {
     memory: await checkMemoryHealth(),
     vvault: checkVvaultHealth(),
     build: checkBuildHealth(),
+    canonicalOwner: checkCanonicalOwnerHealth(),
   };
   if (includeProvider) {
     components.provider = await checkProviderHealth();
@@ -97,6 +116,7 @@ export default {
   checkMemoryHealth,
   checkVvaultHealth,
   checkBuildHealth,
+  checkCanonicalOwnerHealth,
   checkProviderHealth,
   resolveOptimizedZenBuildArtifact,
   runAllHealthChecks,

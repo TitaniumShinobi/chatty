@@ -288,6 +288,29 @@ describe('applyCanonicalOwnerResolution', () => {
     assert.equal(result.authReceipt.auth_email, 'a@b.com');
     assert.equal(result.authReceipt.auth_provider, 'google');
   });
+
+  it('fails closed when a canonical owner resolution applied but produced no owner id', () => {
+    const authReceipt = { data_owner_user_id: 'request-owner', data_owner_source: 'supabase_session', memory_lookup_user_id: 'request-owner', data_owner_matches_auth: false, canonical_construct_owner: null };
+
+    const result = applyCanonicalOwnerResolution({
+      canonicalOwnerResolution: {
+        applied: true,
+        dataOwnerUserId: null,
+        dataOwnerSource: 'canonical_zen_chatty_owner',
+        receipt: { failureReason: 'canonical_owner_unconfigured' },
+      },
+      authReceipt,
+      dataOwnerUserId: 'request-owner',
+      dataOwnerSource: 'supabase_session',
+      userId: 'uid-1',
+    });
+
+    assert.equal(result.dataOwnerUserId, null);
+    assert.equal(result.dataOwnerSource, 'canonical_zen_chatty_owner');
+    assert.equal(result.authReceipt.data_owner_user_id, null);
+    assert.equal(result.authReceipt.memory_lookup_user_id, null);
+    assert.equal(result.authReceipt.canonical_construct_owner.failureReason, 'canonical_owner_unconfigured');
+  });
 });
 
 describe('buildIdentityCoherenceRepairDefaults', () => {
