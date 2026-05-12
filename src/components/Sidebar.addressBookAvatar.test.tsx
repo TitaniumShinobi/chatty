@@ -86,4 +86,14 @@ describe("Sidebar address book avatars", () => {
     expect(html).toContain("Hydro");
     expect(html).toContain("lucide-image-off");
   });
+
+  it("keeps unfinished navigation surfaces hidden in the public MVP sidebar", () => {
+    const html = renderSidebar([]);
+
+    expect(html).not.toContain("Finance");
+    expect(html).not.toContain("Get More");
+    expect(html).toContain("Continuity");
+    expect(html).toContain("simForge");
+    expect(html).toContain("Library");
+  });
 });

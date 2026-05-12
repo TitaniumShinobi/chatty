@@ -1,6 +1,5 @@
 import express from 'express';
 import { tavilySearch } from '../lib/tavilyClient.js';
-import { AIManager } from '../lib/aiManager.js';
 import {
   buildSearchCitations,
   buildSearchContextBlock,
@@ -22,6 +21,18 @@ const searchCache = new Map();
 const CACHE_TTL = 15 * 60 * 1000;
 const searchMediaCache = new Map();
 const SEARCH_MEDIA_CACHE_TTL = 30 * 60 * 1000;
+let aiManagerModulePromise = null;
+
+async function getAIManager() {
+  if (!aiManagerModulePromise) {
+    aiManagerModulePromise = import('../lib/aiManager.js').catch((error) => {
+      aiManagerModulePromise = null;
+      throw error;
+    });
+  }
+  const { AIManager } = await aiManagerModulePromise;
+  return AIManager.getInstance();
+}
 
 function getCachedResult(query) {
   const cached = searchCache.get(query.toLowerCase().trim());
@@ -180,7 +191,7 @@ function normalizeSearchResult(result) {
 }
 
 async function searchViaAIManager(query, { numResults, depth } = {}) {
-  const aiManager = AIManager.getInstance();
+  const aiManager = await getAIManager();
   if (!aiManager?.searchWeb) {
     return null;
   }

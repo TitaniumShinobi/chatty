@@ -5,7 +5,6 @@ import path from "path";
 import fs from "fs/promises";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
-import { AIManager } from "../lib/aiManager.js";
 import VVAULTMemoryManager from "../lib/vvaultMemoryManager.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -31,7 +30,18 @@ const buildConstructBase = (source = 'imported', identity = null, fallbackId = '
   return sanitizeConstructId(`${provider}-${suffix}`);
 };
 
-const aiManager = AIManager.getInstance();
+let aiManagerModulePromise = null;
+
+async function getAIManager() {
+  if (!aiManagerModulePromise) {
+    aiManagerModulePromise = import("../lib/aiManager.js").catch((error) => {
+      aiManagerModulePromise = null;
+      throw error;
+    });
+  }
+  const { AIManager } = await aiManagerModulePromise;
+  return AIManager.getInstance();
+}
 
 // Allow repairing slightly truncated ZIP archives (up to ~5MB padding)
 const MAX_TRUNCATED_ZIP_PAD_BYTES = 5 * 1024 * 1024;
@@ -807,6 +817,7 @@ async function checkForDuplicateRuntime(userId, source, identity) {
   const expectedConstructId = expectedConstructBase.endsWith('-001') ? expectedConstructBase : `${expectedConstructBase}-001`;
 
   // Get all GPTs for this user
+  const aiManager = await getAIManager();
   const allAIs = await aiManager.getAllAIs(userId);
 
   // Check for duplicate by constructId (not name, since name is just provider label)
@@ -923,6 +934,7 @@ export async function createImportedRuntime({
   }
 
   console.log(`💾 [createImportedRuntime] Creating AI entry with userId: ${userId}`);
+  const aiManager = await getAIManager();
   const runtimeConfig = await aiManager.createAI({
     name: runtimeName,
     description,

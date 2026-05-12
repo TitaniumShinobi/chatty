@@ -1,0 +1,93 @@
+export async function normalizeVvaultRouteRequest({
+  req,
+  resolveSupabaseUser,
+  buildAuthReceipt,
+  normalizeInferenceRequest,
+}) {
+  const inferenceClock = req.clock || new Date().toISOString();
+  const inferenceRequestId = req.requestId || `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const authHeader = (req?.headers?.authorization || '').toString();
+  const hasSupabaseAuthHeader = authHeader.toLowerCase().startsWith('bearer ');
+  const hasReqUser = !!req?.user;
+
+  let userId;
+  let authRecovered = false;
+  let supabaseSessionUserId = null;
+  let authSource = 'supabase_session';
+
+  try {
+    const user = await resolveSupabaseUser(req);
+    userId = user.id;
+    supabaseSessionUserId = user.id;
+  } catch {
+    if (process.env.NODE_ENV !== 'production' && (req?.user?.id || req?.user?.sub)) {
+      userId = req.user.id || req.user.sub;
+      authRecovered = true;
+      authSource = 'app_jwt_dev_fallback';
+      console.warn(`[VVAULT Auth] Supabase session missing; dev fallback to app JWT for user ${userId}`);
+    } else {
+      return {
+        ok: false,
+        status: 401,
+        body: { ok: false, error: 'Authentication required' },
+        inferenceClock,
+        inferenceRequestId,
+        hasSupabaseAuthHeader,
+        hasReqUser,
+      };
+    }
+  }
+
+  const normalized = normalizeInferenceRequest(req.body);
+  if (normalized.error) {
+    return {
+      ok: false,
+      status: 400,
+      body: { success: false, error: normalized.error },
+      inferenceClock,
+      inferenceRequestId,
+      hasSupabaseAuthHeader,
+      hasReqUser,
+      userId,
+      supabaseSessionUserId,
+      authRecovered,
+      authSource,
+    };
+  }
+
+  const devDataOwnerOverride =
+    process.env.NODE_ENV !== 'production' &&
+    typeof process.env.CHATTY_DEV_DATA_OWNER_SUPABASE_USER_ID === 'string' &&
+    /^[0-9a-f-]{36}$/i.test(process.env.CHATTY_DEV_DATA_OWNER_SUPABASE_USER_ID.trim())
+      ? process.env.CHATTY_DEV_DATA_OWNER_SUPABASE_USER_ID.trim()
+      : null;
+  const dataOwnerUserId = devDataOwnerOverride || userId;
+  const dataOwnerSource = devDataOwnerOverride ? 'dev_env_supabase_user_override' : authSource;
+  const authReceipt = buildAuthReceipt({
+    user: req.user,
+    userId,
+    supabaseSessionUserId,
+    authSource,
+    authRecovered,
+    devDataOwnerOverride,
+    dataOwnerUserId,
+    dataOwnerSource,
+  });
+
+  return {
+    ok: true,
+    inferenceClock,
+    inferenceRequestId,
+    hasSupabaseAuthHeader,
+    hasReqUser,
+    userId,
+    supabaseSessionUserId,
+    authRecovered,
+    authSource,
+    devDataOwnerOverride,
+    dataOwnerUserId,
+    dataOwnerSource,
+    authReceipt,
+    normalized,
+  };
+}

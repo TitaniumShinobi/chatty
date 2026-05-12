@@ -15,7 +15,6 @@ import multer from "multer";
 import OpenAI from "openai";
 import { loadIdentityFiles } from "../lib/identityLoader.js";
 import { GPTManager } from "../lib/gptManager.js";
-import { AIManager } from "../lib/aiManager.js";
 import { performSearch, injectSearchContext, buildSearchResponsePackets } from "./search.js";
 import {
   buildEnrichedContext,
@@ -176,7 +175,9 @@ import {
 } from "../lib/codexThreadArchive.js";
 import leakSignals from "../lib/leakSignals.cjs";
 import {
+  buildCanonicalPersistenceSemantics,
   buildContinuityFailurePayload,
+  deriveConstructReceiptName,
   buildIdentityFailurePayload,
 } from "../lib/constructInferenceUtil.js";
 import {
@@ -217,7 +218,7 @@ import {
   buildNovaOpenRouterModelCandidates,
   looksLikeInvalidModelAttempt,
   buildProviderCandidates,
-  normalizeProviderError,
+  normalizeProviderError as normalizeProviderErrorFromLib,
 } from "../lib/inferenceProvider.js";
 import {
   resolveConversationTitle,
@@ -228,6 +229,21 @@ import {
   requiresVvaultBodyPersistence,
   buildPersistenceRoleResult,
 } from "../lib/inferencePersistence.js";
+import { normalizeVvaultRouteRequest } from "../lib/vvaultRequestNormalization.js";
+import { resolveVvaultConstructContext } from "../lib/vvaultConstructResolution.js";
+import {
+  loadVvaultRouteRuntimeState,
+  attemptCanonicalContinuityRecovery,
+  processCanonicalTranscriptTruth,
+} from "../lib/vvaultMemoryLoad.js";
+import { initializeVvaultProviderRouting } from "../lib/vvaultProviderRouting.js";
+import { buildVvaultChecklist } from "../lib/vvaultChecklistAssembly.js";
+import {
+  sendTranscriptPersistenceFailure,
+  handleCanonicalTranscriptPersistence,
+} from "../lib/vvaultPersistenceHandling.js";
+import { classifyVvaultRouteFallback } from "../lib/vvaultFallbackClassification.js";
+import { attachRuntimePathMarkers } from "../lib/vvaultReceiptAssembly.js";
 
 const { hasLinIdentityDumpSignals } = leakSignals;
 
@@ -241,6 +257,13 @@ const patchConsoleWithTimestamp = () => {
   console.__tsPatched = true;
 };
 patchConsoleWithTimestamp();
+
+const routeOverrides = {
+  bypassPreferredAuth: false,
+  normalizeVvaultRouteRequest: null,
+  resolveVvaultConstructContext: null,
+  canonicalContractScenario: null,
+};
 
 const require = createRequire(import.meta.url);
 const router = express.Router();
@@ -721,10 +744,6 @@ async function buildEnrichedContextPrompt({
   };
 }
 
-function deriveConstructReceiptName(constructId, gptConfig = {}) {
-  return gptConfig?.name || constructId.replace(/-\d+$/, '').replace(/^./, (c) => c.toUpperCase());
-}
-
 function buildContextBuildFailurePayload({
   authReceipt,
   userId,
@@ -841,7 +860,9 @@ function buildContextBuildFailurePayload({
     memory_retrieval_ran: false,
     memory_query_detected: false,
   };
-  const failureChecklist = buildOrchestrationChecklist({
+  const failureChecklist = buildVvaultChecklist({
+    buildOrchestrationChecklist,
+    checklistInput: {
     userId,
     user,
     constructId,
@@ -887,6 +908,13 @@ function buildContextBuildFailurePayload({
     requestedConstructId: rawConstructId,
     canonicalConstructId: canonicalConstructId || constructId,
     responseStatus: 'context_build_failed',
+    },
+  });
+  const annotated = attachRuntimePathMarkers({
+    runtimeReceipt: failureRuntimeReceipt,
+    orchestrationChecklist: failureChecklist,
+    route: '/api/vvault/message',
+    canonical: true,
   });
 
   return {
@@ -902,8 +930,8 @@ function buildContextBuildFailurePayload({
       reason: details?.reason || 'context_build_failed',
       recovery_profile: details?.recovery_profile || null,
     },
-    runtime_receipt: failureRuntimeReceipt,
-    orchestration_checklist: failureChecklist,
+    runtime_receipt: annotated.runtimeReceipt,
+    orchestration_checklist: annotated.orchestrationChecklist,
     has_images: hasImages,
   };
 }
@@ -1169,7 +1197,9 @@ function buildTranscriptTruthFailurePayload({
       },
     },
   };
-  const failureChecklist = buildOrchestrationChecklist({
+  const failureChecklist = buildVvaultChecklist({
+    buildOrchestrationChecklist,
+    checklistInput: {
     userId,
     user,
     constructId,
@@ -1242,6 +1272,13 @@ function buildTranscriptTruthFailurePayload({
     requestedConstructId: rawConstructId,
     canonicalConstructId: canonicalConstructId || constructId,
     responseStatus,
+    },
+  });
+  const annotated = attachRuntimePathMarkers({
+    runtimeReceipt: failureRuntimeReceipt,
+    orchestrationChecklist: failureChecklist,
+    route: '/api/vvault/message',
+    canonical: true,
   });
 
   return {
@@ -1252,26 +1289,9 @@ function buildTranscriptTruthFailurePayload({
     code,
     error,
     message: error,
-    runtime_receipt: failureRuntimeReceipt,
-    orchestration_checklist: failureChecklist,
+    runtime_receipt: annotated.runtimeReceipt,
+    orchestration_checklist: annotated.orchestrationChecklist,
     has_images: hasImages,
-  };
-}
-
-function buildCanonicalPersistenceSemantics({
-  failureClassification = null,
-  upstreamWriteBlocked = null,
-} = {}) {
-  return {
-    canonical_target: 'vvault_body_transcripts',
-    canonical_target_table: 'ovvaults.transcripts',
-    canonical_write_path: 'vvault_api:/api/chatty/transcript/:constructId/message',
-    route_side_canonical_failover_available: false,
-    route_side_canonical_failover_reason: null,
-    connector_fallback_storage: 'local_deferred_fallback',
-    connector_fallback_counts_as_canonical: false,
-    failure_classification: failureClassification,
-    upstream_write_blocked: upstreamWriteBlocked,
   };
 }
 
@@ -1455,7 +1475,9 @@ function buildTranscriptPersistenceFailurePayload({
     },
   };
 
-  const failureChecklist = buildOrchestrationChecklist({
+  const failureChecklist = buildVvaultChecklist({
+    buildOrchestrationChecklist,
+    checklistInput: {
     userId,
     user,
     constructId,
@@ -1477,6 +1499,13 @@ function buildTranscriptPersistenceFailurePayload({
     requestedConstructId: rawConstructId,
     canonicalConstructId: canonicalConstructId || constructId,
     responseStatus: 'transcript_persistence_failed',
+    },
+  });
+  const annotated = attachRuntimePathMarkers({
+    runtimeReceipt: failureRuntimeReceipt,
+    orchestrationChecklist: failureChecklist,
+    route: '/api/vvault/message',
+    canonical: true,
   });
 
   return {
@@ -1489,8 +1518,8 @@ function buildTranscriptPersistenceFailurePayload({
     message: details?.message || 'Transcript persistence temporarily unavailable.',
     provider_used: runtimeReceipt?.provider?.final_provider || runtimeReceipt?.provider?.provider || null,
     model: runtimeReceipt?.provider?.model || null,
-    runtime_receipt: failureRuntimeReceipt,
-    orchestration_checklist: failureChecklist,
+    runtime_receipt: annotated.runtimeReceipt,
+    orchestration_checklist: annotated.orchestrationChecklist,
     has_images: hasImages,
   };
 }
@@ -1738,6 +1767,7 @@ async function loadAIMetadata(constructCallsign, userId) {
 async function loadLocalAIMetadata(constructCallsign, candidateUserIds = []) {
   const canonical = canonicalizeConstructId(constructCallsign);
   if (!canonical) return null;
+  const { AIManager } = await import("../lib/aiManager.js");
   const aiManager = AIManager.getInstance();
   const candidates = Array.from(
     new Set(
@@ -2037,7 +2067,7 @@ router.get('/constructs/:constructCallsign/editor', requirePreferredAuthOrServic
       coding: identity.codingModel || '',
     };
     try {
-      const gptConfig = await gptManager.getGPTByCallsign(constructCallsign);
+      const gptConfig = await getGptManager().getGPTByCallsign(constructCallsign);
       if (gptConfig) {
         modelConfig = {
           primary: gptConfig.modelId || modelConfig.primary,
@@ -2676,8 +2706,9 @@ console.log('🔑 [Provider Keys] Startup credential check:', {
   openaiClient: !!openaiClient
 });
 
-// GPT Manager singleton for fetching GPT configurations
-const gptManager = GPTManager.getInstance();
+function getGptManager() {
+  return GPTManager.getInstance();
+}
 
 const MEMORY_INTENT_RE = /\b(remember|recall|when did we|we talked|our conversation|first time|last time)\b/i;
 const EXPLICIT_IMAGE_ANALYSIS_RE =
@@ -5236,7 +5267,12 @@ async function seedFixturesForCallsign(identityService, userId, constructCallsig
   return added;
 }
 
-router.use(requirePreferredAuth);
+router.use((req, res, next) => {
+  if (routeOverrides.bypassPreferredAuth === true) {
+    return next();
+  }
+  return requirePreferredAuth(req, res, next);
+});
 console.log('✅ [VVAULT Routes] requirePreferredAuth middleware applied to protected routes');
 
 const ALLOWED_TOOL_NAMES = new Set(['screen_capture', 'ocr']);
@@ -8698,7 +8734,7 @@ router.post("/capsules/role-sync", requirePreferredAuth, async (req, res) => {
 
     let gptConfig = null;
     try {
-      gptConfig = await gptManager.getGPTByCallsign(constructCallsign);
+      gptConfig = await getGptManager().getGPTByCallsign(constructCallsign);
     } catch (e) { /* GPT config not found — ok */ }
 
     const result = await capsuleIntegration.syncOccupationalRole(constructCallsign, gptConfig);
@@ -8721,7 +8757,7 @@ router.post("/capsules/role-sync-all", requirePreferredAuth, async (req, res) =>
     const { getCapsuleIntegration } = await import('../lib/capsuleIntegration.js');
     const capsuleIntegration = getCapsuleIntegration();
 
-    const allGPTs = await gptManager.getAllGPTs(userId) || [];
+    const allGPTs = await getGptManager().getAllGPTs(userId) || [];
     const result = await capsuleIntegration.syncAllRoles(allGPTs);
 
     res.json({
@@ -9269,49 +9305,56 @@ router.get("/conversations/:sessionId/export", requirePreferredAuth, async (req,
  * - construct_id: string
  */
 export async function handleConstructInference(req, res) {
-  const inferenceClock = req.clock || new Date().toISOString();
-  const inferenceRequestId = req.requestId || `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  let userId;
-  let authRecovered = false;
-  let supabaseSessionUserId = null;
-  let authSource = 'supabase_session';
-  const authHeader = (req?.headers?.authorization || '').toString();
-  const hasSupabaseAuthHeader = authHeader.toLowerCase().startsWith('bearer ');
-  const hasReqUser = !!req?.user;
-  try {
-    const user = await resolveSupabaseUser(req);
-    userId = user.id;
-    supabaseSessionUserId = user.id;
-  } catch {
-    // Dev fallback: allow app JWT when Supabase session isn't present (non-prod only)
-    if (process.env.NODE_ENV !== 'production' && (req?.user?.id || req?.user?.sub)) {
-      userId = req.user.id || req.user.sub;
-      authRecovered = true;
-      authSource = 'app_jwt_dev_fallback';
-      console.warn(`[VVAULT Auth] Supabase session missing; dev fallback to app JWT for user ${userId}`);
-    } else {
-      return res.status(401).json({ ok: false, error: "Authentication required" });
-    }
+  const normalizeVvaultRouteRequestImpl =
+    routeOverrides.normalizeVvaultRouteRequest || normalizeVvaultRouteRequest;
+  const normalizedRequestState = await normalizeVvaultRouteRequestImpl({
+    req,
+    resolveSupabaseUser,
+    buildAuthReceipt,
+    normalizeInferenceRequest,
+  });
+  if (!normalizedRequestState.ok) {
+    const earlyContract = attachRuntimePathMarkers({
+      runtimeReceipt: {
+        created_at: normalizedRequestState.inferenceClock,
+        request_id: normalizedRequestState.inferenceRequestId,
+        route_mode: 'vvault_message',
+        provider: {
+          provider: null,
+          model: null,
+          final_provider: null,
+          fallback_used: false,
+        },
+      },
+      orchestrationChecklist: {
+        responseStatus: normalizedRequestState.status === 401 ? 'authentication_required' : 'invalid_request',
+        route: '/api/vvault/message',
+        request_id: normalizedRequestState.inferenceRequestId,
+      },
+      route: '/api/vvault/message',
+      canonical: true,
+    });
+    return res.status(normalizedRequestState.status).json({
+      ...normalizedRequestState.body,
+      runtime_receipt: earlyContract.runtimeReceipt,
+      orchestration_checklist: earlyContract.orchestrationChecklist,
+    });
   }
-
-  const devDataOwnerOverride =
-    process.env.NODE_ENV !== 'production' &&
-    typeof process.env.CHATTY_DEV_DATA_OWNER_SUPABASE_USER_ID === 'string' &&
-    /^[0-9a-f-]{36}$/i.test(process.env.CHATTY_DEV_DATA_OWNER_SUPABASE_USER_ID.trim())
-      ? process.env.CHATTY_DEV_DATA_OWNER_SUPABASE_USER_ID.trim()
-      : null;
-  let dataOwnerUserId = devDataOwnerOverride || userId;
-  let dataOwnerSource = devDataOwnerOverride ? 'dev_env_supabase_user_override' : authSource;
-  const authReceipt = buildAuthReceipt({
-    user: req.user,
+  const {
+    inferenceClock,
+    inferenceRequestId,
     userId,
     supabaseSessionUserId,
     authSource,
-    authRecovered,
-    devDataOwnerOverride,
+    hasSupabaseAuthHeader,
+    hasReqUser,
+    normalized,
+  } = normalizedRequestState;
+  let {
     dataOwnerUserId,
     dataOwnerSource,
-  });
+    authReceipt,
+  } = normalizedRequestState;
   console.log('[VVAULT_AUTH]', {
     hasSupabaseAuthHeader,
     hasReqUser,
@@ -9322,10 +9365,6 @@ export async function handleConstructInference(req, res) {
     env: process.env.NODE_ENV
   });
 
-  const normalized = normalizeInferenceRequest(req.body);
-  if (normalized.error) {
-    return res.status(400).json({ success: false, error: normalized.error });
-  }
   const {
     rawConstructId,
     canonicalConstructId,
@@ -9380,37 +9419,65 @@ export async function handleConstructInference(req, res) {
     normalizedLinearTranscriptLawTurnKind === 'ordinary' &&
     isTranscriptLawSyntheticGateThread(effectiveTurnSessionId);
 
-  const canonicalOwnerResolution = resolveCanonicalConstructDataOwner({
+  if (routeOverrides.canonicalContractScenario) {
+    const overridePayload = await routeOverrides.canonicalContractScenario({
+      req,
+      res,
+      normalizedRequestState,
+      normalized,
+      inferenceClock,
+      inferenceRequestId,
+      attachRuntimePathMarkers,
+    });
+    if (overridePayload) {
+      const annotated = attachRuntimePathMarkers({
+        runtimeReceipt:
+          overridePayload.runtimeReceipt ||
+          overridePayload.body?.runtime_receipt ||
+          null,
+        orchestrationChecklist:
+          overridePayload.orchestrationChecklist ||
+          overridePayload.body?.orchestration_checklist ||
+          null,
+        route: '/api/vvault/message',
+        canonical: true,
+      });
+      return res.status(overridePayload.statusCode || 200).json({
+        ...(overridePayload.body || {}),
+        runtime_receipt: annotated.runtimeReceipt,
+        orchestration_checklist: annotated.orchestrationChecklist,
+      });
+    }
+  }
+
+  const resolveVvaultConstructContextImpl =
+    routeOverrides.resolveVvaultConstructContext || resolveVvaultConstructContext;
+  const constructContext = await resolveVvaultConstructContextImpl({
+    req,
     constructId,
     threadId,
     sessionId,
     transcriptPath,
     projectName,
-    requestedDataOwnerUserId: dataOwnerUserId,
-    requestedDataOwnerSource: dataOwnerSource,
-    authenticatedUserId: userId,
-  });
-  const ownerResolution = applyCanonicalOwnerResolution({
-    canonicalOwnerResolution,
-    authReceipt,
+    userId,
     dataOwnerUserId,
     dataOwnerSource,
-    userId,
+    authReceipt,
+    resolveCanonicalConstructDataOwner,
+    applyCanonicalOwnerResolution,
+    resolveCanonicalRouteUserEmail,
   });
-  dataOwnerUserId = ownerResolution.dataOwnerUserId;
-  dataOwnerSource = ownerResolution.dataOwnerSource;
-  Object.assign(authReceipt, ownerResolution.authReceipt);
+  const {
+    canonicalOwnerResolution,
+    ownerResolution,
+    effectiveRequestUserEmail,
+  } = constructContext;
+  dataOwnerUserId = constructContext.dataOwnerUserId;
+  dataOwnerSource = constructContext.dataOwnerSource;
+  authReceipt = constructContext.authReceipt;
   if (canonicalOwnerResolution.applied) {
     console.log('[VVAULT_AUTH] Canonical construct owner applied', canonicalOwnerResolution.receipt);
   }
-
-  const effectiveRequestUserEmail = await resolveCanonicalRouteUserEmail({
-    req,
-    authenticatedUserId: userId,
-    dataOwnerUserId,
-    preferredEmail: canonicalOwnerResolution.receipt?.canonicalOwnerEmail || null,
-    ignoreRequestEmail: canonicalOwnerResolution.applied === true,
-  });
   if (effectiveRequestUserEmail) {
     req.user = { ...(req.user || {}), email: effectiveRequestUserEmail };
     authReceipt.auth_email = effectiveRequestUserEmail;
@@ -9446,24 +9513,18 @@ export async function handleConstructInference(req, res) {
   req.runtimeTurnEnvelope = routeTurnEnvelope;
   res.locals.runtimeTurnEnvelope = routeTurnEnvelope;
   try {
-    const persistedRuntimeState = await readLatestRuntimeTurnState(
-      buildConversationLookupContext({
-        userEmail: req.user?.email || null,
-        supabaseUserId: UUID_LOOKUP_RE.test(String(dataOwnerUserId || '').trim())
-          ? dataOwnerUserId
-          : supabaseSessionUserId,
-        userId: dataOwnerUserId || req.user?.vvaultUserId || userId,
-      }),
-      {
-        sessionId: effectiveTurnSessionId,
-        constructId,
-        allowLocalFallback: false,
-      },
-    );
-    if (persistedRuntimeState?.runtimeTurnState) {
-      routeTurnEnvelope.runtimeTurnState = persistedRuntimeState.runtimeTurnState;
-      routeTurnEnvelope.persistedStateSource = persistedRuntimeState.source || 'unknown';
-    }
+    await loadVvaultRouteRuntimeState({
+      req,
+      constructId,
+      effectiveTurnSessionId,
+      dataOwnerUserId,
+      supabaseSessionUserId,
+      userId,
+      routeTurnEnvelope,
+      buildConversationLookupContext,
+      readLatestRuntimeTurnState,
+      uuidLookupRe: UUID_LOOKUP_RE,
+    });
     console.log('[RUNTIME_TURN_STATE]', {
       stage: 'loaded',
       sessionId: effectiveTurnSessionId,
@@ -9500,41 +9561,25 @@ export async function handleConstructInference(req, res) {
     try {
       await loadVVAULTModules();
       if (typeof readConversations === 'function') {
-        transcriptTruthLookupId =
-          transcriptTruthLookupId ||
-          buildConversationLookupContext({
-            userEmail: req.user?.email || null,
-            supabaseUserId: UUID_LOOKUP_RE.test(String(dataOwnerUserId || '').trim())
-              ? dataOwnerUserId
-              : supabaseSessionUserId,
-            userId: dataOwnerUserId || req.user?.vvaultUserId || userId,
-          });
-        preloadedTranscriptTruthRows =
-          preloadedTranscriptTruthRows ||
-          await readConversations(transcriptTruthLookupId, constructId, {
-            allowLocalFallback: false,
-          });
-        const preRecoveryTranscriptTruth = buildTranscriptTruthPreflight({
-          readPathAvailable: true,
-          conversations: preloadedTranscriptTruthRows,
-          sessionId: effectiveTurnSessionId,
+        const recoveryResult = await attemptCanonicalContinuityRecovery({
           constructId,
-          runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
+          effectiveTurnSessionId,
+          dataOwnerUserId,
+          supabaseSessionUserId,
+          userId,
+          req,
+          routeTurnEnvelope,
+          continuityResumeRequest,
+          continuityResumeValidation,
+          buildConversationLookupContext,
+          readConversations,
+          buildTranscriptTruthPreflight,
+          validateRuntimeResumeRequest,
+          uuidLookupRe: UUID_LOOKUP_RE,
         });
-        const recoveredRuntimeTurnState = preRecoveryTranscriptTruth.runtimeTurnState || null;
-        if (recoveredRuntimeTurnState) {
-          routeTurnEnvelope.runtimeTurnState = recoveredRuntimeTurnState;
-          routeTurnEnvelope.persistedStateSource = 'canonical_tail_metadata';
-          continuityResumeValidation = validateRuntimeResumeRequest({
-            runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
-            resumeRequest: continuityResumeRequest,
-            sessionId: effectiveTurnSessionId,
-            constructId,
-          });
-          routeTurnEnvelope.continuityExpected =
-            continuityResumeValidation.continuityExpected === true;
-          routeTurnEnvelope.continuityResume = continuityResumeValidation;
-        }
+        transcriptTruthLookupId = recoveryResult.transcriptTruthLookupId;
+        preloadedTranscriptTruthRows = recoveryResult.preloadedTranscriptTruthRows;
+        continuityResumeValidation = recoveryResult.continuityResumeValidation;
       }
     } catch (runtimeTurnStateRecoveryErr) {
       console.warn(
@@ -9620,7 +9665,7 @@ export async function handleConstructInference(req, res) {
     // Fetch GPT config and Supabase metadata
     let meta = null;
     try {
-      gptConfig = await gptManager.getGPTByCallsign(constructId);
+      gptConfig = await getGptManager().getGPTByCallsign(constructId);
       if (gptConfig) {
         console.log(`📋 [VVAULT Proxy] Found GPT config for ${constructId}, model: ${gptConfig.conversationModel || gptConfig.modelId || 'none'}`);
       }
@@ -9710,322 +9755,51 @@ export async function handleConstructInference(req, res) {
       ? 'transcript_law'
       : 'ordinary';
     routeTurnEnvelope.transcriptLawRequired = Boolean(contextBudget.transcript_law_evidence_intent);
-    routeTurnEnvelope.transcriptTruth = {
-      required: false,
-      eligible: false,
-      hydrationSource: 'not_required',
-      hydrationComplete: null,
-    };
-    const transcriptTruthRequired = shouldRequireCanonicalTranscriptTruth({
-      continueTurn,
-      continuityResume: continuityResumeValidation,
-      runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
-      sessionId: effectiveTurnSessionId,
+    const transcriptTruthResult = await processCanonicalTranscriptTruth({
+      req,
+      res,
+      authReceipt,
+      dataOwnerUserId,
+      userId,
+      supabaseSessionUserId,
       constructId,
+      rawConstructId,
+      canonicalConstructId,
       message,
+      threadId,
+      sessionId,
+      hasImages,
       previewMode,
+      gptConfig,
+      continueTurn,
+      continuityResumeRequest,
+      continuityResumeValidation,
+      routeTurnEnvelope,
+      effectiveTurnSessionId,
       skipPersistence,
+      preloadedTranscriptTruthRows,
+      transcriptTruthLookupId,
+      loadVVAULTModules,
+      readConversations,
+      buildConversationLookupContext,
+      uuidLookupRe: UUID_LOOKUP_RE,
+      buildTranscriptTruthPreflight,
+      shouldRequireCanonicalTranscriptTruth,
+      isExplicitResumeContinuationCue,
+      rebuildRuntimeTurnStateFromCanonicalTranscript,
+      validateRuntimeResumeRequest,
+      buildTranscriptTruthFailurePayload,
+      sendSerializedJson,
+      buildContinuityProofReceipt,
+      deriveConstructReceiptName,
+      buildOrchestrationChecklist,
     });
-    const implicitContinuationRequest =
-      isExplicitResumeContinuationCue(message) &&
-      continuityResumeValidation?.continuityExpected !== true;
-    const transcriptTruthRequiresRuntimeState =
-      continueTurn === true ||
-      continuityResumeValidation?.continuityExpected === true ||
-      implicitContinuationRequest === true ||
-      Boolean(routeTurnEnvelope.runtimeTurnState?.assistantTurnId);
-    if (transcriptTruthRequired) {
-      routeTurnEnvelope.transcriptTruth.required = true;
-      try {
-        await loadVVAULTModules();
-      } catch (error) {
-        const payload = buildTranscriptTruthFailurePayload({
-          authReceipt,
-          userId: dataOwnerUserId,
-          user: req.user,
-          constructId,
-          rawConstructId,
-          canonicalConstructId,
-          message,
-          threadId,
-          sessionId,
-          hasImages,
-          previewMode,
-          gptConfig,
-          continuityResume: routeTurnEnvelope.continuityResume,
-          transcriptTruth: buildTranscriptTruthPreflight({
-            readPathAvailable: false,
-            sessionId: effectiveTurnSessionId,
-            constructId,
-            runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
-            requireRuntimeTurnState: transcriptTruthRequiresRuntimeState,
-          }),
-          code: 'CANONICAL_TRANSCRIPT_READ_UNAVAILABLE',
-          error: 'Canonical transcript read path is unavailable, so continuation generation is blocked.',
-          responseStatus: 'canonical_transcript_read_unavailable',
-        });
-        return sendSerializedJson(res, 503, payload, 'transcript-truth-unavailable');
-      }
-
-      if (typeof readConversations !== 'function') {
-        const payload = buildTranscriptTruthFailurePayload({
-          authReceipt,
-          userId: dataOwnerUserId,
-          user: req.user,
-          constructId,
-          rawConstructId,
-          canonicalConstructId,
-          message,
-          threadId,
-          sessionId,
-          hasImages,
-          previewMode,
-          gptConfig,
-          continuityResume: routeTurnEnvelope.continuityResume,
-          transcriptTruth: buildTranscriptTruthPreflight({
-            readPathAvailable: false,
-            sessionId: effectiveTurnSessionId,
-            constructId,
-            runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
-            requireRuntimeTurnState: transcriptTruthRequiresRuntimeState,
-          }),
-          code: 'CANONICAL_TRANSCRIPT_READ_UNAVAILABLE',
-          error: 'Canonical transcript read path is unavailable, so continuation generation is blocked.',
-          responseStatus: 'canonical_transcript_read_unavailable',
-        });
-        return sendSerializedJson(res, 503, payload, 'transcript-truth-unavailable');
-      }
-
-      transcriptTruthLookupId =
-        transcriptTruthLookupId ||
-        buildConversationLookupContext({
-          userEmail: req.user?.email || null,
-          supabaseUserId: UUID_LOOKUP_RE.test(String(dataOwnerUserId || '').trim())
-            ? dataOwnerUserId
-            : supabaseSessionUserId,
-          userId: dataOwnerUserId || req.user?.vvaultUserId || userId,
-        });
-      try {
-        preloadedTranscriptTruthRows =
-          preloadedTranscriptTruthRows ||
-          await readConversations(transcriptTruthLookupId, constructId, {
-            allowLocalFallback: false,
-          });
-      } catch (error) {
-        const payload = buildTranscriptTruthFailurePayload({
-          authReceipt,
-          userId: dataOwnerUserId,
-          user: req.user,
-          constructId,
-          rawConstructId,
-          canonicalConstructId,
-          message,
-          threadId,
-          sessionId,
-          hasImages,
-          previewMode,
-          gptConfig,
-          continuityResume: routeTurnEnvelope.continuityResume,
-          transcriptTruth: buildTranscriptTruthPreflight({
-            readPathAvailable: false,
-            sessionId: effectiveTurnSessionId,
-            constructId,
-            runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
-            requireRuntimeTurnState: transcriptTruthRequiresRuntimeState,
-          }),
-          code: 'CANONICAL_TRANSCRIPT_READ_UNAVAILABLE',
-          error: `Canonical transcript read failed: ${error.message}`,
-          responseStatus: 'canonical_transcript_read_unavailable',
-        });
-        return sendSerializedJson(res, 503, payload, 'transcript-truth-unavailable');
-      }
-
-      if (routeTurnEnvelope.persistedStateSource === 'local_fallback_metadata') {
-        routeTurnEnvelope.runtimeTurnState = null;
-      }
-      let transcriptTruth = buildTranscriptTruthPreflight({
-        readPathAvailable: true,
-        conversations: preloadedTranscriptTruthRows,
-        sessionId: effectiveTurnSessionId,
-        constructId,
-        runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
-        requireRuntimeTurnState: transcriptTruthRequiresRuntimeState,
-      });
-      const rebuiltRuntimeTurnState =
-        transcriptTruthRequiresRuntimeState !== true &&
-        transcriptTruth.exactThreadFound === true &&
-        transcriptTruth.hydrationSource === 'full' &&
-        (transcriptTruth.reason === 'runtime_turn_state_missing' ||
-          transcriptTruth.reason === 'runtime_turn_state_hydration_unproven' ||
-          transcriptTruth.reason === 'runtime_turn_state_thread_mismatch')
-          ? rebuildRuntimeTurnStateFromCanonicalTranscript({
-              exactMessages: transcriptTruth.exactMessages,
-              sessionId: effectiveTurnSessionId,
-              constructId,
-            })
-          : null;
-      if (rebuiltRuntimeTurnState) {
-        routeTurnEnvelope.runtimeTurnState = rebuiltRuntimeTurnState;
-        routeTurnEnvelope.persistedStateSource = 'canonical_tail_rebuild';
-        transcriptTruth = buildTranscriptTruthPreflight({
-          readPathAvailable: true,
-          conversations: preloadedTranscriptTruthRows,
-          sessionId: effectiveTurnSessionId,
-          constructId,
-          runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
-          requireRuntimeTurnState: transcriptTruthRequiresRuntimeState,
-        });
-        const recoveredContinuityResumeValidation = validateRuntimeResumeRequest({
-          runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
-          resumeRequest: continuityResumeRequest,
-          sessionId: effectiveTurnSessionId,
-          constructId,
-        });
-        routeTurnEnvelope.continuityExpected =
-          recoveredContinuityResumeValidation.continuityExpected === true;
-        routeTurnEnvelope.continuityResume = recoveredContinuityResumeValidation;
-      }
-      routeTurnEnvelope.transcriptTruth = {
-        required: true,
-        ...transcriptTruth,
-      };
-      if (transcriptTruth.runtimeTurnState) {
-        routeTurnEnvelope.runtimeTurnState = transcriptTruth.runtimeTurnState;
-        routeTurnEnvelope.persistedStateSource = 'canonical_tail_metadata';
-        const effectiveResumeRequest =
-          implicitContinuationRequest === true
-            ? {
-                continuity_expected: true,
-                resume_from_turn_id: routeTurnEnvelope.runtimeTurnState.assistantTurnId,
-                resume_from_continuity_seq: routeTurnEnvelope.runtimeTurnState.continuitySeq,
-                resume_tail_hash: routeTurnEnvelope.runtimeTurnState.tailHash,
-                resume_construct_revision: routeTurnEnvelope.runtimeTurnState.constructRevision,
-                resume_source_seat: 'chatty',
-              }
-            : continuityResumeRequest;
-        continuityResumeValidation = validateRuntimeResumeRequest({
-          runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
-          resumeRequest: effectiveResumeRequest,
-          sessionId: effectiveTurnSessionId,
-          constructId,
-        });
-        routeTurnEnvelope.continuityExpected =
-          continuityResumeValidation.continuityExpected === true;
-        routeTurnEnvelope.continuityResume = continuityResumeValidation;
-      }
-      if (!transcriptTruth.eligible) {
-        const payload = buildTranscriptTruthFailurePayload({
-          authReceipt,
-          userId: dataOwnerUserId,
-          user: req.user,
-          constructId,
-          rawConstructId,
-          canonicalConstructId,
-          message,
-          threadId,
-          sessionId,
-          hasImages,
-          previewMode,
-          gptConfig,
-          continuityResume: routeTurnEnvelope.continuityResume,
-          transcriptTruth,
-          code: 'TRANSCRIPT_HYDRATION_REQUIRED',
-          error: 'Canonical transcript hydration is incomplete, fallback-shaped, or missing the real assistant tail.',
-          responseStatus: 'transcript_hydration_required',
-        });
-        return sendSerializedJson(res, 409, payload, 'transcript-truth-required');
-      }
-      if (
-        routeTurnEnvelope.continuityResume?.continuityExpected === true &&
-        routeTurnEnvelope.continuityResume?.continuityRestored !== true
-      ) {
-        const continuityFailureCode = routeTurnEnvelope.continuityResume.staleSeatRejected
-          ? 'CONTINUITY_RESUME_STALE'
-          : 'CONTINUITY_RESUME_UNPROVEN';
-        const continuityFailureMessage = routeTurnEnvelope.continuityResume.staleSeatRejected
-          ? 'Continuity resume was rejected because this seat is stale. Reload the canonical thread and try again.'
-          : 'Continuity resume could not be proven from the canonical thread tail. Reload the thread and try again.';
-        const continuityReceipt = buildContinuityProofReceipt({
-          hydration: routeTurnEnvelope.continuityResume.hydration,
-          hydrationComplete: routeTurnEnvelope.continuityResume.hydrationComplete,
-          resumeValidation: routeTurnEnvelope.continuityResume,
-        });
-        const continuityFailureReceipt = {
-          created_at: new Date().toISOString(),
-          user_id: dataOwnerUserId || null,
-          auth: authReceipt,
-          construct_id: constructId,
-          effective_construct_id: constructId,
-          effective_construct_name: deriveConstructReceiptName(constructId, gptConfig),
-          orchestration_mode: gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown',
-          route_mode: 'vvault_message',
-          persistence_owner: 'continuity_resume_blocked',
-          continuity: continuityReceipt,
-          ...continuityReceipt,
-          transcript_truth: {
-            eligible: routeTurnEnvelope.transcriptTruth?.eligible === true,
-            source: routeTurnEnvelope.transcriptTruth?.hydrationSource || 'none',
-            hydration_complete: routeTurnEnvelope.transcriptTruth?.hydrationComplete === true,
-            exact_thread_id: effectiveTurnSessionId,
-            exact_thread_found: routeTurnEnvelope.transcriptTruth?.exactThreadFound === true,
-            assistant_tail_found: routeTurnEnvelope.transcriptTruth?.assistantTailFound === true,
-            runtime_state_found: routeTurnEnvelope.transcriptTruth?.runtimeStateFound === true,
-            runtime_state_hydration_truth:
-              routeTurnEnvelope.transcriptTruth?.runtimeStateHydrationTruth || null,
-            evidence_count: Number(routeTurnEnvelope.transcriptTruth?.evidenceCount || 0),
-            evidence_sources: routeTurnEnvelope.transcriptTruth?.evidenceSources || [],
-            fallback_rejected: routeTurnEnvelope.transcriptTruth?.fallbackRejected === true,
-            retrieval_status: 'verified',
-            blocked_reason: routeTurnEnvelope.continuityResume.failureReason || null,
-          },
-          capsule_runtime: {
-            capsuleLoaded: null,
-            capsuleSource: null,
-            contextProfile: null,
-            continuityFromRuntimeState: false,
-            continuityMemorySource: null,
-          },
-          memory: {
-            retrieval_ran: false,
-            memory_query_detected: false,
-            evidence_count: 0,
-            transcript_memory_status: 'blocked',
-            history_source: routeTurnEnvelope.transcriptTruth?.hydrationSource || 'none',
-            transcript_sources: routeTurnEnvelope.transcriptTruth?.evidenceSources || [],
-          },
-          provider: {
-            final_provider: null,
-            provider: null,
-            model: null,
-            mode: gptConfig?.orchestrationMode || gptConfig?.orchestration_mode || 'unknown',
-            fallback_used: false,
-          },
-        };
-        const continuityFailureChecklist = buildOrchestrationChecklist({
-          userId: dataOwnerUserId,
-          user: req.user,
-          constructId,
-          threadId: effectiveTurnSessionId,
-          userMessage: message,
-          gptConfig,
-          runtimeReceipt: continuityFailureReceipt,
-          responseStatus: 'continuity_resume_blocked',
-          skipPersistence: false,
-        });
-        return res.status(409).json({
-          ok: false,
-          success: false,
-          constructId,
-          construct_id: constructId,
-          code: continuityFailureCode,
-          error: continuityFailureMessage,
-          details: routeTurnEnvelope.continuityResume,
-          runtime_receipt: continuityFailureReceipt,
-          orchestration_checklist: continuityFailureChecklist,
-          has_images: hasImages,
-        });
-      }
+    if (transcriptTruthResult.handled) {
+      return;
     }
+    preloadedTranscriptTruthRows = transcriptTruthResult.preloadedTranscriptTruthRows;
+    transcriptTruthLookupId = transcriptTruthResult.transcriptTruthLookupId;
+    continuityResumeValidation = transcriptTruthResult.continuityResumeValidation;
     const routingMode = forceLinMode || isLinOrchestratedConstruct(constructId) || shouldForceProtectedZenLinMode({
       constructId,
       userMessage: message,
@@ -10062,29 +9836,34 @@ export async function handleConstructInference(req, res) {
     }
 
     // Resolve model using GPTCreator config as source of truth
-    const providerAvailability = await buildProviderAvailability();
-    const codingSeatActive = codingMode || requestedSeat === 'coding';
-    const modelResolution = resolveModelForGPT(
+    const providerRouting = await initializeVvaultProviderRouting({
       gptConfig,
-      providerAvailability,
-      {
-        seat: requestedSeat,
-        mode: routingMode,
-        forceMode: routingMode === 'lin' ? 'lin' : null,
-        constructId,
-        userMessage: message,
-        previewMode,
-        hasImages,
-        codingMode,
-      },
-    );
-    let { provider: effectiveProvider, model: effectiveModel, source: modelSource, error: modelError } = modelResolution;
+      requestedSeat,
+      routingMode,
+      constructId,
+      message,
+      previewMode,
+      hasImages,
+      codingMode,
+      buildProviderAvailability,
+      resolveModelForGPT,
+      buildRouteTrackingState,
+    });
+    const providerAvailability = providerRouting.providerAvailability;
+    const codingSeatActive = codingMode || requestedSeat === 'coding';
+    const modelResolution = providerRouting.modelResolution;
+    let {
+      effectiveProvider,
+      effectiveModel,
+      modelSource,
+      modelError,
+    } = providerRouting;
 
     if (modelError) {
       return res.status(503).json({ success: false, error: modelError });
     }
 
-    let routeTrackingState = buildRouteTrackingState(modelResolution);
+    let routeTrackingState = providerRouting.routeTrackingState;
     let effectiveRouteFallbackUsed = routeTrackingState.effectiveRouteFallbackUsed;
     let effectiveLocalFirstUsed = routeTrackingState.effectiveLocalFirstUsed;
     let effectiveLocalCloudFallbackState = routeTrackingState.effectiveLocalCloudFallbackState;
@@ -12972,413 +12751,75 @@ Output ONLY the rewritten response, nothing else.`
         nextState: nextRuntimeTurnState,
       });
 
-      if (!skipPersistence) {
+      const persistenceResult = await handleCanonicalTranscriptPersistence({
+        req,
+        res,
+        skipPersistence,
+        constructId,
+        rawConstructId,
+        canonicalConstructId,
+        message,
+        threadId,
+        sessionId,
+        hasImages,
+        previewMode,
+        gptConfig,
+        enrichedContext,
+        retrievalDiagnostics,
+        mainPromptDiagnostics,
+        providerTrace,
+        validatorDebug,
+        runtimeReceipt,
+        orchestrationChecklist,
+        aiResponse,
+        nextRuntimeTurnState,
+        routeTurnEnvelope,
+        isSyntheticContinueTurn,
+        dataOwnerUserId,
+        userId,
+        canonicalTurnMetadata,
+        transcriptPath,
+        attachments,
+        effectiveModel,
+        buildTranscriptPersistenceFailurePayload,
+        sendSerializedJson,
+        sendTranscriptPersistenceFailure,
+        mergeToolTrace,
+        drainToolEvents,
+        loadVVAULTModules,
+        writeTranscript,
+        resolveSupabaseUserId,
+        performTranscriptWriteWithRecovery,
+        detectContinuityResetDraft,
+        readConversations,
+        buildConversationLookupContext,
+        stripChattyMetadataComment,
+        clearConversationReadCaches,
+        buildCanonicalPersistenceSemantics,
+        resolveConversationTitle,
+        normalizeTranscriptPath,
+        buildCanonicalTranscriptWriteTargetPath,
+        isCanonicalConstructTranscriptWrite,
+        isCanonicalLinTranscriptWrite,
+        requiresVvaultBodyPersistence,
+        buildPersistenceRoleResult,
+        linCanonicalThreadId: LIN_CANONICAL_THREAD_ID,
+        linCanonicalTranscriptPath: LIN_CANONICAL_TRANSCRIPT_PATH,
+      });
+      if (persistenceResult.handled) {
+        return;
+      }
+
+      if (!skipPersistence && !isSyntheticContinueTurn) {
         const effectiveSession = sessionId || threadId || `${constructId}_chat_with_${constructId}`;
-        const constructName = constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase());
-        try {
-          await loadVVAULTModules();
-          if (!writeTranscript) {
-            const persistenceFailurePayload = buildTranscriptPersistenceFailurePayload({
-              userId: dataOwnerUserId,
-              user: req.user,
-              constructId,
-              rawConstructId,
-              canonicalConstructId,
-              message,
-              threadId,
-              sessionId,
-              hasImages,
-              previewMode,
-              gptConfig,
-              enrichedContext,
-              retrievalDiagnostics,
-              promptDiagnostics: mainPromptDiagnostics,
-              providerTrace,
-              validatorDebug,
-              runtimeReceipt,
-              details: {
-                code: 'TRANSCRIPT_PERSISTENCE_UNAVAILABLE',
-                reason: 'write_transcript_unavailable',
-                message: 'Transcript persistence module unavailable before canonical write.',
-                error: 'writeTranscript function not loaded',
-                timeout_ms: null,
-                bounded: false,
-                stage: 'bootstrap',
-              },
-            });
-            console.error(`❌ [VVAULT Proxy] Transcript persistence unavailable for ${constructId}: writeTranscript function not loaded`);
-            return sendSerializedJson(res, 503, {
-              ...persistenceFailurePayload,
-              tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
-              ...(process.env.SHOW_DEV_INFO === 'true'
-                ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: mainPromptDiagnostics }
-                : {})
-            }, 'transcript_persistence_failure');
-          }
-          const now = new Date();
-          const conversationTitle = canonicalTurnMetadata.projectName
-            ? `${canonicalTurnMetadata.projectName} Hydro`
-            : constructName;
-          const normalizedRequestedTranscriptPath = String(
-            canonicalTurnMetadata.transcriptPath || transcriptPath || ''
-          ).trim().replace(/^\/+/, '');
-          const canonicalTranscriptWriteTargetPath =
-            `instances/${constructId}/chatty/chat_with_${constructId}.md`;
-          const isCanonicalConstructTranscriptWrite =
-            effectiveSession === `${constructId}_chat_with_${constructId}` &&
-            !canonicalTurnMetadata.projectName &&
-            (!normalizedRequestedTranscriptPath ||
-              normalizedRequestedTranscriptPath === canonicalTranscriptWriteTargetPath);
-          const isCanonicalLinTranscriptWrite =
-            constructId === 'lin-001' &&
-            effectiveSession === LIN_CANONICAL_THREAD_ID &&
-            !canonicalTurnMetadata.projectName &&
-            (!normalizedRequestedTranscriptPath ||
-              normalizedRequestedTranscriptPath === LIN_CANONICAL_TRANSCRIPT_PATH);
-          const requiresVvaultBodyPersistence = isCanonicalConstructTranscriptWrite || isCanonicalLinTranscriptWrite;
-          let transcriptWriteSupabaseUserId = dataOwnerUserId;
-          if (isCanonicalConstructTranscriptWrite) {
-            const { supabaseUserId: resolvedTranscriptWriteSupabaseUserId } =
-              await resolveSupabaseUserId({
-                email: req.user?.email || null,
-                chattyUserId: dataOwnerUserId,
-              });
-            if (resolvedTranscriptWriteSupabaseUserId) {
-              transcriptWriteSupabaseUserId = resolvedTranscriptWriteSupabaseUserId;
-            } else {
-              console.warn(
-                `⚠️ [VVAULT Proxy] Could not resolve canonical transcript write target for ${constructId}; falling back to current owner targeting`
-              );
-            }
-          }
-          const persistenceRoleResults = [];
-          const persistWrite = async (role, params) => {
-            const outcome = await performTranscriptWriteWithRecovery(params, {
-              label: `transcript_persistence_${role}`,
-            });
-            persistenceRoleResults.push({
-              role,
-              status: outcome.status,
-              source: outcome.value?.source || null,
-              bounded: false,
-            });
-            return outcome;
-          };
-          const continuityResetBlockReason =
-            (isSyntheticContinueTurn ||
-              routeTurnEnvelope.continuityResume?.continuityExpected === true)
-              ? detectContinuityResetDraft(aiResponse)
-              : null;
-          if (continuityResetBlockReason) {
-            const persistenceFailurePayload = buildTranscriptPersistenceFailurePayload({
-              userId: dataOwnerUserId,
-              user: req.user,
-              constructId,
-              rawConstructId,
-              canonicalConstructId,
-              message,
-              threadId,
-              sessionId,
-              hasImages,
-              previewMode,
-              gptConfig,
-              enrichedContext,
-              retrievalDiagnostics,
-              promptDiagnostics: mainPromptDiagnostics,
-              providerTrace,
-              validatorDebug,
-              runtimeReceipt,
-              details: {
-                code: 'CONTINUITY_RESET_DRAFT_BLOCKED',
-                reason: continuityResetBlockReason,
-                message: 'Assistant draft looked like a continuity reset, so canonical persistence was blocked.',
-                error: 'continuity_reset_draft_blocked',
-                timeout_ms: null,
-                bounded: false,
-                stage: 'assistant_prewrite',
-                roles: persistenceRoleResults,
-                partial_write_risk: !isSyntheticContinueTurn,
-              },
-            });
-            console.warn('[CONTINUITY_PERSISTENCE_GATE] Blocked assistant persistence', {
-              constructId,
-              sessionId: effectiveSession,
-              reason: continuityResetBlockReason,
-            });
-            return sendSerializedJson(res, 422, {
-              ...persistenceFailurePayload,
-              code: 'CONTINUITY_RESET_DRAFT_BLOCKED',
-              error: 'Assistant draft looked like a continuity reset, so canonical persistence was blocked.',
-              response: 'Assistant draft blocked before canonical persistence.',
-              tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
-              ...(process.env.SHOW_DEV_INFO === 'true'
-                ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: mainPromptDiagnostics }
-                : {})
-            }, 'continuity_reset_draft_blocked');
-          }
-
-          if (!isSyntheticContinueTurn) {
-            const userPersistOutcome = await persistWrite('user', {
-              userId: dataOwnerUserId,
-              userEmail: req.user?.email,
-              supabaseUserId: transcriptWriteSupabaseUserId,
-              requireVvaultBodySuccess: requiresVvaultBodyPersistence,
-              sessionId: effectiveSession,
-              timestamp: new Date(now.getTime()).toISOString(),
-              role: 'user',
-              content: message,
-              title: conversationTitle,
-              metadata: {
-                ...canonicalTurnMetadata,
-                attachments,
-              },
-              constructId,
-              constructName,
-              constructCallsign: constructId
-            });
-
-            if (!userPersistOutcome.ok) {
-              const persistenceFailurePayload = buildTranscriptPersistenceFailurePayload({
-                userId: dataOwnerUserId,
-                user: req.user,
-                constructId,
-                rawConstructId,
-                canonicalConstructId,
-                message,
-                threadId,
-                sessionId,
-                hasImages,
-                previewMode,
-                gptConfig,
-                enrichedContext,
-                retrievalDiagnostics,
-                promptDiagnostics: mainPromptDiagnostics,
-                providerTrace,
-                validatorDebug,
-                runtimeReceipt,
-                details: {
-                  code: 'TRANSCRIPT_PERSISTENCE_UNAVAILABLE',
-                  reason: 'transcript_user_write_failed',
-                  message: 'Transcript persistence failed before the user turn could be canonically recorded.',
-                  error: userPersistOutcome.error,
-                  timeout_ms: null,
-                  bounded: false,
-                  stage: 'user',
-                  roles: persistenceRoleResults,
-                  partial_write_risk: false,
-                },
-              });
-              console.error(`❌ [VVAULT Proxy] Transcript persistence failed for ${constructId} at user write:`, userPersistOutcome.error);
-              return sendSerializedJson(res, 503, {
-                ...persistenceFailurePayload,
-                tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
-                ...(process.env.SHOW_DEV_INFO === 'true'
-                  ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: mainPromptDiagnostics }
-                  : {})
-              }, 'transcript_persistence_failure');
-            }
-          }
-
-          const assistantPersistOutcome = await persistWrite('assistant', {
-              userId: dataOwnerUserId,
-              userEmail: req.user?.email,
-              supabaseUserId: transcriptWriteSupabaseUserId,
-              requireVvaultBodySuccess: requiresVvaultBodyPersistence,
-              sessionId: effectiveSession,
-            timestamp: new Date(now.getTime() + 2).toISOString(),
-            role: 'assistant',
-            content: aiResponse,
-            title: conversationTitle,
-            metadata: {
-              ...canonicalTurnMetadata,
-              modelKey: canonicalTurnMetadata.modelKey || effectiveModel,
-              modelLabel: canonicalTurnMetadata.modelLabel || effectiveModel,
-              runtimeReceipt,
-              orchestrationChecklist,
-              runtimeTurnState: nextRuntimeTurnState,
-            },
-            constructId,
-            constructName,
-            constructCallsign: constructId
-          });
-
-          if (!assistantPersistOutcome.ok) {
-            const persistenceFailurePayload = buildTranscriptPersistenceFailurePayload({
-              userId: dataOwnerUserId,
-              user: req.user,
-              constructId,
-              rawConstructId,
-              canonicalConstructId,
-              message,
-              threadId,
-              sessionId,
-              hasImages,
-              previewMode,
-              gptConfig,
-              enrichedContext,
-              retrievalDiagnostics,
-              promptDiagnostics: mainPromptDiagnostics,
-              providerTrace,
-                validatorDebug,
-                runtimeReceipt,
-                details: {
-                  code: 'TRANSCRIPT_PERSISTENCE_UNAVAILABLE',
-                  reason: 'transcript_assistant_write_failed',
-                  message: 'Transcript persistence failed before the assistant reply could be canonically recorded.',
-                  error: assistantPersistOutcome.error,
-                  timeout_ms: null,
-                  bounded: false,
-                  stage: 'assistant',
-                  roles: persistenceRoleResults,
-                  partial_write_risk: true,
-              },
-            });
-            console.error(`❌ [VVAULT Proxy] Transcript persistence failed for ${constructId} at assistant write:`, assistantPersistOutcome.error);
-            return sendSerializedJson(res, 503, {
-              ...persistenceFailurePayload,
-              tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
-              ...(process.env.SHOW_DEV_INFO === 'true'
-                ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: mainPromptDiagnostics }
-                : {})
-            }, 'transcript_persistence_failure');
-          }
-
-          clearConversationReadCaches();
-
-          if (requiresVvaultBodyPersistence) {
-            const canonicalReadbackRows = await readConversations(
-              buildConversationLookupContext({
-                userEmail: req.user?.email || null,
-                supabaseUserId: transcriptWriteSupabaseUserId,
-                userId: dataOwnerUserId || req.user?.vvaultUserId || userId,
-              }),
-              constructId,
-              { allowLocalFallback: false },
-            );
-            const canonicalReadbackConversation = (Array.isArray(canonicalReadbackRows)
-              ? canonicalReadbackRows
-              : []
-            ).find((row) => row?.sessionId === effectiveSession || row?.id === effectiveSession);
-            const readbackAssistantTail = (canonicalReadbackConversation?.messages || [])
-              .filter((row) => row?.role === 'assistant')
-              .at(-1);
-
-            if (
-              !readbackAssistantTail ||
-              stripChattyMetadataComment(readbackAssistantTail.content) !== String(aiResponse || '').trimEnd()
-            ) {
-              const persistenceFailurePayload = buildTranscriptPersistenceFailurePayload({
-                userId: dataOwnerUserId,
-                user: req.user,
-                constructId,
-                rawConstructId,
-                canonicalConstructId,
-                message,
-                threadId,
-                sessionId,
-                hasImages,
-                previewMode,
-                gptConfig,
-                enrichedContext,
-                retrievalDiagnostics,
-                promptDiagnostics: mainPromptDiagnostics,
-                providerTrace,
-                validatorDebug,
-                runtimeReceipt,
-                details: {
-                  code: 'TRANSCRIPT_READBACK_MISMATCH',
-                  reason: 'canonical_vvault_readback_tail_mismatch',
-                  message: 'Transcript write completed, but canonical VVAULT readback did not return the assistant tail.',
-                  error: 'canonical_vvault_readback_tail_mismatch',
-                  timeout_ms: null,
-                  bounded: false,
-                  stage: 'readback',
-                  roles: persistenceRoleResults,
-                  partial_write_risk: true,
-                },
-              });
-              console.error(`❌ [VVAULT Proxy] Canonical readback mismatch for ${constructId} after transcript write`);
-              return sendSerializedJson(res, 503, {
-                ...persistenceFailurePayload,
-                tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
-                ...(process.env.SHOW_DEV_INFO === 'true'
-                  ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: mainPromptDiagnostics }
-                  : {})
-              }, 'transcript_readback_mismatch');
-            }
-          }
-
-          console.log('[RUNTIME_TURN_STATE]', {
-            stage: 'persisted',
-            sessionId: effectiveSession,
-            constructId,
-            source: assistantPersistOutcome.value?.source || assistantPersistOutcome.source || null,
-            runtimeTurnState: nextRuntimeTurnState,
-          });
-
-          runtimeReceipt.persistence_owner = 'vvault_body';
-          runtimeReceipt.persistence = {
-            ...runtimeReceipt.persistence,
-            attempted: true,
-            status: 'pass',
-            timeout_ms: null,
-            bounded: false,
-            stage: 'assistant',
-            roles: persistenceRoleResults,
-            ...buildCanonicalPersistenceSemantics(),
-          };
-          console.log(
-            `💾 [VVAULT Proxy] Transcript persisted for ${constructId} (${isSyntheticContinueTurn ? "assistant-only continue turn" : "user + assistant"})`,
-          );
-        } catch (persistErr) {
-          const persistenceFailurePayload = buildTranscriptPersistenceFailurePayload({
-            userId: dataOwnerUserId,
-            user: req.user,
-            constructId,
-            rawConstructId,
-            canonicalConstructId,
-            message,
-            threadId,
-            sessionId,
-            hasImages,
-            previewMode,
-            gptConfig,
-            enrichedContext,
-            retrievalDiagnostics,
-            promptDiagnostics: mainPromptDiagnostics,
-            providerTrace,
-            validatorDebug,
-            runtimeReceipt,
-            details: {
-              code: 'TRANSCRIPT_PERSISTENCE_UNAVAILABLE',
-              reason: 'transcript_persistence_exception',
-              message: 'Transcript persistence failed before the canonical response could be recorded.',
-              error: persistErr?.message || String(persistErr),
-              timeout_ms: null,
-              bounded: false,
-              stage: 'unexpected',
-            },
-          });
-          console.error(`❌ [VVAULT Proxy] Transcript persistence threw for ${constructId}:`, persistErr?.message || String(persistErr));
-          return sendSerializedJson(res, 503, {
-            ...persistenceFailurePayload,
-            tool_trace: mergeToolTrace(drainToolEvents(sessionId || threadId || `${constructId}_chat_with_${constructId}`), enrichedContext),
-            ...(process.env.SHOW_DEV_INFO === 'true'
-              ? { validator: validatorDebug, provider_trace: providerTrace, retrieval_diagnostics: retrievalDiagnostics, prompt_diagnostics: mainPromptDiagnostics }
-              : {})
-          }, 'transcript_persistence_failure');
-        }
-
-        if (!isSyntheticContinueTurn) {
-          captureMemory({
-            userId: dataOwnerUserId,
-            constructId,
-            userMessage: message,
-            aiResponse,
-            sessionId: effectiveSession,
-            email: req.user?.email
-          }).catch(err => console.warn('⚠️ [VVAULT Proxy] Background memory capture failed:', err.message));
-        }
+        captureMemory({
+          userId: dataOwnerUserId,
+          constructId,
+          userMessage: message,
+          aiResponse,
+          sessionId: effectiveSession,
+          email: req.user?.email
+        }).catch(err => console.warn('⚠️ [VVAULT Proxy] Background memory capture failed:', err.message));
       }
 
       evaluateMessage(dataOwnerUserId, constructId, isSyntheticContinueTurn ? "" : message, aiResponse)
@@ -13488,7 +12929,7 @@ Output ONLY the rewritten response, nothing else.`
     let gptConfigForVVAULT = null;
     let configuredModelForVVAULT = null;
     try {
-      gptConfigForVVAULT = await gptManager.getGPTByCallsign(constructId);
+      gptConfigForVVAULT = await getGptManager().getGPTByCallsign(constructId);
       if (gptConfigForVVAULT) {
         configuredModelForVVAULT = gptConfigForVVAULT.conversationModel || gptConfigForVVAULT.modelId;
         console.log(`📋 [VVAULT Proxy] GPT config for ${constructId}, model: ${configuredModelForVVAULT}`);
@@ -13577,7 +13018,7 @@ Output ONLY the rewritten response, nothing else.`
             // Fetch GPT config and resolve model using GPTCreator as source of truth
             let gptConfig = null;
             try {
-              gptConfig = await gptManager.getGPTByCallsign(constructId);
+              gptConfig = await getGptManager().getGPTByCallsign(constructId);
             } catch (e) { /* ignore */ }
 
             const providerAvailability = await buildProviderAvailability();
@@ -14698,7 +14139,7 @@ Do NOT treat this as a first meeting if there is conversation history.`;
         // Fetch GPT config and resolve model using GPTCreator as source of truth
         let gptConfig = null;
         try {
-          gptConfig = await gptManager.getGPTByCallsign(constructId);
+          gptConfig = await getGptManager().getGPTByCallsign(constructId);
         } catch (e) { /* ignore */ }
 
         const providerAvailability = await buildProviderAvailability();
@@ -16124,5 +15565,15 @@ export {
   buildCompactRepairSystemPrompt,
   resolveLinTurnRouting,
   resolveRouteContextBudgetProfile,
+};
+export const __test__ = {
+  setRouteOverrides(overrides = {}) {
+    Object.assign(routeOverrides, overrides);
+  },
+  clearRouteOverrides() {
+    for (const key of Object.keys(routeOverrides)) {
+      routeOverrides[key] = null;
+    }
+  },
 };
 export default router;

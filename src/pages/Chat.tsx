@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import * as React from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -22,12 +23,13 @@ import type { GPTConfig } from "../lib/gptService";
 
 type Message = {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   text?: string;
   packets?: import("../types").AssistantPacket[];
   ts: number;
   files?: { name: string; size: number }[];
   typing?: boolean; // For typing indicators
+  status?: string;
 };
 
 type Thread = {
@@ -61,6 +63,205 @@ function isDateHeaderMessage(msg: any): boolean {
   if (text.length > 40) return false;
 
   return DATE_HEADER_PATTERN.test(text);
+}
+
+function isCanonicalSelfThreadId(threadId?: string | null): boolean {
+  return typeof threadId === "string" && /^([a-z0-9-]+)_chat_with_\1$/i.test(threadId);
+}
+
+function isImportedSeatValue(value: unknown): boolean {
+  return typeof value === "string" && value.trim().toLowerCase() === "codex";
+}
+
+function isBlockParagraphChild(child: React.ReactNode): boolean {
+  if (!React.isValidElement(child) || typeof child.type !== "string") {
+    return false;
+  }
+
+  return [
+    "div",
+    "pre",
+    "ul",
+    "ol",
+    "blockquote",
+    "table",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+  ].includes(child.type);
+}
+
+export function shouldRenderUserMarkdownParagraphAsBlock(
+  children: React.ReactNode,
+): boolean {
+  return React.Children.toArray(children).some((child) => isBlockParagraphChild(child));
+}
+
+export function renderUserMessageParagraph(
+  children: React.ReactNode,
+): React.ReactElement {
+  const className = "mb-2 last:mb-0 leading-relaxed";
+  const style = { color: "var(--chatty-text)" };
+
+  if (shouldRenderUserMarkdownParagraphAsBlock(children)) {
+    return (
+      <div className={className} style={style}>
+        {children}
+      </div>
+    );
+  }
+
+  return (
+    <p className={className} style={style}>
+      {children}
+    </p>
+  );
+}
+
+export function isImportedCodexRelayUserMessage(message: {
+  role?: string | null;
+  metadata?: Record<string, unknown> | null;
+} | null | undefined): boolean {
+  if (!message || message.role !== "user" || !message.metadata) {
+    return false;
+  }
+
+  const { sourceProduct, sourceSeat, relayImportedAt } = message.metadata;
+  return Boolean(relayImportedAt) && (
+    isImportedSeatValue(sourceProduct) || isImportedSeatValue(sourceSeat)
+  );
+}
+
+export function getUserMessageRenderMode(message: {
+  role?: string | null;
+  text?: string | null;
+  metadata?: Record<string, unknown> | null;
+} | null | undefined): "live-user" | "imported-codex-context" {
+  return isImportedCodexRelayUserMessage(message)
+    ? "imported-codex-context"
+    : "live-user";
+}
+
+export function buildImportedCodexRelayPreview(
+  text?: string | null,
+  maxLength = 400,
+): string {
+  const normalized = String(text || "")
+    .replace(/!\[[^\]]*]\(([^)]+)\)/g, "[imported image: $1]")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength).trimEnd()}...`;
+}
+
+export function renderImportedCodexRelayContext({
+  text,
+  importedAt,
+}: {
+  text?: string | null;
+  importedAt?: string | null;
+}): React.ReactElement {
+  const preview = buildImportedCodexRelayPreview(text, 400);
+
+  return (
+    <div
+      className="rounded-xl border px-4 py-3 space-y-2"
+      style={{
+        borderColor: "rgba(255, 255, 255, 0.12)",
+        backgroundColor: "rgba(255, 255, 255, 0.04)",
+        color: "var(--chatty-text)",
+      }}
+    >
+      <div className="text-xs uppercase tracking-[0.16em]" style={{ opacity: 0.72 }}>
+        Imported Codex handoff context
+      </div>
+      {importedAt ? (
+        <div className="text-xs" style={{ opacity: 0.65 }}>
+          Imported at {importedAt}
+        </div>
+      ) : null}
+      <p className="text-sm leading-relaxed">{preview}</p>
+      <p className="text-xs leading-relaxed" style={{ opacity: 0.72 }}>
+        Full imported content remains in canonical storage.
+      </p>
+    </div>
+  );
+}
+
+export function shouldWindowThreadHistory(thread: {
+  isIndexHydrated?: boolean;
+} | null | undefined): boolean {
+  return thread?.isIndexHydrated === true;
+}
+
+export function getRenderableThreadMessages<T extends { text?: string; isDateHeader?: boolean }>(
+  messages: T[] | null | undefined,
+  messageWindowSize: number,
+  thread: { isIndexHydrated?: boolean } | null | undefined,
+): T[] {
+  const filteredMessages = Array.isArray(messages)
+    ? messages.filter((message) => !isDateHeaderMessage(message))
+    : [];
+
+  if (!shouldWindowThreadHistory(thread)) {
+    return filteredMessages;
+  }
+
+  const windowStart = Math.max(0, filteredMessages.length - messageWindowSize);
+  return filteredMessages.slice(windowStart);
+}
+
+export function shouldBlockActiveThreadRender({
+  activeThreadHydration,
+  thread,
+}: {
+  activeThreadHydration?:
+    | {
+        status?: string | null;
+        hydrationSource?: string | null;
+        hydrationComplete?: boolean;
+      }
+    | null
+    | undefined;
+  thread?:
+    | {
+        id?: string;
+        isIndexHydrated?: boolean;
+      }
+    | null
+    | undefined;
+}): boolean {
+  if (!thread) {
+    return false;
+  }
+
+  if (activeThreadHydration?.status === "loading") {
+    return true;
+  }
+
+  if (thread.isIndexHydrated === true) {
+    return true;
+  }
+
+  if (!isCanonicalSelfThreadId(thread.id)) {
+    return false;
+  }
+
+  if (activeThreadHydration?.status !== "ready") {
+    return true;
+  }
+
+  return (
+    activeThreadHydration?.hydrationSource !== "full" ||
+    activeThreadHydration?.hydrationComplete !== true
+  );
 }
 
 // Markdown components for user messages (styled for bubble with #ADA587 background)
@@ -277,11 +478,7 @@ const userMessageMarkdownComponents: Components = {
   ),
 
   // Paragraphs
-  p: ({ children }) => (
-    <p className="mb-2 last:mb-0 leading-relaxed" style={{ color: "var(--chatty-text)" }}>
-      {children}
-    </p>
-  ),
+  p: ({ children }) => renderUserMessageParagraph(children),
 
   // Lists
   ul: ({ children }) => (
@@ -385,7 +582,13 @@ const userMessageMarkdownComponents: Components = {
 
 interface LayoutContext {
   threads: Thread[];
-  sendMessage: (threadId: string, text: string, files: File[], imageAttachments?: ImageAttachment[]) => void;
+  sendMessage: (
+    threadId: string,
+    text: string,
+    files: File[],
+    imageAttachments?: ImageAttachment[],
+    uiOverrides?: unknown,
+  ) => void;
   renameThread: (threadId: string, title: string) => void;
   newThread: (options?: {
     title?: string;
@@ -393,9 +596,22 @@ interface LayoutContext {
     files?: File[];
   }) => void | Promise<any>;
   reloadThreadMessages?: (threadId: string) => Promise<void>;
+  exportThreadTranscript?: (
+    threadId: string,
+    format: "md" | "pdf" | "docx",
+  ) => Promise<{ blob: Blob; filename: string; contentType: string }>;
   user?: any;
   handleGPTCreated?: (gptConfig: { constructId?: string; constructCallsign?: string; name?: string }) => void;
   forceRefreshConversations?: () => void;
+  activeThreadHydration?:
+    | {
+        threadId?: string;
+        status?: string | null;
+        hydrationSource?: string | null;
+        hydrationComplete?: boolean;
+      }
+    | null
+    | undefined;
 }
 
 export default function Chat() {
@@ -403,10 +619,12 @@ export default function Chat() {
     threads,
     sendMessage: onSendMessage,
     reloadThreadMessages,
+    exportThreadTranscript,
     newThread,
     user,
     handleGPTCreated,
     forceRefreshConversations,
+    activeThreadHydration,
   } = useOutletContext<LayoutContext>();
   const { threadId } = useParams<{ threadId: string }>();
   const navigate = useNavigate();
@@ -421,6 +639,9 @@ export default function Chat() {
   const [gptCreatorInitialMessage, setGptCreatorInitialMessage] = useState<string | null>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [messageWindowSize, setMessageWindowSize] = useState(50);
+  const [composerFooterHeight, setComposerFooterHeight] = useState(0);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<"md" | "pdf" | "docx" | null>(null);
   const MESSAGE_WINDOW_STEP = 30;
   const mirrorContextRef = useRef<string>('');
   const [mirrorConfig, setMirrorConfig] = useState<{source: 'tab'|'window'|'screen', permission: 'read'|'write'|'both'} | null>(null);
@@ -430,6 +651,7 @@ export default function Chat() {
   const [mirrorStatus, setMirrorStatus] = useState<{text: string, count: number}>({text: 'idle', count: 0});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const composerFooterRef = useRef<HTMLDivElement>(null);
   const [zenMarkdown, setZenMarkdown] = useState<string | null>(null);
   const [zenMarkdownError, setZenMarkdownError] = useState<string | null>(null);
   const [isZenMarkdownLoading, setIsZenMarkdownLoading] = useState(false);
@@ -568,6 +790,12 @@ export default function Chat() {
     }
   }, [thread?.id]);
 
+  useEffect(() => {
+    if (!thread || thread.messages.length === 0) return;
+    if (shouldBlockActiveThreadRender({ activeThreadHydration, thread })) return;
+    scrollToBottom(false);
+  }, [thread?.id, thread?.messages.length, activeThreadHydration]);
+
   // Auto-scroll only after user has interacted (sent a message)
   useEffect(() => {
     if (thread && thread.messages.length > 0 && userHasInteracted) {
@@ -592,6 +820,23 @@ export default function Chat() {
     container.addEventListener("scroll", onScroll);
     return () => container.removeEventListener("scroll", onScroll);
   }, [thread?.id, thread?.messages?.length]);
+
+  useEffect(() => {
+    const footer = composerFooterRef.current;
+    if (!footer) return;
+
+    const measure = () => {
+      const rect = footer.getBoundingClientRect();
+      setComposerFooterHeight(Math.max(0, Math.ceil(rect.height) + 8));
+    };
+
+    measure();
+    const observer = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(() => measure())
+      : null;
+    observer?.observe(footer);
+    return () => observer?.disconnect();
+  }, [thread?.id]);
 
   // Load transcript for canonical threads (Zen, Lin, or GPTs)
   // Only attempt fallback transcript loading if threads have loaded (threads.length > 0)
@@ -650,7 +895,13 @@ export default function Chat() {
   useEffect(() => {
     if (!thread || !threadId || !reloadThreadMessages) return;
 
-    if (thread.messages.length === 0 && !isReloading && !reloadAttempted) {
+    const exactThreadReloadNeeded =
+      shouldBlockActiveThreadRender({
+        activeThreadHydration,
+        thread,
+      }) && !isReloading && !reloadAttempted;
+
+    if ((thread.messages.length === 0 || exactThreadReloadNeeded) && !isReloading && !reloadAttempted) {
       setIsReloading(true);
       setReloadAttempted(true);
 
@@ -679,11 +930,13 @@ export default function Chat() {
   }, [
     thread?.id,
     thread?.messages.length,
+    thread?.isIndexHydrated,
     threadId,
     reloadThreadMessages,
     threads.length,
     isReloading,
     reloadAttempted,
+    activeThreadHydration,
   ]); // Watch threads.length to detect updates
 
   // Get the construct name for display (system constructs or GPTs)
@@ -1270,6 +1523,25 @@ export default function Chat() {
     }
   };
 
+  const handleExportThread = async (format: "md" | "pdf" | "docx") => {
+    if (!thread || !exportThreadTranscript) return;
+    setExportingFormat(format);
+    try {
+      const result = await exportThreadTranscript(thread.id, format);
+      const url = URL.createObjectURL(result.blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = result.filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } finally {
+      setExportingFormat(null);
+      setIsExportMenuOpen(false);
+    }
+  };
+
   const handlePinMessage = async (message: Message, destination?: string) => {
     if (!user || !threadId) return;
 
@@ -1433,10 +1705,14 @@ export default function Chat() {
   // Scroll to bottom of messages
   const scrollToBottom = (smooth = true) => {
     if (messagesContainerRef.current) {
-      messagesContainerRef.current.scrollTo({
-        top: messagesContainerRef.current.scrollHeight,
-        behavior: smooth ? "smooth" : "auto",
-      });
+      if (typeof messagesContainerRef.current.scrollTo === "function") {
+        messagesContainerRef.current.scrollTo({
+          top: messagesContainerRef.current.scrollHeight,
+          behavior: smooth ? "smooth" : "auto",
+        });
+        return;
+      }
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
   };
 
@@ -1571,7 +1847,7 @@ export default function Chat() {
 
   return (
     <div
-      className="flex flex-col h-full"
+      className="relative flex flex-col h-full"
       style={{ backgroundColor: "var(--chatty-bg-main)" }}
     >
       {/* Dev Toggle (only in development) */}
@@ -1605,7 +1881,12 @@ export default function Chat() {
           )}
         </div>
       )}
-      <div ref={messagesContainerRef} className="flex-1 overflow-auto min-h-0" style={{ scrollBehavior: "smooth", WebkitOverflowScrolling: "touch" }}>
+      <div
+        ref={messagesContainerRef}
+        data-testid="chat-message-scroller"
+        className="flex-1 overflow-auto min-h-0"
+        style={{ scrollBehavior: "smooth", WebkitOverflowScrolling: "touch" }}
+      >
 
         {/* Loading state while reloading */}
         {isReloading && (
@@ -1643,6 +1924,25 @@ export default function Chat() {
               const user = isUser(m.role);
               const isLatest = index === filteredMessages.length - 1;
               const isRemoved = isMessageRemoved(m.id);
+
+              if (m.role === "system") {
+                return (
+                  <div key={m.id} className="px-4 py-3">
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className="rounded-xl border px-4 py-3 text-sm"
+                      style={{
+                        color: "var(--chatty-text)",
+                        borderColor: "rgba(173, 165, 135, 0.28)",
+                        backgroundColor: "rgba(173, 165, 135, 0.08)",
+                      }}
+                    >
+                      {prepareMessageContent(m.text) || "System status update."}
+                    </div>
+                  </div>
+                );
+              }
 
               // User messages: right-aligned with iMessage-style bubble
               if (user) {
@@ -1978,6 +2278,10 @@ export default function Chat() {
         {!userHasInteracted && thread.messages.length > 0 && (
           <div style={{ height: "calc(100vh - 200px)" }} />
         )}
+        <div
+          data-testid="chat-footer-spacer"
+          style={{ height: `${composerFooterHeight}px` }}
+        />
         <div ref={messagesEndRef} />
       </div>
 
@@ -2058,32 +2362,82 @@ export default function Chat() {
         </div>
       )}
 
-      <div className="p-4 border-t flex-shrink-0" style={{ borderColor: "var(--chatty-bg-main)" }}>
-        <MessageBar
-          onSubmit={(messageText, messageFiles, imageAttachments) => {
-            if (thread) {
-              setUserHasInteracted(true);
-              let finalText = messageText;
-              if (mirrorActive && mirrorConfig && mirrorContextRef.current) {
-                finalText = `${mirrorContextRef.current}\n\n${messageText}`;
-                mirrorContextRef.current = '';
-              }
-              onSendMessage(thread.id, finalText, messageFiles || [], imageAttachments);
-            }
-          }}
-          placeholder={`Message ${canonicalConstructName || "Chatty"}…`}
-          showVoiceButton={true}
-          showFileAttachment={true}
-          autoFocus={true}
-          disabled={!thread}
-        />
-      </div>
-
       <div
-        className="text-center text-xs py-2 px-4 flex-shrink-0"
-        style={{ color: "var(--chatty-text)", opacity: 0.5 }}
+        ref={composerFooterRef}
+        data-testid="chat-composer-footer"
+        className="absolute inset-x-0 bottom-0 pointer-events-none"
       >
-        Chatty can make mistakes. Consider checking important information.
+        <div
+          className="p-4 border-t flex-shrink-0 pointer-events-auto"
+          style={{
+            borderColor: "var(--chatty-bg-main)",
+            backgroundColor: "var(--chatty-bg-main)",
+          }}
+        >
+          <div className="flex items-center justify-between gap-3 mb-2">
+            {exportThreadTranscript && thread ? (
+              <div className="relative">
+                <button
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={isExportMenuOpen}
+                  onClick={() => setIsExportMenuOpen((value) => !value)}
+                  className="text-xs px-3 py-1.5 rounded-full transition-colors"
+                  style={{
+                    backgroundColor: "var(--chatty-bg-message)",
+                    color: "var(--chatty-text)",
+                    opacity: 0.82,
+                  }}
+                >
+                  Open export menu
+                </button>
+                {isExportMenuOpen ? (
+                  <div
+                    role="menu"
+                    className="absolute left-0 bottom-full mb-2 rounded-xl border p-2 min-w-[180px]"
+                    style={{
+                      backgroundColor: "var(--chatty-bg-main)",
+                      borderColor: "var(--chatty-line)",
+                    }}
+                  >
+                    <button role="menuitem" className="block w-full text-left px-3 py-2 text-sm rounded-lg" onClick={() => handleExportThread("md")}>
+                      Export as Markdown
+                    </button>
+                    <button role="menuitem" className="block w-full text-left px-3 py-2 text-sm rounded-lg" onClick={() => handleExportThread("pdf")}>
+                      Export as PDF
+                    </button>
+                    <button role="menuitem" className="block w-full text-left px-3 py-2 text-sm rounded-lg" onClick={() => handleExportThread("docx")}>
+                      Export as DOCX
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : <div />}
+            {exportingFormat ? (
+              <div className="text-xs" style={{ color: "var(--chatty-text)", opacity: 0.72 }}>
+                {`Preparing ${exportingFormat.toUpperCase()}`}
+              </div>
+            ) : null}
+          </div>
+          <MessageBar
+            onSubmit={(messageText, messageFiles, imageAttachments) => {
+              if (thread) {
+                setUserHasInteracted(true);
+                let finalText = messageText;
+                if (mirrorActive && mirrorConfig && mirrorContextRef.current) {
+                  finalText = `${mirrorContextRef.current}\n\n${messageText}`;
+                  mirrorContextRef.current = '';
+                }
+                onSendMessage(thread.id, finalText, messageFiles || [], imageAttachments, undefined);
+              }
+            }}
+            placeholder={`Message ${canonicalConstructName || "Chatty"}…`}
+            showVoiceButton={true}
+            showFileAttachment={true}
+            autoFocus={true}
+            disabled={!thread}
+          />
+        </div>
       </div>
 
       {isGPTCreatorOpen && (

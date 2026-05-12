@@ -114,20 +114,37 @@ function identityBasenamesFor(normalizedConstructId) {
   ]);
 }
 
-function safeParseJson(value) {
-  if (typeof value !== 'string' || !value.trim()) return null;
+function parseJsonDocument(value, label = 'json_document') {
+  if (typeof value !== 'string' || !value.trim()) {
+    return {
+      status: 'empty',
+      value: null,
+      error: null,
+      label,
+    };
+  }
   try {
-    return JSON.parse(value);
-  } catch {
-    console.warn(`[ConstructIdentity] safeParseJson failed — expected JSON string, got malformed input`);
-    return null;
+    return {
+      status: 'loaded',
+      value: JSON.parse(value),
+      error: null,
+      label,
+    };
+  } catch (error) {
+    console.warn(`[ConstructIdentity] ${label} malformed JSON: ${error?.message || error}`);
+    return {
+      status: 'malformed_json',
+      value: null,
+      error: error?.message || String(error),
+      label,
+    };
   }
 }
 
 function parseMetadata(metadata) {
   if (!metadata) return {};
   if (typeof metadata === 'object') return metadata;
-  return safeParseJson(metadata) || {};
+  return parseJsonDocument(metadata, 'row_metadata').value || {};
 }
 
 function isNonEmptyString(value) {
@@ -240,18 +257,40 @@ function earliestTimestamp(rows) {
   return new Date(Math.min(...timestamps)).toISOString();
 }
 
-async function readTextContent(row, supabase) {
-  if (!row) return '';
+async function readTextContentResult(row, supabase, label) {
+  if (!row) {
+    return { status: 'empty', text: '', error: null, label };
+  }
   if (isNonEmptyString(row.content)) {
-    return row.content;
+    return { status: 'loaded', text: row.content, error: null, label };
   }
 
   const storagePath = row.storage_path || row.filename || null;
-  if (!storagePath) return '';
+  if (!storagePath) {
+    return {
+      status: 'missing_storage_content',
+      text: '',
+      error: 'missing_storage_content',
+      label,
+    };
+  }
 
   const { data, error } = await supabase.storage.from(STORAGE_BUCKET).download(storagePath);
-  if (error || !data) return '';
-  return Buffer.from(await data.arrayBuffer()).toString('utf8');
+  if (error || !data) {
+    return {
+      status: 'storage_download_failed',
+      text: '',
+      error: error?.message || 'storage_download_failed',
+      label,
+    };
+  }
+
+  return {
+    status: 'loaded',
+    text: Buffer.from(await data.arrayBuffer()).toString('utf8'),
+    error: null,
+    label,
+  };
 }
 
 function objectToEditorText(value) {
@@ -303,6 +342,28 @@ async function buildAvatarDescriptor({ row, constructId, supabase }) {
     contentType: inferAvatarContentType(row),
     sha256: row.sha256 || null,
   };
+}
+
+async function loadAvatarFallbackRows({ normalizedConstructId, supabaseUserId, supabase }) {
+  try {
+    const rows = await loadIdentityRows({
+      normalizedConstructId,
+      supabaseUserId,
+      supabase,
+    });
+    return {
+      status: 'loaded',
+      rows: rows.filter((row) => isIdentityAvatarRow(row)),
+      error: null,
+    };
+  } catch (error) {
+    console.warn(`⚠️ [Construct Identity] Avatar row fallback failed for ${normalizedConstructId}:`, error.message);
+    return {
+      status: 'error',
+      rows: [],
+      error: error?.message || String(error),
+    };
+  }
 }
 
 function summarizeFileRows(rows) {
@@ -645,16 +706,40 @@ function normalizeVvaultBodyIdentity(apiResult, normalizedConstructId, supabaseU
   };
 }
 
-async function loadVvaultBodyIdentity({ normalizedConstructId, supabaseUserId }) {
+function normalizeVvaultBodyIdentityResult(apiResult, normalizedConstructId, supabaseUserId) {
+  const identity = normalizeVvaultBodyIdentity(apiResult, normalizedConstructId, supabaseUserId);
+  if (!identity) {
+    return {
+      status: 'malformed_body',
+      identity: null,
+      reason: 'vvault_body_identity_malformed',
+    };
+  }
+  return {
+    status: 'loaded',
+    identity,
+    reason: null,
+  };
+}
+
+async function loadVvaultBodyIdentityResult({ normalizedConstructId, supabaseUserId }) {
   try {
     const { getConstructIdentity } = await getVvaultApiClient();
-    if (typeof getConstructIdentity !== 'function') return null;
+    if (typeof getConstructIdentity !== 'function') {
+      return { status: 'unavailable', identity: null, reason: 'vvault_body_function_unavailable' };
+    }
     const apiResult = await getConstructIdentity(normalizedConstructId, { supabaseUserId });
-    if (!apiResult) return null;
-    return normalizeVvaultBodyIdentity(apiResult, normalizedConstructId, supabaseUserId);
+    if (!apiResult) {
+      return { status: 'empty', identity: null, reason: 'vvault_body_identity_missing' };
+    }
+    return normalizeVvaultBodyIdentityResult(apiResult, normalizedConstructId, supabaseUserId);
   } catch (error) {
     console.warn(`⚠️ [Construct Identity] VVAULT body identity unavailable for ${normalizedConstructId}:`, error.message);
-    return null;
+    return {
+      status: 'error',
+      identity: null,
+      reason: error?.message || String(error),
+    };
   }
 }
 
@@ -694,7 +779,16 @@ export async function loadCanonicalConstructIdentity({ constructId, supabaseUser
   const cached = getCachedIdentity(cacheKey);
   if (cached) return cached;
 
-  const bodyIdentity = await loadVvaultBodyIdentity({ normalizedConstructId, supabaseUserId });
+  const bodyIdentityResult = await loadVvaultBodyIdentityResult({ normalizedConstructId, supabaseUserId });
+  const identityDiagnostics = {
+    vvault_body: bodyIdentityResult.status,
+    vvault_body_reason: bodyIdentityResult.reason || null,
+    avatar_fallback: 'not_attempted',
+    supabase_identity: 'not_attempted',
+    parse_failures: [],
+    read_failures: [],
+  };
+  const bodyIdentity = bodyIdentityResult.identity;
   if (bodyIdentity?.exists) {
     // VVAULT body identity is authoritative for text/config identity. Avatar
     // authority still requires a concrete identity avatar file row/descriptor,
@@ -706,18 +800,25 @@ export async function loadCanonicalConstructIdentity({ constructId, supabaseUser
 
     const supabaseForAvatar = getSupabaseClient();
     if (!supabaseForAvatar) {
-      return setCachedIdentity(cacheKey, bodyIdentity);
+      return setCachedIdentity(cacheKey, {
+        ...bodyIdentity,
+        identityDiagnostics: {
+          ...identityDiagnostics,
+          avatar_fallback: 'unavailable',
+        },
+      });
     }
 
-    const avatarRows = await loadIdentityRows({
+    const avatarRowResult = await loadAvatarFallbackRows({
       normalizedConstructId,
       supabaseUserId,
       supabase: supabaseForAvatar,
-    }).then((rows) => rows.filter((row) => isIdentityAvatarRow(row))).catch((error) => {
-      console.warn(`⚠️ [Construct Identity] Avatar row fallback failed for ${normalizedConstructId}:`, error.message);
-      return [];
     });
-    const avatarRow = pickCanonicalAvatarRow(avatarRows, supabaseUserId);
+    if (avatarRowResult.status === 'error') {
+      identityDiagnostics.avatar_fallback = 'error';
+      identityDiagnostics.avatar_fallback_error = avatarRowResult.error;
+    }
+    const avatarRow = pickCanonicalAvatarRow(avatarRowResult.rows, supabaseUserId);
     const avatarDescriptor = await buildAvatarDescriptor({
       row: avatarRow,
       constructId: normalizedConstructId,
@@ -727,6 +828,10 @@ export async function loadCanonicalConstructIdentity({ constructId, supabaseUser
     if (avatarDescriptor) {
       return setCachedIdentity(cacheKey, {
         ...bodyIdentity,
+        identityDiagnostics: {
+          ...identityDiagnostics,
+          avatar_fallback: 'loaded',
+        },
         avatarDescriptor,
         avatarRow,
         sourceFiles: {
@@ -736,13 +841,26 @@ export async function loadCanonicalConstructIdentity({ constructId, supabaseUser
       });
     }
 
-    return setCachedIdentity(cacheKey, bodyIdentity);
+    return setCachedIdentity(cacheKey, {
+      ...bodyIdentity,
+      identityDiagnostics: {
+        ...identityDiagnostics,
+        avatar_fallback: identityDiagnostics.avatar_fallback === 'error' ? 'error' : 'empty',
+      },
+    });
   }
 
   const supabase = getSupabaseOrThrow();
+  identityDiagnostics.supabase_identity = 'loaded';
   const relevantRows = await loadIdentityRows({ normalizedConstructId, supabaseUserId, supabase });
   if (!relevantRows.length) {
-    return setCachedIdentity(cacheKey, emptyIdentity(normalizedConstructId, supabaseUserId));
+    return setCachedIdentity(cacheKey, {
+      ...emptyIdentity(normalizedConstructId, supabaseUserId),
+      identityDiagnostics: {
+        ...identityDiagnostics,
+        supabase_identity: 'empty',
+      },
+    });
   }
 
   const rowsByName = new Map();
@@ -758,49 +876,98 @@ export async function loadCanonicalConstructIdentity({ constructId, supabaseUser
     if (row) sourceFiles[name] = row;
   }
 
-  const [
-    promptJsonText,
-    promptTxtText,
-    definitionJsonText,
-    definitionsJsonText,
-    definitionTxtText,
-    conditioningText,
-    physicalFeaturesDashText,
-    physicalFeaturesText,
-    physicalFeaturesNoUnderscoreText,
-    voiceMdText,
-    voiceJsonText,
-    genderJsonText,
-  ] = await Promise.all([
-    readTextContent(sourceFiles['prompt.json'], supabase),
-    readTextContent(sourceFiles['prompt.txt'], supabase),
-    readTextContent(sourceFiles['definition.json'], supabase),
-    readTextContent(sourceFiles['definitions.json'], supabase),
-    readTextContent(sourceFiles['definition.txt'], supabase),
-    readTextContent(sourceFiles['conditioning.txt'], supabase),
-    readTextContent(sourceFiles['physical-features.json'], supabase),
-    readTextContent(sourceFiles['physical_features.json'], supabase),
-    readTextContent(sourceFiles['physicalfeatures.json'], supabase),
-    readTextContent(sourceFiles['voice.md'], supabase),
-    readTextContent(sourceFiles['voice.json'], supabase),
-    readTextContent(sourceFiles['gender.json'], supabase),
+  const textResults = await Promise.all([
+    readTextContentResult(sourceFiles['prompt.json'], supabase, 'prompt.json'),
+    readTextContentResult(sourceFiles['prompt.txt'], supabase, 'prompt.txt'),
+    readTextContentResult(sourceFiles['definition.json'], supabase, 'definition.json'),
+    readTextContentResult(sourceFiles['definitions.json'], supabase, 'definitions.json'),
+    readTextContentResult(sourceFiles['definition.txt'], supabase, 'definition.txt'),
+    readTextContentResult(sourceFiles['conditioning.txt'], supabase, 'conditioning.txt'),
+    readTextContentResult(sourceFiles['physical-features.json'], supabase, 'physical-features.json'),
+    readTextContentResult(sourceFiles['physical_features.json'], supabase, 'physical_features.json'),
+    readTextContentResult(sourceFiles['physicalfeatures.json'], supabase, 'physicalfeatures.json'),
+    readTextContentResult(sourceFiles['voice.md'], supabase, 'voice.md'),
+    readTextContentResult(sourceFiles['voice.json'], supabase, 'voice.json'),
+    readTextContentResult(sourceFiles['gender.json'], supabase, 'gender.json'),
   ]);
+  for (const result of textResults) {
+    if (result.status !== 'loaded' && result.status !== 'empty') {
+      identityDiagnostics.read_failures.push({
+        label: result.label,
+        status: result.status,
+        error: result.error,
+      });
+    }
+  }
+  const [
+    promptJsonResult,
+    promptTxtResult,
+    definitionJsonResult,
+    definitionsJsonResult,
+    definitionTxtResult,
+    conditioningResult,
+    physicalFeaturesDashResult,
+    physicalFeaturesResult,
+    physicalFeaturesNoUnderscoreResult,
+    voiceMdResult,
+    voiceJsonResult,
+    genderJsonResult,
+  ] = textResults;
+  const promptJsonText = promptJsonResult.text;
+  const promptTxtText = promptTxtResult.text;
+  const definitionJsonText = definitionJsonResult.text;
+  const definitionsJsonText = definitionsJsonResult.text;
+  const definitionTxtText = definitionTxtResult.text;
+  const conditioningText = conditioningResult.text;
+  const physicalFeaturesDashText = physicalFeaturesDashResult.text;
+  const physicalFeaturesText = physicalFeaturesResult.text;
+  const physicalFeaturesNoUnderscoreText = physicalFeaturesNoUnderscoreResult.text;
+  const voiceMdText = voiceMdResult.text;
+  const voiceJsonText = voiceJsonResult.text;
+  const genderJsonText = genderJsonResult.text;
 
-  const promptJson = safeParseJson(promptJsonText) || {};
-  const definitionJson = safeParseJson(definitionJsonText) || safeParseJson(definitionsJsonText) || {};
+  const promptJsonParsed = parseJsonDocument(promptJsonText, 'prompt.json');
+  const definitionJsonParsed = parseJsonDocument(definitionJsonText, 'definition.json');
+  const definitionsJsonParsed = parseJsonDocument(definitionsJsonText, 'definitions.json');
+  const promptJson = promptJsonParsed.value || {};
+  const definitionJson = definitionJsonParsed.value || definitionsJsonParsed.value || {};
+  for (const parsed of [promptJsonParsed, definitionJsonParsed, definitionsJsonParsed]) {
+    if (parsed.status === 'malformed_json') {
+      identityDiagnostics.parse_failures.push({
+        label: parsed.label,
+        status: parsed.status,
+        error: parsed.error,
+      });
+    }
+  }
   const physicalFeaturesTextResolved = firstNonEmptyString([
     physicalFeaturesDashText,
     physicalFeaturesText,
     physicalFeaturesNoUnderscoreText,
   ]);
-  const physicalFeaturesJson = safeParseJson(physicalFeaturesTextResolved) || {};
+  const physicalFeaturesParsed = parseJsonDocument(
+    physicalFeaturesTextResolved,
+    'physical_features',
+  );
+  const physicalFeaturesJson = physicalFeaturesParsed.value || {};
   const physicalFeaturesEditorObject =
     physicalFeaturesJson && typeof physicalFeaturesJson === 'object' && !Array.isArray(physicalFeaturesJson)
       ? { ...physicalFeaturesJson }
       : {};
   delete physicalFeaturesEditorObject.gender;
-  const voiceJson = safeParseJson(voiceJsonText) || {};
-  const genderJson = safeParseJson(genderJsonText) || {};
+  const voiceJsonParsed = parseJsonDocument(voiceJsonText, 'voice.json');
+  const genderJsonParsed = parseJsonDocument(genderJsonText, 'gender.json');
+  const voiceJson = voiceJsonParsed.value || {};
+  const genderJson = genderJsonParsed.value || {};
+  for (const parsed of [physicalFeaturesParsed, voiceJsonParsed, genderJsonParsed]) {
+    if (parsed.status === 'malformed_json') {
+      identityDiagnostics.parse_failures.push({
+        label: parsed.label,
+        status: parsed.status,
+        error: parsed.error,
+      });
+    }
+  }
 
   const avatarRows = relevantRows.filter((row) => isIdentityAvatarRow(row));
   if (avatarRows.length > 1) {
@@ -906,6 +1073,7 @@ export async function loadCanonicalConstructIdentity({ constructId, supabaseUser
     creativeModel,
     codingModel,
     capabilities: promptCapabilities,
+    identityDiagnostics,
   };
 
   return setCachedIdentity(cacheKey, identity);

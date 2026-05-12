@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { 
-  X, Settings, Bell, User, Plus, Clock, ShoppingCart, Database, Lock, ShieldCheck
+  X, Settings, Bell, User, Clock, ShoppingCart, Database, Lock
 } from 'lucide-react'
 import { User as UserType } from '../lib/auth'
 import wreckSymbolLightUrl from '../../WRECK/assets/WRECK_symbol.png?url'
@@ -13,7 +13,6 @@ import PersonalizationTab from './settings/PersonalizationTab'
 import DataControlsTab from './settings/DataControlsTab'
 import StubTab from './settings/StubTab'
 import SecurityTab from './settings/SecurityTab'
-import ParentalControlsTab from './settings/ParentalControlsTab'
 
 interface SettingsModalProps {
   isVisible: boolean
@@ -22,8 +21,8 @@ interface SettingsModalProps {
   onLogout: () => void
 }
 
-type Tab = 'general' | 'notifications' | 'personalization' | 'apps' | 'schedules' | 
-  'orders' | 'data' | 'security' | 'parental' | 'account'
+type Tab = 'general' | 'notifications' | 'personalization' | 'schedules' |
+  'orders' | 'data' | 'security' | 'account'
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ 
   isVisible, 
@@ -40,12 +39,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     { id: 'general' as Tab, label: 'General', icon: Settings },
     { id: 'notifications' as Tab, label: 'Notifications', icon: Bell },
     { id: 'personalization' as Tab, label: 'Personalization', icon: User },
-    { id: 'apps' as Tab, label: 'Apps & Connectors', icon: Plus },
     { id: 'schedules' as Tab, label: 'Schedules', icon: Clock },
     { id: 'orders' as Tab, label: 'Orders', icon: ShoppingCart },
     { id: 'data' as Tab, label: 'Data Controls', icon: Database },
     { id: 'security' as Tab, label: 'Security', icon: Lock },
-    { id: 'parental' as Tab, label: 'Parental Controls', icon: ShieldCheck },
     { id: 'account' as Tab, label: 'Account', icon: User }
   ]
 
@@ -165,12 +162,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               {activeTab === 'general' && <GeneralTab />}
               {activeTab === 'notifications' && <NotificationsTab />}
               {activeTab === 'personalization' && <PersonalizationTab />}
-              {activeTab === 'apps' && <StubTab title="Apps & Connectors" description="App integrations coming soon..." />}
               {activeTab === 'schedules' && <StubTab title="Schedules" description="Schedule management coming soon..." />}
               {activeTab === 'orders' && <StubTab title="Orders" description="Order history coming soon..." />}
               {activeTab === 'data' && <DataControlsTab />}
               {activeTab === 'security' && <SecurityTab />}
-              {activeTab === 'parental' && <ParentalControlsTab />}
               {activeTab === 'account' && <AccountTab user={user} onLogout={onLogout} />}
             </div>
           </div>

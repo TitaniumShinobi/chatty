@@ -19,32 +19,84 @@ async function getVvaultApiClient() {
   return vvaultApiClientPromise;
 }
 
-function memoryToAnchorPair(memory) {
-  if (!memory) return null;
+function buildAnchorPairResult(memory) {
+  if (!memory) {
+    return { ok: false, pair: null, reason: 'memory_missing' };
+  }
   if (typeof memory === 'string') {
-    return { user: memory, assistant: '', sourceFile: 'vvault-body' };
+    return {
+      ok: true,
+      pair: { user: memory, assistant: '', sourceFile: 'vvault-body' },
+      reason: null,
+    };
   }
   const user = memory.context || memory.prompt || memory.user || memory.content || memory.summary || '';
   const assistant = memory.response || memory.assistant || memory.reply || '';
-  if (!user && !assistant) return null;
+  if (!user && !assistant) {
+    return { ok: false, pair: null, reason: 'memory_empty' };
+  }
   return {
-    user,
-    assistant,
-    sourceFile: memory.sourceFile || memory.source_file || memory.source || 'vvault-body',
-    verified: memory.verified !== false,
+    ok: true,
+    pair: {
+      user,
+      assistant,
+      sourceFile: memory.sourceFile || memory.source_file || memory.source || 'vvault-body',
+      verified: memory.verified !== false,
+    },
+    reason: null,
   };
 }
 
 async function fetchVvaultBodyMemoryAnchors(constructId) {
   try {
     const { getConstructMemories } = await getVvaultApiClient();
-    if (typeof getConstructMemories !== 'function') return null;
+    if (typeof getConstructMemories !== 'function') {
+      return {
+        constructId,
+        filename: buildMemoryAnchorFilename(constructId),
+        rows: [],
+        latestRow: null,
+        row: null,
+        anchors: null,
+        error: 'vvault_body_function_unavailable',
+        source: 'vvault_body',
+        status: 'unavailable',
+      };
+    }
     const result = await getConstructMemories(constructId);
-    if (!result || result.status !== 'body_native') return null;
-    const pairs = (result.memories || result.memory || result.items || result.data || [])
-      .map(memoryToAnchorPair)
-      .filter(Boolean);
-    if (!pairs.length) return null;
+    if (!result || result.status !== 'body_native') {
+      return {
+        constructId,
+        filename: buildMemoryAnchorFilename(constructId),
+        rows: [],
+        latestRow: null,
+        row: null,
+        anchors: null,
+        error: result?.status || 'vvault_body_unavailable',
+        source: 'vvault_body',
+        status: 'unavailable',
+      };
+    }
+    const pairResults = (result.memories || result.memory || result.items || result.data || [])
+      .map(buildAnchorPairResult);
+    const pairs = pairResults
+      .filter((result) => result.ok)
+      .map((result) => result.pair);
+    if (!pairs.length) {
+      return {
+        constructId,
+        filename: buildMemoryAnchorFilename(constructId),
+        rows: [],
+        latestRow: null,
+        row: null,
+        anchors: { pairs: [] },
+        error: pairResults.some((result) => result.reason === 'memory_empty')
+          ? 'vvault_body_anchor_pairs_empty'
+          : null,
+        source: 'vvault_body',
+        status: 'empty',
+      };
+    }
     const filename = buildMemoryAnchorFilename(constructId);
     const row = {
       id: `vvault-body:${constructId}:memory_anchors`,
@@ -61,16 +113,37 @@ async function fetchVvaultBodyMemoryAnchors(constructId) {
       anchors: { pairs },
       error: null,
       source: 'vvault_body',
+      status: 'loaded',
     };
   } catch (error) {
     console.warn(`[MemoryAnchorStore] VVAULT body fetch failed for ${constructId}: ${error?.message || error}`);
-    return null;
+    return {
+      constructId,
+      filename: buildMemoryAnchorFilename(constructId),
+      rows: [],
+      latestRow: null,
+      row: null,
+      anchors: null,
+      error: error?.message || String(error),
+      source: 'vvault_body',
+      status: 'error',
+    };
   }
 }
 
 function getSupabase() {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return null;
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+    return {
+      client: null,
+      status: 'supabase_unavailable',
+      error: 'supabase_credentials_missing',
+    };
+  }
+  return {
+    client: createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY),
+    status: 'loaded',
+    error: null,
+  };
 }
 
 function buildMemoryAnchorFilename(constructId) {
@@ -94,14 +167,30 @@ function normalizeAnchorRows(rows) {
 }
 
 function parseAnchorContent(content) {
-  if (!content) return null;
+  if (!content) {
+    return { ok: false, status: 'content_empty', anchors: null, error: 'content_empty' };
+  }
   if (typeof content === 'string') {
-    return JSON.parse(content);
+    try {
+      return {
+        ok: true,
+        status: 'loaded',
+        anchors: JSON.parse(content),
+        error: null,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        status: 'malformed_json',
+        anchors: null,
+        error: error?.message || String(error),
+      };
+    };
   }
   if (typeof content === 'object') {
-    return content;
+    return { ok: true, status: 'loaded', anchors: content, error: null };
   }
-  return null;
+  return { ok: false, status: 'unsupported_content_type', anchors: null, error: 'unsupported_content_type' };
 }
 
 function hasUsableAnchorPairs(anchors) {
@@ -113,19 +202,20 @@ function selectLatestValidAnchorDocument(rows) {
   const latestRow = orderedRows[0] || null;
 
   for (const row of orderedRows) {
-    try {
-      const anchors = parseAnchorContent(row?.content);
-      if (hasUsableAnchorPairs(anchors)) {
-        return {
-          rows: orderedRows,
-          latestRow,
-          row,
-          anchors,
-          filename: row?.filename || latestRow?.filename || null,
-        };
-      }
-    } catch (rowErr) {
-      console.warn(`[MemoryAnchorStore] Skipping row with unparseable content: ${rowErr?.message || rowErr}`);
+    const parsed = parseAnchorContent(row?.content);
+    if (parsed.ok && hasUsableAnchorPairs(parsed.anchors)) {
+      return {
+        rows: orderedRows,
+        latestRow,
+        row,
+        anchors: parsed.anchors,
+        filename: row?.filename || latestRow?.filename || null,
+        parse_status: 'loaded',
+        parse_error: null,
+      };
+    }
+    if (!parsed.ok) {
+      console.warn(`[MemoryAnchorStore] Skipping row with unparseable content: ${parsed.error || parsed.status}`);
     }
   }
 
@@ -135,6 +225,8 @@ function selectLatestValidAnchorDocument(rows) {
     row: null,
     anchors: null,
     filename: latestRow?.filename || null,
+    parse_status: orderedRows.length > 0 ? 'no_usable_pairs' : 'empty',
+    parse_error: orderedRows.length > 0 ? 'no_usable_pairs' : null,
   };
 }
 
@@ -148,18 +240,22 @@ function cloneAnchorPayload(payload) {
     anchors: payload.anchors || null,
     error: payload.error || null,
     source: payload.source || null,
+    status: payload.status || null,
+    parse_status: payload.parse_status || null,
+    parse_error: payload.parse_error || null,
   };
 }
 
 async function fetchLatestMemoryAnchors(constructId, { supabase, preferVvaultBody = true } = {}) {
   if (preferVvaultBody) {
     const bodyAnchors = await fetchVvaultBodyMemoryAnchors(constructId);
-    if (bodyAnchors?.anchors) return bodyAnchors;
+    if (bodyAnchors?.anchors || bodyAnchors?.status === 'empty') return bodyAnchors;
   }
 
   const client = supabase || getSupabase();
+  const supabaseClient = client?.client || client;
   const filename = buildMemoryAnchorFilename(constructId);
-  if (!client) {
+  if (!supabaseClient) {
     return {
       constructId,
       filename,
@@ -167,11 +263,13 @@ async function fetchLatestMemoryAnchors(constructId, { supabase, preferVvaultBod
       latestRow: null,
       row: null,
       anchors: null,
-      error: null,
+      error: client?.error || 'supabase_unavailable',
+      source: 'supabase',
+      status: 'unavailable',
     };
   }
 
-  const { data, error } = await client
+  const { data, error } = await supabaseClient
     .from('vault_files')
     .select('id, filename, content, created_at')
     .eq('construct_id', constructId)
@@ -186,6 +284,8 @@ async function fetchLatestMemoryAnchors(constructId, { supabase, preferVvaultBod
       row: null,
       anchors: null,
       error,
+      source: 'supabase',
+      status: 'error',
     };
   }
 
@@ -194,6 +294,8 @@ async function fetchLatestMemoryAnchors(constructId, { supabase, preferVvaultBod
     filename,
     ...selectLatestValidAnchorDocument(data || []),
     error: null,
+    source: 'supabase',
+    status: (data || []).length > 0 ? 'loaded' : 'empty',
   };
 }
 
@@ -249,6 +351,7 @@ function primeMemoryAnchorReadCache({
     anchors: anchors || null,
     error: null,
     source: 'cache_prime',
+    status: anchors ? 'loaded' : 'empty',
   };
   anchorReadCache.set(constructId, { payload, ts: Date.now() });
   anchorReadInflight.delete(constructId);
