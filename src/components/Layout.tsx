@@ -37,14 +37,18 @@ import {
 import {
   createIdleActiveConversationHydrationState,
   createLoadingActiveConversationHydrationState,
+  createSnapshotReplayActiveConversationHydrationState,
   decodeRuntimeResumeAnchorParam,
   deriveActiveConversationHydrationState,
+  deriveActiveConversationHydrationStateFromTranscript,
+  reconcileIncomingThreadsForActiveRoute,
 } from "../lib/vvaultConversationHydration";
 import { bootstrapConstructs } from "../lib/masterScripts";
 import { GPTService, type GPTConfig } from "../lib/gptService";
 import type { AIConfig } from "../lib/aiService";
 import type { UIContextSnapshot, Message as ChatMessage, Attachment } from "../types";
 import { WorkspaceContextBuilder } from "../engine/context/WorkspaceContextBuilder";
+import { resolveAddressBookAvatar } from "../lib/addressBookAvatarPolicy";
 import { safeMode, safeImport } from "../lib/safeMode";
 import { uploadAttachments, imageAttachmentsToAttachments } from "../lib/attachmentService";
 import {
@@ -162,6 +166,10 @@ const VVAULT_FILESYSTEM_ROOT = import.meta.env.VITE_VVAULT_ROOT_PATH || "";
 const DEFAULT_ZEN_CANONICAL_SESSION_ID = "zen-001_chat_with_zen-001";
 const DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID = "zen-001";
 const DEFAULT_ZEN_RUNTIME_ID = "zen-001";
+
+function isCanonicalZenThreadId(threadId: string | null | undefined): boolean {
+  return threadId === DEFAULT_ZEN_CANONICAL_SESSION_ID;
+}
 
 function mapChatMessageToThreadMessage(message: ChatMessage): Message | null {
   const parsedTs = message.timestamp ? Date.parse(message.timestamp) : NaN;
@@ -303,6 +311,30 @@ export default function Layout() {
   const threadsRef = useRef(threads);
   threadsRef.current = threads;
 
+  const reconcileActiveRouteThreadOverwrite = useCallback(
+    (
+      prevThreads: Thread[],
+      nextThreads: Thread[],
+      {
+        activeThreadId,
+        hydrationSource = null,
+        hydrationComplete = false,
+      }: {
+        activeThreadId?: string | null;
+        hydrationSource?: string | null;
+        hydrationComplete?: boolean;
+      } = {},
+    ) =>
+      reconcileIncomingThreadsForActiveRoute({
+        currentThreads: prevThreads,
+        incomingThreads: nextThreads,
+        activeThreadId: activeThreadId || null,
+        incomingHydrationSource: hydrationSource as any,
+        incomingHydrationComplete: hydrationComplete,
+      }),
+    [],
+  );
+
   useEffect(() => {
     const selfpromptLastPoll = { ts: new Date().toISOString() };
     const pollTimer = setInterval(async () => {
@@ -380,7 +412,16 @@ export default function Layout() {
       )
       .map(t => {
         const matchingGPT = userGPTs.find(gpt => gpt.constructCallsign === t.constructId);
-        return matchingGPT?.avatar ? { ...t, avatar: matchingGPT.avatar } : t;
+        const resolvedAvatar = resolveAddressBookAvatar({
+          ...t,
+          avatar: matchingGPT?.avatar || (t as any).avatar || null,
+          avatarUrl: (t as any).avatarUrl || matchingGPT?.avatarUrl || null,
+        });
+        return resolvedAvatar.avatarSrc
+          ? { ...t, avatar: resolvedAvatar.avatarSrc, avatarUrl: resolvedAvatar.avatarSrc }
+          : matchingGPT?.avatar
+            ? { ...t, avatar: matchingGPT.avatar }
+            : t;
       });
     
     // Create contact cards for GPTs that don't have a conversation thread yet
@@ -407,7 +448,11 @@ export default function Layout() {
         constructId: gpt.constructCallsign || gpt.id,
         runtimeId: gpt.constructCallsign || gpt.id,
         isPrimary: false,
-        avatar: gpt.avatar,
+        avatar: resolveAddressBookAvatar({
+          constructId: gpt.constructCallsign || gpt.id,
+          avatar: gpt.avatar || null,
+          avatarUrl: gpt.avatarUrl || null,
+        }).avatarSrc,
       });
     }
     
@@ -1074,25 +1119,13 @@ export default function Layout() {
           // 1. VVAULT is connected (backendDown already handled above)
           // 2. No conversations loaded from VVAULT
           // 3. AND no thread ID in URL
-          const urlRuntimeHint = extractRuntimeKeyFromThreadId(
-            preferredUrlThreadId || urlThreadId,
-          );
-          const shouldForceCanonicalZen =
-            !preferredUrlThreadId &&
-            !zenCanonicalThread?.id &&
-            urlRuntimeHint === DEFAULT_ZEN_RUNTIME_ID;
-
           const defaultThreadId =
             preferredUrlThreadId ||
             zenCanonicalThread?.id ||
-            (shouldForceCanonicalZen
-              ? DEFAULT_ZEN_CANONICAL_SESSION_ID
-              : `zen_${Date.now()}`);
+            DEFAULT_ZEN_CANONICAL_SESSION_ID;
           const zenConstructId =
             zenCanonicalThread?.constructId ||
-            (defaultThreadId === DEFAULT_ZEN_CANONICAL_SESSION_ID
-              ? DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID
-              : DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID);
+            DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID;
 
           const canonicalConstructId =
             zenCanonicalThread?.constructId ||
@@ -1240,37 +1273,8 @@ export default function Layout() {
           if (error instanceof Error && error.stack) {
             console.error("❌ [Layout.tsx] Error stack:", error.stack);
           }
-
-          // === EMERGENCY FALLBACK - CREATE ZEN CONVERSATION WITH WELCOME MESSAGE ===
-          const emergencyThreadId = `zen_emergency_${Date.now()}`;
-          const emergencyTimestamp = Date.now();
-          const emergencyText =
-            "Hey! I'm Zen. It looks like there was an issue loading conversations, but I'm here now. What can I help you with?";
-
-          const emergencyWelcomeMessage: Message = {
-            id: `msg_emergency_welcome_${emergencyTimestamp}`,
-            role: "assistant",
-            text: emergencyText,
-            packets: [
-              {
-                op: "answer.v1",
-                payload: { content: emergencyText },
-              },
-            ],
-            ts: emergencyTimestamp,
-          };
-
-          const emergencyThread: Thread = {
-            id: emergencyThreadId,
-            title: "Zen",
-            messages: [emergencyWelcomeMessage],
-            createdAt: emergencyTimestamp,
-            updatedAt: emergencyTimestamp,
-            archived: false,
-          };
-
-          setThreads([emergencyThread]);
-          navigate(`/app/chat/${emergencyThreadId}`);
+          setThreads([]);
+          setIsBackendUnavailable(true);
         }
       } finally {
         clearTimeout(safetyTimeout);
@@ -1549,6 +1553,9 @@ export default function Layout() {
   async function newThread(options?: ThreadInitOptions) {
     const trimmedTitle = options?.title?.trim();
     const starterTrimmed = options?.starter?.trim();
+    const requestedBlankThread =
+      (!trimmedTitle || trimmedTitle.length === 0) &&
+      (!starterTrimmed || starterTrimmed.length === 0);
     const initialTitle =
       trimmedTitle && trimmedTitle.length > 0
         ? trimmedTitle
@@ -1559,6 +1566,13 @@ export default function Layout() {
     if (!user) {
       console.error("❌ Cannot create conversation: No user");
       return null;
+    }
+
+    if (requestedBlankThread) {
+      return startConversationWithConstruct(
+        DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID,
+        "Zen",
+      );
     }
 
     try {
@@ -1638,11 +1652,9 @@ export default function Layout() {
       return thread.id;
     } catch (error) {
       console.error("❌ Failed to create new conversation:", error);
-      // Fallback to local creation if VVAULT fails
-      const thread = createThread(initialTitle);
-      setThreads((prev) => [thread, ...prev]);
-      navigate(`/app/chat/${thread.id}`);
-      return thread.id;
+      setIsBackendUnavailable(true);
+      setThreads([]);
+      return null;
     }
   }
 
@@ -1946,16 +1958,21 @@ export default function Layout() {
       return;
     }
 
+    const canonicalZenThread = isCanonicalZenThreadId(threadId);
+
     // Dynamic persona detection + context lock
     const envValue = import.meta.env.VITE_PERSONA_DETECTION_ENABLED;
-    const detectionEnabled = (envValue ?? "true") !== "false";let detectedPersona:
+    const detectionEnabled =
+      !canonicalZenThread && (envValue ?? "true") !== "false";let detectedPersona:
       | import("../engine/character/PersonaDetectionEngine").PersonaSignal
       | undefined;
     let personaContextLock:
       | import("../engine/character/ContextLock").ContextLock
       | null = null;
     let personaSystemPrompt: string | null = null;
-    let effectiveConstructId: string | null = thread.constructId || null;
+    let effectiveConstructId: string | null = canonicalZenThread
+      ? DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID
+      : thread.constructId || null;
 
     if (detectionEnabled) {
       try {const workspaceBuilder = new WorkspaceContextBuilder();const workspaceContext = await workspaceBuilder.buildWorkspaceContext(
@@ -2074,6 +2091,10 @@ export default function Layout() {
           effectiveConstructId,
         );
       }
+    }
+
+    if (canonicalZenThread) {
+      effectiveConstructId = DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID;
     }
 
     if (!effectiveConstructId) {
@@ -2410,6 +2431,11 @@ export default function Layout() {
             const providerTrace = finalPackets
               .map((p: any) => p?.payload?.provider_trace)
               .filter(Boolean)[0] || null;
+            const hasDoNotPersistFailure = finalPackets.some(
+              (packet: any) =>
+                packet?.payload?.do_not_persist === true ||
+                packet?.payload?.non_canonical_failure === true,
+            );
 
             // Extract content from packets before saving
             const assistantContent = finalPackets
@@ -2424,8 +2450,13 @@ export default function Layout() {
               .join("\n\n");
 
 
-            let assistantUnsaved = false;
-            if (user && assistantContent) {
+            let assistantUnsaved = hasDoNotPersistFailure;
+            if (hasDoNotPersistFailure) {
+              console.warn(
+                "⚠️ [Layout.tsx] Skipping assistant transcript persistence because backend marked the response as non-canonical",
+                { threadId },
+              );
+            } else if (user && assistantContent) {
               const assistantTimestampIso = new Date(
                 Date.now() + 2,
               ).toISOString();
@@ -2718,159 +2749,56 @@ export default function Layout() {
     }
 
     try {
-      const vvaultUserId = getUserId(user as any) || user?.email;
-      if (!vvaultUserId) {
-        console.error("❌ [Layout] Cannot reload messages: no user ID");
-        return;
-      }
-
       const conversationManager = VVAULTConversationManager.getInstance();
-      const conversations = await conversationManager.loadAllConversations(
-        vvaultUserId,
-        true,
-      );
-
-
-      // Find the specific conversation - try multiple matching strategies
-      let conv = conversations.find((c) => c.sessionId === threadId);
-
-      if (!conv) {
-        // Try matching by transformed ID pattern (zen-001_chat_with_zen-001)
-        conv = conversations.find((c) => {
-          if (c.constructId && threadId.includes(c.constructId)) {
-            const transformedId = `${c.constructId}_chat_with_${c.constructId}`;
-            return transformedId === threadId;
-          }
-          return false;
-        });
-      }
-
-      if (!conv) {
-        // Try matching by constructId for Zen (zen-001)
-        if (threadId.includes("zen-001") || threadId.includes("zen_")) {
-          conv = conversations.find(
-            (c) =>
-              c.constructId === "zen-001" ||
-              c.constructId === "zen" ||
-              (c.title && c.title.toLowerCase().includes("zen")),
-          );
-        }
-      }
-
-      if (!conv) {
-        // Last resort: find any conversation with matching constructId pattern
-        const constructIdMatch = threadId.match(/([a-z]+-\d+)/i);
-        if (constructIdMatch) {
-          const extractedConstructId = constructIdMatch[1];
-          conv = conversations.find(
-            (c) => c.constructId === extractedConstructId,
-          );
-        }
-      }
-
-      if (!conv) {
-        console.error(
-          `❌ [Layout] Conversation not found for threadId: ${threadId}`,
-        );
-        console.error(
-          `📋 [Layout] Available sessionIds:`,
-          conversations.map((c) => c.sessionId),
-        );
-
-        // Last resort: If this is a Zen conversation, try to find ANY Zen conversation
-        if (threadId.includes("zen")) {
-          conv = conversations.find(
-            (c) =>
-              c.constructId === "zen-001" ||
-              c.constructId === "zen" ||
-              (c.title && c.title.toLowerCase().includes("zen")) ||
-              (c.sessionId && c.sessionId.toLowerCase().includes("zen")),
-          );
-
-          if (conv) {
-          } else {
-            console.error(
-              `❌ [Layout] No Zen conversation found at all. Total conversations: ${conversations.length}`,
-            );
-            return;
-          }
-        } else {
-          return;
-        }
-      }
-
-
-      if (conv.messages.length === 0) {
-        console.warn(
-          `⚠️ [Layout] Conversation found but has NO messages! This might indicate a parsing issue.`,
-        );
-        console.warn(
-          `📄 [Layout] Check VVAULT file: instances/${conv.constructId || "unknown"}/chatty/chat_with_${conv.constructId || "unknown"}.md`,
-        );
-      }
-
-      // Map conversation to thread format
-      const normalizedTitle = (conv.title || "Zen")
-        .replace(/^Chat with /i, "")
-        .replace(/-\d{3,}$/i, "");
-
+      const transcriptPayload =
+        await conversationManager.loadConversationTranscript(threadId);
+      const activeThreadHydration =
+        transcriptPayload?.source === "snapshot-replay"
+          ? createSnapshotReplayActiveConversationHydrationState(threadId)
+          : deriveActiveConversationHydrationStateFromTranscript({
+              threadId,
+              transcriptSource: transcriptPayload?.source || null,
+              transcriptContent: transcriptPayload?.content || "",
+              transcriptMessages: transcriptPayload?.messages || [],
+            });
+      const existingThread =
+        threadsRef.current.find((thread) => thread.id === threadId) || null;
       const constructId =
-        conv.constructId ||
-        conv.importMetadata?.constructId ||
-        conv.importMetadata?.connectedConstructId ||
-        conv.constructFolder ||
-        null;
+        existingThread?.constructId ||
+        (isCanonicalZenThreadId(threadId)
+          ? DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID
+          : threadId.match(/([a-z]+-\d+)/i)?.[1] || null);
       const runtimeId =
-        conv.runtimeId ||
-        conv.importMetadata?.runtimeId ||
+        existingThread?.runtimeId ||
         (constructId ? constructId.replace(/-001$/, "") : null) ||
         null;
-      const isPrimary =
-        typeof conv.isPrimary === "boolean"
-          ? conv.isPrimary
-          : typeof conv.importMetadata?.isPrimary === "boolean"
-            ? conv.importMetadata.isPrimary
-            : typeof conv.importMetadata?.isPrimary === "string"
-              ? conv.importMetadata.isPrimary.toLowerCase() === "true"
-              : false;
-
-      // Normalize thread ID for Zen conversations to match URL pattern
-      let normalizedThreadId = conv.sessionId;
-      if (
-        constructId === "zen-001" ||
-        constructId === "zen" ||
-        normalizedTitle.toLowerCase() === "zen"
-      ) {
-        normalizedThreadId = DEFAULT_ZEN_CANONICAL_SESSION_ID;
-      }
-
-      // Use threadId from URL if it matches the pattern, otherwise use normalized ID
-      const finalThreadId =
-        threadId === DEFAULT_ZEN_CANONICAL_SESSION_ID ||
-        (threadId.includes("zen-001") &&
-          normalizedThreadId === DEFAULT_ZEN_CANONICAL_SESSION_ID)
-          ? threadId
-          : normalizedThreadId;
-
+      const normalizedTitle =
+        existingThread?.title ||
+        (constructId
+          ? constructId.replace(/-\d{3,}$/i, "").replace(/^./, (c) => c.toUpperCase())
+          : "Conversation");
+      const transcriptMessages = Array.isArray(transcriptPayload?.messages)
+        ? transcriptPayload.messages
+        : [];
       const updatedThread: Thread = {
-        id: finalThreadId,
+        id: threadId,
         title: normalizedTitle,
-        messages: conv.messages
+        messages: transcriptMessages
           .map((msg: any, idx: number) => {
             if (!msg || (!msg.content && !msg.text)) {
-              console.warn("⚠️ [Layout] Invalid message in reload (no content):", msg);
               return null;
             }
-            const messageId = msg.id || `${conv.sessionId}_msg_${idx}`;
+            const timestamp = msg.timestamp || null;
             return {
-              id: messageId,
+              id: msg.id || `${threadId}_msg_${idx}`,
               role: msg.role,
               text: msg.content || msg.text,
               packets:
                 msg.role === "assistant"
-                  ? [{ op: "answer.v1", payload: { content: msg.content } }]
+                  ? [{ op: "answer.v1", payload: { content: msg.content || msg.text } }]
                   : undefined,
-              ts: msg.timestamp ? new Date(msg.timestamp).getTime() : (Date.now() - ((conv.messages.length - idx) * 1000)),
+              ts: timestamp ? new Date(timestamp).getTime() : idx,
+              timestamp: timestamp || undefined,
               metadata: msg.metadata || undefined,
               responseTimeMs: msg.metadata?.responseTimeMs,
               thinkingLog: msg.metadata?.thinkingLog,
@@ -2879,50 +2807,43 @@ export default function Layout() {
           })
           .filter((msg): msg is NonNullable<typeof msg> => msg !== null),
         createdAt:
-          conv.messages.length > 0
-            ? new Date(conv.messages[0]?.timestamp || Date.now()).getTime()
+          transcriptMessages.length > 0
+            ? new Date(transcriptMessages[0]?.timestamp || Date.now()).getTime()
             : Date.now(),
         updatedAt:
-          conv.messages.length > 0
+          transcriptMessages.length > 0
             ? new Date(
-                conv.messages[conv.messages.length - 1]?.timestamp || Date.now(),
+                transcriptMessages[transcriptMessages.length - 1]?.timestamp ||
+                  Date.now(),
               ).getTime()
             : Date.now(),
         archived: false,
-        importMetadata: (conv as any).importMetadata || null,
+        importMetadata: {
+          ...(existingThread?.importMetadata || {}),
+          persistenceSource:
+            transcriptPayload?.source === "local-deferred"
+              ? "local-deferred"
+              : existingThread?.importMetadata?.persistenceSource || null,
+        },
         constructId,
         runtimeId,
-        isPrimary,
-        canonicalForRuntime:
-          isPrimary && constructId ? runtimeId || constructId : null,
+        isPrimary:
+          typeof existingThread?.isPrimary === "boolean"
+            ? existingThread.isPrimary
+            : isCanonicalZenThreadId(threadId),
+        canonicalForRuntime: constructId ? runtimeId || constructId : null,
+        isIndexHydrated: activeThreadHydration.hydrationComplete !== true,
       };
 
-
-      // Update thread in state - find by threadId from URL or by matching patterns
       setThreads((prevThreads) => {
-        // Find existing thread by threadId (from URL) or by matching constructId
-        const existingIndex = prevThreads.findIndex(
-          (t) =>
-            t.id === threadId ||
-            t.id === finalThreadId ||
-            (t.constructId && threadId.includes(t.constructId)) ||
-            (t.isPrimary &&
-              t.constructId &&
-              `${t.constructId}_chat_with_${t.constructId}` === threadId) ||
-            (constructId === "zen-001" &&
-              t.constructId === "zen-001" &&
-              t.isPrimary),
-        );
-
-        if (existingIndex >= 0) {
-          // Update existing thread
-          const updated = [...prevThreads];
-          updated[existingIndex] = updatedThread;
-          return updated;
-        } else {
-          // Add new thread if not found
-          return [...prevThreads, updatedThread];
-        }
+        const nextThreads = prevThreads.some((thread) => thread.id === threadId)
+          ? prevThreads.map((thread) => (thread.id === threadId ? updatedThread : thread))
+          : [...prevThreads, updatedThread];
+        return reconcileActiveRouteThreadOverwrite(prevThreads, nextThreads, {
+          activeThreadId: threadId,
+          hydrationSource: activeThreadHydration.hydrationSource,
+          hydrationComplete: activeThreadHydration.hydrationComplete,
+        });
       });
     } catch (error) {
       console.error("❌ [Layout] Failed to reload thread messages:", error);
@@ -3002,12 +2923,9 @@ export default function Layout() {
       return thread.id;
     } catch (error) {
       console.error(`❌ Failed to create conversation with ${constructId}:`, error);
-      // Fallback to local creation
-      const thread = createThread(constructName || constructId);
-      (thread as any).constructId = constructId;
-      setThreads((prev) => [thread, ...prev]);
-      navigate(`/app/chat/${thread.id}`);
-      return thread.id;
+      setIsBackendUnavailable(true);
+      setThreads([]);
+      return null;
     }
   }
 
@@ -3238,7 +3156,7 @@ export default function Layout() {
                     Connecting to VVAULT
                   </h2>
                   <p className="text-[var(--chatty-text-secondary)] mb-6">
-                    Unable to reach the VVAULT server. Your conversations are stored in Supabase and will be available once the connection is restored.
+                    Unable to reach the canonical VVAULT transcript service. Chatty is waiting for the canonical runtime instead of falling back to local conversation state.
                   </p>
                   <button
                     onClick={retryVVAULTConnection}

@@ -10,6 +10,20 @@ function readRoute() {
   return fs.readFileSync(path.join(repoRoot, 'server/routes/vvault.js'), 'utf8');
 }
 
+function readPersistenceHandling() {
+  return fs.readFileSync(
+    path.join(repoRoot, 'server/lib/vvaultPersistenceHandling.js'),
+    'utf8',
+  );
+}
+
+function readMemoryLoad() {
+  return fs.readFileSync(
+    path.join(repoRoot, 'server/lib/vvaultMemoryLoad.js'),
+    'utf8',
+  );
+}
+
 function readRuntimeTurnState() {
   return fs.readFileSync(path.join(repoRoot, 'server/lib/runtimeTurnState.js'), 'utf8');
 }
@@ -32,15 +46,15 @@ describe('/api/vvault/message continuity contract', () => {
   });
 
   it('blocks reset-shaped continuation drafts before canonical persistence', () => {
-    const source = readRoute();
+    const source = readPersistenceHandling();
 
-    assert.match(source, /function detectContinuityResetDraft/);
+    assert.match(source, /detectContinuityResetDraft/);
     assert.match(source, /CONTINUITY_RESET_DRAFT_BLOCKED/);
     assert.match(source, /stage:\s*'assistant_prewrite'/);
   });
 
   it('does not accept local fallback metadata as the required transcript truth source', () => {
-    const source = readRoute();
+    const source = readMemoryLoad();
 
     assert.match(source, /persistedStateSource === 'local_fallback_metadata'/);
     assert.match(source, /routeTurnEnvelope\.runtimeTurnState = null/);

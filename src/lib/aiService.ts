@@ -714,6 +714,13 @@ export class AIService {
         content: string,
       ) => {
         const errorCode = typeof error.error === 'string' ? error.error : null;
+        const shouldBlockPersistence =
+          errorCode === 'IDENTITY_COHERENCE_FAILED' ||
+          errorCode === 'CONTINUITY_RESUME_STALE' ||
+          errorCode === 'CONTINUITY_RESUME_UNPROVEN' ||
+          errorCode === 'TRANSCRIPT_HYDRATION_REQUIRED' ||
+          errorCode === 'CONTINUITY_RESET_DRAFT_BLOCKED' ||
+          errorCode === 'CANONICAL_TRANSCRIPT_READ_UNAVAILABLE';
         return {
           content,
           tool_trace: Array.isArray(error.tool_trace) ? error.tool_trace : [],
@@ -721,7 +728,7 @@ export class AIService {
           ...(error.prompt_diagnostics ? { prompt_diagnostics: error.prompt_diagnostics } : {}),
           ...(error.runtime_receipt ? { runtime_receipt: error.runtime_receipt } : {}),
           ...(error.orchestration_checklist ? { orchestration_checklist: error.orchestration_checklist } : {}),
-          ...(errorCode === 'IDENTITY_COHERENCE_FAILED'
+          ...(shouldBlockPersistence
             ? {
                 non_canonical_failure: true,
                 do_not_persist: true,
@@ -831,10 +838,15 @@ export class AIService {
                 const errorCode = error.error;
                 const errorMessage = resolveBackendErrorMessage(error, response.status);
                 const isIdentityCoherenceFailure = errorCode === 'IDENTITY_COHERENCE_FAILED';
-                const shouldReturnAsAssistant =
-                  isIdentityCoherenceFailure ||
+                const isContinuityTruthFailure =
                   errorCode === 'CONTINUITY_RESUME_STALE' ||
                   errorCode === 'CONTINUITY_RESUME_UNPROVEN' ||
+                  errorCode === 'TRANSCRIPT_HYDRATION_REQUIRED' ||
+                  errorCode === 'CONTINUITY_RESET_DRAFT_BLOCKED' ||
+                  errorCode === 'CANONICAL_TRANSCRIPT_READ_UNAVAILABLE';
+                const shouldReturnAsAssistant =
+                  isIdentityCoherenceFailure ||
+                  isContinuityTruthFailure ||
                   response.status >= 500 ||
                   errorCode === 'VVAULT_HOST_ASLEEP' ||
                   errorCode === 'VVAULT_RUNTIME_LOCKED';
@@ -963,10 +975,15 @@ export class AIService {
         const errorCode = error.error;
         const errorMessage = resolveBackendErrorMessage(error, response.status);
         const isIdentityCoherenceFailure = errorCode === 'IDENTITY_COHERENCE_FAILED';
-        const shouldReturnAsAssistant =
-          isIdentityCoherenceFailure ||
+        const isContinuityTruthFailure =
           errorCode === 'CONTINUITY_RESUME_STALE' ||
           errorCode === 'CONTINUITY_RESUME_UNPROVEN' ||
+          errorCode === 'TRANSCRIPT_HYDRATION_REQUIRED' ||
+          errorCode === 'CONTINUITY_RESET_DRAFT_BLOCKED' ||
+          errorCode === 'CANONICAL_TRANSCRIPT_READ_UNAVAILABLE';
+        const shouldReturnAsAssistant =
+          isIdentityCoherenceFailure ||
+          isContinuityTruthFailure ||
           response.status >= 500 ||
           errorCode === 'VVAULT_HOST_ASLEEP' ||
           errorCode === 'VVAULT_RUNTIME_LOCKED';
