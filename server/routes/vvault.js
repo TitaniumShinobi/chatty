@@ -4958,8 +4958,88 @@ function mapConversationIndexRowsToHydrationRecords(rows = []) {
     constructCallsign: row.constructId || null,
     createdAt: row.lastMessageAt || row.updatedAt || new Date().toISOString(),
     updatedAt: row.updatedAt || row.lastMessageAt || new Date().toISOString(),
+    avatar: row.avatar || row.avatarUrl || null,
+    avatarUrl: row.avatarUrl || row.avatar || null,
     messages: Array.isArray(row.messages) ? row.messages : [],
   }));
+}
+
+function normalizeConversationConstructId(row = {}) {
+  return canonicalizeConstructId(
+    row.constructId ||
+      row.construct_id ||
+      row.constructCallsign ||
+      row.construct_callsign ||
+      row.runtimeId ||
+      row.runtime_id ||
+      null,
+  );
+}
+
+function isEmptyAvatarValue(value) {
+  return value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
+}
+
+function buildCanonicalConversationAvatarUrl(constructId, identity = {}) {
+  if (!constructId || !identity?.avatarDescriptor) return null;
+  const version = typeof identity.avatarDescriptor.sha256 === 'string' && identity.avatarDescriptor.sha256.trim()
+    ? `?v=${encodeURIComponent(identity.avatarDescriptor.sha256.trim())}`
+    : '';
+  return `/api/ais/${encodeURIComponent(constructId)}/avatar${version}`;
+}
+
+async function enrichConversationRowsWithCanonicalAvatars(
+  rows = [],
+  {
+    supabaseUserId = null,
+    loadIdentity = loadCanonicalConstructIdentity,
+  } = {},
+) {
+  if (!Array.isArray(rows) || rows.length === 0) return rows || [];
+
+  const constructIds = Array.from(
+    new Set(
+      rows
+        .filter((row) => isEmptyAvatarValue(row?.avatar) && isEmptyAvatarValue(row?.avatarUrl))
+        .map(normalizeConversationConstructId)
+        .filter(Boolean),
+    ),
+  );
+  if (constructIds.length === 0) return rows;
+
+  const avatarUrlsByConstruct = new Map();
+  await Promise.all(
+    constructIds.map(async (constructId) => {
+      try {
+        const identity = await loadIdentity({ constructId, supabaseUserId });
+        const avatarUrl = buildCanonicalConversationAvatarUrl(constructId, identity);
+        if (avatarUrl) {
+          avatarUrlsByConstruct.set(constructId, avatarUrl);
+        }
+      } catch (error) {
+        console.warn(
+          `⚠️ [VVAULT API] Conversation avatar identity lookup failed for ${constructId}:`,
+          error?.message || error,
+        );
+      }
+    }),
+  );
+
+  if (avatarUrlsByConstruct.size === 0) return rows;
+
+  return rows.map((row) => {
+    if (!isEmptyAvatarValue(row?.avatar) || !isEmptyAvatarValue(row?.avatarUrl)) {
+      return row;
+    }
+    const constructId = normalizeConversationConstructId(row);
+    const avatarUrl = constructId ? avatarUrlsByConstruct.get(constructId) : null;
+    if (!avatarUrl) return row;
+    return {
+      ...row,
+      avatar: avatarUrl,
+      avatarUrl,
+    };
+  });
 }
 
 function mergeConversationsBySession(primaryRows = [], fallbackRows = []) {
@@ -5470,6 +5550,15 @@ router.get("/conversations", requirePreferredAuth, async (req, res) => {
             hydrationSource: 'local-fallback',
           };
         }
+      }
+
+      if (fullLookup.status === 'ok' && Array.isArray(fullLookup.value)) {
+        fullLookup = {
+          ...fullLookup,
+          value: await enrichConversationRowsWithCanonicalAvatars(fullLookup.value, {
+            supabaseUserId,
+          }),
+        };
       }
 
       hydrationPayload = buildConversationHydrationPayload({
@@ -15604,6 +15693,8 @@ export {
   resolveRouteContextBudgetProfile,
 };
 export const __test__ = {
+  mapConversationIndexRowsToHydrationRecords,
+  enrichConversationRowsWithCanonicalAvatars,
   setRouteOverrides(overrides = {}) {
     Object.assign(routeOverrides, overrides);
   },

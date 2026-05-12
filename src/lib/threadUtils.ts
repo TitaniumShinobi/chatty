@@ -1,3 +1,5 @@
+import { resolveAvatarFields } from "./avatarUrl";
+
 export interface Thread {
   id: string;
   title: string;
@@ -9,6 +11,8 @@ export interface Thread {
   createdAt?: number;
   hydrationSource?: string | null;
   hydrationComplete?: boolean;
+  avatar?: string | null;
+  avatarUrl?: string | null;
 }
 
 export const DEFAULT_ZEN_CANONICAL_SESSION_ID = 'zen-001_chat_with_zen-001';
@@ -119,14 +123,18 @@ export function deduplicateThreadsById(threads: Thread[]): Thread[] {
           : hasFullVvaultHydration(thread)
             ? thread
             : canonicalThread;
+        const avatarFields = resolveAvatarFields(fullHydratedThread, supplementaryThread);
         threadById.set(thread.id, {
           ...fullHydratedThread,
           title: pickBetterTitle(fullHydratedThread.title, supplementaryThread.title),
+          avatar: avatarFields.avatar,
+          avatarUrl: avatarFields.avatarUrl,
         });
         return;
       }
       const mergedMessages = mergeMessages(canonicalThread, supplementaryThread);
       const betterTitle = pickBetterTitle(canonicalThread.title, supplementaryThread.title);
+      const avatarFields = resolveAvatarFields(canonicalThread, supplementaryThread);
       
       // Debug logging for Zen thread merging
       if (thread.id.includes('zen')) {
@@ -142,6 +150,8 @@ export function deduplicateThreadsById(threads: Thread[]): Thread[] {
         ...existing,
         title: betterTitle,
         messages: mergedMessages,
+        avatar: avatarFields.avatar,
+        avatarUrl: avatarFields.avatarUrl,
         // Keep the earliest creation time
         createdAt: Math.min(existing.createdAt || Date.now(), thread.createdAt || Date.now()),
         // Keep the latest update time

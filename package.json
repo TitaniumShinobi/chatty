@@ -34,7 +34,7 @@
     "lint": "eslint . --ext js,jsx,ts,tsx",
     "lint:fix": "eslint . --ext js,jsx,ts,tsx --fix",
     "test": "jest",
-    "test:avatar-guard": "jest src/lib/avatarUrl.test.ts src/lib/addressBookAvatarPolicy.test.ts src/lib/addressBookAvatarSourceGuard.test.ts src/components/Sidebar.addressBookAvatar.test.tsx --runInBand && node --test server/tests/ais-avatar-route.test.js",
+    "test:avatar-guard": "jest src/lib/avatarUrl.test.ts src/lib/addressBookAvatarPolicy.test.ts src/lib/addressBookAvatarSourceGuard.test.ts src/components/Sidebar.addressBookAvatar.test.tsx src/lib/threadUtils.test.ts --runInBand && npm --prefix server ci --silent && node --test server/tests/ais-avatar-route.test.js server/tests/vvault-conversation-route-contract.test.js server/tests/ai-manager-avatar-normalization.test.js",
     "ledger": "python3 scripts/append_ledger_entry.py",
     "project-map": "python3 scripts/project_map.py",
     "capsuleforge": "node scripts/capsuleforge-cli.js",

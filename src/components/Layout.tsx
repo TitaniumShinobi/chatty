@@ -49,6 +49,7 @@ import type { AIConfig } from "../lib/aiService";
 import type { UIContextSnapshot, Message as ChatMessage, Attachment } from "../types";
 import { WorkspaceContextBuilder } from "../engine/context/WorkspaceContextBuilder";
 import { resolveAddressBookAvatar } from "../lib/addressBookAvatarPolicy";
+import { resolveAvatarFields } from "../lib/avatarUrl";
 import { safeMode, safeImport } from "../lib/safeMode";
 import { uploadAttachments, imageAttachmentsToAttachments } from "../lib/attachmentService";
 import {
@@ -160,6 +161,8 @@ type Thread = {
   importMetadata?: Record<string, any> | null;
   isFallback?: boolean;
   isIndexHydrated?: boolean;
+  avatar?: string | null;
+  avatarUrl?: string | null;
 };
 
 const VVAULT_FILESYSTEM_ROOT = import.meta.env.VITE_VVAULT_ROOT_PATH || "";
@@ -412,16 +415,23 @@ export default function Layout() {
       )
       .map(t => {
         const matchingGPT = userGPTs.find(gpt => gpt.constructCallsign === t.constructId);
+        const threadAvatar = resolveAvatarFields(t as any);
+        const gptAvatar = resolveAvatarFields(matchingGPT as any);
         const resolvedAvatar = resolveAddressBookAvatar({
           ...t,
-          avatar: matchingGPT?.avatar || (t as any).avatar || null,
-          avatarUrl: (t as any).avatarUrl || matchingGPT?.avatarUrl || null,
+          avatar: threadAvatar.avatar,
+          avatarUrl: threadAvatar.avatarUrl,
+          allowBackendAvatarRoute: true,
+          gptAvatarByConstructId:
+            matchingGPT?.constructCallsign && gptAvatar.avatar
+              ? { [matchingGPT.constructCallsign]: gptAvatar.avatar }
+              : null,
         });
-        return resolvedAvatar.avatarSrc
-          ? { ...t, avatar: resolvedAvatar.avatarSrc, avatarUrl: resolvedAvatar.avatarSrc }
-          : matchingGPT?.avatar
-            ? { ...t, avatar: matchingGPT.avatar }
-            : t;
+        return {
+          ...t,
+          avatar: resolvedAvatar.avatarSrc,
+          avatarUrl: resolvedAvatar.avatarSrc,
+        };
       });
     
     // Create contact cards for GPTs that don't have a conversation thread yet
@@ -438,6 +448,17 @@ export default function Layout() {
       if (existingConstructIds.has(gpt.constructCallsign)) {
         continue;
       }
+      const gptAvatar = resolveAvatarFields(gpt as any);
+      const resolvedAvatar = resolveAddressBookAvatar({
+        constructId: gpt.constructCallsign || gpt.id,
+        avatar: gptAvatar.avatar,
+        avatarUrl: gptAvatar.avatarUrl,
+        allowBackendAvatarRoute: true,
+        gptAvatarByConstructId:
+          gpt.constructCallsign && gptAvatar.avatar
+            ? { [gpt.constructCallsign]: gptAvatar.avatar }
+            : null,
+      });
       gptContactCards.push({
         id: `${gpt.constructCallsign}_contact`,
         title: gpt.name,
@@ -448,11 +469,8 @@ export default function Layout() {
         constructId: gpt.constructCallsign || gpt.id,
         runtimeId: gpt.constructCallsign || gpt.id,
         isPrimary: false,
-        avatar: resolveAddressBookAvatar({
-          constructId: gpt.constructCallsign || gpt.id,
-          avatar: gpt.avatar || null,
-          avatarUrl: gpt.avatarUrl || null,
-        }).avatarSrc,
+        avatar: resolvedAvatar.avatarSrc,
+        avatarUrl: resolvedAvatar.avatarSrc,
       });
     }
     
@@ -1043,6 +1061,7 @@ export default function Layout() {
             // Use canonical ID format for Zen to match URL routing
             threadId = DEFAULT_ZEN_CANONICAL_SESSION_ID;
           }
+          const convAvatar = resolveAvatarFields(conv as any);
 
           return {
             id: threadId,
@@ -1059,6 +1078,8 @@ export default function Layout() {
             constructId,
             runtimeId,
             isPrimary,
+            avatar: convAvatar.avatar,
+            avatarUrl: convAvatar.avatarUrl,
             canonicalForRuntime:
               isPrimary && constructId ? runtimeId || constructId : null,
           };
@@ -1382,6 +1403,7 @@ export default function Layout() {
               : typeof conv.importMetadata?.isPrimary === "string"
                 ? conv.importMetadata.isPrimary.toLowerCase() === "true"
                 : false;
+        const convAvatar = resolveAvatarFields(conv as any);
 
         return {
           id: conv.sessionId,
@@ -1416,6 +1438,8 @@ export default function Layout() {
           constructId,
           runtimeId,
           isPrimary,
+          avatar: convAvatar.avatar,
+          avatarUrl: convAvatar.avatarUrl,
           canonicalForRuntime:
             isPrimary && constructId ? runtimeId || constructId : null,
         };

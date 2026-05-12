@@ -105,6 +105,62 @@ describe('threadUtils', () => {
       expect(result[0].title).toBe('Zen');
     });
 
+    it('preserves avatar fields when duplicate non-Zen threads merge', () => {
+      const threads: Thread[] = [
+        {
+          id: 'nova-001_chat_with_nova-001',
+          title: 'Nova cached',
+          messages: [],
+          constructId: 'nova-001',
+          avatar: '/api/ais/nova-001/avatar?v=trusted',
+          avatarUrl: '/api/ais/nova-001/avatar?v=trusted',
+        },
+        {
+          id: 'nova-001_chat_with_nova-001',
+          title: 'Nova',
+          messages: [
+            { role: 'user', text: 'hello' },
+            { role: 'assistant', text: 'hi' },
+          ],
+          constructId: 'nova-001',
+        },
+      ];
+
+      const result = deduplicateThreadsById(threads);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].messages).toHaveLength(2);
+      expect(result[0].avatar).toBe('/api/ais/nova-001/avatar?v=trusted');
+      expect(result[0].avatarUrl).toBe('/api/ais/nova-001/avatar?v=trusted');
+    });
+
+    it('preserves avatar fields when canonical Zen merge keeps the fully hydrated row', () => {
+      const threads: Thread[] = [
+        {
+          id: DEFAULT_ZEN_CANONICAL_SESSION_ID,
+          title: 'Zen',
+          hydrationSource: 'full',
+          hydrationComplete: true,
+          messages: [{ role: 'assistant', text: 'canonical' }],
+          constructId: 'zen-001',
+          avatarUrl: '/api/ais/zen-001/avatar?v=trusted',
+        },
+        {
+          id: DEFAULT_ZEN_CANONICAL_SESSION_ID,
+          title: 'Zen cached',
+          messages: [{ role: 'assistant', text: 'cached' }],
+          constructId: 'zen-001',
+        },
+      ];
+
+      const result = deduplicateThreadsById(threads);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].hydrationSource).toBe('full');
+      expect(result[0].avatar).toBe('/api/ais/zen-001/avatar?v=trusted');
+      expect(result[0].avatarUrl).toBe('/api/ais/zen-001/avatar?v=trusted');
+    });
+
     it('should preserve unique threads', () => {
       const threads: Thread[] = [
         { id: 'thread-1', title: 'Thread 1', messages: [], constructId: 'zen-001' },

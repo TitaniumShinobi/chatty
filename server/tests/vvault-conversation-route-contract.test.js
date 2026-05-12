@@ -13,6 +13,7 @@ import {
   normalizeConversationIndexRecord,
 } from "../lib/vvaultConversationRouteContract.js";
 import { buildRuntimeTailHash } from "../lib/runtimeTurnState.js";
+import { __test__ as vvaultRouteTest } from "../routes/vvault.js";
 
 describe("VVAULT conversation route contract", () => {
   it("marks full hydration as complete when the primary read succeeds", () => {
@@ -112,6 +113,77 @@ describe("VVAULT conversation route contract", () => {
     });
 
     assert.equal(row.avatarUrl, "/api/ais/hydro-001/avatar");
+  });
+
+  it("preserves trusted avatar metadata when index rows become hydration records", () => {
+    const [record] = vvaultRouteTest.mapConversationIndexRowsToHydrationRecords([
+      normalizeConversationIndexRecord({
+        id: "katana-001_chat_with_katana-001",
+        title: "Katana",
+        constructId: "katana-001",
+        updatedAt: "2026-05-10T15:00:00.000Z",
+      }),
+    ]);
+
+    assert.equal(record.sessionId, "katana-001_chat_with_katana-001");
+    assert.equal(record.avatar, "/api/ais/katana-001/avatar");
+    assert.equal(record.avatarUrl, "/api/ais/katana-001/avatar");
+  });
+
+  it("enriches full conversation rows with canonical avatar routes only when identity has an avatar", async () => {
+    const rows = await vvaultRouteTest.enrichConversationRowsWithCanonicalAvatars(
+      [
+        {
+          sessionId: "nova-001_chat_with_nova-001",
+          title: "Nova",
+          constructId: "nova-001",
+          messages: [],
+        },
+        {
+          sessionId: "hydro-001_chat_with_hydro-001",
+          title: "Hydro",
+          constructId: "hydro-001",
+          messages: [],
+        },
+      ],
+      {
+        supabaseUserId: "user-1",
+        loadIdentity: async ({ constructId, supabaseUserId }) => {
+          assert.equal(supabaseUserId, "user-1");
+          return constructId === "nova-001"
+            ? { avatarDescriptor: { sha256: "avatar-sha" } }
+            : { avatarDescriptor: null };
+        },
+      },
+    );
+
+    assert.equal(rows[0].avatar, "/api/ais/nova-001/avatar?v=avatar-sha");
+    assert.equal(rows[0].avatarUrl, "/api/ais/nova-001/avatar?v=avatar-sha");
+    assert.equal(rows[1].avatar, undefined);
+    assert.equal(rows[1].avatarUrl, undefined);
+  });
+
+  it("does not overwrite explicit full conversation avatars during canonical enrichment", async () => {
+    const rows = await vvaultRouteTest.enrichConversationRowsWithCanonicalAvatars(
+      [
+        {
+          sessionId: "sera-001_chat_with_sera-001",
+          title: "Sera",
+          constructId: "sera-001",
+          avatar: "https://example.test/sera.png",
+          avatarUrl: "https://example.test/sera.png",
+          messages: [],
+        },
+      ],
+      {
+        loadIdentity: async () => {
+          throw new Error("explicit avatars should not require identity lookup");
+        },
+      },
+    );
+
+    assert.equal(rows[0].avatar, "https://example.test/sera.png");
+    assert.equal(rows[0].avatarUrl, "https://example.test/sera.png");
   });
 
   it("marks degraded index reads with rows as index-fallback", () => {

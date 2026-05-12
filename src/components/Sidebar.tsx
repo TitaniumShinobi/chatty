@@ -24,7 +24,7 @@ import { cn } from "../lib/utils";
 import { ThemeToggleButton } from "./ThemeToggleButton";
 import { useTheme } from "../lib/ThemeContext";
 import { getAddressBookEmptyMessage } from "../lib/addressBookEmptyState";
-import { normalizeAvatarUrl } from "../lib/avatarUrl";
+import { resolveAvatarFields } from "../lib/avatarUrl";
 
 // Star assets
 import litchattyStar from "@assets/stars/litChatty_star.svg";
@@ -1128,9 +1128,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div className="space-y-1">
           {/* Existing Conversations - With avatars aligned to nav items */}
           {conversations.map((conversation) => {
-            const avatar =
-              normalizeAvatarUrl((conversation as any).avatar) ||
-              normalizeAvatarUrl((conversation as any).avatarUrl);
+            const avatar = resolveAvatarFields(conversation as any).avatar;
             
             return (
             <button

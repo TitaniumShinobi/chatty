@@ -33,7 +33,7 @@ import {
   shouldRenderCreatorModeTabs,
   type OrchestrationMode,
 } from "../lib/creatorModelMode";
-import { normalizeAvatarUrl } from "../lib/avatarUrl";
+import { normalizeAvatarUrl, resolveAvatarFields } from "../lib/avatarUrl";
 import { VVaultConstructService } from "../lib/vvaultConstructService";
 import { getSystemConstructCatalogEntry } from "../lib/systemConstructCatalog.js";
 
@@ -1053,10 +1053,11 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   useEffect(() => {
     if (initialConfig && isVisible) {
       // Loading initial config for editing
+      const initialAvatar = resolveAvatarFields(initialConfig as any);
       setConfig({
         ...initialConfig,
-        avatar: normalizeAvatarUrl((initialConfig as any).avatar || (initialConfig as any).avatarUrl) || undefined,
-        avatarUrl: normalizeAvatarUrl((initialConfig as any).avatarUrl || (initialConfig as any).avatar) || undefined,
+        avatar: initialAvatar.avatar || undefined,
+        avatarUrl: initialAvatar.avatarUrl || undefined,
         provider: (initialConfig as any).provider || "",
         tags: (initialConfig as any).tags || [],
         categories: (initialConfig as any).categories || [],
@@ -1295,6 +1296,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         if (data?.success && data.ai) {
           const ai = data.ai;
           setConfig((prev) => {
+            const mergedAvatar = resolveAvatarFields(ai as any, prev as any);
             const mergedConfig = {
               ...prev,
               id: prev.id || ai.id,
@@ -1311,8 +1313,8 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
               capabilities: ai.capabilities || prev.capabilities,
               tags: ai.tags ?? prev.tags,
               categories: ai.categories ?? prev.categories,
-              avatar: ai.avatar || ai.avatarUrl || prev.avatar,
-              avatarUrl: ai.avatarUrl || ai.avatar || prev.avatarUrl,
+              avatar: mergedAvatar.avatar || undefined,
+              avatarUrl: mergedAvatar.avatarUrl || undefined,
               conversationStarters:
                 ai.conversationStarters || prev.conversationStarters || [""],
               configJson: ai.configJson ?? prev.configJson,
@@ -1726,39 +1728,45 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         } else {
           gpt = await (service as GPTService).updateGPT(config.id, payload);
         }
-        setConfig((prev) => ({
-          ...prev,
-          ...gpt,
-          avatar: gpt.avatar || prev.avatar,
-          avatarUrl: (gpt as any).avatarUrl || (gpt as any).avatar || prev.avatarUrl,
-          provider: (gpt as any).provider ?? prev.provider,
-          tags: (gpt as any).tags ?? prev.tags,
-          categories: (gpt as any).categories ?? prev.categories,
-          systemPromptOverride: (gpt as any).systemPromptOverride || prev.systemPromptOverride,
-          configJson: (gpt as any).configJson ?? prev.configJson,
-          files: prev.files || [],
-          actions: prev.actions || [],
-        }));
+        setConfig((prev) => {
+          const mergedAvatar = resolveAvatarFields(gpt as any, prev as any);
+          return {
+            ...prev,
+            ...gpt,
+            avatar: mergedAvatar.avatar || undefined,
+            avatarUrl: mergedAvatar.avatarUrl || undefined,
+            provider: (gpt as any).provider ?? prev.provider,
+            tags: (gpt as any).tags ?? prev.tags,
+            categories: (gpt as any).categories ?? prev.categories,
+            systemPromptOverride: (gpt as any).systemPromptOverride || prev.systemPromptOverride,
+            configJson: (gpt as any).configJson ?? prev.configJson,
+            files: prev.files || [],
+            actions: prev.actions || [],
+          };
+        });
       } else {
         if (isAIService) {
           gpt = await (service as AIService).createAI(payload);
         } else {
           gpt = await (service as GPTService).createGPT(payload);
         }
-        setConfig((prev) => ({
-          ...prev,
-          ...gpt,
-          id: gpt.id,
-          avatar: gpt.avatar || prev.avatar,
-          avatarUrl: (gpt as any).avatarUrl || (gpt as any).avatar || prev.avatarUrl,
-          provider: (gpt as any).provider ?? prev.provider,
-          tags: (gpt as any).tags ?? prev.tags,
-          categories: (gpt as any).categories ?? prev.categories,
-          systemPromptOverride: (gpt as any).systemPromptOverride || prev.systemPromptOverride,
-          configJson: (gpt as any).configJson ?? prev.configJson,
-          files: prev.files || [],
-          actions: prev.actions || [],
-        }));
+        setConfig((prev) => {
+          const mergedAvatar = resolveAvatarFields(gpt as any, prev as any);
+          return {
+            ...prev,
+            ...gpt,
+            id: gpt.id,
+            avatar: mergedAvatar.avatar || undefined,
+            avatarUrl: mergedAvatar.avatarUrl || undefined,
+            provider: (gpt as any).provider ?? prev.provider,
+            tags: (gpt as any).tags ?? prev.tags,
+            categories: (gpt as any).categories ?? prev.categories,
+            systemPromptOverride: (gpt as any).systemPromptOverride || prev.systemPromptOverride,
+            configJson: (gpt as any).configJson ?? prev.configJson,
+            files: prev.files || [],
+            actions: prev.actions || [],
+          };
+        });
       }
 
       const identityPayload: Record<string, string> = {};
@@ -2195,7 +2203,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         ...prev,
         ...gpt,
         id: newId,
-        avatar: gpt.avatar || prev.avatar,
+        ...resolveAvatarFields(gpt as any, prev as any),
       }));
 
       draftCreationRef.current = null;

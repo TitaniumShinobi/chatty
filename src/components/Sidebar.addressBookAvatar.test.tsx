@@ -87,6 +87,43 @@ describe("Sidebar address book avatars", () => {
     expect(html).toContain("lucide-image-off");
   });
 
+  it("renders the normalized avatar field when only avatarUrl survives hydration", () => {
+    const html = renderSidebar([
+      {
+        id: "nova-001_contact",
+        title: "Nova",
+        messages: [],
+        createdAt: "",
+        updatedAt: "",
+        constructId: "nova-001",
+        avatar: "avatar",
+        avatarUrl: "/api/ais/nova-001/avatar?v=vvault-identity-v2",
+      },
+    ]);
+
+    expect(html).toContain('src="/api/ais/nova-001/avatar?v=vvault-identity-v2"');
+  });
+
+  it("renders trusted same-construct backend avatars after Layout normalization", () => {
+    const html = renderSidebar(
+      ["sera-001", "nova-001", "katana-001", "hydro-001"].map((constructId) => ({
+        id: `${constructId}_contact`,
+        title: constructId,
+        messages: [],
+        createdAt: "",
+        updatedAt: "",
+        constructId,
+        avatar: `/api/ais/${constructId}/avatar?v=vvault-identity-v2`,
+        avatarUrl: `/api/ais/${constructId}/avatar?v=vvault-identity-v2`,
+      })),
+    );
+
+    expect(html).toContain('src="/api/ais/sera-001/avatar?v=vvault-identity-v2"');
+    expect(html).toContain('src="/api/ais/nova-001/avatar?v=vvault-identity-v2"');
+    expect(html).toContain('src="/api/ais/katana-001/avatar?v=vvault-identity-v2"');
+    expect(html).toContain('src="/api/ais/hydro-001/avatar?v=vvault-identity-v2"');
+  });
+
   it("keeps unfinished navigation surfaces hidden in the public MVP sidebar", () => {
     const html = renderSidebar([]);
 

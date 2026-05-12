@@ -611,23 +611,30 @@ export class AIManager {
     }
 
     const callsign = row?.construct_callsign ? String(row.construct_callsign).trim() : '';
-    if (callsign) {
-      if (avatarUrl && (avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://'))) {
-        return avatarUrl;
-      }
-      if (avatarUrl && /^\/api\/ais\/[^/]+\/avatar(?:[?#].*)?$/i.test(avatarUrl)) {
-        return `/api/ais/${encodeURIComponent(callsign)}/avatar`;
-      }
-      if (avatarUrl && avatarUrl.startsWith('/api/')) {
-        return avatarUrl;
-      }
+    if (!avatarUrl) {
+      return null;
+    }
+
+    if (avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://')) {
+      return avatarUrl;
+    }
+
+    if (callsign && /^\/api\/ais\/[^/]+\/avatar(?:[?#].*)?$/i.test(avatarUrl)) {
       return `/api/ais/${encodeURIComponent(callsign)}/avatar`;
     }
 
-    if (avatarUrl && avatarUrl.startsWith('instances/')) {
+    if (avatarUrl.startsWith('/api/')) {
+      return avatarUrl;
+    }
+
+    if (callsign && (avatarUrl.startsWith('instances/') || avatarUrl.startsWith('data:image/'))) {
+      return `/api/ais/${encodeURIComponent(callsign)}/avatar`;
+    }
+
+    if (avatarUrl.startsWith('instances/')) {
       return `/api/ais/${row.id}/avatar`;
     }
-    if (avatarUrl && avatarUrl.startsWith('data:image/') && avatarUrl.length > 1024) {
+    if (avatarUrl.startsWith('data:image/')) {
       return `/api/ais/${row.id}/avatar`;
     }
     return avatarUrl;
@@ -1163,6 +1170,7 @@ export class AIManager {
       instructions: instructions,
       conversationStarters: JSON.parse(row.conversation_starters || '[]'),
       avatar: avatarUrl,
+      avatarUrl: avatarUrl,
       capabilities: JSON.parse(row.capabilities || '{}'),
       constructCallsign: row.construct_callsign,
       modelId: row.model_id,
@@ -1273,6 +1281,7 @@ export class AIManager {
       instructions: instructions,
       conversationStarters: JSON.parse(row.conversation_starters || '[]'),
       avatar: avatarUrl,
+      avatarUrl: avatarUrl,
       capabilities: JSON.parse(row.capabilities || '{}'),
       constructCallsign: row.construct_callsign,
       modelId: row.model_id,
@@ -1527,14 +1536,7 @@ export class AIManager {
             hasValue: !!avatarValue
           });
 
-          let avatarUrl = row.avatar;
-          if (row.construct_callsign) {
-            avatarUrl = `/api/ais/${row.id}/avatar`;
-          } else if (avatarUrl && avatarUrl.startsWith('instances/')) {
-            avatarUrl = `/api/ais/${row.id}/avatar`;
-          } else if (avatarUrl && avatarUrl.startsWith('data:image/') && avatarUrl.length > 1024) {
-            avatarUrl = `/api/ais/${row.id}/avatar`;
-          }
+          const avatarUrl = this.normalizeAvatarUrlForRow(row);
 
           // Get privacy field, default to 'private' if not set, or derive from isActive for backward compatibility
           let privacy = row.privacy;
@@ -1566,6 +1568,7 @@ export class AIManager {
             instructions: instructions,
             conversationStarters,
             avatar: avatarUrl, // Processed avatar URL
+            avatarUrl: avatarUrl,
             capabilities,
             constructCallsign: row.construct_callsign || null,
             modelId: row.model_id,
@@ -1669,10 +1672,7 @@ export class AIManager {
           }
 
           // Process avatar
-          let avatarUrl = row.avatar;
-          if (avatarUrl && !avatarUrl.startsWith('data:image/') && avatarUrl.startsWith('instances/')) {
-            avatarUrl = `/api/ais/${row.id}/avatar`;
-          }
+          const avatarUrl = this.normalizeAvatarUrlForRow(row);
 
           // Get privacy field
           let privacy = row.privacy || 'store';
@@ -1701,6 +1701,7 @@ export class AIManager {
             instructions: instructions,
             conversationStarters,
             avatar: avatarUrl,
+            avatarUrl: avatarUrl,
             capabilities,
             constructCallsign: row.construct_callsign || null,
             modelId: row.model_id,
