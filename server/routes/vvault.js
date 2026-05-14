@@ -9235,7 +9235,7 @@ router.get("/chat/:sessionId", requirePreferredAuth, async (req, res) => {
   }
 });
 
-router.get("/conversations/:sessionId/canonical-transcript", requirePreferredAuth, async (req, res) => {
+router.get("/conversations/:sessionId/canonical-transcript", requirePreferredAuthOrServiceToken, async (req, res) => {
   const { sessionId } = req.params;
   if (!sessionId) {
     return res.status(400).json({ ok: false, error: "sessionId is required" });
