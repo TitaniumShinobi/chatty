@@ -239,6 +239,7 @@ export function parseFiveConstructCertificationArgs(argv = []) {
     outDir: DEFAULT_FIVE_CONSTRUCT_CERTIFICATION_OUT_DIR,
     constructs: [...FIVE_CONSTRUCT_ORDER],
     promptLimit: FIVE_CONSTRUCT_PROMPT_MATRIX.length,
+    promptStartOrdinal: 1,
     stopOnFail: true,
     includeDiagnosticSynthesis: false,
     json: false,
@@ -282,6 +283,11 @@ export function parseFiveConstructCertificationArgs(argv = []) {
     } else if (arg === '--prompt-limit') {
       args.promptLimit = toNumber(consumeValue(argv, index, '--prompt-limit'), args.promptLimit);
       index += 1;
+    } else if (arg.startsWith('--prompt-start-ordinal=')) {
+      args.promptStartOrdinal = toNumber(arg.slice('--prompt-start-ordinal='.length), args.promptStartOrdinal);
+    } else if (arg === '--prompt-start-ordinal') {
+      args.promptStartOrdinal = toNumber(consumeValue(argv, index, '--prompt-start-ordinal'), args.promptStartOrdinal);
+      index += 1;
     } else if (arg.startsWith('--stop-on-fail=')) {
       args.stopOnFail = parseBoolean(arg.slice('--stop-on-fail='.length), true);
     } else if (arg === '--no-stop-on-fail') {
@@ -297,6 +303,10 @@ export function parseFiveConstructCertificationArgs(argv = []) {
   args.promptLimit = Math.max(
     1,
     Math.min(FIVE_CONSTRUCT_PROMPT_MATRIX.length, toNumber(args.promptLimit, FIVE_CONSTRUCT_PROMPT_MATRIX.length)),
+  );
+  args.promptStartOrdinal = Math.max(
+    1,
+    Math.min(FIVE_CONSTRUCT_PROMPT_MATRIX.length, toNumber(args.promptStartOrdinal, 1)),
   );
   return args;
 }
@@ -321,17 +331,24 @@ export function buildCertificationRuns(args = {}) {
     1,
     Math.min(FIVE_CONSTRUCT_PROMPT_MATRIX.length, toNumber(args.promptLimit, FIVE_CONSTRUCT_PROMPT_MATRIX.length)),
   );
+  const promptStartOrdinal = Math.max(
+    1,
+    Math.min(FIVE_CONSTRUCT_PROMPT_MATRIX.length, toNumber(args.promptStartOrdinal, 1)),
+  );
+  const promptStartIndex = promptStartOrdinal - 1;
   const constructs = args.constructs
     ? normalizeConstructList(args.constructs)
     : [...FIVE_CONSTRUCT_ORDER];
   return constructs.map((constructId) => {
     const target = FIVE_CONSTRUCT_CANONICAL_TARGETS[constructId];
-    const prompts = FIVE_CONSTRUCT_PROMPT_MATRIX.slice(0, promptLimit).map((prompt, index) => ({
-      ...prompt,
-      ordinal: index + 1,
-      constructId,
-      message: buildCertificationPrompt({ constructId, prompt }),
-    }));
+    const prompts = FIVE_CONSTRUCT_PROMPT_MATRIX
+      .slice(promptStartIndex, promptStartIndex + promptLimit)
+      .map((prompt, index) => ({
+        ...prompt,
+        ordinal: promptStartOrdinal + index,
+        constructId,
+        message: buildCertificationPrompt({ constructId, prompt }),
+      }));
     return {
       constructId,
       displayName: target.displayName,

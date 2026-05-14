@@ -106,6 +106,25 @@ describe('five-construct certification harness', () => {
     assert.equal(runs.every((run) => run.prompts.length === 1), true);
   });
 
+  it('can resume a construct matrix from a later prompt ordinal', () => {
+    const args = parseFiveConstructCertificationArgs([
+      '--constructs=zen-001',
+      '--prompt-start-ordinal=2',
+      '--prompt-limit=3',
+    ]);
+    const run = buildCertificationRuns(args)[0];
+
+    assert.equal(run.constructId, 'zen-001');
+    assert.deepEqual(
+      run.prompts.map((prompt) => [prompt.ordinal, prompt.id]),
+      [
+        [2, 'ordinary_greeting'],
+        [3, 'voice_texture'],
+        [4, 'memory_receipt'],
+      ],
+    );
+  });
+
   it('builds one natural Zen/Codex prompt per matrix entry without impersonating Devon', () => {
     const runs = buildCertificationRuns({ promptLimit: FIVE_CONSTRUCT_PROMPT_MATRIX.length });
     const promptCount = runs.reduce((sum, run) => sum + run.prompts.length, 0);
