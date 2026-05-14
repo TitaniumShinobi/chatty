@@ -18,6 +18,7 @@ import {
   X,
   Grid3X3,
   ImageOff,
+  Code2,
 } from "lucide-react";
 import { SidebarProps } from "../types";
 import { cn } from "../lib/utils";
@@ -771,6 +772,15 @@ const Sidebar: React.FC<SidebarProps> = ({
       {/* Navigation Options - Streamlined Default Items */}
       <div className={cn(collapsed ? "px-3 pb-3" : "px-4 pb-4")}>
         <div className="space-y-1">
+          {!collapsed && (
+            <h3
+              className="px-3 pb-1 text-xs font-medium uppercase tracking-wide"
+              style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+            >
+              System
+            </h3>
+          )}
+
           {/* Zen - Primary Construct (Default) */}
           <button
             onClick={() => {
@@ -907,6 +917,29 @@ const Sidebar: React.FC<SidebarProps> = ({
             <MessageSquare size={16} />
             {!collapsed && <span>Val</span>}
           </button>
+
+          <button
+            onClick={() => {
+              if (onOpenCodex) return onOpenCodex();
+              navigate("/app/codex");
+            }}
+            className={navButtonBase}
+            style={navButtonStyle("/app/codex")}
+            onMouseEnter={(e) => handleNavHover(e, "/app/codex", true)}
+            onMouseLeave={(e) => handleNavHover(e, "/app/codex", false)}
+          >
+            <Code2 size={16} />
+            {!collapsed && <span>Code</span>}
+          </button>
+
+          {!collapsed && (
+            <h3
+              className="px-3 pb-1 pt-3 text-xs font-medium uppercase tracking-wide"
+              style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+            >
+              Tools
+            </h3>
+          )}
 
           {/* Continuity (Default) */}
           <button
@@ -1361,15 +1394,6 @@ const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      {/* Ensure Zen is only visible in the sidebar */}
-      {currentConversationId === "zen" && (
-        <div
-          className="zen-sidebar-item"
-          style={{ zIndex: 1, position: "relative" }}
-        >
-          Zen
-        </div>
-      )}
     </div>
   );
 };

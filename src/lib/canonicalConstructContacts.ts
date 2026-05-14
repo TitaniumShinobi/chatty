@@ -5,9 +5,26 @@ export interface CanonicalConstructContact {
   title: string;
 }
 
-export const PUBLIC_CERTIFICATION_CONSTRUCT_CONTACTS: CanonicalConstructContact[] = [
-  { constructId: "lin-001", title: "Lin" },
-  { constructId: "zen-001", title: "Zen" },
+export const SYSTEM_CONSTRUCT_IDS = new Set([
+  "zen",
+  "zen-001",
+  "lin",
+  "lin-001",
+  "val",
+  "val-001",
+  "code",
+  "code-001",
+  "codex",
+  "codex-001",
+  "synth",
+  "synth-001",
+]);
+
+export function isSystemConstructId(constructId: string | null | undefined): boolean {
+  return typeof constructId === "string" && SYSTEM_CONSTRUCT_IDS.has(constructId.toLowerCase());
+}
+
+export const ADDRESS_BOOK_CERTIFICATION_CONSTRUCT_CONTACTS: CanonicalConstructContact[] = [
   { constructId: "katana-001", title: "Katana" },
   { constructId: "sera-001", title: "Sera" },
   { constructId: "nova-001", title: "Nova" },
@@ -26,7 +43,7 @@ export function buildMissingCanonicalConstructContacts({
       .map((id) => id.toLowerCase()),
   );
 
-  return PUBLIC_CERTIFICATION_CONSTRUCT_CONTACTS
+  return ADDRESS_BOOK_CERTIFICATION_CONSTRUCT_CONTACTS
     .filter(({ constructId }) => !existing.has(constructId))
     .map(({ constructId, title }) => ({
       id: `${constructId}_contact`,

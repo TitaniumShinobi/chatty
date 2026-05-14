@@ -1,15 +1,16 @@
-import { buildMissingCanonicalConstructContacts } from "./canonicalConstructContacts";
+import {
+  buildMissingCanonicalConstructContacts,
+  isSystemConstructId,
+} from "./canonicalConstructContacts";
 
 describe("canonical construct address-book contacts", () => {
-  it("adds the public certification constructs without transcript content", () => {
+  it("adds only non-system public certification constructs without transcript content", () => {
     const contacts = buildMissingCanonicalConstructContacts({
       existingConstructIds: [],
       now: 123,
     });
 
     expect(contacts.map((contact) => contact.constructId)).toEqual([
-      "lin-001",
-      "zen-001",
       "katana-001",
       "sera-001",
       "nova-001",
@@ -26,9 +27,15 @@ describe("canonical construct address-book contacts", () => {
     });
 
     expect(contacts.map((contact) => contact.constructId)).toEqual([
-      "lin-001",
-      "zen-001",
       "katana-001",
     ]);
+  });
+
+  it("keeps system constructs out of the address book lane", () => {
+    expect(isSystemConstructId("zen-001")).toBe(true);
+    expect(isSystemConstructId("lin-001")).toBe(true);
+    expect(isSystemConstructId("val-001")).toBe(true);
+    expect(isSystemConstructId("code")).toBe(true);
+    expect(isSystemConstructId("katana-001")).toBe(false);
   });
 });

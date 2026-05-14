@@ -46,7 +46,10 @@ import {
 } from "../lib/vvaultConversationHydration";
 import { bootstrapConstructs, isMasterScriptsBootstrapEnabled } from "../lib/masterScripts";
 import { GPTService, type GPTConfig } from "../lib/gptService";
-import { buildMissingCanonicalConstructContacts } from "../lib/canonicalConstructContacts";
+import {
+  buildMissingCanonicalConstructContacts,
+  isSystemConstructId,
+} from "../lib/canonicalConstructContacts";
 import type { AIConfig } from "../lib/aiService";
 import type { UIContextSnapshot, Message as ChatMessage, Attachment } from "../types";
 import { WorkspaceContextBuilder } from "../engine/context/WorkspaceContextBuilder";
@@ -404,15 +407,13 @@ export default function Layout() {
     [threads, shareConversationId],
   );
   const synthAddressBookThreads = useMemo(() => {
-    const EXCLUDED_CONSTRUCTS = ['lin-001', 'zen-001', 'zen', 'lin', 'synth-001', 'synth'];
-    
     // Get threads that have a constructId (excluding system constructs)
     // Also filter out legacy files (those with .md in the title - raw filenames)
     // Enhance with avatar from matching GPT
     const conversationThreads = threads
       .filter((t) => 
         t.constructId && 
-        !EXCLUDED_CONSTRUCTS.includes(t.constructId) &&
+        !isSystemConstructId(t.constructId) &&
         !t.title?.endsWith('.md')
       )
       .map(t => {
@@ -444,7 +445,7 @@ export default function Layout() {
       if (!gpt.constructCallsign) {
         continue;
       }
-      if (EXCLUDED_CONSTRUCTS.includes(gpt.constructCallsign)) {
+      if (isSystemConstructId(gpt.constructCallsign)) {
         continue;
       }
       if (existingConstructIds.has(gpt.constructCallsign)) {
