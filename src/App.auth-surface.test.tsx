@@ -144,4 +144,20 @@ describe("unauthenticated App surface", () => {
       expect(screen.getByText(/Redirecting/i)).toBeInTheDocument();
     });
   });
+
+  it("opens signup mode when shared auth returns missing consent", async () => {
+    window.history.pushState({}, "", "/?authModal=signup&reason=missing_consent");
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /create account/i })).toBeInTheDocument();
+    });
+
+    expect(
+      screen.getByText(
+        /Google sign-in succeeded\. Finish account setup and accept the Chatty and VVAULT legal terms to continue\./i,
+      ),
+    ).toBeInTheDocument();
+  });
 });

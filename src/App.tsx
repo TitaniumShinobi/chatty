@@ -74,6 +74,24 @@ export default function App() {
     | undefined;
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const authModal = params.get("authModal");
+    const reason = params.get("reason");
+
+    if (authModal === "signup") {
+      setMode("signup");
+      setSignupSuccess(false);
+
+      if (reason === "missing_consent") {
+        setAuthError(
+          "Google sign-in succeeded. Finish account setup and accept the Chatty and VVAULT legal terms to continue.",
+        );
+      }
+    }
+  }, []);
+
   // Initialize Cloudflare Turnstile
   useEffect(() => {
     const loadTurnstile = () => {
