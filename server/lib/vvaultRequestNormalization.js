@@ -2,9 +2,15 @@ import { getVvaultServiceTokens } from './vvaultBridgeConfig.js';
 
 function resolveServiceTokenOperator(req) {
   const authHeader = String(req?.headers?.authorization || '').trim();
-  if (!authHeader.toLowerCase().startsWith('bearer ')) return null;
-
-  const token = authHeader.slice('bearer '.length).trim();
+  const bearerToken = authHeader.toLowerCase().startsWith('bearer ')
+    ? authHeader.slice('bearer '.length).trim()
+    : '';
+  const headerToken = String(
+    req?.headers?.['x-chatty-key'] ||
+    req?.headers?.['x-service-token'] ||
+    '',
+  ).trim();
+  const token = bearerToken || headerToken;
   const tokens = getVvaultServiceTokens();
   if (!token || tokens.length === 0 || !tokens.includes(token)) return null;
 

@@ -474,7 +474,8 @@ export async function requireSharedAuth(req, res, next) {
 export function requireAuthOrServiceToken(req, res, next) {
   const tokens = getVvaultServiceTokens();
   const authHeader = req.headers?.authorization || "";
-  if (tokens.length && tokens.some((token) => authHeader === `Bearer ${token}`)) {
+  const headerToken = (req.headers["x-chatty-key"] || req.headers["x-service-token"] || "").toString().trim();
+  if (tokens.length && tokens.some((token) => authHeader === `Bearer ${token}` || headerToken === token)) {
     const userId = (req.headers["x-chatty-user-id"] || "").toString().trim();
     const email = (req.headers["x-chatty-user-email"] || "").toString().trim();
     if (userId) {
@@ -488,7 +489,8 @@ export function requireAuthOrServiceToken(req, res, next) {
 export async function requirePreferredAuthOrServiceToken(req, res, next) {
   const tokens = getVvaultServiceTokens();
   const authHeader = req.headers?.authorization || "";
-  if (tokens.length && tokens.some((token) => authHeader === `Bearer ${token}`)) {
+  const headerToken = (req.headers["x-chatty-key"] || req.headers["x-service-token"] || "").toString().trim();
+  if (tokens.length && tokens.some((token) => authHeader === `Bearer ${token}` || headerToken === token)) {
     const userId = (req.headers["x-chatty-user-id"] || "").toString().trim();
     const email = (req.headers["x-chatty-user-email"] || "").toString().trim();
     if (userId) {

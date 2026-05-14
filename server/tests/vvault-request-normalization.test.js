@@ -74,6 +74,40 @@ test('normalizeVvaultRouteRequest accepts explicit service-token operator auth',
   assert.equal(result.authReceipt.userId, 'zenith-codex-operator');
 });
 
+test('normalizeVvaultRouteRequest accepts x-chatty-key service-token operator auth', async () => {
+  process.env.VVAULT_URL = 'https://vvault.example.test';
+  process.env.VVAULT_SERVICE_TOKEN = 'service-token-2';
+  process.env.NODE_ENV = 'production';
+
+  const req = {
+    headers: {
+      'x-chatty-key': 'service-token-2',
+      'x-chatty-user-id': 'zenith-codex-operator',
+      'x-chatty-operator-name': 'Zenith/Codex',
+    },
+    body: {
+      constructId: 'lin-001',
+      message: 'Zenith/Codex live certification probe.',
+    },
+  };
+
+  const result = await normalizeVvaultRouteRequest({
+    req,
+    resolveSupabaseUser: async () => {
+      throw new Error('no supabase session');
+    },
+    buildAuthReceipt: (input) => input,
+    normalizeInferenceRequest: () => ({
+      constructId: 'lin-001',
+      message: 'Zenith/Codex live certification probe.',
+    }),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.authSource, 'service_token_operator');
+  assert.equal(result.userId, 'zenith-codex-operator');
+});
+
 test('normalizeVvaultRouteRequest rejects service-token operator auth without an explicit user id', async () => {
   process.env.VVAULT_URL = 'https://vvault.example.test';
   process.env.VVAULT_SERVICE_TOKEN = 'service-token-1';
