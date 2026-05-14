@@ -52,7 +52,9 @@ function getChattyAuthHeaders(userContext) {
     headers['X-Chatty-User'] = userEmail;
   }
   if (isSupabaseUuid(supabaseUserId)) {
-    headers['X-Chatty-Supabase-User-Id'] = supabaseUserId.trim();
+    const normalizedSupabaseUserId = supabaseUserId.trim();
+    headers['X-Chatty-Supabase-User-Id'] = normalizedSupabaseUserId;
+    headers['X-Chatty-User-Id'] = normalizedSupabaseUserId;
   }
   return headers;
 }

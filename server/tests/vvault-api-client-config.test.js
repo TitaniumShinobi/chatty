@@ -57,12 +57,14 @@ describe("VVAULT API client config", () => {
     assert.equal(headers["X-Chatty-Key"], "test-service-token");
     assert.equal(headers["X-Chatty-User"], "devon@example.com");
     assert.equal(headers["X-Chatty-Supabase-User-Id"], "7e34f6b8-e33a-48b5-8ddb-95b94d18e296");
+    assert.equal(headers["X-Chatty-User-Id"], "7e34f6b8-e33a-48b5-8ddb-95b94d18e296");
 
     const invalid = getChattyAuthHeaders({
       userEmail: "devon@example.com",
       supabaseUserId: "not-a-uuid",
     });
     assert.equal(invalid["X-Chatty-Supabase-User-Id"], undefined);
+    assert.equal(invalid["X-Chatty-User-Id"], undefined);
   });
 
   it("reads construct identity from the VVAULT body API", async () => {
