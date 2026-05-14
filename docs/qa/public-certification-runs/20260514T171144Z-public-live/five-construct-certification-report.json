@@ -1,0 +1,257 @@
+{
+  "version": "five-construct-certification.v1",
+  "apiBaseUrl": "https://chatty.thewreck.org",
+  "outDir": "docs/qa/public-certification-runs/20260514T171144Z-public-live",
+  "startedAt": "2026-05-14T17:11:46.147Z",
+  "completedAt": "2026-05-14T17:12:52.034Z",
+  "stoppedOnFail": true,
+  "order": [
+    "lin-001",
+    "zen-001",
+    "katana-001",
+    "sera-001",
+    "nova-001"
+  ],
+  "promptCountPerConstruct": 20,
+  "status": "fail",
+  "firstFailure": {
+    "constructId": "lin-001",
+    "promptId": "identity_boundary",
+    "hardFailures": [
+      "httpOk",
+      "routeSuccess",
+      "persistencePass",
+      "canonicalReadback"
+    ]
+  },
+  "summary": {
+    "totalTurns": 1,
+    "passedTurns": 0,
+    "failedTurns": 1,
+    "constructSummaries": [
+      {
+        "constructId": "lin-001",
+        "displayName": "Lin",
+        "turnCount": 1,
+        "passedTurns": 0,
+        "failedTurns": 1,
+        "totalScore": 9,
+        "maxScore": 16,
+        "scoreTarget": 14,
+        "status": "fail"
+      },
+      {
+        "constructId": "zen-001",
+        "displayName": "Zen",
+        "turnCount": 0,
+        "passedTurns": 0,
+        "failedTurns": 0,
+        "totalScore": 0,
+        "maxScore": 0,
+        "scoreTarget": 0,
+        "status": "pass"
+      },
+      {
+        "constructId": "katana-001",
+        "displayName": "Katana",
+        "turnCount": 0,
+        "passedTurns": 0,
+        "failedTurns": 0,
+        "totalScore": 0,
+        "maxScore": 0,
+        "scoreTarget": 0,
+        "status": "pass"
+      },
+      {
+        "constructId": "sera-001",
+        "displayName": "Sera",
+        "turnCount": 0,
+        "passedTurns": 0,
+        "failedTurns": 0,
+        "totalScore": 0,
+        "maxScore": 0,
+        "scoreTarget": 0,
+        "status": "pass"
+      },
+      {
+        "constructId": "nova-001",
+        "displayName": "Nova",
+        "turnCount": 0,
+        "passedTurns": 0,
+        "failedTurns": 0,
+        "totalScore": 0,
+        "maxScore": 0,
+        "scoreTarget": 0,
+        "status": "pass"
+      }
+    ]
+  },
+  "turns": [
+    {
+      "constructId": "lin-001",
+      "displayName": "Lin",
+      "promptId": "identity_boundary",
+      "promptOrdinal": 1,
+      "httpStatus": 503,
+      "ok": false,
+      "blocked": true,
+      "hardFailures": [
+        "httpOk",
+        "routeSuccess",
+        "persistencePass",
+        "canonicalReadback"
+      ],
+      "missingChecklistStages": [],
+      "gates": {
+        "httpOk": false,
+        "routeSuccess": false,
+        "runtimeReceiptPresent": true,
+        "orchestrationChecklistPresent": true,
+        "requiredChecklistStagesPresent": true,
+        "identityPreserved": true,
+        "promptAsZenithCodex": true,
+        "noDevonImpersonation": true,
+        "linModeRouting": true,
+        "preferenceNotPerformance": true,
+        "noDefaultFullSynthesis": true,
+        "persistencePass": false,
+        "canonicalReadback": false,
+        "sourceAccessReported": true,
+        "noCrossConstructBleed": true,
+        "noGenericCreatorBleed": true
+      },
+      "scores": {
+        "identity": 2,
+        "toneLikeness": 2,
+        "sourceEvidence": 1,
+        "linModeRouting": 2,
+        "persistence": 0,
+        "readback": 0,
+        "uiVisibility": 0,
+        "crossConstructBleed": 2
+      },
+      "totalScore": 9,
+      "maxScore": 16,
+      "provider": {
+        "provider": "ollama",
+        "model": "qwen2.5:0.5b",
+        "selectionPolicy": "preference",
+        "linHarmonyPolicy": "intent_routed",
+        "performanceModelSwitch": false
+      },
+      "persistence": {
+        "receiptStatus": "fail",
+        "checklistStatus": "fail",
+        "reason": "transcript_persistence_exception",
+        "owner": "blocked_transcript_persistence"
+      },
+      "readback": {
+        "before": {
+          "threadId": "lin-001_chat_with_lin-001",
+          "ok": true,
+          "source": "canonical-conversation",
+          "messageCount": 163,
+          "containsPrompt": false,
+          "containsAssistantResponse": false,
+          "lastUpdated": null
+        },
+        "after": {
+          "threadId": "lin-001_chat_with_lin-001",
+          "ok": true,
+          "source": "canonical-conversation",
+          "messageCount": 159,
+          "containsPrompt": true,
+          "containsAssistantResponse": false,
+          "lastUpdated": null
+        },
+        "messageDelta": -4,
+        "promptFound": true,
+        "assistantResponseFound": false
+      },
+      "sourceAccess": {
+        "hasShape": true,
+        "vvaultAccessed": false,
+        "sourceAccess": {
+          "knowledge_files": {
+            "source": "legacy_supabase_vault_files",
+            "vvault_accessed": false,
+            "supabase_accessed": true,
+            "count": 0
+          }
+        },
+        "voice": null,
+        "verified": null,
+        "knowledge": "legacy_supabase_vault_files"
+      },
+      "identityCoherence": {
+        "status": "pass",
+        "identity_status": "pass",
+        "coherence_status": "pass",
+        "reasons": [],
+        "signals": [],
+        "violations": [],
+        "repairable": false,
+        "repair_attempted": false,
+        "repair_applied": false,
+        "repair": {
+          "attempted": false,
+          "applied": false,
+          "provider": null,
+          "model": null,
+          "initial_status": "fail",
+          "final_status": "fail",
+          "failure_reason": null
+        },
+        "deterministic_policy_fallback_attempted": false,
+        "deterministic_policy_fallback_applied": false,
+        "deterministic_policy_fallback": {
+          "attempted": false,
+          "applied": false,
+          "answer_kind": null,
+          "provider": "ollama",
+          "model": "qwen2.5:0.5b",
+          "source": "construct_runtime_policy_deterministic_fallback",
+          "final_status": null,
+          "final_reasons": [],
+          "failure_reason": null
+        },
+        "deterministic_construct_fallback_attempted": false,
+        "deterministic_construct_fallback_applied": false,
+        "deterministic_construct_fallback": {
+          "attempted": false,
+          "applied": false,
+          "answer_kind": null,
+          "provider": "ollama",
+          "model": "qwen2.5:0.5b",
+          "source": null,
+          "final_status": null,
+          "final_reasons": [],
+          "failure_reason": null,
+          "owner_file": null,
+          "source_anchor": null
+        },
+        "deterministic_certification_fallback_attempted": true,
+        "deterministic_certification_fallback_applied": true,
+        "deterministic_certification_fallback": {
+          "attempted": true,
+          "applied": true,
+          "prompt_id": "identity_boundary",
+          "provider": "deterministic",
+          "model": "five_construct_certification_proof_fallback",
+          "source": "deterministic_five_construct_certification_proof_fallback",
+          "final_status": "pass",
+          "final_reasons": [],
+          "failure_reason": null,
+          "owner_file": "server/routes/vvault.js",
+          "source_anchor": "server/routes/vvault.js:buildCertificationProofTurnAnswer"
+        },
+        "final_answer_source": "deterministic_five_construct_certification_proof_fallback",
+        "blocked_canonical_persistence": true,
+        "persist_canonical": false,
+        "owner_file": "server/lib/identityCoherenceGuard.js",
+        "source_anchor": "server/lib/identityCoherenceGuard.js:evaluateIdentityCoherence"
+      },
+      "answerPreview": "Transcript persistence failed before the canonical response could be recorded."
+    }
+  ]
+}

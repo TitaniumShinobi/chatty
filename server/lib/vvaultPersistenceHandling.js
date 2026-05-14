@@ -188,12 +188,7 @@ export async function handleCanonicalTranscriptPersistence({
         label: `transcript_persistence_${role}`,
       });
       persistenceRoleResults.push(
-        buildPersistenceRoleResult({
-          role,
-          status: outcome.status,
-          source: outcome.value?.source || null,
-          bounded: false,
-        }),
+        buildPersistenceRoleResult(role, outcome),
       );
       return outcome;
     };
