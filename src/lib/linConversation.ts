@@ -11,6 +11,7 @@ import { fetchMe, getUserId } from './auth';
 import { getTimeContext, buildTimePromptSection } from './timeAwareness';
 import { runSeat } from './browserSeatRunner';
 import { getSystemConstructCatalogEntry } from './systemConstructCatalog.js';
+import { LIN_DEFAULT_MODELS } from '../config/linModelDefaults';
 
 export interface LinConversationOptions {
   /** User message to send to Lin */
@@ -731,7 +732,7 @@ ${stmContext ? `Recent conversation (STM):\n${stmContext}\n\n` : ''}User: ${mess
 Assistant:`;
 
   // Use a creative model for GPT creation assistance
-  const selectedModel = 'mistral:latest';
+  const selectedModel = LIN_DEFAULT_MODELS.creative;
   console.log('🧠 [Lin] Using model:', selectedModel);
 
   const response = await runSeat({

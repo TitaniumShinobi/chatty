@@ -1,6 +1,11 @@
 import type { AssistantPacket } from "../types";
 import { getMemoryStore, Triple } from "../lib/MemoryStore";
 import { getVVAULTTranscriptLoader } from "../lib/VVAULTTranscriptLoader";
+import { LIN_DEFAULT_MODELS } from "../config/linModelDefaults";
+
+function stripOllamaPrefix(model: string): string {
+  return model.replace(/^ollama:/, "");
+}
 
 // Enhanced Reasoner with memory persistence and transcript retrieval
 // Queries stored triples and transcript fragments before LLM calls
@@ -103,7 +108,7 @@ export class Reasoner {
       const host = (process.env.OLLAMA_HOST || 'http://localhost').replace(/\/$/, '');
       const port = process.env.OLLAMA_PORT || '8003';
       const url = `${host}:${port}/api/generate`;
-      const model = process.env.OLLAMA_MODEL || 'phi3:latest';
+      const model = process.env.OLLAMA_MODEL || stripOllamaPrefix(LIN_DEFAULT_MODELS.smalltalk);
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

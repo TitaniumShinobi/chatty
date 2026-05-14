@@ -11,11 +11,18 @@
 # Logs:
 #   sudo journalctl -u ollama -f
 #
-# Models will be loaded on-demand. To pre-load models:
+# Models will be loaded on-demand.
+#
+# 1 GB public proof hosts must use the tiny Chatty profile instead of routing
+# live traffic to the canonical Three I seat models:
+#   ollama pull qwen2.5:0.5b
+#   set CHATTY_OLLAMA_PROFILE=tiny in the Chatty service env
+#
+# To pre-load canonical Lin seat models on a suitably sized host:
 #   sudo systemctl stop ollama
-#   ollama pull phi3:latest
-#   ollama pull mistral:latest
-#   ollama pull deepseek-coder:6.7b
+#   ollama pull phi4-mini:latest
+#   ollama pull mistral-small3.2:24b
+#   ollama pull qwen3-coder:30b
 #   sudo systemctl start ollama
 # =============================================================================
 

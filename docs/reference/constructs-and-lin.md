@@ -18,7 +18,8 @@ Source of truth:
 
 - Core invariant: selected construct equals speaker identity; selected mode equals response engine; selected memory scope equals continuity evidence.
 - Lin is the base orchestration substrate for Chatty constructs and GPTs.
-- Lin mode is the Three I local triad: Intelligence (`coding` legacy key) `ollama:qwen2.5-coder:latest`, Ingenuity (`creative` legacy key) `ollama:mistral:latest`, and Interaction (`conversation`/`smalltalk` legacy keys) `ollama:phi3:latest`.
+- Lin mode is the Three I local triad: Intelligence (`coding` legacy key) `ollama:qwen3-coder:30b`, Ingenuity (`creative` legacy key) `ollama:mistral-small3.2:24b`, and Interaction (`conversation`/`smalltalk` legacy keys) `ollama:phi4-mini:latest`.
+- Undersized public proof hosts may set `CHATTY_OLLAMA_PROFILE=tiny` to route all Lin seats to `ollama:qwen2.5:0.5b` for runtime fit. This is a deployment profile, not construct identity and not a replacement for the Three I canon.
 - Intelligence owns both coding and continuity: truth, logic, evidence, risk, structure, and canon verification. Do not create a fourth continuity seat unless Devon explicitly reopens that decision.
 - DeepSeek is no longer the Intelligence default or fallback; it is a legacy/manual model option only.
 - Lin mode suppresses stale saved provider/model fields such as `openai:gpt-4o` or `openrouter:*`; those values belong to Custom Models mode.

@@ -71,7 +71,7 @@ const DEFAULT_SEAT_MODELS = {
 
 /**
  * Parse model string to extract provider and model name
- * @param {string} modelString - e.g., 'openrouter:mistralai/mistral-7b-instruct' or 'ollama:phi3:latest'
+ * @param {string} modelString - e.g., 'openrouter:mistralai/mistral-7b-instruct' or 'ollama:phi4-mini:latest'
  * @returns {{ provider: string, model: string }}
  */
 function parseModelString(modelString) {
@@ -792,9 +792,7 @@ router.get('/models', async (req, res) => {
         LIN_MODEL_DEFAULTS.creative,
         LIN_MODEL_DEFAULTS.coding,
         LIN_MODEL_DEFAULTS.codingFallback,
-        'ollama:phi3:latest',
-        'ollama:mistral:latest',
-        'ollama:mistral:7b',
+        'ollama:qwen2.5:0.5b',
         'ollama:llama3:8b',
       ] : []
     };

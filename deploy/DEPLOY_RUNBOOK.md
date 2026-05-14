@@ -53,6 +53,21 @@ ollama list
 curl -s http://127.0.0.1:11434/api/tags | jq '.models[].name' | grep -E '^("zen"|"aurora"|"monday")$'
 ```
 
+### 1 GB public droplet Ollama profile
+
+The public 1 GB droplet is a live proof shell, not a full Lin Three I model host. Do not route live traffic there to canonical seat models that need more memory/latency headroom. Use the tiny profile deliberately:
+
+```bash
+ollama pull qwen2.5:0.5b
+CHATTY_OLLAMA_PROFILE=tiny
+PREFER_LOCAL_MODELS=true
+OLLAMA_HOST=http://127.0.0.1:11434
+OLLAMA_NUM_CTX=512
+OLLAMA_NUM_PREDICT=96
+```
+
+Canonical Lin seat defaults still live in `config/linModelDefaults.json`; the tiny profile is a production-fit proof override for undersized hosts only.
+
 ---
 
 ## Task 3: Add Cloudflare DNS A record

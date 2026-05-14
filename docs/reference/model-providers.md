@@ -19,10 +19,11 @@ Live code authority for provider/model defaults:
 
 Lin local-first defaults are:
 
-- Intelligence (`coding` legacy key): `ollama:qwen2.5-coder:latest`
-- Intelligence upgrade target: `ollama:qwen3-coder:30b`
-- Ingenuity (`creative` legacy key): `ollama:mistral:latest`
-- Interaction (`conversation`/`smalltalk` legacy keys): `ollama:phi3:latest`
+- Intelligence (`coding` legacy key): `ollama:qwen3-coder:30b`
+- Ingenuity (`creative` legacy key): `ollama:mistral-small3.2:24b`
+- Interaction (`conversation`/`smalltalk` legacy keys): `ollama:phi4-mini:latest`
+
+Undersized public proof hosts may set `CHATTY_OLLAMA_PROFILE=tiny` to route every Lin seat to `ollama:qwen2.5:0.5b` with bounded generation settings. That profile is runtime-fit routing, not a change to construct identity or the canonical Three I defaults.
 
 DeepSeek is not the Intelligence default or fallback. It remains a manual/legacy coding model option, but Lin's fallback stays in the Qwen family.
 

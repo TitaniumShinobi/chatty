@@ -1,19 +1,24 @@
 import express from "express";
 import fetch from "node-fetch";
+import { LIN_MODEL_DEFAULTS } from "../lib/linModelDefaults.js";
 
 const router = express.Router();
 
-// Lazy-load ensurePhi3 to avoid circular dependencies
-let ensurePhi3 = null;
+function stripOllamaPrefix(model) {
+  return String(model || '').replace(/^ollama:/, '');
+}
 
-async function getEnsurePhi3() {
-  if (!ensurePhi3) {
+// Lazy-load ensureOllama to avoid circular dependencies
+let ensureOllama = null;
+
+async function getEnsureOllama() {
+  if (!ensureOllama) {
     try {
-      // Simple implementation of ensurePhi3 for server-side Ollama auto-start
+      // Simple implementation of ensureOllama for server-side Ollama auto-start
       const http = require('http');
       const { spawn } = require('child_process');
       
-      ensurePhi3 = async (opts) => {
+      ensureOllama = async (opts) => {
         const portsToTry = [
           opts.preferredPort,
           11434, // Ollama default
@@ -69,12 +74,12 @@ async function getEnsurePhi3() {
         throw new Error('Failed to start Ollama within 30s.');
       };
     } catch (error) {
-      console.warn('Could not initialize ensurePhi3, proceeding without auto-start:', error);
+      console.warn('Could not initialize ensureOllama, proceeding without auto-start:', error);
       // Fallback: just return the default port
-      ensurePhi3 = async () => ({ child: null, port: 11434 });
+      ensureOllama = async () => ({ child: null, port: 11434 });
     }
   }
-  return ensurePhi3;
+  return ensureOllama;
 }
 
 /**
@@ -104,8 +109,8 @@ router.post("/run", async (req, res) => {
     let targetPort = 11434;
     
     try {
-      const ensurePhi3Fn = await getEnsurePhi3();
-      const { port: actualPort } = await ensurePhi3Fn({
+      const ensureOllamaFn = await getEnsureOllama();
+      const { port: actualPort } = await ensureOllamaFn({
         preferredPort: targetPort,
         host: targetHost,
         silent: true
@@ -118,7 +123,7 @@ router.post("/run", async (req, res) => {
 
     if (model != null && typeof model !== "string") return res.status(400).json({ error: "model must be a string" });
     if (timeoutMs != null && (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000)) return res.status(400).json({ error: "timeoutMs is invalid" });
-    const targetModel = model || process.env.OLLAMA_MODEL || "phi3:latest";
+    const targetModel = model || process.env.OLLAMA_MODEL || stripOllamaPrefix(LIN_MODEL_DEFAULTS.smalltalk);
     const timeout = timeoutMs || 90000; // 90 seconds for preview
 
     const controller = new AbortController();

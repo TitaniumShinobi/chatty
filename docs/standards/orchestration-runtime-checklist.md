@@ -96,9 +96,11 @@ Lin mode must preserve active construct identity while routing through the Three
 
 Lin seat routing is intent-based by default. The canonical naming is the Three I seat canon; see [lin-three-i-seat-canon.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/lin-three-i-seat-canon.md). Cross-repo seat documents must be reconciled through [lin-seat-cross-repo-reconciliation.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/lin-seat-cross-repo-reconciliation.md). Legacy keys remain in code/receipts for compatibility, but the seat defaults must resolve from `config/linModelDefaults.json`; stale `openai:*`, `openrouter:*`, old DeepSeek/Mistral/Phi-3 cloud placeholders, and `openrouter:auto` are suppressed in Lin mode unless Custom Models/manual override is active. The seat responsibilities are:
 
-- Intelligence (`coding` legacy key): `ollama:qwen2.5-coder:latest` for truth, logic, coding, continuity, evidence, risk, structure, and canon verification. Qwen3-Coder remains the upgrade target once the 18 GB local pull is intentionally completed.
-- Ingenuity (`creative` legacy key): `ollama:mistral:latest` for voice, theme, persona shaping, creative synthesis, and narrative coherence.
-- Interaction (`conversation`/`smalltalk` legacy keys): `ollama:phi3:latest` for clarity, warmth, pacing, dialogue flow, and professional exchange.
+- Intelligence (`coding` legacy key): `ollama:qwen3-coder:30b` for truth, logic, coding, continuity, evidence, risk, structure, and canon verification.
+- Ingenuity (`creative` legacy key): `ollama:mistral-small3.2:24b` for voice, theme, persona shaping, creative synthesis, and narrative coherence.
+- Interaction (`conversation`/`smalltalk` legacy keys): `ollama:phi4-mini:latest` for clarity, warmth, pacing, dialogue flow, and professional exchange.
+
+Runtime-fit note: undersized public proof hosts may set `CHATTY_OLLAMA_PROFILE=tiny` to route every seat to `ollama:qwen2.5:0.5b` with bounded generation settings. That profile is explicit deployment routing only; it must not be reported as a personality, identity, or canonical seat change.
 
 DeepSeek is not the current canonical Intelligence model and is no longer the Lin Intelligence fallback. Intelligence stays in the Qwen family. Do not add a continuity-only fourth seat unless Devon explicitly reopens that decision.
 

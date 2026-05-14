@@ -5,6 +5,18 @@ import { LIN_THREE_I_SEATS } from './linSeatCanon.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const defaultsPath = path.join(repoRoot, 'config', 'linModelDefaults.json');
+const TINY_OLLAMA_MODEL = 'ollama:qwen2.5:0.5b';
+
+function getOllamaRuntimeProfile() {
+  return String(process.env.CHATTY_OLLAMA_PROFILE || process.env.OLLAMA_PROFILE || '')
+    .trim()
+    .toLowerCase();
+}
+
+function getTinyOllamaModel() {
+  const value = process.env.CHATTY_TINY_OLLAMA_MODEL || process.env.OLLAMA_TINY_MODEL;
+  return value && String(value).trim() ? String(value).trim() : TINY_OLLAMA_MODEL;
+}
 
 function readDefaults() {
   const parsed = JSON.parse(fs.readFileSync(defaultsPath, 'utf8'));
@@ -12,6 +24,17 @@ function readDefaults() {
     const value = process.env[name];
     return value && String(value).trim() ? String(value).trim() : null;
   };
+  if (getOllamaRuntimeProfile() === 'tiny') {
+    const tinyModel = getTinyOllamaModel();
+    return Object.freeze({
+      conversation: envDefault('LIN_CONVERSATION_MODEL') || tinyModel,
+      smalltalk: envDefault('LIN_SMALLTALK_MODEL') || tinyModel,
+      creative: envDefault('LIN_CREATIVE_MODEL') || tinyModel,
+      coding: envDefault('LIN_CODING_MODEL') || envDefault('LIN_INTELLIGENCE_MODEL') || tinyModel,
+      intelligence: envDefault('LIN_INTELLIGENCE_MODEL') || envDefault('LIN_CODING_MODEL') || tinyModel,
+      codingFallback: envDefault('LIN_CODING_FALLBACK_MODEL') || envDefault('LIN_CODING_MODEL') || envDefault('LIN_INTELLIGENCE_MODEL') || tinyModel,
+    });
+  }
   const intelligence =
     envDefault('LIN_INTELLIGENCE_MODEL') ||
     envDefault('LIN_CODING_MODEL') ||

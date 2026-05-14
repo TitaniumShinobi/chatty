@@ -9,6 +9,7 @@ import {
   buildForgedSimConfigJson,
   buildOllamaLockedModelFromCallsign,
 } from './forgedSimLock.js';
+import { LIN_MODEL_DEFAULTS } from './linModelDefaults.js';
 import { getSupabaseClient } from './supabaseClient.js';
 import { resolveSupabaseUserId } from '../auth/lib/supabaseUserResolver.js';
 import { getVvaultBasePath } from './vvaultPaths.js';
@@ -20,7 +21,7 @@ const BUILD_SCRIPT = join(__dirname, '../../scripts/build_sims.py');
 const MAX_LOG_LINES = 200;
 const BUILD_TIMEOUT_MS = 5 * 60 * 1000;
 const BUILD_INSTANCES_DIR = join(getVvaultBasePath(), 'instances');
-const BUILD_BASE_MODEL = 'phi3:latest';
+const BUILD_BASE_MODEL = String(LIN_MODEL_DEFAULTS.smalltalk || 'ollama:phi4-mini:latest').replace(/^ollama:/, '');
 
 function createJobId() {
   return `sim-build-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;

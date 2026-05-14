@@ -2611,8 +2611,10 @@ const DEFAULT_OLLAMA_MODEL =
   LIN_MODEL_DEFAULTS.conversation.replace(/^ollama:/, '');
 const PREFERRED_OLLAMA_MODEL = process.env.OLLAMA_MODEL || DEFAULT_OLLAMA_MODEL;
 const PREFER_LOCAL_MODELS = String(process.env.PREFER_LOCAL_MODELS || '').toLowerCase() === 'true';
-const DEFAULT_OLLAMA_NUM_CTX = Number.parseInt(process.env.OLLAMA_NUM_CTX || '', 10) || 2048;
-const DEFAULT_OLLAMA_NUM_PREDICT = Number.parseInt(process.env.OLLAMA_NUM_PREDICT || '', 10) || 192;
+const OLLAMA_RUNTIME_PROFILE = String(process.env.CHATTY_OLLAMA_PROFILE || process.env.OLLAMA_PROFILE || '').trim().toLowerCase();
+const OLLAMA_TINY_PROFILE = OLLAMA_RUNTIME_PROFILE === 'tiny';
+const DEFAULT_OLLAMA_NUM_CTX = Number.parseInt(process.env.OLLAMA_NUM_CTX || '', 10) || (OLLAMA_TINY_PROFILE ? 512 : 2048);
+const DEFAULT_OLLAMA_NUM_PREDICT = Number.parseInt(process.env.OLLAMA_NUM_PREDICT || '', 10) || (OLLAMA_TINY_PROFILE ? 96 : 192);
 const NOVA_FAST_OPENROUTER_MODEL = process.env.NOVA_FAST_OPENROUTER_MODEL || process.env.OPENROUTER_FAST_MODEL || 'meta-llama/llama-3.2-3b-instruct:free';
 const OLLAMA_CONFIGURED =
   Boolean(process.env.OLLAMA_HOST) ||
@@ -11148,9 +11150,9 @@ Output ONLY the rewritten response, nothing else.`
             throw err;
           }
 
-          const finalRef = String(LIN_MODEL_DEFAULTS.creative || 'ollama:mistral:latest');
+          const finalRef = String(LIN_MODEL_DEFAULTS.creative || LIN_MODEL_DEFAULTS.smalltalk || 'ollama:phi4-mini:latest');
           const [fallbackProvider, ...fallbackModelParts] = finalRef.split(':');
-          const fallbackModel = fallbackModelParts.join(':') || 'mistral:latest';
+          const fallbackModel = fallbackModelParts.join(':') || 'phi4-mini:latest';
           const durationMs = Date.now() - traceStart;
           const errorMessage = (err?.message || 'full-seat synthesis failed').slice(0, 160);
 
