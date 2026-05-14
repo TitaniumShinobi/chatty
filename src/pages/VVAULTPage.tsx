@@ -56,6 +56,45 @@ export default function VVAULTPage() {
     return u.origin
   }
 
+  const normalizeOrigin = (value?: string) => {
+    if (!value) return ''
+    try {
+      return new URL(value).origin
+    } catch {
+      return ''
+    }
+  }
+
+  const isLoopbackOrigin = (value?: string) => {
+    const origin = normalizeOrigin(value)
+    if (!origin) return false
+    const { hostname } = new URL(origin)
+    return hostname === 'localhost' || hostname === '127.0.0.1'
+  }
+
+  const resolveVvaultBrowserOrigin = () => {
+    if (import.meta.env.DEV) {
+      return (
+        normalizeOrigin((import.meta.env.VITE_VVAULT_URL as string | undefined)) ||
+        normalizeOrigin((import.meta.env.VITE_VVAULT_API_BASE_URL as string | undefined)) ||
+        getDevVvaultOrigin()
+      )
+    }
+
+    const candidates = [
+      import.meta.env.VITE_VVAULT_PUBLIC_ORIGIN as string | undefined,
+      import.meta.env.VITE_VVAULT_URL as string | undefined,
+      import.meta.env.VITE_VVAULT_API_BASE_URL as string | undefined,
+    ]
+
+    for (const candidate of candidates) {
+      const origin = normalizeOrigin(candidate)
+      if (origin && !isLoopbackOrigin(origin)) return origin
+    }
+
+    return ''
+  }
+
   // Fetch VVAULT account linking status
   useEffect(() => {
     const fetchAccountStatus = async () => {
@@ -139,9 +178,11 @@ export default function VVAULTPage() {
 
   const handleLinkAccount = () => {
     // Open VVAULT login in new tab
-    const vvaultUrl =
-      (import.meta.env.VITE_VVAULT_URL as string | undefined) ||
-      (import.meta.env.DEV ? getDevVvaultOrigin() : (import.meta.env.VITE_VVAULT_API_BASE_URL as string) || '')
+    const vvaultUrl = resolveVvaultBrowserOrigin()
+    if (!vvaultUrl) {
+      console.error('Failed to resolve explicit VVAULT browser origin for this runtime')
+      return
+    }
     window.open(`${vvaultUrl}/login`, '_blank')
     
     // Show instructions

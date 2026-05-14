@@ -85,11 +85,12 @@ import {
 import {
   assertProductionPublicOriginSafety,
   isConfiguredCanonicalOrigin,
-  resolveConfiguredCallbackBase,
   resolveConfiguredCanonicalDomain,
-  resolveConfiguredCookieDomain,
-  resolveConfiguredPublicOrigin,
 } from "./lib/publicOriginConfig.js";
+import {
+  assertRuntimeHandshakeSafety,
+  resolveRuntimeHandshakeConfig,
+} from "./lib/runtimeHandshakeConfig.js";
 
 console.log('[ENV CHECK]', {
   JWT_SECRET: process.env.JWT_SECRET ? 'SET' : 'MISSING',
@@ -137,15 +138,18 @@ process.on('unhandledRejection', (reason, promise) => {
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const isProduction = process.env.NODE_ENV === "production";
+const RUNTIME_HANDSHAKE = resolveRuntimeHandshakeConfig(process.env);
+const RUNTIME_HANDSHAKE_SAFETY = assertRuntimeHandshakeSafety(process.env);
+console.log("[RUNTIME HANDSHAKE]", RUNTIME_HANDSHAKE_SAFETY);
 function cookieSecure(req) {
   // Treat localhost & 127.0.0.1 (any port) as non-secure
   const host = req.get('host') || '';
   return !/^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host);
 }
-const CONFIGURED_PUBLIC_ORIGIN = resolveConfiguredPublicOrigin(process.env);
-const CONFIGURED_CALLBACK_BASE = resolveConfiguredCallbackBase(process.env);
+const CONFIGURED_PUBLIC_ORIGIN = RUNTIME_HANDSHAKE.publicOrigin;
+const CONFIGURED_CALLBACK_BASE = RUNTIME_HANDSHAKE.callbackBase;
 const CANONICAL_DOMAIN = resolveConfiguredCanonicalDomain(process.env);
-const COOKIE_DOMAIN = resolveConfiguredCookieDomain(process.env);
+const COOKIE_DOMAIN = RUNTIME_HANDSHAKE.cookieDomain;
 const CALLBACK_PATH = process.env.CALLBACK_PATH || '/api/auth/google/callback';
 const REDIRECT_URI = CONFIGURED_CALLBACK_BASE
   ? `${CONFIGURED_CALLBACK_BASE}${CALLBACK_PATH}`
@@ -930,9 +934,10 @@ app.get("/api/auth/google/health", (req, res) => {
     environment: process.env.NODE_ENV || 'development',
     client_id_present: !!OAUTH.client_id,
     client_secret_present: !!OAUTH.client_secret,
-    validation_passed: oauthValid,
+    validation_passed: oauthValid && RUNTIME_HANDSHAKE_SAFETY.ok,
     effective_local_redirect_uri: effectiveLocalRedirectUri,
     allowed_origins: [...ALLOWED_ORIGINS],
+    runtime_handshake: RUNTIME_HANDSHAKE_SAFETY,
     correlation: {
       strategy: "cid_in_oauth_logs",
       spans: ["/api/auth/google", "/api/auth/google/callback", "/api/auth/set-session"]
@@ -1261,15 +1266,8 @@ const OAUTH_STATE_TTL = 10 * 60 * 1000;
 const EXCHANGE_CODE_TTL = 2 * 60 * 1000;
 
 function buildAllowedOrigins() {
-  const origins = new Set();
-  if (CONFIGURED_PUBLIC_ORIGIN) origins.add(CONFIGURED_PUBLIC_ORIGIN);
-  if (REPLIT_DOMAIN) origins.add(`https://${REPLIT_DOMAIN}`);
-  if (POST_LOGIN_REDIRECT && POST_LOGIN_REDIRECT !== 'http://localhost:5173') origins.add(POST_LOGIN_REDIRECT);
-  origins.add('http://localhost:5173');
-  origins.add('http://localhost:5000');
-  // Allow VS Code Simple Browser which uses 127.0.0.1
-  origins.add('http://127.0.0.1:5173');
-  origins.add('http://127.0.0.1:5000');
+  const origins = new Set(RUNTIME_HANDSHAKE.allowedBrowserOrigins);
+  if (!IS_PRODUCTION && REPLIT_DOMAIN) origins.add(`https://${REPLIT_DOMAIN}`);
   return origins;
 }
 const ALLOWED_ORIGINS = buildAllowedOrigins();
@@ -1526,13 +1524,13 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
           correlationId = pending.cid || stateData.cid || correlationId;
           res.set('X-Auth-Correlation', correlationId);
           stateValid = true;
-          const VALID_REDIRECT_URIS = new Set([
-            REDIRECT_URI,
-            `http://localhost:5173${CALLBACK_PATH}`,
-            `http://localhost:5050${CALLBACK_PATH}`,
-            `http://127.0.0.1:5173${CALLBACK_PATH}`,
-            `http://127.0.0.1:5050${CALLBACK_PATH}`,
-          ]);
+          const VALID_REDIRECT_URIS = new Set([REDIRECT_URI]);
+          if (!IS_PRODUCTION) {
+            VALID_REDIRECT_URIS.add(`http://localhost:5173${CALLBACK_PATH}`);
+            VALID_REDIRECT_URIS.add(`http://localhost:5050${CALLBACK_PATH}`);
+            VALID_REDIRECT_URIS.add(`http://127.0.0.1:5173${CALLBACK_PATH}`);
+            VALID_REDIRECT_URIS.add(`http://127.0.0.1:5050${CALLBACK_PATH}`);
+          }
           if (REPLIT_REDIRECT_URI) VALID_REDIRECT_URIS.add(REPLIT_REDIRECT_URI);
           if (pending.redirect_uri && VALID_REDIRECT_URIS.has(pending.redirect_uri)) {
             callbackRedirectUri = pending.redirect_uri;

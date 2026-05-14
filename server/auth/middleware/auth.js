@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import process from "node:process";
 import { getVvaultServiceTokens } from "../../lib/vvaultBridgeConfig.js";
+import { resolveRuntimeHandshakeConfig } from "../../lib/runtimeHandshakeConfig.js";
 import {
   buildSharedAuthGateFailureLog,
   logVvaultIdentityDiagnostics,
@@ -23,7 +24,7 @@ function getSharedAuthCookieName() {
 }
 
 function getSharedAuthApiBaseUrl() {
-  return normalizeOrigin(process.env.AUTH_API_BASE_URL || "");
+  return normalizeOrigin(resolveRuntimeHandshakeConfig(process.env).authApiBaseUrl || "");
 }
 
 function getRequestPath(req) {

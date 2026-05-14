@@ -1,4 +1,5 @@
 import { getVvaultTargets } from "./vvaultBridgeConfig.js";
+import { resolveRuntimeHandshakeConfig } from "./runtimeHandshakeConfig.js";
 import { resolveVvaultDirectAuth } from "./vvaultDirectAuth.js";
 import {
   buildVvaultSessionStateFromAuthContext,
@@ -345,6 +346,8 @@ export async function resolveVvaultBridgeIdentity(req, options = {}) {
         cookieName: process.env.AUTH_COOKIE_NAME || "auth_sid",
         email: String(req?.user?.email || "").trim(),
         displayName: buildDisplayName(req),
+        allowLegacyFallback:
+          resolveRuntimeHandshakeConfig(process.env).allowLegacyVvaultExchange,
         fetchImpl: (url, init = {}) =>
           timedFetch(
             fetchImpl,

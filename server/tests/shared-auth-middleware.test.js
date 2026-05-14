@@ -255,6 +255,9 @@ describe("shared auth middleware", () => {
   it("surfaces bridge misconfiguration for shared-only routes even when Chatty sid is valid", async () => {
     process.env.COOKIE_NAME = "sid";
     process.env.JWT_SECRET = "test-chatty-secret";
+    process.env.NODE_ENV = "production";
+    process.env.FRONTEND_URL = "https://chatty.thewreck.org";
+    process.env.PUBLIC_CALLBACK_BASE = "https://chatty.thewreck.org";
     delete process.env.AUTH_API_BASE_URL;
 
     const token = jwt.sign(

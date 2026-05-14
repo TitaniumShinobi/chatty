@@ -155,6 +155,7 @@ import {
 import { resolveSupabaseUser } from "../lib/resolveSupabaseUser.js";
 import { assertNotLockedSync } from "../lib/runtimeLock.js";
 import { resolveVvaultDirectAuth } from "../lib/vvaultDirectAuth.js";
+import { resolveRuntimeHandshakeConfig } from "../lib/runtimeHandshakeConfig.js";
 import { resolveVvaultRequestUser } from "../lib/vvaultRequestUser.js";
 import { buildConversationIndexLookupCandidates } from "../lib/vvaultIndexLookupCandidates.js";
 import { resolveLinkedVvaultUserId } from "../lib/vvaultUserRegistryLookup.js";
@@ -8060,6 +8061,8 @@ router.get("/auth/token", requireSharedAuth, async (req, res) => {
         String(req.user?.name || "").trim() ||
         String(req.user?.email || "").trim().split("@")[0] ||
         "User",
+      allowLegacyFallback:
+        resolveRuntimeHandshakeConfig(process.env).allowLegacyVvaultExchange,
       fetchImpl: fetch,
       isHostAsleepResponse: isReplitAsleepResponse,
       replitProxyErrorHeader: REPLIT_PROXY_ERROR_HEADER,
