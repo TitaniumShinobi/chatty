@@ -2611,6 +2611,8 @@ const DEFAULT_OLLAMA_MODEL =
   LIN_MODEL_DEFAULTS.conversation.replace(/^ollama:/, '');
 const PREFERRED_OLLAMA_MODEL = process.env.OLLAMA_MODEL || DEFAULT_OLLAMA_MODEL;
 const PREFER_LOCAL_MODELS = String(process.env.PREFER_LOCAL_MODELS || '').toLowerCase() === 'true';
+const DEFAULT_OLLAMA_NUM_CTX = Number.parseInt(process.env.OLLAMA_NUM_CTX || '', 10) || 2048;
+const DEFAULT_OLLAMA_NUM_PREDICT = Number.parseInt(process.env.OLLAMA_NUM_PREDICT || '', 10) || 192;
 const NOVA_FAST_OPENROUTER_MODEL = process.env.NOVA_FAST_OPENROUTER_MODEL || process.env.OPENROUTER_FAST_MODEL || 'meta-llama/llama-3.2-3b-instruct:free';
 const OLLAMA_CONFIGURED =
   Boolean(process.env.OLLAMA_HOST) ||
@@ -2676,6 +2678,24 @@ function getOllamaHost() {
   return String(process.env.OLLAMA_HOST || 'http://127.0.0.1:11434')
     .replace(/^http:\/\/localhost(?=[:/]|$)/, 'http://127.0.0.1')
     .replace(/^https:\/\/localhost(?=[:/]|$)/, 'https://127.0.0.1');
+}
+
+function buildOllamaChatOptions(generationParams = {}) {
+  const requestedMaxTokens = Number(generationParams.max_tokens || 0);
+  const numPredict = requestedMaxTokens > 0
+    ? Math.min(requestedMaxTokens, DEFAULT_OLLAMA_NUM_PREDICT)
+    : DEFAULT_OLLAMA_NUM_PREDICT;
+  const options = {
+    num_ctx: DEFAULT_OLLAMA_NUM_CTX,
+    num_predict: numPredict,
+  };
+  if (Number.isFinite(generationParams.temperature)) {
+    options.temperature = generationParams.temperature;
+  }
+  if (Number.isFinite(generationParams.top_p)) {
+    options.top_p = generationParams.top_p;
+  }
+  return options;
 }
 
 async function buildProviderAvailability() {
@@ -11208,16 +11228,17 @@ Output ONLY the rewritten response, nothing else.`
           const ollamaHost = getOllamaHost();
           const ollamaModel = getOllamaExecutionModel();
           console.log(`🟢 [VVAULT Proxy] Nova local-first: trying Ollama (${ollamaModel}) for nova-001`);
-          try {
-            const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                model: ollamaModel,
-                messages: hotfixMessages,
-                stream: false
-              })
-            });
+	          try {
+	            const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
+	              method: 'POST',
+	              headers: { 'Content-Type': 'application/json' },
+	              body: JSON.stringify({
+	                model: ollamaModel,
+	                messages: hotfixMessages,
+	                stream: false,
+	                options: buildOllamaChatOptions(generationParams),
+	              })
+	            });
             if (ollamaResponse.ok) {
               const ollamaData = await ollamaResponse.json();
               aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
@@ -11308,16 +11329,17 @@ Output ONLY the rewritten response, nothing else.`
           const ollamaHost = getOllamaHost();
           const ollamaModel = getOllamaExecutionModel();
           console.log(`🟢 [VVAULT Proxy] Nova fallback: trying Ollama (${ollamaModel}) for nova-001`);
-          try {
-            const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                model: ollamaModel,
-                messages: hotfixMessages,
-                stream: false
-              })
-            });
+	          try {
+	            const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
+	              method: 'POST',
+	              headers: { 'Content-Type': 'application/json' },
+	              body: JSON.stringify({
+	                model: ollamaModel,
+	                messages: hotfixMessages,
+	                stream: false,
+	                options: buildOllamaChatOptions(generationParams),
+	              })
+	            });
             if (ollamaResponse.ok) {
               const ollamaData = await ollamaResponse.json();
               aiResponse = ollamaData.message?.content || "I'm sorry, I couldn't generate a response.";
@@ -11444,15 +11466,16 @@ Output ONLY the rewritten response, nothing else.`
         // Ollama requires different handling - use fetch directly
         const ollamaHost = getOllamaHost();
         console.log(`🟢 [VVAULT Proxy] Calling Ollama (${effectiveModel}) for ${constructId}`);
-        const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: effectiveModel,
-            messages: buildMessages(message),
-            stream: false
-          })
-        });
+	        const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
+	          method: 'POST',
+	          headers: { 'Content-Type': 'application/json' },
+	          body: JSON.stringify({
+	            model: effectiveModel,
+	            messages: buildMessages(message),
+	            stream: false,
+	            options: buildOllamaChatOptions(generationParams),
+	          })
+	        });
 
         if (!ollamaResponse.ok) {
           throw new Error(`Ollama error: ${ollamaResponse.status}`);
@@ -11552,15 +11575,16 @@ Output ONLY the rewritten response, nothing else.`
           const ollamaMessages = buildMessages(message);
           try {
             console.log(`🟢 [VVAULT Proxy] Local-first: trying Ollama (${ollamaModel}) for ${constructId}`);
-            const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                model: ollamaModel,
-                messages: ollamaMessages,
-                stream: false
-              })
-            });
+	            const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
+	              method: 'POST',
+	              headers: { 'Content-Type': 'application/json' },
+	              body: JSON.stringify({
+	                model: ollamaModel,
+	                messages: ollamaMessages,
+	                stream: false,
+	                options: buildOllamaChatOptions(generationParams),
+	              })
+	            });
             if (!ollamaResponse.ok) {
               throw new Error(`Ollama ${ollamaResponse.status}`);
             }
@@ -11606,15 +11630,16 @@ Output ONLY the rewritten response, nothing else.`
           const ollamaMessages = buildMessages(message);
           try {
             console.log(`🟢 [VVAULT Proxy] All cloud providers failed, trying Ollama (${ollamaModel}) for ${constructId}`);
-            const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                model: ollamaModel,
-                messages: ollamaMessages,
-                stream: false
-              })
-            });
+	            const ollamaResponse = await fetch(`${ollamaHost}/api/chat`, {
+	              method: 'POST',
+	              headers: { 'Content-Type': 'application/json' },
+	              body: JSON.stringify({
+	                model: ollamaModel,
+	                messages: ollamaMessages,
+	                stream: false,
+	                options: buildOllamaChatOptions(generationParams),
+	              })
+	            });
             if (!ollamaResponse.ok) {
               throw new Error(`Ollama ${ollamaResponse.status}`);
             }
@@ -12608,11 +12633,27 @@ Output ONLY the rewritten response, nothing else.`
         continuityIntegrityRepair,
         effectiveTurnSessionId,
       });
-      const transcriptTruthReceipt = buildTranscriptTruthReceipt(routeTurnEnvelope, effectiveTurnSessionId);
-      const capsuleRuntimeReceipt = buildCapsuleRuntimeReceipt(enrichedContext, routeTurnEnvelope, contextBudget.profile);
-      const runtimeReceipt = buildInferenceRuntimeReceipt({
-        dataOwnerUserId,
-        authReceipt,
+	      const transcriptTruthReceipt = buildTranscriptTruthReceipt(routeTurnEnvelope, effectiveTurnSessionId);
+	      const capsuleRuntimeReceipt = buildCapsuleRuntimeReceipt(enrichedContext, routeTurnEnvelope, contextBudget.profile);
+	      const nextRuntimeTurnState = computeNextRuntimeTurnState({
+	        previousState: routeTurnEnvelope.runtimeTurnState,
+	        userMessage: isSyntheticContinueTurn ? '' : message,
+	        assistantMessage: aiResponse,
+	        continuityClass: routeTurnEnvelope.continuityClass,
+	        sessionId: effectiveTurnSessionId,
+	        constructId,
+	        constructRevision: buildConstructRevision({
+	          constructId,
+	          revisionHint:
+	            routeTurnEnvelope.runtimeTurnState?.constructRevision ||
+	            routeTurnEnvelope.continuityResume?.request?.resumeConstructRevision,
+	        }),
+	        hydrationTruth: continuityReceipt.hydration || 'full',
+	      });
+	      routeTurnEnvelope.runtimeTurnState = nextRuntimeTurnState;
+	      const runtimeReceipt = buildInferenceRuntimeReceipt({
+	        dataOwnerUserId,
+	        authReceipt,
         constructId,
         canonicalConstructId,
         rawConstructId,
@@ -12662,11 +12703,12 @@ Output ONLY the rewritten response, nothing else.`
         receiptConstructName,
         activeSimLock,
         simRefreshContract,
-        searchInspectability,
-        nextRuntimeTurnState,
-      });
-      console.log(`✅ [VVAULT Proxy] ${effectiveProvider} successful for ${constructId}, response length: ${aiResponse.length}`);
-      console.log('[RUNTIME_RECEIPT]', runtimeReceipt);
+	        searchInspectability,
+	        nextRuntimeTurnState,
+	      });
+	      runtimeReceipt.runtime_turn_state = nextRuntimeTurnState;
+	      console.log(`✅ [VVAULT Proxy] ${effectiveProvider} successful for ${constructId}, response length: ${aiResponse.length}`);
+	      console.log('[RUNTIME_RECEIPT]', runtimeReceipt);
       console.log('[TURN_CONTEXT]', {
         constructId,
         memory_intent: !!enrichedContext.memory_query_detected,
@@ -12853,25 +12895,8 @@ Output ONLY the rewritten response, nothing else.`
         });
       }
 
-      const nextRuntimeTurnState = computeNextRuntimeTurnState({
-        previousState: routeTurnEnvelope.runtimeTurnState,
-        userMessage: isSyntheticContinueTurn ? '' : message,
-        assistantMessage: aiResponse,
-        continuityClass: routeTurnEnvelope.continuityClass,
-        sessionId: effectiveTurnSessionId,
-        constructId,
-        constructRevision: buildConstructRevision({
-          constructId,
-          revisionHint:
-            routeTurnEnvelope.runtimeTurnState?.constructRevision ||
-            routeTurnEnvelope.continuityResume?.request?.resumeConstructRevision,
-        }),
-        hydrationTruth: continuityReceipt.hydration || 'full',
-      });
-      routeTurnEnvelope.runtimeTurnState = nextRuntimeTurnState;
-      runtimeReceipt.runtime_turn_state = nextRuntimeTurnState;
-      console.log('[RUNTIME_TURN_STATE]', {
-        stage: 'computed',
+	      console.log('[RUNTIME_TURN_STATE]', {
+	        stage: 'computed',
         sessionId: effectiveTurnSessionId,
         constructId,
         continuityClass: routeTurnEnvelope.continuityClass,

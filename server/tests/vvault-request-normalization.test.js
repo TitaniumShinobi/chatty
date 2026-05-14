@@ -149,3 +149,11 @@ test('VVAULT route-local auth gate preserves validated service-token requests', 
     /router\.get\("\/conversations\/:sessionId\/canonical-transcript",\s*requirePreferredAuthOrServiceToken/,
   );
 });
+
+test('VVAULT Ollama calls include bounded runtime options', () => {
+  const source = fs.readFileSync(new URL('../routes/vvault.js', import.meta.url), 'utf8');
+  assert.match(source, /const DEFAULT_OLLAMA_NUM_CTX = Number\.parseInt\(process\.env\.OLLAMA_NUM_CTX/);
+  assert.match(source, /const DEFAULT_OLLAMA_NUM_PREDICT = Number\.parseInt\(process\.env\.OLLAMA_NUM_PREDICT/);
+  assert.match(source, /function buildOllamaChatOptions\(generationParams = \{\}\)/);
+  assert.match(source, /options: buildOllamaChatOptions\(generationParams\)/);
+});
