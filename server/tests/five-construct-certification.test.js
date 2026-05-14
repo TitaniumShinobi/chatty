@@ -231,6 +231,7 @@ describe('five-construct certification harness', () => {
     const client = fs.readFileSync(new URL('../../vvaultConnector/vvaultApiClient.js', import.meta.url), 'utf8');
 
     assert.match(client, /VVAULT_TRANSCRIPT_READ_TIMEOUT_MS/);
+    assert.match(client, /30000/);
     assert.match(client, /transcriptReadTimeoutMs\(\)/);
     assert.match(client, /transcriptReadTimeoutMs\(\)\n\s+\);/);
   });

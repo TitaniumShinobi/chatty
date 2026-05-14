@@ -127,8 +127,8 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 3000) {
 }
 
 function transcriptReadTimeoutMs() {
-  const configured = Number(process.env.VVAULT_TRANSCRIPT_READ_TIMEOUT_MS || 10000);
-  return Number.isFinite(configured) && configured > 0 ? configured : 10000;
+  const configured = Number(process.env.VVAULT_TRANSCRIPT_READ_TIMEOUT_MS || 30000);
+  return Number.isFinite(configured) && configured > 0 ? configured : 30000;
 }
 
 /**
