@@ -1,6 +1,7 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { Database, FileText, Users, Clock, CheckCircle, AlertCircle, RefreshCw, Link2, ExternalLink, Unlink } from 'lucide-react'
+import { resolveClientDoorContract } from '../lib/chattyVvaultDoor'
 
 const TranscriptManager = lazy(() => import('../components/TranscriptManager').then(m => ({ default: m.TranscriptManager })))
 const VaultFileManager = lazy(() => import('../components/VaultFileManager').then(m => ({ default: m.VaultFileManager })))
@@ -43,56 +44,8 @@ export default function VVAULTPage() {
   const [isCodexSyncing, setIsCodexSyncing] = useState(false)
   const [codexSyncStatus, setCodexSyncStatus] = useState<string | null>(null)
 
-  const getDevVvaultOrigin = () => {
-    // Avoid hardcoding "localhost" so production bundles don't contain loopback URLs.
-    const loc = (globalThis as any).location as Location | undefined
-    if (!loc?.origin) return ''
-    const u = new URL(loc.origin)
-    u.protocol = 'http:'
-    u.port = '8000'
-    u.pathname = ''
-    u.search = ''
-    u.hash = ''
-    return u.origin
-  }
-
-  const normalizeOrigin = (value?: string) => {
-    if (!value) return ''
-    try {
-      return new URL(value).origin
-    } catch {
-      return ''
-    }
-  }
-
-  const isLoopbackOrigin = (value?: string) => {
-    const origin = normalizeOrigin(value)
-    if (!origin) return false
-    const { hostname } = new URL(origin)
-    return hostname === 'localhost' || hostname === '127.0.0.1'
-  }
-
   const resolveVvaultBrowserOrigin = () => {
-    if (import.meta.env.DEV) {
-      return (
-        normalizeOrigin((import.meta.env.VITE_VVAULT_URL as string | undefined)) ||
-        normalizeOrigin((import.meta.env.VITE_VVAULT_API_BASE_URL as string | undefined)) ||
-        getDevVvaultOrigin()
-      )
-    }
-
-    const candidates = [
-      import.meta.env.VITE_VVAULT_PUBLIC_ORIGIN as string | undefined,
-      import.meta.env.VITE_VVAULT_URL as string | undefined,
-      import.meta.env.VITE_VVAULT_API_BASE_URL as string | undefined,
-    ]
-
-    for (const candidate of candidates) {
-      const origin = normalizeOrigin(candidate)
-      if (origin && !isLoopbackOrigin(origin)) return origin
-    }
-
-    return ''
+    return resolveClientDoorContract().vvaultOrigin
   }
 
   // Fetch VVAULT account linking status

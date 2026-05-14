@@ -1,8 +1,7 @@
 import {
-  resolveConfiguredCallbackBase,
-  resolveConfiguredCookieDomain,
-  resolveConfiguredPublicOrigin,
-} from "./publicOriginConfig.js";
+  isLocalOrigin,
+  resolveDoorContract,
+} from "./chattyVvaultDoorConfig.js";
 
 function trimString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -25,167 +24,100 @@ function normalizeOrigin(value) {
   return parsed ? parsed.origin : null;
 }
 
-function isLoopbackHostname(hostname) {
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+function normalizeOrigins(values) {
+  const deduped = [];
+  const seen = new Set();
+  for (const value of values) {
+    const normalized = normalizeOrigin(value);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    deduped.push(normalized);
+  }
+  return deduped;
 }
 
-export function isLocalOrigin(value) {
-  const parsed = parseHttpUrl(value);
-  return parsed ? isLoopbackHostname(parsed.hostname) : false;
-}
+function buildTargetMismatchProblems(door, explicitOrigins = []) {
+  const problems = [];
+  const normalized = explicitOrigins.map((origin) => normalizeOrigin(origin)).filter(Boolean);
+  if (!normalized.length) return problems;
 
-function parseTargets(rawTargets) {
-  const targets = [];
-  for (const rawPart of String(rawTargets || "").split(",")) {
-    const part = rawPart.trim();
-    if (!part) continue;
-    const [nameRaw, originRaw, tokenRaw] = part.split("|");
-    const name = trimString(nameRaw);
-    const origin = normalizeOrigin(originRaw);
-    const token = trimString(tokenRaw) || null;
-    if (!name || !origin) continue;
-    targets.push({ name, origin, token });
+  if (door.selectedDoor === "public" && normalized.some((origin) => isLocalOrigin(origin))) {
+    problems.push("door_public_with_localhost_target");
   }
-  return targets;
-}
-
-function buildDefaultDevOrigins() {
-  return [
-    "http://localhost:5173",
-    "http://localhost:5000",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:5000",
-  ];
-}
-
-function dedupeOrigins(origins) {
-  const values = new Set();
-  for (const origin of origins) {
-    const normalized = normalizeOrigin(origin);
-    if (normalized) values.add(normalized);
-  }
-  return Array.from(values);
-}
-
-function buildVvaultTargets(env, isProduction) {
-  const explicitTargets = parseTargets(env.VVAULT_TARGETS);
-  if (explicitTargets.length > 0) {
-    if (isProduction && explicitTargets.some((target) => isLocalOrigin(target.origin))) {
-      return {
-        targets: [],
-        problems: ["VVAULT_TARGETS_localhost"],
-      };
-    }
-    return { targets: explicitTargets, problems: [] };
+  if (door.selectedDoor === "private" && normalized.some((origin) => !isLocalOrigin(origin))) {
+    problems.push("door_private_with_production_target");
   }
 
-  const explicitOrigin = normalizeOrigin(
-    env.VVAULT_API_BASE_URL || env.VVAULT_URL || env.VVAULT_BASE_URL,
-  );
-
-  if (explicitOrigin) {
-    if (isProduction && isLocalOrigin(explicitOrigin)) {
-      return {
-        targets: [],
-        problems: ["VVAULT_API_BASE_URL_localhost"],
-      };
-    }
-    return {
-      targets: [
-        {
-          name: isProduction ? "production" : "local",
-          origin: explicitOrigin,
-          token: trimString(env.VVAULT_SERVICE_TOKEN) || null,
-        },
-      ],
-      problems: [],
-    };
-  }
-
-  if (isProduction) {
-    return {
-      targets: [],
-      problems: ["VVAULT_API_BASE_URL"],
-    };
-  }
-
-  return {
-    targets: [
-      {
-        name: "local",
-        origin: "http://127.0.0.1:8000",
-        token: trimString(env.VVAULT_SERVICE_TOKEN) || null,
-      },
-    ],
-    problems: [],
-  };
+  return problems;
 }
 
 export function resolveRuntimeHandshakeConfig(env = process.env) {
-  const isProduction = env.NODE_ENV === "production";
-  const publicOrigin =
-    resolveConfiguredPublicOrigin(env) ||
-    (isProduction ? null : normalizeOrigin(env.FRONTEND_URL || env.PUBLIC_APP_URL) || "http://localhost:5173");
-  const callbackBase =
-    resolveConfiguredCallbackBase(env) ||
-    (isProduction ? null : normalizeOrigin(env.PUBLIC_CALLBACK_BASE) || "http://localhost:5050");
-  const authApiBaseUrl = normalizeOrigin(env.AUTH_API_BASE_URL) || (isProduction ? null : `http://127.0.0.1:${trimString(env.AUTH_PORT) || "1111"}`);
-  const authPublicOrigin =
-    normalizeOrigin(env.AUTH_PUBLIC_ORIGIN) ||
-    (isProduction ? normalizeOrigin(env.AUTH_API_BASE_URL) : `http://localhost:${trimString(env.AUTH_PORT) || "1111"}`);
-  const authCookieName = trimString(env.AUTH_COOKIE_NAME) || "auth_sid";
-  const authCookieDomain = trimString(env.AUTH_COOKIE_DOMAIN) || null;
-  const cookieDomain = resolveConfiguredCookieDomain(env);
-  const enableSharedAuthBrowserLogin =
-    trimString(env.ENABLE_SHARED_AUTH_BROWSER_LOGIN).toLowerCase() === "true";
-  const allowLegacyVvaultExchange = trimString(env.VVAULT_ENABLE_LEGACY_CHATTY_SESSION_EXCHANGE).toLowerCase() === "true";
-  const vvaultResult = buildVvaultTargets(env, isProduction);
-  const vvaultTargets = vvaultResult.targets;
-  const vvaultOrigin = vvaultTargets[0]?.origin || null;
-  const vvaultApiBaseUrl = vvaultOrigin;
-  const allowedBrowserOrigins = isProduction
-    ? dedupeOrigins([publicOrigin, trimString(env.POST_LOGIN_REDIRECT)])
-    : dedupeOrigins([publicOrigin, ...buildDefaultDevOrigins()]);
+  const door = resolveDoorContract(env);
+  const explicitOrigins = [
+    env.FRONTEND_URL,
+    env.PUBLIC_APP_URL,
+    env.PUBLIC_CALLBACK_BASE,
+    env.VVAULT_API_BASE_URL,
+    env.VVAULT_URL,
+    env.VVAULT_BASE_URL,
+    env.AUTH_API_BASE_URL,
+    env.AUTH_PUBLIC_ORIGIN,
+  ];
 
-  const problems = [...vvaultResult.problems];
-  if (isProduction) {
-    if (!publicOrigin) problems.push("PUBLIC_ORIGIN");
-    else if (isLocalOrigin(publicOrigin)) problems.push("PUBLIC_ORIGIN_localhost");
+  const vvaultServiceToken = trimString(env.VVAULT_SERVICE_TOKEN) || null;
+  const problems = [
+    ...door.problems,
+    ...buildTargetMismatchProblems(door, explicitOrigins),
+  ];
 
-    if (!callbackBase) problems.push("PUBLIC_CALLBACK_BASE");
-    else if (isLocalOrigin(callbackBase)) problems.push("PUBLIC_CALLBACK_BASE_localhost");
+  const vvaultTargets = door.vvaultOrigin
+    ? [
+        {
+          name: door.selectedDoor,
+          origin: door.vvaultOrigin,
+          token: vvaultServiceToken,
+          sessionBridgePath: door.sessionBridgePath,
+        },
+      ]
+    : [];
 
-    if (!authApiBaseUrl) problems.push("AUTH_API_BASE_URL");
-    else if (isLocalOrigin(authApiBaseUrl)) problems.push("AUTH_API_BASE_URL_localhost");
+  const allowedBrowserOrigins = normalizeOrigins(door.allowedBrowserOrigins);
 
-    if (enableSharedAuthBrowserLogin) {
-      if (!authPublicOrigin) problems.push("AUTH_PUBLIC_ORIGIN");
-      else if (isLocalOrigin(authPublicOrigin)) problems.push("AUTH_PUBLIC_ORIGIN_localhost");
-    }
-
-    if (allowedBrowserOrigins.some((origin) => isLocalOrigin(origin))) {
-      problems.push("ALLOWED_BROWSER_ORIGINS_localhost");
-    }
+  if (door.selectedDoor === "public" && allowedBrowserOrigins.some((origin) => isLocalOrigin(origin))) {
+    problems.push("door_public_with_localhost_target");
+  }
+  if (door.selectedDoor === "private" && allowedBrowserOrigins.some((origin) => !isLocalOrigin(origin))) {
+    problems.push("door_private_with_production_target");
   }
 
   return {
-    environment: isProduction ? "production" : "development",
-    isProduction,
-    publicOrigin,
-    callbackBase,
-    cookieDomain,
-    authApiBaseUrl,
-    authPublicOrigin,
-    authCookieName,
-    authCookieDomain,
-    enableSharedAuthBrowserLogin,
+    environment: door.selectedDoor === "public" ? "production" : "development",
+    isProduction: door.selectedDoor === "public",
+    selectedDoor: door.selectedDoor,
+    doorContractVersion: door.version,
+    doorContractPath: door.path,
+    publicOrigin: door.chattyPublicOrigin,
+    chattyApiOrigin: door.chattyApiOrigin,
+    callbackBase: door.chattyApiOrigin,
+    cookieDomain:
+      door.selectedDoor === "public" ? trimString(env.AUTH_COOKIE_DOMAIN) || ".thewreck.org" : null,
+    authApiBaseUrl: door.authApiOrigin,
+    authPublicOrigin: door.authPublicOrigin,
+    authCookieName: door.authCookieName,
+    authCookieDomain:
+      door.selectedDoor === "public" ? trimString(env.AUTH_COOKIE_DOMAIN) || ".thewreck.org" : null,
+    enableSharedAuthBrowserLogin:
+      door.selectedDoor === "public"
+        ? trimString(env.ENABLE_SHARED_AUTH_BROWSER_LOGIN).toLowerCase() !== "false"
+        : trimString(env.ENABLE_SHARED_AUTH_BROWSER_LOGIN).toLowerCase() === "true",
     vvaultTargets,
-    vvaultOrigin,
-    vvaultApiBaseUrl,
-    allowLegacyVvaultExchange,
+    vvaultOrigin: door.vvaultOrigin,
+    vvaultApiBaseUrl: door.vvaultOrigin,
+    sessionBridgePath: door.sessionBridgePath,
+    allowLegacyVvaultExchange: door.allowLegacyExchange,
     allowedBrowserOrigins,
-    problems,
-    ok: problems.length === 0,
+    problems: Array.from(new Set(problems)),
+    ok: Array.from(new Set(problems)).length === 0,
   };
 }
 
@@ -193,17 +125,23 @@ export function assertRuntimeHandshakeSafety(env = process.env) {
   const config = resolveRuntimeHandshakeConfig(env);
   return {
     ok: config.ok,
+    selectedDoor: config.selectedDoor,
+    doorContractVersion: config.doorContractVersion,
     problems: [...config.problems],
     environment: config.environment,
     publicOrigin: config.publicOrigin,
+    chattyApiOrigin: config.chattyApiOrigin,
     callbackBase: config.callbackBase,
     authApiBaseUrl: config.authApiBaseUrl,
     authPublicOrigin: config.authPublicOrigin,
     authCookieName: config.authCookieName,
     authCookieDomain: config.authCookieDomain,
     enableSharedAuthBrowserLogin: config.enableSharedAuthBrowserLogin,
-    vvaultTargets: config.vvaultTargets.map(({ name, origin }) => ({ name, origin })),
+    vvaultTargets: config.vvaultTargets.map(
+      ({ name, origin, sessionBridgePath }) => ({ name, origin, sessionBridgePath }),
+    ),
     allowedBrowserOrigins: [...config.allowedBrowserOrigins],
     allowLegacyVvaultExchange: config.allowLegacyVvaultExchange,
+    sessionBridgePath: config.sessionBridgePath,
   };
 }
