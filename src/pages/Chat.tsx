@@ -842,7 +842,17 @@ export default function Chat() {
   // Only attempt fallback transcript loading if threads have loaded (threads.length > 0)
   // This prevents race condition where thread appears undefined during initial data fetch
   useEffect(() => {
-    if (thread || !threadId || !isCanonicalThread || threads.length === 0) return;
+    const threadHasMessages = Boolean(thread && thread.messages.length > 0);
+    const waitingForEmptyThreadReload = Boolean(
+      thread && thread.messages.length === 0 && (!reloadAttempted || isReloading),
+    );
+
+    if (
+      !threadId ||
+      !isCanonicalThread ||
+      threadHasMessages ||
+      waitingForEmptyThreadReload
+    ) return;
 
     let cancelled = false;
     const constructName = isZenSessionThread ? "Zen" : isLinSessionThread ? "Lin" : gptConstructName || "GPT";
@@ -889,7 +899,16 @@ export default function Chat() {
     return () => {
       cancelled = true;
     };
-  }, [thread, threadId, isCanonicalThread, isZenSessionThread, isLinSessionThread, gptConstructName, threads.length]);
+  }, [
+    thread,
+    threadId,
+    isCanonicalThread,
+    isZenSessionThread,
+    isLinSessionThread,
+    gptConstructName,
+    reloadAttempted,
+    isReloading,
+  ]);
 
   // Hydration check: If thread has no messages, attempt to reload
   useEffect(() => {
@@ -941,11 +960,71 @@ export default function Chat() {
 
   // Get the construct name for display (system constructs or GPTs)
   const canonicalConstructName = isZenSessionThread ? "Zen" : isLinSessionThread ? "Lin" : gptConstructName;
+  const shouldRenderCanonicalTranscriptFallback = Boolean(
+    isCanonicalThread &&
+      (!thread || (thread.messages.length === 0 && reloadAttempted && !isReloading)),
+  );
 
-  if (!thread) {
+  const assistantCodeStyles = `
+    .assistant-code-scope,
+    .assistant-code-scope * {
+      border: none !important;
+      outline: none !important;
+      box-shadow: none !important;
+      background: transparent;
+    }
+    .assistant-code-scope pre {
+      display: block;
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      overflow-x: auto;
+      overflow-y: hidden;
+      white-space: pre !important;
+      word-break: normal !important;
+      overflow-wrap: normal !important;
+      word-wrap: normal !important;
+      background: #2d2d2d;
+      color: #fffff0;
+      border-radius: 12px;
+      padding: 12px;
+      margin: 12px 0;
+      font-size: 15px;
+      line-height: 1.45;
+    }
+    .assistant-code-scope code {
+      white-space: pre !important;
+      word-break: normal !important;
+      overflow-wrap: normal !important;
+      word-wrap: normal !important;
+      background: transparent;
+    }
+    .assistant-code-scope pre::-webkit-scrollbar {
+      height: 10px;
+    }
+    .assistant-code-scope pre::-webkit-scrollbar-track {
+      background: #2d2d2d;
+      border-radius: 12px;
+    }
+    .assistant-code-scope pre::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.25);
+      border-radius: 12px;
+    }
+    .assistant-code-scope pre::-webkit-scrollbar-thumb:hover {
+      background: rgba(255,255,255,0.35);
+    }
+  `;
+  const formatCanonicalFallbackTimestamp = (ts: number): string =>
+    new Date(ts).toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+
+  if (!thread || shouldRenderCanonicalTranscriptFallback) {
     // If threads haven't loaded yet, show a loading state
     // This prevents race condition where we try to show zenMarkdown before thread data arrives
-    if (threads.length === 0) {
+    if (!shouldRenderCanonicalTranscriptFallback && threads.length === 0) {
       return (
         <div
           className="flex flex-col h-full"
@@ -1309,7 +1388,7 @@ export default function Chat() {
                           </div>
                           <div className="mt-1 flex items-center gap-2">
                             <span className="opacity-0 group-hover:opacity-100 transition-opacity text-xs" style={{ color: "#ADA587" }}>
-                              {formatMessageTimestamp(m.ts)}
+                              {formatCanonicalFallbackTimestamp(m.ts)}
                             </span>
                           </div>
                         </div>
@@ -1332,7 +1411,7 @@ export default function Chat() {
                         </div>
                         <div className="mt-1 flex items-center gap-2">
                           <span className="opacity-0 group-hover:opacity-100 transition-opacity text-xs" style={{ color: "var(--chatty-text)", opacity: 0.5 }}>
-                            {formatMessageTimestamp(m.ts)}
+                            {formatCanonicalFallbackTimestamp(m.ts)}
                           </span>
                         </div>
                       </div>
@@ -1455,56 +1534,6 @@ export default function Chat() {
   }
 
   const isUser = (role: string) => role === "user";
-
-  const assistantCodeStyles = `
-    .assistant-code-scope,
-    .assistant-code-scope * {
-      border: none !important;
-      outline: none !important;
-      box-shadow: none !important;
-      background: transparent;
-    }
-    .assistant-code-scope pre {
-      display: block;
-      width: 100%;
-      min-width: 0;
-      max-width: 100%;
-      overflow-x: auto;
-      overflow-y: hidden;
-      white-space: pre !important;
-      word-break: normal !important;
-      overflow-wrap: normal !important;
-      word-wrap: normal !important;
-      background: #2d2d2d;
-      color: #fffff0;
-      border-radius: 12px;
-      padding: 12px;
-      margin: 12px 0;
-      font-size: 15px;
-      line-height: 1.45;
-    }
-    .assistant-code-scope code {
-      white-space: pre !important;
-      word-break: normal !important;
-      overflow-wrap: normal !important;
-      word-wrap: normal !important;
-      background: transparent;
-    }
-    .assistant-code-scope pre::-webkit-scrollbar {
-      height: 10px;
-    }
-    .assistant-code-scope pre::-webkit-scrollbar-track {
-      background: #2d2d2d;
-      border-radius: 12px;
-    }
-    .assistant-code-scope pre::-webkit-scrollbar-thumb {
-      background: rgba(255,255,255,0.25);
-      border-radius: 12px;
-    }
-    .assistant-code-scope pre::-webkit-scrollbar-thumb:hover {
-      background: rgba(255,255,255,0.35);
-    }
-  `;
 
   // Action handlers for message options menu
   const handleCopyMessage = async (text: string) => {

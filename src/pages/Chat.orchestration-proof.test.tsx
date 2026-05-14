@@ -93,7 +93,10 @@ class MockResizeObserver {
   disconnect() {}
 }
 
-function renderChatWithContext(overrides: Record<string, unknown> = {}) {
+function renderChatWithContext(
+  overrides: Record<string, unknown> = {},
+  initialEntry = "/app/chat/zen-001_chat_with_zen-001",
+) {
   const baseThread = {
     id: "zen-001_chat_with_zen-001",
     title: "Zen",
@@ -136,7 +139,7 @@ function renderChatWithContext(overrides: Record<string, unknown> = {}) {
   return {
     ...render(
       <MemoryRouter
-        initialEntries={["/app/chat/zen-001_chat_with_zen-001"]}
+        initialEntries={[initialEntry]}
         future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <Routes>
@@ -252,6 +255,48 @@ describe("Chat orchestration proof surface", () => {
       expect(reloadThreadMessages).toHaveBeenCalledWith(
         "zen-001_chat_with_zen-001",
       );
+    });
+  });
+
+  it("loads canonical Lin transcript when the thread list is empty", async () => {
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/vvault/chat/lin-001_chat_with_lin-001")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true, content: "**Lin:** route is awake" }),
+          text: async () => "",
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ enabled: false }),
+        text: async () => "",
+      });
+    });
+
+    renderChatWithContext(
+      {
+        threads: [],
+        activeThreadHydration: {
+          threadId: "lin-001_chat_with_lin-001",
+          status: "ready",
+          hydrationSource: "full",
+          hydrationComplete: true,
+        },
+      },
+      "/app/chat/lin-001_chat_with_lin-001",
+    );
+
+    expect(
+      screen.getByText(/loading lin transcript/i),
+    ).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByText("route is awake")).toBeInTheDocument();
     });
   });
 });
