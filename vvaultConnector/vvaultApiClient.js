@@ -131,6 +131,11 @@ function transcriptReadTimeoutMs() {
   return Number.isFinite(configured) && configured > 0 ? configured : 30000;
 }
 
+function transcriptAppendTimeoutMs() {
+  const configured = Number(process.env.VVAULT_TRANSCRIPT_APPEND_TIMEOUT_MS || 30000);
+  return Number.isFinite(configured) && configured > 0 ? configured : 30000;
+}
+
 /**
  * Get transcript for a specific construct
  * @param {string} constructId - e.g., "zen-001"
@@ -637,7 +642,8 @@ async function appendMessage({ constructId, role, content, name, timestamp, user
           projectName,
           rootPath
         })
-      }
+      },
+      transcriptAppendTimeoutMs()
     );
 
     if (!response.ok) {

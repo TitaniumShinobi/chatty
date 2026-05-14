@@ -236,6 +236,14 @@ describe('five-construct certification harness', () => {
     assert.match(client, /transcriptReadTimeoutMs\(\)\n\s+\);/);
   });
 
+  it('keeps VVAULT transcript appends on a bounded production-sized timeout', () => {
+    const client = fs.readFileSync(new URL('../../vvaultConnector/vvaultApiClient.js', import.meta.url), 'utf8');
+
+    assert.match(client, /VVAULT_TRANSCRIPT_APPEND_TIMEOUT_MS/);
+    assert.match(client, /transcriptAppendTimeoutMs\(\)/);
+    assert.match(client, /transcriptAppendTimeoutMs\(\)\n\s+\);/);
+  });
+
   it('deduplicates and bounds canonical identity loading for Supabase-backed constructs', () => {
     const loader = fs.readFileSync(new URL('../lib/identityLoader.js', import.meta.url), 'utf8');
 

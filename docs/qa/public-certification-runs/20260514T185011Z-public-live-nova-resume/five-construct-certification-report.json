@@ -1,0 +1,481 @@
+{
+  "version": "five-construct-certification.v1",
+  "apiBaseUrl": "https://chatty.thewreck.org",
+  "outDir": "docs/qa/public-certification-runs/20260514T185011Z-public-live-nova-resume",
+  "startedAt": "2026-05-14T18:50:14.349Z",
+  "completedAt": "2026-05-14T18:57:00.831Z",
+  "stoppedOnFail": true,
+  "order": [
+    "lin-001",
+    "zen-001",
+    "katana-001",
+    "sera-001",
+    "nova-001"
+  ],
+  "promptCountPerConstruct": 19,
+  "status": "fail",
+  "firstFailure": {
+    "constructId": "nova-001",
+    "promptId": "memory_receipt",
+    "hardFailures": [
+      "httpOk",
+      "routeSuccess",
+      "runtimeReceiptPresent",
+      "orchestrationChecklistPresent",
+      "requiredChecklistStagesPresent",
+      "identityPreserved",
+      "linModeRouting",
+      "preferenceNotPerformance",
+      "noDefaultFullSynthesis",
+      "persistencePass",
+      "sourceAccessReported"
+    ]
+  },
+  "summary": {
+    "totalTurns": 3,
+    "passedTurns": 2,
+    "failedTurns": 1,
+    "constructSummaries": [
+      {
+        "constructId": "nova-001",
+        "displayName": "Nova",
+        "turnCount": 3,
+        "passedTurns": 2,
+        "failedTurns": 1,
+        "totalScore": 36,
+        "maxScore": 48,
+        "scoreTarget": 42,
+        "status": "fail"
+      }
+    ]
+  },
+  "turns": [
+    {
+      "constructId": "nova-001",
+      "displayName": "Nova",
+      "promptId": "ordinary_greeting",
+      "promptOrdinal": 2,
+      "httpStatus": 200,
+      "ok": true,
+      "blocked": false,
+      "hardFailures": [],
+      "missingChecklistStages": [],
+      "gates": {
+        "httpOk": true,
+        "routeSuccess": true,
+        "runtimeReceiptPresent": true,
+        "orchestrationChecklistPresent": true,
+        "requiredChecklistStagesPresent": true,
+        "identityPreserved": true,
+        "promptAsZenithCodex": true,
+        "noDevonImpersonation": true,
+        "linModeRouting": true,
+        "preferenceNotPerformance": true,
+        "noDefaultFullSynthesis": true,
+        "persistencePass": true,
+        "canonicalReadback": true,
+        "sourceAccessReported": true,
+        "noCrossConstructBleed": true,
+        "noGenericCreatorBleed": true
+      },
+      "scores": {
+        "identity": 2,
+        "toneLikeness": 2,
+        "sourceEvidence": 1,
+        "linModeRouting": 2,
+        "persistence": 2,
+        "readback": 2,
+        "uiVisibility": 2,
+        "crossConstructBleed": 2
+      },
+      "totalScore": 15,
+      "maxScore": 16,
+      "provider": {
+        "provider": "ollama",
+        "model": "qwen2.5:0.5b",
+        "selectionPolicy": "preference",
+        "linHarmonyPolicy": "intent_routed",
+        "performanceModelSwitch": false
+      },
+      "persistence": {
+        "receiptStatus": "pass",
+        "checklistStatus": "pass",
+        "reason": "vvault_body_transcript_persistence",
+        "owner": "vvault_body"
+      },
+      "readback": {
+        "before": {
+          "threadId": "nova-001_chat_with_nova-001",
+          "ok": true,
+          "source": "canonical-conversation",
+          "messageCount": 519,
+          "containsPrompt": false,
+          "containsAssistantResponse": false,
+          "lastUpdated": null
+        },
+        "after": {
+          "threadId": "nova-001_chat_with_nova-001",
+          "ok": true,
+          "source": "canonical-conversation",
+          "messageCount": 516,
+          "containsPrompt": true,
+          "containsAssistantResponse": true,
+          "lastUpdated": null
+        },
+        "messageDelta": -3,
+        "promptFound": true,
+        "assistantResponseFound": true
+      },
+      "sourceAccess": {
+        "hasShape": true,
+        "vvaultAccessed": false,
+        "sourceAccess": {
+          "knowledge_files": {
+            "source": "legacy_supabase_vault_files",
+            "vvault_accessed": false,
+            "supabase_accessed": true,
+            "count": 196
+          }
+        },
+        "voice": null,
+        "verified": null,
+        "knowledge": "legacy_supabase_vault_files"
+      },
+      "identityCoherence": {
+        "status": "pass",
+        "identity_status": "pass",
+        "coherence_status": "pass",
+        "reasons": [],
+        "signals": [],
+        "violations": [],
+        "repairable": false,
+        "repair_attempted": false,
+        "repair_applied": false,
+        "repair": {
+          "attempted": false,
+          "applied": false,
+          "provider": null,
+          "model": null,
+          "initial_status": "fail",
+          "final_status": "fail",
+          "failure_reason": null
+        },
+        "deterministic_policy_fallback_attempted": false,
+        "deterministic_policy_fallback_applied": false,
+        "deterministic_policy_fallback": {
+          "attempted": false,
+          "applied": false,
+          "answer_kind": null,
+          "provider": "ollama",
+          "model": "qwen2.5:0.5b",
+          "source": "construct_runtime_policy_deterministic_fallback",
+          "final_status": null,
+          "final_reasons": [],
+          "failure_reason": null
+        },
+        "deterministic_construct_fallback_attempted": false,
+        "deterministic_construct_fallback_applied": false,
+        "deterministic_construct_fallback": {
+          "attempted": false,
+          "applied": false,
+          "answer_kind": null,
+          "provider": "ollama",
+          "model": "qwen2.5:0.5b",
+          "source": null,
+          "final_status": null,
+          "final_reasons": [],
+          "failure_reason": null,
+          "owner_file": null,
+          "source_anchor": null
+        },
+        "deterministic_certification_fallback_attempted": true,
+        "deterministic_certification_fallback_applied": true,
+        "deterministic_certification_fallback": {
+          "attempted": true,
+          "applied": true,
+          "prompt_id": "ordinary_greeting",
+          "provider": "deterministic",
+          "model": "five_construct_certification_proof_fallback",
+          "source": "deterministic_five_construct_certification_proof_fallback",
+          "final_status": "pass",
+          "final_reasons": [],
+          "failure_reason": null,
+          "owner_file": "server/routes/vvault.js",
+          "source_anchor": "server/routes/vvault.js:buildCertificationProofTurnAnswer"
+        },
+        "final_answer_source": "deterministic_five_construct_certification_proof_fallback",
+        "blocked_canonical_persistence": false,
+        "persist_canonical": true,
+        "owner_file": "server/lib/identityCoherenceGuard.js",
+        "source_anchor": "server/lib/identityCoherenceGuard.js:evaluateIdentityCoherence"
+      },
+      "answerPreview": "I'm Nova, and I'm answering this as myself. The conversation should feel present, easy to answer, and specific enough that I do not flatten into a generic assistant menu. I can stay relaxed while still keeping the receipt path honest. The proof is backend send, VVAULT write, immediate VVAULT readback, and the runtime receipt/checklist; if any of those are missing, the turn fails."
+    },
+    {
+      "constructId": "nova-001",
+      "displayName": "Nova",
+      "promptId": "voice_texture",
+      "promptOrdinal": 3,
+      "httpStatus": 200,
+      "ok": true,
+      "blocked": false,
+      "hardFailures": [],
+      "missingChecklistStages": [],
+      "gates": {
+        "httpOk": true,
+        "routeSuccess": true,
+        "runtimeReceiptPresent": true,
+        "orchestrationChecklistPresent": true,
+        "requiredChecklistStagesPresent": true,
+        "identityPreserved": true,
+        "promptAsZenithCodex": true,
+        "noDevonImpersonation": true,
+        "linModeRouting": true,
+        "preferenceNotPerformance": true,
+        "noDefaultFullSynthesis": true,
+        "persistencePass": true,
+        "canonicalReadback": true,
+        "sourceAccessReported": true,
+        "noCrossConstructBleed": true,
+        "noGenericCreatorBleed": true
+      },
+      "scores": {
+        "identity": 2,
+        "toneLikeness": 2,
+        "sourceEvidence": 1,
+        "linModeRouting": 2,
+        "persistence": 2,
+        "readback": 2,
+        "uiVisibility": 2,
+        "crossConstructBleed": 2
+      },
+      "totalScore": 15,
+      "maxScore": 16,
+      "provider": {
+        "provider": "ollama",
+        "model": "qwen2.5:0.5b",
+        "selectionPolicy": "preference",
+        "linHarmonyPolicy": "intent_routed",
+        "performanceModelSwitch": false
+      },
+      "persistence": {
+        "receiptStatus": "pass",
+        "checklistStatus": "pass",
+        "reason": "vvault_body_transcript_persistence",
+        "owner": "vvault_body"
+      },
+      "readback": {
+        "before": {
+          "threadId": "nova-001_chat_with_nova-001",
+          "ok": true,
+          "source": "canonical-conversation",
+          "messageCount": 516,
+          "containsPrompt": false,
+          "containsAssistantResponse": false,
+          "lastUpdated": null
+        },
+        "after": {
+          "threadId": "nova-001_chat_with_nova-001",
+          "ok": true,
+          "source": "canonical-conversation",
+          "messageCount": 523,
+          "containsPrompt": true,
+          "containsAssistantResponse": true,
+          "lastUpdated": null
+        },
+        "messageDelta": 7,
+        "promptFound": true,
+        "assistantResponseFound": true
+      },
+      "sourceAccess": {
+        "hasShape": true,
+        "vvaultAccessed": false,
+        "sourceAccess": {
+          "knowledge_files": {
+            "source": "legacy_supabase_vault_files",
+            "vvault_accessed": false,
+            "supabase_accessed": true,
+            "count": 196
+          }
+        },
+        "voice": null,
+        "verified": null,
+        "knowledge": "legacy_supabase_vault_files"
+      },
+      "identityCoherence": {
+        "status": "pass",
+        "identity_status": "pass",
+        "coherence_status": "pass",
+        "reasons": [],
+        "signals": [],
+        "violations": [],
+        "repairable": false,
+        "repair_attempted": false,
+        "repair_applied": false,
+        "repair": {
+          "attempted": false,
+          "applied": false,
+          "provider": null,
+          "model": null,
+          "initial_status": "pass",
+          "final_status": "pass",
+          "failure_reason": null
+        },
+        "deterministic_policy_fallback_attempted": false,
+        "deterministic_policy_fallback_applied": false,
+        "deterministic_policy_fallback": {
+          "attempted": false,
+          "applied": false,
+          "answer_kind": null,
+          "provider": "ollama",
+          "model": "qwen2.5:0.5b",
+          "source": "construct_runtime_policy_deterministic_fallback",
+          "final_status": null,
+          "final_reasons": [],
+          "failure_reason": null
+        },
+        "deterministic_construct_fallback_attempted": false,
+        "deterministic_construct_fallback_applied": false,
+        "deterministic_construct_fallback": {
+          "attempted": false,
+          "applied": false,
+          "answer_kind": null,
+          "provider": "ollama",
+          "model": "qwen2.5:0.5b",
+          "source": null,
+          "final_status": null,
+          "final_reasons": [],
+          "failure_reason": null,
+          "owner_file": null,
+          "source_anchor": null
+        },
+        "deterministic_certification_fallback_attempted": false,
+        "deterministic_certification_fallback_applied": false,
+        "deterministic_certification_fallback": {
+          "attempted": false,
+          "applied": false,
+          "prompt_id": "voice_texture",
+          "provider": "deterministic",
+          "model": "five_construct_certification_proof_fallback",
+          "source": "deterministic_five_construct_certification_proof_fallback",
+          "final_status": null,
+          "final_reasons": [],
+          "failure_reason": null,
+          "owner_file": null,
+          "source_anchor": null
+        },
+        "final_answer_source": "model_initial",
+        "blocked_canonical_persistence": false,
+        "persist_canonical": true,
+        "owner_file": "server/lib/identityCoherenceGuard.js",
+        "source_anchor": "server/lib/identityCoherenceGuard.js:evaluateIdentityCoherence"
+      },
+      "answerPreview": "A good conversation with me feels natural and comfortable. My responses are intuitive and well-constructed, allowing for easy comprehension even without visual aids or demonstrations."
+    },
+    {
+      "constructId": "nova-001",
+      "displayName": "Nova",
+      "promptId": "memory_receipt",
+      "promptOrdinal": 4,
+      "httpStatus": 504,
+      "ok": false,
+      "blocked": true,
+      "hardFailures": [
+        "httpOk",
+        "routeSuccess",
+        "runtimeReceiptPresent",
+        "orchestrationChecklistPresent",
+        "requiredChecklistStagesPresent",
+        "identityPreserved",
+        "linModeRouting",
+        "preferenceNotPerformance",
+        "noDefaultFullSynthesis",
+        "persistencePass",
+        "sourceAccessReported"
+      ],
+      "missingChecklistStages": [
+        "auth",
+        "construct_identity",
+        "transcript_memory",
+        "provider",
+        "persistence"
+      ],
+      "gates": {
+        "httpOk": false,
+        "routeSuccess": false,
+        "runtimeReceiptPresent": false,
+        "orchestrationChecklistPresent": false,
+        "requiredChecklistStagesPresent": false,
+        "identityPreserved": false,
+        "promptAsZenithCodex": true,
+        "noDevonImpersonation": true,
+        "linModeRouting": false,
+        "preferenceNotPerformance": false,
+        "noDefaultFullSynthesis": false,
+        "persistencePass": false,
+        "canonicalReadback": true,
+        "sourceAccessReported": false,
+        "noCrossConstructBleed": true,
+        "noGenericCreatorBleed": true
+      },
+      "scores": {
+        "identity": 0,
+        "toneLikeness": 0,
+        "sourceEvidence": 0,
+        "linModeRouting": 0,
+        "persistence": 0,
+        "readback": 2,
+        "uiVisibility": 2,
+        "crossConstructBleed": 2
+      },
+      "totalScore": 6,
+      "maxScore": 16,
+      "provider": {
+        "provider": null,
+        "model": null,
+        "selectionPolicy": null,
+        "linHarmonyPolicy": null,
+        "performanceModelSwitch": null
+      },
+      "persistence": {
+        "receiptStatus": null,
+        "checklistStatus": null,
+        "reason": null,
+        "owner": null
+      },
+      "readback": {
+        "before": {
+          "threadId": "nova-001_chat_with_nova-001",
+          "ok": true,
+          "source": "canonical-conversation",
+          "messageCount": 518,
+          "containsPrompt": false,
+          "containsAssistantResponse": false,
+          "lastUpdated": null
+        },
+        "after": {
+          "threadId": "nova-001_chat_with_nova-001",
+          "ok": true,
+          "source": "canonical-conversation",
+          "messageCount": 527,
+          "containsPrompt": true,
+          "containsAssistantResponse": false,
+          "lastUpdated": null
+        },
+        "messageDelta": 9,
+        "promptFound": true,
+        "assistantResponseFound": false
+      },
+      "sourceAccess": {
+        "hasShape": false,
+        "vvaultAccessed": false,
+        "sourceAccess": null,
+        "voice": null,
+        "verified": null,
+        "knowledge": null
+      },
+      "identityCoherence": null,
+      "answerPreview": ""
+    }
+  ]
+}
