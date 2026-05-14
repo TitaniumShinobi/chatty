@@ -82,6 +82,18 @@ import {
   buildCliCallbackRedirect,
   normalizeCliCallbackUrl,
 } from "./lib/cliAuthBridge.js";
+import {
+  assertProductionPublicOriginSafety,
+  isConfiguredCanonicalOrigin,
+  resolveConfiguredCallbackBase,
+  resolveConfiguredCanonicalDomain,
+  resolveConfiguredCookieDomain,
+  resolveConfiguredPublicOrigin,
+} from "./lib/publicOriginConfig.js";
+import {
+  assertRuntimeHandshakeSafety,
+  resolveRuntimeHandshakeConfig,
+} from "./lib/runtimeHandshakeConfig.js";
 
 console.log('[ENV CHECK]', {
   JWT_SECRET: process.env.JWT_SECRET ? 'SET' : 'MISSING',
@@ -129,15 +141,21 @@ process.on('unhandledRejection', (reason, promise) => {
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const isProduction = process.env.NODE_ENV === "production";
+const RUNTIME_HANDSHAKE = resolveRuntimeHandshakeConfig(process.env);
+const RUNTIME_HANDSHAKE_SAFETY = assertRuntimeHandshakeSafety(process.env);
+console.log("[RUNTIME HANDSHAKE]", RUNTIME_HANDSHAKE_SAFETY);
 function cookieSecure(req) {
   // Treat localhost & 127.0.0.1 (any port) as non-secure
   const host = req.get('host') || '';
   return !/^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host);
 }
-const CANONICAL_DOMAIN = process.env.CANONICAL_DOMAIN;
+const CONFIGURED_PUBLIC_ORIGIN = resolveConfiguredPublicOrigin(process.env);
+const CONFIGURED_CALLBACK_BASE = resolveConfiguredCallbackBase(process.env) || RUNTIME_HANDSHAKE.callbackBase;
+const CANONICAL_DOMAIN = resolveConfiguredCanonicalDomain(process.env);
+const COOKIE_DOMAIN = resolveConfiguredCookieDomain(process.env);
 const CALLBACK_PATH = process.env.CALLBACK_PATH || '/api/auth/google/callback';
-const REDIRECT_URI = CANONICAL_DOMAIN
-  ? `https://${CANONICAL_DOMAIN}${CALLBACK_PATH}`
+const REDIRECT_URI = CONFIGURED_CALLBACK_BASE
+  ? `${CONFIGURED_CALLBACK_BASE}${CALLBACK_PATH}`
   : `http://localhost:5050${CALLBACK_PATH}`;
 const GOOGLE_CALLBACK = REDIRECT_URI;
 
@@ -145,7 +163,7 @@ const REPLIT_DOMAIN = process.env.REPLIT_DEV_DOMAIN || process.env.REPLIT_DOMAIN
 const REPLIT_REDIRECT_URI = REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}${CALLBACK_PATH}` : null;
 const POST_LOGIN_REDIRECT = REPLIT_DOMAIN
   ? `https://${REPLIT_DOMAIN}`
-  : (process.env.POST_LOGIN_REDIRECT || process.env.FRONTEND_URL || "http://localhost:5173");
+  : (CONFIGURED_PUBLIC_ORIGIN || "http://localhost:5173");
 
 const WATCHDOG_DEFAULT_LOG_DIR = process.env.WATCHDOG_LOG_DIR || '/var/log/chatty';
 const WATCHDOG_FALLBACK_LOG = path.join(PROJECT_ROOT, 'watchdog', 'logs', 'watchdog.log');
@@ -203,7 +221,7 @@ function getRequestOrigin(req) {
   const host = req.get('x-forwarded-host') || req.get('host');
   const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
   if (host && host !== 'localhost:5050') return `${proto}://${host}`;
-  if (IS_PRODUCTION) return `https://${CANONICAL_DOMAIN}`;
+  if (IS_PRODUCTION && CONFIGURED_PUBLIC_ORIGIN) return CONFIGURED_PUBLIC_ORIGIN;
   return 'http://localhost:5173';
 }
 
@@ -239,16 +257,15 @@ function getRedirectUri(req) {
 }
 
 function getPostLoginRedirect(req) {
+  if (IS_PRODUCTION && CONFIGURED_PUBLIC_ORIGIN) return CONFIGURED_PUBLIC_ORIGIN;
   return getRequestOrigin(req);
 }
 
 // In production, never fall back to localhost for redirect/callback config.
 if (process.env.NODE_ENV === 'production' && !REPLIT_DOMAIN) {
-  const missing = [];
-  if (!process.env.PUBLIC_CALLBACK_BASE) missing.push('PUBLIC_CALLBACK_BASE');
-  if (!process.env.FRONTEND_URL) missing.push('FRONTEND_URL');
-  if (missing.length) {
-    console.error('❌ [Config] Missing required environment variables for production:', missing);
+  const safety = assertProductionPublicOriginSafety(process.env);
+  if (!safety.ok) {
+    console.error('❌ [Config] Invalid production public origin configuration:', safety.problems);
     console.error('❌ [Config] Refusing to start because OAuth/callback URLs must not fall back to localhost in production.');
     process.exit(1);
   }
@@ -256,6 +273,8 @@ if (process.env.NODE_ENV === 'production' && !REPLIT_DOMAIN) {
 
 console.log('--- OAUTH CONFIG DEBUG ---');
 console.log('CANONICAL_DOMAIN:', CANONICAL_DOMAIN);
+console.log('CONFIGURED_PUBLIC_ORIGIN:', CONFIGURED_PUBLIC_ORIGIN || '(not set)');
+console.log('CONFIGURED_CALLBACK_BASE:', CONFIGURED_CALLBACK_BASE || '(not set)');
 console.log('REPLIT_DOMAIN:', REPLIT_DOMAIN);
 console.log('REDIRECT_URI:', REDIRECT_URI);
 console.log('REPLIT_REDIRECT_URI:', REPLIT_REDIRECT_URI || '(not set)');
@@ -417,7 +436,7 @@ app.set("trust proxy", 1);
 
 // CORS configuration (explicit allowlist in prod)
 const corsOrigin = process.env.NODE_ENV === 'production'
-  ? (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || process.env.PUBLIC_APP_URL || (() => { throw new Error('Missing required env var: PUBLIC_APP_URL or CORS_ORIGIN or FRONTEND_URL in production'); })())
+  ? (process.env.CORS_ORIGIN || CONFIGURED_PUBLIC_ORIGIN || (() => { throw new Error('Missing required env var: PUBLIC_APP_URL or FRONTEND_URL or CORS_ORIGIN in production'); })())
   : (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || process.env.PUBLIC_APP_URL || 'http://localhost:5173');
 
 app.use(cors({
@@ -485,7 +504,7 @@ function createSessionCookieOptions(req) {
     maxAge: 1000 * 60 * 60 * 24 * 30,
   };
   if (cookieSecure(req)) {
-    cookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || undefined;
+    cookieOptions.domain = COOKIE_DOMAIN;
   } else {
     delete cookieOptions.domain;
   }
@@ -918,9 +937,10 @@ app.get("/api/auth/google/health", (req, res) => {
     environment: process.env.NODE_ENV || 'development',
     client_id_present: !!OAUTH.client_id,
     client_secret_present: !!OAUTH.client_secret,
-    validation_passed: oauthValid,
+    validation_passed: oauthValid && RUNTIME_HANDSHAKE_SAFETY.ok,
     effective_local_redirect_uri: effectiveLocalRedirectUri,
     allowed_origins: [...ALLOWED_ORIGINS],
+    runtime_handshake: RUNTIME_HANDSHAKE_SAFETY,
     correlation: {
       strategy: "cid_in_oauth_logs",
       spans: ["/api/auth/google", "/api/auth/google/callback", "/api/auth/set-session"]
@@ -1249,7 +1269,8 @@ const OAUTH_STATE_TTL = 10 * 60 * 1000;
 const EXCHANGE_CODE_TTL = 2 * 60 * 1000;
 
 function buildAllowedOrigins() {
-  const origins = new Set([`https://${CANONICAL_DOMAIN}`]);
+  const origins = new Set();
+  if (CONFIGURED_PUBLIC_ORIGIN) origins.add(CONFIGURED_PUBLIC_ORIGIN);
   if (REPLIT_DOMAIN) origins.add(`https://${REPLIT_DOMAIN}`);
   if (POST_LOGIN_REDIRECT && POST_LOGIN_REDIRECT !== 'http://localhost:5173') origins.add(POST_LOGIN_REDIRECT);
   origins.add('http://localhost:5173');
@@ -1499,7 +1520,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       correlationId = requestCid;
     }
 
-    let originUrl = IS_PRODUCTION ? `https://${CANONICAL_DOMAIN}` : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : 'http://localhost:5173');
+    let originUrl = IS_PRODUCTION ? (CONFIGURED_PUBLIC_ORIGIN || `https://${CANONICAL_DOMAIN}`) : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : 'http://localhost:5173');
     let callbackRedirectUri = REDIRECT_URI;
     let stateValid = false;
     let cliCallback = null;
@@ -1657,7 +1678,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       );
     }
 
-    const originIsCanonical = process.env.PUBLIC_APP_URL ? originUrl.startsWith(process.env.PUBLIC_APP_URL) : false;
+    const originIsCanonical = isConfiguredCanonicalOrigin(originUrl, process.env);
 
     if (originIsCanonical) {
       console.log(`[COOKIE SET][cid:${correlationId}] Setting cookie on canonical domain`);
@@ -1677,7 +1698,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
     res.redirect(`${originUrl}/api/auth/set-session?code=${encodeURIComponent(exchangeCode)}&cid=${encodeURIComponent(correlationId)}`);
   } catch (e) {
     console.error(`❌ [OAuth Callback][cid:${correlationId}] OAuth callback error:`, e);
-    const errorRedirect = IS_PRODUCTION ? (process.env.PUBLIC_APP_URL || `https://${CANONICAL_DOMAIN}`) : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : 'http://localhost:5173');
+    const errorRedirect = IS_PRODUCTION ? (CONFIGURED_PUBLIC_ORIGIN || `https://${CANONICAL_DOMAIN}`) : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : 'http://localhost:5173');
     res.redirect(`${errorRedirect}/?error=auth_failed`);
   }
 });
@@ -1716,7 +1737,7 @@ app.get("/api/auth/set-session", (req, res) => {
     maxAge: 1000 * 60 * 60 * 24 * 30
   };
   if (cookieSecure(req)) {
-    cookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || undefined;
+    cookieOptions.domain = COOKIE_DOMAIN;
   } else {
     delete cookieOptions.domain;
   }
@@ -1826,7 +1847,7 @@ app.post("/api/logout", (req, res) => {
     sameSite: 'lax'
   };
   if (cookieSecure(req)) {
-    clearCookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || undefined;
+    clearCookieOptions.domain = COOKIE_DOMAIN;
   }
   res.clearCookie(COOKIE_NAME, clearCookieOptions);
   res.json({ ok: true });
@@ -1963,7 +1984,7 @@ app.post("/api/auth/delete-account", requireAuth, async (req, res) => {
       sameSite: 'lax'
     };
     if (cookieSecure(req)) {
-      clearCookieOptions.domain = process.env.COOKIE_DOMAIN || process.env.CANONICAL_DOMAIN || undefined;
+      clearCookieOptions.domain = COOKIE_DOMAIN;
     }
     res.clearCookie(COOKIE_NAME, clearCookieOptions);
 
