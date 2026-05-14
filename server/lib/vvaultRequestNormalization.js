@@ -1,3 +1,44 @@
+import { getVvaultServiceTokens } from './vvaultBridgeConfig.js';
+
+function resolveServiceTokenOperator(req) {
+  const authHeader = String(req?.headers?.authorization || '').trim();
+  if (!authHeader.toLowerCase().startsWith('bearer ')) return null;
+
+  const token = authHeader.slice('bearer '.length).trim();
+  const tokens = getVvaultServiceTokens();
+  if (!token || tokens.length === 0 || !tokens.includes(token)) return null;
+
+  const userId = String(
+    req?.headers?.['x-chatty-user-id'] ||
+    req?.headers?.['x-chatty-operator-id'] ||
+    '',
+  ).trim();
+  if (!userId) {
+    return {
+      ok: false,
+      error: 'Service-token operator requests require x-chatty-user-id.',
+    };
+  }
+
+  const email = String(
+    req?.headers?.['x-chatty-user-email'] ||
+    req?.headers?.['x-chatty-operator-email'] ||
+    '',
+  ).trim();
+  const name = String(
+    req?.headers?.['x-chatty-operator-name'] ||
+    req?.headers?.['x-chatty-user-name'] ||
+    'Zenith/Codex',
+  ).trim();
+
+  return {
+    ok: true,
+    userId,
+    email,
+    name,
+  };
+}
+
 export async function normalizeVvaultRouteRequest({
   req,
   resolveSupabaseUser,
@@ -14,27 +55,51 @@ export async function normalizeVvaultRouteRequest({
   let authRecovered = false;
   let supabaseSessionUserId = null;
   let authSource = 'supabase_session';
+  const serviceTokenOperator = resolveServiceTokenOperator(req);
 
-  try {
-    const user = await resolveSupabaseUser(req);
-    userId = user.id;
-    supabaseSessionUserId = user.id;
-  } catch {
-    if (process.env.NODE_ENV !== 'production' && (req?.user?.id || req?.user?.sub)) {
-      userId = req.user.id || req.user.sub;
-      authRecovered = true;
-      authSource = 'app_jwt_dev_fallback';
-      console.warn(`[VVAULT Auth] Supabase session missing; dev fallback to app JWT for user ${userId}`);
-    } else {
-      return {
-        ok: false,
-        status: 401,
-        body: { ok: false, error: 'Authentication required' },
-        inferenceClock,
-        inferenceRequestId,
-        hasSupabaseAuthHeader,
-        hasReqUser,
-      };
+  if (serviceTokenOperator?.ok) {
+    userId = serviceTokenOperator.userId;
+    authSource = 'service_token_operator';
+    req.user = {
+      ...(req.user || {}),
+      id: userId,
+      sub: userId,
+      email: serviceTokenOperator.email || req.user?.email || null,
+      name: serviceTokenOperator.name,
+      auth_provider: 'service_token',
+    };
+  } else if (serviceTokenOperator && serviceTokenOperator.ok === false) {
+    return {
+      ok: false,
+      status: 401,
+      body: { ok: false, error: serviceTokenOperator.error },
+      inferenceClock,
+      inferenceRequestId,
+      hasSupabaseAuthHeader,
+      hasReqUser,
+    };
+  } else {
+    try {
+      const user = await resolveSupabaseUser(req);
+      userId = user.id;
+      supabaseSessionUserId = user.id;
+    } catch {
+      if (process.env.NODE_ENV !== 'production' && (req?.user?.id || req?.user?.sub)) {
+        userId = req.user.id || req.user.sub;
+        authRecovered = true;
+        authSource = 'app_jwt_dev_fallback';
+        console.warn(`[VVAULT Auth] Supabase session missing; dev fallback to app JWT for user ${userId}`);
+      } else {
+        return {
+          ok: false,
+          status: 401,
+          body: { ok: false, error: 'Authentication required' },
+          inferenceClock,
+          inferenceRequestId,
+          hasSupabaseAuthHeader,
+          hasReqUser,
+        };
+      }
     }
   }
 
