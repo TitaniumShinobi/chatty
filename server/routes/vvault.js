@@ -700,6 +700,7 @@ async function buildEnrichedContextPrompt({
   runtimeTurnState = null,
   continuityClass = null,
   continuityResume = null,
+  preloadedTranscriptMessages = null,
 }) {
   const effectiveThreadId = threadId || `${constructId}_chat_with_${constructId}`;
   const memoryContext = await buildMemoryContext({
@@ -731,6 +732,7 @@ async function buildEnrichedContextPrompt({
     runtimeTurnState,
     continuityClass,
     continuityResume,
+    preloadedTranscriptMessages,
   });
 
   return {
@@ -1594,6 +1596,7 @@ async function buildEnrichedContextPromptWithRecovery({
   runtimeTurnState = null,
   continuityClass = null,
   continuityResume = null,
+  preloadedTranscriptMessages = null,
 }) {
   const contextArgs = {
     userId,
@@ -1617,6 +1620,7 @@ async function buildEnrichedContextPromptWithRecovery({
     runtimeTurnState,
     continuityClass,
     continuityResume,
+    preloadedTranscriptMessages,
   };
 
   const boundedZenSmalltalkContext = shouldUseBoundedZenSmalltalkContext({
@@ -10225,6 +10229,7 @@ export async function handleConstructInference(req, res) {
         runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
         continuityClass: routeTurnEnvelope.continuityClass,
         continuityResume: routeTurnEnvelope.continuityResume,
+        preloadedTranscriptMessages: routeTurnEnvelope.transcriptTruth?.exactMessages || null,
       });
       if (!enrichedResult) return;
       enrichedContext = enrichedResult.enrichedContext;

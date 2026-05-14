@@ -23,6 +23,8 @@ describe('memoryContextBuilder VVAULT-first read cutover', () => {
   it('passes email-bearing VVAULT lookup context into readConversations instead of a bare Chatty id string', () => {
     const text = source();
     const stm = text.slice(text.indexOf('const tStm'), text.indexOf('let ledger = null'));
+    assert.match(stm, /preloadedCanonicalMessages\.length > 0/);
+    assert.match(stm, /result\.history_source = 'transcript_truth_preflight'/);
     assert.match(stm, /const vvaultContext = userContextForVvault\(userId, user\?\.email\)/);
     assert.match(stm, /readConversations\(vvaultContext, constructId\)/);
     assert.doesNotMatch(stm, /const lookupId = userId \|\| user\?\.email/);
@@ -41,12 +43,22 @@ describe('memoryContextBuilder VVAULT-first read cutover', () => {
     const text = source();
     const physical = text.slice(text.indexOf('const cachedPhys'), text.indexOf('let definitionSection'));
     const definition = text.slice(text.indexOf("let definitionSection = ''"), text.indexOf("let voiceExemplarSection = ''"));
+    assert.match(text, /const loadConstructFilesForContext = \(\) =>/);
     assert.match(physical, /identity\?\.physicalFeatures/);
-    assert.match(physical, /loadConstructFilesFromVvault/);
+    assert.match(physical, /loadConstructFilesForContext\(\)/);
     assert.doesNotMatch(physical, /getSupabaseClient/);
     assert.match(definition, /identity\?\.definition/);
-    assert.match(definition, /loadConstructFilesFromVvault/);
+    assert.match(definition, /loadConstructFilesForContext\(\)/);
     assert.doesNotMatch(definition, /getSupabaseClient/);
+  });
+
+  it('shares request-scoped VVAULT body files with knowledge context', () => {
+    const text = source();
+    const knowledgeCall = text.slice(text.indexOf('const knowledgeResult = await getKnowledgeContext'), text.indexOf('knowledgeSection = knowledgeResult.section'));
+
+    assert.match(text, /let constructFilesPromise = null/);
+    assert.match(knowledgeCall, /bodyFilesPromise: constructFilesPromise/);
+    assert.match(text, /options\.bodyFilesPromise/);
   });
 
   it('prefers storage_path when deciding whether VVAULT body files are knowledge documents or assets', () => {

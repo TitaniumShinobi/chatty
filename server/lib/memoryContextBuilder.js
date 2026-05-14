@@ -459,13 +459,49 @@ function extractVoiceCandidates(row, constructId) {
   return candidates;
 }
 
-async function loadVoiceExemplars(constructId, userId, userEmail = null) {
+function normalizePreloadedConversationMessages(messages = []) {
+  return Array.isArray(messages)
+    ? messages
+        .filter((message) =>
+          message &&
+          (message.role === 'user' || message.role === 'assistant') &&
+          typeof message.content === 'string' &&
+          message.content.length > 0
+        )
+        .map((message) => ({
+          role: message.role,
+          content: message.content,
+          timestamp: message.timestamp || null,
+          metadata: message.metadata || null,
+        }))
+    : [];
+}
+
+async function loadVoiceExemplars(constructId, userId, userEmail = null, options = {}) {
   const cacheKey = `${userEmail || userId || 'anonymous'}:${constructId}`;
   const cached = voiceExemplarCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < VOICE_EXEMPLAR_CACHE_TTL) return cached.data;
 
   const empty = { section: '', sources: [], count: 0, source: 'none' };
   const vvaultContext = userContextForVvault(userId, userEmail);
+  const preloadedMessages = normalizePreloadedConversationMessages(options.preloadedMessages);
+
+  if (preloadedMessages.length > 0) {
+    const row = {
+      filename: `vvault-body:${constructId}:canonical-transcript-preflight`,
+      content: JSON.stringify({ messages: preloadedMessages }),
+    };
+    const exemplars = [];
+    for (const candidate of extractVoiceCandidates(row, constructId)) {
+      pushVoiceCandidate(exemplars, candidate.filename, candidate.text);
+      if (exemplars.length >= MAX_VOICE_EXEMPLARS) break;
+    }
+    if (exemplars.length) {
+      const result = buildVoiceExemplarResult(exemplars, 'vvault_conversations');
+      voiceExemplarCache.set(cacheKey, { data: result, ts: Date.now() });
+      return result;
+    }
+  }
 
   try {
     const bodyRows = await loadTranscriptRowsFromVvault(constructId, vvaultContext);
@@ -2047,7 +2083,11 @@ async function getKnowledgeContext(constructId, userEmail, userMessage, options 
   }
 
   try {
-    const bodyFiles = await loadConstructFilesFromVvault(constructId, userContextForVvault(userEmail, userEmail));
+    const bodyFiles = Array.isArray(options.bodyFiles)
+      ? options.bodyFiles
+      : options.bodyFilesPromise
+        ? await options.bodyFilesPromise
+        : await loadConstructFilesFromVvault(constructId, userContextForVvault(userEmail, userEmail));
     const bodyRows = bodyFiles.filter((row) => {
       const name = String(row.storage_path || row.filename || '').toLowerCase();
       return name.includes(`/instances/${constructId}/documents/`) ||
@@ -2203,6 +2243,7 @@ async function buildEnrichedContext(options) {
     runtimeTurnState = null,
     continuityClass = null,
     continuityResume = null,
+    preloadedTranscriptMessages = null,
   } = options;
   const t0 = Date.now();
   const phaseTiming = {};
@@ -2227,6 +2268,17 @@ async function buildEnrichedContext(options) {
 
   const isStrictConstruct = isLinOrchestratedConstruct(constructId);
   const effectiveLowInformationPrompt = isStrictConstruct ? false : lowInformationPrompt;
+  const preloadedCanonicalMessages = normalizePreloadedConversationMessages(preloadedTranscriptMessages);
+  let constructFilesPromise = null;
+  const loadConstructFilesForContext = () => {
+    if (!constructFilesPromise) {
+      constructFilesPromise = loadConstructFilesFromVvault(
+        constructId,
+        userContextForVvault(userId, user?.email),
+      );
+    }
+    return constructFilesPromise;
+  };
 
   const contextProfile = normalizeContextBudgetProfile(contextBudgetProfile, {
     memoryQueryDetected,
@@ -2432,7 +2484,7 @@ async function buildEnrichedContext(options) {
       const identityPhysical = identity?.physicalFeatures || identity?.physical_features || identity?.sourceFiles?.['physical_features.json']?.content || identity?.sourceFiles?.['physical-features.json']?.content;
       physicalAppearanceSection = buildPhysicalFeaturesSectionFromContent(identityPhysical);
       if (!physicalAppearanceSection) {
-        const bodyFiles = await loadConstructFilesFromVvault(constructId, userContextForVvault(userId, user?.email));
+        const bodyFiles = await loadConstructFilesForContext();
         const physFile = bodyFiles.find((file) => /physical[-_]?features/i.test(file.filename || file.storage_path || ''));
         physicalAppearanceSection = buildPhysicalFeaturesSectionFromContent(physFile?.content);
       }
@@ -2472,7 +2524,7 @@ async function buildEnrichedContext(options) {
       const identityDefinition = identity?.definition || identity?.sourceFiles?.['definition.json']?.content || identity?.sourceFiles?.['definition.txt']?.content;
       definitionSection = buildDefinitionContextSection(identityDefinition, constructId);
       if (!definitionSection) {
-        const bodyFiles = await loadConstructFilesFromVvault(constructId, userContextForVvault(userId, user?.email));
+        const bodyFiles = await loadConstructFilesForContext();
         const definitionFile = bodyFiles.find((file) => /definition\.json$|definition\.txt$|definitions\.json$/i.test(file.filename || file.storage_path || ''));
         definitionSection = buildDefinitionContextSection(definitionFile?.content, constructId);
       }
@@ -2536,7 +2588,9 @@ async function buildEnrichedContext(options) {
     try {
       const voiceOutcome = userId
         ? await withEvidenceTimeoutResult(
-            loadVoiceExemplars(constructId, userId, user?.email),
+            loadVoiceExemplars(constructId, userId, user?.email, {
+              preloadedMessages: preloadedCanonicalMessages,
+            }),
             VOICE_EXEMPLAR_TIMEOUT_MS,
             `voice exemplars for ${constructId}`,
           )
@@ -2717,7 +2771,32 @@ async function buildEnrichedContext(options) {
     : ordinaryConversationActive
       ? 0
       : (contextProfile === CONTEXT_BUDGET_PROFILES.TINY ? 2 : 6);
-  if (boundedZenSmalltalkContext) {
+  if (preloadedCanonicalMessages.length > 0) {
+    conversationLookupAttempted = true;
+    cachedConversationMessages = preloadedCanonicalMessages;
+    result.history_source = 'transcript_truth_preflight';
+    if (!ordinaryConversationActive || continuityRestoredForContext) {
+      result.routeHistoryMessages = cachedConversationMessages
+        .slice(-(continuityRestoredForContext ? 6 : LOCAL_ROUTE_HISTORY_LIMIT))
+        .map((message) => ({ role: message.role, content: message.content }));
+    } else {
+      runtimeContinuityDemotedHistory = true;
+    }
+
+    if (cachedConversationMessages.length > 0 && stmWindow > 0) {
+      const recentStm = cachedConversationMessages.slice(-stmWindow);
+      stmCount = recentStm.length;
+      stmSection = buildRecentStmSection(recentStm, { maxMessages: stmWindow });
+      result.stmMemories = stmCount;
+      includeSection('stm');
+    }
+
+    phaseTiming.stm = {
+      ms: Date.now() - tStm,
+      count: stmCount,
+      source: 'transcript_truth_preflight',
+    };
+  } else if (boundedZenSmalltalkContext) {
     try {
       const localHistory = await loadLocalCanonicalConversationHistory({
         constructId,
@@ -3280,6 +3359,7 @@ Speak in first person as ${constructDisplayName}. Address the user as ${userName
     try {
       const knowledgeResult = await getKnowledgeContext(constructId, user?.email, userMessage, {
         evidenceStyle: evidenceStyleRequested,
+        bodyFilesPromise: constructFilesPromise,
       });
       knowledgeSection = knowledgeResult.section;
       knowledgeMatchedFiles = knowledgeResult.matchedFiles || [];

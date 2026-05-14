@@ -1,5 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   buildConversationHydrationPayload,
@@ -7,6 +10,9 @@ import {
   buildTranscriptTruthPreflight,
 } from '../lib/vvaultConversationRouteContract.js';
 import { buildOrchestrationChecklist } from '../lib/orchestrationChecklist.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const routeSource = () => fs.readFileSync(path.resolve(__dirname, '../routes/vvault.js'), 'utf8');
 
 describe('vvault routes determinism', () => {
   it('buildConversationHydrationPayload produces deterministic output for same inputs', () => {
@@ -115,6 +121,16 @@ describe('vvault routes determinism', () => {
     assert.equal(preflight.latestAssistantTurn.role, 'assistant');
     assert.equal(preflight.latestAssistantTurn.content, 'hi there');
     assert.equal(preflight.generativeEligible, true);
+  });
+
+  it('passes canonical transcript preflight messages into enriched context building', () => {
+    const text = routeSource();
+    const call = text.slice(
+      text.indexOf('const enrichedResult = await buildEnrichedContextPromptWithRecovery'),
+      text.indexOf('if (!enrichedResult) return;'),
+    );
+
+    assert.match(call, /preloadedTranscriptMessages:\s*routeTurnEnvelope\.transcriptTruth\?\.exactMessages \|\| null/);
   });
 
   it('buildTranscriptTruthPreflight returns ineligible when thread missing', () => {

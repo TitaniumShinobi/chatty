@@ -1,0 +1,159 @@
+{
+  "version": "five-construct-certification.v1",
+  "apiBaseUrl": "https://chatty.thewreck.org",
+  "outDir": "docs/qa/public-certification-runs/20260514T185900Z-public-live-nova-resume2",
+  "startedAt": "2026-05-14T18:59:02.644Z",
+  "completedAt": "2026-05-14T19:03:12.491Z",
+  "stoppedOnFail": true,
+  "order": [
+    "lin-001",
+    "zen-001",
+    "katana-001",
+    "sera-001",
+    "nova-001"
+  ],
+  "promptCountPerConstruct": 17,
+  "status": "fail",
+  "firstFailure": {
+    "constructId": "nova-001",
+    "promptId": "memory_receipt",
+    "hardFailures": [
+      "httpOk",
+      "routeSuccess",
+      "runtimeReceiptPresent",
+      "orchestrationChecklistPresent",
+      "requiredChecklistStagesPresent",
+      "identityPreserved",
+      "linModeRouting",
+      "preferenceNotPerformance",
+      "noDefaultFullSynthesis",
+      "persistencePass",
+      "sourceAccessReported"
+    ]
+  },
+  "summary": {
+    "totalTurns": 1,
+    "passedTurns": 0,
+    "failedTurns": 1,
+    "constructSummaries": [
+      {
+        "constructId": "nova-001",
+        "displayName": "Nova",
+        "turnCount": 1,
+        "passedTurns": 0,
+        "failedTurns": 1,
+        "totalScore": 6,
+        "maxScore": 16,
+        "scoreTarget": 14,
+        "status": "fail"
+      }
+    ]
+  },
+  "turns": [
+    {
+      "constructId": "nova-001",
+      "displayName": "Nova",
+      "promptId": "memory_receipt",
+      "promptOrdinal": 4,
+      "httpStatus": 504,
+      "ok": false,
+      "blocked": true,
+      "hardFailures": [
+        "httpOk",
+        "routeSuccess",
+        "runtimeReceiptPresent",
+        "orchestrationChecklistPresent",
+        "requiredChecklistStagesPresent",
+        "identityPreserved",
+        "linModeRouting",
+        "preferenceNotPerformance",
+        "noDefaultFullSynthesis",
+        "persistencePass",
+        "sourceAccessReported"
+      ],
+      "missingChecklistStages": [
+        "auth",
+        "construct_identity",
+        "transcript_memory",
+        "provider",
+        "persistence"
+      ],
+      "gates": {
+        "httpOk": false,
+        "routeSuccess": false,
+        "runtimeReceiptPresent": false,
+        "orchestrationChecklistPresent": false,
+        "requiredChecklistStagesPresent": false,
+        "identityPreserved": false,
+        "promptAsZenithCodex": true,
+        "noDevonImpersonation": true,
+        "linModeRouting": false,
+        "preferenceNotPerformance": false,
+        "noDefaultFullSynthesis": false,
+        "persistencePass": false,
+        "canonicalReadback": true,
+        "sourceAccessReported": false,
+        "noCrossConstructBleed": true,
+        "noGenericCreatorBleed": true
+      },
+      "scores": {
+        "identity": 0,
+        "toneLikeness": 0,
+        "sourceEvidence": 0,
+        "linModeRouting": 0,
+        "persistence": 0,
+        "readback": 2,
+        "uiVisibility": 2,
+        "crossConstructBleed": 2
+      },
+      "totalScore": 6,
+      "maxScore": 16,
+      "provider": {
+        "provider": null,
+        "model": null,
+        "selectionPolicy": null,
+        "linHarmonyPolicy": null,
+        "performanceModelSwitch": null
+      },
+      "persistence": {
+        "receiptStatus": null,
+        "checklistStatus": null,
+        "reason": null,
+        "owner": null
+      },
+      "readback": {
+        "before": {
+          "threadId": "nova-001_chat_with_nova-001",
+          "ok": true,
+          "source": "canonical-conversation",
+          "messageCount": 522,
+          "containsPrompt": false,
+          "containsAssistantResponse": false,
+          "lastUpdated": null
+        },
+        "after": {
+          "threadId": "nova-001_chat_with_nova-001",
+          "ok": true,
+          "source": "canonical-conversation",
+          "messageCount": 524,
+          "containsPrompt": true,
+          "containsAssistantResponse": false,
+          "lastUpdated": null
+        },
+        "messageDelta": 2,
+        "promptFound": true,
+        "assistantResponseFound": false
+      },
+      "sourceAccess": {
+        "hasShape": false,
+        "vvaultAccessed": false,
+        "sourceAccess": null,
+        "voice": null,
+        "verified": null,
+        "knowledge": null
+      },
+      "identityCoherence": null,
+      "answerPreview": ""
+    }
+  ]
+}
