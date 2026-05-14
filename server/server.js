@@ -1273,11 +1273,13 @@ function buildAllowedOrigins() {
   if (CONFIGURED_PUBLIC_ORIGIN) origins.add(CONFIGURED_PUBLIC_ORIGIN);
   if (REPLIT_DOMAIN) origins.add(`https://${REPLIT_DOMAIN}`);
   if (POST_LOGIN_REDIRECT && POST_LOGIN_REDIRECT !== 'http://localhost:5173') origins.add(POST_LOGIN_REDIRECT);
-  origins.add('http://localhost:5173');
-  origins.add('http://localhost:5000');
-  // Allow VS Code Simple Browser which uses 127.0.0.1
-  origins.add('http://127.0.0.1:5173');
-  origins.add('http://127.0.0.1:5000');
+  if (!IS_PRODUCTION) {
+    origins.add('http://localhost:5173');
+    origins.add('http://localhost:5000');
+    // Allow VS Code Simple Browser which uses 127.0.0.1
+    origins.add('http://127.0.0.1:5173');
+    origins.add('http://127.0.0.1:5000');
+  }
   return origins;
 }
 const ALLOWED_ORIGINS = buildAllowedOrigins();
