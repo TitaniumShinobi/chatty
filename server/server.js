@@ -91,6 +91,12 @@ import {
   assertRuntimeHandshakeSafety,
   resolveRuntimeHandshakeConfig,
 } from "./lib/runtimeHandshakeConfig.js";
+import {
+  buildSharedAuthDelegationUrl,
+  getResponseSetCookieHeaders,
+  isSharedAuthBrowserLoginEnabled,
+  shouldDelegateGoogleBrowserAuth,
+} from "./lib/sharedAuthBrowserFlow.js";
 
 console.log('[ENV CHECK]', {
   JWT_SECRET: process.env.JWT_SECRET ? 'SET' : 'MISSING',
@@ -533,6 +539,81 @@ function setAuthSessionCookie(req, res, payload) {
   return token;
 }
 
+function appendSetCookieHeaders(res, setCookieHeaders = []) {
+  for (const cookieHeader of setCookieHeaders) {
+    if (!cookieHeader) continue;
+    res.append("Set-Cookie", cookieHeader);
+  }
+}
+
+async function ensureChattySessionFromSharedAuth(req, res, authContext, sharedAuthContext) {
+  if (authContext?.source !== "shared" || !sharedAuthContext?.ok || !sharedAuthContext?.user) {
+    return null;
+  }
+
+  const sharedUser = sharedAuthContext.user;
+  const email = toNonEmptyString(sharedUser.email).toLowerCase();
+  if (!email) {
+    throw new Error("Shared auth user is missing email");
+  }
+
+  const name = toNonEmptyString(sharedUser.name) || email.split("@")[0] || "User";
+  const seedUserId =
+    toNonEmptyString(sharedUser.sub) ||
+    toNonEmptyString(sharedUser.id) ||
+    toNonEmptyString(sharedUser.uid) ||
+    email;
+
+  const { getOrCreateUser } = await import("./lib/userRegistry.js");
+  const userProfile = await getOrCreateUser(seedUserId, email, name);
+
+  try {
+    const { GPTManager } = await import("./lib/gptManager.js");
+    GPTManager.getInstance().provisionUserConstructs(userProfile.user_id);
+  } catch (error) {
+    console.warn("⚠️ [Auth] Failed to provision constructs from shared auth session:", error?.message || error);
+  }
+
+  const payload = buildAuthJwtPayload({
+    id: userProfile.user_id,
+    sub: userProfile.user_id,
+    uid: toNonEmptyString(sharedUser.uid) || toNonEmptyString(sharedUser.id) || userProfile.user_id,
+    name,
+    email,
+    picture: toNonEmptyString(sharedUser.picture),
+    given_name: toNonEmptyString(sharedUser.given_name),
+    family_name: toNonEmptyString(sharedUser.family_name),
+    locale: toNonEmptyString(sharedUser.locale),
+    auth_provider: toNonEmptyString(sharedUser.auth_provider) || "shared_auth",
+  });
+
+  setAuthSessionCookie(req, res, payload);
+  return payload;
+}
+
+async function fetchSharedAuthGoogleHealth(req) {
+  if (!isSharedAuthBrowserLoginEnabled(RUNTIME_HANDSHAKE)) {
+    return null;
+  }
+
+  const origin = CONFIGURED_PUBLIC_ORIGIN || getRequestOrigin(req);
+  const headers = {
+    origin,
+    referer: `${origin}/`,
+  };
+
+  const response = await fetch(`${RUNTIME_HANDSHAKE.authApiBaseUrl}/api/auth/google/health`, {
+    method: "GET",
+    headers,
+    redirect: "manual",
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload || typeof payload !== "object") {
+    throw new Error("Shared auth health endpoint returned a non-JSON failure");
+  }
+  return payload;
+}
+
 function getAuthProviderStatus(provider) {
   const normalized = toNonEmptyString(provider).toLowerCase();
   if (!SUPPORTED_AUTH_PROVIDERS.has(normalized)) {
@@ -733,6 +814,7 @@ const handleApiMe = async (req, res) => {
     const sharedAuthContext = await resolveSharedAuthContext(req, {
       hydrateRequestUser: false,
     });
+    await ensureChattySessionFromSharedAuth(req, res, authContext, sharedAuthContext);
     const vvaultSession = await resolveVvaultApiMeSessionState(req, sharedAuthContext, {
       fetchImpl: fetch,
     });
@@ -926,8 +1008,58 @@ app.get("/api/watchdog/events", (req, res) => {
 });
 
 // OAuth health check endpoint
-app.get("/api/auth/google/health", (req, res) => {
+app.get("/api/auth/google/health", async (req, res) => {
   const effectiveLocalRedirectUri = getRedirectUri(req);
+  try {
+    const sharedHealth = await fetchSharedAuthGoogleHealth(req);
+    if (sharedHealth) {
+      return res.json({
+        oauth_configured: sharedHealth.oauth_configured === true,
+        redirect_uri: sharedHealth.redirect_uri || null,
+        environment: process.env.NODE_ENV || 'development',
+        client_id_present: sharedHealth.client_id_present === true,
+        client_secret_present: sharedHealth.client_secret_present === true,
+        validation_passed: sharedHealth.validation_passed === true && RUNTIME_HANDSHAKE_SAFETY.ok,
+        effective_local_redirect_uri: sharedHealth.redirect_uri || effectiveLocalRedirectUri,
+        allowed_origins: [...ALLOWED_ORIGINS],
+        runtime_handshake: RUNTIME_HANDSHAKE_SAFETY,
+        auth_authority: {
+          public_origin: RUNTIME_HANDSHAKE.authPublicOrigin,
+          api_base_url: RUNTIME_HANDSHAKE.authApiBaseUrl,
+          cookie_name: sharedHealth.auth_cookie_name || RUNTIME_HANDSHAKE.authCookieName,
+          cookie_domain: sharedHealth.auth_cookie_domain || RUNTIME_HANDSHAKE.authCookieDomain || null,
+          cookie_secure: sharedHealth.auth_cookie_secure === true,
+          allowed_origins: Array.isArray(sharedHealth.allowed_origins) ? sharedHealth.allowed_origins : [],
+        },
+        correlation: {
+          strategy: "cid_in_oauth_logs",
+          spans: ["/api/auth/google", "/api/auth/google/callback", "/api/auth/set-session"]
+        }
+      });
+    }
+  } catch (error) {
+    return res.json({
+      oauth_configured: false,
+      redirect_uri: null,
+      environment: process.env.NODE_ENV || 'development',
+      client_id_present: false,
+      client_secret_present: false,
+      validation_passed: false,
+      effective_local_redirect_uri: effectiveLocalRedirectUri,
+      allowed_origins: [...ALLOWED_ORIGINS],
+      runtime_handshake: RUNTIME_HANDSHAKE_SAFETY,
+      auth_authority: {
+        public_origin: RUNTIME_HANDSHAKE.authPublicOrigin,
+        api_base_url: RUNTIME_HANDSHAKE.authApiBaseUrl,
+        error: error?.message || String(error),
+      },
+      correlation: {
+        strategy: "cid_in_oauth_logs",
+        spans: ["/api/auth/google", "/api/auth/google/callback", "/api/auth/set-session"]
+      }
+    });
+  }
+
   res.json({
     oauth_configured: !!OAUTH.client_id && !!OAUTH.client_secret,
     redirect_uri: OAUTH.redirect_uri,
@@ -1403,6 +1535,27 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
   const correlationId = createAuthCorrelationId();
   res.set('X-Auth-Correlation', correlationId);
   console.log(`🔍 [OAuth][cid:${correlationId}] /api/auth/google endpoint hit`);
+  const cliCallback = normalizeCliCallbackUrl(req.query?.cli_callback);
+
+  if (shouldDelegateGoogleBrowserAuth(RUNTIME_HANDSHAKE, { cliCallback })) {
+    const delegatedUrl = buildSharedAuthDelegationUrl(RUNTIME_HANDSHAKE, "/api/auth/google", {
+      origin: CONFIGURED_PUBLIC_ORIGIN || getRequestOrigin(req),
+    });
+    for (const [key, rawValue] of Object.entries(req.query || {})) {
+      if (key === "cli_callback" || key === "origin") continue;
+      if (Array.isArray(rawValue)) {
+        rawValue
+          .filter((value) => value !== undefined && value !== null && `${value}`.trim() !== "")
+          .forEach((value) => delegatedUrl.searchParams.append(key, `${value}`));
+        continue;
+      }
+      if (rawValue !== undefined && rawValue !== null && `${rawValue}`.trim() !== "") {
+        delegatedUrl.searchParams.set(key, `${rawValue}`);
+      }
+    }
+    console.log(`↪️ [OAuth][cid:${correlationId}] Delegating browser login to shared auth:`, delegatedUrl.toString());
+    return res.redirect(delegatedUrl.toString());
+  }
 
   // Graceful degradation: avoid 500 and avoid calling getRequestOrigin/getRedirectUri/signState when env is missing
   if (!OAUTH.client_id || !OAUTH.client_secret) {
@@ -1415,7 +1568,6 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
   }
 
   try {
-    const cliCallback = normalizeCliCallbackUrl(req.query?.cli_callback);
     const originUrl = getRequestOrigin(req);
     console.log(`🔍 [OAuth][cid:${correlationId}] Detected origin via Origin/Referer/Host:`, originUrl, {
       origin_header: req.get('origin') || '(none)',
@@ -1829,7 +1981,7 @@ app.get("/api/profile-image/:userId", async (req, res) => {
 });
 
 // logout
-app.post("/api/logout", (req, res) => {
+app.post("/api/logout", async (req, res) => {
   const clearCookieOptions = {
     path: "/",
     httpOnly: true,
@@ -1838,6 +1990,25 @@ app.post("/api/logout", (req, res) => {
   };
   if (cookieSecure(req)) {
     clearCookieOptions.domain = COOKIE_DOMAIN;
+  }
+  if (isSharedAuthBrowserLoginEnabled(RUNTIME_HANDSHAKE)) {
+    try {
+      const origin = CONFIGURED_PUBLIC_ORIGIN || getRequestOrigin(req);
+      const sharedLogoutResponse = await fetch(`${RUNTIME_HANDSHAKE.authApiBaseUrl}/api/logout`, {
+        method: "POST",
+        headers: {
+          cookie: typeof req.headers?.cookie === "string" ? req.headers.cookie : "",
+          origin,
+          referer: `${origin}/`,
+          ...(req.headers?.["user-agent"] ? { "user-agent": req.headers["user-agent"] } : {}),
+          ...(req.headers?.["x-forwarded-for"] ? { "x-forwarded-for": req.headers["x-forwarded-for"] } : {}),
+        },
+        redirect: "manual",
+      });
+      appendSetCookieHeaders(res, getResponseSetCookieHeaders(sharedLogoutResponse));
+    } catch (error) {
+      console.warn("⚠️ [Auth] Shared logout bridge failed:", error?.message || error);
+    }
   }
   res.clearCookie(COOKIE_NAME, clearCookieOptions);
   res.json({ ok: true });

@@ -130,8 +130,14 @@ export function resolveRuntimeHandshakeConfig(env = process.env) {
     resolveConfiguredCallbackBase(env) ||
     (isProduction ? null : normalizeOrigin(env.PUBLIC_CALLBACK_BASE) || "http://localhost:5050");
   const authApiBaseUrl = normalizeOrigin(env.AUTH_API_BASE_URL) || (isProduction ? null : `http://127.0.0.1:${trimString(env.AUTH_PORT) || "1111"}`);
+  const authPublicOrigin =
+    normalizeOrigin(env.AUTH_PUBLIC_ORIGIN) ||
+    (isProduction ? normalizeOrigin(env.AUTH_API_BASE_URL) : `http://localhost:${trimString(env.AUTH_PORT) || "1111"}`);
   const authCookieName = trimString(env.AUTH_COOKIE_NAME) || "auth_sid";
+  const authCookieDomain = trimString(env.AUTH_COOKIE_DOMAIN) || null;
   const cookieDomain = resolveConfiguredCookieDomain(env);
+  const enableSharedAuthBrowserLogin =
+    trimString(env.ENABLE_SHARED_AUTH_BROWSER_LOGIN).toLowerCase() === "true";
   const allowLegacyVvaultExchange = trimString(env.VVAULT_ENABLE_LEGACY_CHATTY_SESSION_EXCHANGE).toLowerCase() === "true";
   const vvaultResult = buildVvaultTargets(env, isProduction);
   const vvaultTargets = vvaultResult.targets;
@@ -152,6 +158,11 @@ export function resolveRuntimeHandshakeConfig(env = process.env) {
     if (!authApiBaseUrl) problems.push("AUTH_API_BASE_URL");
     else if (isLocalOrigin(authApiBaseUrl)) problems.push("AUTH_API_BASE_URL_localhost");
 
+    if (enableSharedAuthBrowserLogin) {
+      if (!authPublicOrigin) problems.push("AUTH_PUBLIC_ORIGIN");
+      else if (isLocalOrigin(authPublicOrigin)) problems.push("AUTH_PUBLIC_ORIGIN_localhost");
+    }
+
     if (allowedBrowserOrigins.some((origin) => isLocalOrigin(origin))) {
       problems.push("ALLOWED_BROWSER_ORIGINS_localhost");
     }
@@ -164,7 +175,10 @@ export function resolveRuntimeHandshakeConfig(env = process.env) {
     callbackBase,
     cookieDomain,
     authApiBaseUrl,
+    authPublicOrigin,
     authCookieName,
+    authCookieDomain,
+    enableSharedAuthBrowserLogin,
     vvaultTargets,
     vvaultOrigin,
     vvaultApiBaseUrl,
@@ -184,6 +198,10 @@ export function assertRuntimeHandshakeSafety(env = process.env) {
     publicOrigin: config.publicOrigin,
     callbackBase: config.callbackBase,
     authApiBaseUrl: config.authApiBaseUrl,
+    authPublicOrigin: config.authPublicOrigin,
+    authCookieName: config.authCookieName,
+    authCookieDomain: config.authCookieDomain,
+    enableSharedAuthBrowserLogin: config.enableSharedAuthBrowserLogin,
     vvaultTargets: config.vvaultTargets.map(({ name, origin }) => ({ name, origin })),
     allowedBrowserOrigins: [...config.allowedBrowserOrigins],
     allowLegacyVvaultExchange: config.allowLegacyVvaultExchange,
