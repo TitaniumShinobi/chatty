@@ -46,6 +46,7 @@ import {
 } from "../lib/vvaultConversationHydration";
 import { bootstrapConstructs, isMasterScriptsBootstrapEnabled } from "../lib/masterScripts";
 import { GPTService, type GPTConfig } from "../lib/gptService";
+import { buildMissingCanonicalConstructContacts } from "../lib/canonicalConstructContacts";
 import type { AIConfig } from "../lib/aiService";
 import type { UIContextSnapshot, Message as ChatMessage, Attachment } from "../types";
 import { WorkspaceContextBuilder } from "../engine/context/WorkspaceContextBuilder";
@@ -435,8 +436,8 @@ export default function Layout() {
         };
       });
     
-    // Create contact cards for GPTs that don't have a conversation thread yet
-    // Also exclude system constructs (Zen, Lin, Synth) - they're nav items, not address book contacts
+    // Create contact cards for GPTs that don't have a conversation thread yet.
+    // The public certification constructs get navigation-only contact cards below.
     const existingConstructIds = new Set(conversationThreads.map(t => t.constructId));
     const gptContactCards: Thread[] = [];
     for (const gpt of userGPTs) {
@@ -475,7 +476,13 @@ export default function Layout() {
       });
     }
     
-    const allContacts = [...conversationThreads, ...gptContactCards];
+    const canonicalContactCards = buildMissingCanonicalConstructContacts({
+      existingConstructIds: [
+        ...conversationThreads.map((thread) => thread.constructId),
+        ...gptContactCards.map((thread) => thread.constructId),
+      ],
+    });
+    const allContacts = [...conversationThreads, ...gptContactCards, ...canonicalContactCards];
     
     // Deduplicate by constructId - keep only the most recent thread per construct
     const seenConstructIds = new Set<string>();
