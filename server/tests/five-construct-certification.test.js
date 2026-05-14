@@ -234,4 +234,13 @@ describe('five-construct certification harness', () => {
     assert.match(client, /transcriptReadTimeoutMs\(\)/);
     assert.match(client, /transcriptReadTimeoutMs\(\)\n\s+\);/);
   });
+
+  it('deduplicates and bounds canonical identity loading for Supabase-backed constructs', () => {
+    const loader = fs.readFileSync(new URL('../lib/identityLoader.js', import.meta.url), 'utf8');
+
+    assert.match(loader, /canonicalIdentityInFlight/);
+    assert.match(loader, /CANONICAL_IDENTITY_TIMEOUT_MS/);
+    assert.match(loader, /requiresSupabaseBackedIdentity\(constructId\)/);
+    assert.match(loader, /canonicalIdentityInFlight\.set\(cacheKey, loadCanonicalIdentityPromise\)/);
+  });
 });

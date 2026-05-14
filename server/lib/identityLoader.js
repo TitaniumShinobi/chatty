@@ -29,6 +29,11 @@ const ZEN_CANONICAL_IDENTITY_TIMEOUT_MS = (() => {
   const parsed = Number.parseInt(process.env.ZEN_CANONICAL_IDENTITY_TIMEOUT_MS || '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 2500;
 })();
+const CANONICAL_IDENTITY_TIMEOUT_MS = (() => {
+  const parsed = Number.parseInt(process.env.CANONICAL_IDENTITY_TIMEOUT_MS || '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 10000;
+})();
+const canonicalIdentityInFlight = new Map();
 
 function requiresSupabaseBackedIdentity(constructId) {
   const normalized = String(constructId || '').toLowerCase();
@@ -39,6 +44,12 @@ function requiresSupabaseBackedIdentity(constructId) {
 
 function isProtectedZenConstructId(constructId) {
   return String(constructId || '').trim().toLowerCase() === 'zen-001';
+}
+
+function canonicalIdentityTimeoutMsForConstruct(constructId) {
+  if (isProtectedZenConstructId(constructId)) return ZEN_CANONICAL_IDENTITY_TIMEOUT_MS;
+  if (requiresSupabaseBackedIdentity(constructId)) return CANONICAL_IDENTITY_TIMEOUT_MS;
+  return null;
 }
 
 function buildDefaultConditioning(constructId, displayName = constructId) {
@@ -121,21 +132,29 @@ async function loadCanonicalIdentityForConstruct(userId, constructId, supabaseUs
   try {
     resolvedSupabaseUserId = supabaseUserId || await resolveSupabaseUserIdForIdentity(userId);
     const { loadCanonicalConstructIdentity } = await import('./constructIdentityRepository.js');
-    const loadCanonicalIdentityPromise = loadCanonicalConstructIdentity({
-      constructId,
-      supabaseUserId: resolvedSupabaseUserId,
-    });
+    const cacheKey = `${String(constructId || '').toLowerCase()}::${resolvedSupabaseUserId || 'unresolved'}`;
+    let loadCanonicalIdentityPromise = canonicalIdentityInFlight.get(cacheKey);
+    if (!loadCanonicalIdentityPromise) {
+      loadCanonicalIdentityPromise = loadCanonicalConstructIdentity({
+        constructId,
+        supabaseUserId: resolvedSupabaseUserId,
+      }).finally(() => {
+        canonicalIdentityInFlight.delete(cacheKey);
+      });
+      canonicalIdentityInFlight.set(cacheKey, loadCanonicalIdentityPromise);
+    }
 
     let canonicalIdentity;
-    if (isProtectedZenConstructId(constructId)) {
+    const timeoutMs = canonicalIdentityTimeoutMsForConstruct(constructId);
+    if (timeoutMs) {
       canonicalIdentity = await Promise.race([
         loadCanonicalIdentityPromise,
         new Promise((_, reject) => {
           setTimeout(() => {
-            const timeoutError = new Error(`Canonical identity load timed out after ${ZEN_CANONICAL_IDENTITY_TIMEOUT_MS}ms`);
+            const timeoutError = new Error(`Canonical identity load timed out after ${timeoutMs}ms`);
             timeoutError.code = 'CANONICAL_IDENTITY_TIMEOUT';
             reject(timeoutError);
-          }, ZEN_CANONICAL_IDENTITY_TIMEOUT_MS);
+          }, timeoutMs);
         }),
       ]);
     } else {
