@@ -690,6 +690,8 @@ export default function Chat() {
       }
       return false;
     });
+  const activeThreadMessages = Array.isArray(thread?.messages) ? thread.messages : [];
+  const activeThreadHasMalformedMessages = Boolean(thread && !Array.isArray(thread.messages));
 
   const isZenSessionThread = Boolean(
     threadId && threadId.startsWith("zen-001_chat_with_"),
@@ -782,7 +784,7 @@ export default function Chat() {
   const prevThreadId = useRef(thread?.id);
   useEffect(() => {
     if (prevThreadId.current !== thread?.id) {
-      if (!userHasInteracted || (thread && thread.messages.length === 0)) {
+      if (!userHasInteracted || (thread && activeThreadMessages.length === 0)) {
         setUserHasInteracted(false);
       }
       setMessageWindowSize(50);
@@ -791,17 +793,17 @@ export default function Chat() {
   }, [thread?.id]);
 
   useEffect(() => {
-    if (!thread || thread.messages.length === 0) return;
+    if (!thread || activeThreadMessages.length === 0) return;
     if (shouldBlockActiveThreadRender({ activeThreadHydration, thread })) return;
     scrollToBottom(false);
-  }, [thread?.id, thread?.messages.length, activeThreadHydration]);
+  }, [thread?.id, activeThreadMessages.length, activeThreadHydration]);
 
   // Auto-scroll only after user has interacted (sent a message)
   useEffect(() => {
-    if (thread && thread.messages.length > 0 && userHasInteracted) {
+    if (thread && activeThreadMessages.length > 0 && userHasInteracted) {
       scrollToBottom(true);
     }
-  }, [thread?.messages, userHasInteracted]);
+  }, [activeThreadMessages, userHasInteracted]);
 
   useEffect(() => {
     const container = messagesContainerRef.current;
@@ -842,9 +844,9 @@ export default function Chat() {
   // Only attempt fallback transcript loading if threads have loaded (threads.length > 0)
   // This prevents race condition where thread appears undefined during initial data fetch
   useEffect(() => {
-    const threadHasMessages = Boolean(thread && thread.messages.length > 0);
+    const threadHasMessages = Boolean(thread && activeThreadMessages.length > 0);
     const waitingForEmptyThreadReload = Boolean(
-      thread && thread.messages.length === 0 && (!reloadAttempted || isReloading),
+      thread && activeThreadMessages.length === 0 && (!reloadAttempted || isReloading),
     );
 
     if (
@@ -920,7 +922,7 @@ export default function Chat() {
         thread,
       }) && !isReloading && !reloadAttempted;
 
-    if ((thread.messages.length === 0 || exactThreadReloadNeeded) && !isReloading && !reloadAttempted) {
+    if ((activeThreadMessages.length === 0 || exactThreadReloadNeeded) && !isReloading && !reloadAttempted) {
       setIsReloading(true);
       setReloadAttempted(true);
 
@@ -942,13 +944,13 @@ export default function Chat() {
           console.error("❌ [Chat] Failed to reload thread messages:", error);
           setIsReloading(false);
         });
-    } else if (thread.messages.length > 0 && isReloading) {
+    } else if (activeThreadMessages.length > 0 && isReloading) {
       // If messages are now present, clear loading state
       setIsReloading(false);
     }
   }, [
     thread?.id,
-    thread?.messages.length,
+    activeThreadMessages.length,
     thread?.isIndexHydrated,
     threadId,
     reloadThreadMessages,
@@ -962,7 +964,11 @@ export default function Chat() {
   const canonicalConstructName = isZenSessionThread ? "Zen" : isLinSessionThread ? "Lin" : gptConstructName;
   const shouldRenderCanonicalTranscriptFallback = Boolean(
     isCanonicalThread &&
-      (!thread || (thread.messages.length === 0 && reloadAttempted && !isReloading)),
+      (
+        !thread ||
+        activeThreadHasMalformedMessages ||
+        (activeThreadMessages.length === 0 && reloadAttempted && !isReloading)
+      ),
   );
 
   const assistantCodeStyles = `
@@ -1607,7 +1613,7 @@ export default function Chat() {
     if (!thread || !threadId) return;
 
     // Slice messages array up to (but not including) messageIndex
-    const truncatedMessages = thread.messages.slice(0, messageIndex);
+    const truncatedMessages = activeThreadMessages.slice(0, messageIndex);
 
     // Update thread state (this will be handled by Layout.tsx if we add rewindToMessage)
     // For now, we'll reload the thread which should sync with VVAULT
@@ -1929,9 +1935,9 @@ export default function Chat() {
           </div>
         )}
 
-        {thread.messages.length > 0 &&
+        {activeThreadMessages.length > 0 &&
           (() => {
-            const filtered = thread.messages.filter((m: any) => !isDateHeaderMessage(m));
+            const filtered = activeThreadMessages.filter((m: any) => !isDateHeaderMessage(m));
             const windowStart = Math.max(0, filtered.length - messageWindowSize);
             const windowed = filtered.slice(windowStart);
             const hasMore = windowStart > 0;
@@ -2304,7 +2310,7 @@ export default function Chat() {
             );
           })()}
         {/* Fresh canvas spacer — large gap after last message on fresh session, disappears on first send */}
-        {!userHasInteracted && thread.messages.length > 0 && (
+        {!userHasInteracted && activeThreadMessages.length > 0 && (
           <div style={{ height: "calc(100vh - 200px)" }} />
         )}
         <div
