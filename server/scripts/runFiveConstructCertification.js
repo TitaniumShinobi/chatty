@@ -3,8 +3,7 @@ import '../loadEnv.js';
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
-
-import jwt from 'jsonwebtoken';
+import { createHmac } from 'node:crypto';
 
 import {
   buildCertificationMarkdown,
@@ -18,6 +17,10 @@ const API_PORT = process.env.API_PORT ? parseInt(process.env.API_PORT, 10) : 505
 const API_BASE_URL = process.env.API_BASE_URL || `http://127.0.0.1:${API_PORT}`;
 const COOKIE_NAME = process.env.COOKIE_NAME || 'sid';
 const JWT_SECRET = process.env.JWT_SECRET;
+const SERVICE_TOKEN =
+  process.env.FIVE_CONSTRUCT_CERTIFICATION_SERVICE_TOKEN ||
+  process.env.VVAULT_SERVICE_TOKEN ||
+  '';
 const REQUEST_AUTH_USER_ID =
   process.env.FIVE_CONSTRUCT_CERTIFICATION_USER_ID ||
   process.env.TEST_USER_ID ||
@@ -43,6 +46,7 @@ Environment:
   JWT_SECRET
   FIVE_CONSTRUCT_CERTIFICATION_USER_ID
   FIVE_CONSTRUCT_CERTIFICATION_USER_EMAIL
+  FIVE_CONSTRUCT_CERTIFICATION_SERVICE_TOKEN
   FIVE_CONSTRUCT_CERTIFICATION_VVAULT_READY_URL
   FIVE_CONSTRUCT_CERTIFICATION_TIMEOUT_MS`);
 }
@@ -57,19 +61,38 @@ function buildToken() {
   if (!JWT_SECRET) {
     throw new Error('JWT_SECRET is not set. Start Chatty with the same env before running certification.');
   }
+  const header = { alg: 'HS256', typ: 'JWT' };
   const payload = { sub: REQUEST_AUTH_USER_ID };
   if (REQUEST_AUTH_USER_EMAIL) payload.email = REQUEST_AUTH_USER_EMAIL;
-  return jwt.sign(payload, JWT_SECRET);
+  const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  const unsigned = `${encode(header)}.${encode(payload)}`;
+  const signature = createHmac('sha256', JWT_SECRET).update(unsigned).digest('base64url');
+  return `${unsigned}.${signature}`;
 }
 
-async function fetchJsonWithStatus(url, cookie, options = {}) {
+function buildAuthHeaders() {
+  if (SERVICE_TOKEN) {
+    return {
+      Authorization: `Bearer ${SERVICE_TOKEN}`,
+      'X-Chatty-Key': SERVICE_TOKEN,
+      'X-Chatty-User-Id': REQUEST_AUTH_USER_ID,
+      'X-Chatty-User-Email': REQUEST_AUTH_USER_EMAIL,
+      'X-Chatty-Operator-Name': 'Zenith/Codex',
+    };
+  }
+  return {
+    Cookie: `${COOKIE_NAME}=${buildToken()}`,
+  };
+}
+
+async function fetchJsonWithStatus(url, authHeaders = {}, options = {}) {
   let response;
   try {
     response = await fetch(url, {
       ...options,
       headers: {
+        ...authHeaders,
         ...(options.headers || {}),
-        ...(cookie ? { Cookie: cookie } : {}),
       },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
@@ -165,14 +188,14 @@ function snapshotCanonicalTranscript(payload, threadId, prompt = '', answer = ''
   };
 }
 
-async function fetchCanonicalTranscript(apiBaseUrl, cookie, threadId) {
+async function fetchCanonicalTranscript(apiBaseUrl, authHeaders, threadId) {
   return fetchJsonWithStatus(
     `${apiBaseUrl}/api/vvault/conversations/${encodeURIComponent(threadId)}/canonical-transcript`,
-    cookie,
+    authHeaders,
   );
 }
 
-async function fetchCanonicalTranscriptUntilReadback(apiBaseUrl, cookie, threadId, prompt, answer, initial) {
+async function fetchCanonicalTranscriptUntilReadback(apiBaseUrl, authHeaders, threadId, prompt, answer, initial) {
   let latest = initial;
   for (let attempt = 0; attempt < READBACK_RETRY_COUNT; attempt += 1) {
     const snapshot = snapshotCanonicalTranscript(latest.payload, threadId, prompt, answer);
@@ -180,14 +203,14 @@ async function fetchCanonicalTranscriptUntilReadback(apiBaseUrl, cookie, threadI
       return latest;
     }
     await sleep(READBACK_RETRY_DELAY_MS);
-    latest = await fetchCanonicalTranscript(apiBaseUrl, cookie, threadId);
+    latest = await fetchCanonicalTranscript(apiBaseUrl, authHeaders, threadId);
   }
   return latest;
 }
 
 async function postCertificationPrompt({
   apiBaseUrl,
-  cookie,
+  authHeaders,
   run,
   prompt,
   includeDiagnosticSynthesis,
@@ -203,20 +226,20 @@ async function postCertificationPrompt({
   if (includeDiagnosticSynthesis) {
     body.orchestrationProfile = 'diagnostic_full_seat_synthesis';
   }
-  return fetchJsonWithStatus(`${apiBaseUrl}/api/vvault/message`, cookie, {
+  return fetchJsonWithStatus(`${apiBaseUrl}/api/vvault/message`, authHeaders, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
 }
 
-async function assertReady(apiBaseUrl, cookie) {
-  const health = await fetchJsonWithStatus(`${apiBaseUrl}/api/health`, cookie);
+async function assertReady(apiBaseUrl, authHeaders) {
+  const health = await fetchJsonWithStatus(`${apiBaseUrl}/api/health`, authHeaders);
   if (!health.ok || health.payload?.ready !== true) {
     throw new Error(`Chatty API is not ready at ${apiBaseUrl}/api/health`);
   }
   if (VVAULT_READY_URL) {
-    const vvaultReady = await fetchJsonWithStatus(VVAULT_READY_URL, cookie);
+    const vvaultReady = await fetchJsonWithStatus(VVAULT_READY_URL, authHeaders);
     if (!vvaultReady.ok || vvaultReady.payload?.ready !== true) {
       throw new Error(`VVAULT is not ready at ${VVAULT_READY_URL}`);
     }
@@ -251,12 +274,11 @@ async function main() {
   }
 
   const apiBaseUrl = args.apiBaseUrl || API_BASE_URL;
-  const token = buildToken();
-  const cookie = `${COOKIE_NAME}=${token}`;
+  const authHeaders = buildAuthHeaders();
   const runs = buildCertificationRuns(args);
   const totalPrompts = runs.reduce((sum, run) => sum + run.prompts.length, 0);
 
-  await assertReady(apiBaseUrl, cookie);
+  await assertReady(apiBaseUrl, authHeaders);
 
   const startedAt = new Date().toISOString();
   const turns = [];
@@ -271,20 +293,20 @@ async function main() {
 
   for (const run of runs) {
     for (const prompt of run.prompts) {
-      const beforeTranscript = await fetchCanonicalTranscript(apiBaseUrl, cookie, run.threadId);
+      const beforeTranscript = await fetchCanonicalTranscript(apiBaseUrl, authHeaders, run.threadId);
       const beforeReadback = snapshotCanonicalTranscript(beforeTranscript.payload, run.threadId);
       const response = await postCertificationPrompt({
         apiBaseUrl,
-        cookie,
+        authHeaders,
         run,
         prompt,
         includeDiagnosticSynthesis: args.includeDiagnosticSynthesis,
       });
       const answer = answerText(response.payload);
-      const initialAfter = await fetchCanonicalTranscript(apiBaseUrl, cookie, run.threadId);
+      const initialAfter = await fetchCanonicalTranscript(apiBaseUrl, authHeaders, run.threadId);
       const finalAfter = await fetchCanonicalTranscriptUntilReadback(
         apiBaseUrl,
-        cookie,
+        authHeaders,
         run.threadId,
         prompt.message,
         answer,

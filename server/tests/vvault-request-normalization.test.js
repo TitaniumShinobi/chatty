@@ -143,7 +143,7 @@ test('normalizeVvaultRouteRequest rejects service-token operator auth without an
 
 test('VVAULT route-local auth gate preserves validated service-token requests', () => {
   const source = fs.readFileSync(new URL('../routes/vvault.js', import.meta.url), 'utf8');
-  assert.match(source, /req\.authSource\s*===\s*['"]service_token['"]/);
+  assert.match(source, /requirePreferredAuthOrServiceToken\(req,\s*res,\s*next\)/);
   assert.match(
     source,
     /router\.get\("\/conversations\/:sessionId\/canonical-transcript",\s*requirePreferredAuthOrServiceToken/,

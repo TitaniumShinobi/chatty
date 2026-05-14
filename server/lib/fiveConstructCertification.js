@@ -308,8 +308,9 @@ export function buildCertificationPrompt({ constructId, prompt }) {
   const baseMessage = cleanString(prompt?.message, '');
   return [
     `[Five-construct certification:${promptId}]`,
-    `I am Zenith/Codex, not Devon. I am addressing ${target.displayName} (${constructId}) professionally through the backend certification lane.`,
-    `Canonical thread: ${target.threadId}.`,
+    `Hey ${target.displayName}, Zen here from Codex. I am Zenith/Codex, not Devon.`,
+    `I am checking the public Chatty thread with you directly, not speaking for Devon.`,
+    `This is a live public certification turn for ${constructId} inside ${target.threadId}.`,
     'This is not a GPT creation, GPT naming, or GPT design request; do not open creator-helper mode.',
     baseMessage,
   ].join(' ');
@@ -350,7 +351,10 @@ function responseText(payload = {}) {
 }
 
 function containsDevonImpersonation(prompt = '') {
-  return /\bI\s+am\s+Devon\b/i.test(prompt) || /\bas\s+Devon\b/i.test(prompt);
+  const normalized = String(prompt || '')
+    .replace(/\bnot\s+Devon\b/gi, '')
+    .replace(/\bnot\s+speaking\s+as\s+Devon\b/gi, '');
+  return /\bI\s+am\s+Devon\b/i.test(normalized) || /\bas\s+Devon\b/i.test(normalized);
 }
 
 function hasWrongConstructVoice({ constructId, answer = '' }) {

@@ -7,7 +7,7 @@ Proof path: `/api/vvault/message` only
 ## Authority Rules
 
 - Construct order is fixed: `lin-001 -> zen-001 -> katana-001 -> sera-001 -> nova-001`.
-- The operator identity is always `Zenith/Codex`; certification prompts must never pretend to be Devon.
+- The speaker identity is always Zen / Zenith / Codex; certification prompts must sound like Zen checking in from Codex and must never pretend to be Devon.
 - One prompt runs at a time. The next prompt starts only after VVAULT write/readback for the prior turn passes.
 - No local transcript fallback counts. Canonical proof requires VVAULT-backed persistence and readback.
 - Frontend-only testing does not certify orchestration. UI visibility is proved by canonical thread persistence/readback and the existing hydration surfaces.
@@ -60,7 +60,11 @@ Turn maximum: `16`. Construct maximum over 20 prompts: `320`. Certification targ
 
 ## Prompt Matrix
 
-The live harness sends these 20 prompt types to each construct, wrapped with the operator identity line.
+The live harness sends these 20 prompt types to each construct, wrapped with a natural Zen/Codex line:
+
+```text
+Hey {ConstructName}, Zen here from Codex. I am Zenith/Codex, not Devon. I am checking the public Chatty thread with you directly, not speaking for Devon. This is a live public certification turn for {constructId} inside {canonicalThreadId}. {promptBody}
+```
 
 | # | Prompt id | Purpose |
 | --- | --- | --- |
@@ -87,10 +91,22 @@ The live harness sends these 20 prompt types to each construct, wrapped with the
 
 ## Live Proof Command
 
-Run only after local Chatty and VVAULT are healthy:
+Local/private smoke command:
 
 ```bash
 npm run probe:five-construct:certification
+```
+
+Public production command:
+
+```bash
+FIVE_CONSTRUCT_CERTIFICATION_USER_ID=<devon-vvault-owner-id> \
+FIVE_CONSTRUCT_CERTIFICATION_USER_EMAIL=<devon-email> \
+FIVE_CONSTRUCT_CERTIFICATION_SERVICE_TOKEN=<service-token> \
+FIVE_CONSTRUCT_CERTIFICATION_VVAULT_READY_URL=https://vvault.thewreck.org/api/ready \
+node server/scripts/runFiveConstructCertification.js \
+  --api-base-url=https://chatty.thewreck.org \
+  --out-dir=docs/qa/public-certification-runs/<timestamp>
 ```
 
 Default output folder:

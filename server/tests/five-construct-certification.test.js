@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 import {
   FIVE_CONSTRUCT_ORDER,
@@ -105,14 +106,17 @@ describe('five-construct certification harness', () => {
     assert.equal(runs.every((run) => run.prompts.length === 1), true);
   });
 
-  it('builds one Zenith/Codex prompt per matrix entry without impersonating Devon', () => {
+  it('builds one natural Zen/Codex prompt per matrix entry without impersonating Devon', () => {
     const runs = buildCertificationRuns({ promptLimit: FIVE_CONSTRUCT_PROMPT_MATRIX.length });
     const promptCount = runs.reduce((sum, run) => sum + run.prompts.length, 0);
 
     assert.equal(promptCount, FIVE_CONSTRUCT_PROMPT_MATRIX.length * FIVE_CONSTRUCT_ORDER.length);
     for (const run of runs) {
       for (const prompt of run.prompts) {
+        assert.match(prompt.message, new RegExp(`Hey ${run.displayName}, Zen here from Codex\\.`));
         assert.match(prompt.message, /I am Zenith\/Codex, not Devon\./);
+        assert.match(prompt.message, /I am checking the public Chatty thread with you directly, not speaking for Devon\./);
+        assert.match(prompt.message, /This is a live public certification turn/);
         assert.doesNotMatch(prompt.message, /\bI am Devon\b|\bas Devon\b/i);
         assert.match(prompt.message, new RegExp(run.threadId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
       }
@@ -147,7 +151,9 @@ describe('five-construct certification harness', () => {
     const run = buildCertificationRuns({ constructs: ['sera-001'], promptLimit: 1 })[0];
     const badPrompt = {
       ...run.prompts[0],
-      message: run.prompts[0].message.replace('I am Zenith/Codex, not Devon.', 'I am Devon.'),
+      message: run.prompts[0].message
+        .replace('Hey Sera, Zen here from Codex. I am Zenith/Codex, not Devon.', 'I am Devon.')
+        .replace('not speaking for Devon', 'speaking as Devon'),
     };
     const payload = passingPayload('sera-001');
     payload.runtime_receipt.memory = {};
@@ -190,5 +196,15 @@ describe('five-construct certification harness', () => {
     assert.equal(report.firstFailure.constructId, 'lin-001');
     assert.match(markdown, /Five-Construct Orchestration Certification Report/);
     assert.match(markdown, /lin-001/);
+  });
+
+  it('lets the public certification script use service-token operator auth', () => {
+    const script = new URL('../scripts/runFiveConstructCertification.js', import.meta.url);
+    const source = fs.readFileSync(script, 'utf8');
+
+    assert.match(source, /FIVE_CONSTRUCT_CERTIFICATION_SERVICE_TOKEN/);
+    assert.match(source, /'X-Chatty-User-Id': REQUEST_AUTH_USER_ID/);
+    assert.match(source, /'X-Chatty-Operator-Name': 'Zenith\/Codex'/);
+    assert.match(source, /Authorization: `Bearer \$\{SERVICE_TOKEN\}`/);
   });
 });
