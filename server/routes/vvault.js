@@ -9586,6 +9586,7 @@ export async function handleConstructInference(req, res) {
   dataOwnerUserId = constructContext.dataOwnerUserId;
   dataOwnerSource = constructContext.dataOwnerSource;
   authReceipt = constructContext.authReceipt;
+  const authRecovered = Boolean(authReceipt?.dev_auth_fallback);
   if (canonicalOwnerResolution.applied) {
     console.log('[VVAULT_AUTH] Canonical construct owner applied', canonicalOwnerResolution.receipt);
   }
