@@ -8,15 +8,33 @@ const defaultsPath = path.join(repoRoot, 'config', 'linModelDefaults.json');
 
 function readDefaults() {
   const parsed = JSON.parse(fs.readFileSync(defaultsPath, 'utf8'));
+  const envDefault = (name) => {
+    const value = process.env[name];
+    return value && String(value).trim() ? String(value).trim() : null;
+  };
   const intelligence =
+    envDefault('LIN_INTELLIGENCE_MODEL') ||
+    envDefault('LIN_CODING_MODEL') ||
     String(parsed.intelligence || parsed.coding || LIN_THREE_I_SEATS.intelligence.model);
+  const conversation =
+    envDefault('LIN_CONVERSATION_MODEL') ||
+    String(parsed.conversation || LIN_THREE_I_SEATS.interaction.model);
+  const smalltalk =
+    envDefault('LIN_SMALLTALK_MODEL') ||
+    String(parsed.smalltalk || conversation || LIN_THREE_I_SEATS.interaction.model);
+  const creative =
+    envDefault('LIN_CREATIVE_MODEL') ||
+    String(parsed.creative || LIN_THREE_I_SEATS.ingenuity.model);
   return Object.freeze({
-    conversation: String(parsed.conversation || LIN_THREE_I_SEATS.interaction.model),
-    smalltalk: String(parsed.smalltalk || parsed.conversation || LIN_THREE_I_SEATS.interaction.model),
-    creative: String(parsed.creative || LIN_THREE_I_SEATS.ingenuity.model),
+    conversation,
+    smalltalk,
+    creative,
     coding: intelligence,
     intelligence,
-    codingFallback: String(parsed.codingFallback || LIN_THREE_I_SEATS.intelligence.fallbackModel),
+    codingFallback:
+      envDefault('LIN_CODING_FALLBACK_MODEL') ||
+      envDefault('LIN_CODING_MODEL') ||
+      String(parsed.codingFallback || LIN_THREE_I_SEATS.intelligence.fallbackModel),
   });
 }
 

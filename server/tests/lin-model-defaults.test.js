@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,6 +29,37 @@ describe('shared Lin model defaults', () => {
     assert.equal(SERVER_LIN_MODEL_DEFAULTS.coding, 'ollama:qwen3-coder:30b');
     assert.equal(SERVER_LIN_MODEL_DEFAULTS.intelligence, 'ollama:qwen3-coder:30b');
     assert.equal(SERVER_LIN_MODEL_DEFAULTS.codingFallback, 'ollama:qwen3-coder:30b');
+  });
+
+  it('allows deployment env overrides without changing the shared canon file', () => {
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        "import { LIN_MODEL_DEFAULTS } from './server/lib/linModelDefaults.js'; console.log(JSON.stringify(LIN_MODEL_DEFAULTS));",
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          LIN_CONVERSATION_MODEL: 'ollama:phi3:latest',
+          LIN_SMALLTALK_MODEL: 'ollama:phi3:latest',
+          LIN_CREATIVE_MODEL: 'ollama:mistral:latest',
+          LIN_CODING_MODEL: 'ollama:deepseek-coder:6.7b',
+        },
+        encoding: 'utf8',
+      },
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    const defaults = JSON.parse(result.stdout);
+    assert.equal(defaults.conversation, 'ollama:phi3:latest');
+    assert.equal(defaults.smalltalk, 'ollama:phi3:latest');
+    assert.equal(defaults.creative, 'ollama:mistral:latest');
+    assert.equal(defaults.coding, 'ollama:deepseek-coder:6.7b');
+    assert.equal(defaults.intelligence, 'ollama:deepseek-coder:6.7b');
+    assert.equal(defaults.codingFallback, 'ollama:deepseek-coder:6.7b');
   });
 
   it('keeps the client wrapper importing the same shared JSON instead of duplicating defaults', () => {
