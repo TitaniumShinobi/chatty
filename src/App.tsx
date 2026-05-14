@@ -1,6 +1,7 @@
 // src/App.tsx
 import React, { useEffect, useRef, useState } from "react";
 import {
+  buildHostedAuthUrl,
   fetchMe,
   loginWithGoogle,
   loginWithMicrosoft,
@@ -10,6 +11,7 @@ import {
   signupWithEmail,
   type User,
 } from "./lib/auth";
+import { resolveClientDoorName } from "./lib/chattyVvaultDoor";
 // Migration removed - file doesn't exist
 // import ChattyApp from './ChattyApp' // Not used - Layout.tsx is the main app component
 
@@ -43,6 +45,7 @@ function getRuntimeEnv(): Record<string, any> {
 }
 
 export default function App() {
+  const hostedAuthPublicDoor = resolveClientDoorName() === "public";
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -74,8 +77,15 @@ export default function App() {
     | undefined;
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
 
+  function redirectToHostedAuth(mode: "login" | "signup", reason?: string) {
+    window.location.href = buildHostedAuthUrl(mode, undefined, reason);
+  }
+
   // Initialize Cloudflare Turnstile
   useEffect(() => {
+    if (hostedAuthPublicDoor) {
+      return;
+    }
     const loadTurnstile = () => {
       if (window.turnstile) {
         // Turnstile is already loaded
@@ -100,10 +110,13 @@ export default function App() {
     };
 
     loadTurnstile();
-  }, [turnstileSiteKey]);
+  }, [hostedAuthPublicDoor, turnstileSiteKey]);
 
   // Initialize Turnstile widget when in signup mode
   useEffect(() => {
+    if (hostedAuthPublicDoor) {
+      return;
+    }
     if (mode === "signup" && window.turnstile && !turnstileWidgetId) {
       if (!turnstileSiteKey) {
         return;
@@ -127,17 +140,20 @@ export default function App() {
       });
       setTurnstileWidgetId(widgetId);
     }
-  }, [mode, turnstileWidgetId, turnstileSiteKey]);
+  }, [hostedAuthPublicDoor, mode, turnstileWidgetId, turnstileSiteKey]);
 
   // Cleanup Turnstile widget when switching modes
   useEffect(() => {
+    if (hostedAuthPublicDoor) {
+      return;
+    }
     if (mode === "login" && turnstileWidgetId && window.turnstile) {
       window.turnstile.remove(turnstileWidgetId);
       setTurnstileWidgetId("");
       setTurnstileToken("");
       setTurnstileError("");
     }
-  }, [mode, turnstileWidgetId]);
+  }, [hostedAuthPublicDoor, mode, turnstileWidgetId]);
 
   useEffect(() => {
     // Safety timeout: ensure isLoading is cleared after 5 seconds max
@@ -213,6 +229,18 @@ export default function App() {
       clearTimeout(timeoutId);
     };
   }, []);
+
+  useEffect(() => {
+    if (!hostedAuthPublicDoor || typeof window === "undefined") {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const authModal = params.get("authModal");
+    const reason = params.get("reason");
+    if (authModal === "signup") {
+      redirectToHostedAuth("signup", reason || undefined);
+    }
+  }, [hostedAuthPublicDoor]);
 
   async function handleEmailAuth(e: React.FormEvent) {
     e.preventDefault();
@@ -654,6 +682,79 @@ export default function App() {
         }}
       >
         <div className="opacity-70">Redirecting…</div>
+      </div>
+    );
+  }
+
+  if (hostedAuthPublicDoor) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center p-4"
+        style={{
+          backgroundColor: "var(--chatty-bg-main)",
+          color: "var(--chatty-text)",
+        }}
+      >
+        <div
+          style={{
+            width: "420px",
+            maxWidth: "100%",
+            backgroundColor: "var(--chatty-bg-sidebar)",
+            borderRadius: "12px",
+            padding: "24px",
+            boxShadow: "0 10px 30px rgba(0,0,0,.15)",
+            textAlign: "center",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              marginBottom: "16px",
+            }}
+          >
+            <img
+              src="/assets/logo/Chatty.png"
+              alt="Chatty"
+              style={{
+                height: "64px",
+                width: "auto",
+                maxWidth: "100%",
+                display: "block",
+              }}
+            />
+          </div>
+          <p className="opacity-75 mb-6 text-center">
+            Chatty now uses the hosted auth door for public sign in and account
+            creation.
+          </p>
+          <div className="space-y-3">
+            <button
+              type="button"
+              onClick={() => redirectToHostedAuth("login")}
+              className="w-80 max-w-full py-2 rounded-full font-semibold transition-colors"
+              style={{
+                backgroundColor: "var(--chatty-button)",
+                color: "var(--chatty-text-inverse)",
+                border: "none",
+              }}
+            >
+              Continue to Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => redirectToHostedAuth("signup")}
+              className="w-80 max-w-full py-2 rounded-full font-semibold transition-colors"
+              style={{
+                backgroundColor: "transparent",
+                color: "var(--chatty-text)",
+                border: "1px solid var(--chatty-line)",
+              }}
+            >
+              Create Account
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

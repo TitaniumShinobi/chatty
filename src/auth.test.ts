@@ -2,12 +2,27 @@ import {
   fetchWithDevAuthRetry,
   resetDevAuthStateForTests,
 } from './auth';
-import { buildGoogleLoginUrl } from './lib/auth';
+import { buildGoogleLoginUrl, buildHostedAuthUrl } from './lib/auth';
+
+jest.mock('./lib/chattyVvaultDoor', () => ({
+  resolveClientDoorName: jest.fn((currentHref?: string) => 'private'),
+  resolveClientDoorContract: jest.fn(() => ({
+    authPublicOrigin: 'https://auth.thewreck.org',
+  })),
+}));
 
 describe('fetchWithDevAuthRetry', () => {
   beforeEach(() => {
     resetDevAuthStateForTests();
     jest.resetAllMocks();
+    const doorModule = jest.requireMock('./lib/chattyVvaultDoor') as {
+      resolveClientDoorName: jest.Mock;
+      resolveClientDoorContract: jest.Mock;
+    };
+    doorModule.resolveClientDoorName.mockImplementation(() => 'private');
+    doorModule.resolveClientDoorContract.mockImplementation(() => ({
+      authPublicOrigin: 'https://auth.thewreck.org',
+    }));
   });
 
   it('retries a vvault request once after dev-login on 401 in development', async () => {
@@ -46,5 +61,13 @@ describe('buildGoogleLoginUrl', () => {
 
   it('uses the normal google auth path when no cli callback is present', () => {
     expect(buildGoogleLoginUrl('http://localhost:5173/')).toBe('/api/auth/google');
+  });
+});
+
+describe('buildHostedAuthUrl', () => {
+  it('points the public door at the hosted auth origin with the current origin attached', () => {
+    expect(
+      buildHostedAuthUrl('signup', 'https://chatty.thewreck.org/?reason=missing_consent'),
+    ).toBe('https://auth.thewreck.org/?origin=https%3A%2F%2Fchatty.thewreck.org&mode=signup');
   });
 });
