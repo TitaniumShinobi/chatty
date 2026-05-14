@@ -5351,6 +5351,9 @@ router.use((req, res, next) => {
   if (routeOverrides.bypassPreferredAuth === true) {
     return next();
   }
+  if (req.authSource === 'service_token') {
+    return next();
+  }
   return requirePreferredAuth(req, res, next);
 });
 console.log('✅ [VVAULT Routes] requirePreferredAuth middleware applied to protected routes');

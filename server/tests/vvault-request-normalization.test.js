@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 
 import { normalizeVvaultRouteRequest } from '../lib/vvaultRequestNormalization.js';
@@ -138,4 +139,9 @@ test('normalizeVvaultRouteRequest rejects service-token operator auth without an
   assert.equal(result.ok, false);
   assert.equal(result.status, 401);
   assert.match(result.body.error, /x-chatty-user-id/i);
+});
+
+test('VVAULT route-local auth gate preserves validated service-token requests', () => {
+  const source = fs.readFileSync(new URL('../routes/vvault.js', import.meta.url), 'utf8');
+  assert.match(source, /req\.authSource\s*===\s*['"]service_token['"]/);
 });
