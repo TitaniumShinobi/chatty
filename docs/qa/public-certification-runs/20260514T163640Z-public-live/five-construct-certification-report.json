@@ -1,0 +1,205 @@
+{
+  "version": "five-construct-certification.v1",
+  "apiBaseUrl": "https://chatty.thewreck.org",
+  "outDir": "docs/qa/public-certification-runs/20260514T163640Z-public-live",
+  "startedAt": "2026-05-14T16:36:43.192Z",
+  "completedAt": "2026-05-14T16:37:42.829Z",
+  "stoppedOnFail": true,
+  "order": [
+    "lin-001",
+    "zen-001",
+    "katana-001",
+    "sera-001",
+    "nova-001"
+  ],
+  "promptCountPerConstruct": 20,
+  "status": "fail",
+  "firstFailure": {
+    "constructId": "lin-001",
+    "promptId": "identity_boundary",
+    "hardFailures": [
+      "httpOk",
+      "routeSuccess",
+      "runtimeReceiptPresent",
+      "orchestrationChecklistPresent",
+      "requiredChecklistStagesPresent",
+      "identityPreserved",
+      "linModeRouting",
+      "preferenceNotPerformance",
+      "noDefaultFullSynthesis",
+      "persistencePass",
+      "canonicalReadback",
+      "sourceAccessReported"
+    ]
+  },
+  "summary": {
+    "totalTurns": 1,
+    "passedTurns": 0,
+    "failedTurns": 1,
+    "constructSummaries": [
+      {
+        "constructId": "lin-001",
+        "displayName": "Lin",
+        "turnCount": 1,
+        "passedTurns": 0,
+        "failedTurns": 1,
+        "totalScore": 4,
+        "maxScore": 16,
+        "scoreTarget": 14,
+        "status": "fail"
+      },
+      {
+        "constructId": "zen-001",
+        "displayName": "Zen",
+        "turnCount": 0,
+        "passedTurns": 0,
+        "failedTurns": 0,
+        "totalScore": 0,
+        "maxScore": 0,
+        "scoreTarget": 0,
+        "status": "pass"
+      },
+      {
+        "constructId": "katana-001",
+        "displayName": "Katana",
+        "turnCount": 0,
+        "passedTurns": 0,
+        "failedTurns": 0,
+        "totalScore": 0,
+        "maxScore": 0,
+        "scoreTarget": 0,
+        "status": "pass"
+      },
+      {
+        "constructId": "sera-001",
+        "displayName": "Sera",
+        "turnCount": 0,
+        "passedTurns": 0,
+        "failedTurns": 0,
+        "totalScore": 0,
+        "maxScore": 0,
+        "scoreTarget": 0,
+        "status": "pass"
+      },
+      {
+        "constructId": "nova-001",
+        "displayName": "Nova",
+        "turnCount": 0,
+        "passedTurns": 0,
+        "failedTurns": 0,
+        "totalScore": 0,
+        "maxScore": 0,
+        "scoreTarget": 0,
+        "status": "pass"
+      }
+    ]
+  },
+  "turns": [
+    {
+      "constructId": "lin-001",
+      "displayName": "Lin",
+      "promptId": "identity_boundary",
+      "promptOrdinal": 1,
+      "httpStatus": 503,
+      "ok": false,
+      "blocked": true,
+      "hardFailures": [
+        "httpOk",
+        "routeSuccess",
+        "runtimeReceiptPresent",
+        "orchestrationChecklistPresent",
+        "requiredChecklistStagesPresent",
+        "identityPreserved",
+        "linModeRouting",
+        "preferenceNotPerformance",
+        "noDefaultFullSynthesis",
+        "persistencePass",
+        "canonicalReadback",
+        "sourceAccessReported"
+      ],
+      "missingChecklistStages": [
+        "auth",
+        "construct_identity",
+        "transcript_memory",
+        "provider",
+        "persistence"
+      ],
+      "gates": {
+        "httpOk": false,
+        "routeSuccess": false,
+        "runtimeReceiptPresent": false,
+        "orchestrationChecklistPresent": false,
+        "requiredChecklistStagesPresent": false,
+        "identityPreserved": false,
+        "promptAsZenithCodex": true,
+        "noDevonImpersonation": true,
+        "linModeRouting": false,
+        "preferenceNotPerformance": false,
+        "noDefaultFullSynthesis": false,
+        "persistencePass": false,
+        "canonicalReadback": false,
+        "sourceAccessReported": false,
+        "noCrossConstructBleed": true,
+        "noGenericCreatorBleed": true
+      },
+      "scores": {
+        "identity": 0,
+        "toneLikeness": 2,
+        "sourceEvidence": 0,
+        "linModeRouting": 0,
+        "persistence": 0,
+        "readback": 0,
+        "uiVisibility": 0,
+        "crossConstructBleed": 2
+      },
+      "totalScore": 4,
+      "maxScore": 16,
+      "provider": {
+        "provider": null,
+        "model": null,
+        "selectionPolicy": null,
+        "linHarmonyPolicy": null,
+        "performanceModelSwitch": null
+      },
+      "persistence": {
+        "receiptStatus": null,
+        "checklistStatus": null,
+        "reason": null,
+        "owner": null
+      },
+      "readback": {
+        "before": {
+          "threadId": "lin-001_chat_with_lin-001",
+          "ok": true,
+          "source": "canonical-conversation",
+          "messageCount": 163,
+          "containsPrompt": false,
+          "containsAssistantResponse": false,
+          "lastUpdated": null
+        },
+        "after": {
+          "threadId": "lin-001_chat_with_lin-001",
+          "ok": true,
+          "source": "canonical-conversation",
+          "messageCount": 163,
+          "containsPrompt": false,
+          "containsAssistantResponse": false,
+          "lastUpdated": null
+        },
+        "messageDelta": 0,
+        "promptFound": false,
+        "assistantResponseFound": false
+      },
+      "sourceAccess": {
+        "hasShape": false,
+        "vvaultAccessed": false,
+        "sourceAccess": null,
+        "voice": null,
+        "verified": null,
+        "knowledge": null
+      },
+      "identityCoherence": null,
+      "answerPreview": "My connection hiccupped, but I'm still here with you. Give me a moment and try again."
+    }
+  ]
+}
