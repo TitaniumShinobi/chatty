@@ -226,4 +226,12 @@ describe('five-construct certification harness', () => {
     assert.match(source, /'X-Chatty-Operator-Name': 'Zenith\/Codex'/);
     assert.match(source, /Authorization: `Bearer \$\{SERVICE_TOKEN\}`/);
   });
+
+  it('keeps VVAULT transcript reads on a bounded but production-sized timeout', () => {
+    const client = fs.readFileSync(new URL('../../vvaultConnector/vvaultApiClient.js', import.meta.url), 'utf8');
+
+    assert.match(client, /VVAULT_TRANSCRIPT_READ_TIMEOUT_MS/);
+    assert.match(client, /transcriptReadTimeoutMs\(\)/);
+    assert.match(client, /transcriptReadTimeoutMs\(\)\n\s+\);/);
+  });
 });

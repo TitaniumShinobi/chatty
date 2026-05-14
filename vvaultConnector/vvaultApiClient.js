@@ -126,6 +126,11 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 3000) {
   }
 }
 
+function transcriptReadTimeoutMs() {
+  const configured = Number(process.env.VVAULT_TRANSCRIPT_READ_TIMEOUT_MS || 10000);
+  return Number.isFinite(configured) && configured > 0 ? configured : 10000;
+}
+
 /**
  * Get transcript for a specific construct
  * @param {string} constructId - e.g., "zen-001"
@@ -143,7 +148,8 @@ async function getTranscript(constructId, userContext) {
       {
         method: 'GET',
         headers: getChattyAuthHeaders(userContext)
-      }
+      },
+      transcriptReadTimeoutMs()
     );
 
     if (!response.ok) {
