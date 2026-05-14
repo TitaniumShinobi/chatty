@@ -17,6 +17,7 @@ import "../lib/messageRecovery";
 import StorageFailureFallback from "./StorageFailureFallback";
 import { ThemeProvider } from "../lib/ThemeContext";
 import { SettingsProvider, useSettings } from "../context/SettingsContext";
+import { TtsPlaybackProvider } from "../context/TtsPlaybackContext";
 import { useIdleTimeout } from "../hooks/useIdleTimeout";
 import { Z_LAYERS } from "../lib/zLayers";
 // icons not needed here after Sidebar is used
@@ -43,7 +44,7 @@ import {
   deriveActiveConversationHydrationStateFromTranscript,
   reconcileIncomingThreadsForActiveRoute,
 } from "../lib/vvaultConversationHydration";
-import { bootstrapConstructs } from "../lib/masterScripts";
+import { bootstrapConstructs, isMasterScriptsBootstrapEnabled } from "../lib/masterScripts";
 import { GPTService, type GPTConfig } from "../lib/gptService";
 import type { AIConfig } from "../lib/aiService";
 import type { UIContextSnapshot, Message as ChatMessage, Attachment } from "../types";
@@ -886,17 +887,21 @@ export default function Layout() {
           }
         })();
 
-        // Bootstrap constructs with master scripts (autonomy stack)
-        try {
-          gpts = await gptsPromise;
-          const constructIds = ["zen-001", "lin-001", ...gpts.map((g: AIConfig) => g.constructCallsign || `${g.name.toLowerCase()}-001`)];
-          const bootstrapResult = await bootstrapConstructs(constructIds);
-          if (bootstrapResult.success) {
-          } else {
-            console.warn("⚠️ [Layout.tsx] Some constructs failed to bootstrap:", bootstrapResult.errors);
+        if (isMasterScriptsBootstrapEnabled()) {
+          // Bootstrap constructs with master scripts (autonomy stack)
+          try {
+            gpts = await gptsPromise;
+            const constructIds = ["zen-001", "lin-001", ...gpts.map((g: AIConfig) => g.constructCallsign || `${g.name.toLowerCase()}-001`)];
+            const bootstrapResult = await bootstrapConstructs(constructIds);
+            if (bootstrapResult.success) {
+            } else {
+              console.warn("⚠️ [Layout.tsx] Some constructs failed to bootstrap:", bootstrapResult.errors);
+            }
+          } catch (bootstrapError) {
+            console.warn("⚠️ [Layout.tsx] Master scripts bootstrap failed (non-fatal):", bootstrapError);
           }
-        } catch (bootstrapError) {
-          console.warn("⚠️ [Layout.tsx] Master scripts bootstrap failed (non-fatal):", bootstrapError);
+        } else {
+          gpts = await gptsPromise;
         }
 
 
@@ -3091,7 +3096,8 @@ export default function Layout() {
     <SettingsProvider>
       <IdleTimeoutWatcher onTimeout={handleLogout} />
       <ThemeProvider user={user}>
-        <div
+        <TtsPlaybackProvider>
+          <div
           className="flex h-screen bg-[var(--chatty-bg-main)] text-[var(--chatty-text)] relative"
           style={{ isolation: "isolate" }} // Ensure proper stacking context for children
         >
@@ -3247,7 +3253,8 @@ export default function Layout() {
             totalSteps={totalSteps}
           />
           {/* Manual runtime dashboard removed - using automatic runtime orchestration */}
-        </div>
+          </div>
+        </TtsPlaybackProvider>
       </ThemeProvider>
     </SettingsProvider>
   );

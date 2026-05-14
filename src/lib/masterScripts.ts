@@ -27,6 +27,13 @@ export interface StateManagerResult {
 }
 
 const API_BASE = "/api/master";
+type MasterScriptsEnv = Partial<Record<"VITE_ENABLE_MASTER_SCRIPTS_BOOTSTRAP", string>>;
+
+export function isMasterScriptsBootstrapEnabled(
+  env: MasterScriptsEnv = import.meta.env,
+): boolean {
+  return env.VITE_ENABLE_MASTER_SCRIPTS_BOOTSTRAP === "true";
+}
 
 export async function bootstrapConstructs(constructIds?: string[]): Promise<MasterScriptsBootstrapResult> {
   try {
@@ -36,6 +43,13 @@ export async function bootstrapConstructs(constructIds?: string[]): Promise<Mast
       credentials: "include",
       body: JSON.stringify({ constructIds }),
     });
+    if (!response.ok) {
+      return {
+        success: false,
+        constructs: [],
+        errors: [`bootstrap_http_${response.status}`],
+      };
+    }
     return await response.json();
   } catch (error) {
     console.error("❌ [MasterScripts] Bootstrap failed:", error);
