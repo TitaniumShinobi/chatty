@@ -198,6 +198,25 @@ function buildHostedProviderLoginUrl(provider: string, currentHref?: string) {
   return loginUrl.toString();
 }
 
+export function buildHostedAuthUrl(
+  mode: "login" | "signup",
+  currentHref?: string,
+  reason?: string,
+) {
+  const href =
+    typeof currentHref === "string" && currentHref.trim()
+      ? currentHref
+      : window.location.href;
+  const currentUrl = new URL(href);
+  const hostedUrl = new URL("/", resolveAuthPublicOrigin(href));
+  hostedUrl.searchParams.set("origin", currentUrl.origin);
+  hostedUrl.searchParams.set("mode", mode);
+  if (reason) {
+    hostedUrl.searchParams.set("reason", reason);
+  }
+  return hostedUrl.toString();
+}
+
 function buildAuthApiUrl(pathname: string, currentHref?: string) {
   const href =
     typeof currentHref === "string" && currentHref.trim()

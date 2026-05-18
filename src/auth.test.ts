@@ -5,6 +5,7 @@ import {
 import {
   buildAuthLogoutApiUrl,
   buildGoogleLoginUrl,
+  buildHostedAuthUrl,
   buildHostedLogoutUrl,
   loginWithEmail,
   logout,
@@ -84,6 +85,12 @@ describe('buildGoogleLoginUrl', () => {
 });
 
 describe('hosted Auth logout URLs', () => {
+  it('builds the hosted Auth door URL for public Chatty login', () => {
+    expect(buildHostedAuthUrl('login', 'https://chatty.thewreck.org/')).toBe(
+      'https://auth.thewreck.org/?origin=https%3A%2F%2Fchatty.thewreck.org&mode=login',
+    );
+  });
+
   it('builds the hosted logout URL for the public Chatty origin', () => {
     expect(buildHostedLogoutUrl('https://chatty.thewreck.org/app?thread=123')).toBe(
       'https://auth.thewreck.org/api/auth/logout?origin=https%3A%2F%2Fchatty.thewreck.org',
