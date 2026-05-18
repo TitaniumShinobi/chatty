@@ -110,6 +110,11 @@ export function buildGoogleLoginUrl(currentHref?: string) {
     typeof currentHref === "string" && currentHref.trim()
       ? new URL(currentHref)
       : new URL(window.location.href);
+  if (isPublicChattyUrl(currentUrl)) {
+    const loginUrl = new URL("/api/auth/google", resolveAuthPublicOrigin(currentUrl.href));
+    loginUrl.searchParams.set("origin", currentUrl.origin);
+    return loginUrl.toString();
+  }
   const loginUrl = new URL("/api/auth/google", currentUrl.origin);
   const cliCallback = currentUrl.searchParams.get("cli_callback");
   if (cliCallback) {
@@ -119,14 +124,26 @@ export function buildGoogleLoginUrl(currentHref?: string) {
 }
 
 export function loginWithMicrosoft() {
+  if (isPublicChattyUrl()) {
+    window.location.href = buildHostedProviderLoginUrl("microsoft");
+    return;
+  }
   window.location.href = "/api/auth/microsoft";
 }
 
 export function loginWithApple() {
+  if (isPublicChattyUrl()) {
+    window.location.href = buildHostedProviderLoginUrl("apple");
+    return;
+  }
   window.location.href = "/api/auth/apple";
 }
 
 export function loginWithGithub() {
+  if (isPublicChattyUrl()) {
+    window.location.href = buildHostedProviderLoginUrl("github");
+    return;
+  }
   window.location.href = "/api/auth/github";
 }
 
@@ -161,6 +178,45 @@ function resolveAuthPublicOrigin(currentHref?: string) {
   return "http://localhost:1111";
 }
 
+function isPublicChattyUrl(currentUrl?: URL) {
+  const url =
+    currentUrl ||
+    (typeof window !== "undefined" && window.location?.href
+      ? new URL(window.location.href)
+      : null);
+  return url?.hostname === "chatty.thewreck.org";
+}
+
+function buildHostedProviderLoginUrl(provider: string, currentHref?: string) {
+  const href =
+    typeof currentHref === "string" && currentHref.trim()
+      ? currentHref
+      : window.location.href;
+  const currentUrl = new URL(href);
+  const loginUrl = new URL(`/api/auth/${provider}`, resolveAuthPublicOrigin(href));
+  loginUrl.searchParams.set("origin", currentUrl.origin);
+  return loginUrl.toString();
+}
+
+function buildAuthApiUrl(pathname: string, currentHref?: string) {
+  const href =
+    typeof currentHref === "string" && currentHref.trim()
+      ? currentHref
+      : typeof window !== "undefined"
+        ? window.location.href
+        : "";
+  if (href) {
+    try {
+      if (isPublicChattyUrl(new URL(href))) {
+        return new URL(pathname, resolveAuthPublicOrigin(href)).toString();
+      }
+    } catch {
+      // fall through to local Chatty API path
+    }
+  }
+  return pathname;
+}
+
 export function buildHostedLogoutUrl(currentHref?: string) {
   const href =
     typeof currentHref === "string" && currentHref.trim()
@@ -189,7 +245,7 @@ export type EmailLoginResult =
 
 export async function loginWithEmail(email: string, password: string): Promise<EmailLoginResult> {
   try {
-    const response = await fetch("/api/auth/login", {
+    const response = await fetch(buildAuthApiUrl("/api/auth/login"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -224,7 +280,7 @@ export async function signupWithEmail(
   turnstileToken?: string
 ): Promise<User | null> {
   try {
-    const response = await fetch("/api/auth/register", {
+    const response = await fetch(buildAuthApiUrl("/api/auth/register"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

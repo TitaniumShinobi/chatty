@@ -6,6 +6,7 @@ import {
   buildAuthLogoutApiUrl,
   buildGoogleLoginUrl,
   buildHostedLogoutUrl,
+  loginWithEmail,
   logout,
 } from './lib/auth';
 
@@ -73,6 +74,12 @@ describe('buildGoogleLoginUrl', () => {
 
   it('uses the normal google auth path when no cli callback is present', () => {
     expect(buildGoogleLoginUrl('http://localhost:5173/')).toBe('/api/auth/google');
+  });
+
+  it('uses hosted Auth for public Chatty Google login', () => {
+    expect(buildGoogleLoginUrl('https://chatty.thewreck.org/')).toBe(
+      'https://auth.thewreck.org/api/auth/google?origin=https%3A%2F%2Fchatty.thewreck.org',
+    );
   });
 });
 
@@ -151,5 +158,33 @@ describe('logout', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(replace).not.toHaveBeenCalled();
+  });
+});
+
+describe('email auth on public Chatty', () => {
+  it('posts login to hosted Auth so auth_sid can be set', async () => {
+    installWindowMock('https://chatty.thewreck.org/');
+    const fetchMock = jest.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          user: { id: 'life-user-1', sub: 'life-user-1', email: 'devon@example.com', name: 'Devon' },
+        }),
+        { status: 200 },
+      ),
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await loginWithEmail('devon@example.com', 'secret123');
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith('https://auth.thewreck.org/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ email: 'devon@example.com', password: 'secret123' }),
+    });
   });
 });
