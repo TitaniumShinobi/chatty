@@ -1321,7 +1321,6 @@ export default function Layout() {
       conversationManager.clearUserData(userId);
     }
     await logout();
-    navigate("/");
   }
 
   // Migrate legacy messages to packet format

@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import {
   requireSharedAuth,
   requirePreferredAuth,
+  resolveBrowserAuthContext,
   resolvePreferredAuthContext,
 } from "../auth/middleware/auth.js";
 
@@ -92,6 +93,39 @@ describe("shared auth middleware", () => {
     assert.equal(req.authSource, "shared");
     assert.equal(req.user.email, "shared@example.com");
     assert.equal(req.user.uid, "supabase-user-1");
+  });
+
+  it("rejects a valid legacy sid without auth_sid for browser /api/me reentry", async () => {
+    process.env.COOKIE_NAME = "sid";
+    process.env.JWT_SECRET = "test-chatty-secret";
+    process.env.AUTH_API_BASE_URL = "http://127.0.0.1:1111";
+    process.env.AUTH_COOKIE_NAME = "auth_sid";
+
+    const token = jwt.sign(
+      { id: "chatty-user-1", sub: "chatty-user-1", email: "chatty@example.com" },
+      process.env.JWT_SECRET,
+      { expiresIn: "1h" },
+    );
+
+    let fetchCalled = false;
+    globalThis.fetch = async () => {
+      fetchCalled = true;
+      throw new Error("shared auth should not be called without auth_sid");
+    };
+
+    const req = {
+      method: "GET",
+      url: "/api/me",
+      cookies: { sid: token },
+      headers: { cookie: `sid=${encodeURIComponent(token)}` },
+    };
+
+    const resolved = await resolveBrowserAuthContext(req);
+    assert.equal(resolved.ok, false);
+    assert.equal(resolved.sharedReason, "no_shared_auth_cookie");
+    assert.equal(resolved.nativeReason, null);
+    assert.equal(req.user, undefined);
+    assert.equal(fetchCalled, false);
   });
 
   it("returns AUTH_REQUIRED when neither Chatty nor shared auth resolves a session", async () => {

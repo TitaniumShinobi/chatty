@@ -413,6 +413,26 @@ export async function resolvePreferredAuthContext(req, options = {}) {
   return resolved;
 }
 
+export async function resolveBrowserAuthContext(req, options = {}) {
+  const sharedSession = await resolveSharedAuthContext(req, {
+    fetchImpl: options.fetchImpl,
+    sharedAuthTimeoutMs: options.sharedAuthTimeoutMs,
+    hydrateRequestUser: true,
+  });
+  if (sharedSession.ok) {
+    return sharedSession;
+  }
+
+  const nativeSession = readChattySession(req);
+  return {
+    ok: false,
+    reason: sharedSession.reason || "shared_auth_required",
+    nativeReason: nativeSession.reason || null,
+    sharedReason: sharedSession.reason || null,
+    sharedStatus: sharedSession.httpStatus || null,
+  };
+}
+
 export function attachAuthIfPresent(req, _res, next) {
   const nativeSession = readChattySession(req);
   if (!nativeSession.ok) {

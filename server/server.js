@@ -22,6 +22,7 @@ import {
   requireAuth,
   requireAuthOrServiceToken,
   requirePreferredAuthOrServiceToken,
+  resolveBrowserAuthContext,
   resolvePreferredAuthContext,
   resolveSharedAuthContext,
 } from "./auth/middleware/auth.js";
@@ -710,7 +711,7 @@ async function recordLegalAcceptances({ supabase, userId, email, docs, acceptedA
 
 const handleApiMe = async (req, res) => {
   try {
-    const authContext = await resolvePreferredAuthContext(req);
+    const authContext = await resolveBrowserAuthContext(req);
     if (!authContext.ok || !authContext.user) {
       logVvaultIdentityDiagnostics(
         "chatty_api_me_auth_failure",
@@ -1832,16 +1833,20 @@ app.get("/api/profile-image/:userId", async (req, res) => {
 
 // logout
 app.post("/api/logout", (req, res) => {
+  const secure = cookieSecure(req);
   const clearCookieOptions = {
     path: "/",
     httpOnly: true,
-    secure: cookieSecure(req),
+    secure,
     sameSite: 'lax'
   };
-  if (cookieSecure(req)) {
-    clearCookieOptions.domain = COOKIE_DOMAIN;
-  }
   res.clearCookie(COOKIE_NAME, clearCookieOptions);
+  if (secure && COOKIE_DOMAIN) {
+    res.clearCookie(COOKIE_NAME, {
+      ...clearCookieOptions,
+      domain: COOKIE_DOMAIN,
+    });
+  }
   res.json({ ok: true });
 });
 

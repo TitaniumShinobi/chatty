@@ -130,6 +130,52 @@ export function loginWithGithub() {
   window.location.href = "/api/auth/github";
 }
 
+function getRuntimeEnv(): Record<string, any> {
+  try {
+    return (0, eval)('typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {}');
+  } catch {
+    return typeof process !== "undefined" && process.env ? process.env : {};
+  }
+}
+
+function resolveAuthPublicOrigin(currentHref?: string) {
+  const env = getRuntimeEnv();
+  const configured =
+    typeof env.VITE_AUTH_PUBLIC_ORIGIN === "string" && env.VITE_AUTH_PUBLIC_ORIGIN.trim()
+      ? env.VITE_AUTH_PUBLIC_ORIGIN.trim()
+      : "";
+  if (configured) return configured.replace(/\/+$/, "");
+
+  const href =
+    typeof currentHref === "string" && currentHref.trim()
+      ? currentHref
+      : typeof window !== "undefined"
+        ? window.location.href
+        : "";
+  try {
+    const currentUrl = new URL(href);
+    if (currentUrl.hostname === "chatty.thewreck.org") return "https://auth.thewreck.org";
+  } catch {
+    // fall through to local auth default
+  }
+  return "http://localhost:1111";
+}
+
+export function buildHostedLogoutUrl(currentHref?: string) {
+  const href =
+    typeof currentHref === "string" && currentHref.trim()
+      ? currentHref
+      : window.location.href;
+  const currentUrl = new URL(href);
+  const logoutUrl = new URL("/api/auth/logout", resolveAuthPublicOrigin(href));
+  logoutUrl.searchParams.set("origin", currentUrl.origin);
+  return logoutUrl.toString();
+}
+
+export function buildAuthLogoutApiUrl(currentHref?: string) {
+  return new URL("/api/auth/logout", resolveAuthPublicOrigin(currentHref)).toString();
+}
+
 export type EmailLoginResult =
   | { ok: true; user: User }
   | {
@@ -207,6 +253,73 @@ export async function signupWithEmail(
 }
 
 export async function logout() {
-  await fetch("/api/logout", { method: "POST", credentials: "include" });
-  window.location.href = "/";
+  const authLogoutUrl = buildAuthLogoutApiUrl();
+  clearLocalLogoutState();
+  await clearLegacyChattySessionCookie();
+  await clearCanonicalAuthSession(authLogoutUrl);
+  await assertBrowserSessionSignedOutOrFallback();
+  window.location.replace("/");
+}
+
+function clearLocalLogoutState() {
+  if (typeof window === "undefined") return;
+  try {
+    for (const key of ["auth:session", "vvault_token", "vvault_user"]) {
+      window.localStorage?.removeItem(key);
+    }
+  } catch {
+    // Local state cleanup is best-effort; canonical logout is owned by Auth.
+  }
+}
+
+async function clearLegacyChattySessionCookie() {
+  if (typeof fetch !== "function") return;
+  try {
+    await fetch("/api/logout", { method: "POST", credentials: "include" });
+  } catch {
+    // Auth owns canonical logout; this only clears the legacy Chatty cookie when reachable.
+  }
+}
+
+async function clearCanonicalAuthSession(authLogoutUrl: string) {
+  let response: Response;
+  try {
+    response = await fetch(authLogoutUrl, {
+      method: "POST",
+      credentials: "include",
+    });
+  } catch (cause) {
+    console.error("❌ [Auth] Canonical auth logout request failed", {
+      authLogoutUrl,
+      error: cause instanceof Error ? cause.message : String(cause),
+    });
+    throw new Error("Auth logout failed; canonical session may still be active.");
+  }
+
+  const payload = (await response.json().catch(() => ({}))) as { ok?: boolean };
+  if (!response.ok || payload.ok !== true) {
+    console.error("❌ [Auth] Canonical auth logout failed", {
+      status: response.status,
+      authLogoutUrl,
+    });
+    throw new Error("Auth logout failed; canonical session may still be active.");
+  }
+}
+
+async function assertBrowserSessionSignedOutOrFallback() {
+  const response = await fetch("/api/me", {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (!response.ok) return;
+  const payload = (await response.json().catch(() => ({}))) as {
+    ok?: boolean;
+    user?: unknown;
+  };
+  if (payload.ok === true && payload.user) {
+    const hostedLogoutUrl = buildHostedLogoutUrl();
+    console.error("❌ [Auth] Browser session survived JSON logout; falling back to hosted auth logout.");
+    window.location.replace(hostedLogoutUrl);
+    throw new Error("Logout did not clear the active browser session.");
+  }
 }
