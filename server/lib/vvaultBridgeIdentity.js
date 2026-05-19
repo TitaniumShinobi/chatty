@@ -12,8 +12,13 @@ function normalizeTimeoutMs(value, fallback) {
   return parsed;
 }
 
+export const DEFAULT_VVAULT_BRIDGE_IDENTITY_TIMEOUT_MS = 5000;
+
 async function resolveWithTimeout(task, timeoutMs, label) {
-  const boundedTimeoutMs = normalizeTimeoutMs(timeoutMs, 1200);
+  const boundedTimeoutMs = normalizeTimeoutMs(
+    timeoutMs,
+    DEFAULT_VVAULT_BRIDGE_IDENTITY_TIMEOUT_MS,
+  );
   return new Promise((resolve, reject) => {
     let settled = false;
     const timeoutId = setTimeout(() => {
@@ -336,7 +341,10 @@ export async function resolveVvaultBridgeIdentity(req, options = {}) {
         options.timeoutMs ??
         options.bridgeIdentityTimeoutMs ??
         process.env.VVAULT_BRIDGE_IDENTITY_TIMEOUT_MS;
-      const bridgeFetchTimeoutMs = normalizeTimeoutMs(timeoutMs, 1200);
+      const bridgeFetchTimeoutMs = normalizeTimeoutMs(
+        timeoutMs,
+        DEFAULT_VVAULT_BRIDGE_IDENTITY_TIMEOUT_MS,
+      );
       const rawCookieHeader = getRawCookieHeader(req);
       const startedAt = Date.now();
       const directAuth = await resolveVvaultDirectAuth({

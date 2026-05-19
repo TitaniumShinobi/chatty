@@ -2,12 +2,17 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  DEFAULT_VVAULT_BRIDGE_IDENTITY_TIMEOUT_MS,
   buildVvaultSessionStateFromBridgeIdentity,
   resolveVvaultApiMeSessionState,
   resolveVvaultBridgeIdentity,
 } from "../lib/vvaultBridgeIdentity.js";
 
 describe("VVAULT bridge identity resolution", () => {
+  it("keeps the default bridge identity timeout above production proxy jitter", () => {
+    assert.equal(DEFAULT_VVAULT_BRIDGE_IDENTITY_TIMEOUT_MS, 5000);
+  });
+
   it("keeps legacy Supabase UUIDs as compatibility aliases from the session bridge flow", async () => {
     const calls = [];
     const req = {

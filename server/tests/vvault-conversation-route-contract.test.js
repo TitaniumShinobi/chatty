@@ -36,6 +36,11 @@ describe("VVAULT conversation route contract", () => {
     assert.equal(payload.conversations.length, 1);
   });
 
+  it("keeps production conversation hydration defaults above observed VVAULT transcript fanout", () => {
+    assert.equal(vvaultRouteTest.DEFAULT_VVAULT_CONVERSATION_LOOKUP_TIMEOUT_MS, 15000);
+    assert.equal(vvaultRouteTest.DEFAULT_VVAULT_INDEX_LOOKUP_TIMEOUT_MS, 8000);
+  });
+
   it("marks local deferred fallback as partial instead of impersonating full hydration", () => {
     const payload = buildConversationHydrationPayload({
       fullLookup: {

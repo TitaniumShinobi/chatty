@@ -4889,8 +4889,10 @@ const INDEX_CACHE_LIMIT = 50;
 const SUMMARY_CACHE_LIMIT = 200;
 const indexCache = new Map(); // userId -> { etag, conversations, timestamp }
 const summaryCache = new Map(); // `${userId}:${sessionId}` -> { etag, summary, timestamp }
+const DEFAULT_VVAULT_CONVERSATION_LOOKUP_TIMEOUT_MS = 15000;
+const DEFAULT_VVAULT_INDEX_LOOKUP_TIMEOUT_MS = 8000;
 const VVAULT_CONVERSATION_LOOKUP_TIMEOUT_MS = Number(
-  process.env.VVAULT_CONVERSATION_LOOKUP_TIMEOUT_MS || 3500
+  process.env.VVAULT_CONVERSATION_LOOKUP_TIMEOUT_MS || DEFAULT_VVAULT_CONVERSATION_LOOKUP_TIMEOUT_MS
 );
 
 function setIndexCache(userId, payload) {
@@ -4918,7 +4920,9 @@ function isCanonicalZenSession(sessionId) {
   return sessionId === ZEN_LIVE_SESSION_ID;
 }
 
-const VVAULT_INDEX_LOOKUP_TIMEOUT_MS = Number(process.env.VVAULT_INDEX_LOOKUP_TIMEOUT_MS || 3000);
+const VVAULT_INDEX_LOOKUP_TIMEOUT_MS = Number(
+  process.env.VVAULT_INDEX_LOOKUP_TIMEOUT_MS || DEFAULT_VVAULT_INDEX_LOOKUP_TIMEOUT_MS
+);
 
 function normalizeTimeoutMs(value, fallback) {
   const parsed = Number(value);
@@ -15695,6 +15699,8 @@ export {
 export const __test__ = {
   mapConversationIndexRowsToHydrationRecords,
   enrichConversationRowsWithCanonicalAvatars,
+  DEFAULT_VVAULT_CONVERSATION_LOOKUP_TIMEOUT_MS,
+  DEFAULT_VVAULT_INDEX_LOOKUP_TIMEOUT_MS,
   setRouteOverrides(overrides = {}) {
     Object.assign(routeOverrides, overrides);
   },
