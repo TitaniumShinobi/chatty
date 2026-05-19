@@ -4,11 +4,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import App from "./App";
-import { buildHostedAuthUrl, fetchMe, loginWithEmail, type User } from "./lib/auth";
-import { resolveClientDoorName } from "./lib/chattyVvaultDoor";
+import { fetchMe, loginWithEmail, type User } from "./lib/auth";
 
 jest.mock("./lib/auth", () => ({
-  buildHostedAuthUrl: jest.fn(() => "https://auth.thewreck.org/?origin=https%3A%2F%2Fchatty.thewreck.org&mode=login"),
   fetchMe: jest.fn(async () => null),
   loginWithGoogle: jest.fn(),
   loginWithMicrosoft: jest.fn(),
@@ -18,19 +16,9 @@ jest.mock("./lib/auth", () => ({
   signupWithEmail: jest.fn(),
 }));
 
-jest.mock("./lib/chattyVvaultDoor", () => ({
-  resolveClientDoorName: jest.fn(() => "private"),
-}));
-
 describe("unauthenticated App surface", () => {
   const fetchMeMock = fetchMe as jest.MockedFunction<typeof fetchMe>;
   const loginWithEmailMock = loginWithEmail as jest.MockedFunction<typeof loginWithEmail>;
-  const buildHostedAuthUrlMock = buildHostedAuthUrl as jest.MockedFunction<
-    typeof buildHostedAuthUrl
-  >;
-  const resolveClientDoorNameMock = resolveClientDoorName as jest.MockedFunction<
-    typeof resolveClientDoorName
-  >;
 
   function userWithVvaultSession(reason: string, ready = false): User {
     return {
@@ -52,11 +40,6 @@ describe("unauthenticated App surface", () => {
     jest.clearAllMocks();
     window.history.pushState({}, "", "/");
     localStorage.clear();
-    resolveClientDoorNameMock.mockReturnValue("private");
-    buildHostedAuthUrlMock.mockImplementation(
-      (mode) =>
-        `https://auth.thewreck.org/?origin=https%3A%2F%2Fchatty.thewreck.org&mode=${mode}`,
-    );
     fetchMeMock.mockResolvedValue(null);
     loginWithEmailMock.mockResolvedValue({
       ok: false,
@@ -85,23 +68,6 @@ describe("unauthenticated App surface", () => {
     expect(screen.queryByPlaceholderText(/ask before you enter/i)).toBeNull();
     expect(screen.queryByText(/customizable construct/i)).toBeNull();
     expect(screen.queryByText(/who is zen/i)).toBeNull();
-  });
-
-  it("uses the hosted auth handoff on the public door", async () => {
-    resolveClientDoorNameMock.mockReturnValue("public");
-
-    render(<App />);
-
-    await waitFor(() => {
-      expect(
-        screen.getByRole("button", { name: /continue to sign in/i }),
-      ).toBeInTheDocument();
-    });
-
-    expect(
-      screen.getByText(/hosted auth door for public sign in and account creation/i),
-    ).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("you@example.com")).toBeNull();
   });
 
   it("treats a shared-auth-degraded user as signed in and redirects into the app shell", async () => {
