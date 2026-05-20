@@ -34,11 +34,30 @@ import {
   isGPTConstruct,
   getCanonicalIdForGPT,
 } from "../lib/threadUtils";
+import {
+  createErrorActiveConversationHydrationState,
+  createIdleActiveConversationHydrationState,
+  createLoadingActiveConversationHydrationState,
+  createSnapshotReplayActiveConversationHydrationState,
+  decodeRuntimeResumeAnchorParam,
+  deriveActiveConversationHydrationState,
+  deriveActiveConversationHydrationStateFromTranscript,
+  reconcileIncomingThreadsForActiveRoute,
+} from "../lib/vvaultConversationHydration";
+import {
+  classifyVvaultFailure,
+  deriveVvaultUiStatus,
+  getVvaultUiStatusCopy,
+  shouldHonorAsyncChatNavigation,
+  type VvaultFailureClassification,
+} from "../lib/pageSwitchStability";
 import { bootstrapConstructs } from "../lib/masterScripts";
 import { GPTService, type GPTConfig } from "../lib/gptService";
 import type { AIConfig } from "../lib/aiService";
 import type { UIContextSnapshot, Message as ChatMessage, Attachment } from "../types";
 import { WorkspaceContextBuilder } from "../engine/context/WorkspaceContextBuilder";
+import { resolveAddressBookAvatar } from "../lib/addressBookAvatarPolicy";
+import { resolveAvatarFields } from "../lib/avatarUrl";
 import { safeMode, safeImport } from "../lib/safeMode";
 import { uploadAttachments, imageAttachmentsToAttachments } from "../lib/attachmentService";
 import {
@@ -149,12 +168,19 @@ type Thread = {
   canonicalForRuntime?: string | null;
   importMetadata?: Record<string, any> | null;
   isFallback?: boolean;
+  isIndexHydrated?: boolean;
+  avatar?: string | null;
+  avatarUrl?: string | null;
 };
 
-const VVAULT_FILESYSTEM_ROOT = "/Users/devonwoodson/Documents/GitHub/vvault";
+const VVAULT_FILESYSTEM_ROOT = import.meta.env.VITE_VVAULT_ROOT_PATH || "";
 const DEFAULT_ZEN_CANONICAL_SESSION_ID = "zen-001_chat_with_zen-001";
 const DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID = "zen-001";
 const DEFAULT_ZEN_RUNTIME_ID = "zen-001";
+
+function isCanonicalZenThreadId(threadId: string | null | undefined): boolean {
+  return threadId === DEFAULT_ZEN_CANONICAL_SESSION_ID;
+}
 
 function mapChatMessageToThreadMessage(message: ChatMessage): Message | null {
   const parsedTs = message.timestamp ? Date.parse(message.timestamp) : NaN;
@@ -270,11 +296,17 @@ export default function Layout() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isProjectsOpen, setIsProjectsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [routeOverlayActive, setRouteOverlayActive] = useState(false);
   // Manual runtime dashboard removed - using automatic orchestration
   const [shareConversationId, setShareConversationId] = useState<string | null>(
     null,
   );
   const [isBackendUnavailable, setIsBackendUnavailable] = useState(false);
+  const [vvaultFailureClassification, setVvaultFailureClassification] =
+    useState<VvaultFailureClassification>(null);
+  const [activeThreadHydration, setActiveThreadHydration] = useState(
+    createIdleActiveConversationHydrationState(),
+  );
   const [vvaultRetryCount, setVvaultRetryCount] = useState(0);
   const [isRetryingVVAULT, setIsRetryingVVAULT] = useState(false);
   const pendingStarterRef = useRef<{
@@ -295,6 +327,30 @@ export default function Layout() {
 
   const threadsRef = useRef(threads);
   threadsRef.current = threads;
+
+  const reconcileActiveRouteThreadOverwrite = useCallback(
+    (
+      prevThreads: Thread[],
+      nextThreads: Thread[],
+      {
+        activeThreadId,
+        hydrationSource = null,
+        hydrationComplete = false,
+      }: {
+        activeThreadId?: string | null;
+        hydrationSource?: string | null;
+        hydrationComplete?: boolean;
+      } = {},
+    ) =>
+      reconcileIncomingThreadsForActiveRoute({
+        currentThreads: prevThreads,
+        incomingThreads: nextThreads,
+        activeThreadId: activeThreadId || null,
+        incomingHydrationSource: hydrationSource as any,
+        incomingHydrationComplete: hydrationComplete,
+      }),
+    [],
+  );
 
   useEffect(() => {
     const selfpromptLastPoll = { ts: new Date().toISOString() };
@@ -355,6 +411,14 @@ export default function Layout() {
   }, [location.pathname]);
   const activeRuntimeId = (location.state as any)?.activeRuntimeId || null;
 
+  useEffect(() => {
+    setIsSearchOpen(false);
+    setIsProjectsOpen(false);
+    setIsSettingsOpen(false);
+    setShareConversationId(null);
+    setRouteOverlayActive(false);
+  }, [location.pathname]);
+
   const shareConversation = useMemo(
     () => threads.find((thread) => thread.id === shareConversationId) || null,
     [threads, shareConversationId],
@@ -373,7 +437,23 @@ export default function Layout() {
       )
       .map(t => {
         const matchingGPT = userGPTs.find(gpt => gpt.constructCallsign === t.constructId);
-        return matchingGPT?.avatar ? { ...t, avatar: matchingGPT.avatar } : t;
+        const threadAvatar = resolveAvatarFields(t as any);
+        const gptAvatar = resolveAvatarFields(matchingGPT as any);
+        const resolvedAvatar = resolveAddressBookAvatar({
+          ...t,
+          avatar: threadAvatar.avatar,
+          avatarUrl: threadAvatar.avatarUrl,
+          allowBackendAvatarRoute: true,
+          gptAvatarByConstructId:
+            matchingGPT?.constructCallsign && gptAvatar.avatar
+              ? { [matchingGPT.constructCallsign]: gptAvatar.avatar }
+              : null,
+        });
+        return {
+          ...t,
+          avatar: resolvedAvatar.avatarSrc,
+          avatarUrl: resolvedAvatar.avatarSrc,
+        };
       });
     
     // Create contact cards for GPTs that don't have a conversation thread yet
@@ -390,6 +470,17 @@ export default function Layout() {
       if (existingConstructIds.has(gpt.constructCallsign)) {
         continue;
       }
+      const gptAvatar = resolveAvatarFields(gpt as any);
+      const resolvedAvatar = resolveAddressBookAvatar({
+        constructId: gpt.constructCallsign || gpt.id,
+        avatar: gptAvatar.avatar,
+        avatarUrl: gptAvatar.avatarUrl,
+        allowBackendAvatarRoute: true,
+        gptAvatarByConstructId:
+          gpt.constructCallsign && gptAvatar.avatar
+            ? { [gpt.constructCallsign]: gptAvatar.avatar }
+            : null,
+      });
       gptContactCards.push({
         id: `${gpt.constructCallsign}_contact`,
         title: gpt.name,
@@ -400,7 +491,8 @@ export default function Layout() {
         constructId: gpt.constructCallsign || gpt.id,
         runtimeId: gpt.constructCallsign || gpt.id,
         isPrimary: false,
-        avatar: gpt.avatar,
+        avatar: resolvedAvatar.avatarSrc,
+        avatarUrl: resolvedAvatar.avatarSrc,
       });
     }
     
@@ -427,10 +519,7 @@ export default function Layout() {
     isSettingsOpen ||
     Boolean(shareConversation) ||
     Boolean(storageFailureInfo) ||
-    location.pathname.includes("/gpts/new") ||
-    location.pathname.includes("/gpts/edit/") ||
-    location.pathname.includes("/ais/new") ||
-    location.pathname.includes("/ais/edit/");
+    routeOverlayActive;
 
   // #region agent log
   useEffect(() => {
@@ -576,6 +665,53 @@ export default function Layout() {
     shareConversation,
     storageFailureInfo,
   ]);
+
+  useEffect(() => {
+    if (!activeId) {
+      setActiveThreadHydration(createIdleActiveConversationHydrationState());
+      return;
+    }
+
+    if (isLoading) {
+      setActiveThreadHydration(createLoadingActiveConversationHydrationState(activeId));
+      return;
+    }
+
+    const activeThread = threads.find((thread) => thread.id === activeId) || null;
+    if (!activeThread) {
+      setActiveThreadHydration(
+        deriveActiveConversationHydrationStateFromTranscript({
+          threadId: activeId,
+          transcriptMessages: [],
+          transcriptContent: "",
+        }),
+      );
+      return;
+    }
+
+    if (activeThread.isIndexHydrated) {
+      setActiveThreadHydration({
+        status: "partial",
+        threadId: activeId,
+        hydrationSource: "index",
+        hydrationComplete: false,
+        message:
+          "Conversation index loaded, but full VVAULT hydration did not complete for this thread.",
+      });
+      return;
+    }
+
+    setActiveThreadHydration(
+      deriveActiveConversationHydrationStateFromTranscript({
+        threadId: activeId,
+        transcriptSource:
+          activeThread.importMetadata?.persistenceSource === "local-deferred"
+            ? "local-deferred"
+            : "full",
+        transcriptMessages: activeThread.messages || [],
+      }),
+    );
+  }, [activeId, isLoading, threads]);
 
   function createThread(title = "New conversation"): Thread {
     const timestamp = Date.now();
@@ -725,6 +861,23 @@ export default function Layout() {
     });return filtered;
   }
 
+  function preserveActiveRouteThread(
+    filteredThreads: Thread[],
+    runtimeScopedThreads: Thread[],
+    activeThreadId: string | null | undefined,
+  ) {
+    if (!activeThreadId) return runtimeScopedThreads;
+    if (runtimeScopedThreads.some((thread) => thread.id === activeThreadId)) {
+      return runtimeScopedThreads;
+    }
+    const activeRouteThread =
+      filteredThreads.find((thread) => thread.id === activeThreadId) || null;
+    if (!activeRouteThread) {
+      return runtimeScopedThreads;
+    }
+    return [activeRouteThread, ...runtimeScopedThreads];
+  }
+
   function routeIdForThread(threadId: string, threadList: Thread[]) {
     const thread = threadList.find((t) => t.id === threadId);
     // Route GPT threads (non-Zen, non-Lin) to canonical format
@@ -853,8 +1006,10 @@ export default function Layout() {
         // Load VVAULT conversations with timeout protection (but don't race - wait for actual result)
         let vvaultConversations: any[] = [];
         let backendUnavailable = false;
+        let nextFailureClassification: VvaultFailureClassification = null;
+        let startupCreationBlocked = false;
         try {const vvaultPromise =
-            conversationManager.loadAllConversations(vvaultUserId);
+            conversationManager.loadAllConversationsResponse(vvaultUserId);
 
           // Use Promise.race but track which one won
           let timeoutFired = false;
@@ -866,7 +1021,13 @@ export default function Layout() {
           }, 15000); // Increased to 15s, but don't resolve with empty array
 
           try {
-            vvaultConversations = await vvaultPromise;clearTimeout(timeoutId); // Cancel timeout if promise resolves first
+            const vvaultResponse = await vvaultPromise;clearTimeout(timeoutId); // Cancel timeout if promise resolves first
+            vvaultConversations = vvaultResponse.conversations;
+            if (!cancelled) {
+              setActiveThreadHydration(
+                deriveActiveConversationHydrationState(vvaultResponse, activeId),
+              );
+            }
             if (timeoutFired) {
             }
           } catch (promiseError) {
@@ -877,13 +1038,20 @@ export default function Layout() {
           console.error("❌ [Layout.tsx] VVAULT loading error:", vvaultError);
           vvaultConversations = []; // Use empty array on error
           const message = (vvaultError as any)?.message || "";
-          backendUnavailable =
-            message.includes("Failed to fetch") ||
-            message.includes("Backend route not found") ||
-            message.includes("404") ||
-            message.includes("ENOENT");
+          const classifiedFailure = classifyVvaultFailure(message);
+          backendUnavailable = classifiedFailure.backendUnavailable || Boolean(message);
+          nextFailureClassification = classifiedFailure.classification;
+          if (!cancelled && activeId) {
+            setActiveThreadHydration(
+              createErrorActiveConversationHydrationState(
+                activeId,
+                message || "VVAULT conversation load failed.",
+              ),
+            );
+          }
         }
         setIsBackendUnavailable(backendUnavailable);
+        setVvaultFailureClassification(nextFailureClassification);
 
         vvaultConversations = vvaultConversations.filter(
           (conv) => conv.constructId !== "synth-001" && conv.constructId !== "synth"
@@ -991,6 +1159,7 @@ export default function Layout() {
             // Use canonical ID format for Zen to match URL routing
             threadId = DEFAULT_ZEN_CANONICAL_SESSION_ID;
           }
+          const convAvatar = resolveAvatarFields(conv as any);
 
           return {
             id: threadId,
@@ -1007,6 +1176,8 @@ export default function Layout() {
             constructId,
             runtimeId,
             isPrimary,
+            avatar: convAvatar.avatar,
+            avatarUrl: convAvatar.avatarUrl,
             canonicalForRuntime:
               isPrimary && constructId ? runtimeId || constructId : null,
           };
@@ -1048,16 +1219,21 @@ export default function Layout() {
         );let runtimeScopedThreads = filterByActiveRuntime(
           filteredThreads,
           activeRuntimeId,
-        );const backendDown = backendUnavailable || isBackendUnavailable;
+        );
+        runtimeScopedThreads = preserveActiveRouteThread(
+          filteredThreads,
+          runtimeScopedThreads,
+          activeId,
+        );
+        const backendDown = backendUnavailable || isBackendUnavailable;
 
         // VVAULT-FIRST PATTERN: Never create local fallbacks when backend is down
         // This ensures single source of truth in Supabase/VVAULT
         if (backendDown) {
-          // Don't create any local threads - UI will show VVAULT connection error
-          setThreads([]); // Empty threads = show connection status UI
+          // Do not create local fallback threads or clear the visible shell.
           setIsLoading(false);
           clearTimeout(safetyTimeout);
-          return; // Exit early - don't populate with local data
+          return;
         }
 
         // Guard clause: Skip thread creation if canonical Zen thread exists with messages
@@ -1067,25 +1243,13 @@ export default function Layout() {
           // 1. VVAULT is connected (backendDown already handled above)
           // 2. No conversations loaded from VVAULT
           // 3. AND no thread ID in URL
-          const urlRuntimeHint = extractRuntimeKeyFromThreadId(
-            preferredUrlThreadId || urlThreadId,
-          );
-          const shouldForceCanonicalZen =
-            !preferredUrlThreadId &&
-            !zenCanonicalThread?.id &&
-            urlRuntimeHint === DEFAULT_ZEN_RUNTIME_ID;
-
           const defaultThreadId =
             preferredUrlThreadId ||
             zenCanonicalThread?.id ||
-            (shouldForceCanonicalZen
-              ? DEFAULT_ZEN_CANONICAL_SESSION_ID
-              : `zen_${Date.now()}`);
+            DEFAULT_ZEN_CANONICAL_SESSION_ID;
           const zenConstructId =
             zenCanonicalThread?.constructId ||
-            (defaultThreadId === DEFAULT_ZEN_CANONICAL_SESSION_ID
-              ? DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID
-              : DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID);
+            DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID;
 
           const canonicalConstructId =
             zenCanonicalThread?.constructId ||
@@ -1129,9 +1293,14 @@ export default function Layout() {
                 "❌ [Layout.tsx] Failed to create Zen in VVAULT:",
                 error,
               );
+              const classifiedFailure = classifyVvaultFailure(
+                (error as any)?.message || "",
+              );
               // Mark VVAULT as unavailable since write failed
               setIsBackendUnavailable(true);
-              // Don't add to local state if VVAULT creation failed
+              setVvaultFailureClassification(classifiedFailure.classification);
+              startupCreationBlocked = true;
+              // Don't add local state if VVAULT creation failed.
             }
           }
         } else if (hasUrlThread) {
@@ -1151,6 +1320,9 @@ export default function Layout() {
           ),
         ];
 
+        if (startupCreationBlocked && sortedThreads.length === 0) {
+          return;
+        }
 
         if (sortedThreads.length > 0) {
         }
@@ -1168,7 +1340,7 @@ export default function Layout() {
         if (shouldRedirectToCanonical && urlThreadId && preferredUrlThreadId) {
           const requestedPath = `/app/chat/${urlThreadId}`;
           const canonicalPath = `/app/chat/${preferredUrlThreadId}`;
-          if (location.pathname === requestedPath) {
+          if (window.location.pathname === requestedPath) {
             navigate(canonicalPath);
             didNavigateToCanonical = true;
           }
@@ -1233,43 +1405,11 @@ export default function Layout() {
           if (error instanceof Error && error.stack) {
             console.error("❌ [Layout.tsx] Error stack:", error.stack);
           }
-
-          // === EMERGENCY FALLBACK - CREATE ZEN CONVERSATION WITH WELCOME MESSAGE ===
-          const emergencyThreadId = `zen_emergency_${Date.now()}`;
-          const emergencyTimestamp = Date.now();
-          const emergencyText =
-            "Hey! I'm Zen. It looks like there was an issue loading conversations, but I'm here now. What can I help you with?";
-
-          const emergencyWelcomeMessage: Message = {
-            id: `msg_emergency_welcome_${emergencyTimestamp}`,
-            role: "assistant",
-            text: emergencyText,
-            packets: [
-              {
-                op: "answer.v1",
-                payload: { content: emergencyText },
-              },
-            ],
-            ts: emergencyTimestamp,
-          };
-
-          const emergencyThread: Thread = {
-            id: emergencyThreadId,
-            title: "Zen",
-            messages: [emergencyWelcomeMessage],
-            createdAt: emergencyTimestamp,
-            updatedAt: emergencyTimestamp,
-            archived: false,
-          };
-
-          setThreads([emergencyThread]);
-          navigate(`/app/chat/${emergencyThreadId}`);
+          setIsBackendUnavailable(true);
         }
       } finally {
         clearTimeout(safetyTimeout);
-        if (!cancelled) {
-          setIsLoading(false);
-        }
+        setIsLoading(false);
       }
     })();
 
@@ -1343,8 +1483,16 @@ export default function Layout() {
 
     // Reload conversations
     try {
-      const vvaultConversations =
-        await conversationManager.loadAllConversations(vvaultUserId, true);
+      const vvaultResponse =
+        await conversationManager.loadAllConversationsResponse(vvaultUserId, true);
+      const vvaultConversations = vvaultResponse.conversations;
+      setIsBackendUnavailable(false);
+      setVvaultFailureClassification(null);
+      if (activeId) {
+        setActiveThreadHydration(
+          deriveActiveConversationHydrationState(vvaultResponse, activeId),
+        );
+      }
 
       // Convert and set threads (same logic as auth effect)
       const loadedThreads: Thread[] = vvaultConversations.map((conv) => {
@@ -1371,6 +1519,7 @@ export default function Layout() {
               : typeof conv.importMetadata?.isPrimary === "string"
                 ? conv.importMetadata.isPrimary.toLowerCase() === "true"
                 : false;
+        const convAvatar = resolveAvatarFields(conv as any);
 
         return {
           id: conv.sessionId,
@@ -1405,6 +1554,8 @@ export default function Layout() {
           constructId,
           runtimeId,
           isPrimary,
+          avatar: convAvatar.avatar,
+          avatarUrl: convAvatar.avatarUrl,
           canonicalForRuntime:
             isPrimary && constructId ? runtimeId || constructId : null,
         };
@@ -1412,9 +1563,13 @@ export default function Layout() {
 
       const filteredThreads =
         filterThreadsWithCanonicalPreference(loadedThreads);
-      const runtimeScopedThreads = filterByActiveRuntime(
+      const runtimeScopedThreads = preserveActiveRouteThread(
         filteredThreads,
-        activeRuntimeId,
+        filterByActiveRuntime(
+          filteredThreads,
+          activeRuntimeId,
+        ),
+        activeId,
       );
       const canonicalThreads = runtimeScopedThreads.filter(
         (thread) => thread.isPrimary && thread.constructId,
@@ -1430,8 +1585,11 @@ export default function Layout() {
       setThreads(sortedThreads);
     } catch (error) {
       console.error("❌ [Layout.tsx] Force refresh failed:", error);
+      const classifiedFailure = classifyVvaultFailure((error as any)?.message || "");
+      setIsBackendUnavailable(true);
+      setVvaultFailureClassification(classifiedFailure.classification);
     }
-  }, [user, activeRuntimeId]);
+  }, [user, activeId, activeRuntimeId]);
 
   // Keyboard shortcut: Cmd/Ctrl + Shift + R to force refresh conversations
   useEffect(() => {
@@ -1540,8 +1698,12 @@ export default function Layout() {
   };
 
   async function newThread(options?: ThreadInitOptions) {
+    const navigationStartPath = window.location.pathname;
     const trimmedTitle = options?.title?.trim();
     const starterTrimmed = options?.starter?.trim();
+    const requestedBlankThread =
+      (!trimmedTitle || trimmedTitle.length === 0) &&
+      (!starterTrimmed || starterTrimmed.length === 0);
     const initialTitle =
       trimmedTitle && trimmedTitle.length > 0
         ? trimmedTitle
@@ -1552,6 +1714,13 @@ export default function Layout() {
     if (!user) {
       console.error("❌ Cannot create conversation: No user");
       return null;
+    }
+
+    if (requestedBlankThread) {
+      return startConversationWithConstruct(
+        DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID,
+        "Zen",
+      );
     }
 
     try {
@@ -1616,7 +1785,14 @@ export default function Layout() {
       );
 
       setThreads((prev) => [thread, ...prev]);
-      navigate(`/app/chat/${thread.id}`);
+      if (
+        shouldHonorAsyncChatNavigation({
+          startPath: navigationStartPath,
+          currentPath: window.location.pathname,
+        })
+      ) {
+        navigate(`/app/chat/${thread.id}`);
+      }
 
       if (starterTrimmed && starterTrimmed.length > 0) {
         pendingStarterRef.current = {
@@ -1631,11 +1807,10 @@ export default function Layout() {
       return thread.id;
     } catch (error) {
       console.error("❌ Failed to create new conversation:", error);
-      // Fallback to local creation if VVAULT fails
-      const thread = createThread(initialTitle);
-      setThreads((prev) => [thread, ...prev]);
-      navigate(`/app/chat/${thread.id}`);
-      return thread.id;
+      const classifiedFailure = classifyVvaultFailure((error as any)?.message || "");
+      setIsBackendUnavailable(true);
+      setVvaultFailureClassification(classifiedFailure.classification);
+      return null;
     }
   }
 
@@ -1939,16 +2114,21 @@ export default function Layout() {
       return;
     }
 
+    const canonicalZenThread = isCanonicalZenThreadId(threadId);
+
     // Dynamic persona detection + context lock
     const envValue = import.meta.env.VITE_PERSONA_DETECTION_ENABLED;
-    const detectionEnabled = (envValue ?? "true") !== "false";let detectedPersona:
+    const detectionEnabled =
+      !canonicalZenThread && (envValue ?? "true") !== "false";let detectedPersona:
       | import("../engine/character/PersonaDetectionEngine").PersonaSignal
       | undefined;
     let personaContextLock:
       | import("../engine/character/ContextLock").ContextLock
       | null = null;
     let personaSystemPrompt: string | null = null;
-    let effectiveConstructId: string | null = thread.constructId || null;
+    let effectiveConstructId: string | null = canonicalZenThread
+      ? DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID
+      : thread.constructId || null;
 
     if (detectionEnabled) {
       try {const workspaceBuilder = new WorkspaceContextBuilder();const workspaceContext = await workspaceBuilder.buildWorkspaceContext(
@@ -2067,6 +2247,10 @@ export default function Layout() {
           effectiveConstructId,
         );
       }
+    }
+
+    if (canonicalZenThread) {
+      effectiveConstructId = DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID;
     }
 
     if (!effectiveConstructId) {
@@ -2403,6 +2587,11 @@ export default function Layout() {
             const providerTrace = finalPackets
               .map((p: any) => p?.payload?.provider_trace)
               .filter(Boolean)[0] || null;
+            const hasDoNotPersistFailure = finalPackets.some(
+              (packet: any) =>
+                packet?.payload?.do_not_persist === true ||
+                packet?.payload?.non_canonical_failure === true,
+            );
 
             // Extract content from packets before saving
             const assistantContent = finalPackets
@@ -2417,8 +2606,13 @@ export default function Layout() {
               .join("\n\n");
 
 
-            let assistantUnsaved = false;
-            if (user && assistantContent) {
+            let assistantUnsaved = hasDoNotPersistFailure;
+            if (hasDoNotPersistFailure) {
+              console.warn(
+                "⚠️ [Layout.tsx] Skipping assistant transcript persistence because backend marked the response as non-canonical",
+                { threadId },
+              );
+            } else if (user && assistantContent) {
               const assistantTimestampIso = new Date(
                 Date.now() + 2,
               ).toISOString();
@@ -2711,159 +2905,57 @@ export default function Layout() {
     }
 
     try {
-      const vvaultUserId = getUserId(user as any) || user?.email;
-      if (!vvaultUserId) {
-        console.error("❌ [Layout] Cannot reload messages: no user ID");
-        return;
-      }
-
+      setActiveThreadHydration(createLoadingActiveConversationHydrationState(threadId));
       const conversationManager = VVAULTConversationManager.getInstance();
-      const conversations = await conversationManager.loadAllConversations(
-        vvaultUserId,
-        true,
-      );
-
-
-      // Find the specific conversation - try multiple matching strategies
-      let conv = conversations.find((c) => c.sessionId === threadId);
-
-      if (!conv) {
-        // Try matching by transformed ID pattern (zen-001_chat_with_zen-001)
-        conv = conversations.find((c) => {
-          if (c.constructId && threadId.includes(c.constructId)) {
-            const transformedId = `${c.constructId}_chat_with_${c.constructId}`;
-            return transformedId === threadId;
-          }
-          return false;
-        });
-      }
-
-      if (!conv) {
-        // Try matching by constructId for Zen (zen-001)
-        if (threadId.includes("zen-001") || threadId.includes("zen_")) {
-          conv = conversations.find(
-            (c) =>
-              c.constructId === "zen-001" ||
-              c.constructId === "zen" ||
-              (c.title && c.title.toLowerCase().includes("zen")),
-          );
-        }
-      }
-
-      if (!conv) {
-        // Last resort: find any conversation with matching constructId pattern
-        const constructIdMatch = threadId.match(/([a-z]+-\d+)/i);
-        if (constructIdMatch) {
-          const extractedConstructId = constructIdMatch[1];
-          conv = conversations.find(
-            (c) => c.constructId === extractedConstructId,
-          );
-        }
-      }
-
-      if (!conv) {
-        console.error(
-          `❌ [Layout] Conversation not found for threadId: ${threadId}`,
-        );
-        console.error(
-          `📋 [Layout] Available sessionIds:`,
-          conversations.map((c) => c.sessionId),
-        );
-
-        // Last resort: If this is a Zen conversation, try to find ANY Zen conversation
-        if (threadId.includes("zen")) {
-          conv = conversations.find(
-            (c) =>
-              c.constructId === "zen-001" ||
-              c.constructId === "zen" ||
-              (c.title && c.title.toLowerCase().includes("zen")) ||
-              (c.sessionId && c.sessionId.toLowerCase().includes("zen")),
-          );
-
-          if (conv) {
-          } else {
-            console.error(
-              `❌ [Layout] No Zen conversation found at all. Total conversations: ${conversations.length}`,
-            );
-            return;
-          }
-        } else {
-          return;
-        }
-      }
-
-
-      if (conv.messages.length === 0) {
-        console.warn(
-          `⚠️ [Layout] Conversation found but has NO messages! This might indicate a parsing issue.`,
-        );
-        console.warn(
-          `📄 [Layout] Check VVAULT file: instances/${conv.constructId || "unknown"}/chatty/chat_with_${conv.constructId || "unknown"}.md`,
-        );
-      }
-
-      // Map conversation to thread format
-      const normalizedTitle = (conv.title || "Zen")
-        .replace(/^Chat with /i, "")
-        .replace(/-\d{3,}$/i, "");
-
+      const transcriptPayload =
+        await conversationManager.loadConversationTranscript(threadId);
+      const activeThreadHydration =
+        transcriptPayload?.source === "snapshot-replay"
+          ? createSnapshotReplayActiveConversationHydrationState(threadId)
+          : deriveActiveConversationHydrationStateFromTranscript({
+              threadId,
+              transcriptSource: transcriptPayload?.source || null,
+              transcriptContent: transcriptPayload?.content || "",
+              transcriptMessages: transcriptPayload?.messages || [],
+            });
+      const existingThread =
+        threadsRef.current.find((thread) => thread.id === threadId) || null;
       const constructId =
-        conv.constructId ||
-        conv.importMetadata?.constructId ||
-        conv.importMetadata?.connectedConstructId ||
-        conv.constructFolder ||
-        null;
+        existingThread?.constructId ||
+        (isCanonicalZenThreadId(threadId)
+          ? DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID
+          : threadId.match(/([a-z]+-\d+)/i)?.[1] || null);
       const runtimeId =
-        conv.runtimeId ||
-        conv.importMetadata?.runtimeId ||
+        existingThread?.runtimeId ||
         (constructId ? constructId.replace(/-001$/, "") : null) ||
         null;
-      const isPrimary =
-        typeof conv.isPrimary === "boolean"
-          ? conv.isPrimary
-          : typeof conv.importMetadata?.isPrimary === "boolean"
-            ? conv.importMetadata.isPrimary
-            : typeof conv.importMetadata?.isPrimary === "string"
-              ? conv.importMetadata.isPrimary.toLowerCase() === "true"
-              : false;
-
-      // Normalize thread ID for Zen conversations to match URL pattern
-      let normalizedThreadId = conv.sessionId;
-      if (
-        constructId === "zen-001" ||
-        constructId === "zen" ||
-        normalizedTitle.toLowerCase() === "zen"
-      ) {
-        normalizedThreadId = DEFAULT_ZEN_CANONICAL_SESSION_ID;
-      }
-
-      // Use threadId from URL if it matches the pattern, otherwise use normalized ID
-      const finalThreadId =
-        threadId === DEFAULT_ZEN_CANONICAL_SESSION_ID ||
-        (threadId.includes("zen-001") &&
-          normalizedThreadId === DEFAULT_ZEN_CANONICAL_SESSION_ID)
-          ? threadId
-          : normalizedThreadId;
-
+      const normalizedTitle =
+        existingThread?.title ||
+        (constructId
+          ? constructId.replace(/-\d{3,}$/i, "").replace(/^./, (c) => c.toUpperCase())
+          : "Conversation");
+      const transcriptMessages = Array.isArray(transcriptPayload?.messages)
+        ? transcriptPayload.messages
+        : [];
       const updatedThread: Thread = {
-        id: finalThreadId,
+        id: threadId,
         title: normalizedTitle,
-        messages: conv.messages
+        messages: transcriptMessages
           .map((msg: any, idx: number) => {
             if (!msg || (!msg.content && !msg.text)) {
-              console.warn("⚠️ [Layout] Invalid message in reload (no content):", msg);
               return null;
             }
-            const messageId = msg.id || `${conv.sessionId}_msg_${idx}`;
+            const timestamp = msg.timestamp || null;
             return {
-              id: messageId,
+              id: msg.id || `${threadId}_msg_${idx}`,
               role: msg.role,
               text: msg.content || msg.text,
               packets:
                 msg.role === "assistant"
-                  ? [{ op: "answer.v1", payload: { content: msg.content } }]
+                  ? [{ op: "answer.v1", payload: { content: msg.content || msg.text } }]
                   : undefined,
-              ts: msg.timestamp ? new Date(msg.timestamp).getTime() : (Date.now() - ((conv.messages.length - idx) * 1000)),
+              ts: timestamp ? new Date(timestamp).getTime() : idx,
+              timestamp: timestamp || undefined,
               metadata: msg.metadata || undefined,
               responseTimeMs: msg.metadata?.responseTimeMs,
               thinkingLog: msg.metadata?.thinkingLog,
@@ -2872,58 +2964,59 @@ export default function Layout() {
           })
           .filter((msg): msg is NonNullable<typeof msg> => msg !== null),
         createdAt:
-          conv.messages.length > 0
-            ? new Date(conv.messages[0]?.timestamp || Date.now()).getTime()
+          transcriptMessages.length > 0
+            ? new Date(transcriptMessages[0]?.timestamp || Date.now()).getTime()
             : Date.now(),
         updatedAt:
-          conv.messages.length > 0
+          transcriptMessages.length > 0
             ? new Date(
-                conv.messages[conv.messages.length - 1]?.timestamp || Date.now(),
+                transcriptMessages[transcriptMessages.length - 1]?.timestamp ||
+                  Date.now(),
               ).getTime()
             : Date.now(),
         archived: false,
-        importMetadata: (conv as any).importMetadata || null,
+        importMetadata: {
+          ...(existingThread?.importMetadata || {}),
+          persistenceSource:
+            transcriptPayload?.source === "local-deferred"
+              ? "local-deferred"
+              : existingThread?.importMetadata?.persistenceSource || null,
+        },
         constructId,
         runtimeId,
-        isPrimary,
-        canonicalForRuntime:
-          isPrimary && constructId ? runtimeId || constructId : null,
+        isPrimary:
+          typeof existingThread?.isPrimary === "boolean"
+            ? existingThread.isPrimary
+            : isCanonicalZenThreadId(threadId),
+        canonicalForRuntime: constructId ? runtimeId || constructId : null,
+        isIndexHydrated: activeThreadHydration.hydrationComplete !== true,
       };
 
-
-      // Update thread in state - find by threadId from URL or by matching patterns
       setThreads((prevThreads) => {
-        // Find existing thread by threadId (from URL) or by matching constructId
-        const existingIndex = prevThreads.findIndex(
-          (t) =>
-            t.id === threadId ||
-            t.id === finalThreadId ||
-            (t.constructId && threadId.includes(t.constructId)) ||
-            (t.isPrimary &&
-              t.constructId &&
-              `${t.constructId}_chat_with_${t.constructId}` === threadId) ||
-            (constructId === "zen-001" &&
-              t.constructId === "zen-001" &&
-              t.isPrimary),
-        );
-
-        if (existingIndex >= 0) {
-          // Update existing thread
-          const updated = [...prevThreads];
-          updated[existingIndex] = updatedThread;
-          return updated;
-        } else {
-          // Add new thread if not found
-          return [...prevThreads, updatedThread];
-        }
+        const nextThreads = prevThreads.some((thread) => thread.id === threadId)
+          ? prevThreads.map((thread) => (thread.id === threadId ? updatedThread : thread))
+          : [...prevThreads, updatedThread];
+        return reconcileActiveRouteThreadOverwrite(prevThreads, nextThreads, {
+          activeThreadId: threadId,
+          hydrationSource: activeThreadHydration.hydrationSource,
+          hydrationComplete: activeThreadHydration.hydrationComplete,
+        });
       });
+      setActiveThreadHydration(activeThreadHydration);
     } catch (error) {
       console.error("❌ [Layout] Failed to reload thread messages:", error);
+      setActiveThreadHydration(
+        createErrorActiveConversationHydrationState(
+          threadId,
+          (error as any)?.message || "Thread reload failed.",
+        ),
+      );
       throw error;
     }
   }
 
   async function startConversationWithConstruct(constructId: string, constructName?: string) {
+    const navigationStartPath = window.location.pathname;
     
     if (!user) {
       console.error("❌ Cannot create conversation: No user");
@@ -2990,17 +3083,22 @@ export default function Layout() {
       };
 
       setThreads((prev) => [thread, ...prev]);
-      navigate(`/app/chat/${thread.id}`);
+      if (
+        shouldHonorAsyncChatNavigation({
+          startPath: navigationStartPath,
+          currentPath: window.location.pathname,
+        })
+      ) {
+        navigate(`/app/chat/${thread.id}`);
+      }
 
       return thread.id;
     } catch (error) {
       console.error(`❌ Failed to create conversation with ${constructId}:`, error);
-      // Fallback to local creation
-      const thread = createThread(constructName || constructId);
-      (thread as any).constructId = constructId;
-      setThreads((prev) => [thread, ...prev]);
-      navigate(`/app/chat/${thread.id}`);
-      return thread.id;
+      const classifiedFailure = classifyVvaultFailure((error as any)?.message || "");
+      setIsBackendUnavailable(true);
+      setVvaultFailureClassification(classifiedFailure.classification);
+      return null;
     }
   }
 
@@ -3108,9 +3206,15 @@ export default function Layout() {
   }
 
   // Check if we're on a non-chat route that should render even during auth loading
-  const isNonChatRouteRender = ["/app/gpts", "/app/explore", "/app/vvault", "/app/library", "/app/codex", "/app/finance", "/app/simforge"].some(
+  const isNonChatRouteRender = ["/app/explore", "/app/vvault", "/app/library", "/app/search", "/app/simforge"].some(
     (r) => window.location.pathname.startsWith(r)
   );
+  const vvaultUiStatus = deriveVvaultUiStatus({
+    backendUnavailable: isBackendUnavailable,
+    classification: vvaultFailureClassification,
+  });
+  const vvaultStatusCopy = getVvaultUiStatusCopy(vvaultUiStatus);
+  const showVvaultStatus = Boolean(vvaultStatusCopy) && !isLoading;
 
   // For chat routes, require user authentication
   // For non-chat routes (VVAULT, GPTs, etc.), show loading state while auth completes
@@ -3192,9 +3296,45 @@ export default function Layout() {
               overflow: hasBlockingOverlay ? "hidden" : "auto",
             }}
           >
+            {showVvaultStatus && vvaultStatusCopy && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="mx-4 mt-4 mb-2 flex flex-wrap items-center justify-between gap-3 border px-4 py-3 text-sm"
+                style={{
+                  borderColor: "var(--chatty-border)",
+                  backgroundColor: "var(--chatty-bg-secondary)",
+                  color: "var(--chatty-text)",
+                }}
+              >
+                <div className="min-w-0">
+                  <div className="font-medium">{vvaultStatusCopy.title}</div>
+                  <div
+                    className="text-xs"
+                    style={{ color: "var(--chatty-text-secondary)" }}
+                  >
+                    {vvaultStatusCopy.message}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={retryVVAULTConnection}
+                  disabled={isRetryingVVAULT}
+                  className="px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    backgroundColor: "var(--chatty-button)",
+                    color: "var(--chatty-text-inverse, #fffff0)",
+                    border: "1px solid var(--chatty-line)",
+                  }}
+                >
+                  {isRetryingVVAULT ? "Checking..." : "Retry"}
+                </button>
+              </div>
+            )}
             <Outlet
               context={{
                 threads,
+                isLoading,
                 sendMessage,
                 renameThread,
                 newThread,
@@ -3206,6 +3346,9 @@ export default function Layout() {
                 user,
                 handleGPTCreated,
                 forceRefreshConversations,
+                activeThreadHydration,
+                setRouteOverlayActive,
+                addressBookContacts: synthAddressBookThreads,
               }}
             />
           </main>
@@ -3213,57 +3356,6 @@ export default function Layout() {
             info={storageFailureInfo}
             onClose={closeStorageFailure}
           />
-
-          {/* VVAULT Connection Status - Single Source of Truth Pattern */}
-          {isBackendUnavailable && threads.length === 0 && !isLoading && (
-            <div 
-              className="fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-              style={{ zIndex: Z_LAYERS.modal }}
-            >
-              <div className="bg-[var(--chatty-bg-main)] border border-[var(--chatty-border)] rounded-2xl p-8 max-w-md mx-4 shadow-2xl">
-                <div className="text-center">
-                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-100 flex items-center justify-center">
-                    <svg className="w-8 h-8 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                  </div>
-                  <h2 className="text-xl font-semibold text-[var(--chatty-text)] mb-2">
-                    Connecting to VVAULT
-                  </h2>
-                  <p className="text-[var(--chatty-text-secondary)] mb-6">
-                    Unable to reach the VVAULT server. Your conversations are stored in Supabase and will be available once the connection is restored.
-                  </p>
-                  <button
-                    onClick={retryVVAULTConnection}
-                    disabled={isRetryingVVAULT}
-                    className="w-full py-3 px-6 bg-[var(--chatty-accent)] hover:bg-[var(--chatty-accent-hover)] text-white rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    {isRetryingVVAULT ? (
-                      <>
-                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                        Connecting...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        Retry Connection
-                      </>
-                    )}
-                  </button>
-                  {vvaultRetryCount > 0 && (
-                    <p className="text-sm text-[var(--chatty-text-secondary)] mt-3">
-                      Retry attempts: {vvaultRetryCount}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Search Popup */}
           <SearchPopup

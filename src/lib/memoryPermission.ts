@@ -17,10 +17,12 @@ export function isMemoryAllowed(settings?: { personalization?: { allowMemory?: b
     return settings.personalization.allowMemory;
   }
 
-  // Client-side: Try to access from localStorage as fallback
-  if (typeof window !== 'undefined') {
+  const storage = typeof globalThis !== 'undefined' ? globalThis.localStorage : undefined;
+
+  // Client-side or test runtime: Try to access from localStorage as fallback
+  if (storage) {
     try {
-      const storedSettings = localStorage.getItem('chatty_settings_v2');
+      const storedSettings = storage.getItem('chatty_settings_v2');
       if (storedSettings) {
         const parsed = JSON.parse(storedSettings);
         if (parsed?.personalization?.allowMemory !== undefined) {
@@ -56,4 +58,3 @@ export function checkMemoryPermission(
   
   return allowed;
 }
-

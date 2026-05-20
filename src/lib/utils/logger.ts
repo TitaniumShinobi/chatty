@@ -124,3 +124,6 @@ class Logger {
 
 export const logger = Logger.getInstance();
 
+export function logEvent(message: string, data?: any, context?: string): void {
+  logger.info(message, data, context);
+}

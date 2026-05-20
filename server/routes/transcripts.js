@@ -3,8 +3,18 @@ import multer from 'multer';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getSupabaseClient } from '../lib/supabaseClient.js';
+import { getConstructFiles, getTranscript } from '../../vvaultConnector/vvaultApiClient.js';
 import { extractStartDate, extractFromPath } from '../lib/transcriptDateExtractor.js';
 import { assertValidVaultFilename } from '../lib/vaultPathGuard.js';
+import {
+  normalizeTranscriptSource,
+  requireCanonicalTranscriptSource,
+  isReviewOnlyTranscriptSource,
+  extractSourceFromTranscriptPath,
+  toCanonicalTranscriptFilename,
+  isYearSegment,
+  isMonthSegment,
+} from '../lib/transcriptSource.js';
 
 const router = express.Router();
 
@@ -16,10 +26,6 @@ function isMediaFile(filename) {
   if (!filename) return false;
   const ext = filename.toLowerCase().split('.').pop();
   return MEDIA_EXTENSIONS.has(ext);
-}
-
-function getFileRouteFolder(filename) {
-  return isMediaFile(filename) ? 'assets' : 'documents';
 }
 
 const upload = multer({
@@ -75,6 +81,56 @@ function getVvaultRoot() {
   return process.env.VVAULT_PATH || process.env.VVAULT_ROOT || '';
 }
 
+
+function transcriptListItemFromVvaultFile(file, constructCallsign) {
+  const filename = file.filename || file.name || file.storage_path || file.storagePath || '';
+  const metadata = file.metadata && typeof file.metadata === 'object' ? file.metadata : {};
+  let source = normalizeTranscriptSource(metadata.source, { fallback: '' });
+  if (!source || isReviewOnlyTranscriptSource(source)) {
+    const extractedSource = extractSourceFromTranscriptPath(filename, file.construct_id || constructCallsign);
+    if (extractedSource) source = normalizeTranscriptSource(extractedSource, { fallback: source || '' });
+  }
+  return {
+    id: file.id || `vvault-body:${constructCallsign}:${filename}`,
+    name: metadata.originalName || filename.split('/').pop() || `chat_with_${constructCallsign}.md`,
+    type: metadata.type || file.file_type || file.fileType || 'transcript',
+    source: normalizeTranscriptSource(source, { fallback: 'review_required' }),
+    year: metadata.year || null,
+    month: metadata.month || null,
+    startDate: metadata.startDate || null,
+    dateConfidence: metadata.dateConfidence || 0,
+    uploadedAt: metadata.uploadedAt || file.created_at || file.createdAt || null,
+    filename,
+    readSource: 'vvault_body',
+  };
+}
+
+async function listTranscriptsFromVvaultBody({ constructCallsign, userEmail, supabaseUserId }) {
+  const userContext = { userEmail, supabaseUserId };
+  const rows = [];
+  const filesResult = await getConstructFiles(constructCallsign, userContext);
+  if (filesResult?.status === 'body_native' && Array.isArray(filesResult.files)) {
+    rows.push(...filesResult.files.filter((file) => {
+      const name = String(file.filename || file.name || file.storage_path || file.storagePath || '').toLowerCase();
+      return file.file_type === 'transcript' || file.fileType === 'transcript' || name.includes('/chatty/') || name.includes('chat_with_');
+    }).map((file) => transcriptListItemFromVvaultFile(file, constructCallsign)));
+  }
+
+  if (rows.length === 0) {
+    const transcriptResult = await getTranscript(constructCallsign, userContext);
+    if (transcriptResult?.content) {
+      rows.push(transcriptListItemFromVvaultFile({
+        id: transcriptResult.id,
+        filename: transcriptResult.filename || `instances/${constructCallsign}/chatty/chat_with_${constructCallsign}.md`,
+        file_type: 'transcript',
+        metadata: transcriptResult.metadata || { source: 'chatty' },
+        created_at: transcriptResult.updated_at,
+      }, constructCallsign));
+    }
+  }
+  return rows;
+}
+
 async function listTranscriptsFromFilesystem({ vvaultRoot, userId, constructCallsign }) {
   const baseDir = path.join(
     vvaultRoot,
@@ -102,7 +158,8 @@ async function listTranscriptsFromFilesystem({ vvaultRoot, userId, constructCall
         results.push({
           name,
           type: name.split('.').pop() || 'unknown',
-          source: 'transcripts',
+          source: 'review_required',
+          reviewRequired: true,
           year: null,
           month: null,
           startDate: null,
@@ -148,9 +205,6 @@ router.post('/save', async (req, res) => {
     const savedTranscripts = [];
     const failedTranscripts = [];
     
-    // Get user identifier for VVAULT path (email formatted as name_timestamp or fallback)
-    const userIdentifier = req.user?.name || userEmail.replace('@', '_').replace(/\./g, '_') || 'anonymous';
-    
     for (const transcript of transcripts) {
       if (transcript.content && transcript.content.length > MAX_TEXT_SIZE) {
         console.warn(`⚠️ [Transcripts] File too large: ${transcript.name} (${transcript.content.length} bytes)`);
@@ -162,61 +216,94 @@ router.post('/save', async (req, res) => {
       // Filename uses RELATIVE paths rooted at instances/{callsign}/
       // The user_id column links to the user; construct_id links to the construct.
       // NEVER use full internal VVAULT paths (vvault/users/shard_0000/...) as filenames.
-      // Correct: instances/sera-001/transcripts/chat.txt
+      // Correct: instances/sera-001/chatgpt/chat.txt
       // Wrong:   vvault/users/shard_0000/devon_woodson_.../instances/sera-001/transcripts/chat.txt
       
-      let transcriptSource = transcript.source || 'transcripts';
+      let transcriptSource = normalizeTranscriptSource(transcript.source, { fallback: '' });
       let transcriptYear = transcript.year || '';
       let transcriptMonth = transcript.month || '';
       
       let filename;
-      
-      const routeFolder = getFileRouteFolder(transcript.name);
-      
+
       if (transcript.path && transcript.path.includes('/')) {
-        const zipParts = transcript.path.split('/').filter(p => p && !p.startsWith('.'));
-        const months = ['january', 'february', 'march', 'april', 'may', 'june', 
-                        'july', 'august', 'september', 'october', 'november', 'december'];
+        const zipParts = transcript.path.replace(/\\/g, '/').split('/').filter(p => p && !p.startsWith('.'));
         
         for (const part of zipParts) {
-          if (/^\d{4}$/.test(part)) {
+          if (isYearSegment(part)) {
             transcriptYear = part;
-          } else if (months.includes(part.toLowerCase())) {
+          } else if (isMonthSegment(part)) {
             transcriptMonth = part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
-          } else if (!transcriptSource || transcriptSource === 'transcripts') {
-            const normalizedPart = part.toLowerCase().replace(/\s+/g, '_');
-            if (['chatgpt', 'gemini', 'grok', 'copilot', 'claude', 'chai', 
-                 'character.ai', 'deepseek', 'codex', 'github_copilot'].includes(normalizedPart)) {
-              transcriptSource = normalizedPart;
-            } else if (part !== transcript.name && !part.includes('.')) {
+          } else if (!transcriptSource || isReviewOnlyTranscriptSource(transcriptSource)) {
+            const normalizedPart = normalizeTranscriptSource(part, { fallback: '' });
+            if (normalizedPart && !isReviewOnlyTranscriptSource(normalizedPart) && !part.includes('.')) {
               transcriptSource = normalizedPart;
             }
           }
         }
-        
-        let cleanedPath = transcript.path;
-        const routedFolders = ['assets', 'documents', 'transcripts'];
-        const firstSegment = cleanedPath.split('/')[0]?.toLowerCase();
-        if (routedFolders.includes(firstSegment)) {
-          cleanedPath = cleanedPath.split('/').slice(1).join('/');
+
+        const rawParts = [...zipParts];
+        if (rawParts.length > 0 && ['assets', 'documents', 'transcripts'].includes(rawParts[0].toLowerCase())) {
+          rawParts.shift();
         }
-        
-        filename = `instances/${constructCallsign}/${routeFolder}/${cleanedPath}`;
+
+        if (rawParts.length > 0) {
+          const first = rawParts[0];
+          const firstSource = normalizeTranscriptSource(first, { fallback: '' });
+          const looksLikeSource =
+            !!firstSource &&
+            !isYearSegment(first) &&
+            !isMonthSegment(first) &&
+            !first.includes('.');
+
+          if (looksLikeSource) {
+            if (!transcriptSource || isReviewOnlyTranscriptSource(transcriptSource)) {
+              transcriptSource = firstSource;
+            }
+            if (firstSource === transcriptSource) {
+              rawParts.shift();
+            }
+          }
+        }
+
+        filename = ['instances', constructCallsign, transcriptSource, ...rawParts].join('/');
       } else {
-        let pathParts = [
+        const pathParts = [
           'instances',
           constructCallsign,
-          routeFolder
+          transcriptSource
         ];
-        if (transcriptSource && transcriptSource !== 'transcripts') pathParts.push(transcriptSource);
         if (transcriptYear) pathParts.push(transcriptYear);
         if (transcriptYear && transcriptMonth) pathParts.push(transcriptMonth);
         pathParts.push(transcript.name);
         
         filename = pathParts.join('/');
       }
-      
-      console.log(`📁 [Transcripts] Routing ${transcript.name} → ${routeFolder}/ (media: ${isMediaFile(transcript.name)})`);
+
+      try {
+        transcriptSource = requireCanonicalTranscriptSource(
+          transcriptSource || extractSourceFromTranscriptPath(filename, constructCallsign),
+          { label: `Transcript source for ${transcript.name || 'upload'}` }
+        );
+      } catch (sourceError) {
+        failedTranscripts.push({
+          name: transcript.name,
+          error: sourceError.message,
+          reviewRequired: true,
+        });
+        continue;
+      }
+
+      filename = toCanonicalTranscriptFilename(filename, constructCallsign, transcriptSource);
+      transcriptSource = normalizeTranscriptSource(
+        transcriptSource || extractSourceFromTranscriptPath(filename, constructCallsign),
+        { fallback: '' }
+      );
+
+      if (!filename.includes(`instances/${constructCallsign}/`)) {
+        filename = ['instances', constructCallsign, transcriptSource, transcript.name].join('/');
+      }
+
+      console.log(`📁 [Transcripts] Routing ${transcript.name} → ${transcriptSource}/ (media: ${isMediaFile(transcript.name)})`);
       
       // Auto-detect start date from transcript content (runs in milliseconds)
       const dateResult = extractStartDate(transcript.content, transcript.name);
@@ -309,6 +396,55 @@ router.post('/save', async (req, res) => {
   } catch (error) {
     console.error('❌ [Transcripts] Save error:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete a transcript file for a construct (Supabase only)
+router.post('/delete', async (req, res) => {
+  try {
+    const { constructCallsign, id, filename } = req.body;
+    if (!constructCallsign) {
+      return res.status(400).json({ success: false, error: 'constructCallsign required' });
+    }
+    if (!id && !filename) {
+      return res.status(400).json({ success: false, error: 'id or filename required' });
+    }
+
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return res.status(500).json({ success: false, error: 'Supabase not configured' });
+    }
+
+    const userEmail = req.user?.email;
+    if (!userEmail) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const userId = await resolveSupabaseUserId(supabase, userEmail);
+    if (!userId) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    let query = supabase
+      .from('vault_files')
+      .delete()
+      .eq('user_id', userId)
+      .eq('construct_id', constructCallsign)
+      .eq('file_type', 'transcript');
+
+    if (id) query = query.eq('id', id);
+    else query = query.eq('filename', filename);
+
+    const { error } = await query;
+    if (error) {
+      console.error('❌ [Transcripts] Delete error:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('❌ [Transcripts] Delete error:', error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -422,9 +558,19 @@ router.get('/list/:constructCallsign', async (req, res) => {
     const supabase = getSupabaseClient();
     const userEmail = req.user?.email || 'anonymous';
 
-    // Prefer Supabase when configured; otherwise fall back to filesystem VVAULT.
     let transcripts = [];
-    if (supabase) {
+    try {
+      transcripts = await listTranscriptsFromVvaultBody({
+        constructCallsign,
+        userEmail,
+        supabaseUserId: req.user?.supabaseUserId || req.user?.supabase_user_id || null,
+      });
+    } catch (bodyErr) {
+      console.warn(`⚠️ [Transcripts] VVAULT body list failed for ${constructCallsign}:`, bodyErr.message);
+    }
+
+    // Legacy fallback only: VVAULT body is the canonical read target.
+    if (transcripts.length === 0 && supabase) {
       const userId = await resolveSupabaseUserId(supabase, userEmail);
 
       const constructVariants = [
@@ -436,7 +582,7 @@ router.get('/list/:constructCallsign', async (req, res) => {
       for (const cid of constructVariants) {
         let query = supabase
           .from('vault_files')
-          .select('id, filename, metadata, created_at')
+          .select('id, filename, metadata, created_at, construct_id')
           .eq('file_type', 'transcript')
           .eq('construct_id', cid);
 
@@ -451,7 +597,6 @@ router.get('/list/:constructCallsign', async (req, res) => {
       }
 
       const { data: files, error: filesError } = { data: allFiles, error: null };
-      const _ = filesError;
 
       if (filesError) {
         console.error('❌ [Transcripts] List error:', filesError);
@@ -460,31 +605,33 @@ router.get('/list/:constructCallsign', async (req, res) => {
 
       transcripts = (files || []).map(f => {
         // Prefer metadata for source/year/month (reliable), fall back to path parsing
-        let source = f.metadata?.source;
+        let source = normalizeTranscriptSource(f.metadata?.source, { fallback: '' });
         let year = f.metadata?.year;
         let month = f.metadata?.month;
 
         // If metadata missing, parse from path
-        if (!source || source === 'transcripts') {
+        if (!source || isReviewOnlyTranscriptSource(source)) {
           // Path format: instances/{constructCallsign}/{source}/{year?}/{month?}/{filename}
           // Legacy format: vvault/users/shard_0000/{userId}/instances/{constructId}/{source}/...
           const pathParts = f.filename.split('/');
           const constructIdx = pathParts.indexOf('instances');
+          const extractedSource = extractSourceFromTranscriptPath(f.filename, f.construct_id || constructCallsign);
+          if (extractedSource) source = normalizeTranscriptSource(extractedSource, { fallback: source || '' });
+
           if (constructIdx >= 0 && pathParts.length > constructIdx + 2) {
-            source = pathParts[constructIdx + 2];
             // Check for year/month in subsequent parts
-            const months = ['january', 'february', 'march', 'april', 'may', 'june',
-                            'july', 'august', 'september', 'october', 'november', 'december'];
             for (let i = constructIdx + 3; i < pathParts.length - 1; i++) {
               const part = pathParts[i];
-              if (/^\d{4}$/.test(part) && !year) {
+              if (isYearSegment(part) && !year) {
                 year = part;
-              } else if (months.includes(part.toLowerCase()) && !month) {
+              } else if (isMonthSegment(part) && !month) {
                 month = part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
               }
             }
           }
         }
+
+        source = normalizeTranscriptSource(source, { fallback: 'review_required' });
 
         return {
           id: f.id,
@@ -499,12 +646,12 @@ router.get('/list/:constructCallsign', async (req, res) => {
           filename: f.filename,
         };
       });
-    } else {
+    } else if (transcripts.length === 0) {
       const vvaultRoot = getVvaultRoot();
       if (!vvaultRoot) {
         return res.status(500).json({
           success: false,
-          error: 'Transcripts unavailable: set SUPABASE_* or VVAULT_PATH on the server',
+          error: 'Transcripts unavailable: VVAULT body returned no rows and no legacy fallback is configured',
         });
       }
 
@@ -540,7 +687,14 @@ router.get('/list/:constructCallsign', async (req, res) => {
       .filter(t => t.startDate)
       .sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
     
-    res.json({ success: true, transcripts, bySource, byTimeline, byStartDate });
+    res.json({
+      success: true,
+      transcripts,
+      bySource,
+      byTimeline,
+      byStartDate,
+      readSource: transcripts.some((t) => t.readSource === 'vvault_body') ? 'vvault_body' : 'legacy_fallback',
+    });
   } catch (error) {
     console.error('❌ [Transcripts] List error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -704,6 +858,14 @@ router.post('/auto-organize/:constructCallsign', async (req, res) => {
 router.post('/move', async (req, res) => {
   try {
     const { fileId, year, month, source } = req.body;
+    let normalizedSource = null;
+    if (source) {
+      try {
+        normalizedSource = requireCanonicalTranscriptSource(source, { label: 'Move destination source' });
+      } catch (sourceError) {
+        return res.status(400).json({ success: false, error: sourceError.message, reviewRequired: true });
+      }
+    }
 
     if (!fileId) {
       return res.status(400).json({ success: false, error: 'fileId is required' });
@@ -717,7 +879,7 @@ router.post('/move', async (req, res) => {
     const userEmail = req.user?.email || 'anonymous';
     const userId = await resolveSupabaseUserId(supabase, userEmail);
 
-    console.log(`📦 [Transcripts] Moving file ${fileId} → ${source || '?'}/${year || 'Unsorted'}/${month || ''}`);
+    console.log(`📦 [Transcripts] Moving file ${fileId} → ${normalizedSource || '?'}/${year || 'Unsorted'}/${month || ''}`);
 
     const { data: file, error: fetchError } = await supabase
       .from('vault_files')
@@ -744,16 +906,12 @@ router.post('/move', async (req, res) => {
 
     let newFilename = file.filename;
 
-    if (source && source !== file.metadata?.source) {
-      updatedMetadata.source = source;
+    if (normalizedSource && normalizedSource !== normalizeTranscriptSource(file.metadata?.source, { fallback: '' })) {
+      updatedMetadata.source = normalizedSource;
       updatedMetadata.previousSource = file.metadata?.source || null;
-      const oldSource = file.metadata?.source || 'documents';
       const constructId = file.construct_id || file.metadata?.constructCallsign;
       if (constructId) {
-        const candidate = file.filename.replace(
-          new RegExp(`(instances/${constructId}/)${oldSource}/`),
-          `$1${source}/`
-        );
+        const candidate = toCanonicalTranscriptFilename(file.filename, constructId, normalizedSource);
         try {
           assertValidVaultFilename(candidate);
           newFilename = candidate;
@@ -774,8 +932,8 @@ router.post('/move', async (req, res) => {
     }
 
     const displayName = file.filename?.split('/').pop() || fileId;
-    console.log(`✅ [Transcripts] Moved ${displayName} → ${source || '?'}/${year || 'Unsorted'}/${month || ''}`);
-    res.json({ success: true, year: year || null, month: month || null, source: source || null });
+    console.log(`✅ [Transcripts] Moved ${displayName} → ${normalizedSource || '?'}/${year || 'Unsorted'}/${month || ''}`);
+    res.json({ success: true, year: year || null, month: month || null, source: normalizedSource || null });
   } catch (error) {
     console.error('❌ [Transcripts] Move error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -785,12 +943,19 @@ router.post('/move', async (req, res) => {
 router.post('/relocate-source', async (req, res) => {
   try {
     const { constructCallsign, fromSource, toSource } = req.body;
+    const normalizedFrom = normalizeTranscriptSource(fromSource, { fallback: '' });
+    let normalizedTo;
+    try {
+      normalizedTo = requireCanonicalTranscriptSource(toSource, { label: 'Relocation destination source' });
+    } catch (sourceError) {
+      return res.status(400).json({ success: false, error: sourceError.message, reviewRequired: true });
+    }
 
-    if (!constructCallsign || !fromSource || !toSource) {
+    if (!constructCallsign || !normalizedFrom || !normalizedTo) {
       return res.status(400).json({ success: false, error: 'constructCallsign, fromSource, and toSource are all required' });
     }
 
-    if (fromSource === toSource) {
+    if (normalizedFrom === normalizedTo) {
       return res.json({ success: true, moved: 0, message: 'Source and destination are the same' });
     }
 
@@ -805,15 +970,14 @@ router.post('/relocate-source', async (req, res) => {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
-    console.log(`📦 [Transcripts] Relocating ${constructCallsign} files: ${fromSource} → ${toSource}`);
+    console.log(`📦 [Transcripts] Relocating ${constructCallsign} files: ${normalizedFrom} → ${normalizedTo}`);
 
     const { data: files, error: fetchError } = await supabase
       .from('vault_files')
       .select('id, filename, metadata')
       .eq('user_id', userId)
       .eq('construct_id', constructCallsign)
-      .eq('file_type', 'transcript')
-      .like('filename', `%/${fromSource}/%`);
+      .eq('file_type', 'transcript');
 
     if (fetchError) {
       return res.status(500).json({ success: false, error: fetchError.message });
@@ -826,18 +990,16 @@ router.post('/relocate-source', async (req, res) => {
     let moved = 0;
     let skipped = 0;
     for (const file of files) {
-      const sourcePattern = `instances/${constructCallsign}/${fromSource}/`;
-      if (!file.filename.includes(sourcePattern)) {
+      const currentSource = normalizeTranscriptSource(
+        file.metadata?.source || extractSourceFromTranscriptPath(file.filename, constructCallsign),
+        { fallback: '' }
+      );
+      if (!currentSource || currentSource !== normalizedFrom) {
         skipped++;
         continue;
       }
 
-      const newFilename = file.filename.replace(sourcePattern, `instances/${constructCallsign}/${toSource}/`);
-
-      if (newFilename === file.filename) {
-        skipped++;
-        continue;
-      }
+      const newFilename = toCanonicalTranscriptFilename(file.filename, constructCallsign, normalizedTo);
 
       try {
         assertValidVaultFilename(newFilename);
@@ -847,10 +1009,9 @@ router.post('/relocate-source', async (req, res) => {
         continue;
       }
 
-      const currentSource = file.metadata?.source || fromSource;
       const updatedMetadata = {
         ...file.metadata,
-        source: toSource,
+        source: normalizedTo,
         previousSource: currentSource,
         relocatedAt: new Date().toISOString(),
       };
@@ -867,11 +1028,185 @@ router.post('/relocate-source', async (req, res) => {
       }
     }
 
-    console.log(`✅ [Transcripts] Relocated ${moved}/${files.length} files to ${toSource}/ (${skipped} skipped)`);
-    res.json({ success: true, moved, skipped, total: files.length });
+    console.log(`✅ [Transcripts] Relocated ${moved}/${files.length} files to ${normalizedTo}/ (${skipped} skipped)`);
+    res.json({ success: true, moved, skipped, total: files.length, fromSource: normalizedFrom, toSource: normalizedTo });
   } catch (error) {
     console.error('❌ [Transcripts] Relocate error:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/migrate-canonical', async (req, res) => {
+  try {
+    const { constructCallsign, dryRun = true } = req.body || {};
+    if (!constructCallsign) {
+      return res.status(400).json({ success: false, error: 'constructCallsign is required' });
+    }
+
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return res.status(500).json({ success: false, error: 'Supabase not configured' });
+    }
+
+    const userEmail = req.user?.email || 'anonymous';
+    const userId = await resolveSupabaseUserId(supabase, userEmail);
+    if (!userId) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const { data: files, error: fetchError } = await supabase
+      .from('vault_files')
+      .select('id, filename, metadata, content, file_type, created_at')
+      .eq('user_id', userId)
+      .eq('construct_id', constructCallsign)
+      .eq('file_type', 'transcript')
+      .order('created_at', { ascending: true });
+
+    if (fetchError) {
+      return res.status(500).json({ success: false, error: fetchError.message });
+    }
+
+    if (!files || files.length === 0) {
+      return res.json({
+        success: true,
+        constructCallsign,
+        dryRun: !!dryRun,
+        scanned: 0,
+        renamed: 0,
+        metadataUpdated: 0,
+        reindexed: 0,
+        skipped: 0,
+        updates: [],
+      });
+    }
+
+    const updates = [];
+    let renamed = 0;
+    let metadataUpdated = 0;
+    let skipped = 0;
+
+    for (const file of files) {
+      const fromPath = extractSourceFromTranscriptPath(file.filename, constructCallsign);
+      const currentSource = normalizeTranscriptSource(file.metadata?.source || fromPath, { fallback: '' });
+      if (isReviewOnlyTranscriptSource(currentSource)) {
+        skipped++;
+        updates.push({
+          id: file.id,
+          oldFilename: file.filename,
+          newFilename: file.filename,
+          oldSource: file.metadata?.source || null,
+          newSource: null,
+          skipped: true,
+          reviewRequired: true,
+          reason: 'Transcript has no canonical provider/source and must be reviewed before migration.',
+        });
+        continue;
+      }
+      const nextFilename = toCanonicalTranscriptFilename(file.filename, constructCallsign, currentSource);
+      const nextSource = normalizeTranscriptSource(currentSource, { fallback: '' });
+      const currentStoredSource = normalizeTranscriptSource(file.metadata?.source, { fallback: '' });
+
+      const needsFilenameUpdate = nextFilename !== file.filename;
+      const needsSourceUpdate = nextSource !== currentStoredSource;
+
+      if (!needsFilenameUpdate && !needsSourceUpdate) {
+        skipped++;
+        continue;
+      }
+
+      const updatedMetadata = {
+        ...(file.metadata || {}),
+        source: nextSource,
+        migratedCanonicalAt: new Date().toISOString(),
+      };
+
+      if (needsSourceUpdate) {
+        updatedMetadata.previousSource = file.metadata?.source || null;
+      }
+
+      updates.push({
+        id: file.id,
+        oldFilename: file.filename,
+        newFilename: nextFilename,
+        oldSource: file.metadata?.source || null,
+        newSource: nextSource,
+        metadata: updatedMetadata,
+        content: file.content,
+      });
+
+      if (needsFilenameUpdate) renamed++;
+      if (needsSourceUpdate) metadataUpdated++;
+    }
+
+    let reindexed = 0;
+    const reindexFailures = [];
+
+    if (!dryRun && updates.length > 0) {
+      for (const update of updates) {
+        try {
+          assertValidVaultFilename(update.newFilename);
+          const { error: updateError } = await supabase
+            .from('vault_files')
+            .update({
+              filename: update.newFilename,
+              metadata: update.metadata,
+            })
+            .eq('id', update.id);
+
+          if (updateError) {
+            reindexFailures.push({ id: update.id, error: updateError.message });
+            continue;
+          }
+        } catch (err) {
+          reindexFailures.push({ id: update.id, error: err.message });
+        }
+      }
+
+      try {
+        const { clearVerifiedMemoryCache, extractAndStoreAnchors } = await import('../lib/verifiedMemoryLoader.js');
+        clearVerifiedMemoryCache(constructCallsign);
+
+        for (const target of updates) {
+          const content = target.content || '';
+          const isText = typeof content === 'string' && content.length > 100 && !content.startsWith('data:image/');
+          if (!isText) continue;
+
+          const anchorResult = await extractAndStoreAnchors(
+            constructCallsign,
+            content,
+            target.newFilename.split('/').pop() || 'transcript.md'
+          );
+          if (anchorResult?.pairCount || anchorResult?.pairs?.length) {
+            reindexed++;
+          }
+        }
+      } catch (anchorErr) {
+        reindexFailures.push({ id: 'anchors', error: anchorErr.message });
+      }
+    }
+
+    return res.json({
+      success: true,
+      constructCallsign,
+      dryRun: !!dryRun,
+      scanned: files.length,
+      renamed,
+      metadataUpdated,
+      reindexed,
+      skipped,
+      failed: reindexFailures.length,
+      updates: updates.map(u => ({
+        id: u.id,
+        oldFilename: u.oldFilename,
+        newFilename: u.newFilename,
+        oldSource: u.oldSource,
+        newSource: u.newSource,
+      })),
+      failures: reindexFailures,
+    });
+  } catch (error) {
+    console.error('❌ [Transcripts] migrate-canonical error:', error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -900,6 +1235,53 @@ router.post('/extract-pdf', upload.single('file'), async (req, res) => {
   } catch (error) {
     console.error('❌ [Transcripts] PDF extraction error:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Lightweight delete endpoint for stored transcripts (dev convenience)
+router.post('/delete', async (req, res) => {
+  try {
+    const { constructCallsign, id, filename } = req.body || {};
+    if (!constructCallsign || (!id && !filename)) {
+      return res.status(400).json({ success: false, error: 'constructCallsign and id or filename required' });
+    }
+
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return res.status(500).json({ success: false, error: 'Supabase not configured' });
+    }
+
+    const userEmail = req.user?.email || 'anonymous';
+    const userId = await resolveSupabaseUserId(supabase, userEmail);
+    if (!userId) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    let query = supabase
+      .from('vault_files')
+      .delete()
+      .eq('user_id', userId)
+      .eq('construct_id', constructCallsign)
+      .eq('file_type', 'transcript')
+      .select('id,filename')
+      .limit(1);
+
+    if (id) {
+      query = query.eq('id', id);
+    } else if (filename) {
+      query = query.eq('filename', filename);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('❌ [Transcripts] delete error:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+
+    return res.json({ success: true, deleted: data?.length || 0 });
+  } catch (err) {
+    console.error('❌ [Transcripts] delete handler error:', err);
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 

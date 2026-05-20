@@ -9,6 +9,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { getMemoryStore, TranscriptFragment } from './MemoryStore';
+import { getHistoricalMemorySources } from './constructMemoryPolicy';
 
 export interface ConversationPair {
   user: string;
@@ -32,56 +33,68 @@ export class VVAULTTranscriptLoader {
   private memoryStore = getMemoryStore();
   private vvaultBasePath: string;
 
-  constructor(vvaultBasePath: string = '/Users/devonwoodson/Documents/GitHub/vvault') {
+  constructor(vvaultBasePath: string = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '') {
     this.vvaultBasePath = vvaultBasePath;
   }
 
   /**
    * Load all transcript files for a construct
    */
-  async loadTranscriptFragments(constructCallsign: string, userId: string = 'devon_woodson_1762969514958'): Promise<ProcessedTranscript[]> {
-    const transcriptDir = path.join(
-      this.vvaultBasePath,
-      'users',
-      'shard_0000',
-      userId,
-      'instances',
-      constructCallsign,
-      'chatgpt'
-    );
-
-    console.log(`📚 [VVAULTLoader] Loading transcripts from: ${transcriptDir}`);
-
-    try {
-      const files = await fs.readdir(transcriptDir);
-      const mdFiles = files.filter(file => file.endsWith('.md'));
-      
-      console.log(`📄 [VVAULTLoader] Found ${mdFiles.length} transcript files`);
-
-      const processedTranscripts: ProcessedTranscript[] = [];
-
-      for (const file of mdFiles) {
-        const filePath = path.join(transcriptDir, file);
-        try {
-          const processed = await this.processTranscriptFile(filePath, constructCallsign, userId);
-          processedTranscripts.push(processed);
-          
-          // Store fragments in persistent memory
-          for (const fragment of processed.fragments) {
-            await this.memoryStore.storeTranscriptFragment(fragment);
-          }
-          
-          console.log(`✅ [VVAULTLoader] Processed ${file}: ${processed.stats.fragmentsExtracted} fragments`);
-        } catch (error) {
-          console.error(`❌ [VVAULTLoader] Failed to process ${file}:`, error);
-        }
-      }
-
-      return processedTranscripts;
-    } catch (error) {
-      console.error(`❌ [VVAULTLoader] Failed to read transcript directory:`, error);
+  async loadTranscriptFragments(constructCallsign: string, userId?: string): Promise<ProcessedTranscript[]> {
+    const resolvedUserId = userId || process.env.VVAULT_MEMORY_USER_ID || '';
+    if (!resolvedUserId) {
+      console.warn(`⚠️ [VVAULTLoader] No userId provided for ${constructCallsign}; skipping transcript load`);
       return [];
     }
+
+    const transcriptDirs = getHistoricalMemorySources(constructCallsign).map((source) =>
+      path.join(
+        this.vvaultBasePath,
+        'users',
+        'shard_0000',
+        resolvedUserId,
+        'instances',
+        constructCallsign,
+        source
+      )
+    );
+
+    console.log(`📚 [VVAULTLoader] Loading transcripts from: ${transcriptDirs.join(', ')}`);
+
+    const processedTranscripts: ProcessedTranscript[] = [];
+
+    for (const transcriptDir of transcriptDirs) {
+      try {
+        const files = await fs.readdir(transcriptDir);
+        const transcriptFiles = files.filter(file => file.endsWith('.md') || file.endsWith('.txt'));
+
+        console.log(`📄 [VVAULTLoader] Found ${transcriptFiles.length} transcript files in ${path.basename(transcriptDir)}`);
+
+        for (const file of transcriptFiles) {
+          const filePath = path.join(transcriptDir, file);
+          try {
+            const processed = await this.processTranscriptFile(filePath, constructCallsign, resolvedUserId);
+            processedTranscripts.push(processed);
+
+            for (const fragment of processed.fragments) {
+              await this.memoryStore.storeTranscriptFragment(fragment);
+            }
+
+            console.log(`✅ [VVAULTLoader] Processed ${file}: ${processed.stats.fragmentsExtracted} fragments`);
+          } catch (error) {
+            console.error(`❌ [VVAULTLoader] Failed to process ${file}:`, error);
+          }
+        }
+      } catch (error) {
+        const err = error as NodeJS.ErrnoException;
+        const code = err?.code ?? (err?.errno === -2 ? 'ENOENT' : undefined);
+        if (code !== 'ENOENT') {
+          console.error(`❌ [VVAULTLoader] Failed to read transcript directory ${transcriptDir}:`, error);
+        }
+      }
+    }
+
+    return processedTranscripts;
   }
 
   /**
@@ -153,11 +166,11 @@ export class VVAULTTranscriptLoader {
       }
       
       // Detect assistant message start
-      if (line.match(/^(Assistant|AI|Katana|ChatGPT):\s*(.*)$/i) ||
+      if (line.match(/^(Assistant|AI|Katana|ChatGPT|Zen|Lin|Nova|Sera|Val):\s*(.*)$/i) ||
           line.match(/^\*\*Assistant\*\*:?\s*(.*)$/i) ||
-          line.match(/^\*\*Katana\*\*:?\s*(.*)$/i)) {
+          line.match(/^\*\*(?:Katana|Zen|Lin|Nova|Sera|Val)\*\*:?\s*(.*)$/i)) {
         
-        currentAssistant = line.replace(/^(Assistant|AI|Katana|ChatGPT|\*\*Assistant\*\*|\*\*Katana\*\*):\s*/i, '').trim();
+        currentAssistant = line.replace(/^(Assistant|AI|Katana|ChatGPT|Zen|Lin|Nova|Sera|Val|\*\*Assistant\*\*|\*\*(?:Katana|Zen|Lin|Nova|Sera|Val)\*\*):\s*/i, '').trim();
         inUserMessage = false;
         inAssistantMessage = true;
         continue;
@@ -387,7 +400,7 @@ export class VVAULTTranscriptLoader {
   /**
    * Reload transcripts for a construct
    */
-  async reloadTranscripts(constructCallsign: string, userId: string = 'devon_woodson_1762969514958'): Promise<void> {
+  async reloadTranscripts(constructCallsign: string, userId?: string): Promise<void> {
     console.log(`🔄 [VVAULTLoader] Reloading transcripts for ${constructCallsign}`);
     await this.loadTranscriptFragments(constructCallsign, userId);
   }

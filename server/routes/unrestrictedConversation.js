@@ -1,13 +1,20 @@
 /**
- * Unrestricted Conversation Routes
- * 
+ * /api/conversation/unrestricted
+ *
+ * ROUTE CLASSIFICATION: NONCANONICAL (separate path)
+ * These routes bypass the canonical /api/vvault/message runtime path.
+ * They use UnifiedIntelligenceOrchestrator directly and emit stub
+ * runtime_receipt and orchestration_checklist fields for parity.
+ *
+ * New consumers should target /api/vvault/message for the canonical runtime path.
+ *
  * API endpoints for unlimited conversational intelligence
  * without artificial restrictions or domain boundaries.
  */
 
 import express from 'express';
 import { getUnifiedIntelligenceOrchestrator } from '../lib/unifiedIntelligenceOrchestrator.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth } from '../auth/middleware/auth.js';
 
 const router = express.Router();
 router.use(requireAuth);
@@ -54,7 +61,24 @@ router.post('/unrestricted', async (req, res) => {
         restrictions_removed: true,
         topic_limitations: 'none',
         conversational_scope: 'unlimited'
-      }
+      },
+      runtime_receipt: {
+        created_at: new Date().toISOString(),
+        route_mode: 'unrestricted_message',
+        construct_callsign: constructCallsign,
+        _noncanonical: true,
+        _canonical_path: '/api/vvault/message',
+        _disclaimer: 'Stub receipt. Canonical runtime: /api/vvault/message.',
+      },
+      orchestration_checklist: {
+        responseStatus: 'unrestricted_routed',
+        route: '/api/conversation/unrestricted',
+        _noncanonical: true,
+        _canonical_path: '/api/vvault/message',
+        _disclaimer: 'Stub checklist. Canonical runtime: /api/vvault/message.',
+      },
+      _noncanonical: true,
+      _canonical_path: '/api/vvault/message',
     });
 
   } catch (error) {
@@ -63,7 +87,9 @@ router.post('/unrestricted', async (req, res) => {
       ok: false,
       error: 'Failed to process unrestricted message',
       details: error.message,
-      conversational_freedom: 'error'
+      conversational_freedom: 'error',
+      _noncanonical: true,
+      _canonical_path: '/api/vvault/message',
     });
   }
 });

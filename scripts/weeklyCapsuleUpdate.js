@@ -163,7 +163,7 @@ Usage:
   node weeklyCapsuleUpdate.js all                     Update capsules for all users
 
 Examples:
-  node weeklyCapsuleUpdate.js user devon_woodson_1762969514958 shard_0000
+  node weeklyCapsuleUpdate.js user ${process.env.VVAULT_USER_ID} shard_0000
   node weeklyCapsuleUpdate.js shard shard_0000
   node weeklyCapsuleUpdate.js all
 `);
@@ -200,4 +200,3 @@ Examples:
 }
 
 export { updateUserCapsules, updateShardCapsules, updateAllCapsules };
-

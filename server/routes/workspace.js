@@ -1,5 +1,5 @@
 import express from "express";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth } from "../auth/middleware/auth.js";
 import fs from "fs/promises";
 import path from "path";
 

@@ -25,7 +25,7 @@ export interface GroundingResponse {
 
 export class EmotionalWatchdog {
   private emotionalState: EmotionalState;
-  private crisisIndicators: CrisisIndicator[];
+  private crisisIndicators: CrisisIndicator[] = [];
   private messageHistory: Array<{ message: string; timestamp: number; emotionalWeight: number }> = [];
   private readonly MAX_HISTORY = 20;
 

@@ -2,7 +2,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 
-const VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/VVAULT';
+const VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
 const DEFAULT_USER_ID = '690ec2d8c980c59365f284f5';
 const userId = process.argv[2] || DEFAULT_USER_ID;
 const constructFolder = 'zen-001';

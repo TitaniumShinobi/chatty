@@ -8,7 +8,7 @@
 // Since the server is running, let's try a different approach
 // We'll create a simple HTTP request to reset the user
 
-const TARGET_EMAIL = 'dwoodson92@gmail.com';
+const TARGET_EMAIL = process.env.TARGET_EMAIL || process.env.CHATTY_TEST_EMAIL || '';
 
 async function resetUserViaAPI() {
   try {

@@ -120,7 +120,7 @@ export const CHATTY_TIPS: ChattyTip[] = [
     emoji: '🌐'
   },
   {
-    text: "🧠 Deep research mode generates comprehensive reports on any topic",
+    text: "🧠 Research mode gathers evidence and builds sourced answers",
     constructId: 'synth',
     category: 'productivity',
     emoji: '🧠'
@@ -244,4 +244,3 @@ export const getContextualTips = (
   // New users get a mix of all categories
   return tips;
 };
-

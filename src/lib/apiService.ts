@@ -99,3 +99,99 @@ class ApiService {
 }
 
 export const apiService = new ApiService();
+
+// ─── Voice Lab 2.0 ───────────────────────────────────────────────────────────
+
+/** Upload a voice reference file and save to construct in one step (legacy). */
+export async function uploadVoice(constructId: string, file: File): Promise<boolean> {
+  const { ok, tmpId } = await uploadVoiceToTemp(file);
+  if (!ok || !tmpId) return false;
+  const saveRes = await saveVoiceToConstruct(constructId, { tmpId });
+  return saveRes.ok;
+}
+
+/** Upload file to temp; returns tmpId for audit/save. */
+export async function uploadVoiceToTemp(file: File): Promise<{ ok: boolean; tmpId?: string; error?: string }> {
+  const form = new FormData();
+  form.append('voice', file);
+  const res = await fetch('/api/voice/upload', { method: 'POST', body: form, credentials: 'include' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: data?.error || res.statusText };
+  return { ok: true, tmpId: data.tmpId };
+}
+
+/** Fetch URL to temp; returns tmpId. */
+export async function fetchVoiceUrlToTemp(url: string): Promise<{ ok: boolean; tmpId?: string; error?: string }> {
+  const res = await fetch('/api/voice/upload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: data?.error || res.statusText };
+  return { ok: true, tmpId: data.tmpId };
+}
+
+/** Get quality audit for a temp upload. */
+export async function getVoiceAudit(tmpId: string): Promise<{
+  ok: boolean;
+  durationSec?: number;
+  channels?: number;
+  sampleRateHz?: number;
+  rmsDb?: number | null;
+  pass?: boolean;
+  hints?: string[];
+  error?: string;
+}> {
+  const res = await fetch(`/api/voice/audit?id=${encodeURIComponent(tmpId)}`, { credentials: 'include' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: data?.error || res.statusText };
+  return { ok: true, ...data };
+}
+
+/** URL for previewing a staged temp voice upload. */
+export function getVoicePreviewUrl(tmpId: string): string {
+  return `/api/voice/preview?id=${encodeURIComponent(tmpId)}`;
+}
+
+/** Trim long temp file to 25 s from startSec; returns new tmpId. */
+export async function trimVoiceTemp(tmpId: string, startSec: number): Promise<{ ok: boolean; tmpId?: string; error?: string }> {
+  const res = await fetch('/api/voice/trim', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tmpId, startSec }),
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: data?.error || res.statusText };
+  return { ok: true, tmpId: data.tmpId };
+}
+
+/** Save temp (or starter) to construct. */
+export async function saveVoiceToConstruct(
+  constructId: string,
+  opts: { tmpId?: string; starterId?: string }
+): Promise<{ ok: boolean; refPath?: string; error?: string }> {
+  const res = await fetch('/api/voice/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ constructId, ...opts }),
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: data?.error || res.statusText };
+  return { ok: true, refPath: data.refPath };
+}
+
+/** URL for TTS sample playback (GET stream). */
+export function getTtsSampleUrl(constructId: string): string {
+  return `/api/tts?sample=true&constructId=${encodeURIComponent(constructId)}`;
+}
+
+/** Fetch help markdown for the voice lab drawer. */
+export async function getVoiceLabHelp(): Promise<string> {
+  const res = await fetch('/api/voice/help', { credentials: 'include' });
+  if (!res.ok) return '';
+  return res.text();
+}

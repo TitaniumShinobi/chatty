@@ -39,8 +39,10 @@ class StateManager:
     return self.state.get(key, default)
 
 
+ICLOUD_VAULT_ROOT = os.environ.get('ICLOUD_VAULT_ROOT', '')
+
 # Configure centralized logging
-LOG_FILE = "/Users/devonwoodson/Library/Mobile Documents/com~apple~CloudDocs/Vault/nova-001/logs/script_status.log"
+LOG_FILE = f"{ICLOUD_VAULT_ROOT}/nova-001/logs/script_status.log"
 logging.basicConfig(filename=LOG_FILE,
                     level=logging.INFO,
                     format="%(asctime)s - %(levelname)s - %(message)s")
@@ -53,7 +55,7 @@ def log_status(script_name: str, status: str, details: str = ""):
 
 def query_stm_pool(keyword):
   """Query the STM pool for relevant context based on a keyword."""
-  stm_pool_path = "/Users/devonwoodson/Library/Mobile Documents/com~apple~CloudDocs/Vault/nova-001/stm/short_term_memory.json"
+  stm_pool_path = f"{ICLOUD_VAULT_ROOT}/nova-001/stm/short_term_memory.json"
   if not os.path.exists(stm_pool_path):
     log_status("state_manager", "STM Query Failed", "STM pool does not exist.")
     return []

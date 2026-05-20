@@ -1,8 +1,14 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { LIN_MODEL_DEFAULTS } from '../lib/linModelDefaults.js';
 
 const NOVA_CONSTRUCT = 'nova-001';
 const NON_NOVA_CONSTRUCT = 'zen-001';
+const EXPECTED_LIN_CONVERSATION_MODEL = LIN_MODEL_DEFAULTS.conversation.replace(/^ollama:/, '');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function createMockClient(name, shouldFail = false, failStatus = null) {
   const calls = [];
@@ -27,7 +33,16 @@ function createMockClient(name, shouldFail = false, failStatus = null) {
   };
 }
 
-function simulateNovaHotfix({ constructId, hasImages, replitOpenrouter, openrouter, openaiClient }) {
+function simulateNovaHotfix({
+  constructId,
+  hasImages,
+  replitOpenrouter,
+  openrouter,
+  openaiClient,
+  orchestrationMode = 'custom',
+  ollamaAvailable = false,
+  resolvedLinModel = EXPECTED_LIN_CONVERSATION_MODEL,
+}) {
   const callLog = [];
   let effectiveProvider = 'openai';
   let effectiveModel = 'gpt-4.1-mini';
@@ -49,8 +64,19 @@ function simulateNovaHotfix({ constructId, hasImages, replitOpenrouter, openrout
     }
   }
 
+  const isNovaLinLocalFirst =
+    constructId === NOVA_CONSTRUCT &&
+    orchestrationMode === 'lin' &&
+    ollamaAvailable &&
+    !hasImages;
   const isNovaHotfix = constructId === NOVA_CONSTRUCT && replitOpenrouter && !hasImages;
-  if (isNovaHotfix) {
+
+  if (isNovaLinLocalFirst) {
+    callLog.push('nova-lin-local-first');
+    effectiveProvider = 'ollama';
+    effectiveModel = resolvedLinModel;
+    aiResponse = 'Response from ollama';
+  } else if (isNovaHotfix) {
     callLog.push('nova-hotfix-primary');
     effectiveProvider = 'replitOpenrouter';
     effectiveModel = DEFAULT_OPENROUTER_MODEL;
@@ -85,17 +111,35 @@ function simulateNovaFallbackGuard({ constructId, effectiveProvider, openaiClien
 
 describe('Nova-001 Hotfix Tests', () => {
 
-  it('nova-001 text request routes to replitOpenrouter, never openai', () => {
+  it('nova-001 Lin text request routes local-first to the fixed Lin conversation model', () => {
     const result = simulateNovaHotfix({
       constructId: NOVA_CONSTRUCT,
       hasImages: false,
       replitOpenrouter: createMockClient('replitOpenrouter'),
       openrouter: createMockClient('openrouter'),
       openaiClient: createMockClient('openai'),
+      orchestrationMode: 'lin',
+      ollamaAvailable: true,
+    });
+    assert.equal(result.effectiveProvider, 'ollama');
+    assert.equal(result.effectiveModel, EXPECTED_LIN_CONVERSATION_MODEL);
+    assert.ok(!result.callLog.includes('openai-primary'), 'OpenAI must not be called for nova-001');
+    assert.ok(result.callLog.includes('nova-lin-local-first'), 'Nova Lin local-first path must be triggered');
+  });
+
+  it('nova-001 custom text request keeps OpenRouter hotfix and never calls openai', () => {
+    const result = simulateNovaHotfix({
+      constructId: NOVA_CONSTRUCT,
+      hasImages: false,
+      replitOpenrouter: createMockClient('replitOpenrouter'),
+      openrouter: createMockClient('openrouter'),
+      openaiClient: createMockClient('openai'),
+      orchestrationMode: 'custom',
+      ollamaAvailable: false,
     });
     assert.equal(result.effectiveProvider, 'replitOpenrouter');
     assert.ok(!result.callLog.includes('openai-primary'), 'OpenAI must not be called for nova-001');
-    assert.ok(result.callLog.includes('nova-hotfix-primary'), 'Nova hotfix must be triggered');
+    assert.ok(result.callLog.includes('nova-hotfix-primary'), 'Nova non-Lin hotfix must be triggered');
   });
 
   it('non-nova construct still routes to openai when resolved', () => {
@@ -180,5 +224,22 @@ describe('Nova-001 Hotfix Tests', () => {
     assert.equal(payload.provider_used, 'replitOpenrouter');
     assert.equal(payload.has_images, false);
     assert.equal(payload.construct_id, 'nova-001');
+  });
+
+  it('static guard: Nova Lin Ollama branches use resolved Lin model helper', () => {
+    const routeSource = fs.readFileSync(path.resolve(__dirname, '../routes/vvault.js'), 'utf8');
+    const localFirstIndex = routeSource.indexOf('Nova local-first: trying Ollama');
+    const fallbackIndex = routeSource.indexOf('Nova fallback: trying Ollama');
+
+    assert.notEqual(localFirstIndex, -1);
+    assert.notEqual(fallbackIndex, -1);
+
+    const localFirstSnippet = routeSource.slice(Math.max(0, localFirstIndex - 500), localFirstIndex + 1200);
+    const fallbackSnippet = routeSource.slice(Math.max(0, fallbackIndex - 500), fallbackIndex + 1200);
+
+    assert.match(localFirstSnippet, /getOllamaExecutionModel\(\)/);
+    assert.match(fallbackSnippet, /getOllamaExecutionModel\(\)/);
+    assert.doesNotMatch(localFirstSnippet, /PREFERRED_OLLAMA_MODEL/);
+    assert.doesNotMatch(fallbackSnippet, /PREFERRED_OLLAMA_MODEL/);
   });
 });

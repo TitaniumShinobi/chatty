@@ -15,8 +15,10 @@ sys.path.append(parent_dir)
 
 from meta.runtime_identity_injection import load_identity_context  # Import after adjusting path
 
+ICLOUD_VAULT_ROOT = os.environ.get('ICLOUD_VAULT_ROOT', '')
+
 # Configure centralized logging
-LOG_FILE = "/Users/devonwoodson/Library/Mobile Documents/com~apple~CloudDocs/Vault/nova-001/logs/script_status.log"
+LOG_FILE = f"{ICLOUD_VAULT_ROOT}/nova-001/logs/script_status.log"
 logging.basicConfig(filename=LOG_FILE,
                     level=logging.INFO,
                     format="%(asctime)s - %(levelname)s - %(message)s")
@@ -27,7 +29,7 @@ def log_status(script_name: str, status: str, details: str = ""):
 
 
 def update_stm_with_identity(file_path):
-    stm_pool_path = "/Users/devonwoodson/Library/Mobile Documents/com~apple~CloudDocs/Vault/nova-001/stm/short_term_memory.json"
+    stm_pool_path = f"{ICLOUD_VAULT_ROOT}/nova-001/stm/short_term_memory.json"
     if not os.path.exists(stm_pool_path):
         with open(stm_pool_path, "w") as f:
             json.dump({}, f)
@@ -104,7 +106,7 @@ def monitor_folder(folder_path):
 # Initialize logging
 logging.basicConfig(
     filename=
-    "/Users/devonwoodson/Library/Mobile Documents/com~apple~CloudDocs/Vault/nova-001/logs/identity_monitor.log",
+    f"{ICLOUD_VAULT_ROOT}/nova-001/logs/identity_monitor.log",
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -132,7 +134,7 @@ if __name__ == "__main__":
     observer.schedule(
         event_handler,
         path=
-        "/Users/devonwoodson/Library/Mobile Documents/com~apple~CloudDocs/Vault/nova-001",
+        f"{ICLOUD_VAULT_ROOT}/nova-001",
         recursive=True)
     observer.start()
     try:

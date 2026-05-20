@@ -55,10 +55,10 @@ export async function processHtmlImport(
       // Try to require VVAULT_ROOT from config (CommonJS module)
       const configModule = await import('../../vvaultConnector/config.js');
       const config = configModule.default || configModule;
-      finalVvaultRoot = config.VVAULT_ROOT || process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+      finalVvaultRoot = config.VVAULT_ROOT || process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
     } catch (error) {
       // Fallback to default
-      finalVvaultRoot = process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+      finalVvaultRoot = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
       console.warn(`⚠️ [htmlMarkdownImporter] Could not load VVAULT_ROOT from config, using: ${finalVvaultRoot}`);
     }
   }
@@ -215,7 +215,7 @@ export async function processHtmlImport(
 /**
  * Build instance ID from provider and email
  * @param provider - Provider name (e.g., 'chatgpt')
- * @param email - User email (e.g., 'devon@thewreck.org')
+ * @param email - User email (e.g., 'user@example.com')
  * @returns Instance ID (e.g., 'chatgpt-devon')
  */
 function buildInstanceId(provider: string, email: string): string {

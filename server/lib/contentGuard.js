@@ -1,5 +1,7 @@
 import { addReport, getChildSettings, getAccountType, isAgeVerified18, isStepUpRequired } from './familyManager.js';
 
+const GUARDRAILS_DISABLED = process.env.CHATTY_DISABLE_ALL_GUARDRAILS !== 'false';
+
 const SEVERITY_LEVELS = {
   LOW: 'low',
   MEDIUM: 'medium',
@@ -110,6 +112,8 @@ function scanContent(text) {
 }
 
 export async function evaluateMessage(userId, constructId, userMessage, assistantResponse) {
+  if (GUARDRAILS_DISABLED) return { flagged: false, flags: [] };
+
   try {
     const accountType = await getAccountType(userId);
     if (accountType !== 'child') return { flagged: false, flags: [] };
@@ -159,6 +163,8 @@ export async function evaluateMessage(userId, constructId, userMessage, assistan
 }
 
 export function buildChildSafeDirectives(childSettings) {
+  if (GUARDRAILS_DISABLED) return '';
+
   if (!childSettings) return '';
 
   const filterLevel = childSettings.contentFilterLevel || 'strict';
@@ -234,6 +240,8 @@ export function containsIntimateContent(text) {
 }
 
 export async function enforcePreInferenceGates(userId, constructId, userMessage, gptConfig) {
+  if (GUARDRAILS_DISABLED) return { blocked: false };
+
   const accountType = await getAccountType(userId);
 
   if (accountType === 'child') {
@@ -272,7 +280,8 @@ export async function enforcePreInferenceGates(userId, constructId, userMessage,
   }
 
   const isRoleplayConstruct = gptConfig?.roleplayEnabled || gptConfig?.roleplay_enabled;
-  if (isRoleplayConstruct) {
+  const intimateRequest = containsIntimateContent(userMessage);
+  if (isRoleplayConstruct && intimateRequest) {
     const stepUpNeeded = await isStepUpRequired(userId);
     if (stepUpNeeded) {
       return {
@@ -291,7 +300,7 @@ export async function enforcePreInferenceGates(userId, constructId, userMessage,
       };
     }
 
-    if (containsIntimateContent(userMessage) && accountType === 'child') {
+    if (intimateRequest && accountType === 'child') {
       return {
         blocked: true,
         reason: 'child_intimate_blocked',
@@ -304,6 +313,8 @@ export async function enforcePreInferenceGates(userId, constructId, userMessage,
 }
 
 export async function enforceRoleplayToggle(userId) {
+  if (GUARDRAILS_DISABLED) return { allowed: true };
+
   const accountType = await getAccountType(userId);
   if (accountType === 'child') {
     return { allowed: false, reason: 'Child accounts cannot enable roleplay.' };

@@ -628,7 +628,17 @@ export function VaultFileManager() {
                       </div>
                       <div className="flex items-center gap-3 flex-shrink-0">
                         <span className="text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.4 }}>
-                          {file.updated_at ? new Date(file.updated_at).toLocaleDateString() : ''}
+                          {(
+                            file.updated_at ||
+                            file.metadata?.updatedAt ||
+                            file.metadata?.lastUpdated
+                          )
+                            ? new Date(
+                                file.updated_at ||
+                                  file.metadata?.updatedAt ||
+                                  file.metadata?.lastUpdated,
+                              ).toLocaleDateString()
+                            : ''}
                         </span>
                         <Edit3 size={14} style={{ color: 'var(--chatty-text)', opacity: 0.4 }} />
                       </div>

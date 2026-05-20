@@ -10,12 +10,11 @@
 
 import { getCapsuleIntegration } from './capsuleIntegration.js';
 import { getIdentityDriftPrevention } from './identityDriftPrevention.js';
+import { getHybridMemoryService } from '../services/hybridMemoryService.js';
 import { createRequire } from 'module';
 import OpenAI from 'openai';
 
-// Use createRequire for CommonJS module
 const require = createRequire(import.meta.url);
-const { getHybridMemoryService } = require('../services/hybridMemoryService.js');
 
 // OpenRouter client for GPT seat LLM calls
 const openrouter = new OpenAI({
@@ -34,7 +33,7 @@ function isOpenAIAvailable() {
   return !!(process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY);
 }
 
-const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
+const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free';
 
 const GPT_SEAT_MODELS = {
   default: DEFAULT_OPENROUTER_MODEL,

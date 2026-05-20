@@ -1,6 +1,6 @@
 /**
  * simForge Client - Personality Extraction and Identity Forge
- * 
+ *
  * Frontend client for the simForge API
  */
 
@@ -42,9 +42,10 @@ export interface ForgeResult {
   constructName?: string;
   analysis?: PersonalityAnalysis;
   identityFiles?: {
-    'prompt.txt': string;
-    'conditioning.txt': string;
-    'tone_profile.json': string;
+    'prompt.json'?: string;
+    'prompt.txt'?: string;
+    'conditioning.txt'?: string;
+    'tone_profile.json'?: string;
   };
   stats?: {
     transcriptsAnalyzed: number;
@@ -57,6 +58,57 @@ export interface ForgeResult {
     error?: string;
   };
 }
+
+export interface ZenBuildOptions {
+  callsign?: string;
+  dryRun?: boolean;
+  includeCapsuleSummary?: boolean;
+  requestId?: string;
+}
+
+export interface SimBuildOptions {
+  callsign: string;
+  dryRun?: boolean;
+  includeCapsuleSummary?: boolean;
+  requestId?: string;
+}
+
+export interface ZenBuildJob {
+  ok: boolean;
+  jobId: string;
+  normalizedCallsign: string;
+  status: string;
+  acceptedAt?: string;
+  mode?: string;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  exitCode?: number | null;
+  summary?: {
+    exitCode?: number | null;
+    mode?: string;
+    normalizedCallsign?: string;
+    error?: string | null;
+    lockPersistence?: {
+      applied?: boolean;
+      error?: string | null;
+      lockedModel?: string;
+      modeLabel?: string;
+      source?: string;
+    } | null;
+    simLock?: {
+      locked?: boolean;
+      lockedModel?: string;
+      modeLabel?: string;
+      source?: string;
+    } | null;
+    [key: string]: unknown;
+  } | null;
+  logsTail?: string[];
+  error?: string;
+  activeJobId?: string;
+}
+
+export type SimBuildJob = ZenBuildJob;
 
 export interface ForgePreview {
   constructCallsign: string;
@@ -130,6 +182,80 @@ class SimForgeClient {
     }
 
     return response.json();
+  }
+
+  async startZenBuild(options: ZenBuildOptions = {}): Promise<ZenBuildJob> {
+    const response = await fetch(`${this.baseUrl}/build/zen`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        callsign: options.callsign ?? 'zen-001',
+        dryRun: options.dryRun ?? true,
+        includeCapsuleSummary: options.includeCapsuleSummary ?? true,
+        requestId: options.requestId,
+      })
+    });
+
+    const payload: ZenBuildJob = await response.json();
+    if (!response.ok) {
+      throw Object.assign(new Error(payload.error || 'Zen build failed'), {
+        statusCode: response.status,
+        activeJobId: payload.activeJobId,
+      });
+    }
+    return payload;
+  }
+
+  async getZenBuildStatus(jobId: string): Promise<ZenBuildJob> {
+    const response = await fetch(`${this.baseUrl}/build/zen/${encodeURIComponent(jobId)}`, {
+      credentials: 'include',
+    });
+
+    const payload: ZenBuildJob = await response.json();
+    if (!response.ok) {
+      throw Object.assign(new Error(payload.error || 'Failed to get build status'), {
+        statusCode: response.status,
+      });
+    }
+    return payload;
+  }
+
+  async startConstructSimBuild(options: SimBuildOptions): Promise<SimBuildJob> {
+    const response = await fetch(`${this.baseUrl}/build/sim`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        callsign: options.callsign,
+        dryRun: options.dryRun ?? true,
+        includeCapsuleSummary: options.includeCapsuleSummary ?? true,
+        requestId: options.requestId,
+      })
+    });
+
+    const payload: SimBuildJob = await response.json();
+    if (!response.ok) {
+      throw Object.assign(new Error(payload.error || 'Construct sim build failed'), {
+        statusCode: response.status,
+        activeJobId: payload.activeJobId,
+      });
+    }
+    return payload;
+  }
+
+  async getConstructSimBuildStatus(jobId: string): Promise<SimBuildJob> {
+    const response = await fetch(`${this.baseUrl}/build/sim/${encodeURIComponent(jobId)}`, {
+      credentials: 'include',
+    });
+
+    const payload: SimBuildJob = await response.json();
+    if (!response.ok) {
+      throw Object.assign(new Error(payload.error || 'Failed to get construct sim build status'), {
+        statusCode: response.status,
+      });
+    }
+    return payload;
   }
 }
 

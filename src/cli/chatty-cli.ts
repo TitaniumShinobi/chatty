@@ -4,10 +4,10 @@ import { spawn, ChildProcess } from 'child_process';
 import { runSeat, loadSeatConfig } from '../engine/seatRunner.js';
 import http from 'node:http';
 import https from 'node:https';
+import path from 'node:path';
 import { ConversationCore } from '../engine/ConversationCore.js';
 import { PersistentMemoryStore } from '../engine/memory/PersistentMemoryStore.js';
 import { chatQueue } from '../../server/chat_queue.js';
-import '../../server/chatty-api.ts';
 // Import PersonaBrain for enhanced persona support
 import { PersonaBrain } from '../engine/memory/PersonaBrain.js';
 // Import file operations commands
@@ -22,6 +22,20 @@ import { SettingsManager } from './settingsManager.js';
 // Import turn-taking and emotional systems
 import { TurnTakingSystem } from './turnTakingSystem.js';
 import { EmotionalWatchdog } from './emotionalWatchdog.js';
+import {
+  getChattyCliConversationsDir,
+  getChattyCliFileRoot,
+  getChattyCliSettingsFile
+} from './paths.js';
+import {
+  cliApiClient,
+  DEFAULT_API_URL,
+  DEFAULT_CLI_CONSTRUCT_ID,
+  summarizeCanonicalTurn,
+  type CliTurnMetadata,
+  type CliConstructCard,
+  type CliConstructCatalogResult,
+} from './apiClient.js';
 // Import containment manager
 import {
   triggerContainment,
@@ -54,6 +68,158 @@ function log(message: string, color = 'reset') {
   console.log(colorize(message, color));
 }
 
+type CliTransportMode = 'vvault' | 'local';
+type CliBackendOrchestrationMode = 'lin' | 'custom';
+
+const DEFAULT_CLI_API_URL = process.env.CHATTY_API_URL || 'http://127.0.0.1:5050';
+const CHATTY_CLI_REPO_ROOT = path.resolve(process.env.CHATTY_REPO_ROOT || process.cwd());
+const CHATTY_CLI_TSX_BIN = path.join(CHATTY_CLI_REPO_ROOT, 'node_modules', '.bin', 'tsx');
+const CHATTY_CLI_ORCHESTRATION_SCRIPT = path.join(
+  CHATTY_CLI_REPO_ROOT,
+  'server',
+  'scripts',
+  'runChattyCliOrchestrationProof.ts',
+);
+
+function normalizeTransportMode(value: unknown, fallback: CliTransportMode = 'vvault'): CliTransportMode {
+  return value === 'local' ? 'local' : value === 'vvault' ? 'vvault' : fallback;
+}
+
+function resolveThreadId(constructId: string, explicitThreadId?: string | null): string {
+  const trimmed = String(explicitThreadId || '').trim();
+  return trimmed || `${constructId}_chat_with_${constructId}`;
+}
+
+function extractPacketContent(packets: any[]): string {
+  return packets
+    .map((packet) => {
+      const content = packet?.payload?.content;
+      return typeof content === 'string' ? content.trim() : '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+type CliRuntimeMode = 'backend' | 'local';
+
+interface CLIAIServiceOptions {
+  runtimeMode?: CliRuntimeMode;
+  apiUrl?: string;
+  constructId?: string;
+  threadId?: string | null;
+  requestTimeoutMs?: number;
+  orchestrationMode?: CliBackendOrchestrationMode;
+  customModelTarget?: string;
+  skipPersistence?: boolean;
+  showReceipts?: boolean;
+  showChecklist?: boolean;
+  allowInteractiveAuth?: boolean;
+}
+
+const BACKEND_IGNORED_MODELS = new Set([
+  'synth',
+  'coding',
+  'creative',
+  'smalltalk',
+  'intelligence',
+  'imagination',
+  'conversational',
+  'full_synthesis',
+]);
+
+const BACKEND_LOCAL_ONLY_ALIASES = new Set([
+  'synth',
+  'zen',
+  'coding',
+  'creative',
+  'smalltalk',
+  'intelligence',
+  'imagination',
+  'conversational',
+  'full_synthesis',
+]);
+
+const KNOWN_PROVIDER_PREFIXES = new Set([
+  'anthropic',
+  'google',
+  'grok',
+  'groq',
+  'mistral',
+  'ollama',
+  'openai',
+  'openrouter',
+  'perplexity',
+  'xai',
+]);
+
+function trimValue(value: string | undefined | null, fallback: string): string {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : fallback;
+}
+
+function trimOptionalValue(value: string | undefined | null): string {
+  return value?.trim() || '';
+}
+
+function parseOptionalPositiveIntegerEnv(name: string): number | undefined {
+  const raw = process.env[name]?.trim();
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive number when set.`);
+  }
+  return Math.floor(parsed);
+}
+
+function normalizeBackendOrchestrationMode(
+  value: unknown,
+  fallback: CliBackendOrchestrationMode = 'lin',
+): CliBackendOrchestrationMode {
+  return value === 'custom' ? 'custom' : value === 'lin' ? 'lin' : fallback;
+}
+
+function describeBackendModelSelection(
+  mode: CliBackendOrchestrationMode,
+  customTarget: string,
+): string {
+  if (mode === 'custom') {
+    return customTarget ? `custom (${customTarget})` : 'custom (unset)';
+  }
+  return 'lin';
+}
+
+function isBackendLocalOnlyAlias(value: string): boolean {
+  return BACKEND_LOCAL_ONLY_ALIASES.has(value.trim().toLowerCase());
+}
+
+function resolveBackendModelOverride(currentModel: string): {
+  model?: string;
+  provider?: string;
+} {
+  const normalizedModel = currentModel.trim();
+  if (!normalizedModel) {
+    return {};
+  }
+
+  if (BACKEND_IGNORED_MODELS.has(normalizedModel.toLowerCase())) {
+    return {};
+  }
+
+  const providerSplit = normalizedModel.split(':', 2);
+  if (
+    providerSplit.length === 2 &&
+    KNOWN_PROVIDER_PREFIXES.has(providerSplit[0].toLowerCase()) &&
+    providerSplit[1]
+  ) {
+    return {
+      provider: providerSplit[0].toLowerCase(),
+      model: providerSplit[1],
+    };
+  }
+
+  return { model: normalizedModel };
+}
+
 // CLI AI Service that uses the same enhanced AI service as Web
 class CLIAIService {
   private conversationHistory: { text: string; timestamp: string }[] = [];
@@ -65,10 +231,44 @@ class CLIAIService {
   private brain: PersonaBrain; // Enhanced persona support
   public optimizedZen: OptimizedZenProcessor;
   public memoryManager: AdaptiveMemoryManager;
+  private readonly runtimeMode: CliRuntimeMode;
+  private readonly apiUrl: string;
+  private constructId: string;
+  private threadId: string | null;
+  private readonly requestTimeoutMs: number;
+  private orchestrationMode: CliBackendOrchestrationMode;
+  private customModelTarget: string;
+  private skipPersistence: boolean;
+  private showReceipts: boolean;
+  private showChecklist: boolean;
+  private readonly allowInteractiveAuth: boolean;
+  private lastTurnMetadata: CliTurnMetadata | null = null;
 
-  constructor(useFallback = false, addTimestamps = true, modelName = 'AI') {
+  constructor(
+    useFallback = false,
+    addTimestamps = true,
+    modelName = 'AI',
+    options: CLIAIServiceOptions = {},
+  ) {
     this.addTimestamps = addTimestamps;
     this.modelName = modelName;
+    this.runtimeMode = options.runtimeMode || 'local';
+    this.apiUrl = trimValue(options.apiUrl, DEFAULT_API_URL);
+    this.constructId = trimValue(options.constructId, DEFAULT_CLI_CONSTRUCT_ID);
+    this.threadId = options.threadId ? String(options.threadId).trim() || null : null;
+    this.requestTimeoutMs =
+      typeof options.requestTimeoutMs === 'number' && options.requestTimeoutMs > 0
+        ? options.requestTimeoutMs
+        : 45000;
+    this.orchestrationMode = normalizeBackendOrchestrationMode(
+      options.orchestrationMode,
+      'lin',
+    );
+    this.customModelTarget = trimOptionalValue(options.customModelTarget);
+    this.skipPersistence = options.skipPersistence === true;
+    this.showReceipts = options.showReceipts === true;
+    this.showChecklist = options.showChecklist === true;
+    this.allowInteractiveAuth = options.allowInteractiveAuth === true;
     // Default to synthesizer mode for richer answers
     this.currentModel = 'synth';
     this.context = {
@@ -172,10 +372,15 @@ class CLIAIService {
   async processMessage(userMessage: string) {
     // Add to conversation history
     this.conversationHistory.push({ text: userMessage, timestamp: new Date().toLocaleString() });
+    this.lastTurnMetadata = null;
 
     // Trim history if too long
     if (this.conversationHistory.length > this.context.settings.maxHistory) {
       this.conversationHistory = this.conversationHistory.slice(-this.context.settings.maxHistory);
+    }
+
+    if (this.runtimeMode === 'backend') {
+      return this.processCanonicalMessage(userMessage);
     }
 
     try {
@@ -230,6 +435,54 @@ class CLIAIService {
     return this.renderPackets(fallbackPackets ?? []);
   }
 
+  private async processCanonicalMessage(userMessage: string) {
+    const backendOverride =
+      this.orchestrationMode === 'custom' && this.customModelTarget
+        ? resolveBackendModelOverride(this.customModelTarget)
+        : {};
+    const threadId = resolveThreadId(this.constructId, this.threadId);
+    const result = await cliApiClient.sendCanonicalMessage(
+      {
+        constructId: this.constructId,
+        message: userMessage,
+        threadId,
+        sessionId: threadId,
+        skipPersistence: this.skipPersistence,
+        ...backendOverride,
+      },
+      {
+        apiUrl: this.apiUrl,
+        allowInteractiveAuth: this.allowInteractiveAuth,
+        openBrowser: this.allowInteractiveAuth,
+        timeoutMs: this.requestTimeoutMs,
+      },
+    );
+
+    this.lastTurnMetadata = {
+      ...summarizeCanonicalTurn(result.payload, result.status),
+      constructId:
+        result.payload.construct_id ||
+        this.constructId ||
+        DEFAULT_CLI_CONSTRUCT_ID,
+    };
+    const answer =
+      result.payload.response ||
+      result.payload.message ||
+      extractPacketContent(
+        Array.isArray(result.payload.packets) ? result.payload.packets : [],
+      ) ||
+      (typeof result.payload.error === 'string' ? result.payload.error : '') ||
+      '';
+
+    if (!result.ok) {
+      throw new Error(
+        answer || `Canonical backend request failed with status ${result.status}.`,
+      );
+    }
+
+    return answer;
+  }
+
   generateFallbackPackets(message: string) {
     const lower = message.toLowerCase();
 
@@ -253,6 +506,11 @@ class CLIAIService {
   /help        - Show this help
   /clear       - Clear conversation history
   /memory      - Show memory status
+  /receipt     - Show the last runtime receipt/checklist
+  /construct   - Open the construct picker
+  /construct list - List available constructs
+  /construct current - Show the active construct
+  /construct <id> - Switch constructs and reset to the canonical thread
   /settings    - Show current settings
   /set <key> <value> - Update a setting
   /reset-settings - Reset settings to defaults
@@ -265,10 +523,11 @@ class CLIAIService {
   /containment-check <user> - Check if user is in containment
   /containment-resolve <user> - Resolve user containment
   /containment-history <user> - Show user's containment history
-  /model       - Show current model (or Synthesizer)
-  /model list  - List installed Ollama models
-  /model <tag> - Switch to single-model mode (e.g., deepseek)
-  /model synth - Enable multi-model blending mode
+  /model       - Show current model or backend orchestration mode
+  /model list  - List installed Ollama models (local mode only)
+  /model lin   - Use Lin-first backend orchestration
+  /model <provider:model> - Use a backend custom model override
+  /model custom <provider:model> - Explicit backend custom override
   /models      - Show specific models in synth pipeline
   /persona <name> - Switch to a specific LLM persona (copilot, gemini, grok, claude, chatgpt)
   /personas - List all available personas
@@ -308,7 +567,13 @@ class CLIAIService {
   }
 
   getContext() {
-    return { history: this.conversationHistory, ...this.context };
+    return {
+      history: this.conversationHistory,
+      ...this.context,
+      runtimeMode: this.runtimeMode,
+      constructId: this.constructId,
+      apiUrl: this.apiUrl,
+    };
   }
 
   getConversationHistory() {
@@ -319,8 +584,99 @@ class CLIAIService {
     return this.currentModel;
   }
 
+  getModelStatusLabel() {
+    if (this.runtimeMode === 'backend') {
+      return describeBackendModelSelection(
+        this.orchestrationMode,
+        this.customModelTarget,
+      );
+    }
+    return this.currentModel;
+  }
+
+  getRuntimeMode() {
+    return this.runtimeMode;
+  }
+
+  getApiUrl() {
+    return this.apiUrl;
+  }
+
+  getConstructId() {
+    return this.constructId;
+  }
+
+  getThreadId() {
+    return resolveThreadId(this.constructId, this.threadId);
+  }
+
+  getLastTurnMetadata() {
+    return this.lastTurnMetadata;
+  }
+
+  shouldShowReceipts() {
+    return this.showReceipts;
+  }
+
+  shouldShowChecklist() {
+    return this.showChecklist;
+  }
+
+  getOrchestrationMode() {
+    return this.orchestrationMode;
+  }
+
+  getCustomModelTarget() {
+    return this.customModelTarget;
+  }
+
   setModel(name: string) {
     this.currentModel = name;
+  }
+
+  setConstructId(
+    constructId: string,
+    options: { preserveThread?: boolean } = {},
+  ) {
+    const nextConstructId = trimValue(constructId, DEFAULT_CLI_CONSTRUCT_ID);
+    const constructChanged = nextConstructId !== this.constructId;
+    this.constructId = nextConstructId;
+    if (constructChanged && !options.preserveThread) {
+      this.threadId = null;
+    }
+  }
+
+  setThreadId(threadId: string | null) {
+    const trimmed = String(threadId || '').trim();
+    this.threadId = trimmed || null;
+  }
+
+  setShowReceipts(showReceipts: boolean) {
+    this.showReceipts = showReceipts;
+  }
+
+  setShowChecklist(showChecklist: boolean) {
+    this.showChecklist = showChecklist;
+  }
+
+  setSkipPersistence(skipPersistence: boolean) {
+    this.skipPersistence = skipPersistence;
+  }
+
+  setOrchestrationMode(mode: CliBackendOrchestrationMode) {
+    this.orchestrationMode = normalizeBackendOrchestrationMode(mode, 'lin');
+  }
+
+  setCustomModelTarget(target: string | null | undefined) {
+    this.customModelTarget = trimOptionalValue(target);
+  }
+
+  configureBackendModelSelection(
+    mode: CliBackendOrchestrationMode,
+    customTarget = '',
+  ) {
+    this.setOrchestrationMode(mode);
+    this.setCustomModelTarget(customTarget);
   }
 }
 
@@ -414,21 +770,826 @@ async function detectModelName(host: string, port: number): Promise<string> {
   });
 }
 
+interface ParsedCliArgs {
+  helpMode: boolean;
+  useFallback: boolean;
+  noTimestamp: boolean;
+  localMode: boolean;
+  localModel: boolean;
+  onceMode: boolean;
+  jsonOut: boolean;
+  explicitConstructArg: boolean;
+  seatOverride?: string;
+  cliRoot?: string;
+  settingsFile?: string;
+  conversationDir?: string;
+  orchestrationOutDir?: string;
+  orchestrationConstructs?: string;
+  orchestrationNoBrowser: boolean;
+  orchestrationAuthTimeoutMs?: number;
+  apiUrl?: string;
+  constructId?: string;
+  threadId?: string;
+  transport?: CliTransportMode;
+  requestTimeoutMs?: number;
+  showReceipts: boolean;
+  showChecklist: boolean;
+  skipPersistence: boolean;
+  handoffLatestCodex: boolean;
+  handoffWatch: boolean;
+  handoffPollSeconds?: number;
+  handoffFromFile?: string;
+  handoffStdinJson: boolean;
+  handoffSeedOnly: boolean;
+  positionals: string[];
+}
+
+const CLI_HELP_TEXT = `Chatty CLI - Terminal AI Assistant
+
+Usage:
+  chatty-cli [options]
+  chatty-cli --once [options] <message>
+  chatty-cli handoff [--latest-codex [--watch] [--poll-seconds <n>] | --from-file <absolute-path> | --stdin-json | --seed-only]
+  chatty-cli orchestration [--json] [--skip-persistence] [--constructs=zen-001,nova-001] [--latest-codex] [--no-browser] [--auth-timeout-ms=<ms>] [--out-dir=<path>]
+  npm run cli -- [options]
+
+Default route:
+  /api/vvault/message on ${DEFAULT_CLI_API_URL}
+
+Options:
+  --help, -h              Show this help and exit
+  --once                  Run one prompt and exit
+  --json                  Emit machine-readable JSON in --once mode
+  --construct <id>        Select a construct, e.g. zen-001 or nova-001
+  --thread <id>           Select a thread/session id
+  --api-url <url>         Override backend API URL
+  --timeout <ms>          Override backend request timeout
+  --show-receipts         Print runtime receipt summary
+  --show-checklist        Print runtime checklist summary
+  --skip-persistence      Ask backend to skip canonical persistence
+  --latest-codex         Use the newest local Codex rollout tail as handoff/proof context
+  --watch                Keep syncing Codex source transcripts to VVAULT and relay only after VVAULT readback proof (latest-codex only)
+  --poll-seconds <n>     Poll interval for --watch mode (default 2)
+  --from-file <path>      Codex export file for handoff relay
+  --stdin-json            Read a JSON tail from stdin for handoff relay
+  --seed-only             Use the old bounded seed handoff path (debug only)
+  --local                 Use local CLI runtime instead of backend route
+  --fallback              Use local fallback runtime
+  --seat <name>           Override local seat or backend custom model target
+  --root <path>           File-ops root; defaults to the caller directory
+  --settings-file <path>  Settings file; defaults under ~/.chatty-cli
+  --conversation-dir <p>  Conversation save dir; defaults under ~/.chatty-cli
+  --out-dir <path>        Orchestration proof artifact dir
+  --constructs <ids>      Orchestration proof construct ids
+  --no-browser            Do not open a browser for orchestration proof auth
+  --auth-timeout-ms <ms>  Orchestration proof auth timeout
+
+Interactive commands:
+  /help, /construct, /model, /settings, /receipt, /file, /save, /load, /list, /exit
+`;
+
+function parseCliArgs(rawArgs: string[]): ParsedCliArgs {
+  let helpMode = false;
+  let useFallback = false;
+  let noTimestamp = false;
+  let localMode = false;
+  let localModel = false;
+  let onceMode = false;
+  let jsonOut = false;
+  let explicitConstructArg = false;
+  let seatOverride: string | undefined;
+  let cliRoot: string | undefined;
+  let settingsFile: string | undefined;
+  let conversationDir: string | undefined;
+  let orchestrationOutDir: string | undefined;
+  let orchestrationConstructs: string | undefined;
+  let orchestrationNoBrowser = false;
+  let orchestrationAuthTimeoutMs: number | undefined;
+  let apiUrl: string | undefined;
+  let constructId: string | undefined;
+  let threadId: string | undefined;
+  let transport: CliTransportMode | undefined;
+  let requestTimeoutMs: number | undefined;
+  let showReceipts = false;
+  let showChecklist = false;
+  let skipPersistence = false;
+  let handoffLatestCodex = false;
+  let handoffWatch = false;
+  let handoffPollSeconds: number | undefined;
+  let handoffFromFile: string | undefined;
+  let handoffStdinJson = false;
+  let handoffSeedOnly = false;
+  const positionals: string[] = [];
+
+  for (let index = 0; index < rawArgs.length; index++) {
+    const arg = rawArgs[index];
+    if (arg === '--') {
+      positionals.push(...rawArgs.slice(index + 1));
+      break;
+    }
+
+    if (!arg.startsWith('--')) {
+      positionals.push(arg);
+      continue;
+    }
+
+    if (arg.startsWith('--out-dir=')) {
+      orchestrationOutDir = arg.slice('--out-dir='.length).trim() || orchestrationOutDir;
+      continue;
+    }
+
+    if (arg.startsWith('--constructs=')) {
+      orchestrationConstructs = arg.slice('--constructs='.length).trim() || orchestrationConstructs;
+      continue;
+    }
+
+    if (arg.startsWith('--auth-timeout-ms=')) {
+      orchestrationAuthTimeoutMs = Number(arg.slice('--auth-timeout-ms='.length));
+      continue;
+    }
+
+    if (arg.startsWith('--poll-seconds=')) {
+      handoffPollSeconds = Number(arg.slice('--poll-seconds='.length));
+      continue;
+    }
+
+    switch (arg) {
+      case '--help':
+      case '-h':
+        helpMode = true;
+        break;
+      case '--fallback':
+        useFallback = true;
+        localMode = true;
+        break;
+      case '--no-timestamp':
+        noTimestamp = true;
+        break;
+      case '--local':
+        localMode = true;
+        break;
+      case '--local-model':
+        localMode = true;
+        localModel = true;
+        break;
+      case '--once':
+        onceMode = true;
+        break;
+      case '--json':
+        jsonOut = true;
+        break;
+      case '--seat':
+        seatOverride = rawArgs[index + 1];
+        index += 1;
+        break;
+      case '--root':
+        cliRoot = rawArgs[index + 1] || cliRoot;
+        index += 1;
+        break;
+      case '--settings-file':
+        settingsFile = rawArgs[index + 1] || settingsFile;
+        index += 1;
+        break;
+      case '--conversation-dir':
+        conversationDir = rawArgs[index + 1] || conversationDir;
+        index += 1;
+        break;
+      case '--out-dir':
+        orchestrationOutDir = rawArgs[index + 1] || orchestrationOutDir;
+        index += 1;
+        break;
+      case '--constructs':
+        orchestrationConstructs = rawArgs[index + 1] || orchestrationConstructs;
+        index += 1;
+        break;
+      case '--no-browser':
+        orchestrationNoBrowser = true;
+        break;
+      case '--auth-timeout-ms':
+        orchestrationAuthTimeoutMs = Number(rawArgs[index + 1]);
+        index += 1;
+        break;
+      case '--transport':
+        transport = normalizeTransportMode(rawArgs[index + 1], 'vvault');
+        index += 1;
+        break;
+      case '--api-url':
+      case '--api-base-url':
+        apiUrl = trimValue(rawArgs[index + 1], DEFAULT_API_URL);
+        index += 1;
+        break;
+      case '--construct':
+        explicitConstructArg = true;
+        constructId = trimValue(rawArgs[index + 1], DEFAULT_CLI_CONSTRUCT_ID);
+        index += 1;
+        break;
+      case '--thread':
+        threadId = rawArgs[index + 1] || '';
+        index += 1;
+        break;
+      case '--timeout':
+        requestTimeoutMs = Number(rawArgs[index + 1]);
+        index += 1;
+        break;
+      case '--show-receipts':
+        showReceipts = true;
+        break;
+      case '--show-checklist':
+        showChecklist = true;
+        break;
+      case '--skip-persistence':
+        skipPersistence = true;
+        break;
+      case '--latest-codex':
+        handoffLatestCodex = true;
+        break;
+      case '--watch':
+        handoffWatch = true;
+        break;
+      case '--poll-seconds':
+        handoffPollSeconds = Number(rawArgs[index + 1]);
+        index += 1;
+        break;
+      case '--from-file':
+        handoffFromFile = rawArgs[index + 1] || handoffFromFile;
+        index += 1;
+        break;
+      case '--stdin-json':
+        handoffStdinJson = true;
+        break;
+      case '--seed-only':
+        handoffSeedOnly = true;
+        break;
+      default:
+        positionals.push(arg);
+        break;
+    }
+  }
+
+  return {
+    helpMode,
+    useFallback,
+    noTimestamp,
+    localMode,
+    localModel,
+    onceMode,
+    jsonOut,
+    explicitConstructArg,
+    seatOverride,
+    cliRoot,
+    settingsFile,
+    conversationDir,
+    orchestrationOutDir,
+    orchestrationConstructs,
+    orchestrationNoBrowser,
+    orchestrationAuthTimeoutMs,
+    apiUrl,
+    constructId,
+    threadId,
+    transport,
+    requestTimeoutMs,
+    showReceipts,
+    showChecklist,
+    skipPersistence,
+    handoffLatestCodex,
+    handoffWatch,
+    handoffPollSeconds,
+    handoffFromFile,
+    handoffStdinJson,
+    handoffSeedOnly,
+    positionals,
+  };
+}
+
+function isOrchestrationProofCommand(args: ParsedCliArgs): boolean {
+  return args.positionals.length === 1 && args.positionals[0].trim().toLowerCase() === 'orchestration';
+}
+
+function isCodexHandoffCommand(args: ParsedCliArgs): boolean {
+  return args.positionals.length === 1 && args.positionals[0].trim().toLowerCase() === 'handoff';
+}
+
+async function runCliCodexHandoffCommand(): Promise<number> {
+  const originalConsole = {
+    log: console.log,
+    warn: console.warn,
+    error: console.error,
+  };
+
+  try {
+    console.log = () => {};
+    console.warn = () => {};
+    console.error = () => {};
+    // Handoff/watch uses server-side VVAULT authority config; load env before lazy server imports.
+    await import('../../server/loadEnv.js');
+    const args = parseCliArgs(process.argv.slice(2));
+    const handoffModeCount =
+      Number(args.handoffLatestCodex) +
+      Number(Boolean(args.handoffFromFile)) +
+      Number(args.handoffStdinJson) +
+      Number(args.handoffSeedOnly);
+    if (handoffModeCount > 1) {
+      throw new Error('chatty-cli handoff accepts exactly one of --latest-codex, --from-file, --stdin-json, or --seed-only.');
+    }
+    if (args.handoffWatch === true && args.handoffLatestCodex !== true) {
+      throw new Error('chatty-cli handoff --watch requires --latest-codex.');
+    }
+    if (typeof args.handoffPollSeconds === 'number' && !Number.isFinite(args.handoffPollSeconds)) {
+      throw new Error('chatty-cli handoff --poll-seconds must be a number.');
+    }
+    if (typeof args.handoffPollSeconds === 'number' && args.handoffWatch !== true) {
+      throw new Error('chatty-cli handoff --poll-seconds requires --watch.');
+    }
+
+    let result: any;
+    if (args.handoffSeedOnly === true) {
+      // @ts-ignore Server continuity helper is CommonJS in this checkout.
+      const { seedCodexContinuity } = await import('../../server/lib/codexContinuitySeed.js');
+      result = await seedCodexContinuity();
+    } else if (args.handoffLatestCodex === true) {
+      if (args.handoffWatch === true) {
+        // @ts-ignore Server continuity helper is CommonJS in this checkout.
+        const { runCodexContinuityWatch } = await import('../../server/lib/codexContinuityWatch.js');
+        console.log = originalConsole.log;
+        console.warn = originalConsole.warn;
+        console.error = originalConsole.error;
+        await runCodexContinuityWatch({
+          pollSeconds: args.handoffPollSeconds,
+          syncSourceEvidenceToVvault: true,
+          sourceSyncMaxFiles: parseOptionalPositiveIntegerEnv('CHATTY_CODEX_SOURCE_SYNC_MAX_FILES'),
+          maxPolls:
+            process.env.CHATTY_CLI_HANDOFF_WATCH_MAX_POLLS
+              ? Number(process.env.CHATTY_CLI_HANDOFF_WATCH_MAX_POLLS)
+              : Number.POSITIVE_INFINITY,
+        });
+        return 0;
+      }
+      // @ts-ignore Server continuity helper is CommonJS in this checkout.
+      const { relayCodexContinuity } = await import('../../server/lib/codexContinuityRelay.js');
+      result = await relayCodexContinuity({
+        latestCodex: true,
+      });
+    } else if (args.handoffFromFile) {
+      // @ts-ignore Server continuity helper is CommonJS in this checkout.
+      const { relayCodexContinuity } = await import('../../server/lib/codexContinuityRelay.js');
+      result = await relayCodexContinuity({
+        fromFilePath: path.resolve(args.handoffFromFile),
+      });
+    } else if (args.handoffStdinJson === true) {
+      if (process.stdin.isTTY) {
+        throw new Error('chatty-cli handoff --stdin-json requires JSON input on stdin.');
+      }
+      const stdinJson = await new Promise<string>((resolve, reject) => {
+        let buffer = '';
+        process.stdin.setEncoding('utf8');
+        process.stdin.on('data', (chunk) => {
+          buffer += chunk;
+        });
+        process.stdin.on('end', () => resolve(buffer));
+        process.stdin.on('error', reject);
+      });
+      // @ts-ignore Server continuity helper is CommonJS in this checkout.
+      const { relayCodexContinuity } = await import('../../server/lib/codexContinuityRelay.js');
+      result = await relayCodexContinuity({
+        stdinJson,
+      });
+    } else {
+      throw new Error('chatty-cli handoff now requires --latest-codex, --from-file, or --stdin-json. Use --seed-only only for debug fallback.');
+    }
+    console.log = originalConsole.log;
+    console.warn = originalConsole.warn;
+    console.error = originalConsole.error;
+
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          command: 'chatty-cli handoff',
+          source: result.source || { type: args.handoffSeedOnly ? 'seed-only' : 'unknown' },
+          constructId:
+            result.constructId ||
+            result.resumeTokenJson?.constructId ||
+            result.seededRuntimeTurnState?.constructId ||
+            'zen-001',
+          threadId:
+            result.threadId ||
+            result.resumeTokenJson?.threadId ||
+            result.seededRuntimeTurnState?.sessionId ||
+            'zen-001_chat_with_zen-001',
+          importedTurns: result.importedTurns ?? 0,
+          dedupedTurns: result.dedupedTurns ?? 0,
+          latestAssistantTurnId:
+            result.latestAssistantTurnId ||
+            result.latestRuntimeTurnState?.assistantTurnId ||
+            result.seededRuntimeTurnState?.assistantTurnId ||
+            null,
+          resumeTokenJson: result.resumeTokenJson,
+          chattyResumeUrl: result.chattyResumeUrl,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return 0;
+  } catch (error: any) {
+    console.log = originalConsole.log;
+    console.warn = originalConsole.warn;
+    console.error = originalConsole.error;
+    process.stderr.write(`chatty-cli handoff failed: ${error?.message || String(error)}\n`);
+    return 1;
+  }
+}
+
+async function runCliOrchestrationProofCommand({
+  apiUrl,
+  jsonOut,
+  skipPersistence,
+  outDir,
+  constructs,
+  latestCodex,
+  noBrowser,
+  authTimeoutMs,
+}: {
+  apiUrl: string;
+  jsonOut: boolean;
+  skipPersistence: boolean;
+  outDir?: string;
+  constructs?: string;
+  latestCodex: boolean;
+  noBrowser: boolean;
+  authTimeoutMs?: number;
+}): Promise<number> {
+  const args = [CHATTY_CLI_ORCHESTRATION_SCRIPT];
+  if (jsonOut) args.push('--json');
+  if (skipPersistence) args.push('--skip-persistence');
+  if (outDir) args.push(`--out-dir=${outDir}`);
+  if (constructs) args.push(`--constructs=${constructs}`);
+  if (latestCodex) args.push('--latest-codex');
+  if (noBrowser) args.push('--no-browser');
+  if (typeof authTimeoutMs === 'number' && Number.isFinite(authTimeoutMs) && authTimeoutMs > 0) {
+    args.push(`--auth-timeout-ms=${Math.floor(authTimeoutMs)}`);
+  }
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(CHATTY_CLI_TSX_BIN, args, {
+      cwd: CHATTY_CLI_REPO_ROOT,
+      env: {
+        ...process.env,
+        CHATTY_API_URL: apiUrl,
+      },
+      stdio: 'inherit',
+    });
+    child.on('error', reject);
+    child.on('close', (code) => resolve(code ?? 1));
+  });
+}
+
+function findConstructCard(
+  catalog: CliConstructCatalogResult | null,
+  constructId: string,
+): CliConstructCard | null {
+  if (!catalog) return null;
+  return (
+    catalog.constructs.find(
+      (entry) =>
+        entry.constructId === constructId || entry.callsign === constructId,
+    ) || null
+  );
+}
+
+function printConstructCatalog(
+  catalog: CliConstructCatalogResult,
+  currentConstructId: string,
+) {
+  const freshness =
+    catalog.cachedAt && catalog.source === 'cache'
+      ? ` (cached ${catalog.cachedAt})`
+      : catalog.source === 'live'
+        ? ' (live)'
+        : '';
+  console.log(
+    colorize(
+      `🎭 Available Constructs${freshness}:`,
+      'cyan',
+    ),
+  );
+
+  catalog.constructs.forEach((entry, index) => {
+    const active = entry.constructId === currentConstructId ? ' [current]' : '';
+    console.log(
+      colorize(
+        `  ${index + 1}. ${entry.displayName} (${entry.constructId})${active}`,
+        'white',
+      ),
+    );
+    if (entry.description) {
+      console.log(colorize(`     ${entry.description}`, 'dim'));
+    }
+  });
+}
+
+function askQuestion(rl: any, prompt: string): Promise<string> {
+  return new Promise((resolve) => {
+    rl.question(prompt, (answer: string) => resolve(answer));
+  });
+}
+
+async function promptForManualConstructId(
+  rl: any,
+  currentConstructId: string,
+): Promise<string | null> {
+  const manualValue = (await askQuestion(
+    rl,
+    `Enter construct ID [Enter keeps ${currentConstructId}]: `,
+  )).trim();
+  return manualValue || null;
+}
+
+async function promptForConstructSelection(
+  rl: any,
+  currentConstructId: string,
+  catalog: CliConstructCatalogResult | null,
+): Promise<string | null> {
+  if (catalog && catalog.constructs.length > 0) {
+    printConstructCatalog(catalog, currentConstructId);
+  } else {
+    console.log(
+      colorize(
+        'Construct catalog unavailable. Manual construct ID entry only.',
+        'yellow',
+      ),
+    );
+  }
+
+  const hasCatalog = Boolean(catalog && catalog.constructs.length > 0);
+  while (true) {
+    const choice = (
+      await askQuestion(
+        rl,
+        hasCatalog
+          ? `Select construct [Enter keeps ${currentConstructId}, number, m manual, q cancel]: `
+          : `Enter construct ID [Enter keeps ${currentConstructId}, q cancel]: `,
+      )
+    ).trim();
+
+    if (!choice || choice.toLowerCase() === 'q') {
+      return null;
+    }
+
+    if (!hasCatalog || choice.toLowerCase() === 'm') {
+      return promptForManualConstructId(rl, currentConstructId);
+    }
+
+    const index = Number(choice);
+    if (Number.isInteger(index) && index >= 1 && index <= catalog!.constructs.length) {
+      return catalog!.constructs[index - 1].constructId;
+    }
+
+    const directMatch = catalog!.constructs.find(
+      (entry) => entry.constructId === choice || entry.callsign === choice,
+    );
+    if (directMatch) {
+      return directMatch.constructId;
+    }
+
+    console.log(
+      colorize(
+        'Invalid selection. Choose a number, m for manual entry, or Enter to keep the current construct.',
+        'yellow',
+      ),
+    );
+  }
+}
+
+function applyPromptEnvelope(
+  rawInput: string,
+  ai: CLIAIService,
+): string {
+  let prompt = rawInput.trim();
+  if (!prompt.startsWith('{')) {
+    return prompt;
+  }
+
+  const payload = JSON.parse(prompt);
+  prompt = typeof payload.prompt === 'string' ? payload.prompt : '';
+
+  if (typeof payload.seat === 'string' && payload.seat.trim()) {
+    if (ai.getRuntimeMode() === 'backend') {
+      ai.configureBackendModelSelection('custom', payload.seat.trim());
+    } else {
+      ai.setModel(payload.seat.trim());
+    }
+  } else if (typeof payload.model === 'string' && payload.model.trim()) {
+    if (ai.getRuntimeMode() === 'backend') {
+      ai.configureBackendModelSelection('custom', payload.model.trim());
+    } else {
+      ai.setModel(payload.model.trim());
+    }
+  }
+
+  if (typeof payload.constructId === 'string' && payload.constructId.trim()) {
+    ai.setConstructId(payload.constructId.trim());
+  }
+
+  if (typeof payload.threadId === 'string') {
+    ai.setThreadId(payload.threadId);
+  }
+
+  return prompt;
+}
+
+function buildOnceOutput(ai: CLIAIService, answer: string) {
+  const turnMetadata = ai.getLastTurnMetadata();
+  const output: Record<string, unknown> = {
+    answer,
+    model: turnMetadata?.receipt?.model || ai.getModelStatusLabel(),
+    transport: ai.getRuntimeMode(),
+    constructId: turnMetadata?.constructId || ai.getConstructId(),
+    threadId: ai.getThreadId(),
+  };
+
+  if (ai.getRuntimeMode() === 'backend') {
+    output.orchestrationMode = ai.getOrchestrationMode();
+    if (ai.getCustomModelTarget()) {
+      output.customModelTarget = ai.getCustomModelTarget();
+    }
+  }
+
+  if (turnMetadata) {
+    output.success = turnMetadata.success;
+    output.status = turnMetadata.status;
+    if (turnMetadata.error) output.error = turnMetadata.error;
+    if (turnMetadata.receipt) output.receipt = turnMetadata.receipt;
+    if (turnMetadata.checklist) output.checklist = turnMetadata.checklist;
+  }
+
+  return output;
+}
+
+function writeOnceResult(ai: CLIAIService, answer: string, jsonOut: boolean) {
+  if (jsonOut) {
+    process.stdout.write(JSON.stringify(buildOnceOutput(ai, answer)));
+    return;
+  }
+
+  process.stdout.write(answer);
+}
+
+function writeOnceError(
+  ai: CLIAIService,
+  error: unknown,
+  jsonOut: boolean,
+) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (jsonOut) {
+    const turnMetadata = ai.getLastTurnMetadata();
+    const output: Record<string, unknown> = {
+      ok: false,
+      error: message,
+      transport: ai.getRuntimeMode(),
+      constructId: turnMetadata?.constructId || ai.getConstructId(),
+      threadId: ai.getThreadId(),
+    };
+    if (turnMetadata?.status) output.status = turnMetadata.status;
+    if (turnMetadata?.receipt) output.receipt = turnMetadata.receipt;
+    if (turnMetadata?.checklist) output.checklist = turnMetadata.checklist;
+    process.stdout.write(JSON.stringify(output));
+    return;
+  }
+
+  process.stderr.write(message);
+}
+
+function printTurnMetadata(ai: CLIAIService) {
+  const turnMetadata = ai.getLastTurnMetadata();
+  if (!turnMetadata) return;
+
+  if (ai.shouldShowReceipts() && turnMetadata.receipt) {
+    const receipt = turnMetadata.receipt;
+    console.log(
+      colorize(
+        `🧾 Receipt: route=${receipt.routeMode || 'unknown'} construct=${receipt.constructId || 'unknown'} provider=${receipt.provider || 'unknown'} model=${receipt.model || 'unknown'} persistence=${receipt.persistenceOwner || 'unknown'}`,
+        'dim',
+      ),
+    );
+  }
+
+  if (ai.shouldShowChecklist() && turnMetadata.checklist) {
+    const checklistSummary =
+      turnMetadata.checklist.summary ||
+      turnMetadata.checklist.responseStatus ||
+      turnMetadata.checklist.overallStatus ||
+      'available';
+    console.log(colorize(`✅ Checklist: ${checklistSummary}`, 'dim'));
+  }
+}
+
 // Main CLI execution
 async function main() {
 
   let phiChild: ChildProcess | null = null;
-  const args = process.argv.slice(2);
-  const useFallback = args.includes('--fallback');
-  const noTimestamp = args.includes('--no-timestamp');
-  const localModel = args.includes('--local-model');
-  const onceMode = args.includes('--once');
-  const jsonOut = args.includes('--json');
-  const seatArgIndex = args.indexOf('--seat');
-  const seatOverride = seatArgIndex !== -1 ? args[seatArgIndex + 1] : undefined;
+  const parsedArgs = parseCliArgs(process.argv.slice(2));
+  const {
+    helpMode,
+    useFallback,
+    noTimestamp,
+    localMode,
+    localModel,
+    onceMode,
+    jsonOut,
+    explicitConstructArg,
+    seatOverride,
+    cliRoot,
+    settingsFile,
+    conversationDir,
+    orchestrationOutDir,
+    orchestrationConstructs,
+    orchestrationNoBrowser,
+    orchestrationAuthTimeoutMs,
+    apiUrl,
+    constructId,
+    threadId,
+    transport,
+    requestTimeoutMs,
+    showReceipts,
+    showChecklist,
+    skipPersistence,
+    positionals,
+  } = parsedArgs;
+
+  if (helpMode) {
+    console.log(CLI_HELP_TEXT);
+    return;
+  }
+
+  if (isCodexHandoffCommand(parsedArgs)) {
+    const code = await runCliCodexHandoffCommand();
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+    return;
+  }
+
+  const resolvedSettingsFile = settingsFile || getChattyCliSettingsFile();
+  const settingsManager = new SettingsManager(resolvedSettingsFile);
+  await settingsManager.ready();
+  const settings = settingsManager.getAll();
+  const runtimeMode: CliRuntimeMode =
+    localMode || localModel || useFallback
+      ? 'local'
+      : normalizeTransportMode(transport, settings.transport) === 'local'
+        ? 'local'
+        : 'backend';
+  const resolvedApiUrl = trimValue(apiUrl, settings.apiBaseUrl || DEFAULT_CLI_API_URL);
+  const resolvedConstructId = trimValue(
+    constructId,
+    settings.constructId || DEFAULT_CLI_CONSTRUCT_ID,
+  );
+  const resolvedThreadId = resolveThreadId(
+    resolvedConstructId,
+    threadId ?? settings.threadId,
+  );
+  const resolvedRequestTimeoutMs =
+    typeof requestTimeoutMs === 'number' &&
+    Number.isFinite(requestTimeoutMs) &&
+    requestTimeoutMs > 0
+      ? requestTimeoutMs
+      : settings.requestTimeoutMs;
+  const resolvedOrchestrationMode = normalizeBackendOrchestrationMode(
+    settings.orchestrationMode,
+    'lin',
+  );
+  const resolvedCustomModelTarget = trimOptionalValue(
+    settings.customModelTarget,
+  );
+  const resolvedShowReceipts = showReceipts || settings.showReceipts;
+  const resolvedShowChecklist = showChecklist || settings.showChecklist;
+  const resolvedSkipPersistence = skipPersistence || settings.skipPersistence;
+  const resolvedCliRoot = cliRoot || settings.defaultFileOperationsPath || getChattyCliFileRoot();
+  const resolvedConversationDir =
+    conversationDir ||
+    settings.conversationSavePath ||
+    getChattyCliConversationsDir();
+
+  if (isOrchestrationProofCommand(parsedArgs)) {
+    const code = await runCliOrchestrationProofCommand({
+      apiUrl: resolvedApiUrl,
+      jsonOut,
+      skipPersistence,
+      outDir: orchestrationOutDir,
+      constructs: orchestrationConstructs,
+      latestCodex: parsedArgs.handoffLatestCodex,
+      noBrowser: orchestrationNoBrowser,
+      authTimeoutMs: orchestrationAuthTimeoutMs,
+    });
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+    return;
+  }
+
   let modelName = 'LLM';
 
-  if (!localModel) {
+  if (runtimeMode === 'local' && !localModel) {
     const host = process.env.OLLAMA_HOST || 'http://localhost';
     // Suppress logs when in JSON mode to avoid polluting stdout
     const { child, port } = await ensurePhi3({
@@ -445,7 +1606,9 @@ async function main() {
 
   // If detection failed, fall back to env var or default
   if (modelName === 'LLM') {
-    const envModel = process.env.OLLAMA_MODEL || 'phi3:latest';
+    const envModel = runtimeMode === 'local'
+      ? process.env.OLLAMA_MODEL || 'phi3:latest'
+      : 'receipt-backed-backend';
     modelName = envModel;
   }
 
@@ -490,38 +1653,40 @@ async function main() {
     return ' '.repeat(Math.max(pad, 0)) + s;
   }
 
-  await new Promise<void>((resolve) => {
-    const BOX_HEIGHT = 10; // top + 8 content + bottom
-    let idx = 0;
-    const renderFrame = () => {
-      // For frames after the first, move cursor back to the banner start
-      if (idx > 0) readlineMod.moveCursor(process.stdout, 0, -BOX_HEIGHT);
+  if (!onceMode && process.stdout.isTTY) {
+    await new Promise<void>((resolve) => {
+      const BOX_HEIGHT = 10; // top + 8 content + bottom
+      let idx = 0;
+      const renderFrame = () => {
+        // For frames after the first, move cursor back to the banner start
+        if (idx > 0) readlineMod.moveCursor(process.stdout, 0, -BOX_HEIGHT);
 
-      // Compose banner block
-      let block = '┌' + '─'.repeat(BOX_WIDTH - 2) + '┐\n';
-      // Calculate which banner, how much vertical padding, and which lines to show
-      const banner = banners[idx % banners.length].split('\n');
-      const padTop = Math.floor((8 - banner.length) / 2);
-      const lines = banner;
+        // Compose banner block
+        let block = '┌' + '─'.repeat(BOX_WIDTH - 2) + '┐\n';
+        // Calculate which banner, how much vertical padding, and which lines to show
+        const banner = banners[idx % banners.length].split('\n');
+        const padTop = Math.floor((8 - banner.length) / 2);
+        const lines = banner;
 
-      for (let i = 0; i < 8; i++) {
-        const srcIdx = i - padTop;
-        const content = srcIdx >= 0 && srcIdx < lines.length ? lines[srcIdx] : '';
-        block += '│' + center(content).padEnd(BOX_WIDTH - 2, ' ') + '│\n';
-      }
-      block += '└' + '─'.repeat(BOX_WIDTH - 2) + '┘\n';
-      process.stdout.write(block);
-    };
+        for (let i = 0; i < 8; i++) {
+          const srcIdx = i - padTop;
+          const content = srcIdx >= 0 && srcIdx < lines.length ? lines[srcIdx] : '';
+          block += '│' + center(content).padEnd(BOX_WIDTH - 2, ' ') + '│\n';
+        }
+        block += '└' + '─'.repeat(BOX_WIDTH - 2) + '┘\n';
+        process.stdout.write(block);
+      };
 
-    const iv = setInterval(() => {
-      renderFrame();
-      idx++;
-      if (idx >= 6) {
-        clearInterval(iv);
-        resolve();
-      }
-    }, 400);
-  });
+      const iv = setInterval(() => {
+        renderFrame();
+        idx++;
+        if (idx >= 6) {
+          clearInterval(iv);
+          resolve();
+        }
+      }, 400);
+    });
+  }
 
   if (!onceMode) {
     console.log(colorize(`
@@ -533,41 +1698,65 @@ Welcome to Chatty! I have full AI capabilities:
   • Reasoning Engine - I can solve complex problems
   • File Processing - I can analyze files
   • Context Awareness - I understand conversation flow
+  • Default route - /api/vvault/message on ${resolvedApiUrl}
 
 Type your message and press Enter to chat with me.
+Use --local or --fallback when you want the local seat runtime explicitly.
 Type /help to see all available commands.
 `, 'cyan'));
   }
 
-  const ai = new CLIAIService(useFallback, !noTimestamp, modelName);
-  if (seatOverride) ai.setModel(seatOverride);
+  const ai = new CLIAIService(
+    useFallback,
+    noTimestamp ? false : settings.showTimestamps,
+    modelName,
+    {
+    runtimeMode,
+    apiUrl: resolvedApiUrl,
+    constructId: resolvedConstructId,
+    threadId: resolvedThreadId,
+    requestTimeoutMs: resolvedRequestTimeoutMs,
+    orchestrationMode: resolvedOrchestrationMode,
+    customModelTarget: resolvedCustomModelTarget,
+    skipPersistence: resolvedSkipPersistence,
+    showReceipts: resolvedShowReceipts,
+    showChecklist: resolvedShowChecklist,
+    allowInteractiveAuth: !onceMode && runtimeMode === 'backend',
+    },
+  );
+  if (runtimeMode === 'backend') {
+    if (seatOverride) {
+      ai.configureBackendModelSelection('custom', seatOverride);
+    } else {
+      ai.configureBackendModelSelection(
+        resolvedOrchestrationMode,
+        resolvedCustomModelTarget,
+      );
+    }
+  } else if (seatOverride) {
+    ai.setModel(seatOverride);
+  } else if (settings.defaultModel) {
+    ai.setModel(settings.defaultModel);
+  }
 
   // Initialize file operations commands
-  const fileOps = new FileOpsCommands();
-  const conversationManager = new ConversationManager();
-  const settingsManager = new SettingsManager();
+  const fileOps = new FileOpsCommands(resolvedCliRoot);
+  const conversationManager = new ConversationManager(resolvedConversationDir);
   const turnTakingSystem = new TurnTakingSystem();
   const emotionalWatchdog = new EmotionalWatchdog();
+  let lastConstructCatalog: CliConstructCatalogResult | null = null;
 
   // ---- once mode --------------------------------------------------
   if (onceMode) {
     // Handle command line arguments for once mode
-    const messageArg = args.find(arg => !arg.startsWith('--'));
+    const messageArg = positionals.length > 0 ? positionals.join(' ') : '';
     if (messageArg) {
       try {
-        let prompt = messageArg;
-        if (prompt.startsWith('{')) {
-          const obj = JSON.parse(prompt);
-          prompt = obj.prompt ?? '';
-          if (obj.seat) ai.setModel(obj.seat);
-        }
-
-
+        const prompt = applyPromptEnvelope(messageArg, ai);
         const answer = await ai.processMessage(prompt);
-        const out = jsonOut ? { answer, model: ai.getModel() } : answer;
-        process.stdout.write(JSON.stringify(out));
+        writeOnceResult(ai, answer, jsonOut);
       } catch (err: any) {
-        process.stderr.write(String(err));
+        writeOnceError(ai, err, jsonOut);
         process.exit(1);
       }
       return;
@@ -578,23 +1767,22 @@ Type /help to see all available commands.
     process.stdin.on('data', chunk => (stdinData += chunk));
     process.stdin.on('end', async () => {
       try {
-        let prompt = stdinData.trim();
-        if (prompt.startsWith('{')) {
-          const obj = JSON.parse(prompt);
-          prompt = obj.prompt ?? '';
-          if (obj.seat) ai.setModel(obj.seat);
-        }
+        const prompt = applyPromptEnvelope(stdinData.trim(), ai);
 
         const answer = await ai.processMessage(prompt);
-        const out = jsonOut ? { answer, model: ai.getModel() } : answer;
-        process.stdout.write(JSON.stringify(out));
+        writeOnceResult(ai, answer, jsonOut);
       } catch (err: any) {
-        process.stderr.write(String(err));
+        writeOnceError(ai, err, jsonOut);
         process.exit(1);
       }
       process.exit(0);
     });
     return; // skip interactive setup
+  }
+
+  if (runtimeMode === 'local') {
+    // @ts-ignore Local runtime is launched through tsx and imports the server entry directly.
+    await import('../../server/chatty-api.ts');
   }
 
   // --- Conversation management -------------------------------------------
@@ -615,6 +1803,82 @@ Type /help to see all available commands.
     output: process.stdout,
     prompt: colorize(`${who}> `, 'green')
   });
+
+  const applyConstructSelection = async (nextConstructId: string) => {
+    const normalizedConstructId = trimOptionalValue(nextConstructId);
+    if (!normalizedConstructId) {
+      console.log(colorize('Construct ID cannot be empty.', 'red'));
+      return false;
+    }
+
+    const currentConstructId = ai.getConstructId();
+    if (normalizedConstructId === currentConstructId) {
+      console.log(
+        colorize(`Keeping current construct: ${normalizedConstructId}`, 'yellow'),
+      );
+      return false;
+    }
+
+    ai.setConstructId(normalizedConstructId);
+    ai.setThreadId(null);
+    await settingsManager.updateSettings({
+      constructId: normalizedConstructId,
+      threadId: '',
+    });
+
+    const constructCard =
+      findConstructCard(lastConstructCatalog, normalizedConstructId);
+    const displayName = constructCard?.displayName || normalizedConstructId;
+    console.log(
+      colorize(
+        `✅ Active construct: ${displayName} (${normalizedConstructId})`,
+        'green',
+      ),
+    );
+    console.log(colorize(`   Thread reset to ${ai.getThreadId()}`, 'dim'));
+    return true;
+  };
+
+  const loadConstructCatalog = async () => {
+    try {
+      const catalog = await cliApiClient.listConstructCatalog({
+        apiUrl: resolvedApiUrl,
+        allowInteractiveAuth: true,
+        openBrowser: true,
+        timeoutMs: resolvedRequestTimeoutMs,
+      });
+      lastConstructCatalog = catalog;
+      return catalog;
+    } catch (error: any) {
+      console.log(
+        colorize(`Construct catalog unavailable: ${error.message}`, 'yellow'),
+      );
+      return lastConstructCatalog;
+    }
+  };
+
+  const openConstructPicker = async () => {
+    const catalog = await loadConstructCatalog();
+    const selectedConstructId = await promptForConstructSelection(
+      rl,
+      ai.getConstructId(),
+      catalog,
+    );
+    if (!selectedConstructId) {
+      return false;
+    }
+    return applyConstructSelection(selectedConstructId);
+  };
+
+  if (
+    runtimeMode === 'backend' &&
+    settings.showConstructPickerOnStart &&
+    process.stdin.isTTY &&
+    process.stdout.isTTY &&
+    !explicitConstructArg
+  ) {
+    await openConstructPicker();
+  }
 
   rl.prompt();
 
@@ -869,8 +2133,130 @@ Be thoughtful, wise, and supportive.`;
     }
 
     // existing commands
+    if (message === '/construct' || message.startsWith('/construct ')) {
+      const parts = message.split(/\s+/);
+      const subcommand = parts[1];
+
+      if (!subcommand) {
+        await openConstructPicker();
+        rl.prompt();
+        return;
+      }
+
+      if (subcommand === 'list') {
+        const catalog = await loadConstructCatalog();
+        if (catalog && catalog.constructs.length > 0) {
+          printConstructCatalog(catalog, ai.getConstructId());
+        } else {
+          console.log(colorize('No construct catalog available yet.', 'yellow'));
+        }
+        rl.prompt();
+        return;
+      }
+
+      if (subcommand === 'current') {
+        const constructCard = findConstructCard(
+          lastConstructCatalog,
+          ai.getConstructId(),
+        );
+        const displayName = constructCard?.displayName || ai.getConstructId();
+        console.log(
+          colorize(
+            `🎭 Current construct: ${displayName} (${ai.getConstructId()})`,
+            'cyan',
+          ),
+        );
+        console.log(colorize(`   Thread: ${ai.getThreadId()}`, 'dim'));
+        rl.prompt();
+        return;
+      }
+
+      await applyConstructSelection(subcommand);
+      rl.prompt();
+      return;
+    }
+
     if (message === '/model' || message.startsWith('/model ')) {
       const parts = message.split(/\s+/);
+      if (ai.getRuntimeMode() === 'backend') {
+        if (parts.length === 1) {
+          console.log(
+            colorize(
+              `Backend orchestration: ${describeBackendModelSelection(
+                ai.getOrchestrationMode(),
+                ai.getCustomModelTarget(),
+              )}`,
+              'cyan',
+            ),
+          );
+          rl.prompt();
+          return;
+        }
+
+        if (parts[1] === 'list') {
+          console.log(
+            colorize(
+              'Backend mode does not use local Ollama model listing. Use /model lin or /model <provider:model>.',
+              'yellow',
+            ),
+          );
+          rl.prompt();
+          return;
+        }
+
+        if (parts[1] === 'lin') {
+          ai.configureBackendModelSelection('lin', '');
+          await settingsManager.updateSettings({
+            orchestrationMode: 'lin',
+            customModelTarget: '',
+          });
+          console.log(colorize('✅ Backend orchestration set to Lin mode.', 'green'));
+          rl.prompt();
+          return;
+        }
+
+        const customTarget =
+          parts[1] === 'custom'
+            ? trimOptionalValue(parts.slice(2).join(' '))
+            : trimOptionalValue(parts.slice(1).join(' '));
+
+        if (!customTarget) {
+          console.log(
+            colorize(
+              'Usage: /model lin | /model <provider:model> | /model custom <provider:model>',
+              'yellow',
+            ),
+          );
+          rl.prompt();
+          return;
+        }
+
+        if (isBackendLocalOnlyAlias(customTarget)) {
+          console.log(
+            colorize(
+              `‘${customTarget}’ is a local seat alias. In backend mode use /model lin or a provider:model override.`,
+              'yellow',
+            ),
+          );
+          rl.prompt();
+          return;
+        }
+
+        ai.configureBackendModelSelection('custom', customTarget);
+        await settingsManager.updateSettings({
+          orchestrationMode: 'custom',
+          customModelTarget: customTarget,
+        });
+        console.log(
+          colorize(
+            `✅ Backend orchestration set to custom override: ${customTarget}`,
+            'green',
+          ),
+        );
+        rl.prompt();
+        return;
+      }
+
       if (parts.length === 1) {
         console.log(colorize(`Active model: ${ai.getModel()}`, 'cyan'));
         rl.prompt();
@@ -929,10 +2315,21 @@ Be thoughtful, wise, and supportive.`;
     }
 
     if (message === '/models') {
+      if (ai.getRuntimeMode() === 'backend') {
+        console.log(
+          colorize(
+            'Backend mode delegates to the current canonical /api/vvault/message route. Use /receipt to inspect the last selected provider/model.',
+            'yellow',
+          ),
+        );
+        rl.prompt();
+        return;
+      }
+
       if (ai.getModel() === 'zen') {
         try {
           const cfg = await loadSeatConfig();
-          const codingModel = (cfg.coding as any)?.tag ?? (cfg.coding as any) ?? 'deepseek-coder';
+          const codingModel = (cfg.coding as any)?.tag ?? (cfg.coding as any) ?? 'qwen2.5-coder:latest';
           const creativeModel = (cfg.creative as any)?.tag ?? (cfg.creative as any) ?? 'mistral';
           const smalltalkModel = (cfg.smalltalk as any)?.tag ?? (cfg.smalltalk as any) ?? 'phi3';
 
@@ -968,7 +2365,40 @@ Be thoughtful, wise, and supportive.`;
         memoryInfo = `Persistent SQLite Memory:\n  • Messages: ${stats.messageCount}\n  • Triples: ${stats.tripleCount}\n  • Persona keys: ${stats.personaKeys}`;
       }
 
-      console.log(colorize(`🩺 Status Report:\n  • ${memoryInfo}\n  • Active model: ${ai.getModel()}`, 'cyan'));
+      const runtimeDetails =
+        ai.getRuntimeMode() === 'backend'
+          ? `\n  • Orchestration: ${ai.getOrchestrationMode()}\n  • Custom override: ${ai.getCustomModelTarget() || 'none'}`
+          : '';
+
+      console.log(colorize(`🩺 Status Report:\n  • ${memoryInfo}\n  • Active model: ${ai.getModelStatusLabel()}\n  • Runtime mode: ${ai.getRuntimeMode()}\n  • Construct: ${ai.getConstructId()}\n  • Thread: ${ai.getThreadId()}\n  • API: ${ai.getApiUrl()}${runtimeDetails}`, 'cyan'));
+      rl.prompt();
+      return;
+    }
+
+    if (message === '/receipt') {
+      const turnMetadata = ai.getLastTurnMetadata();
+      if (!turnMetadata) {
+        console.log(colorize('No runtime receipt available yet.', 'yellow'));
+        rl.prompt();
+        return;
+      }
+
+      console.log(colorize('🧾 Last Runtime Turn:', 'cyan'));
+      console.log(
+        JSON.stringify(
+          {
+            transport: turnMetadata.transport,
+            constructId: turnMetadata.constructId,
+            status: turnMetadata.status,
+            success: turnMetadata.success,
+            error: turnMetadata.error,
+            receipt: turnMetadata.receipt,
+            checklist: turnMetadata.checklist,
+          },
+          null,
+          2,
+        ),
+      );
       rl.prompt();
       return;
     }
@@ -1034,8 +2464,44 @@ Be thoughtful, wise, and supportive.`;
           return;
         }
 
-        await settingsManager.set(key as any, parsedValue);
+        if (key === 'constructId' && typeof parsedValue === 'string') {
+          await settingsManager.updateSettings({
+            constructId: parsedValue,
+            threadId: '',
+          });
+          ai.setConstructId(parsedValue);
+          ai.setThreadId(null);
+        } else if (key === 'threadId') {
+          await settingsManager.set(key as any, parsedValue);
+          ai.setThreadId(typeof parsedValue === 'string' ? parsedValue : null);
+        } else if (key === 'orchestrationMode') {
+          await settingsManager.set(key as any, parsedValue);
+          ai.setOrchestrationMode(parsedValue as CliBackendOrchestrationMode);
+        } else if (key === 'customModelTarget') {
+          await settingsManager.set(key as any, parsedValue);
+          ai.setCustomModelTarget(typeof parsedValue === 'string' ? parsedValue : '');
+        } else if (key === 'showReceipts') {
+          await settingsManager.set(key as any, parsedValue);
+          ai.setShowReceipts(Boolean(parsedValue));
+        } else if (key === 'showChecklist') {
+          await settingsManager.set(key as any, parsedValue);
+          ai.setShowChecklist(Boolean(parsedValue));
+        } else if (key === 'skipPersistence') {
+          await settingsManager.set(key as any, parsedValue);
+          ai.setSkipPersistence(Boolean(parsedValue));
+        } else {
+          await settingsManager.set(key as any, parsedValue);
+        }
         console.log(colorize(`✅ Setting '${key}' updated to: ${parsedValue}`, 'green'));
+        if (
+          key === 'transport' ||
+          key === 'apiBaseUrl' ||
+          key === 'requestTimeoutMs' ||
+          key === 'defaultFileOperationsPath' ||
+          key === 'conversationSavePath'
+        ) {
+          console.log(colorize('Restart Chatty CLI to apply that setting to this session.', 'yellow'));
+        }
       } catch (error: any) {
         console.log(colorize(`Error updating setting: ${error.message}`, 'red'));
       }
@@ -1048,7 +2514,16 @@ Be thoughtful, wise, and supportive.`;
     if (message === '/reset-settings') {
       try {
         await settingsManager.resetToDefaults();
+        const defaults = settingsManager.getAll();
+        ai.setConstructId(defaults.constructId);
+        ai.setThreadId(defaults.threadId);
+        ai.setOrchestrationMode(defaults.orchestrationMode);
+        ai.setCustomModelTarget(defaults.customModelTarget);
+        ai.setShowReceipts(defaults.showReceipts);
+        ai.setShowChecklist(defaults.showChecklist);
+        ai.setSkipPersistence(defaults.skipPersistence);
         console.log(colorize('🔄 Settings reset to defaults', 'green'));
+        console.log(colorize('Restart Chatty CLI to fully apply transport/path changes.', 'yellow'));
       } catch (error: any) {
         console.log(colorize(`Error resetting settings: ${error.message}`, 'red'));
       }
@@ -1428,6 +2903,11 @@ Be thoughtful, wise, and supportive.`;
   /help        - Show this help
   /clear       - Clear conversation history
   /memory      - Show memory status
+  /receipt     - Show the last runtime receipt/checklist
+  /construct   - Open the construct picker
+  /construct list - List available constructs
+  /construct current - Show the active construct
+  /construct <id> - Switch constructs and reset to the canonical thread
   /settings    - Show current settings
   /set <key> <value> - Update a setting
   /reset-settings - Reset settings to defaults
@@ -1440,10 +2920,11 @@ Be thoughtful, wise, and supportive.`;
   /containment-check <user> - Check if user is in containment
   /containment-resolve <user> - Resolve user containment
   /containment-history <user> - Show user's containment history
-  /model       - Show current model (or Synthesizer)
-  /model list  - List installed Ollama models
-  /model <tag> - Switch to single-model mode (e.g., deepseek)
-  /model synth - Enable multi-model blending mode
+  /model       - Show current model or backend orchestration mode
+  /model list  - List installed Ollama models (local mode only)
+  /model lin   - Use Lin-first backend orchestration
+  /model <provider:model> - Use a backend custom model override
+  /model custom <provider:model> - Explicit backend custom override
   /models      - Show specific models in synth pipeline
   /persona <name> - Switch to a specific LLM persona (copilot, gemini, grok, claude, chatgpt)
   /personas - List all available personas
@@ -1477,6 +2958,7 @@ Be thoughtful, wise, and supportive.`;
     try {
       const response = await ai.processMessage(message);
       console.log(response);
+      printTurnMetadata(ai);
     } catch (error: any) {
       console.error(colorize(`Error: ${error?.message || error}`, 'red'));
     }
@@ -1500,14 +2982,13 @@ Be thoughtful, wise, and supportive.`;
 export default main;
 
 // Re-export for external integrations
-export { CLIAIService, ensurePhi3 };
+export { CLIAIService, ensurePhi3, isCodexHandoffCommand, isOrchestrationProofCommand, parseCliArgs };
 
 // ---- Execute when run directly -------------------------------------------
-// Support both CommonJS (require.main) and ES module (import.meta.url) entry.
-const isDirectCJS = typeof require !== 'undefined' && require.main === module;
-const isDirectESM = typeof import.meta !== 'undefined' && import.meta.url === (typeof process !== 'undefined' ? `file://${process.argv[1]}` : '');
+const directEntry = path.resolve(process.argv[1] || '');
+const cliEntry = path.join(CHATTY_CLI_REPO_ROOT, 'src', 'cli', 'chatty-cli.ts');
 
-if (isDirectCJS || isDirectESM) {
+if (directEntry === cliEntry) {
   // eslint-disable-next-line @typescript-eslint/no-floating-promises
   main();
 }

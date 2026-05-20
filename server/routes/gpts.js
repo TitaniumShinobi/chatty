@@ -9,6 +9,8 @@ import JSZip from 'jszip';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import { GPTManager } from '../lib/gptManager.js';
 import { enforceRoleplayToggle } from '../lib/contentGuard.js';
+import { mergeFromVVAULT } from '../lib/vvaultHydration.js';
+import { classifyConstructArtifactPath } from '../lib/artifactClassifier.js';
 
 const router = express.Router();
 
@@ -32,12 +34,46 @@ function mapToVsiFolder(filename) {
   if (baseName.endsWith('.capsule') || baseName.endsWith('.capsuleso')) return 'memup/';
   if (baseName.startsWith('chat_with_') && baseName.endsWith('.md')) return 'chatty/';
   if (baseName === 'prompt.json' || baseName === 'prompt.txt') return 'identity/';
-  if (baseName === 'personality.json' || baseName === 'conditioning.txt') return 'identity/';
+  if (baseName === 'conditioning.txt' || baseName === 'definition.json' || baseName === 'voice.json' || baseName === 'voice.md') return 'identity/';
   if (baseName === 'avatar.png' || baseName === 'avatar.jpg' || baseName === 'avatar.jpeg') return 'identity/';
-  if (baseName === 'metadata.json' || baseName === 'tone_profile.json' || baseName === 'voice.md') return 'config/';
+  if (baseName === 'metadata.json' || baseName === 'personality.json' || baseName === 'tone_profile.json') return 'config/';
   if (baseName.endsWith('.log')) return 'logs/';
   if (/\.(png|jpg|jpeg|svg|gif|webp)$/i.test(baseName)) return 'assets/';
   return 'documents/';
+}
+
+function cleanConstructRelativePath(value) {
+  return String(value || '')
+    .replace(/\\/g, '/')
+    .replace(/^\.\//, '')
+    .replace(/\.\./g, '')
+    .replace(/\/\//g, '/')
+    .replace(/^\//, '');
+}
+
+function resolveConstructVaultPlacement({ constructCallsign, relativePath, mimeType }) {
+  const cleanPath = cleanConstructRelativePath(relativePath);
+  const classification = classifyConstructArtifactPath(cleanPath, { mimeType });
+  if (classification.reviewRequired) {
+    const error = new Error(classification.reason || 'File requires taxonomy review before canonical storage.');
+    error.reviewRequired = true;
+    error.artifactClass = classification.artifactClass;
+    error.reason = classification.reason;
+    throw error;
+  }
+
+  const firstSegment = cleanPath.split('/').filter(Boolean)[0] || '';
+  const canonicalRelativePath = firstSegment === classification.folder
+    ? cleanPath
+    : `${classification.folder}/${cleanPath}`;
+
+  return {
+    vaultPath: `instances/${constructCallsign}/${canonicalRelativePath}`,
+    resolvedFolder: classification.folder,
+    fileType: classification.fileType,
+    artifactClass: classification.artifactClass,
+    classification,
+  };
 }
 
 function mimeForExt(ext) {
@@ -122,32 +158,6 @@ async function syncPromptJsonToSupabase(gpt, userEmail) {
   }
 
   console.log(`✅ [GPTs API] Synced prompt.json to Supabase for ${callsign}`);
-
-  const bakPath = `instances/${callsign}/identity/identity.bak.json`;
-  const bakContent = JSON.stringify({ ...promptData, backupTimestamp: new Date().toISOString(), backupSource: 'save-gpt' }, null, 2);
-
-  const { data: existingBak } = await supabase
-    .from('vault_files')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('filename', bakPath)
-    .maybeSingle();
-
-  if (existingBak) {
-    const { error: bakErr } = await supabase.from('vault_files').update({ content: bakContent }).eq('id', existingBak.id);
-    if (bakErr) console.warn(`⚠️ [GPTs API] identity.bak.json update failed for ${callsign}:`, bakErr.message);
-  } else {
-    const { error: bakErr } = await supabase.from('vault_files').insert({
-      user_id: userId,
-      filename: bakPath,
-      content: bakContent,
-      file_type: 'identity',
-      construct_id: callsign,
-      metadata: { originalName: 'identity.bak.json', sha256: null },
-    });
-    if (bakErr) console.warn(`⚠️ [GPTs API] identity.bak.json insert failed for ${callsign}:`, bakErr.message);
-  }
-  console.log(`🔒 [GPTs API] Identity backup saved to identity.bak.json for ${callsign}`);
 }
 
 async function resolveUserId(req) {
@@ -186,6 +196,40 @@ async function verifyGPTOwnership(req, gptId) {
   return { allowed: ownerMatch, gpt, userId };
 }
 
+function isEmptyHydrationValue(value) {
+  return value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
+}
+
+async function hydrateGPTDetailFromVVAULT(gpt, userId = null, userEmail = null) {
+  if (!gpt || typeof gpt !== 'object') return gpt;
+  const constructCallsign = gpt.constructCallsign || gpt.construct_call_sign || gpt.id?.replace(/^gpt-/, '');
+  if (!constructCallsign) return gpt;
+
+  const vvault = await mergeFromVVAULT(constructCallsign, userId || gpt.userId || null, userEmail);
+  const hydrated = { ...gpt };
+  const fill = (key, value) => {
+    if (!isEmptyHydrationValue(value) && isEmptyHydrationValue(hydrated[key])) {
+      hydrated[key] = value;
+    }
+  };
+
+  fill('name', vvault.name);
+  fill('description', vvault.description);
+  fill('instructions', vvault.instructions);
+  fill('systemPromptOverride', vvault.instructions);
+  fill('conditioning', vvault.conditioning);
+  fill('physicalFeatures', vvault.physicalFeatures);
+  fill('definition', vvault.definition);
+  fill('voice', vvault.voice);
+
+  if (vvault.hasAvatar && isEmptyHydrationValue(hydrated.avatar) && isEmptyHydrationValue(hydrated.avatarUrl)) {
+    hydrated.avatar = `/api/ais/${encodeURIComponent(constructCallsign)}/avatar`;
+    hydrated.avatarUrl = hydrated.avatar;
+  }
+
+  return hydrated;
+}
+
 // Configure multer for file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -220,7 +264,7 @@ const upload = multer({
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     ];
-    
+
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -236,10 +280,10 @@ router.get('/', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Authentication required' });
     }
     console.log(`📋 [GPTs API] GET /api/gpts - User: ${userId}`);
-    
+
     const gpts = await gptManager.getAllGPTs(userId, chattyUserId);
     console.log(`✅ [GPTs API] Returning ${gpts?.length || 0} GPTs`);
-    
+
     // Ensure response is valid JSON
     if (!res.headersSent) {
       res.json({ success: true, gpts: gpts || [] });
@@ -247,11 +291,11 @@ router.get('/', async (req, res) => {
   } catch (error) {
     console.error('❌ [GPTs API] Error fetching GPTs:', error);
     console.error('❌ [GPTs API] Error stack:', error.stack);
-    
+
     // Ensure we always return valid JSON, even on error
     if (!res.headersSent) {
-      res.status(500).json({ 
-        success: false, 
+      res.status(500).json({
+        success: false,
         error: error.message || 'Internal server error',
         details: process.env.NODE_ENV === 'development' ? error.stack : undefined
       });
@@ -263,10 +307,11 @@ router.get('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    const { allowed, gpt } = await verifyGPTOwnership(req, req.params.id);
+    const { allowed, gpt, userId } = await verifyGPTOwnership(req, req.params.id);
     if (!gpt) return res.status(404).json({ success: false, error: 'GPT not found' });
     if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
-    res.json({ success: true, gpt });
+    const hydrated = await hydrateGPTDetailFromVVAULT(gpt, userId, req.user?.email);
+    res.json({ success: true, gpt: hydrated });
   } catch (error) {
     console.error('Error fetching GPT:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -281,7 +326,7 @@ router.post('/', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Authentication required' });
     }
     console.log(`➕ [GPTs API] Creating GPT for user: ${userId}`);
-    
+
     const gptData = {
       ...req.body,
       userId,
@@ -289,7 +334,7 @@ router.post('/', async (req, res) => {
     };
 
     const gpt = await gptManager.createGPT(gptData);
-    
+
     // Scaffold instance folder structure in VVAULT (API first, Supabase fallback)
     if (gpt.constructCallsign) {
       try {
@@ -297,7 +342,7 @@ router.post('/', async (req, res) => {
         const { getSupabaseClient } = await import('../lib/supabaseClient.js');
         const constructId = gpt.constructCallsign;
         const supabase = getSupabaseClient();
-        
+
         let scaffoldUserId = userId;
         if (supabase && userEmail) {
           const { data: byEmail } = await supabase
@@ -325,15 +370,17 @@ router.post('/', async (req, res) => {
             console.warn(`⚠️ [GPTs API] Could not resolve Supabase UUID for ${userEmail}, scaffold may fail`);
           }
         }
-        
+
         console.log(`📦 [GPTs API] Scaffolding instance for new GPT: ${constructId}`);
-        
+
         const result = await scaffoldConstruct(constructId, gpt, {
           userId: scaffoldUserId,
           userEmail,
           supabase,
+          localOnly: true,
+          syncGenerated: false,
         });
-        
+
         console.log(`✅ [GPTs API] Scaffolded instance for ${constructId} via ${result.source || 'unknown'}`);
         if (result.failed > 0) {
           console.error(`❌ [GPTs API] Scaffold had ${result.failed} failures for ${constructId}`);
@@ -344,7 +391,7 @@ router.post('/', async (req, res) => {
     } else {
       console.warn(`⚠️ [GPTs API] No constructCallsign for ${gpt.id}, skipping scaffold`);
     }
-    
+
     res.json({ success: true, gpt });
   } catch (error) {
     console.error('Error creating GPT:', error);
@@ -354,7 +401,7 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const { allowed, gpt: existing } = await verifyGPTOwnership(req, req.params.id);
+    const { allowed, gpt: existing, userId } = await verifyGPTOwnership(req, req.params.id);
     if (!existing) return res.status(404).json({ success: false, error: 'GPT not found' });
     if (!allowed) return res.status(403).json({ success: false, error: 'Access denied' });
 
@@ -369,6 +416,21 @@ router.put('/:id', async (req, res) => {
     }
 
     const gpt = await gptManager.updateGPT(req.params.id, req.body);
+
+    if (gpt?.constructCallsign) {
+      try {
+        const { scaffoldConstruct } = await import('../lib/constructScaffolder.js');
+        await scaffoldConstruct(gpt.constructCallsign, gpt, {
+          userId,
+          userEmail: req.user?.email,
+          localOnly: true,
+          syncGenerated: true,
+        });
+      } catch (scaffoldError) {
+        console.warn(`⚠️ [GPTs API] Local construct bundle sync failed for ${gpt.constructCallsign}:`, scaffoldError.message);
+      }
+    }
+
     res.json({ success: true, gpt });
 
     if (gpt?.constructCallsign) {
@@ -491,22 +553,21 @@ router.post('/:id/files', upload.single('file'), async (req, res) => {
               for (const prefix of instancePrefixes) {
                 if (rawZipPath.startsWith(prefix)) { rawZipPath = rawZipPath.slice(prefix.length); break; }
               }
-              rawZipPath = rawZipPath.replace(/\.\./g, '').replace(/\/\//g, '/').replace(/^\//, '');
+              rawZipPath = cleanConstructRelativePath(rawZipPath);
             }
 
             let relativePath = rawZipPath || originalName;
-            const knownVsiFolders = ['identity/', 'memup/', 'chatty/', 'logs/', 'config/', 'assets/', 'documents/', 'data/', 'frame/', 'simDrive/', 'vxrunner/', 'codex/', 'chatgpt/', 'character.ai/', 'github_copilot/'];
-            const alreadyHasVsiFolder = knownVsiFolders.some(f => relativePath.startsWith(f));
-
-            let vaultPath;
-            let resolvedFolder;
-            if (alreadyHasVsiFolder) {
-              vaultPath = `instances/${constructCallsign}/${relativePath}`;
-              resolvedFolder = relativePath.split('/')[0];
-            } else {
-              resolvedFolder = mapToVsiFolder(relativePath).replace(/\/$/, '');
-              vaultPath = `instances/${constructCallsign}/${resolvedFolder}/${relativePath}`;
-            }
+            const {
+              vaultPath,
+              resolvedFolder,
+              fileType,
+              artifactClass,
+              classification,
+            } = resolveConstructVaultPlacement({
+              constructCallsign,
+              relativePath,
+              mimeType: req.file.mimetype,
+            });
 
             try {
               const { assertValidVaultFilename } = await import('../lib/vaultPathGuard.js');
@@ -529,20 +590,46 @@ router.post('/:id/files', upload.single('file'), async (req, res) => {
               contentForVault = `[binary:${req.file.mimetype}:${req.file.size}]`;
             }
 
-            const fileType = resolvedFolder || 'knowledge';
-
             const { data: existing } = await supabase
               .from('vault_files').select('id').eq('user_id', supabaseUserId).eq('filename', vaultPath).maybeSingle();
 
             if (existing) {
               const { error: updateErr } = await supabase.from('vault_files')
-                .update({ content: contentForVault, metadata: { source: 'chatty-knowledge-upload', originalName, mimeType: req.file.mimetype, size: req.file.size, updatedAt: new Date().toISOString() } })
+                .update({
+                  content: contentForVault,
+                  metadata: {
+                    source: 'chatty-knowledge-upload',
+                    originalName,
+                    mimeType: req.file.mimetype,
+                    size: req.file.size,
+                    artifactClass,
+                    sourceKind: artifactClass,
+                    classificationReason: classification.reason,
+                    updatedAt: new Date().toISOString(),
+                  },
+                })
                 .eq('id', existing.id);
               if (updateErr) throw updateErr;
               console.log(`✅ [GPTs API] Updated vault_files: ${vaultPath}`);
             } else {
               const { error: insertErr } = await supabase.from('vault_files')
-                .insert({ user_id: supabaseUserId, filename: vaultPath, content: contentForVault, file_type: fileType, construct_id: constructCallsign, metadata: { source: 'chatty-knowledge-upload', originalName, mimeType: req.file.mimetype, size: req.file.size, createdAt: new Date().toISOString() } });
+                .insert({
+                  user_id: supabaseUserId,
+                  filename: vaultPath,
+                  content: contentForVault,
+                  file_type: fileType,
+                  construct_id: constructCallsign,
+                  metadata: {
+                    source: 'chatty-knowledge-upload',
+                    originalName,
+                    mimeType: req.file.mimetype,
+                    size: req.file.size,
+                    artifactClass,
+                    sourceKind: artifactClass,
+                    classificationReason: classification.reason,
+                    createdAt: new Date().toISOString(),
+                  },
+                });
               if (insertErr) throw insertErr;
               console.log(`✅ [GPTs API] Created vault_files: ${vaultPath} (folder: ${resolvedFolder})`);
             }
@@ -558,6 +645,15 @@ router.post('/:id/files', upload.single('file'), async (req, res) => {
     } catch (vaultError) {
       supabaseError = vaultError.message || 'Unknown Supabase write error';
       console.error(`❌ [GPTs API] Supabase vault_files write FAILED:`, supabaseError);
+      if (vaultError.reviewRequired) {
+        return res.status(400).json({
+          success: false,
+          reviewRequired: true,
+          error: supabaseError,
+          artifactClass: vaultError.artifactClass || 'review_required',
+          reason: vaultError.reason || supabaseError,
+        });
+      }
     }
 
     res.json({ success: true, file, supabaseSaved, supabaseError });
@@ -751,20 +847,35 @@ router.post('/:id/upload-zip', zipUpload.single('file'), async (req, res) => {
           for (const prefix of instancePrefixes) {
             if (relativePath.startsWith(prefix)) { relativePath = relativePath.slice(prefix.length); break; }
           }
-          relativePath = relativePath.replace(/\.\./g, '').replace(/\/\//g, '/').replace(/^\//, '');
+          relativePath = cleanConstructRelativePath(relativePath);
 
           const originalName = path.basename(relativePath);
-          const knownVsiFolders = ['identity/', 'memup/', 'chatty/', 'logs/', 'config/', 'assets/', 'documents/', 'data/', 'frame/', 'simDrive/', 'vxrunner/', 'codex/', 'chatgpt/', 'character.ai/', 'github_copilot/'];
-          const alreadyHasVsiFolder = knownVsiFolders.some(f => relativePath.startsWith(f));
-
           let vaultPath;
           let resolvedFolder;
-          if (alreadyHasVsiFolder) {
-            vaultPath = `instances/${constructCallsign}/${relativePath}`;
-            resolvedFolder = relativePath.split('/')[0];
-          } else {
-            resolvedFolder = mapToVsiFolder(relativePath).replace(/\/$/, '');
-            vaultPath = `instances/${constructCallsign}/${resolvedFolder}/${relativePath}`;
+          let fileType;
+          let artifactClass;
+          let classification;
+          try {
+            ({
+              vaultPath,
+              resolvedFolder,
+              fileType,
+              artifactClass,
+              classification,
+            } = resolveConstructVaultPlacement({
+              constructCallsign,
+              relativePath,
+              mimeType: mimeForExt(path.extname(entryName).toLowerCase()),
+            }));
+          } catch (classificationError) {
+            results.skipped++;
+            results.errors.push({
+              file: entryName,
+              error: classificationError.message,
+              reviewRequired: true,
+              artifactClass: classificationError.artifactClass || 'review_required',
+            });
+            return;
           }
 
           try {
@@ -794,7 +905,16 @@ router.post('/:id/upload-zip', zipUpload.single('file'), async (req, res) => {
           const { data: existing } = await supabase
             .from('vault_files').select('id').eq('user_id', supabaseUserId).eq('filename', vaultPath).maybeSingle();
 
-          const metadata = { source: 'chatty-zip-upload', originalName, mimeType: mimeForExt(ext), size: fileBuffer.length, sha256 };
+          const metadata = {
+            source: 'chatty-zip-upload',
+            originalName,
+            mimeType: mimeForExt(ext),
+            size: fileBuffer.length,
+            sha256,
+            artifactClass,
+            sourceKind: artifactClass,
+            classificationReason: classification.reason,
+          };
 
           if (existing) {
             metadata.updatedAt = new Date().toISOString();
@@ -803,7 +923,7 @@ router.post('/:id/upload-zip', zipUpload.single('file'), async (req, res) => {
             results.updated++;
           } else {
             const { error: insertErr } = await supabase.from('vault_files')
-              .insert({ user_id: supabaseUserId, filename: vaultPath, content: contentForVault, file_type: resolvedFolder || 'knowledge', construct_id: constructCallsign, metadata });
+              .insert({ user_id: supabaseUserId, filename: vaultPath, content: contentForVault, file_type: fileType, construct_id: constructCallsign, metadata });
             if (insertErr) throw insertErr;
             results.created++;
           }

@@ -1,0 +1,50 @@
+# =============================================================================
+# Ollama systemd service
+# Location: /etc/systemd/system/ollama.service
+#
+# Setup:
+#   sudo cp deploy/ollama.service /etc/systemd/system/ollama.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable ollama
+#   sudo systemctl start ollama
+#
+# Logs:
+#   sudo journalctl -u ollama -f
+#
+# Models will be loaded on-demand. To pre-load models:
+#   sudo systemctl stop ollama
+#   ollama pull phi3:latest
+#   ollama pull mistral:latest
+#   ollama pull deepseek-coder:6.7b
+#   sudo systemctl start ollama
+# =============================================================================
+
+[Unit]
+Description=Ollama AI Model Server
+After=network.target
+
+[Service]
+Type=simple
+User=vvault
+Group=vvault
+WorkingDirectory=/home/vvault
+
+Environment="OLLAMA_HOST=0.0.0.0:11434"
+Environment="PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
+
+ExecStart=/usr/local/bin/ollama serve
+
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ollama
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

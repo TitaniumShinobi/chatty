@@ -1,5 +1,7 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react'
+import { useOutletContext } from 'react-router-dom'
 import { Database, FileText, Users, Clock, CheckCircle, AlertCircle, RefreshCw, Link2, ExternalLink, Unlink } from 'lucide-react'
+import { resolveClientDoorContract } from '../lib/chattyVvaultDoor'
 
 const TranscriptManager = lazy(() => import('../components/TranscriptManager').then(m => ({ default: m.TranscriptManager })))
 const VaultFileManager = lazy(() => import('../components/VaultFileManager').then(m => ({ default: m.VaultFileManager })))
@@ -20,8 +22,13 @@ interface VVAULTAccountStatus {
   chattyEmail: string
 }
 
+interface LayoutContext {
+  forceRefreshConversations?: () => Promise<boolean | void> | boolean | void
+}
+
 export default function VVAULTPage() {
   console.log('🏦 [VVAULTPage] Rendering VVAULTPage component');
+  const layoutContext = useOutletContext<LayoutContext>()
   
   const [stats, setStats] = useState<VVAULTStats>({
     totalUsers: 0,
@@ -34,18 +41,11 @@ export default function VVAULTPage() {
   const [recentTranscripts, setRecentTranscripts] = useState<any[]>([])
   const [accountStatus, setAccountStatus] = useState<VVAULTAccountStatus | null>(null)
   const [isLinking, setIsLinking] = useState(false)
+  const [isCodexSyncing, setIsCodexSyncing] = useState(false)
+  const [codexSyncStatus, setCodexSyncStatus] = useState<string | null>(null)
 
-  const getDevVvaultOrigin = () => {
-    // Avoid hardcoding "localhost" so production bundles don't contain loopback URLs.
-    const loc = (globalThis as any).location as Location | undefined
-    if (!loc?.origin) return ''
-    const u = new URL(loc.origin)
-    u.protocol = 'http:'
-    u.port = '8000'
-    u.pathname = ''
-    u.search = ''
-    u.hash = ''
-    return u.origin
+  const resolveVvaultBrowserOrigin = () => {
+    return resolveClientDoorContract().vvaultOrigin
   }
 
   // Fetch VVAULT account linking status
@@ -131,9 +131,11 @@ export default function VVAULTPage() {
 
   const handleLinkAccount = () => {
     // Open VVAULT login in new tab
-    const vvaultUrl =
-      (import.meta.env.VITE_VVAULT_URL as string | undefined) ||
-      (import.meta.env.DEV ? getDevVvaultOrigin() : 'https://vvault.thewreck.org')
+    const vvaultUrl = resolveVvaultBrowserOrigin()
+    if (!vvaultUrl) {
+      console.error('Failed to resolve explicit VVAULT browser origin for this runtime')
+      return
+    }
     window.open(`${vvaultUrl}/login`, '_blank')
     
     // Show instructions
@@ -159,6 +161,37 @@ export default function VVAULTPage() {
       }
     } catch (error) {
       console.error('Failed to unlink VVAULT account:', error)
+    }
+  }
+
+  const handleForceCodexSync = async () => {
+    setIsCodexSyncing(true)
+    setCodexSyncStatus(null)
+    try {
+      const response = await fetch('/api/vvault/codex/sync', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || data?.ok !== true) {
+        throw new Error(data?.message || data?.error || `Codex sync failed (${response.status})`)
+      }
+      const publishedCount = Number(data.vvaultPublishedThreads || 0)
+      const verifiedCount = Number(data.vvaultReadbackVerifiedThreads)
+      if (!Number.isFinite(verifiedCount) || publishedCount < 1 || verifiedCount !== publishedCount) {
+        throw new Error('Codex sync did not return verified VVAULT readback proof')
+      }
+      setCodexSyncStatus(
+        `Published ${publishedCount} Codex threads to VVAULT` +
+          ` (${verifiedCount} readbacks verified, ${data.skippedThreads || 0} skipped, ${data.vvaultPublishFailedThreads || 0} failed readbacks)`
+      )
+      await layoutContext.forceRefreshConversations?.()
+    } catch (error: any) {
+      setCodexSyncStatus(error?.message || 'Codex sync failed')
+    } finally {
+      setIsCodexSyncing(false)
     }
   }
 
@@ -307,7 +340,24 @@ export default function VVAULTPage() {
                 <Unlink size={14} />
                 Unlink
               </button>
+              <button
+                onClick={handleForceCodexSync}
+                disabled={isCodexSyncing}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs transition-colors hover:opacity-80 disabled:opacity-60"
+                style={{ 
+                  backgroundColor: 'var(--chatty-button)', 
+                  color: 'var(--chatty-text)'
+                }}
+              >
+                <RefreshCw size={14} className={isCodexSyncing ? 'animate-spin' : ''} />
+                Force Codex Sync
+              </button>
             </div>
+            {codexSyncStatus && (
+              <p className="mt-3 text-xs" style={{ color: 'var(--chatty-text)', opacity: 0.75 }}>
+                {codexSyncStatus}
+              </p>
+            )}
           </div>
         )}
 

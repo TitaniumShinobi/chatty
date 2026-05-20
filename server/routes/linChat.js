@@ -1,6 +1,14 @@
 /**
  * Lin Chat Route - Multi-provider LLM routing with Memory Injection
  * 
+ * ROUTE CLASSIFICATION: NONCANONICAL (helper)
+ * This is a helper/dev route that bypasses the canonical orchestration runtime path
+ * (/api/vvault/message). It emits skeleton runtime_receipt and orchestration_checklist
+ * fields for observability parity but does NOT go through the full canonical pipeline
+ * (VVAULT proxy, transcript truth preflight, continuity recovery, identity coherence guard).
+ * 
+ * New consumers should target /api/vvault/message for the canonical runtime path.
+ * 
  * Supports both OpenRouter (cloud) and Ollama (self-hosted) models.
  * Model strings should be prefixed with their provider:
  *   - openrouter:provider/model-name -> Routes to OpenRouter API
@@ -19,9 +27,22 @@ import { getSupabaseClient } from '../lib/supabaseClient.js';
 import { GPTManager } from '../lib/gptManager.js';
 import { loadIdentityFiles } from '../lib/identityLoader.js';
 import { extractAndStoreAnchors } from '../lib/verifiedMemoryLoader.js';
+import { LIN_MODEL_DEFAULTS } from '../lib/linModelDefaults.js';
+import { attachRuntimePathMarkers } from '../lib/vvaultReceiptAssembly.js';
+import { classifyVvaultRouteFallback } from '../lib/vvaultFallbackClassification.js';
 
 const router = express.Router();
-const gptManager = GPTManager.getInstance();
+const routeOverrides = {
+  callOpenRouter: null,
+  callOllama: null,
+  loadTranscriptMemories: null,
+  openaiDirectClient: null,
+  openaiIntegrationClient: null,
+};
+
+function getGptManager() {
+  return GPTManager.getInstance();
+}
 
 // Initialize OpenRouter client using Replit AI Integrations
 const openrouter = new OpenAI({
@@ -40,12 +61,12 @@ const openaiDirect = DIRECT_OPENAI_KEY ? new OpenAI({
   apiKey: DIRECT_OPENAI_KEY,
 }) : null;
 
-const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
+const DEFAULT_OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free';
 
 const DEFAULT_SEAT_MODELS = {
-  creative: `openrouter:google/gemma-3-27b-it:free`,
-  coding: `openrouter:deepseek/deepseek-chat`, 
-  smalltalk: `openrouter:${DEFAULT_OPENROUTER_MODEL}`
+  creative: LIN_MODEL_DEFAULTS.creative,
+  coding: LIN_MODEL_DEFAULTS.coding,
+  smalltalk: LIN_MODEL_DEFAULTS.smalltalk,
 };
 
 /**
@@ -55,7 +76,7 @@ const DEFAULT_SEAT_MODELS = {
  */
 function parseModelString(modelString) {
   if (!modelString) {
-    return { provider: 'openrouter', model: 'mistralai/mistral-7b-instruct' };
+    return parseModelString(DEFAULT_SEAT_MODELS.smalltalk);
   }
   
   if (modelString.startsWith('openrouter:')) {
@@ -135,20 +156,20 @@ function scoreAnchorPairs(pairs, query, maxResults = 20) {
     .slice(0, maxResults);
 }
 
-async function loadTranscriptMemories(constructId, userEmail, options = {}) {
+async function loadTranscriptMemoriesDetailed(constructId, userEmail, options = {}) {
   const startTime = Date.now();
   const maxFiles = options.maxFiles || 50;
   const maxMemories = options.maxMemories || 100;
   
   if (!userEmail) {
     console.log('⚠️ [LinChat Memory] No user email provided - memory access denied');
-    return '';
+    return { status: 'memory_denied', context: '', reason: 'missing_user_email' };
   }
   try {
     const supabase = getSupabaseClient();
     if (!supabase) {
       console.log('⚠️ [LinChat Memory] Supabase not configured');
-      return '';
+      return { status: 'memory_unavailable', context: '', reason: 'supabase_unconfigured' };
     }
     
     const { data: user, error: userError } = await supabase
@@ -160,7 +181,7 @@ async function loadTranscriptMemories(constructId, userEmail, options = {}) {
     
     if (userError || !user) {
       console.log(`⚠️ [LinChat Memory] User not found: ${userEmail}`);
-      return '';
+      return { status: 'memory_unavailable', context: '', reason: 'user_not_found' };
     }
 
     // === FAST PATH: Check for pre-extracted memory anchors ===
@@ -186,7 +207,7 @@ async function loadTranscriptMemories(constructId, userEmail, options = {}) {
             memoryContext += `You have these memories from past conversations with this user (${anchors.pairs.length} total anchors):\n\n`;
             memoryContext += topPairs.map(p => `User: ${p.user}\nAssistant: ${p.assistant}`).join('\n\n');
             memoryContext += `\n\nUse these memories to maintain continuity and reference past discussions when relevant.`;
-            return memoryContext;
+            return { status: 'memory_loaded', context: memoryContext, reason: 'anchor_fast_path' };
           }
         }
       }
@@ -222,7 +243,7 @@ async function loadTranscriptMemories(constructId, userEmail, options = {}) {
     
     if (error || !files || files.length === 0) {
       console.log(`📚 [LinChat Memory] No transcripts found for ${constructId}`);
-      return '';
+      return { status: 'memory_empty', context: '', reason: 'no_transcripts_found' };
     }
     
     const groupedFiles = {};
@@ -298,7 +319,7 @@ async function loadTranscriptMemories(constructId, userEmail, options = {}) {
     }
     
     if (memories.length === 0) {
-      return '';
+      return { status: 'memory_empty', context: '', reason: 'insufficient_memory_matches' };
     }
     
     let memoryContext = `## MEMORY - Previous Conversations\n`;
@@ -308,10 +329,14 @@ async function loadTranscriptMemories(constructId, userEmail, options = {}) {
     
     const slowElapsed = Date.now() - startTime;
     console.log(`✅ [LinChat Memory] SLOW PATH: Injected ${Math.min(memories.length, maxMemories)} memory snippets from ${files.length} files in ${slowElapsed}ms${timedOut ? ' (timed out)' : ''}`);
-    return memoryContext;
+    return {
+      status: timedOut ? 'memory_loaded_partial' : 'memory_loaded',
+      context: memoryContext,
+      reason: timedOut ? 'slow_path_timeout_partial' : 'slow_path_complete',
+    };
   } catch (error) {
     console.error('❌ [LinChat Memory] Error loading memories:', error.message);
-    return '';
+    return { status: 'memory_error', context: '', reason: error.message || 'memory_load_failed' };
   }
 }
 
@@ -353,6 +378,36 @@ async function callOllama(model, messages, options = {}) {
   return data.response || '';
 }
 
+function buildLinRouteContract({
+  responseStatus,
+  provider,
+  model,
+  requestClock = null,
+  requestId = null,
+  fallbackUsed = false,
+}) {
+  return attachRuntimePathMarkers({
+    runtimeReceipt: {
+      created_at: requestClock || new Date().toISOString(),
+      request_id: requestId || null,
+      route_mode: 'lin_generate',
+      provider: {
+        provider,
+        model,
+        final_provider: provider,
+        fallback_used: fallbackUsed,
+      },
+    },
+    orchestrationChecklist: {
+      responseStatus,
+      route: '/api/lin/generate',
+      request_id: requestId || null,
+    },
+    route: '/api/lin/generate',
+    canonical: false,
+  });
+}
+
 /**
  * POST /api/lin/generate
  * Generate a response using the appropriate provider
@@ -382,13 +437,39 @@ router.post('/generate', async (req, res) => {
     const userEmail = req.user?.email;
     
     if (!prompt) {
-      return res.status(400).json({ error: 'Prompt is required' });
+      const contract = buildLinRouteContract({
+        responseStatus: 'invalid_request',
+        provider: null,
+        model: null,
+        requestClock: req.clock || null,
+        requestId: req.requestId || null,
+      });
+      return res.status(400).json({
+        error: 'Prompt is required',
+        runtime_receipt: contract.runtimeReceipt,
+        orchestration_checklist: contract.orchestrationChecklist,
+        _noncanonical: true,
+        _canonical_path: '/api/vvault/message',
+      });
     }
 
     // Security: Require authentication when memory access is requested
     if (constructId && !userEmail) {
       console.log('🔒 [Lin Chat] Memory access denied - authentication required');
-      return res.status(401).json({ error: 'Authentication required for memory-enhanced responses' });
+      const contract = buildLinRouteContract({
+        responseStatus: 'memory_auth_required',
+        provider: null,
+        model: null,
+        requestClock: req.clock || null,
+        requestId: req.requestId || null,
+      });
+      return res.status(401).json({
+        error: 'Authentication required for memory-enhanced responses',
+        runtime_receipt: contract.runtimeReceipt,
+        orchestration_checklist: contract.orchestrationChecklist,
+        _noncanonical: true,
+        _canonical_path: '/api/vvault/message',
+      });
     }
 
     // Determine which model to use
@@ -404,8 +485,8 @@ router.post('/generate', async (req, res) => {
     // Load GPT identity (instructions) if constructId provided
     let identityPrompt = '';
     if (constructId) {
-      // First try to load from GPT database (custom GPTs like Katana)
-      const gpt = await gptManager.getGPTByCallsign(constructId);
+      // First try to load from GPT database (custom GPTs)
+      const gpt = await getGptManager().getGPTByCallsign(constructId);
       if (gpt && gpt.instructions) {
         identityPrompt = `# Identity: ${gpt.name}\n\nYou are ${gpt.name}. ${gpt.description || ''}\n\n${gpt.instructions}`;
         console.log(`🎭 [LinChat] Loaded identity from GPT database: ${gpt.name} (${constructId})`);
@@ -429,8 +510,11 @@ router.post('/generate', async (req, res) => {
 
     // Load transcript memories if constructId provided and user authenticated
     let memoryContext = '';
+    let memoryStatus = { status: 'memory_skipped', context: '', reason: 'construct_not_requested' };
     if (constructId && userEmail) {
-      memoryContext = await loadTranscriptMemories(constructId, userEmail, memoryOptions);
+      const loadTranscriptMemoriesImpl = routeOverrides.loadTranscriptMemories || loadTranscriptMemoriesDetailed;
+      memoryStatus = await loadTranscriptMemoriesImpl(constructId, userEmail, memoryOptions);
+      memoryContext = memoryStatus.context || '';
     }
 
     let enhancedSystemPrompt = '';
@@ -454,17 +538,28 @@ router.post('/generate', async (req, res) => {
     const linUserName = req.user?.name || req.user?.given_name || 'the user';
     const userIdentityBlock = `## User Identity\nThe user you are speaking with is named "${linUserName}". Address them by name when appropriate. Remember their name throughout the conversation.${req.user?.email ? `\nTheir email is ${req.user.email}.` : ''}`;
     enhancedSystemPrompt = enhancedSystemPrompt ? `${enhancedSystemPrompt}\n\n${userIdentityBlock}` : userIdentityBlock;
-    const isShortMessage = prompt.length < 100 && !/\b(search|find|look up|what is|who is|how to)\b/i.test(prompt);
+    let searchIntentReason = 'skipped_short_message';
+    let searchInjected = false;
+    const isShortMessage = prompt.length < 100 && !/\b(search|find|look up|what is|who is|how to|\/search)\b/i.test(prompt);
     if (!isShortMessage) {
       try {
         const { injectSearchContext } = await import('./search.js');
         if (injectSearchContext) {
-          const { enhancedPrompt } = await injectSearchContext(prompt, enhancedSystemPrompt);
+          const {
+            enhancedPrompt,
+            intent_reason: searchIntentReasonResolved,
+            search_injected: searchInjectedResolved,
+          } = await injectSearchContext(prompt, enhancedSystemPrompt, { explicitOnly: true });
           enhancedSystemPrompt = enhancedPrompt;
+          searchIntentReason = searchIntentReasonResolved || 'unknown';
+          searchInjected = searchInjectedResolved === true;
         }
       } catch (searchErr) {
         console.warn('⚠️ [LinChat] Search injection skipped:', searchErr.message);
+        searchIntentReason = 'search_injection_error';
       }
+    } else {
+      searchIntentReason = 'explicit_only_no_trigger';
     }
     if (memoryContext) {
       enhancedSystemPrompt = enhancedSystemPrompt ? `${enhancedSystemPrompt}\n\n${memoryContext}` : memoryContext;
@@ -476,13 +571,21 @@ router.post('/generate', async (req, res) => {
       messages.push({ role: 'system', content: enhancedSystemPrompt });
     }
     messages.push({ role: 'user', content: prompt });
+    console.log('[LinChat TURN_CONTEXT]', {
+      constructId: constructId || 'lin-001',
+      search_intent: searchIntentReason,
+      search_injected: searchInjected,
+      provider_requested: provider,
+    });
 
     let response;
+    let providerFallbackUsed = false;
     
     if (provider === 'openrouter') {
       let orSuccess = false;
       try {
-        response = await callOpenRouter(model, messages);
+        const callOpenRouterImpl = routeOverrides.callOpenRouter || callOpenRouter;
+        response = await callOpenRouterImpl(model, messages);
         orSuccess = true;
       } catch (err) {
         const errStatus = err?.status || err?.response?.status || err?.error?.status;
@@ -492,7 +595,9 @@ router.post('/generate', async (req, res) => {
           const fallbackModel = DEFAULT_OPENROUTER_MODEL;
           console.log(`⚠️ [Lin Chat] Free model ${model} rate-limited (429), falling back to ${fallbackModel}`);
           try {
-            response = await callOpenRouter(fallbackModel, messages);
+            const callOpenRouterImpl = routeOverrides.callOpenRouter || callOpenRouter;
+            response = await callOpenRouterImpl(fallbackModel, messages);
+            providerFallbackUsed = true;
             orSuccess = true;
           } catch (err2) {
             console.error(`❌ [Lin Chat] OpenRouter fallback model also failed:`, err2.message);
@@ -502,15 +607,17 @@ router.post('/generate', async (req, res) => {
         }
       }
       if (!orSuccess) {
-        if (openaiDirect) {
+        const openaiDirectClient = routeOverrides.openaiDirectClient || openaiDirect;
+        if (openaiDirectClient) {
           console.log(`🔄 [Lin Chat] All OpenRouter failed, trying OpenAI direct for ${seat} seat`);
           try {
-            const completion = await openaiDirect.chat.completions.create({
+            const completion = await openaiDirectClient.chat.completions.create({
               model: 'gpt-4.1-mini',
               messages,
               max_tokens: 2048,
             });
             response = completion.choices[0]?.message?.content || '';
+            providerFallbackUsed = true;
             console.log(`✅ [Lin Chat] OpenAI direct fallback success (${response.length} chars)`);
           } catch (oaiErr) {
             console.error(`❌ [Lin Chat] OpenAI direct also failed:`, oaiErr.message);
@@ -521,7 +628,11 @@ router.post('/generate', async (req, res) => {
         }
       }
     } else if (provider === 'openai') {
-      const openaiClient = openaiIntegration || openaiDirect;
+      const openaiClient =
+        routeOverrides.openaiIntegrationClient ||
+        openaiIntegration ||
+        routeOverrides.openaiDirectClient ||
+        openaiDirect;
       if (!openaiClient) {
         return res.status(503).json({ error: 'OpenAI not configured', details: 'No OpenAI integration or API key available.' });
       }
@@ -533,9 +644,10 @@ router.post('/generate', async (req, res) => {
         });
         response = completion.choices[0]?.message?.content || '';
       } catch (oaiErr) {
-        if (openaiDirect && openaiClient !== openaiDirect) {
+        const openaiDirectClient = routeOverrides.openaiDirectClient || openaiDirect;
+        if (openaiDirectClient && openaiClient !== openaiDirectClient) {
           console.warn(`⚠️ [Lin Chat] OpenAI integration failed, trying direct: ${oaiErr.message}`);
-          const completion = await openaiDirect.chat.completions.create({
+          const completion = await openaiDirectClient.chat.completions.create({
             model: model || 'gpt-4.1-mini',
             messages,
             max_tokens: 2048,
@@ -552,24 +664,77 @@ router.post('/generate', async (req, res) => {
           details: 'Set OLLAMA_HOST environment variable to use Ollama models. See docs/MODEL_PROVIDERS.md for setup instructions.'
         });
       }
-      response = await callOllama(model, messages);
+      const callOllamaImpl = routeOverrides.callOllama || callOllama;
+      response = await callOllamaImpl(model, messages);
     } else {
       return res.status(400).json({ error: `Unknown provider: ${provider}` });
     }
     
     console.log(`✅ [Lin Chat] Response generated via ${provider} (${response.length} chars)`);
-    
-    res.json({ 
+
+    const contract = buildLinRouteContract({
+      responseStatus: 'bypass_canonical',
+      provider,
+      model,
+      requestClock: req.clock || null,
+      requestId: req.requestId || null,
+      fallbackUsed: providerFallbackUsed,
+    });
+    const fallback = classifyVvaultRouteFallback({
+      route: '/api/lin/generate',
+      reason: providerFallbackUsed ? 'provider_fallback' : 'helper_route_bypass_canonical',
+      source: providerFallbackUsed ? 'provider_fallback' : memoryStatus.status,
+      canonical: false,
+    });
+
+    res.json({
       response,
       model: `${provider}:${model}`,
       provider,
-      seat
+      seat,
+      memory_status: memoryStatus,
+      runtime_receipt: {
+        ...contract.runtimeReceipt,
+        memory_status: memoryStatus,
+        fallback,
+        _noncanonical: true,
+        _canonical_path: '/api/vvault/message',
+        _disclaimer: 'This is a stub receipt. The canonical runtime path is /api/vvault/message.',
+      },
+      orchestration_checklist: {
+        ...contract.orchestrationChecklist,
+        memory_status: memoryStatus,
+        _noncanonical: true,
+        _canonical_path: '/api/vvault/message',
+        _disclaimer: 'This is a stub checklist. The canonical runtime path is /api/vvault/message.',
+      },
+      _noncanonical: true,
+      _canonical_path: '/api/vvault/message',
     });
   } catch (error) {
     console.error('❌ [Lin Chat] Error:', error.message);
-    res.status(500).json({ 
+    const contract = buildLinRouteContract({
+      responseStatus: 'helper_route_failure',
+      provider: null,
+      model: null,
+      requestClock: req.clock || null,
+      requestId: req.requestId || null,
+    });
+    res.status(500).json({
       error: 'Failed to generate response',
-      details: error.message 
+      details: error.message,
+      runtime_receipt: {
+        ...contract.runtimeReceipt,
+        fallback: classifyVvaultRouteFallback({
+          route: '/api/lin/generate',
+          reason: 'helper_route_failure',
+          source: 'lin_generate_exception',
+          canonical: false,
+        }),
+      },
+      orchestration_checklist: contract.orchestrationChecklist,
+      _noncanonical: true,
+      _canonical_path: '/api/vvault/message',
     });
   }
 });
@@ -616,24 +781,28 @@ router.get('/models', async (req, res) => {
   try {
     const models = {
       openrouter: [
-        'openrouter:meta-llama/llama-3.3-70b-instruct',
+        'openrouter:meta-llama/llama-3.3-70b-instruct:free',
         'openrouter:meta-llama/llama-3.1-8b-instruct',
         'openrouter:meta-llama/llama-3.1-70b-instruct',
         'openrouter:mistralai/mistral-7b-instruct',
-        'openrouter:deepseek/deepseek-coder-33b-instruct',
+        'openrouter:qwen/qwen-2.5-72b-instruct',
       ],
       ollama: process.env.OLLAMA_HOST ? [
+        LIN_MODEL_DEFAULTS.smalltalk,
+        LIN_MODEL_DEFAULTS.creative,
+        LIN_MODEL_DEFAULTS.coding,
+        LIN_MODEL_DEFAULTS.codingFallback,
         'ollama:phi3:latest',
+        'ollama:mistral:latest',
         'ollama:mistral:7b',
         'ollama:llama3:8b',
-        'ollama:deepseek-coder:6.7b',
       ] : []
     };
     
     res.json({
       models,
       defaultSeats: DEFAULT_SEAT_MODELS,
-      note: 'Ollama models require OLLAMA_HOST to be configured. See docs/MODEL_PROVIDERS.md'
+      note: '/api/lin/generate is a helper route. Construct-quality conversation uses /api/vvault/message; Ollama models require OLLAMA_HOST to be configured.'
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -722,5 +891,17 @@ router.post('/generate-anchors', async (req, res) => {
     res.status(500).json({ error: 'Failed to generate anchors', details: error.message });
   }
 });
+
+export const __test__ = {
+  setRouteOverrides(overrides = {}) {
+    Object.assign(routeOverrides, overrides);
+  },
+  clearRouteOverrides() {
+    for (const key of Object.keys(routeOverrides)) {
+      routeOverrides[key] = null;
+    }
+  },
+  buildLinRouteContract,
+};
 
 export default router;

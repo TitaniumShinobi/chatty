@@ -1,230 +1,113 @@
-<div align="center">
-  <img src="assets/stars/chattynova.png" alt="Chatty Nova Star" width="200">
-</div>
+# Chatty Docs
 
-<div align="left">
-  <img src="assets/collapseToggle/chatty_collapsed.png" alt="Collapsed Chatty Logo" width="200">
-</div><div align="center">
-  <img src="assets/stars/chattynova.png" alt="Chatty Nova Star" width="200">
-</div>
+This is the live documentation entrypoint after the cleanup pass. Use the sections below instead of browsing historical folders directly.
 
-<div align="left">
-  <img src="assets/collapseToggle/chatty_collapsed.png" alt="Collapsed Chatty Logo" width="200">
-</div>
+## Containerism Entry
 
-# Chatty Documentation Index
+- Start doctrine orientation at [CONTAINERISM_ADAPTER.md](CONTAINERISM_ADAPTER.md).
+- Ownership + boundaries: [standards/identity-boundaries.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/identity-boundaries.md).
+- Fail-closed + local-vs-production truth: [standards/vvault-authority-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/vvault-authority-contract.md).
+- Promotion gate + pre-promotion contract: [CONTAINERISM_ADAPTER.md](CONTAINERISM_ADAPTER.md), [standards/repository-rubrication.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/repository-rubrication.md).
 
-**Last Updated**: January 16, 2026
+## VVAULT Authority Rule
 
-This directory contains organized documentation for the Chatty system. Documentation has been categorized for easy navigation.
+VVAULT is the canonical cloud/VVAULT-owned database authority for transcripts, continuity, construct body data, and sync/readback proof.
 
----
+Local files are ingest input, dev runtime artifacts, cache, or archive evidence only. Local files must never be treated as VVAULT, never used as continuity authority, and never used as fallback truth.
 
-## 📚 Quick Links
+If VVAULT cannot be written to and read back from, the task is blocked. Do not create local folders or transcript files and call that a VVAULT sync.
 
-- **[Comprehensive Summary](./architecture/CHATTY_COMPREHENSIVE_SUMMARY.md)** - Complete system overview
-- **[Chatty Core Principles](./architecture/CHATTY_PRINCIPLES.md)** - Core principles and architecture foundations
-- **[Documentation Organization Plan](./DOCUMENTATION_ORGANIZATION_PLAN.md)** - Organization status and structure
+Canonical authority contract: [standards/vvault-authority-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/vvault-authority-contract.md).
 
----
+## VVAULT Authority Failures
 
-## 📁 Directory Structure
+- Creating local transcript/archive/sync folders = fail.
+- Reading local transcript files for continuity = fail.
+- Calling local file placement "VVAULT sync" = fail.
+- Continuing locally when VVAULT is unavailable = fail.
+- Treating Supabase as current VVAULT = fail.
 
-### **architecture/**
-Core architectural documents:
-- `CHATTY_PRINCIPLES.md` - Core principles comparing actual architecture to market claims
-- `CHATTY_COMPREHENSIVE_SUMMARY.md` - Complete system overview
-- `LIN_ARCHITECTURE_FOUNDATION.md` - Lin architecture foundation
-- `HOUSE_RULES_ZEN_LIN.md` - Zen/Lin house rules and operating invariants
-- `IDENTITY_ENFORCEMENT_ARCHITECTURE.md` - Identity system preventing LLM absorption
-- `ZEN_CANONICAL_IMPLEMENTATION.md` - Zen's canonical entity pattern
-- `LIN_ARCHITECTURE.md` - Lin's dual role (construct + infrastructure)
-- `LLM_GPT_EQUALITY_ARCHITECTURE.md` - Core philosophy: LLM = GPT equality
-- `RUNTIME_ARCHITECTURE_RUBRIC.md` - Runtime architecture principles
-- `VVAULT_FILE_STRUCTURE.md` - Storage structure specification
-- `MODULAR_RUNTIME_DEFINITION.md` - Modular runtime architecture
+## Orchestration Start Here
 
-### **implementation/**
-Implementation guides and how-tos:
-- `HTML_CONVERSATION_IMPORT.md` - HTML conversation import system
-- `AUTHENTICATION_SETUP_GUIDE.md` - Authentication setup
-- `GPT_CREATOR_GUIDE.md` - GPT Creator usage
-- `VVAULT_INTEGRATION_SUMMARY.md` - VVAULT integration details
-- `LIN_ORCHESTRATION_IMPLEMENTATION_GUIDE.md` - Lin orchestration guide
-- `LIN_ORCHESTRATION_DEEP_DIVE.md` - Deep dive into Lin orchestration
-- `LIN_COPILOT_IMPLEMENTATION.md` - Lin copilot implementation
-- `UNIFIED_LIN_ORCHESTRATION.md` - Unified Lin orchestration
-- `CONSTRUCT_CALLSIGN_ENFORCEMENT.md` - Construct callsign enforcement
-- `CREATE_VS_PREVIEW_IDENTITY.md` - Create vs preview identity
-- `CHATTY_USER_DIRECTORY_STRUCTURE.md` - User directory structure
-- `CAPSULE_HARDLOCK_INTEGRATION.md` - Capsule hardlock integration
+- VVAULT authority contract: [standards/vvault-authority-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/vvault-authority-contract.md)
+- Shared auth and avatar contract: [standards/VVAULT_SHARED_AUTH_AND_AVATAR_CONTRACT.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/VVAULT_SHARED_AUTH_AND_AVATAR_CONTRACT.md)
+- Current implemented canon: [standards/orchestration-canon-rubric.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-canon-rubric.md)
+- Construct file classification: [standards/construct-file-classification-rubric.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/construct-file-classification-rubric.md)
+- Surface inventory: [standards/orchestration-surface-inventory.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-surface-inventory.md)
+- Runtime checklist: [standards/orchestration-runtime-checklist.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-runtime-checklist.md)
+- VVAULT body contract: [standards/vvault-body-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/vvault-body-contract.md)
+- App-level Diagnosis law: [standards/perfection-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/perfection-contract.md)
+- Navigation workflow contract: [standards/chatty-navigation-workflow-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/chatty-navigation-workflow-contract.md)
+- Three I seat canon: [standards/lin-three-i-seat-canon.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/lin-three-i-seat-canon.md)
+- Wrapper split and Lin substrate truth: [reference/constructs-and-lin.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/reference/constructs-and-lin.md)
 
-### **implementation/oauth/**
-OAuth-specific implementation:
-- `GOOGLE_OAUTH_SETUP.md` - Google OAuth setup
-- `GOOGLE_OAUTH_FIX_PROMPT.md` - Google OAuth fix prompt
-- `OAUTH_DATA_AVAILABILITY.md` - OAuth data availability
-- `OAUTH_FIX_APPLIED.md` - OAuth fix applied
-- `WHY_OAUTH_BROKE.md` - Why OAuth broke
+Do not infer current orchestration truth from `orchestration/` or `vvault_scripts/` before reading the canon docs above.
 
-### **implementation/lin/**
-Lin-specific implementation:
-- `LIN_CONTEXTUAL_AWARENESS.md` - Lin contextual awareness
-- `LIN_CONVERSATIONAL_ABILITY_ASSESSMENT.md` - Conversational ability assessment
-- `LIN_CONVERSATIONAL_ABILITY_GRADE.md` - Conversational ability grade
-- `LIN_IDENTITY_PROTECTION.md` - Lin identity protection
-- `TIME_AWARENESS.md` - Time awareness
+## Current Canon
 
-### **troubleshooting/**
-Debug guides and issue resolution:
-- `VVAULT_TROUBLESHOOTING_GUIDE.md` - VVAULT connection issues
-- `DEBUG_MODEL_DISCONNECTION_PROMPT.md` - Model disconnection issues
-- `ECONNREFUSED_FIX.md` - Connection refused errors
-- `PROXY_ERROR_FIX.md` - Proxy error resolution
+- Chatty
+  - Zen is Chatty's system maintenance worker.
+  - Val is available through her Chatty chat panel only, for now.
+- Code
+  - CodeGPT belongs to Code.
+  - The Hydro team belongs to Code.
+- VVAULT
+  - Aurora belongs to VVAULT as the AI assistant for helping users with files and data.
+  - Current docs should not be read as saying Aurora can already directly edit user files or data everywhere.
 
-### **guides/**
-User and developer guides:
-- `ENVIRONMENT_SETUP.md` - Development environment setup
-- `CLIENT_STORAGE_IMPLEMENTATION_GUIDE.md` - Client storage
-- `CLI_AUTHENTICATION.md` - CLI authentication
-- `PRODUCTION_DEPLOYMENT.md` - Production deployment
-- `CHATTY_COMMANDS.md` - Complete CLI commands reference
-- `USER_ID_MIGRATION_GUIDE.md` - User ID migration guide
-- `VVAULT_USER_ID_GENERATION.md` - VVAULT user ID generation
-- `USER_REGISTRY_TROUBLESHOOTING.md` - User registry troubleshooting
-- `HISTORY_MEMORY_TEST_RUNNER_USAGE.md` - History memory test runner
-- `LIN_TEST_RUNNER_USAGE.md` - Lin test runner usage
-- `LIN_TEST_RUNNER_QUICK_REFERENCE.md` - Lin test runner quick reference
-- `LIN_TEST_RUNNER_BROWSER_USAGE.md` - Lin test runner browser usage
-- `LIN_CONVERSATIONAL_TEST_ROADMAP.md` - Conversational test roadmap
-- `INSTANCE_FOLDER_CLEANUP.md` - Instance folder cleanup
+The older house or room framing is useful design language, but it is not a documented runtime contract for the current product unless a live implementation says so.
 
-### **infrastructure/**
-Infrastructure and networking:
-- `TUNNEL_INFO.md` - Cloudflare tunnel setup and Katana integration
+## Future Plans
 
-### **memory/**
-Memory system documentation:
-- `persona-routing.md` - Persona routing architecture
-- `MEMORY_MANAGEMENT_ANALYSIS_AND_OPTIMIZATION.md` - Memory management analysis
-- `MEMORY_MANAGEMENT_OPTIMIZATIONS_IMPLEMENTED.md` - Memory optimizations
-- `MEMUP_STATUS_AND_USAGE.md` - MEMUP status and usage
+- Mirage Social Platform may later become a fuller home for Val, ContinuityGPT, and Lin.
+- Mirage planning may include social features, games, image and video generation, construct creation, and avatar management.
+- Mirage may eventually take the place of Sora.
+- Broader ecosystem ambitions and platform partnerships remain future planning, not current product canon.
+- After NovaReturns, focus may shift toward Voxol and Anything Goes. That remains TBD.
 
-### **rubrics/**
-Design rubrics and standards:
-- `CONSTRUCT_FORMATTING_RUBRIC.md` - Construct formatting standards
-- `CHATTY_Z_AXIS_LAYERING_RUBRIC.md` - Z-axis layering (moved to ../styling/)
-- `USER_REGISTRY_ENFORCEMENT_RUBRIC.md` - User registry standards
-- `CHATTY_LOGIN_PROCESS_RUBRIC.md` - Login process standards
-- `TRANSCRIPT_PROTECTION_RUBRIC.md` - Transcript protection rubric
+## Start Here
 
-### **analysis/**
-Analysis documents:
-- `LIN_ORCHESTRATION_ANALYSIS.md` - Lin orchestration analysis
-- `TONE_PERSONA_STABILITY_ASSESSMENT.md` - Tone persona stability assessment
-- `DOCUMENTATION_OVERLAP_ANALYSIS.md` - Documentation overlap analysis
-- `PARALLEL_USER_REGISTRIES.md` - Parallel user registries
+- Audit packet: [README/README.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/README/README.md)
+- Reference: [reference/README.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/reference/README.md)
+- How-to: [how-to/README.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/how-to/README.md)
+- Features: [features/README.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/features/README.md)
+- QA: [qa/chatty-navigation-workflow-checklist.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/qa/chatty-navigation-workflow-checklist.md)
+- Standards: [standards/README.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/README.md)
+- Reports: [reports/README.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/reports/README.md)
+- Security: [security/README.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/security/README.md)
+- Legal: [legal/README.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/legal/README.md)
+- Prompts: [prompts/README.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/prompts/README.md)
+- Archive: [archive/README.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/archive/README.md)
 
-### **debugging/**
-Debug guides:
-- `CONVERSATION_LOCATIONS_LEDGER.md` - Conversation locations ledger
-- `DIAGNOSE_SIDEBAR_CLICKS.md` - Diagnose sidebar clicks
-- `MODAL_BYPASS_STRATEGY.md` - Modal bypass strategy
-- `DEBUG_BACKUPS.md` - Debug backups
+## Current Live Set
 
-### **specifications/**
-Technical specifications:
-- `APP_TSX_SPECIFICATION.md` - App.tsx specification
+- Orchestration canon rubric: [standards/orchestration-canon-rubric.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-canon-rubric.md)
+- Construct file classification: [standards/construct-file-classification-rubric.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/construct-file-classification-rubric.md)
+- Orchestration surface inventory: [standards/orchestration-surface-inventory.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-surface-inventory.md)
+- Orchestration runtime checklist: [standards/orchestration-runtime-checklist.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-runtime-checklist.md)
+- VVAULT authority contract: [standards/vvault-authority-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/vvault-authority-contract.md)
+- Shared auth and avatar contract: [standards/VVAULT_SHARED_AUTH_AND_AVATAR_CONTRACT.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/VVAULT_SHARED_AUTH_AND_AVATAR_CONTRACT.md)
+- VVAULT body contract: [standards/vvault-body-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/vvault-body-contract.md)
+- Lin Three I seat canon: [standards/lin-three-i-seat-canon.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/lin-three-i-seat-canon.md)
+- Lin cross-repo reconciliation: [standards/lin-seat-cross-repo-reconciliation.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/lin-seat-cross-repo-reconciliation.md)
+- Product overview: [reference/platform-overview.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/reference/platform-overview.md)
+- Perfection contract: [standards/perfection-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/perfection-contract.md)
+- Navigation workflow contract: [standards/chatty-navigation-workflow-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/chatty-navigation-workflow-contract.md)
+- Chat interface layout: [standards/chat-interface-layout.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/chat-interface-layout.md)
+- Zen singleton live transcript: [standards/zen-singleton-live-transcript.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/zen-singleton-live-transcript.md)
+- Zen mode surfaces: [standards/zen-mode-surfaces.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/zen-mode-surfaces.md)
+- Runtime and ports: [reference/runtime-and-ports.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/reference/runtime-and-ports.md)
+- Auth and OAuth: [reference/auth-and-oauth.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/reference/auth-and-oauth.md)
+- VVAULT and storage: [reference/vvault-and-storage.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/reference/vvault-and-storage.md)
+- Constructs and Lin: [reference/constructs-and-lin.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/reference/constructs-and-lin.md)
+- File intelligence: [features/file-intelligence.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/features/file-intelligence.md)
+- GPT Creator and Lin: [features/gpt-creator-and-lin.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/features/gpt-creator-and-lin.md)
 
-### **prompts/**
-Implementation prompts:
-- See `prompts/` directory for all implementation prompts
+## Governance
 
----
+The live surface stays intentionally small:
 
-## 🔍 Finding Documentation
-
-### **By Topic**
-
-**Identity & Constructs**:
-- `architecture/IDENTITY_ENFORCEMENT_ARCHITECTURE.md`
-- `architecture/SYNTH_CANONICAL_IMPLEMENTATION.md`
-- `architecture/LLM_GPT_EQUALITY_ARCHITECTURE.md`
-
-**VVAULT Integration**:
-- `architecture/VVAULT_FILE_STRUCTURE.md`
-- `implementation/VVAULT_INTEGRATION_SUMMARY.md`
-- `troubleshooting/VVAULT_TROUBLESHOOTING_GUIDE.md`
-
-**GPT Creator**:
-- `implementation/GPT_CREATOR_GUIDE.md`
-- `architecture/LIN_ARCHITECTURE.md`
-
-**Authentication**:
-- `implementation/AUTHENTICATION_SETUP_GUIDE.md`
-- `guides/CLI_AUTHENTICATION.md`
-
-**File Processing**:
-- `implementation/HTML_CONVERSATION_IMPORT.md`
-- `guides/COMPREHENSIVE_FILE_PARSER_GUIDE.md`
-
-**Styling & UI**:
-- See `../styling/` directory
-
-**Reports & Analysis**:
-- See `../reports/` directory
-
-**Infrastructure**:
-- See `infrastructure/` directory
-
----
-
-## 📝 Documentation Status
-
-### **Consolidated** ✅
-- Identity Enforcement (3 files → 1)
-- Synth Canonical (2 files → 1)
-- VVAULT Connection (6 files → 1)
-- HTML Import (4 files → 1)
-
-### **Organized** ✅
-- Styling files → `../styling/` (21 files)
-- Reports → `../reports/` (30 files)
-- Architecture → `docs/architecture/`
-- Implementation → `docs/implementation/`
-
-### **Organized** ✅
-- All root-level documentation files organized into appropriate subdirectories
-- Architecture files → `architecture/`
-- Implementation files → `implementation/` (with `oauth/` and `lin/` subdirectories)
-- Guide files → `guides/`
-- Memory files → `memory/`
-- Rubrics → `rubrics/`
-- Analysis → `analysis/`
-- Debugging → `debugging/`
-- Specifications → `specifications/`
-
----
-
-## 🎯 For New Developers
-
-1. Start with **[Comprehensive Summary](./architecture/CHATTY_COMPREHENSIVE_SUMMARY.md)**
-2. Read **[Chatty Core Principles](./architecture/CHATTY_PRINCIPLES.md)** - Core principles and architecture
-3. Read **[Identity Enforcement Architecture](./architecture/IDENTITY_ENFORCEMENT_ARCHITECTURE.md)**
-4. Review **[VVAULT File Structure](./architecture/VVAULT_FILE_STRUCTURE.md)**
-5. Check **[Documentation Organization Plan](./DOCUMENTATION_ORGANIZATION_PLAN.md)** for organization status
-
----
-
-## 📊 Documentation Statistics
-
-- **Total Markdown Files**: 132
-- **Organized in docs/**: In progress
-- **Styling files**: 21 files in `styling/`
-- **Reports**: 30 files in `reports/`
-- **Consolidated**: 18 files → 5 files
-- **Net Reduction**: 13 files
-
----
-
-*This index is maintained as part of the documentation organization effort. Last updated January 16, 2026.*
+- code, manifests, and runtime scripts beat prose when they disagree
+- one canonical doc per topic
+- ticket-like notes belong in reports or archive, not live folders
+- new top-level sections are not allowed without a documented exception in [standards/docs-governance.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/docs-governance.md)

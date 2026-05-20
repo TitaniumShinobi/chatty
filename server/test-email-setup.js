@@ -129,7 +129,7 @@ console.log('==================');
 if (emailService === 'resend') {
   console.log('✅ You\'re using Resend (recommended)');
   console.log('📋 Next steps:');
-  console.log('   1. Verify your domain (thewreck.org) in Resend dashboard');
+  console.log('   1. Verify your domain (example.com) in Resend dashboard');
   console.log('   2. Set up SPF/DKIM DNS records');
   console.log('   3. Test with a real email address');
 } else {
@@ -138,7 +138,7 @@ if (emailService === 'resend') {
 
 if (smtpPass === 'dev-password') {
   console.log('⚠️  Update EMAIL_PASS with real Gmail App Password');
-  console.log('   1. Enable 2FA on info@thewreck.org');
+  console.log('   1. Enable 2FA on support@example.com');
   console.log('   2. Generate App Password in Google Account');
   console.log('   3. Update EMAIL_PASS in .env file');
 }

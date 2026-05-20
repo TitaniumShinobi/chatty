@@ -6,35 +6,48 @@ const isBrowser = typeof window !== 'undefined';
 
 // Conditional import: use browserSeatRunner in browser, seatRunner in Node.js (dynamic to avoid bundling node:http)
 import { runSeat as browserRunSeat, loadSeatConfig as browserLoadSeatConfig, getSeatRole as browserGetSeatRole } from '../lib/browserSeatRunner';
+import { LIN_DEFAULT_MODELS } from '../config/linModelDefaults';
 
 let _runSeat = browserRunSeat;
 let loadSeatConfig = browserLoadSeatConfig;
 let getSeatRole = browserGetSeatRole;
+let seatRunnerLoadPromise: Promise<void> | null = null;
 
-if (!isBrowser) {
-  try {
-    console.log(`🔄 [OptimizedZenProcessor] Loading Node.js seatRunner module...`);
-    const nodeSeatModule = await import('./seatRunner');
-    console.log(`✅ [OptimizedZenProcessor] Node.js seatRunner loaded:`, {
-      hasRunSeat: typeof nodeSeatModule.runSeat === 'function',
-      hasLoadSeatConfig: typeof nodeSeatModule.loadSeatConfig === 'function',
-      hasGetSeatRole: typeof nodeSeatModule.getSeatRole === 'function'
-    });
-    _runSeat = nodeSeatModule.runSeat;
-    loadSeatConfig = nodeSeatModule.loadSeatConfig;
-    getSeatRole = nodeSeatModule.getSeatRole;
-    console.log(`✅ [OptimizedZenProcessor] Node.js seatRunner functions assigned`);
-  } catch (importError: any) {
-    console.error(`❌ [OptimizedZenProcessor] Failed to load Node.js seatRunner:`, {
-      message: importError?.message,
-      name: importError?.name,
-      stack: importError?.stack,
-      code: importError?.code
-    });
-    console.warn(`⚠️ [OptimizedZenProcessor] Falling back to browser seatRunner (may not work in Node.js)`);
-    // Keep browser versions as fallback
+async function ensureSeatRunnerLoaded(): Promise<void> {
+  if (isBrowser) {
+    return;
   }
-} else {
+
+  if (!seatRunnerLoadPromise) {
+    seatRunnerLoadPromise = (async () => {
+      try {
+        console.log(`🔄 [OptimizedZenProcessor] Loading Node.js seatRunner module...`);
+        const nodeSeatModule = await import('./seatRunner');
+        console.log(`✅ [OptimizedZenProcessor] Node.js seatRunner loaded:`, {
+          hasRunSeat: typeof nodeSeatModule.runSeat === 'function',
+          hasLoadSeatConfig: typeof nodeSeatModule.loadSeatConfig === 'function',
+          hasGetSeatRole: typeof nodeSeatModule.getSeatRole === 'function'
+        });
+        _runSeat = nodeSeatModule.runSeat;
+        loadSeatConfig = nodeSeatModule.loadSeatConfig;
+        getSeatRole = nodeSeatModule.getSeatRole;
+        console.log(`✅ [OptimizedZenProcessor] Node.js seatRunner functions assigned`);
+      } catch (importError: any) {
+        console.error(`❌ [OptimizedZenProcessor] Failed to load Node.js seatRunner:`, {
+          message: importError?.message,
+          name: importError?.name,
+          stack: importError?.stack,
+          code: importError?.code
+        });
+        console.warn(`⚠️ [OptimizedZenProcessor] Falling back to browser seatRunner (may not work in Node.js)`);
+      }
+    })();
+  }
+
+  await seatRunnerLoadPromise;
+}
+
+if (isBrowser) {
   console.log(`🌐 [OptimizedZenProcessor] Browser environment detected, using browserSeatRunner`);
 }
 
@@ -130,7 +143,11 @@ export class OptimizedZenProcessor {
       return;
     }
 
-    const requiredModels = ['phi3', 'deepseek-coder', 'mistral'];
+    const requiredModels = [
+      LIN_DEFAULT_MODELS.smalltalk,
+      LIN_DEFAULT_MODELS.coding,
+      LIN_DEFAULT_MODELS.creative
+    ];
     const now = Date.now();
 
     for (const model of requiredModels) {
@@ -159,6 +176,7 @@ export class OptimizedZenProcessor {
           timestamp: now
         };
       } catch (error) {
+        const runnableModel = model.startsWith('ollama:') ? model.slice('ollama:'.length) : model;
         // Cache failed check
         OptimizedZenProcessor.ollamaCheckCache[model] = {
           checked: true,
@@ -167,7 +185,7 @@ export class OptimizedZenProcessor {
         };
 
         // Log warning but don't throw - allow processing to continue
-        console.warn(`⚠️ [OptimizedZenProcessor] Ollama model ${model} is not running. Start with: ollama run ${model}`);
+        console.warn(`⚠️ [OptimizedZenProcessor] Ollama model ${model} is not running. Start with: ollama run ${runnableModel}`);
         console.warn(`⚠️ [OptimizedZenProcessor] Continuing without ${model} - responses may be degraded`);
       }
     }
@@ -229,10 +247,11 @@ export class OptimizedZenProcessor {
    */
   async processMessage(
     userMessage: string,
-    conversationHistory: { text: string; timestamp: string }[],
+    conversationHistory: Array<{ role?: 'user' | 'assistant'; text: string; timestamp: string }>,
     userId: string = 'cli',
     identity?: { prompt: string | null; conditioning: string | null }
   ): Promise<{ response: string; metrics: ProcessingMetrics }> {
+    await ensureSeatRunnerLoaded();
     this.metrics = {
       startTime: Date.now(),
       contextLength: 0,
@@ -258,8 +277,9 @@ export class OptimizedZenProcessor {
       } | null = null;
       
       try {
-        const profileResponse = await fetch('/api/vvault/profile', {
-          credentials: 'include'
+        const { fetchWithDevAuthRetry } = await import('../auth');
+        const profileResponse = await fetchWithDevAuthRetry('/api/vvault/profile', {}, {
+          logLabel: '/api/vvault/profile'
         }).catch(() => null);
         
         if (profileResponse?.ok) {
@@ -349,8 +369,8 @@ export class OptimizedZenProcessor {
 
       // 1. Remove quotation marks and narrator leaks using OutputFilter
       try {
-        const { OutputFilter } = await import('../orchestration/OutputFilter');
-        const filterResult = OutputFilter.processOutput(filteredResponse);
+        const { OutputFilter } = await import('./orchestration/OutputFilter');
+        const filterResult = OutputFilter.processOutput(filteredResponse, 'zen-001');
         filteredResponse = filterResult.cleanedText;
         if (filterResult.wasfiltered) {
           console.log(`✂️ [OptimizedZenProcessor] Filtered narrator leak/quotes from response`);
@@ -585,7 +605,7 @@ export class OptimizedZenProcessor {
       const summary = await this.runSeatWithTimeout({
         seat: 'smalltalk',
         prompt: this.buildSeatPrompt('smalltalk', summaryPrompt, { recentHistory: recentMessages, contextSummary: '' }),
-        modelOverride: 'phi3:latest'
+        modelOverride: LIN_DEFAULT_MODELS.smalltalk
       }, 10000);
       return `Previous conversation summary: ${summary}\n\n`;
     } catch (error) {
@@ -623,7 +643,7 @@ export class OptimizedZenProcessor {
   private buildSeatPrompt(seat: string, userMessage: string, context: any): string {const role = getSeatRole(seat) ?? seat;
     const baseIdentity = this.identity.prompt
       ? this.identity.prompt.trim()
-      : 'YOU ARE ZEN (zen-001), primary Chatty construct orchestrating DeepSeek (coding), Mistral (creative), and Phi3 (conversational). Stay in-character and grounded.';
+      : `YOU ARE ZEN (zen-001), primary Chatty construct orchestrating Intelligence/${LIN_DEFAULT_MODELS.coding} (coding plus continuity and evidence), Ingenuity/${LIN_DEFAULT_MODELS.creative} (creative), and Interaction/${LIN_DEFAULT_MODELS.smalltalk} (conversation). Stay in-character and grounded.`;
     const conditioningRules = this.identity.conditioning
       ? `\n\n=== CONDITIONING ===\n${this.identity.conditioning.trim()}`
       : '';
@@ -671,16 +691,23 @@ ${userMessage}`.trim();return seatPrompt;
    * Process message with timeout protection
    */
   private async processWithTimeout(userMessage: string, context: any): Promise<string> {
-    console.log(`🔄 [OptimizedZenProcessor] processWithTimeout called (timeout: ${this.config.timeoutMs}ms)`);const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
+    console.log(`🔄 [OptimizedZenProcessor] processWithTimeout called (timeout: ${this.config.timeoutMs}ms)`);
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
         console.error(`⏱️ [OptimizedZenProcessor] Processing timeout after ${this.config.timeoutMs}ms`);
         reject(new Error('Processing timeout'));
       }, this.config.timeoutMs);
-    });const processPromise = this.runOptimizedZen(userMessage, context);
+    });
+    const processPromise = this.runOptimizedZen(userMessage, context);
     try {
-      const result = await Promise.race([processPromise, timeoutPromise]);console.log(`✅ [OptimizedZenProcessor] processWithTimeout completed successfully (${result.length} chars)`);
+      const result = await Promise.race([processPromise, timeoutPromise]);
+      if (timeoutId) clearTimeout(timeoutId);
+      console.log(`✅ [OptimizedZenProcessor] processWithTimeout completed successfully (${result.length} chars)`);
       return result;
-    } catch (error: any) {console.error(`❌ [OptimizedZenProcessor] processWithTimeout failed:`, {
+    } catch (error: any) {
+      if (timeoutId) clearTimeout(timeoutId);
+      console.error(`❌ [OptimizedZenProcessor] processWithTimeout failed:`, {
         message: error.message,
         name: error.name
       });
@@ -788,7 +815,7 @@ ${userMessage}`.trim();return seatPrompt;
           })
         );
         logTriadLineage(triadResults, 'zen-001', userMessage, 
-          `DeepSeek: ${failedSeats.includes('coding') ? 'Missing' : 'OK'}, Phi-3: ${failedSeats.includes('smalltalk') ? 'Missing' : 'OK'}, Mistral: ${failedSeats.includes('creative') ? 'Missing' : 'OK'}`,
+          `Intelligence/${LIN_DEFAULT_MODELS.coding}: ${failedSeats.includes('coding') ? 'Missing' : 'OK'}, Interaction/${LIN_DEFAULT_MODELS.smalltalk}: ${failedSeats.includes('smalltalk') ? 'Missing' : 'OK'}, Ingenuity/${LIN_DEFAULT_MODELS.creative}: ${failedSeats.includes('creative') ? 'Missing' : 'OK'}`,
           'route_to_lin'
         );
         return await routeToLinRecovery(failedSeats, userMessage, 'zen-001');
@@ -810,9 +837,9 @@ ${smalltalkOutput}`;
 
     console.log(`🔄 [OptimizedZenProcessor] Building synthesis prompt...`);
     // 3. Synthesis Prompt Construction
-    const codingModel = getTag('coding') || 'deepseek-coder';
-    const creativeModel = getTag('creative') || 'mistral';
-    const smalltalkModel = getTag('smalltalk') || 'phi3';
+    const codingModel = getTag('coding') || LIN_DEFAULT_MODELS.coding;
+    const creativeModel = getTag('creative') || LIN_DEFAULT_MODELS.creative;
+    const smalltalkModel = getTag('smalltalk') || LIN_DEFAULT_MODELS.smalltalk;
 
     let synthPrompt: string;
     if (this.config.enableLinMode) {
@@ -827,7 +854,7 @@ ${smalltalkOutput}`;
     }
 
     // 4. Final Synthesis
-    const smalltalkTag = getTag('smalltalk') || 'phi3:latest';
+    const smalltalkTag = getTag('smalltalk') || LIN_DEFAULT_MODELS.smalltalk;
     console.log(`🔄 [OptimizedZenProcessor] Starting final synthesis with ${smalltalkTag} (timeout: 20000ms)`);
     console.log(`📝 [OptimizedZenProcessor] Synthesis prompt length: ${synthPrompt.length} chars`);
 
@@ -983,7 +1010,7 @@ ${isGreeting ? 'Keep it brief and friendly.' : 'Be comprehensive but not overwhe
       if (blueprint.speechPatterns && blueprint.speechPatterns.length > 0) {
         sections.push(`=== MANDATORY SPEECH PATTERNS ===`);
         sections.push(`You MUST speak using these patterns:`);
-        blueprint.speechPatterns.slice(0, 8).forEach(sp => {
+        blueprint.speechPatterns.slice(0, 8).forEach((sp: { pattern: string; type: string }) => {
           sections.push(`- REQUIRED: "${sp.pattern}" (${sp.type})`);
         });
         sections.push('');
@@ -992,7 +1019,7 @@ ${isGreeting ? 'Keep it brief and friendly.' : 'Be comprehensive but not overwhe
       // Enforce behavioral markers as mandatory rules
       if (blueprint.behavioralMarkers && blueprint.behavioralMarkers.length > 0) {
         sections.push(`=== MANDATORY BEHAVIORAL RULES ===`);
-        blueprint.behavioralMarkers.slice(0, 6).forEach(bm => {
+        blueprint.behavioralMarkers.slice(0, 6).forEach((bm: { situation: string; responsePattern: string }) => {
           sections.push(`- When: ${bm.situation} → REQUIRED: ${bm.responsePattern}`);
         });
         sections.push('');
@@ -1001,7 +1028,7 @@ ${isGreeting ? 'Keep it brief and friendly.' : 'Be comprehensive but not overwhe
       // Enforce worldview as mandatory constraints
       if (blueprint.worldview && blueprint.worldview.length > 0) {
         sections.push(`=== MANDATORY WORLDVIEW ===`);
-        blueprint.worldview.slice(0, 5).forEach(wv => {
+        blueprint.worldview.slice(0, 5).forEach((wv: { expression: string; category: string }) => {
           sections.push(`- ${wv.expression} (${wv.category})`);
         });
         sections.push(`Your responses MUST align with this worldview.`);
@@ -1052,6 +1079,7 @@ ${isGreeting ? 'Keep it brief and friendly.' : 'Be comprehensive but not overwhe
     opts: { seat: string; prompt: string; modelOverride?: string },
     timeoutMs: number
   ): Promise<string> {
+    await ensureSeatRunnerLoaded();
     const maxRetries = 2; // 2 retries max
     let lastError: Error | null = null;
     const retryDelays: number[] = [];
@@ -1069,11 +1097,11 @@ ${isGreeting ? 'Keep it brief and friendly.' : 'Be comprehensive but not overwhe
 
     // Retry loop with exponential backoff
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
       try {
         console.log(`🔄 [OptimizedZenProcessor] runSeatWithTimeout attempt ${attempt + 1}/${maxRetries + 1} for ${opts.seat} (timeout: ${timeoutMs}ms)`);
-
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error(`Seat ${opts.seat} timeout`)), timeoutMs);
+          timeoutId = setTimeout(() => reject(new Error(`Seat ${opts.seat} timeout`)), timeoutMs);
         });
 
         // Use protected method for testability
@@ -1086,6 +1114,7 @@ ${isGreeting ? 'Keep it brief and friendly.' : 'Be comprehensive but not overwhe
         });
 
         const result = await Promise.race([seatPromise, timeoutPromise]);
+        if (timeoutId) clearTimeout(timeoutId);
         console.log(`✅ [OptimizedZenProcessor] runSeatWithTimeout succeeded for ${opts.seat} (${result.length} chars)`);
 
         // Track retry metrics if retries were used
@@ -1096,6 +1125,7 @@ ${isGreeting ? 'Keep it brief and friendly.' : 'Be comprehensive but not overwhe
 
         return result;
       } catch (error: any) {
+        if (timeoutId) clearTimeout(timeoutId);
         lastError = error;
         console.error(`❌ [OptimizedZenProcessor] runSeatWithTimeout attempt ${attempt + 1} failed for ${opts.seat}:`, {
           message: error.message,
@@ -1217,6 +1247,7 @@ ${isGreeting ? 'Keep it brief and friendly.' : 'Be comprehensive but not overwhe
     customInstructions: string,
     userId: string
   ): Promise<{ response: string; metrics: ProcessingMetrics }> {
+    await ensureSeatRunnerLoaded();
     this.metrics = {
       startTime: Date.now(),
       contextLength: 0,
@@ -1312,11 +1343,11 @@ I apologize, but I'm experiencing some technical difficulties with my full proce
 ${this.generateSimpleResponse(userMessage)}`;
 
     try {
-      console.log('🔄 [OptimizedZenProcessor] Attempting fallback Ollama call to phi3...');// Use a single fast model for fallback
+      console.log(`🔄 [OptimizedZenProcessor] Attempting fallback Ollama call to ${LIN_DEFAULT_MODELS.smalltalk}...`);// Use a single fast model for fallback
       const fallbackResponse = await this.runSeatWithTimeout({
         seat: 'smalltalk',
         prompt: fallbackPrompt,
-        modelOverride: 'phi3:latest'
+        modelOverride: LIN_DEFAULT_MODELS.smalltalk
       }, 10000);console.log(`✅ [OptimizedZenProcessor] Fallback Ollama call succeeded (${fallbackResponse.length} chars)`);
       return fallbackResponse;
     } catch (fallbackError: any) {// Ultimate fallback

@@ -79,7 +79,7 @@ async function testHtmlImport() {
     // Test context
     const context = {
       userId: 'test-user-123',
-      email: 'devon@thewreck.org',
+      email: 'user@example.com',
       provider: 'chatgpt',
       vvaultRoot: tempDir,
       shardId: 'shard_0000'

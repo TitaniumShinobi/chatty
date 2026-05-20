@@ -1,5 +1,5 @@
 {
-  "smalltalk": { "tag": "phi3:latest", "role": "general chat and synthesis" },
-  "coding": { "tag": "deepseek-coder:latest", "role": "technical and code reasoning" },
-  "creative": { "tag": "mistral:latest", "role": "creative language and storytelling" }
+  "smalltalk": { "tag": "ollama:phi4-mini:latest", "role": "general chat and synthesis" },
+  "coding": { "tag": "ollama:qwen3-coder:30b", "role": "Intelligence seat: coding, continuity, truth, evidence, risk, and canon verification" },
+  "creative": { "tag": "ollama:mistral-small3.2:24b", "role": "creative language and storytelling" }
 }

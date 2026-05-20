@@ -11,7 +11,8 @@ def navigate_to_project(project_name):
     Returns:
         str: The absolute path of the project directory.
     """
-  base_path = "/Users/devonwoodson/Library/Mobile Documents/com~apple~CloudDocs/Vault/nova-001"
+  icloud_vault_root = os.environ.get('ICLOUD_VAULT_ROOT', '')
+  base_path = f"{icloud_vault_root}/nova-001"
   project_paths = {
       "GitHub": os.path.join(base_path, "documents/Documents/GitHub"),
       "continuity": os.path.join(base_path, "chatgpt"),

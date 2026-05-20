@@ -1,45 +1,14 @@
-# Feature Documentation
+# Features
 
-**Last Updated**: November 15, 2025
+Durable capability docs live here.
 
-This directory contains documentation for Chatty's major features and capabilities.
+## Live Feature Docs
 
----
+- [RAG_SYSTEM.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/features/RAG_SYSTEM.md)
+- [COMMUNITY_GPTs_STRUCTURE.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/features/COMMUNITY_GPTs_STRUCTURE.md)
+- [AGENT_DIRECT_SEND.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/features/AGENT_DIRECT_SEND.md)
+- [file-intelligence.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/features/file-intelligence.md)
+- [gpt-creator-and-lin.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/features/gpt-creator-and-lin.md)
+- [profile-photos.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/features/profile-photos.md)
 
-## 📁 Contents
-
-### **VVAULT Integration**
-- `VVAULT_COMPLETE_GUIDE.md` - **Consolidated guide** covering file structure, account linking, memory sharing, sidebar integration, and import structure
-
-### **RAG System**
-- `RAG_SYSTEM.md` - **Consolidated guide** covering RAG implementation, verification checklist, and usage
-
-### **GPT Features**
-- `COMMUNITY_GPTs_STRUCTURE.md` - Community GPTs architecture and structure
-- `RUNTIME_IMPORT_PROCESSING_EXPLANATION.md` - Runtime import processing with Lin synthesis mode
-
-### **File Processing**
-- `OCR_INTEGRATION_PLAN.md` - OCR integration plan for PNG knowledge files
-
-### **Legacy Files** (Consolidated Above)
-- ~~`VVAULT_FILE_STRUCTURE.md`~~ → Merged into `VVAULT_COMPLETE_GUIDE.md`
-- ~~`VVAULT_IMPORT_FILE_STRUCTURE.md`~~ → Merged into `VVAULT_COMPLETE_GUIDE.md`
-- ~~`VVAULT_ACCOUNT_LINKING.md`~~ → Merged into `VVAULT_COMPLETE_GUIDE.md`
-- ~~`VVAULT_MEMORY_SHARING.md`~~ → Merged into `VVAULT_COMPLETE_GUIDE.md`
-- ~~`VVAULT_SIDEBAR_INTEGRATION.md`~~ → Merged into `VVAULT_COMPLETE_GUIDE.md`
-- ~~`RETRIEVAL_AUGMENTED_GENERATION.md`~~ → Merged into `RAG_SYSTEM.md`
-- ~~`RAG_VERIFICATION_CHECKLIST.md`~~ → Merged into `RAG_SYSTEM.md`
-
----
-
-## 🎯 Quick Reference
-
-**VVAULT**: See `VVAULT_COMPLETE_GUIDE.md`  
-**RAG**: See `RAG_SYSTEM.md`  
-**Community GPTs**: See `COMMUNITY_GPTs_STRUCTURE.md`  
-**Runtime Import**: See `RUNTIME_IMPORT_PROCESSING_EXPLANATION.md`
-
----
-
-*This directory is part of the Chatty documentation organization effort.*
-
+Legacy feature writeups were moved out of the live surface once they became duplicates, implementation notes, or point-in-time reports.

@@ -15,7 +15,15 @@ const capabilitiesSchema = new mongoose.Schema({
   },
   codeInterpreter: {
     type: Boolean,
-    default: true
+    default: false
+  },
+  agent: {
+    type: Boolean,
+    default: false
+  },
+  proactiveInitiation: {
+    type: Boolean,
+    default: false
   }
 }, { _id: false });
 
@@ -49,7 +57,9 @@ const gptSchema = new mongoose.Schema({
       webSearch: false,
       canvas: false,
       imageGeneration: false,
-      codeInterpreter: true
+      codeInterpreter: false,
+      agent: false,
+      proactiveInitiation: false
     })
   },
   modelId: {

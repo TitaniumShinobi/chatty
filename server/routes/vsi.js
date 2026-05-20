@@ -4,8 +4,8 @@
  */
 
 import express from 'express';
-import { requireAuth } from '../middleware/auth.js';
-import { requireVSIConstruct, requireVSIScope, attachVSIContext } from '../middleware/vsiAuth.js';
+import { requireAuth } from '../auth/middleware/auth.js';
+import { requireVSIConstruct, requireVSIScope, attachVSIContext, requireVSIAdminAccess } from '../middleware/vsiAuth.js';
 import { getManifestService } from '../lib/vsi/manifestService.js';
 import { getPermissionService } from '../lib/vsi/permissionService.js';
 import { getAuditLogger } from '../lib/vsi/auditLogger.js';
@@ -29,10 +29,16 @@ router.get('/status', (req, res) => {
   const permissionService = getPermissionService();
   const zenPermissions = permissionService.getConstructPermissions('zen-001');
   const zenPolicy = permissionService.getConstructPolicy('zen-001');
+  const runtime = permissionService.getRuntimeControls();
 
   res.json({
     ok: true,
     vsiEnabled: true,
+    runtime: {
+      mode: permissionService.canApplyEdits() ? 'editable' : 'read_only',
+      applyEditsAllowed: permissionService.canApplyEdits(),
+      ...runtime
+    },
     constructs: {
       'zen-001': {
         permissions: zenPermissions,
@@ -41,6 +47,36 @@ router.get('/status', (req, res) => {
     }
   });
 });
+
+/**
+ * POST /api/vsi/admin/disable-agents
+ * Authenticated admin control that forces VSI into read-only mode.
+ */
+export async function disableAgentsHandler(req, res) {
+  const permissionService = getPermissionService();
+  const auditLogger = getAuditLogger();
+  const disabledBy = req.vsiAdmin?.actor || req.user?.email || req.user?.sub || req.user?.id || 'admin';
+  const reason = String(req.body?.reason || 'manual_admin_disable').trim() || 'manual_admin_disable';
+  const runtime = permissionService.setReadOnlyMode({ actor: disabledBy, reason });
+
+  await auditLogger.logIdentityGuard('zen-001', 'agent_mode_disabled', {
+    userId: disabledBy,
+    reason,
+    runtimeMode: 'read_only'
+  });
+
+  return res.json({
+    ok: true,
+    mode: 'read_only',
+    runtime: {
+      mode: 'read_only',
+      applyEditsAllowed: false,
+      ...runtime
+    }
+  });
+}
+
+router.post('/admin/disable-agents', requireVSIAdminAccess, disableAgentsHandler);
 
 /**
  * GET /api/vsi/philosophy
@@ -363,6 +399,7 @@ router.get('/scopes', (req, res) => {
 
 console.log('✅ [VSI Routes] Zero-trust VSI routes initialized');
 console.log('   - GET  /api/vsi/status');
+console.log('   - POST /api/vsi/admin/disable-agents');
 console.log('   - GET  /api/vsi/permissions/:constructId');
 console.log('   - POST /api/vsi/manifest/propose');
 console.log('   - GET  /api/vsi/manifest/:id/preview');

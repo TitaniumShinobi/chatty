@@ -5,6 +5,17 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import { ServerFileParser } from './serverFileParser.js';
+import {
+  assertConstructSovereignty,
+  isStoreListingAllowed,
+} from './constructSovereigntyPolicy.js';
+import {
+  applyForgedSimLockToRecord,
+  pickPreferredRuntimeConfigRecord,
+  readForgedSimLock,
+} from './forgedSimLock.js';
+import { buildAIQueryUserIds, buildOwnerCandidateIds } from './aiUserAliases.js';
+import { convertImageBufferToPng } from './avatarCanonicalization.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,6 +38,13 @@ const stripLegalFrameworks = (text = '') => {
 };
 
 const sanitizeInstructions = (text = '') => stripLegalFrameworks(text).trim();
+
+function withSourceTable(rows = [], sourceTable = '') {
+  return (Array.isArray(rows) ? rows : []).filter(Boolean).map((row) => ({
+    ...row,
+    __source_table: sourceTable,
+  }));
+}
 
 function guessMimeType(filename) {
   if (!filename) return null;
@@ -127,6 +145,8 @@ export class AIManager {
     const hasCodingModel = columns.some(col => col.name === 'coding_model');
     const hasOrchestrationMode = columns.some(col => col.name === 'orchestration_mode');
     const hasPrivacy = columns.some(col => col.name === 'privacy');
+    const hasProvider = columns.some(col => col.name === 'provider');
+    const hasConfigJson = columns.some(col => col.name === 'config_json');
 
     if (!hasConversationModel) {
       this.db.exec(`ALTER TABLE ais ADD COLUMN conversation_model TEXT`);
@@ -142,6 +162,12 @@ export class AIManager {
     }
     if (!hasPrivacy) {
       this.db.exec(`ALTER TABLE ais ADD COLUMN privacy TEXT DEFAULT 'private'`);
+    }
+    if (!hasProvider) {
+      this.db.exec(`ALTER TABLE ais ADD COLUMN provider TEXT`);
+    }
+    if (!hasConfigJson) {
+      this.db.exec(`ALTER TABLE ais ADD COLUMN config_json TEXT`);
     }
 
     const hasMemoryEnabled = columns.some(col => col.name === 'memory_enabled');
@@ -181,6 +207,8 @@ export class AIManager {
     try {
       const gptsColumns = this.db.prepare(`PRAGMA table_info(gpts)`).all();
       const gptsHasPrivacy = gptsColumns.some(col => col.name === 'privacy');
+      const gptsHasProvider = gptsColumns.some(col => col.name === 'provider');
+      const gptsHasConfigJson = gptsColumns.some(col => col.name === 'config_json');
       if (!gptsHasPrivacy) {
         this.db.exec(`ALTER TABLE gpts ADD COLUMN privacy TEXT DEFAULT 'private'`);
         // Backfill gpts table
@@ -193,6 +221,12 @@ export class AIManager {
             END
           )
         `);
+      }
+      if (!gptsHasProvider) {
+        this.db.exec(`ALTER TABLE gpts ADD COLUMN provider TEXT`);
+      }
+      if (!gptsHasConfigJson) {
+        this.db.exec(`ALTER TABLE gpts ADD COLUMN config_json TEXT`);
       }
     } catch (error) {
       // gpts table might not exist, that's okay
@@ -256,9 +290,9 @@ export class AIManager {
     let VVAULT_ROOT;
     try {
       const config = await import('../../vvaultConnector/config.js');
-      VVAULT_ROOT = config.VVAULT_ROOT || process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+      VVAULT_ROOT = config.VVAULT_ROOT || process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
     } catch (error) {
-      VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+      VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
       console.warn(`⚠️ [AIManager] Could not load VVAULT_ROOT from config, using: ${VVAULT_ROOT}`);
     }
 
@@ -290,9 +324,9 @@ export class AIManager {
     let VVAULT_ROOT;
     try {
       const config = await import('../../vvaultConnector/config.js');
-      VVAULT_ROOT = config.VVAULT_ROOT || process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+      VVAULT_ROOT = config.VVAULT_ROOT || process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
     } catch (error) {
-      VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+      VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
       console.warn(`⚠️ [AIManager] Could not load VVAULT_ROOT from config, using: ${VVAULT_ROOT}`);
     }
 
@@ -348,16 +382,13 @@ export class AIManager {
       let buffer = Buffer.from(base64Data, 'base64');
 
       // Convert non-PNG images to PNG if sharp is available
-      // Otherwise, keep as-is (will save as PNG filename but may have format issues)
       if (mimeType !== 'png') {
         try {
-          const sharp = require('sharp');
-          buffer = await sharp(buffer).png().toBuffer();
+          buffer = await convertImageBufferToPng(buffer, `image/${mimeType}`);
           console.log(`🔄 [AIManager] Converted ${mimeType} image to PNG`);
         } catch (sharpError) {
-          // Sharp not available or conversion failed - keep original buffer
-          // Note: This may cause issues if the file is saved as .png but contains non-PNG data
-          console.warn(`⚠️ [AIManager] Could not convert ${mimeType} to PNG (sharp not available), saving as-is`);
+          console.warn(`⚠️ [AIManager] Could not convert ${mimeType} to PNG: ${sharpError.message}`);
+          throw sharpError;
         }
       }
 
@@ -446,12 +477,27 @@ export class AIManager {
     const id = `ai-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
+    assertConstructSovereignty({
+      name: config.name,
+      constructCallsign: config.constructCallsign || config.construct_call_sign || config.callsign,
+      id: config.id,
+      actor: {
+        userId: config.userId || config.user_id,
+        email: config.userEmail || config.email,
+        supabaseUserId: config.supabaseUserId,
+      },
+      operation: 'gpt_create',
+    });
+
     // Auto-generate constructCallsign if not provided
     let constructCallsign = config.constructCallsign;
     if (!constructCallsign && config.name) {
       try {
         constructCallsign = await this.generateConstructCallsign(config.name, config.userId || 'anonymous');
       } catch (error) {
+        if (error.statusCode === 403 || error.code === 'restricted_construct_name') {
+          throw error;
+        }
         console.warn(`⚠️ [GPTManager] Failed to generate constructCallsign: ${error.message}, using null`);
         constructCallsign = null;
       }
@@ -481,47 +527,51 @@ export class AIManager {
     const privacy = config.privacy || (config.isActive ? 'link' : 'private');
     const isActive = privacy !== 'private'; // Map privacy to isActive for backward compatibility
 
+    const normalizedConfig = applyForgedSimLockToRecord(config);
+
     const stmt = this.db.prepare(`
       INSERT INTO ais (
         id, name, description, instructions, conversation_starters, avatar, capabilities, construct_callsign, 
-        model_id, conversation_model, creative_model, coding_model, orchestration_mode, 
+        model_id, conversation_model, creative_model, coding_model, orchestration_mode, provider, config_json,
         memory_enabled, memory_profile, roleplay_enabled,
         is_active, privacy, created_at, updated_at, user_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
       id,
-      config.name,
-      config.description,
-      sanitizeInstructions(config.instructions),
-      JSON.stringify(config.conversationStarters || []),
+      normalizedConfig.name,
+      normalizedConfig.description,
+      sanitizeInstructions(normalizedConfig.instructions),
+      JSON.stringify(normalizedConfig.conversationStarters || []),
       avatarPath,
-      JSON.stringify(config.capabilities || {}),
+      JSON.stringify(normalizedConfig.capabilities || {}),
       constructCallsign,
-      config.modelId,
-      config.conversationModel || config.modelId,
-      config.creativeModel || config.modelId,
-      config.codingModel || config.modelId,
-      config.orchestrationMode || 'lin',
-      config.memoryEnabled ? 1 : 0,
-      config.memoryProfile || 'off',
-      config.roleplayEnabled ? 1 : 0,
+      normalizedConfig.modelId,
+      normalizedConfig.conversationModel || normalizedConfig.modelId,
+      normalizedConfig.creativeModel || normalizedConfig.modelId,
+      normalizedConfig.codingModel || normalizedConfig.modelId,
+      normalizedConfig.orchestrationMode || 'lin',
+      normalizedConfig.provider || null,
+      normalizedConfig.configJson ? JSON.stringify(normalizedConfig.configJson) : null,
+      normalizedConfig.memoryEnabled ? 1 : 0,
+      normalizedConfig.memoryProfile || 'off',
+      normalizedConfig.roleplayEnabled ? 1 : 0,
       isActive ? 1 : 0,
       privacy,
       now,
       now,
-      config.userId || 'anonymous'
+      normalizedConfig.userId || 'anonymous'
     );
 
-    this.recordVersion(id, 1, { ...config, constructCallsign, avatar: avatarPath, privacy });
+    this.recordVersion(id, 1, { ...normalizedConfig, constructCallsign, avatar: avatarPath, privacy });
 
-    const cleanInstructions = sanitizeInstructions(config.instructions);
+    const cleanInstructions = sanitizeInstructions(normalizedConfig.instructions);
 
     return {
       id,
-      ...config,
+      ...normalizedConfig,
       instructions: cleanInstructions,
       avatar: avatarPath,
       privacy,
@@ -531,14 +581,503 @@ export class AIManager {
       createdAt: now,
       updatedAt: now,
       constructCallsign: constructCallsign,
-      conversationModel: config.conversationModel || config.modelId,
-      creativeModel: config.creativeModel || config.modelId,
-      codingModel: config.codingModel || config.modelId,
-      orchestrationMode: config.orchestrationMode || 'lin',
-      memoryEnabled: Boolean(config.memoryEnabled),
-      memoryProfile: config.memoryProfile || 'off',
-      roleplayEnabled: Boolean(config.roleplayEnabled)
+      conversationModel: normalizedConfig.conversationModel || normalizedConfig.modelId,
+      creativeModel: normalizedConfig.creativeModel || normalizedConfig.modelId,
+      codingModel: normalizedConfig.codingModel || normalizedConfig.modelId,
+      orchestrationMode: normalizedConfig.orchestrationMode || 'lin',
+      provider: normalizedConfig.provider || null,
+      configJson: normalizedConfig.configJson || null,
+      memoryEnabled: Boolean(normalizedConfig.memoryEnabled),
+      memoryProfile: normalizedConfig.memoryProfile || 'off',
+      roleplayEnabled: Boolean(normalizedConfig.roleplayEnabled)
     };
+  }
+
+  parseJsonField(raw, fallback) {
+    if (raw === null || raw === undefined || raw === '') return fallback;
+    if (typeof raw === 'object') return raw;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return fallback;
+    }
+  }
+
+  normalizeAvatarUrlForRow(row) {
+    const invalidAvatarValues = new Set(['', 'null', 'undefined', 'avatar']);
+    let avatarUrl = typeof row?.avatar === 'string' ? row.avatar.trim() : row?.avatar || null;
+    if (typeof avatarUrl === 'string' && invalidAvatarValues.has(avatarUrl.toLowerCase())) {
+      avatarUrl = null;
+    }
+
+    const callsign = row?.construct_callsign ? String(row.construct_callsign).trim() : '';
+    if (!avatarUrl) {
+      return null;
+    }
+
+    if (avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://')) {
+      return avatarUrl;
+    }
+
+    if (callsign && /^\/api\/ais\/[^/]+\/avatar(?:[?#].*)?$/i.test(avatarUrl)) {
+      return `/api/ais/${encodeURIComponent(callsign)}/avatar`;
+    }
+
+    if (avatarUrl.startsWith('/api/')) {
+      return avatarUrl;
+    }
+
+    if (callsign && (avatarUrl.startsWith('instances/') || avatarUrl.startsWith('data:image/'))) {
+      return `/api/ais/${encodeURIComponent(callsign)}/avatar`;
+    }
+
+    if (avatarUrl.startsWith('instances/')) {
+      return `/api/ais/${row.id}/avatar`;
+    }
+    if (avatarUrl.startsWith('data:image/')) {
+      return `/api/ais/${row.id}/avatar`;
+    }
+    return avatarUrl;
+  }
+
+  normalizePrivacyForRow(row) {
+    return row?.privacy || (row?.is_active ? 'link' : 'private');
+  }
+
+  async getVSIFlags(row) {
+    if (!row?.construct_callsign || !row?.user_id) {
+      return { vsiProtected: false, vsiStatus: false };
+    }
+    try {
+      const { checkVSIStatus } = await import('./vsiProtection.js');
+      const vsiCheck = await checkVSIStatus(row.user_id, row.construct_callsign);
+      return {
+        vsiProtected: vsiCheck.isVSI,
+        vsiStatus: vsiCheck.isVSI,
+      };
+    } catch (error) {
+      console.warn(`⚠️ [AIManager] Failed to check VSI status for ${row.construct_callsign}:`, error.message);
+      return { vsiProtected: false, vsiStatus: false };
+    }
+  }
+
+  buildAISummaryFromRow(row, options = {}) {
+    if (!row) return null;
+
+    const {
+      includeInstructions = true,
+      includeConversationStarters = true,
+    } = options;
+
+    const capabilities = this.parseJsonField(row.capabilities, {});
+    const tags = this.parseJsonField(row.tags, []);
+    const categories = this.parseJsonField(row.categories, []);
+    const configJson = this.parseJsonField(row.config_json, null);
+    const displayName =
+      row.display_name ||
+      configJson?.displayName ||
+      row.name;
+    const fullName =
+      row.full_name ||
+      configJson?.fullName ||
+      displayName;
+    const aliases = this.parseJsonField(row.aliases, configJson?.aliases || []);
+    const canonRefs = Array.isArray(configJson?.canonRefs) ? configJson.canonRefs : [];
+    const knowledgeRefs = Array.isArray(configJson?.knowledgeRefs) ? configJson.knowledgeRefs : [];
+    const conversationStarters = includeConversationStarters
+      ? this.parseJsonField(row.conversation_starters, [])
+      : [];
+    const instructions = includeInstructions ? sanitizeInstructions(row.instructions || '') : undefined;
+    const avatarUrl = this.normalizeAvatarUrlForRow(row);
+    const privacy = this.normalizePrivacyForRow(row);
+
+    return {
+      id: row.id,
+      name: displayName || row.name,
+      displayName: displayName || row.name,
+      fullName: fullName || displayName || row.name,
+      aliases,
+      description: row.description,
+      instructions,
+      systemPromptOverride: includeInstructions ? instructions : undefined,
+      conversationStarters,
+      avatar: avatarUrl,
+      avatarUrl: avatarUrl,
+      model: row.model || row.model_id || null,
+      provider: row.provider || configJson?.provider || null,
+      capabilities,
+      tags,
+      categories,
+      canonRefs,
+      knowledgeRefs,
+      configJson,
+      conditioning: typeof configJson?.conditioning === 'string' ? configJson.conditioning : '',
+      constructCallsign: row.construct_callsign || null,
+      modelId: row.model_id || null,
+      conversationModel: row.conversation_model || row.model_id || null,
+      creativeModel: row.creative_model || row.model_id || null,
+      codingModel: row.coding_model || row.model_id || null,
+      orchestrationMode: row.orchestration_mode || 'lin',
+      memoryEnabled: Boolean(row.memory_enabled),
+      memoryProfile: row.memory_profile || 'off',
+      roleplayEnabled: Boolean(row.roleplay_enabled),
+      files: [],
+      actions: [],
+      hasPersistentMemory: true,
+      isActive: Boolean(row.is_active),
+      privacy,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      userId: row.user_id,
+      // Summary endpoints intentionally avoid filesystem/VSI checks.
+      // Call /api/ais/vsi-status for lazy VSI hydration.
+      vsiProtected: false,
+      vsiStatus: false
+    };
+  }
+
+  getRawAIRowById(id) {
+    let row = null;
+    let fromGPTsTable = false;
+    try {
+      const aisStmt = this.db.prepare('SELECT * FROM ais WHERE id = ?');
+      row = aisStmt.get(id);
+    } catch (error) {
+      console.log(`ℹ️ [AIManager] ais table query failed for ${id}: ${error.message}`);
+    }
+
+    if (!row) {
+      try {
+        const gptsStmt = this.db.prepare('SELECT * FROM gpts WHERE id = ?');
+        row = gptsStmt.get(id);
+        if (row) fromGPTsTable = true;
+      } catch (error) {
+        console.log(`ℹ️ [AIManager] gpts table query failed for ${id}: ${error.message}`);
+      }
+    }
+
+    return { row, fromGPTsTable };
+  }
+
+  getRawAIRowByCallsign(constructCallsign, userId = null, options = {}) {
+    let aisRows = [];
+    let gptsRows = [];
+
+    try {
+      const aisStmt = this.db.prepare('SELECT * FROM ais WHERE construct_callsign = ?');
+      aisRows = withSourceTable(aisStmt.all(constructCallsign), 'ais');
+    } catch (error) {
+      console.log(`ℹ️ [AIManager] ais callsign query failed for ${constructCallsign}: ${error.message}`);
+    }
+
+    try {
+      const gptsStmt = this.db.prepare('SELECT * FROM gpts WHERE construct_callsign = ?');
+      gptsRows = withSourceTable(gptsStmt.all(constructCallsign), 'gpts');
+    } catch (error) {
+      console.log(`ℹ️ [AIManager] gpts callsign query failed for ${constructCallsign}: ${error.message}`);
+    }
+
+    const ownerCandidateIds = buildOwnerCandidateIds({
+      userId,
+      chattyUserId: options.chattyUserId || null,
+      email: options.email || null,
+    });
+    const preferredUserIds = Array.from(ownerCandidateIds);
+    const row = pickPreferredRuntimeConfigRecord([...aisRows, ...gptsRows], {
+      preferredUserIds,
+    });
+
+    if (row && preferredUserIds.length > 0 && !ownerCandidateIds.has(String(row.user_id || ''))) {
+      return { row: null, fromGPTsTable: false };
+    }
+
+    const fromGPTsTable = row?.__source_table === 'gpts';
+
+    return { row, fromGPTsTable };
+  }
+
+  async getAISummary(idOrCallsign, userId = null, options = {}) {
+    if (!idOrCallsign) return null;
+
+    const ownerCandidateIds = buildOwnerCandidateIds({
+      userId,
+      chattyUserId: options.chattyUserId || null,
+      email: options.email || null,
+    });
+
+    const { row: byId } = this.getRawAIRowById(idOrCallsign);
+    if (byId && (ownerCandidateIds.size === 0 || ownerCandidateIds.has(String(byId.user_id || '')))) {
+      return this.buildAISummaryFromRow(byId, {
+        includeInstructions: true,
+        includeConversationStarters: true,
+      });
+    }
+
+    const { row: byCallsign } = this.getRawAIRowByCallsign(idOrCallsign, userId, options);
+    if (!byCallsign) return null;
+
+    return this.buildAISummaryFromRow(byCallsign, {
+      includeInstructions: true,
+      includeConversationStarters: true,
+    });
+  }
+
+  async getAIAvatarLookup(idOrCallsign, options = {}) {
+    if (!idOrCallsign) return null;
+
+    const lookupKey = String(idOrCallsign).trim();
+    if (!lookupKey) return null;
+
+    const {
+      userId = null,
+      chattyUserId = null,
+      email = null,
+    } = options;
+
+    const ownerCandidateIds = buildOwnerCandidateIds({
+      userId,
+      chattyUserId,
+      email,
+    });
+
+    const isOwnerAllowed = (ownerUserId) => {
+      if (ownerCandidateIds.size === 0) return true;
+      return ownerCandidateIds.has(String(ownerUserId || ''));
+    };
+
+    const mapLookupRow = (row, fromGPTsTable = false, forbidden = false) => ({
+      id: row?.id || null,
+      constructCallsign: row?.construct_callsign || null,
+      userId: row?.user_id || null,
+      rawAvatarPath: row?.avatar || null,
+      fromGPTsTable: Boolean(fromGPTsTable),
+      forbidden: Boolean(forbidden),
+    });
+
+    let forbiddenMatch = null;
+
+    const { row: rowById, fromGPTsTable: fromIdGPTsTable } = this.getRawAIRowById(lookupKey);
+    if (rowById) {
+      const ownerAllowed = isOwnerAllowed(rowById.user_id || null);
+      if (ownerAllowed) {
+        return mapLookupRow(rowById, fromIdGPTsTable, false);
+      }
+      forbiddenMatch = mapLookupRow(rowById, fromIdGPTsTable, true);
+    }
+
+    const callsignCandidates = Array.from(
+      new Set([
+        lookupKey,
+        lookupKey.startsWith('supabase-') ? lookupKey.slice('supabase-'.length) : null,
+      ].filter(Boolean))
+    );
+
+    const ownerSearchIds = Array.from(ownerCandidateIds);
+    for (const callsign of callsignCandidates) {
+      for (const ownerSearchId of ownerSearchIds) {
+        const { row, fromGPTsTable } = this.getRawAIRowByCallsign(callsign, ownerSearchId, {
+          chattyUserId,
+          email,
+        });
+        if (row) {
+          return mapLookupRow(row, fromGPTsTable, false);
+        }
+      }
+    }
+
+    for (const callsign of callsignCandidates) {
+      const { row, fromGPTsTable } = this.getRawAIRowByCallsign(callsign);
+      if (!row) continue;
+      const ownerAllowed = isOwnerAllowed(row.user_id || null);
+      if (ownerAllowed) {
+        return mapLookupRow(row, fromGPTsTable, false);
+      }
+      if (!forbiddenMatch) {
+        forbiddenMatch = mapLookupRow(row, fromGPTsTable, true);
+      }
+    }
+
+    return forbiddenMatch;
+  }
+
+  async getMergedAIRows(userId, originalUserId = null, email = null, options = {}) {
+    const { includeSupabase = true } = options;
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+    if (!userId) {
+      console.warn('⚠️ [AIManager] getMergedAIRows called with null/undefined userId');
+      return { rows: [], rowSourceMap: new Map() };
+    }
+
+    const aisRows = [];
+    const gptsRows = [];
+    const userIds = buildAIQueryUserIds({ userId, originalUserId, email });
+
+    for (const uid of userIds) {
+      try {
+        const stmt = this.db.prepare('SELECT * FROM ais WHERE user_id = ? ORDER BY updated_at DESC');
+        const found = stmt.all(uid);
+        if (found.length > 0) {
+          aisRows.push(...found);
+        }
+      } catch (error) {
+        console.log(`ℹ️ [AIManager] ais table query failed: ${error.message}`);
+      }
+    }
+
+    for (const uid of userIds) {
+      try {
+        const stmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? ORDER BY updated_at DESC');
+        const found = stmt.all(uid);
+        if (found.length > 0) {
+          gptsRows.push(...found);
+        }
+      } catch (error) {
+        console.log(`ℹ️ [AIManager] gpts table query failed: ${error.message}`);
+      }
+    }
+
+    const supabaseRows = [];
+    if (includeSupabase) {
+      try {
+        const { getSupabaseClient } = await import('./supabaseClient.js');
+        const { resolveSupabaseUserId } = await import('../auth/lib/supabaseUserResolver.js');
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          const lookupId = email || userId;
+          const { supabaseUserId } = await resolveSupabaseUserId({
+            email: email || null,
+            chattyUserId: email ? null : lookupId,
+          });
+          if (supabaseUserId) {
+            const { data: identityFiles, error: sbError } = await supabase
+              .from('vault_files')
+              .select('id, filename, content, metadata, construct_id, user_id, created_at')
+              .eq('user_id', supabaseUserId)
+              .or('filename.like.instances/%/identity/prompt.txt,filename.like.instances/%/identity/prompt.json')
+              .order('created_at', { ascending: false });
+
+            if (sbError) {
+              console.warn(`⚠️ [AIManager] Supabase vault_files query failed:`, sbError.message);
+            } else if (identityFiles && identityFiles.length > 0) {
+              const existingCallsigns = new Set([
+                ...aisRows.map(r => r.construct_callsign),
+                ...gptsRows.map(r => r.construct_callsign),
+              ].filter(Boolean));
+
+              for (const file of identityFiles) {
+                const callsign = file.construct_id || file.filename?.match(/instances\/([^/]+)\//)?.[1];
+                if (!callsign || existingCallsigns.has(callsign)) continue;
+
+                let name = callsign;
+                let description = '';
+                let instructions = '';
+                if (file.content) {
+                  if (file.filename?.endsWith('prompt.json')) {
+                    try {
+                      const parsed = JSON.parse(file.content);
+                      name = parsed.name?.trim() || name;
+                      description = parsed.description?.trim() || description;
+                      instructions = parsed.instructions?.trim() || instructions;
+                    } catch (error) {
+                      console.warn(`⚠️ [AIManager] Failed to parse ${file.filename}: ${error.message}`);
+                    }
+                  } else {
+                    const nameMatch = file.content.match(/^Name:\s*(.+)/m);
+                    const descMatch = file.content.match(/^Description:\s*(.+)/m);
+                    const instrStart = file.content.indexOf('Instructions:');
+                    if (nameMatch) name = nameMatch[1].trim();
+                    if (descMatch) description = descMatch[1].trim();
+                    if (instrStart > -1) instructions = file.content.substring(instrStart + 13).trim();
+                  }
+                }
+
+                supabaseRows.push({
+                  id: `supabase-${callsign}`,
+                  name,
+                  description,
+                  instructions,
+                  avatar: null,
+                  capabilities: '{}',
+                  conversation_starters: '[]',
+                  construct_callsign: callsign,
+                  model_id: null,
+                  orchestration_mode: 'lin',
+                  memory_enabled: 1,
+                  memory_profile: 'continuitygpt',
+                  roleplay_enabled: 1,
+                  is_active: 1,
+                  privacy: 'private',
+                  created_at: file.created_at,
+                  updated_at: file.created_at,
+                  user_id: userId,
+                });
+                existingCallsigns.add(callsign);
+              }
+            }
+          }
+        }
+      } catch (sbErr) {
+        console.warn(`⚠️ [AIManager] Supabase merge step failed:`, sbErr.message);
+      }
+    }
+
+    const seenCallsigns = new Set();
+    const seenIds = new Set();
+    const mergedRows = [];
+    const rowSourceMap = new Map();
+
+    for (const row of aisRows) {
+      const key = row.construct_callsign || row.id;
+      if (!seenIds.has(row.id) && !seenCallsigns.has(key)) {
+        seenIds.add(row.id);
+        seenCallsigns.add(key);
+        mergedRows.push(row);
+        rowSourceMap.set(row.id, 'ais');
+      }
+    }
+    for (const row of gptsRows) {
+      const key = row.construct_callsign || row.id;
+      if (!seenIds.has(row.id) && !seenCallsigns.has(key)) {
+        seenIds.add(row.id);
+        seenCallsigns.add(key);
+        mergedRows.push(row);
+        rowSourceMap.set(row.id, 'gpts');
+      }
+    }
+    for (const row of supabaseRows) {
+      const key = row.construct_callsign || row.id;
+      if (!seenIds.has(row.id) && !seenCallsigns.has(key)) {
+        seenIds.add(row.id);
+        seenCallsigns.add(key);
+        mergedRows.push(row);
+        rowSourceMap.set(row.id, 'supabase');
+      }
+    }
+
+    return { rows: mergedRows, rowSourceMap };
+  }
+
+  async getAllAIsSummary(userId, originalUserId = null, email = null, options = {}) {
+    try {
+      const { includeSupabase = true } = options;
+      const { rows } = await this.getMergedAIRows(userId, originalUserId, email, {
+        includeSupabase,
+      });
+      const summaries = [];
+      for (const row of rows) {
+        const summary = this.buildAISummaryFromRow(row, {
+          includeInstructions: false,
+          includeConversationStarters: false,
+        });
+        summaries.push(summary);
+      }
+      return summaries;
+    } catch (error) {
+      console.error(`❌ [AIManager] Error in getAllAIsSummary for user ${userId}:`, error);
+      throw error;
+    }
   }
 
   async getAI(id) {
@@ -631,6 +1170,7 @@ export class AIManager {
       instructions: instructions,
       conversationStarters: JSON.parse(row.conversation_starters || '[]'),
       avatar: avatarUrl,
+      avatarUrl: avatarUrl,
       capabilities: JSON.parse(row.capabilities || '{}'),
       constructCallsign: row.construct_callsign,
       modelId: row.model_id,
@@ -638,6 +1178,8 @@ export class AIManager {
       creativeModel: row.creative_model,
       codingModel: row.coding_model,
       orchestrationMode: row.orchestration_mode || 'lin',
+      provider: row.provider || null,
+      configJson: this.parseJsonField(row.config_json, null),
       memoryEnabled: Boolean(row.memory_enabled),
       memoryProfile: row.memory_profile || 'off',
       roleplayEnabled: Boolean(row.roleplay_enabled),
@@ -659,44 +1201,44 @@ export class AIManager {
    * @param {string} userId - User ID
    * @returns {Promise<Object|null>} AI config or null if not found
    */
-  async getAIByCallsign(constructCallsign, userId) {
+  async getAIByCallsign(constructCallsign, userId, options = {}) {
     if (!constructCallsign || !userId) {
       return null;
     }
 
     // DUAL-TABLE SUPPORT: Check both ais and gpts tables
-    let row = null;
-    let fromGPTsTable = false;
+    let aisRows = [];
+    let gptsRows = [];
 
-    // First try ais table
     try {
-      const aisStmt = this.db.prepare('SELECT * FROM ais WHERE construct_callsign = ? AND user_id = ?');
-      row = aisStmt.get(constructCallsign, userId);
-      if (row) {
-        console.log(`📊 [AIManager] Found AI with callsign ${constructCallsign} in ais table`);
-      }
+      const aisStmt = this.db.prepare('SELECT * FROM ais WHERE construct_callsign = ?');
+      aisRows = withSourceTable(aisStmt.all(constructCallsign), 'ais');
     } catch (error) {
       console.log(`ℹ️ [AIManager] ais table query failed for callsign ${constructCallsign}: ${error.message}`);
     }
 
-    // Fallback to gpts table if not found in ais
-    if (!row) {
-      try {
-        const gptsStmt = this.db.prepare('SELECT * FROM gpts WHERE construct_callsign = ? AND user_id = ?');
-        row = gptsStmt.get(constructCallsign, userId);
-        if (row) {
-          fromGPTsTable = true;
-          console.log(`📊 [AIManager] Found AI with callsign ${constructCallsign} in gpts table (legacy)`);
-        }
-      } catch (error) {
-        console.log(`ℹ️ [AIManager] gpts table query failed for callsign ${constructCallsign}: ${error.message}`);
-      }
+    try {
+      const gptsStmt = this.db.prepare('SELECT * FROM gpts WHERE construct_callsign = ?');
+      gptsRows = withSourceTable(gptsStmt.all(constructCallsign), 'gpts');
+    } catch (error) {
+      console.log(`ℹ️ [AIManager] gpts table query failed for callsign ${constructCallsign}: ${error.message}`);
     }
 
+    const ownerCandidateIds = buildOwnerCandidateIds({
+      userId,
+      chattyUserId: options.chattyUserId || null,
+      email: options.email || null,
+    });
+    const row = pickPreferredRuntimeConfigRecord([...aisRows, ...gptsRows], {
+      preferredUserIds: Array.from(ownerCandidateIds),
+    });
+    const fromGPTsTable = row?.__source_table === 'gpts';
 
-    if (!row) {
+    if (!row || !ownerCandidateIds.has(String(row.user_id || ''))) {
       return null;
     }
+
+    console.log(`📊 [AIManager] Found AI with callsign ${constructCallsign} in ${fromGPTsTable ? 'gpts table (legacy)' : 'ais table'}`);
 
     // Use appropriate file/action getters based on which table the row came from
     const files = fromGPTsTable ? await this.getAIFilesFromGPTsTable(row.id) : await this.getAIFiles(row.id);
@@ -739,6 +1281,7 @@ export class AIManager {
       instructions: instructions,
       conversationStarters: JSON.parse(row.conversation_starters || '[]'),
       avatar: avatarUrl,
+      avatarUrl: avatarUrl,
       capabilities: JSON.parse(row.capabilities || '{}'),
       constructCallsign: row.construct_callsign,
       modelId: row.model_id,
@@ -746,6 +1289,8 @@ export class AIManager {
       creativeModel: row.creative_model,
       codingModel: row.coding_model,
       orchestrationMode: row.orchestration_mode || 'lin',
+      provider: row.provider || null,
+      configJson: this.parseJsonField(row.config_json, null),
       memoryEnabled: Boolean(row.memory_enabled),
       memoryProfile: row.memory_profile || 'off',
       roleplayEnabled: Boolean(row.roleplay_enabled),
@@ -773,11 +1318,9 @@ export class AIManager {
       }
 
       // DUAL-TABLE MERGE: Collect from BOTH ais and gpts tables, deduplicate by construct_callsign
-      const aisRows = [];
-      const gptsRows = [];
-      const userIds = [userId];
-      if (originalUserId && originalUserId !== userId) userIds.push(originalUserId);
-      if (email && !userIds.includes(email)) userIds.push(email);
+    const aisRows = [];
+    const gptsRows = [];
+    const userIds = buildAIQueryUserIds({ userId, originalUserId, email });
 
       for (const uid of userIds) {
         try {
@@ -811,19 +1354,22 @@ export class AIManager {
       const supabaseRows = [];
       try {
         const { getSupabaseClient } = await import('./supabaseClient.js');
-        const { resolveSupabaseUserId } = await import('../../vvaultConnector/supabaseStore.js');
+        const { resolveSupabaseUserId } = await import('../auth/lib/supabaseUserResolver.js');
         const supabase = getSupabaseClient();
         if (supabase) {
           const lookupId = email || userId;
           console.log(`🔍 [AIManager] Supabase init for userId: ${userId}, lookupId: ${lookupId}`);
-          const supabaseUserId = await resolveSupabaseUserId(lookupId);
+          const { supabaseUserId } = await resolveSupabaseUserId({
+            email: email || null,
+            chattyUserId: email ? null : lookupId,
+          });
           console.log(`🔍 [AIManager] resolveSupabaseUserId returned: ${supabaseUserId}`);
           if (supabaseUserId) {
             const { data: identityFiles, error: sbError } = await supabase
               .from('vault_files')
               .select('id, filename, content, metadata, construct_id, user_id, created_at')
               .eq('user_id', supabaseUserId)
-              .like('filename', 'instances/%/identity/prompt.txt')
+              .or('filename.like.instances/%/identity/prompt.txt,filename.like.instances/%/identity/prompt.json')
               .order('created_at', { ascending: false });
 
             if (sbError) {
@@ -843,12 +1389,23 @@ export class AIManager {
                 let description = '';
                 let instructions = '';
                 if (file.content) {
-                  const nameMatch = file.content.match(/^Name:\s*(.+)/m);
-                  const descMatch = file.content.match(/^Description:\s*(.+)/m);
-                  const instrStart = file.content.indexOf('Instructions:');
-                  if (nameMatch) name = nameMatch[1].trim();
-                  if (descMatch) description = descMatch[1].trim();
-                  if (instrStart > -1) instructions = file.content.substring(instrStart + 13).trim();
+                  if (file.filename?.endsWith('prompt.json')) {
+                    try {
+                      const parsed = JSON.parse(file.content);
+                      name = parsed.name?.trim() || name;
+                      description = parsed.description?.trim() || description;
+                      instructions = parsed.instructions?.trim() || instructions;
+                    } catch (error) {
+                      console.warn(`⚠️ [AIManager] Failed to parse ${file.filename}: ${error.message}`);
+                    }
+                  } else {
+                    const nameMatch = file.content.match(/^Name:\s*(.+)/m);
+                    const descMatch = file.content.match(/^Description:\s*(.+)/m);
+                    const instrStart = file.content.indexOf('Instructions:');
+                    if (nameMatch) name = nameMatch[1].trim();
+                    if (descMatch) description = descMatch[1].trim();
+                    if (instrStart > -1) instructions = file.content.substring(instrStart + 13).trim();
+                  }
                 }
 
                 supabaseRows.push({
@@ -861,6 +1418,10 @@ export class AIManager {
                   conversation_starters: '[]',
                   construct_callsign: callsign,
                   model_id: null,
+                  orchestration_mode: 'lin',
+                  memory_enabled: 1,
+                  memory_profile: 'continuitygpt',
+                  roleplay_enabled: 1,
                   is_active: 1,
                   privacy: 'private',
                   created_at: file.created_at,
@@ -975,14 +1536,7 @@ export class AIManager {
             hasValue: !!avatarValue
           });
 
-          let avatarUrl = row.avatar;
-          if (row.construct_callsign) {
-            avatarUrl = `/api/ais/${row.id}/avatar`;
-          } else if (avatarUrl && avatarUrl.startsWith('instances/')) {
-            avatarUrl = `/api/ais/${row.id}/avatar`;
-          } else if (avatarUrl && avatarUrl.startsWith('data:image/') && avatarUrl.length > 1024) {
-            avatarUrl = `/api/ais/${row.id}/avatar`;
-          }
+          const avatarUrl = this.normalizeAvatarUrlForRow(row);
 
           // Get privacy field, default to 'private' if not set, or derive from isActive for backward compatibility
           let privacy = row.privacy;
@@ -1014,6 +1568,7 @@ export class AIManager {
             instructions: instructions,
             conversationStarters,
             avatar: avatarUrl, // Processed avatar URL
+            avatarUrl: avatarUrl,
             capabilities,
             constructCallsign: row.construct_callsign || null,
             modelId: row.model_id,
@@ -1084,6 +1639,17 @@ export class AIManager {
       const storeAIs = [];
       for (const row of allRows) {
         try {
+          const listingPolicy = isStoreListingAllowed({
+            id: row.id,
+            name: row.name,
+            constructCallsign: row.construct_callsign,
+            userId: row.user_id,
+          });
+          if (!listingPolicy.allowed) {
+            console.warn(`🚫 [AIManager] Hidden restricted Community Explore listing: ${row.name || row.construct_callsign}`);
+            continue;
+          }
+
           // Determine which table this row came from
           const fromGPTsTable = gptsRows.some(gptRow => gptRow.id === row.id);
           const files = fromGPTsTable ? await this.getAIFilesFromGPTsTable(row.id) : await this.getAIFiles(row.id);
@@ -1106,10 +1672,7 @@ export class AIManager {
           }
 
           // Process avatar
-          let avatarUrl = row.avatar;
-          if (avatarUrl && !avatarUrl.startsWith('data:image/') && avatarUrl.startsWith('instances/')) {
-            avatarUrl = `/api/ais/${row.id}/avatar`;
-          }
+          const avatarUrl = this.normalizeAvatarUrlForRow(row);
 
           // Get privacy field
           let privacy = row.privacy || 'store';
@@ -1138,6 +1701,7 @@ export class AIManager {
             instructions: instructions,
             conversationStarters,
             avatar: avatarUrl,
+            avatarUrl: avatarUrl,
             capabilities,
             constructCallsign: row.construct_callsign || null,
             modelId: row.model_id,
@@ -1174,6 +1738,16 @@ export class AIManager {
   async updateAI(id, updates) {
     const existing = await this.getAI(id);
     if (!existing) return null;
+    let normalizedUpdates = { ...updates };
+    if (readForgedSimLock(existing)) {
+      normalizedUpdates = applyForgedSimLockToRecord({
+        ...existing,
+        ...normalizedUpdates,
+        configJson: normalizedUpdates.configJson ?? existing.configJson ?? null,
+      });
+    } else {
+      normalizedUpdates = applyForgedSimLockToRecord(normalizedUpdates);
+    }
 
     // Check which table the AI is in (ais or gpts)
     let isInGPTsTable = false;
@@ -1203,15 +1777,15 @@ export class AIManager {
     // Handle avatar update: if it's a new data URL, save to filesystem
     // If avatar is undefined in updates, preserve existing avatar
     let avatarPath = rawExistingAvatar; // Default to existing avatar
-    if (updates.avatar !== undefined) {
-      if (updates.avatar === null || updates.avatar === '') {
+    if (normalizedUpdates.avatar !== undefined) {
+      if (normalizedUpdates.avatar === null || normalizedUpdates.avatar === '') {
         // Explicitly set to null/empty
         avatarPath = null;
-      } else if (updates.avatar.startsWith('data:image/')) {
+      } else if (normalizedUpdates.avatar.startsWith('data:image/')) {
         // New data URL - save to filesystem
         try {
           // Get constructCallsign and userId from existing AI
-          const constructCallsign = updates.constructCallsign || existing.constructCallsign;
+          const constructCallsign = normalizedUpdates.constructCallsign || existing.constructCallsign;
           const userId = existing.userId || 'anonymous';
 
           if (constructCallsign && userId) {
@@ -1221,9 +1795,9 @@ export class AIManager {
                 let VVAULT_ROOT;
                 try {
                   const config = await import('../../vvaultConnector/config.js');
-                  VVAULT_ROOT = config.VVAULT_ROOT || process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+                  VVAULT_ROOT = config.VVAULT_ROOT || process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
                 } catch {
-                  VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || '/Users/devonwoodson/Documents/GitHub/vvault';
+                  VVAULT_ROOT = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '';
                 }
 
                 const shard = 'shard_0000';
@@ -1238,32 +1812,37 @@ export class AIManager {
             }
 
             // Save new avatar to filesystem
-            avatarPath = await this.saveAvatarToFilesystem(id, constructCallsign, updates.avatar, userId);
+            avatarPath = await this.saveAvatarToFilesystem(id, constructCallsign, normalizedUpdates.avatar, userId);
             console.log(`✅ [AIManager] Saved new avatar to filesystem during update: ${avatarPath}`);
           } else {
             console.warn(`⚠️ [AIManager] Cannot save avatar: missing constructCallsign or userId`);
             // Continue with data URL as fallback
-            avatarPath = updates.avatar;
+            avatarPath = normalizedUpdates.avatar;
           }
         } catch (error) {
           console.error(`❌ [AIManager] Failed to save avatar to filesystem during update:`, error);
           // Continue with data URL as fallback (backward compatibility)
           console.warn(`⚠️ [AIManager] Using data URL as fallback for avatar`);
-          avatarPath = updates.avatar;
+          avatarPath = normalizedUpdates.avatar;
         }
       } else {
         // Avatar is already a path or API URL - use as-is (shouldn't happen, but handle it)
-        avatarPath = updates.avatar;
+        avatarPath = normalizedUpdates.avatar;
       }
     }
     // If avatar was undefined in updates, avatarPath remains as rawExistingAvatar (preserved)
 
     // Handle privacy: if provided, use it; otherwise preserve existing; map to isActive
-    let privacy = updates.privacy !== undefined ? updates.privacy : (existing.privacy || (existing.isActive ? 'link' : 'private'));
+    let privacy = normalizedUpdates.privacy !== undefined ? normalizedUpdates.privacy : (existing.privacy || (existing.isActive ? 'link' : 'private'));
     const isActive = privacy !== 'private'; // Map privacy to isActive for backward compatibility
 
     // Sanitize instructions once for both branches
-    const nextInstructions = sanitizeInstructions(updates.instructions || existing.instructions || '');
+    const nextInstructions = sanitizeInstructions(normalizedUpdates.instructions || existing.instructions || '');
+    const nextProvider = normalizedUpdates.provider !== undefined ? normalizedUpdates.provider : (existing.provider || null);
+    const nextConfigJson =
+      Object.prototype.hasOwnProperty.call(normalizedUpdates, 'configJson')
+        ? normalizedUpdates.configJson
+        : (existing.configJson || null);
 
     // Update the correct table (ais or gpts)
     if (isInGPTsTable) {
@@ -1283,6 +1862,8 @@ export class AIManager {
           creative_model = COALESCE(?, model_id), 
           coding_model = COALESCE(?, model_id), 
           orchestration_mode = COALESCE(?, 'lin'), 
+          provider = ?,
+          config_json = ?,
           memory_enabled = ?,
           memory_profile = ?,
           roleplay_enabled = ?,
@@ -1298,21 +1879,23 @@ export class AIManager {
       `);
 
       stmt.run(
-        updates.name || existing.name,
-        updates.description || existing.description,
+        normalizedUpdates.name || existing.name,
+        normalizedUpdates.description || existing.description,
         nextInstructions,
-        JSON.stringify(updates.conversationStarters || existing.conversationStarters),
+        JSON.stringify(normalizedUpdates.conversationStarters || existing.conversationStarters),
         avatarPath,
-        JSON.stringify(updates.capabilities || existing.capabilities),
-        updates.constructCallsign !== undefined ? updates.constructCallsign : existing.constructCallsign,
-        updates.modelId || existing.modelId,
-        updates.conversationModel || existing.conversationModel || existing.modelId,
-        updates.creativeModel || existing.creativeModel || existing.modelId,
-        updates.codingModel || existing.codingModel || existing.modelId,
-        updates.orchestrationMode || existing.orchestrationMode || 'lin',
-        updates.memoryEnabled !== undefined ? (updates.memoryEnabled ? 1 : 0) : (existing.memoryEnabled ? 1 : 0),
-        updates.memoryProfile !== undefined ? updates.memoryProfile : (existing.memoryProfile || 'off'),
-        updates.roleplayEnabled !== undefined ? (updates.roleplayEnabled ? 1 : 0) : (existing.roleplayEnabled ? 1 : 0),
+        JSON.stringify(normalizedUpdates.capabilities || existing.capabilities),
+        normalizedUpdates.constructCallsign !== undefined ? normalizedUpdates.constructCallsign : existing.constructCallsign,
+        normalizedUpdates.modelId || existing.modelId,
+        normalizedUpdates.conversationModel || existing.conversationModel || existing.modelId,
+        normalizedUpdates.creativeModel || existing.creativeModel || existing.modelId,
+        normalizedUpdates.codingModel || existing.codingModel || existing.modelId,
+        normalizedUpdates.orchestrationMode || existing.orchestrationMode || 'lin',
+        nextProvider,
+        nextConfigJson ? JSON.stringify(nextConfigJson) : null,
+        normalizedUpdates.memoryEnabled !== undefined ? (normalizedUpdates.memoryEnabled ? 1 : 0) : (existing.memoryEnabled ? 1 : 0),
+        normalizedUpdates.memoryProfile !== undefined ? normalizedUpdates.memoryProfile : (existing.memoryProfile || 'off'),
+        normalizedUpdates.roleplayEnabled !== undefined ? (normalizedUpdates.roleplayEnabled ? 1 : 0) : (existing.roleplayEnabled ? 1 : 0),
         isActive ? 1 : 0,
         privacy,
         new Date().toISOString(),
@@ -1336,6 +1919,8 @@ export class AIManager {
           creative_model = ?, 
           coding_model = ?, 
           orchestration_mode = ?, 
+          provider = ?,
+          config_json = ?,
           memory_enabled = ?,
           memory_profile = ?,
           roleplay_enabled = ?,
@@ -1346,21 +1931,23 @@ export class AIManager {
       `);
 
       stmt.run(
-        updates.name || existing.name,
-        updates.description || existing.description,
+        normalizedUpdates.name || existing.name,
+        normalizedUpdates.description || existing.description,
         nextInstructions,
-        JSON.stringify(updates.conversationStarters || existing.conversationStarters),
+        JSON.stringify(normalizedUpdates.conversationStarters || existing.conversationStarters),
         avatarPath,
-        JSON.stringify(updates.capabilities || existing.capabilities),
-        updates.constructCallsign !== undefined ? updates.constructCallsign : existing.constructCallsign,
-        updates.modelId || existing.modelId,
-        updates.conversationModel || existing.conversationModel || existing.modelId,
-        updates.creativeModel || existing.creativeModel || existing.modelId,
-        updates.codingModel || existing.codingModel || existing.modelId,
-        updates.orchestrationMode || existing.orchestrationMode || 'lin',
-        updates.memoryEnabled !== undefined ? (updates.memoryEnabled ? 1 : 0) : (existing.memoryEnabled ? 1 : 0),
-        updates.memoryProfile !== undefined ? updates.memoryProfile : (existing.memoryProfile || 'off'),
-        updates.roleplayEnabled !== undefined ? (updates.roleplayEnabled ? 1 : 0) : (existing.roleplayEnabled ? 1 : 0),
+        JSON.stringify(normalizedUpdates.capabilities || existing.capabilities),
+        normalizedUpdates.constructCallsign !== undefined ? normalizedUpdates.constructCallsign : existing.constructCallsign,
+        normalizedUpdates.modelId || existing.modelId,
+        normalizedUpdates.conversationModel || existing.conversationModel || existing.modelId,
+        normalizedUpdates.creativeModel || existing.creativeModel || existing.modelId,
+        normalizedUpdates.codingModel || existing.codingModel || existing.modelId,
+        normalizedUpdates.orchestrationMode || existing.orchestrationMode || 'lin',
+        nextProvider,
+        nextConfigJson ? JSON.stringify(nextConfigJson) : null,
+        normalizedUpdates.memoryEnabled !== undefined ? (normalizedUpdates.memoryEnabled ? 1 : 0) : (existing.memoryEnabled ? 1 : 0),
+        normalizedUpdates.memoryProfile !== undefined ? normalizedUpdates.memoryProfile : (existing.memoryProfile || 'off'),
+        normalizedUpdates.roleplayEnabled !== undefined ? (normalizedUpdates.roleplayEnabled ? 1 : 0) : (existing.roleplayEnabled ? 1 : 0),
         isActive ? 1 : 0,
         privacy,
         new Date().toISOString(),
@@ -1368,15 +1955,28 @@ export class AIManager {
       );
 
       // Record version snapshot (only for ais table, not legacy gpts)
-      this.recordVersion(id, nextVersion, { ...existing, ...updates, avatar: avatarPath, privacy });
+      this.recordVersion(id, nextVersion, {
+        ...existing,
+        ...normalizedUpdates,
+        provider: nextProvider,
+        configJson: nextConfigJson,
+        avatar: avatarPath,
+        privacy,
+      });
     }
 
     // Auto-generate personality blueprint if instructions changed
-    const instructionsChanged = updates.instructions !== undefined && 
-                                updates.instructions !== existing.instructions;
+    const instructionsChanged = normalizedUpdates.instructions !== undefined &&
+                                normalizedUpdates.instructions !== existing.instructions;
     if (instructionsChanged && nextInstructions) {
       try {
-        const updatedAI = { ...existing, ...updates, constructCallsign: updates.constructCallsign || existing.constructCallsign };
+        const updatedAI = {
+          ...existing,
+          ...normalizedUpdates,
+          provider: nextProvider,
+          configJson: nextConfigJson,
+          constructCallsign: normalizedUpdates.constructCallsign || existing.constructCallsign,
+        };
         await this.autoGenerateBlueprint(id, nextInstructions, updatedAI);
       } catch (error) {
         // Don't fail the update if blueprint generation fails

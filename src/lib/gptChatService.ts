@@ -123,7 +123,7 @@ export class GPTChatService {
 
     } catch (error) {
       console.error('Error sending message:', error);
-      
+
       // Add error message to session
       const errorMsg: ChatMessage = {
         id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -139,7 +139,7 @@ export class GPTChatService {
 
       session.messages.push(errorMsg);
       session.updatedAt = new Date().toISOString();
-      
+
       return errorMsg;
     }
   }
@@ -160,7 +160,7 @@ export class GPTChatService {
     if (session) {
       // Unload GPT from runtime
       this.gptRuntime.unloadGPT(session.gptId);
-      
+
       // Remove session
       this.activeSessions.delete(sessionId);
     }
@@ -242,7 +242,7 @@ export class GPTChatService {
   importChatSession(exportData: string): ChatSession | null {
     try {
       const data = JSON.parse(exportData);
-      
+
       const session: ChatSession = {
         id: data.sessionId,
         gptId: data.gptId,
@@ -256,7 +256,9 @@ export class GPTChatService {
             webSearch: false,
             canvas: false,
             imageGeneration: false,
-            codeInterpreter: true
+            codeInterpreter: false,
+            agent: false,
+            proactiveInitiation: false,
           },
           modelId: 'chatty-core',
           files: [],

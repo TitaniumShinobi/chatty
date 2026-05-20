@@ -6,6 +6,16 @@ const router = express.Router();
 const VVAULT_URL = process.env.VVAULT_URL || '';
 const VVAULT_SERVICE_TOKEN = process.env.VVAULT_SERVICE_TOKEN || '';
 
+function rejectUnknownBodyKeys(req, res, allowedKeys) {
+  const keys = Object.keys(req.body || {});
+  const unknown = keys.filter((key) => !allowedKeys.has(key));
+  if (unknown.length) {
+    res.status(400).json({ success: false, error: "unknown request field" });
+    return true;
+  }
+  return false;
+}
+
 function isConfigured() {
   return Boolean(VVAULT_URL && VVAULT_SERVICE_TOKEN);
 }
@@ -103,6 +113,8 @@ router.get('/configs/:service', async (req, res) => {
 });
 
 router.post('/credentials', async (req, res) => {
+  if (rejectUnknownBodyKeys(req, res, new Set(["key", "value", "service_id", "service_name", "metadata"]))) return;
+
   if (!isConfigured()) {
     return res.status(503).json({
       success: false,
@@ -142,6 +154,7 @@ router.post('/credentials', async (req, res) => {
 
 router.get('/credentials/:key', async (req, res) => {
   const { key } = req.params;
+  if (!key || /[^a-zA-Z0-9_.:-]/.test(key)) return res.status(400).json({ error: 'Invalid credential key' });
   
   if (!isConfigured()) {
     return res.status(503).json({
@@ -174,6 +187,7 @@ router.get('/credentials/:key', async (req, res) => {
 
 router.delete('/credentials/:key', async (req, res) => {
   const { key } = req.params;
+  if (!key || /[^a-zA-Z0-9_.:-]/.test(key)) return res.status(400).json({ success: false, error: 'Invalid credential key' });
   
   if (!isConfigured()) {
     return res.status(503).json({

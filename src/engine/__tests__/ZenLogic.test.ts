@@ -7,9 +7,9 @@ const mockRunSeat = jest.fn();
 jest.mock('../seatRunner', () => ({
     runSeat: (...args: any[]) => mockRunSeat(...args),
     loadSeatConfig: () => ({
-        coding: { tag: 'deepseek-coder' },
-        creative: { tag: 'mistral' },
-        smalltalk: { tag: 'phi3' }
+        coding: { tag: 'ollama:qwen3-coder:30b' },
+        creative: { tag: 'ollama:mistral-small3.2:24b' },
+        smalltalk: { tag: 'ollama:phi4-mini:latest' }
     }),
     getSeatRole: (seat: string) => seat
 }));
@@ -33,9 +33,9 @@ describe('OptimizedZenProcessor', () => {
         jest.mock('../seatRunner', () => ({
             runSeat: (...args: any[]) => mockRunSeat(...args),
             loadSeatConfig: () => ({
-                coding: { tag: 'deepseek-coder' },
-                creative: { tag: 'mistral' },
-                smalltalk: { tag: 'phi3' }
+                coding: { tag: 'ollama:qwen3-coder:30b' },
+                creative: { tag: 'ollama:mistral-small3.2:24b' },
+                smalltalk: { tag: 'ollama:phi4-mini:latest' }
             }),
             getSeatRole: (seat: string) => seat
         }));
@@ -52,6 +52,21 @@ describe('OptimizedZenProcessor', () => {
 
         jest.mock('../memory/MemoryStore.js', () => ({ MemoryStore: jest.fn() }), { virtual: true });
         jest.mock('../memory/PersonaBrain.js', () => ({ PersonaBrain: jest.fn() }), { virtual: true });
+        jest.mock('../../lib/orchestration/triad_sanity_check', () => ({
+            triadSanityCheck: jest.fn().mockResolvedValue({
+                results: [
+                    { model: 'ollama:qwen3-coder:30b', seat: 'coding', active: true },
+                    { model: 'ollama:mistral-small3.2:24b', seat: 'creative', active: true },
+                    { model: 'ollama:phi4-mini:latest', seat: 'smalltalk', active: true },
+                ],
+                allActive: true,
+                failedSeats: [],
+                lineage: 'test triad healthy',
+                action: 'continue',
+            }),
+            routeToLinRecovery: jest.fn(),
+            logTriadLineage: jest.fn(),
+        }));
 
         // Now require the module
         const mod = require('../optimizedZen');

@@ -1,0 +1,117 @@
+.starfield {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+}
+
+.novaLayer {
+  z-index: 1;
+}
+
+.rayLayer {
+  z-index: 2;
+}
+
+.starburstLayer {
+  z-index: 3;
+}
+
+.fourpointLayer {
+  z-index: 4;
+}
+
+.sprite {
+  position: absolute;
+  display: block;
+  user-select: none;
+  will-change: transform, opacity;
+}
+
+.fourpoint {
+  animation: starfield-fourpoint-spin var(--duration) linear infinite;
+  animation-delay: var(--delay);
+  opacity: var(--opacity);
+}
+
+.ray {
+  animation: starfield-ray-spin var(--duration) linear infinite;
+  animation-delay: var(--delay);
+  opacity: var(--opacity);
+}
+
+.starburst {
+  animation: starfield-starburst-spin var(--duration) linear infinite;
+  animation-delay: var(--delay);
+  opacity: var(--opacity);
+}
+
+.nova {
+  animation:
+    starfield-nova-spin 28s linear infinite,
+    starfield-nova-pulse calc(28s * 0.65) ease-in-out infinite;
+  animation-delay: var(--delay), calc(var(--delay) * 0.5);
+  opacity: var(--opacity);
+}
+
+@keyframes starfield-fourpoint-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes starfield-ray-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes starfield-starburst-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes starfield-nova-spin {
+  from {
+    transform: rotate(0deg) scale(1);
+  }
+  to {
+    transform: rotate(-360deg) scale(1);
+  }
+}
+
+@keyframes starfield-nova-pulse {
+  0%,
+  100% {
+    opacity: calc(var(--opacity) * 0.82);
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: var(--opacity);
+    transform: scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fourpoint,
+  .ray,
+  .starburst,
+  .nova {
+    animation: none;
+  }
+}

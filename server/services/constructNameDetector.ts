@@ -17,7 +17,7 @@ import { ParsedConversation } from './htmlParser';
  * 
  * @param conversation - Parsed conversation with messages
  * @param provider - Provider name (e.g., "chatgpt", "gemini") as fallback
- * @param emailHandle - Email handle (e.g., "devon" from "devon@thewreck.org") for fallback format
+ * @param emailHandle - Email handle (e.g., "user" from "user@example.com") for fallback format
  * @returns Detected construct name or provider-emailHandle format if none found
  */
 export function detectConstructName(

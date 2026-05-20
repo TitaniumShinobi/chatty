@@ -4,11 +4,20 @@
     "types": ["node"],
     "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "noEmit": false,
     "outDir": "./dist",
     "rootDir": "../",
     "allowImportingTsExtensions": false
   },
-  "include": ["*.ts", "../src/engine/optimizedZen.ts", "../src/engine/toneModulation.ts"],
+  "include": [
+    "*.ts",
+    "*.d.ts",
+    "../src/**/*.d.ts",
+    "../src/vite-env.d.ts",
+    "../src/engine/optimizedZen.ts",
+    "../src/engine/toneModulation.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }

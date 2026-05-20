@@ -32,12 +32,20 @@ export const SLASH_COMMANDS: Record<string, SlashCommand> = {
       return 'selfprompt is handled via server endpoint';
     }
   },
-  mirror: {
-    name: 'mirror',
-    description: 'Screen sharing with AI analysis',
-    usage: '/mirror [read|write|both|stop]',
+  research: {
+    name: 'research',
+    description: 'Run a research workflow with explicit evidence and receipts',
+    usage: '/research <question or topic>',
     handler: async (_args: string[]) => {
-      return 'mirror is handled via command handler';
+      return 'research is handled via command workflow';
+    }
+  },
+  screenshare: {
+    name: 'screenshare',
+    description: 'Screen sharing with AI analysis',
+    usage: '/screenshare [read|write|both|stop]',
+    handler: async (_args: string[]) => {
+      return 'screenshare is handled via command handler';
     }
   },
   capabilities: {

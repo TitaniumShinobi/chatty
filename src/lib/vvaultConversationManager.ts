@@ -3,6 +3,236 @@
 
 import { type User, getUserId } from './auth'
 import type { CharacterProfile } from '../engine/character/types';
+import {
+  normalizeConversationHydrationResponse,
+  type VvaultConversationCollectionResponse,
+} from './vvaultConversationHydration';
+
+export type VvaultTranscriptExportFormat = 'md' | 'pdf' | 'docx';
+
+export interface VvaultConversationExportResponse {
+  blob: Blob;
+  filename: string;
+  contentType: string;
+}
+
+export interface VvaultConversationTranscriptResponse {
+  ok?: boolean;
+  content?: string;
+  messages?: VVAULTConversationMessage[];
+  source?: string;
+}
+
+export interface VVAULTConversationIndexRecord {
+  id: string;
+  title: string;
+  constructId?: string | null;
+  updatedAt?: string | number | null;
+  lastMessageAt?: string | number | null;
+  messageCount?: number;
+  messages?: Array<{
+    id?: string;
+    role?: 'user' | 'assistant' | 'system';
+    content?: string;
+    text?: string;
+    timestamp?: string | number | null;
+  }>;
+}
+
+export type VvaultFrontendFailureClassification =
+  | 'auth-needed'
+  | 'bridge-misconfigured'
+  | 'unreachable';
+
+export interface VvaultFrontendFailureInfo {
+  classification: VvaultFrontendFailureClassification;
+  message: string;
+  status?: number;
+  path?: string;
+}
+
+export interface VvaultSessionState {
+  ready?: boolean;
+  reason?: string | null;
+  authSource?: string | null;
+}
+
+type VvaultClassifiedError = Error & {
+  vvaultFailure?: VvaultFrontendFailureInfo;
+};
+
+const ZEN_CANONICAL_CONSTRUCT_ID = 'zen-001';
+const ZEN_CANONICAL_SESSION_ID = `${ZEN_CANONICAL_CONSTRUCT_ID}_chat_with_${ZEN_CANONICAL_CONSTRUCT_ID}`;
+
+function normalizeZenConstructId(constructId: string | null | undefined): string {
+  const normalized = typeof constructId === 'string' ? constructId.trim().toLowerCase() : '';
+  if (normalized === 'zen' || normalized === ZEN_CANONICAL_CONSTRUCT_ID) {
+    return ZEN_CANONICAL_CONSTRUCT_ID;
+  }
+  return normalized || 'zen';
+}
+
+function shouldNormalizeToCanonicalZenSession({
+  constructId,
+  sessionId,
+  title,
+  hasExplicitSessionId,
+}: {
+  constructId: string | null | undefined;
+  sessionId: string | null | undefined;
+  title: string | null | undefined;
+  hasExplicitSessionId: boolean;
+}): boolean {
+  if (normalizeZenConstructId(constructId) !== ZEN_CANONICAL_CONSTRUCT_ID) {
+    return false;
+  }
+
+  if (!hasExplicitSessionId) {
+    return true;
+  }
+
+  const normalizedSessionId = typeof sessionId === 'string' ? sessionId.trim().toLowerCase() : '';
+  const normalizedTitle = typeof title === 'string' ? title.trim().toLowerCase() : '';
+
+  return (
+    !normalizedSessionId ||
+    normalizedSessionId === 'zen' ||
+    normalizedSessionId === ZEN_CANONICAL_CONSTRUCT_ID ||
+    normalizedSessionId === ZEN_CANONICAL_SESSION_ID ||
+    normalizedSessionId.startsWith('zen_') ||
+    (normalizedSessionId.startsWith('zen-') && !normalizedSessionId.includes('_chat_with_')) ||
+    normalizedTitle === 'zen'
+  );
+}
+
+function isVvaultUnreachableMessage(message: string): boolean {
+  return (
+    message.includes('ERR_CONNECTION_REFUSED') ||
+    message.includes('ECONNREFUSED') ||
+    message.includes('ERR_CONNECTION_RESET') ||
+    message.includes('ERR_EMPTY_RESPONSE') ||
+    message.includes('Failed to fetch') ||
+    message.includes('NetworkError') ||
+    message.includes('timed out') ||
+    message.includes('Bad Gateway') ||
+    message.includes('Gateway Timeout') ||
+    message.includes('proxy error') ||
+    message.includes('upstream') ||
+    message.includes('socket hang up') ||
+    message.includes('Backend route not found') ||
+    message.includes('ENOENT')
+  );
+}
+
+function inferVvaultFrontendFailureInfo(
+  status: number | undefined,
+  message: string,
+  path?: string,
+  errorCode?: string,
+): VvaultFrontendFailureInfo | null {
+  const normalizedErrorCode =
+    typeof errorCode === 'string' && errorCode.trim()
+      ? errorCode.trim().toUpperCase()
+      : null;
+
+  if (status === 401 || normalizedErrorCode === 'AUTH_REQUIRED') {
+    return {
+      classification: 'auth-needed',
+      message,
+      status,
+      path,
+    };
+  }
+
+  if (normalizedErrorCode === 'AUTH_BRIDGE_MISCONFIGURED') {
+    return {
+      classification: 'bridge-misconfigured',
+      message,
+      status,
+      path,
+    };
+  }
+
+  if (normalizedErrorCode === 'VVAULT_UNREACHABLE' || isVvaultUnreachableMessage(message)) {
+    return {
+      classification: 'unreachable',
+      message,
+      status,
+      path,
+    };
+  }
+
+  return null;
+}
+
+function createVvaultClassifiedError(
+  message: string,
+  failure: VvaultFrontendFailureInfo,
+): VvaultClassifiedError {
+  const error = new Error(message) as VvaultClassifiedError;
+  error.vvaultFailure = failure;
+  return error;
+}
+
+export function getVvaultFrontendFailureInfo(error: unknown): VvaultFrontendFailureInfo | null {
+  const classified = (error as VvaultClassifiedError | null | undefined)?.vvaultFailure;
+  if (classified?.classification) {
+    return classified;
+  }
+
+  const message = error instanceof Error ? error.message : String(error || '');
+  const statusMatch = message.match(/VVAULT API error:\s*(\d{3})\b/);
+  const status = statusMatch ? Number(statusMatch[1]) : undefined;
+  const errorCodeMatch = message.match(
+    /\b(AUTH_REQUIRED|AUTH_BRIDGE_MISCONFIGURED|VVAULT_UNREACHABLE)\b/,
+  );
+  const errorCode = errorCodeMatch?.[1];
+
+  return inferVvaultFrontendFailureInfo(status, message, undefined, errorCode);
+}
+
+export function getVvaultFrontendFailureInfoFromSessionState(
+  session: VvaultSessionState | null | undefined,
+  path = '/api/me',
+): VvaultFrontendFailureInfo | null {
+  if (!session || session.ready !== false) {
+    return null;
+  }
+
+  const reason = String(session.reason || '').trim();
+  switch (reason) {
+    case 'vvault_bridge_unavailable':
+    case 'shared_auth_unconfigured':
+    case 'shared_auth_unavailable':
+    case 'shared_auth_timeout':
+    case 'shared_auth_error':
+    case 'shared_auth_invalid_payload':
+      return {
+        classification: 'bridge-misconfigured',
+        message: 'Chatty could not reach the shared auth/VVAULT bridge for this session.',
+        status: 503,
+        path,
+      };
+    case 'vvault_unreachable':
+      return {
+        classification: 'unreachable',
+        message: 'Chatty could not reach VVAULT for this shared session.',
+        status: 502,
+        path,
+      };
+    case 'shared_auth_required':
+    case 'shared_auth_unauthenticated':
+    case 'shared_auth_identity_unavailable':
+    default:
+      return {
+        classification: 'auth-needed',
+        message:
+          'You are logged into Chatty, but this browser does not currently have a VVAULT-ready shared session.',
+        status: 401,
+        path,
+      };
+  }
+}
 
 export interface ConversationThread {
   id: string;
@@ -94,44 +324,79 @@ export class VVAULTConversationManager {
     // Create the request promise
     const requestPromise = (async (): Promise<T> => {
       try {
+        const mergedHeaders = new Headers(options?.headers || {});
+        if (!mergedHeaders.has('Content-Type') && !mergedHeaders.has('content-type')) {
+          mergedHeaders.set('Content-Type', 'application/json');
+        }
+
         const response = await fetch(`${this.browserEndpointBase}${path}`, {
+          ...options,
           credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(options?.headers || {})
-          },
-          ...options
+          headers: mergedHeaders,
         });
 
         // Handle 503 Service Unavailable (backend not ready)
-        if (response.status === 503 && retryCount < MAX_RETRIES) {
-          const retryAfter = parseInt(response.headers.get('retry-after') || '1') * 1000;
-          console.log(`⏳ [VVAULT] Backend not ready (503), retrying in ${retryAfter}ms... (attempt ${retryCount + 1}/${MAX_RETRIES + 1})`);
-          await new Promise(resolve => setTimeout(resolve, retryAfter));
-          return this.browserRequest<T>(path, options, retryCount + 1);
-        }
-
         if (!response.ok) {
           const contentType = response.headers.get('content-type') || '';
           const errorText = await response.text();
+          let errorCode: string | undefined;
 
           // Check if response is HTML (404 page) instead of JSON
           if (contentType.includes('text/html') || errorText.trim().startsWith('<!')) {
             console.error(`❌ [VVAULT] browserRequest HTTP error ${path}: ${response.status} ${response.statusText}`);
             console.error(`❌ [VVAULT] Backend returned HTML instead of JSON - route may not exist`);
-            throw new Error(`VVAULT API error: ${response.status} ${response.statusText} - Backend route not found. Check if backend server is running on port 5000.`);
+            if (response.status === 401) {
+              const message = `VVAULT API error: ${response.status} ${response.statusText} - Authentication required`;
+              throw createVvaultClassifiedError(message, {
+                classification: 'auth-needed',
+                message,
+                status: response.status,
+                path,
+              });
+            }
+
+            const message = `VVAULT API error: ${response.status} ${response.statusText} - Backend route not found. Check if the Chatty backend on port 5050 is running and has been restarted since the route change.`;
+            throw createVvaultClassifiedError(message, {
+              classification: 'unreachable',
+              message,
+              status: response.status,
+              path,
+            });
           }
 
           let errorDetails = errorText;
           try {
             const errorJson = JSON.parse(errorText);
+            errorCode =
+              typeof errorJson?.errorCode === 'string'
+                ? errorJson.errorCode
+                : typeof errorJson?.code === 'string'
+                  ? errorJson.code
+                  : undefined;
             errorDetails = errorJson.details || errorJson.error || errorText;
           } catch {
             // Keep original errorText if not JSON
           }
+
+          if (response.status === 503 && retryCount < MAX_RETRIES && !errorCode) {
+            const retryAfter = parseInt(response.headers.get('retry-after') || '1') * 1000;
+            console.log(`⏳ [VVAULT] Backend not ready (503), retrying in ${retryAfter}ms... (attempt ${retryCount + 1}/${MAX_RETRIES + 1})`);
+            await new Promise(resolve => setTimeout(resolve, retryAfter));
+            return this.browserRequest<T>(path, options, retryCount + 1);
+          }
+
           console.error(`❌ [VVAULT] browserRequest HTTP error ${path}: ${response.status} ${response.statusText}`);
           console.error(`❌ [VVAULT] Error details:`, errorDetails);
           const errorMessage = `VVAULT API error: ${response.status} ${response.statusText}${errorDetails ? ` - ${errorDetails}` : ''}`;
+          const classifiedFailure = inferVvaultFrontendFailureInfo(
+            response.status,
+            errorMessage,
+            path,
+            errorCode,
+          );
+          if (classifiedFailure) {
+            throw createVvaultClassifiedError(errorMessage, classifiedFailure);
+          }
           throw new Error(errorMessage);
         }
 
@@ -143,6 +408,15 @@ export class VVAULTConversationManager {
         if (data?.ok === false) {
           const message = data?.error || 'VVAULT request failed';
           console.error(`❌ [VVAULT] browserRequest failed ${path}:`, message);
+          const classifiedFailure = inferVvaultFrontendFailureInfo(
+            typeof data?.status === 'number' ? data.status : undefined,
+            message,
+            path,
+            typeof data?.errorCode === 'string' ? data.errorCode : undefined,
+          );
+          if (classifiedFailure) {
+            throw createVvaultClassifiedError(message, classifiedFailure);
+          }
           throw new Error(message);
         }
 
@@ -155,10 +429,22 @@ export class VVAULTConversationManager {
             error.message.includes('ECONNREFUSED') ||
             error.message.includes('NetworkError'));
 
-        if (isConnectionError && retryCount < MAX_RETRIES) {
-          console.log(`⏳ [VVAULT] Connection error, retrying in ${RETRY_DELAY}ms... (attempt ${retryCount + 1}/${MAX_RETRIES + 1})`);
-          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-          return this.browserRequest<T>(path, options, retryCount + 1);
+        if (isConnectionError) {
+          if (retryCount < MAX_RETRIES) {
+            console.log(
+              `⏳ [VVAULT] Connection error, retrying in ${RETRY_DELAY}ms... (attempt ${retryCount + 1}/${MAX_RETRIES + 1})`,
+            );
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+            return this.browserRequest<T>(path, options, retryCount + 1);
+          }
+          const message = error instanceof Error
+            ? error.message
+            : `VVAULT network failure (${path})`;
+          throw createVvaultClassifiedError(message, {
+            classification: 'unreachable',
+            message,
+            path,
+          });
         }
 
         console.error(`❌ [VVAULT] browserRequest exception ${path}:`, error);
@@ -208,19 +494,29 @@ export class VVAULTConversationManager {
     await this.initializeVVAULT();
 
     const hasExplicitSessionId = typeof titleOverride === 'string' && titleOverride.length > 0;
-    const sessionId = hasExplicitSessionId
+    const initialSessionId = hasExplicitSessionId
       ? sessionOrTitle
       : `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    const title = hasExplicitSessionId
+    const initialTitle = hasExplicitSessionId
       ? titleOverride!.trim() || 'Zen'
       : sessionOrTitle?.trim?.() || 'Zen';
+    const normalizedConstructId = normalizeZenConstructId(constructId);
+    const canonicalZenSession = shouldNormalizeToCanonicalZenSession({
+      constructId: normalizedConstructId,
+      sessionId: initialSessionId,
+      title: initialTitle,
+      hasExplicitSessionId,
+    });
+    const sessionId = canonicalZenSession ? ZEN_CANONICAL_SESSION_ID : initialSessionId;
+    const title = canonicalZenSession ? 'Zen' : initialTitle;
 
     try {
       if (this.isBrowserEnv()) {
         const payload: Record<string, any> = { title, constructId };
-        if (hasExplicitSessionId) {
+        if (hasExplicitSessionId || canonicalZenSession) {
           payload.sessionId = sessionId;
         }
+        payload.constructId = normalizedConstructId;
         const response = await this.browserRequest<{ conversation: { sessionId: string; title: string } }>('/conversations', {
           method: 'POST',
           body: JSON.stringify(payload)
@@ -228,7 +524,9 @@ export class VVAULTConversationManager {
         console.log(`✅ Created new conversation via VVAULT API: ${response.conversation.sessionId}`);
       } else {
         const timestamp = new Date().toISOString();
-        const constructDescriptor = this.resolveConstructDescriptor(sessionId, { constructId });
+        const constructDescriptor = this.resolveConstructDescriptor(sessionId, {
+          constructId: normalizedConstructId,
+        });
         await this.vvaultConnector.writeTranscript({
           userId,
           sessionId,
@@ -309,6 +607,14 @@ export class VVAULTConversationManager {
    * @param forceRefresh - If true, bypasses cache and forces fresh load from VVAULT
    */
   async loadAllConversations(userId: string, forceRefresh: boolean = false): Promise<VVAULTConversationRecord[]> {
+    const response = await this.loadAllConversationsResponse(userId, forceRefresh);
+    return response.conversations;
+  }
+
+  async loadAllConversationsResponse(
+    userId: string,
+    forceRefresh: boolean = false,
+  ): Promise<VvaultConversationCollectionResponse<VVAULTConversationRecord>> {
     const cacheKey = `loadAllConversations:${userId}`;
 
     // If forceRefresh is true, clear cache first
@@ -330,13 +636,33 @@ export class VVAULTConversationManager {
           throw new Error('User ID is required. Cannot load conversations without user identity.');
         }
 
+        if (this.isBrowserEnv()) {
+          const payload = await this.browserRequest<
+            VvaultConversationCollectionResponse<VVAULTConversationRecord>
+          >('/conversations', {
+            method: 'GET',
+          });
+          return normalizeConversationHydrationResponse(payload, 'full');
+        }
+
         const conversations = await this.readConversations(userId);
 
         this.logDebug(`📚 Loaded ${conversations.length} conversations from VVAULT for user ${userId}`);
-        return conversations;
+        return {
+          conversations,
+          hydrationSource: 'full' as const,
+          hydrationComplete: true,
+        };
       } catch (error) {
         console.error('❌ Failed to load conversations from VVAULT:', error);
-        return [];
+        if (this.isBrowserEnv()) {
+          throw error;
+        }
+        return {
+          conversations: [],
+          hydrationSource: 'empty-fallback' as const,
+          hydrationComplete: false,
+        };
       } finally {
         // Remove from cache after request completes (success or failure)
         VVAULTConversationManager.inFlightRequests.delete(cacheKey);
@@ -347,6 +673,143 @@ export class VVAULTConversationManager {
     VVAULTConversationManager.inFlightRequests.set(cacheKey, requestPromise);
 
     return requestPromise;
+  }
+
+  /**
+   * Load lightweight conversation index (metadata + recent message sample).
+   * Intended for startup and non-chat routes where full history is unnecessary.
+   */
+  async loadConversationIndex(
+    userId: string,
+  ): Promise<VvaultConversationCollectionResponse<VVAULTConversationIndexRecord>> {
+    await this.initializeVVAULT();
+
+    if (!userId) {
+      throw new Error('User ID is required. Cannot load conversation index without user identity.');
+    }
+
+    if (this.isBrowserEnv()) {
+      const payload = await this.browserRequest<
+        VvaultConversationCollectionResponse<VVAULTConversationIndexRecord>
+      >('/conversations/index', {
+        method: 'GET'
+      });
+      return normalizeConversationHydrationResponse(payload, 'index');
+    }
+
+    const conversations = await this.readConversations(userId);
+    return {
+      conversations: (conversations || []).map((conv) => ({
+        id: conv.sessionId,
+        title: conv.title || 'Conversation',
+        constructId: conv.constructId || conv.constructFolder || null,
+        updatedAt: conv.updatedAt || null,
+        lastMessageAt: conv.updatedAt || null,
+        messageCount: Array.isArray(conv.messages) ? conv.messages.length : 0,
+        messages: (conv.messages || []).slice(-5).map((m, idx) => ({
+          id: m.id || `${conv.sessionId}_m_${idx}`,
+          role: m.role || 'assistant',
+          content: m.content || '',
+          timestamp: m.timestamp ?? undefined,
+        })),
+      })),
+      hydrationSource: 'index',
+      hydrationComplete: false,
+    };
+  }
+
+  /**
+   * Load the canonical transcript for a conversation thread.
+   */
+  async loadConversationTranscript(
+    threadId: string,
+  ): Promise<VvaultConversationTranscriptResponse> {
+    await this.initializeVVAULT();
+    if (this.isBrowserEnv()) {
+      return this.browserRequest<VvaultConversationTranscriptResponse>(`/chat/${threadId}`, {
+        method: 'GET',
+      });
+    }
+
+    throw new Error('loadConversationTranscript is supported in browser environment only');
+  }
+
+  /**
+   * Export a conversation transcript in supported formats.
+   */
+  async exportConversationTranscript(
+    threadId: string,
+    format: VvaultTranscriptExportFormat,
+  ): Promise<VvaultConversationExportResponse> {
+    await this.initializeVVAULT();
+    if (this.isBrowserEnv()) {
+      const endpoint = `${this.browserEndpointBase}/conversations/${threadId}/export?format=${format}`;
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const status = response.status;
+        const contentType = response.headers.get('content-type') || '';
+        const errorText = await response.text().catch(() => '');
+
+        if (contentType.includes('text/html') || errorText.trim().startsWith('<!')) {
+          if (status === 401) {
+            const message = `VVAULT API error: ${status} ${response.statusText} - Authentication required`;
+            throw createVvaultClassifiedError(message, {
+              classification: 'auth-needed',
+              message,
+              status,
+              path: `/conversations/${threadId}/export?format=${format}`,
+            });
+          }
+
+          const message = `VVAULT API error: ${status} ${response.statusText} - Backend route not found. Check if the Chatty backend on port 5050 is running and has been restarted since the route change.`;
+          throw createVvaultClassifiedError(message, {
+            classification: 'unreachable',
+            message,
+            status,
+            path: `/conversations/${threadId}/export?format=${format}`,
+          });
+        }
+
+        let errorCode: string | undefined;
+        let errorDetails = errorText;
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorCode =
+            typeof errorJson?.errorCode === 'string'
+              ? errorJson.errorCode
+              : typeof errorJson?.code === 'string'
+                ? errorJson.code
+                : undefined;
+          errorDetails = errorJson.details || errorJson.error || errorText;
+        } catch {
+          // Keep raw body
+        }
+
+        const message = `VVAULT API error: ${status} ${response.statusText}${errorDetails ? ` - ${errorDetails}` : ''}`;
+        const classifiedFailure = inferVvaultFrontendFailureInfo(status, message, `/conversations/${threadId}/export?format=${format}`, errorCode);
+        if (classifiedFailure) {
+          throw createVvaultClassifiedError(message, classifiedFailure);
+        }
+
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const contentType = response.headers.get('content-type') || 'application/octet-stream';
+      const disposition = response.headers.get('content-disposition') || '';
+      const filenameMatch = /filename="?([^\";]+)"?/i.exec(disposition);
+      return {
+        blob,
+        filename: filenameMatch?.[1] || `${threadId}.md`,
+        contentType,
+      };
+    }
+
+    throw new Error('exportConversationTranscript is supported in browser environment only');
   }
 
   /**
@@ -552,7 +1015,7 @@ export class VVAULTConversationManager {
   /**
    * Add a message to a conversation in VVAULT
    */
-  async addMessageToConversation(user: User, threadId: string, message: any): Promise<void> {
+  async addMessageToConversation(user: User, threadId: string, message: any): Promise<unknown> {
     try {
       console.log('💾 [VVAULTConversationManager] Saving message to VVAULT...');
       console.log('📝 [VVAULTConversationManager] ThreadId:', threadId);
@@ -611,6 +1074,12 @@ export class VVAULTConversationManager {
             packets: message.packets, // Include packets as fallback for server-side extraction
             timestamp: message.timestamp || new Date().toISOString(),
             title: message.title,
+            message: {
+              id: message.id || message.messageId || message.metadata?.clientMessageId,
+              role: message.role,
+              content: normalizedContent || message.content || '',
+              timestamp: message.timestamp || new Date().toISOString(),
+            },
             constructId: constructDescriptor.constructId,
             constructName: constructDescriptor.constructName,
             constructCallsign: constructDescriptor.constructCallsign,
@@ -618,13 +1087,8 @@ export class VVAULTConversationManager {
           })
         });
 
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => 'Unknown error');
-          throw new Error(`Failed to save message via API: ${response.statusText} - ${errorText}`);
-        }
-
         console.log('✅ [VVAULTConversationManager] Message saved via API');
-        return;
+        return response;
       }
 
       // Node.js environment: use direct file system access

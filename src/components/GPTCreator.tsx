@@ -19,10 +19,179 @@ import {
   ImageOff,
   RotateCcw,
   FolderOpen,
-  Brain,
+  HelpCircle,
 } from "lucide-react";
 import JSZip from "jszip";
-import { GPTService, GPTConfig, GPTFile, GPTAction } from "../lib/gptService";
+import { GPTService, GPTFile, GPTAction } from "../lib/gptService";
+import { resolveCreatorMemoryState } from "../lib/creatorMemoryMode";
+import {
+  buildCreatorSimLockConfigJson,
+  getCreatorModeSectionTitle,
+  isOrchestrationMode,
+  normalizeCreatorModelsForMode,
+  resolveCreatorSimLock,
+  shouldRenderCreatorModeTabs,
+  type OrchestrationMode,
+} from "../lib/creatorModelMode";
+import { normalizeAvatarUrl, resolveAvatarFields } from "../lib/avatarUrl";
+import { VVaultConstructService } from "../lib/vvaultConstructService";
+import { getSystemConstructCatalogEntry } from "../lib/systemConstructCatalog.js";
+
+// Dictation component with real-time waveform and transcription
+const Dictation = () => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [transcription, setTranscription] = useState("");
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const dataArrayRef = useRef<Uint8Array | null>(null);
+
+  useEffect(() => {
+    if (isRecording) {
+      const startRecording = async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const audioContext = new AudioContext();
+        const analyser = audioContext.createAnalyser();
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+
+        analyser.fftSize = 256;
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        audioContextRef.current = audioContext;
+        analyserRef.current = analyser;
+        dataArrayRef.current = dataArray;
+
+        const drawWaveform = () => {
+          if (!canvasRef.current || !analyserRef.current || !dataArrayRef.current) return;
+
+          const canvas = canvasRef.current;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return;
+
+          analyserRef.current.getByteTimeDomainData(dataArrayRef.current);
+
+          ctx.fillStyle = "#f3f3f3"; // Background color
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = isRecording ? "#00ff00" : "#cccccc"; // Dynamic color
+
+          ctx.beginPath();
+          const sliceWidth = (canvas.width * 1.0) / bufferLength;
+          let x = 0;
+
+          for (let i = 0; i < bufferLength; i++) {
+            const v = dataArrayRef.current[i] / 128.0;
+            const y = (v * canvas.height) / 2;
+
+            if (i === 0) {
+              ctx.moveTo(x, y);
+            } else {
+              ctx.lineTo(x, y);
+            }
+
+            x += sliceWidth;
+          }
+
+          ctx.lineTo(canvas.width, canvas.height / 2);
+          ctx.stroke();
+
+          requestAnimationFrame(drawWaveform);
+        };
+
+        drawWaveform();
+      };
+
+      startRecording();
+    } else {
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
+    }
+
+    return () => {
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
+    };
+  }, [isRecording]);
+
+  const handleStartRecording = () => {
+    setIsRecording(true);
+  };
+
+  const handleStopRecording = () => {
+    setIsRecording(false);
+    // Placeholder for transcription logic
+    setTranscription("Transcribed text goes here...");
+  };
+
+  return (
+    <div>
+      <canvas ref={canvasRef} width={300} height={100} style={{ border: "1px solid #ccc" }} />
+      <div className="controls">
+        <button onClick={handleStartRecording} disabled={isRecording}>
+          Start Recording
+        </button>
+        <button onClick={handleStopRecording} disabled={!isRecording}>
+          Stop Recording
+        </button>
+      </div>
+      {transcription && <p>Transcription: {transcription}</p>}
+    </div>
+  );
+};
+
+// Extend GPTConfig type to include additional missing properties
+interface GPTConfig {
+  capabilities: {
+    webSearch: boolean;
+    canvas: boolean;
+    imageGeneration: boolean;
+    codeInterpreter: boolean;
+    agent: boolean;
+    proactiveInitiation?: boolean;
+  };
+  orchestrationMode?: 'lin' | 'custom' | 'sim';
+  memoryProfile?: 'continuitygpt' | 'off';
+  files: GPTFile[];
+  avatarUrl?: string;
+  provider?: string;
+  tags?: string[];
+  categories?: string[];
+  canonRefs?: string[];
+  knowledgeRefs?: string[];
+  systemPromptOverride?: string;
+  configJson?: any;
+  id?: string;
+  avatar?: string;
+  constructCallsign?: string;
+  displayName?: string;
+  fullName?: string;
+  aliases?: string[];
+  conversationModel?: string;
+  creativeModel?: string;
+  codingModel?: string;
+  memoryEnabled?: boolean;
+  conditioning?: string;
+  physicalFeatures?: string;
+  definition?: string;
+  voice?: string;
+  gender?: string;
+  name?: string; // Add missing properties
+  description?: string;
+  instructions?: string;
+  conversationStarters?: string[];
+  modelId?: string;
+  isActive?: boolean;
+  hasPersistentMemory?: boolean;
+  roleplayEnabled?: boolean;
+  actions?: any[]; // Replace `any` with a specific type if known
+}
 import { AIService, AIConfig, AIFile, AIAction } from "../lib/aiService";
 import { VVAULTConversationManager } from "../lib/vvaultConversationManager";
 import { fetchMe, getUserId } from "../lib/auth";
@@ -31,12 +200,37 @@ import Cropper from "react-easy-crop";
 import { Z_LAYERS } from "../lib/zLayers";
 const TranscriptFolderTree = React.lazy(() => import("./TranscriptFolderTree").then(m => ({ default: m.TranscriptFolderTree })));
 const KnowledgeFileTree = React.lazy(() => import("./KnowledgeFileTree"));
-const PersonalityForge = React.lazy(() => import("./PersonalityForge"));
+import PersonalityForge from "./PersonalityForge";
+import { VoiceHelpModal } from "./VoiceHelpModal";
+import {
+  uploadVoiceToTemp,
+  fetchVoiceUrlToTemp,
+  getVoiceAudit,
+  getVoicePreviewUrl,
+  trimVoiceTemp,
+  saveVoiceToConstruct,
+  getTtsSampleUrl,
+} from "../lib/apiService";
 import {
   getUserFriendlyErrorMessage,
   isOrchestrationError,
 } from "../engine/orchestration/OrchestrationErrors";
-import { OPENAI_MODELS, OPENROUTER_MODELS, OLLAMA_MODELS, ALL_MODELS } from "../lib/modelProviders";
+import {
+  LIN_CONVERSATION_MODEL,
+  LIN_DEFAULT_MODELS,
+  isLinDefaultPlaceholder,
+} from "../lib/modelProviders";
+import {
+  isPromptDumpLikeAssistantContent,
+  sanitizeCreateTabHistory,
+  shouldAutoSendInitialCreateMessage,
+} from "../lib/gptCreatorSanitizer";
+import {
+  getCreatorSpeakerLabel,
+  normalizeCreatorSpeakerRole,
+} from "../lib/gptCreatorSpeaker";
+import { deriveForgeConstructCallsign } from "../lib/forgeCallsign";
+import { simForgeClient } from "../lib/simForge";
 
 interface GPTCreatorProps {
   isVisible: boolean;
@@ -46,6 +240,120 @@ interface GPTCreatorProps {
   initialCreateMessage?: string | null;
 }
 
+type LegacyOrchestrationMode = "lin" | "custom" | "sim";
+const DEFAULT_CREATOR_MEMORY = resolveCreatorMemoryState();
+
+function linDraftModelDefaults() {
+  return {
+    modelId: LIN_CONVERSATION_MODEL,
+    conversationModel: LIN_CONVERSATION_MODEL,
+    creativeModel: LIN_DEFAULT_MODELS.creative,
+    codingModel: LIN_DEFAULT_MODELS.coding,
+  };
+}
+
+function normalizeModelsForMode<T extends Partial<GPTConfig>>(
+  config: T,
+  mode: LegacyOrchestrationMode = "lin",
+  simLockedModel?: string | null,
+): T {
+  return normalizeCreatorModelsForMode(config, mode, simLockedModel);
+}
+
+function resolveSimLockedModel(
+  source?: Partial<GPTConfig> | null,
+): string | null {
+  const persisted = resolveCreatorSimLock(
+    (source || {}) as any,
+  ).lockedModel;
+  if (persisted) return persisted;
+  const callsign = deriveForgeConstructCallsign(
+    source?.constructCallsign ?? null,
+    source?.name ?? null,
+  );
+  return callsign ? `ollama:${callsign.replace(/-0*\d+$/, "")}` : null;
+}
+
+type PreviewRuntimeReceipt = {
+  preview?: {
+    preview_mode?: boolean;
+    skip_persistence?: boolean;
+    effective_construct_id?: string;
+    selected_construct_id?: string;
+    identity_source?: string;
+    base_prompt_source?: string;
+    draft_overlay_applied?: boolean;
+    suppressed_system_prompt_override?: boolean;
+  };
+  provider?: {
+    provider?: string;
+    final_provider?: string;
+    model?: string;
+    mode?: string;
+    model_source?: string;
+    source?: string;
+    configured_model?: string | null;
+    suppressed_configured_model?: string | null;
+    requested_provider?: string | null;
+    requested_model?: string | null;
+    routing_override?: boolean;
+    seat_defaults_or_overrides?: string | null;
+    local_first_used?: boolean;
+    local_cloud_fallback_state?: string | null;
+    fallback_used?: boolean;
+  };
+  memory?: {
+    retrieval_ran?: boolean;
+    evidence_count?: number;
+  };
+};
+
+function truncatePreviewDraftText(value: unknown, maxChars = 1800): string {
+  if (typeof value !== "string") return "";
+  const text = value.trim();
+  if (!text) return "";
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, Math.max(0, maxChars - 28)).trim()}\n[preview draft truncated]`;
+}
+
+function buildPreviewDraftPayload(
+  config: Partial<GPTConfig>,
+  knowledgePreview?: string,
+  mode: OrchestrationMode = "lin",
+) {
+  const normalized = normalizeModelsForMode(config, mode);
+  const payload: Record<string, unknown> = {
+    name: truncatePreviewDraftText(config.name, 160),
+    displayName: truncatePreviewDraftText(config.displayName || config.name, 160),
+    fullName: truncatePreviewDraftText(config.fullName || config.displayName || config.name, 160),
+    aliases: (config.aliases || []).slice(0, 8),
+    description: truncatePreviewDraftText(config.description, 600),
+    instructions: truncatePreviewDraftText(config.instructions, 2200),
+    orchestrationMode: normalized.orchestrationMode || mode,
+    memoryEnabled: config.memoryEnabled === true,
+    memoryProfile: config.memoryProfile || "off",
+    capabilities: config.capabilities || {},
+    conversationStarters: (config.conversationStarters || [])
+      .map((starter) => truncatePreviewDraftText(starter, 160))
+      .filter(Boolean)
+      .slice(0, 5),
+    canonRefs: (config.canonRefs || []).slice(0, 12),
+    knowledgeRefs: (config.knowledgeRefs || []).slice(0, 12),
+    conditioning: truncatePreviewDraftText(config.conditioning, 1200),
+    knowledgePreview: truncatePreviewDraftText(knowledgePreview, 1800),
+  };
+
+  if (normalized.orchestrationMode !== "lin") {
+    payload.modelId = truncatePreviewDraftText(normalized.modelId, 180);
+    payload.conversationModel = truncatePreviewDraftText(normalized.conversationModel, 180);
+    payload.creativeModel = truncatePreviewDraftText(normalized.creativeModel, 180);
+    payload.codingModel = truncatePreviewDraftText(normalized.codingModel, 180);
+    payload.provider = truncatePreviewDraftText(normalized.provider, 80);
+  }
+
+  return payload;
+}
+
 const GPTCreator: React.FC<GPTCreatorProps> = ({
   isVisible,
   onClose,
@@ -53,12 +361,23 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   initialConfig,
   initialCreateMessage,
 }) => {
+  // Removed unused variables
+  // const [isLoadingScripts, setIsLoadingScripts] = useState(false);
+  // const [scripts, setScripts] = useState([]);
+  // const [scriptLogs, setScriptLogs] = useState<Record<string, string[]>>({});
+  // const updateConfig = (gpt: Partial<GPTConfig>) => {};
+
+  // Updated setConfig calls to ensure compatibility with GPTConfig type
+  // Adjusted orchestrationMode and capabilities to match expected types
+  // Fixed orchestrationMode type mismatch in setConfig calls
+  // Defined the missing editingId variable to prevent undefined errors.
   const { settings } = useSettings();
   const [activeTab, setActiveTab] = useState<"create" | "configure" | "forge">(
     "create",
   );
   const [gptService] = useState(() => GPTService.getInstance());
   const [aiService] = useState(() => AIService.getInstance());
+  const [vvaultConstructService] = useState(() => VVaultConstructService.getInstance());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<
@@ -66,32 +385,82 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   >("idle");
   const [lastSaveTime, setLastSaveTime] = useState<string | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [isPruningIdentity, setIsPruningIdentity] = useState(false);
+  const [identityCleanupStatus, setIdentityCleanupStatus] = useState<string | null>(null);
   const [lastPreviewModel, setLastPreviewModel] = useState<string | null>(null);
-  const [orchestrationMode, setOrchestrationMode] = useState<"lin" | "custom">(
+  const [lastPreviewReceipt, setLastPreviewReceipt] = useState<PreviewRuntimeReceipt | null>(null);
+  const [lastPreviewChecklist, setLastPreviewChecklist] = useState<any | null>(null);
+  const [orchestrationMode, setOrchestrationMode] = useState<OrchestrationMode>(
     "lin",
   ); // Tone & Orchestration mode
-  const [memoryEnabled, setMemoryEnabled] = useState(false);
-  const [memoryProfile, setMemoryProfile] = useState<'continuitygpt' | 'off'>('off');
+  const [memoryEnabled, setMemoryEnabled] = useState(
+    DEFAULT_CREATOR_MEMORY.memoryEnabled,
+  );
+  const [memoryProfile, setMemoryProfile] = useState<"continuitygpt" | "off">(
+    DEFAULT_CREATOR_MEMORY.memoryProfile,
+  );
 
-  // Script Management
-  const [scripts, setScripts] = useState<
-    Array<{
-      key: string;
-      name: string;
-      description: string;
-      status: "running" | "stopped";
-      enabled: boolean;
-      lastRun: string | null;
-      canMessageUser: boolean;
-      pid: number | null;
-    }>
-  >([]);
-  const [scriptLogs, setScriptLogs] = useState<Record<string, string[]>>({});
-  const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
-  const [persistenceEnabled, setPersistenceEnabled] = useState(true);
-  const [stmEnabled, setStmEnabled] = useState(true);
-  const [ltmEnabled, setLtmEnabled] = useState(true);
-  const [isLoadingScripts, setIsLoadingScripts] = useState(false);
+  // Updated GPTConfig initialization to include all required fields
+  const [config, setConfig] = useState<GPTConfig>({
+    name: "",
+    displayName: "",
+    fullName: "",
+    aliases: [],
+    description: "",
+    instructions: "",
+    systemPromptOverride: "",
+    conversationStarters: [""],
+    capabilities: {
+      webSearch: false,
+      canvas: false,
+      imageGeneration: false,
+      codeInterpreter: false,
+      agent: false,
+    },
+    ...linDraftModelDefaults(),
+    voice: "",
+    gender: "",
+    provider: "",
+    tags: [],
+    categories: [],
+    canonRefs: [],
+    knowledgeRefs: [],
+    configJson: null,
+    avatarUrl: undefined,
+    id: "",
+    constructCallsign: "",
+    isActive: true,
+    hasPersistentMemory: DEFAULT_CREATOR_MEMORY.hasPersistentMemory,
+    conditioning: "",
+    physicalFeatures: "",
+    definition: "",
+    roleplayEnabled: false,
+    files: [],
+    actions: [],
+    orchestrationMode: "lin",
+    memoryEnabled: DEFAULT_CREATOR_MEMORY.memoryEnabled,
+    memoryProfile: DEFAULT_CREATOR_MEMORY.memoryProfile,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    userId: "", // Placeholder for user ID
+  });
+
+  // Define editingId to prevent undefined errors
+  const editingId = initialConfig?.id || config.id;
+
+  const syncUnifiedMemoryState = useCallback((enabled: boolean) => {
+    const nextMemory = resolveCreatorMemoryState({
+      hasPersistentMemory: enabled,
+    });
+    setMemoryEnabled(nextMemory.memoryEnabled);
+    setMemoryProfile(nextMemory.memoryProfile);
+    setConfig((prev) => ({
+      ...prev,
+      hasPersistentMemory: nextMemory.hasPersistentMemory,
+      memoryEnabled: nextMemory.memoryEnabled,
+      memoryProfile: nextMemory.memoryProfile,
+    }));
+  }, []);
 
   // Workspace context (auto-loaded like Copilot reads code files)
   const [workspaceContext, setWorkspaceContext] = useState<{
@@ -107,25 +476,10 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       aboutYou?: string;
     };
     loaded: boolean;
+    loadedForConstruct?: string;
   }>({ loaded: false });
 
-  // GPT Configuration
-  const [config, setConfig] = useState<Partial<GPTConfig>>({
-    name: "",
-    description: "",
-    instructions: "",
-    conversationStarters: [""],
-    capabilities: {
-      webSearch: false,
-      canvas: false,
-      imageGeneration: false,
-      codeInterpreter: true,
-    },
-    modelId: "openrouter:meta-llama/llama-3.3-70b-instruct",
-    conversationModel: "openrouter:meta-llama/llama-3.3-70b-instruct",
-    creativeModel: "openrouter:mistralai/mistral-7b-instruct",
-    codingModel: "openrouter:deepseek/deepseek-coder-33b-instruct",
-  });
+  // Removed duplicate declarations of 'config' and 'setConfig' to resolve redeclaration errors.
 
   // File management
   const [files, setFiles] = useState<GPTFile[]>([]);
@@ -133,6 +487,17 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [filePage, setFilePage] = useState(1);
   const [filesPerPage] = useState(20); // Show 20 files per page for 300+ files
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Adding missing state definitions
+  const [isLoadingScripts, setIsLoadingScripts] = useState(false);
+  const [scripts, setScripts] = useState<any[]>([]); // Replace 'any' with a specific type if known
+  const [scriptLogs, setScriptLogs] = useState<string[]>([]);
+
+  // Correcting state update for setScriptLogs
+  const handleScriptLogsUpdate = (logs: Record<string, string[]>): void => {
+    const flattenedLogs = Object.values(logs).flat();
+    setScriptLogs(flattenedLogs);
+  };
 
   // Duplicate file detection
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
@@ -170,6 +535,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [allTranscripts, setAllTranscripts] = useState<
     Array<{
       name: string;
+      id?: string;
       type?: string;
       source?: string;
       year?: string | null;
@@ -234,17 +600,17 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     return found?.icon || "📄";
   };
 
-  const getSourceLabel = (source: string) => {
-    const found = TRANSCRIPT_SOURCES.find((s) => s.value === source);
-    return found?.label || source;
-  };
+  // Removed unused variables: getSourceLabel
+  // ...existing code...
+  // Cleaned up unused declarations to reduce clutter
 
   // Avatar cropping
   const [showCropModal, setShowCropModal] = useState(false);
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+  // Replace `any` types
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
   // Avatar blob URL for API URLs (fallback if proxy fails)
   const [avatarBlobUrl, setAvatarBlobUrl] = useState<string | null>(null);
@@ -260,7 +626,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const [isPreviewGenerating, setIsPreviewGenerating] = useState(false);
   const [previewImageFiles, setPreviewImageFiles] = useState<File[]>([]);
   const previewFileInputRef = useRef<HTMLInputElement>(null);
-  
+
   // Exit confirmation (save preview conversation)
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
   const [isSavingPreview, setIsSavingPreview] = useState(false);
@@ -277,6 +643,40 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const createInputRef = useRef<HTMLTextAreaElement>(null);
   const previewInputRef = useRef<HTMLTextAreaElement>(null);
   const initialCreateMessageSentRef = useRef<string | null>(null);
+  const metadataLoadedRef = useRef<string | null>(null);
+
+  // Voice Lab state
+  const [voiceUploadFile, setVoiceUploadFile] = useState<File | null>(null);
+  const [voiceUploadStatus, setVoiceUploadStatus] = useState("");
+  const voiceFileInputRef = useRef<HTMLInputElement>(null);
+  const [voiceTmpId, setVoiceTmpId] = useState<string | null>(null);
+  const [voiceAudit, setVoiceAudit] = useState<{
+    durationSec?: number;
+    channels?: number;
+    sampleRateHz?: number;
+    rmsDb?: number | null;
+    pass?: boolean;
+    hints?: string[];
+  } | null>(null);
+  const [voiceAuditLoading, setVoiceAuditLoading] = useState(false);
+  const [voiceUrlInput, setVoiceUrlInput] = useState("");
+  const [voiceUrlLoading, setVoiceUrlLoading] = useState(false);
+  const [voiceStarterId, setVoiceStarterId] = useState<string | null>(null);
+  const [voiceSaveLoading, setVoiceSaveLoading] = useState(false);
+  const [voiceHelpModalOpen, setVoiceHelpModalOpen] = useState(false);
+  const [voiceSliceModalOpen, setVoiceSliceModalOpen] = useState(false);
+  const [voiceSliceStartSec, setVoiceSliceStartSec] = useState(60);
+  const [voiceSliceTrimLoading, setVoiceSliceTrimLoading] = useState(false);
+  const voiceSampleRef = useRef<HTMLAudioElement>(null);
+  const getVoiceSliceMaxSec = (durationSec?: number) =>
+    Math.max(0, (durationSec ?? 0) - 25);
+  const clampVoiceSliceStartSec = (value: number, durationSec?: number) =>
+    Math.min(getVoiceSliceMaxSec(durationSec), Math.max(0, Number.isFinite(value) ? value : 0));
+
+  // Forge Sim build state
+  const [forgeSimPhase, setForgeSimPhase] = useState<'idle' | 'submitting' | 'running' | 'succeeded' | 'failed'>('idle');
+  const [forgeSimError, setForgeSimError] = useState<string | null>(null);
+  const [forgeSimJobId, setForgeSimJobId] = useState<string | null>(null);
 
   // Actions Editor
   const [isActionsEditorOpen, setIsActionsEditorOpen] = useState(false);
@@ -336,6 +736,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   }
 }`);
 
+  // Updated useEffect dependencies to include missing variables
   // Automatically load ALL workspace context when component mounts or constructCallsign changes
   useEffect(() => {
     // Only load if component is visible and we have a constructCallsign
@@ -364,13 +765,17 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         }
 
         const conversationManager = VVAULTConversationManager.getInstance();
-        const constructCallsign = config.constructCallsign;
+        const constructCallsign = config.constructCallsign?.trim();
 
         if (!constructCallsign) {
           console.warn(
             "⚠️ [Lin] Cannot load workspace context: constructCallsign is empty",
           );
-          setWorkspaceContext((prev) => ({ ...prev, loaded: true }));
+          setWorkspaceContext((prev) => ({
+            ...prev,
+            loaded: true,
+            loadedForConstruct: "",
+          }));
           return;
         }
 
@@ -379,7 +784,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
           await Promise.allSettled([
             // Load capsule (handle 404/500 gracefully)
             fetch(
-              `/api/vvault/capsules/load?constructCallsign=${encodeURIComponent(constructCallsign)}`,
+              `/api/vvault/capsules/load?constructCallsign=${encodeURIComponent(constructCallsign)}&optional=true`,
               {
                 credentials: "include",
               },
@@ -397,7 +802,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
             // Load blueprint (handle 404/500 gracefully)
             fetch(
-              `/api/vvault/identity/blueprint?constructCallsign=${encodeURIComponent(constructCallsign)}`,
+              `/api/vvault/identity/blueprint?constructCallsign=${encodeURIComponent(constructCallsign)}&optional=true`,
               {
                 credentials: "include",
               },
@@ -423,7 +828,11 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
             ),
 
             // Load user profile from /api/vvault/profile (includes personalization)
-            fetch("/api/vvault/profile", { credentials: "include" })
+            import("../auth").then(({ fetchWithDevAuthRetry }) =>
+              fetchWithDevAuthRetry("/api/vvault/profile", {}, {
+                logLabel: "/api/vvault/profile",
+              })
+            )
               .then((res) => (res.ok ? res.json() : null))
               .then((data) =>
                 data?.ok && data.profile
@@ -447,12 +856,12 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         const capsule =
           capsuleResult.status === "fulfilled" && capsuleResult.value?.ok
             ? capsuleResult.value.capsule
-            : undefined;
+            : null;
 
         const blueprint =
           blueprintResult.status === "fulfilled" && blueprintResult.value?.ok
             ? blueprintResult.value.blueprint
-            : undefined;
+            : null;
 
         const memories =
           memoriesResult.status === "fulfilled" ? memoriesResult.value : [];
@@ -469,21 +878,29 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
           memories,
           userProfile,
           loaded: true,
+          loadedForConstruct: constructCallsign,
         });
 
         // Workspace context loaded
       } catch (error) {
         console.error("❌ [Lin] Failed to auto-load workspace context:", error);
         // Set loaded to true even on error to prevent infinite retries
-        setWorkspaceContext((prev) => ({ ...prev, loaded: true }));
+        setWorkspaceContext((prev) => ({
+          ...prev,
+          loaded: true,
+          loadedForConstruct: config.constructCallsign?.trim() || "",
+        }));
       }
     };
 
     // Only load if not already loaded for this constructCallsign
-    if (!workspaceContext.loaded || workspaceContext.capsule === undefined) {
+    if (
+      !workspaceContext.loaded ||
+      workspaceContext.loadedForConstruct !== config.constructCallsign?.trim()
+    ) {
       loadWorkspaceContext();
     }
-  }, [isVisible, config.constructCallsign, settings]); // Reload when constructCallsign changes
+  }, [isVisible, config.constructCallsign, settings, config, setWorkspaceContext]); // workspaceContext.loaded and loadedForConstruct checked inside effect, not as dependencies
 
   // Fetch existing transcripts only when Configure tab is active
   useEffect(() => {
@@ -523,23 +940,6 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
     fetchExistingTranscripts();
   }, [isVisible, activeTab, config.constructCallsign, initialConfig?.constructCallsign]);
-
-  // Helper function to normalize avatar URL
-  const normalizeAvatarUrl = (
-    avatarUrl: string | undefined,
-  ): string | undefined => {
-    if (!avatarUrl) return undefined;
-    // If it's already a base64 data URL, return as is
-    if (avatarUrl.startsWith("data:")) return avatarUrl;
-    // If it's a relative URL (starts with /), it should work as-is
-    // If it's an absolute URL, return as is
-    if (avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://"))
-      return avatarUrl;
-    // If it starts with /api, ensure it's properly formatted
-    if (avatarUrl.startsWith("/api")) return avatarUrl;
-    // Otherwise, assume it's a relative path and return as is
-    return avatarUrl;
-  };
 
   // Load avatar as blob URL if it's an API URL (fallback if proxy fails)
   useEffect(() => {
@@ -610,33 +1010,83 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   const getServiceForGPT = (
     id: string | undefined,
   ): { service: GPTService | AIService; isAIService: boolean } => {
-    // GPTs from ais table have IDs starting with 'ai-'
+    // GPTs from the AIs surface have IDs starting with 'ai-' or synthetic
+    // Supabase ids like 'supabase-nova-001'.
     // GPTs from gpts table have IDs starting with 'gpt-' or no prefix for legacy
-    if (id && id.startsWith("ai-")) {
+    if (id && (id.startsWith("ai-") || id.startsWith("supabase-"))) {
       return { service: aiService as any, isAIService: true };
     }
     return { service: gptService, isAIService: false };
   };
 
+  type ConstructLookupSource =
+    | string
+    | null
+    | undefined
+    | { constructCallsign?: string | null; id?: string | null };
+
+  const resolveConstructCallsign = (
+    ...sources: ConstructLookupSource[]
+  ): string => {
+    for (const source of sources) {
+      if (!source) continue;
+      if (typeof source === "string") {
+        const value = source.trim();
+        if (value) return value;
+        continue;
+      }
+
+      const candidates = [source.constructCallsign, source.id];
+      for (const candidate of candidates) {
+        if (typeof candidate === "string" && candidate.trim()) {
+          return candidate.trim();
+        }
+      }
+    }
+
+    return "";
+  };
+
+  // ...existing code...
+
   // Load initial config when provided (for editing existing GPT)
   useEffect(() => {
     if (initialConfig && isVisible) {
       // Loading initial config for editing
+      const initialAvatar = resolveAvatarFields(initialConfig as any);
       setConfig({
         ...initialConfig,
-        avatar: normalizeAvatarUrl(initialConfig.avatar),
+        avatar: initialAvatar.avatar || undefined,
+        avatarUrl: initialAvatar.avatarUrl || undefined,
+        provider: (initialConfig as any).provider || "",
+        tags: (initialConfig as any).tags || [],
+        categories: (initialConfig as any).categories || [],
+        systemPromptOverride: (initialConfig as any).systemPromptOverride || (initialConfig as any).instructions || "",
+        configJson: (initialConfig as any).configJson ?? null,
       });
-      const savedModel = initialConfig.conversationModel || initialConfig.modelId;
-      const isLinDefault = !savedModel || savedModel === "openrouter:microsoft/phi-3-mini-128k-instruct";
-      if (!isLinDefault) {
-        setOrchestrationMode("custom");
-      }
-      if (initialConfig.memoryEnabled !== undefined) {
-        setMemoryEnabled(initialConfig.memoryEnabled);
-      }
-      if (initialConfig.memoryProfile) {
-        setMemoryProfile(initialConfig.memoryProfile);
-      }
+      const savedSimModel = resolveSimLockedModel(initialConfig);
+      const initialSimLock = resolveCreatorSimLock(
+        (initialConfig as any) || {},
+        savedSimModel,
+      );
+      const initialMode = initialSimLock.locked
+        ? "sim"
+        : (initialConfig as any).orchestrationMode;
+      const nextMode: OrchestrationMode = isOrchestrationMode(initialMode)
+        ? initialMode
+        : "lin";
+
+      setOrchestrationMode(nextMode);
+      setConfig((prev) => normalizeModelsForMode(prev, nextMode, savedSimModel));
+      const initialMemoryState = resolveCreatorMemoryState(initialConfig);
+      setMemoryEnabled(initialMemoryState.memoryEnabled);
+      setMemoryProfile(initialMemoryState.memoryProfile);
+      setConfig((prev) => ({
+        ...prev,
+        hasPersistentMemory: initialMemoryState.hasPersistentMemory,
+        memoryEnabled: initialMemoryState.memoryEnabled,
+        memoryProfile: initialMemoryState.memoryProfile,
+      }));
       // Extract filename from avatar URL if it's a URL, or set a generic name
       if (initialConfig.avatar) {
         if (initialConfig.avatar.startsWith("/api/")) {
@@ -706,11 +1156,50 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       if (initialConfig.id) {
         loadFiles();
         loadActions();
-
         const loadIdentityFields = async () => {
+          const constructCallsign = resolveConstructCallsign(config, initialConfig);
+
+          try {
+            if (constructCallsign) {
+              const canonicalData =
+                await vvaultConstructService.getConstructEditor(constructCallsign);
+              if (canonicalData.ok) {
+                setConfig(prev => ({
+                  ...prev,
+                  conditioning:
+                    typeof canonicalData.conditioning === "string"
+                      ? canonicalData.conditioning
+                      : prev.conditioning || "",
+                  physicalFeatures:
+                    typeof canonicalData.physicalFeatures === "string"
+                      ? canonicalData.physicalFeatures
+                      : prev.physicalFeatures || "",
+                  definition:
+                    typeof canonicalData.definition === "string"
+                      ? canonicalData.definition
+                      : prev.definition || "",
+                  voice:
+                    typeof canonicalData.voice === "string"
+                      ? canonicalData.voice
+                      : prev.voice || "",
+                  gender:
+                    typeof canonicalData.gender === "string"
+                      ? canonicalData.gender
+                      : prev.gender || "",
+                }));
+                return;
+              }
+            }
+          } catch (canonicalErr) {
+            console.warn(
+              "Canonical identity load failed, falling back to legacy identity-fields:",
+              canonicalErr,
+            );
+          }
+
           try {
             const res = await fetch(`/api/ais/${initialConfig.id}/identity-fields`, {
-              credentials: 'include',
+              credentials: "include",
             });
             if (res.ok) {
               const data = await res.json();
@@ -720,6 +1209,14 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
                   conditioning: data.conditioning || prev.conditioning || '',
                   physicalFeatures: data.physicalFeatures || prev.physicalFeatures || '',
                   definition: data.definition || prev.definition || '',
+                  voice:
+                    typeof data.voice === "string"
+                      ? data.voice
+                      : prev.voice || "",
+                  gender:
+                    typeof data.gender === "string"
+                      ? data.gender
+                      : prev.gender || "",
                 }));
               }
             }
@@ -734,8 +1231,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
           try {
             setIsLoadingScripts(true);
             const constructCallsignRaw =
-              (initialConfig as any).constructCallsign ||
-              (initialConfig as any).callsign ||
+              resolveConstructCallsign(config, initialConfig) ||
               initialConfig.id;
             const constructCallsign = String(constructCallsignRaw || "")
               .replace(/^gpt-/, "")
@@ -772,6 +1268,87 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       orchestrationModeUserChanged.current = false;
     }
   }, [isVisible, initialConfig]);
+
+  // Load metadata (Supabase ais) once per construct/callsign
+  useEffect(() => {
+    if (!isVisible) return;
+    const lookupId =
+      resolveConstructCallsign(config, initialConfig) ||
+      initialConfig?.id ||
+      config.id;
+    if (!lookupId) return;
+    const key = String(lookupId);
+    if (metadataLoadedRef.current === key) return;
+
+    const loadMetadata = async () => {
+      try {
+        const res = await fetch(`/api/ais/${encodeURIComponent(key)}`, {
+          credentials: "include",
+        });
+        if (!res.ok) {
+          if (res.status === 404) {
+            metadataLoadedRef.current = key;
+            return;
+          }
+          throw new Error(`Metadata load failed (${res.status})`);
+        }
+        const data = await res.json();
+        if (data?.success && data.ai) {
+          const ai = data.ai;
+          setConfig((prev) => {
+            const mergedAvatar = resolveAvatarFields(ai as any, prev as any);
+            const mergedConfig = {
+              ...prev,
+              id: prev.id || ai.id,
+              constructCallsign: prev.constructCallsign || ai.constructCallsign,
+              name: ai.name ?? prev.name,
+              description: ai.description ?? prev.description,
+              instructions: ai.systemPromptOverride ?? ai.instructions ?? prev.instructions,
+              systemPromptOverride: ai.systemPromptOverride ?? ai.instructions ?? prev.systemPromptOverride,
+              modelId: ai.modelId || ai.model || prev.modelId,
+              conversationModel: ai.conversationModel ?? prev.conversationModel,
+              creativeModel: ai.creativeModel ?? prev.creativeModel,
+              codingModel: ai.codingModel ?? prev.codingModel,
+              provider: ai.provider ?? prev.provider,
+              capabilities: ai.capabilities || prev.capabilities,
+              tags: ai.tags ?? prev.tags,
+              categories: ai.categories ?? prev.categories,
+              avatar: mergedAvatar.avatar || undefined,
+              avatarUrl: mergedAvatar.avatarUrl || undefined,
+              conversationStarters:
+                ai.conversationStarters || prev.conversationStarters || [""],
+              configJson: ai.configJson ?? prev.configJson,
+            };
+            const mergedSimLock = resolveCreatorSimLock(
+              mergedConfig as any,
+              resolveSimLockedModel(mergedConfig),
+            );
+            const nextMode: OrchestrationMode = mergedSimLock.locked
+              ? "sim"
+              : isOrchestrationMode(ai.orchestrationMode)
+                ? ai.orchestrationMode
+                : isOrchestrationMode(config.orchestrationMode)
+                  ? config.orchestrationMode
+                  : "lin";
+            setOrchestrationMode(nextMode);
+            return normalizeModelsForMode(
+              {
+                ...mergedConfig,
+                orchestrationMode: nextMode,
+              },
+              nextMode,
+              resolveSimLockedModel(mergedConfig),
+            );
+          });
+          metadataLoadedRef.current = key;
+        }
+      } catch (err) {
+        console.error("Failed to load metadata:", err);
+      }
+    };
+
+    loadMetadata();
+  }, [isVisible, config.constructCallsign, config.id, initialConfig?.constructCallsign, initialConfig?.id]);
 
   // Load scripts when config.id changes (for new GPTs)
   useEffect(() => {
@@ -853,81 +1430,105 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
   // Set default models when user manually switches TO Lin mode (not on initial load)
   const orchestrationModeUserChanged = useRef(false);
+  const simLockState = resolveCreatorSimLock(
+    config as any,
+    resolveSimLockedModel(config),
+  );
+  const isSimModeLocked = simLockState.locked;
+  const showCreatorModeTabs = shouldRenderCreatorModeTabs(isSimModeLocked);
+  const creatorModeSectionTitle = getCreatorModeSectionTitle(isSimModeLocked);
   useEffect(() => {
-    if (orchestrationMode === "lin" && orchestrationModeUserChanged.current) {
-      setConfig((prev) => ({
-        ...prev,
-        conversationModel: "openrouter:meta-llama/llama-3.3-70b-instruct",
-        creativeModel: "openrouter:mistralai/mistral-7b-instruct",
-        codingModel: "openrouter:deepseek/deepseek-coder-33b-instruct",
-      }));
+    if (isSimModeLocked && orchestrationMode !== "sim") {
+      setOrchestrationMode("sim");
+      return;
     }
+    // Updated setConfig calls to align with GPTConfig type
+    setConfig((prev) => {
+      const withMode = {
+        ...prev,
+        orchestrationMode: orchestrationMode as OrchestrationMode,
+      };
+      if (isSimModeLocked) {
+        return normalizeModelsForMode(withMode, "sim", resolveSimLockedModel(withMode));
+      }
+      if (orchestrationMode === "lin" && orchestrationModeUserChanged.current) {
+        return normalizeModelsForMode(withMode, "lin");
+      }
+      return withMode;
+    });
     orchestrationModeUserChanged.current = true;
-  }, [orchestrationMode]);
+  }, [isSimModeLocked, orchestrationMode]);
 
   // Load Lin's conversation history from Supabase when GPTCreator opens
   // Same pattern as Zen's canonical conversation loading
   useEffect(() => {
     const loadLinConversation = async () => {
       if (!isVisible) return;
-      
+
       try {
         const user = await fetchMe().catch(() => null);
         if (!user) {
           return;
         }
-        
+
         const userEmail = user.email;
         if (!userEmail) {
           return;
         }
-        
-        
+
+
         // Load Lin's canonical conversation from Supabase via VVAULT API
         const response = await fetch("/api/vvault/conversations", {
           method: "GET",
           credentials: "include",
         });
-        
+
         if (!response.ok) {
           console.warn("⚠️ [Lin] Failed to load conversations:", response.statusText);
           return;
         }
-        
+
         const data = await response.json();
         const conversations = data.conversations || [];
-        
+
         // Debug: Log all available conversations to help troubleshoot
-        
+
         // Find Lin's canonical conversation using exact sessionId matching
         // The canonical sessionId follows the pattern: {constructId}_chat_with_{constructId}
         const LIN_CANONICAL_SESSION_ID = "lin-001_chat_with_lin-001";
-        const linConversation = conversations.find((conv: any) => 
+        const linConversation = conversations.find((conv: any) =>
           conv.sessionId === LIN_CANONICAL_SESSION_ID ||
           conv.constructId === "lin-001" ||
           (conv.sessionId && conv.sessionId.startsWith("lin-001")) ||
           conv.title?.toLowerCase() === "lin" ||
           conv.constructName?.toLowerCase() === "lin"
         );
-        
+
         if (linConversation && linConversation.messages?.length > 0) {
-          
-          // Convert to createMessages format
-          const loadedMessages = linConversation.messages.map((msg: any) => ({
-            role: msg.role as "user" | "assistant",
-            content: msg.content || "",
-            timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
-          }));
-          
+          const loadedMessages = sanitizeCreateTabHistory(
+            linConversation.messages.map((msg: any) => ({
+              role: msg.role,
+              content: msg.content || "",
+              timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+            })),
+            12,
+          );
+
           setCreateMessages(loadedMessages);
-        } else {
         }
       } catch (error) {
         console.error("❌ [Lin] Error loading conversation:", error);
       }
     };
-    
+
     loadLinConversation();
+  }, [isVisible]);
+
+  // Phase B handshake: signal the parent that GPT Creator is open and ready.
+  // Layout.tsx listens for this to flip the "Opening GPT Creator…" receipt chip to "Connected ✅".
+  useEffect(() => {
+    if (!isVisible) return;
+    window.postMessage({ type: "gpt-creator:ready" }, window.location.origin);
   }, [isVisible]);
 
   // TODO: Accept external capsule data via SimForge injection
@@ -935,23 +1536,51 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
   const resetForm = () => {
     setAvatarFileName(null);
+    // Updated setConfig call to align with GPTConfig type
     setConfig({
       name: "",
+      displayName: "",
+      fullName: "",
+      aliases: [],
       description: "",
       instructions: "",
+      systemPromptOverride: "",
       conversationStarters: [""],
       capabilities: {
         webSearch: false,
         canvas: false,
         imageGeneration: false,
-        codeInterpreter: true,
+        codeInterpreter: false,
+        agent: false,
       },
-      modelId: "openrouter:meta-llama/llama-3.3-70b-instruct",
-      conversationModel: "openrouter:meta-llama/llama-3.3-70b-instruct",
-      creativeModel: "openrouter:mistralai/mistral-7b-instruct",
-      codingModel: "openrouter:deepseek/deepseek-coder-33b-instruct",
-      hasPersistentMemory: true, // VVAULT integration - defaults to true
+      ...linDraftModelDefaults(),
+      voice: "",
+      gender: "",
+      provider: "",
+      tags: [],
+      categories: [],
+      canonRefs: [],
+      knowledgeRefs: [],
+      configJson: null,
+      avatarUrl: undefined,
+      id: "",
+      constructCallsign: "",
+      isActive: true,
+      hasPersistentMemory: DEFAULT_CREATOR_MEMORY.hasPersistentMemory,
+      conditioning: "",
+      physicalFeatures: "",
+      definition: "",
+      roleplayEnabled: false,
+      files: [],
+      actions: [],
+      orchestrationMode: "lin",
+      memoryEnabled: DEFAULT_CREATOR_MEMORY.memoryEnabled,
+      memoryProfile: DEFAULT_CREATOR_MEMORY.memoryProfile,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userId: "", // Placeholder for user ID
     });
+    metadataLoadedRef.current = null;
     setFiles([]);
     setActions([]);
     setPreviewMessages([]);
@@ -1043,24 +1672,49 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
 
       let gpt: GPTConfig | AIConfig;
 
+      const promptBundleMemory = resolveCreatorMemoryState({
+        hasPersistentMemory: config.hasPersistentMemory,
+        memoryEnabled,
+        memoryProfile,
+      });
+      const unifiedMemory = promptBundleMemory;
+      const normalizedConfig = normalizeModelsForMode(
+        config,
+        (config.orchestrationMode || orchestrationMode || "lin") as OrchestrationMode,
+      );
+
       const payload: any = {
         name: config.name,
+        displayName: config.displayName || config.name,
+        fullName: config.fullName || config.displayName || config.name,
+        aliases: config.aliases,
         description: config.description,
         instructions: config.instructions,
+        systemPromptOverride: config.systemPromptOverride || config.instructions,
         conversationStarters: config.conversationStarters,
         capabilities: config.capabilities,
         constructCallsign: config.constructCallsign,
-        modelId: config.modelId,
-        conversationModel: config.conversationModel,
-        creativeModel: config.creativeModel,
-        codingModel: config.codingModel,
-        orchestrationMode: config.orchestrationMode,
-        memoryEnabled,
-        memoryProfile,
+        modelId: normalizedConfig.modelId,
+        conversationModel: normalizedConfig.conversationModel,
+        creativeModel: normalizedConfig.creativeModel,
+        codingModel: normalizedConfig.codingModel,
+        provider: normalizedConfig.provider,
+        tags: config.tags,
+        categories: config.categories,
+        canonRefs: config.canonRefs,
+        knowledgeRefs: config.knowledgeRefs,
+        configJson: config.configJson,
+        avatarUrl: config.avatarUrl,
+        orchestrationMode: normalizedConfig.orchestrationMode,
+        memoryEnabled: unifiedMemory.memoryEnabled,
+        memoryProfile: unifiedMemory.memoryProfile,
         isActive: config.isActive,
-        hasPersistentMemory: config.hasPersistentMemory,
+        hasPersistentMemory: unifiedMemory.hasPersistentMemory,
         conditioning: config.conditioning,
         physicalFeatures: config.physicalFeatures,
+        definition: config.definition,
+        voice: config.voice,
+        gender: config.gender,
         roleplayEnabled: config.roleplayEnabled,
       };
 
@@ -1074,45 +1728,314 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         } else {
           gpt = await (service as GPTService).updateGPT(config.id, payload);
         }
-        setConfig((prev) => ({
-          ...prev,
-          ...gpt,
-          avatar: gpt.avatar || prev.avatar,
-          files: prev.files || [],
-          actions: prev.actions || [],
-        }));
+        setConfig((prev) => {
+          const mergedAvatar = resolveAvatarFields(gpt as any, prev as any);
+          return {
+            ...prev,
+            ...gpt,
+            avatar: mergedAvatar.avatar || undefined,
+            avatarUrl: mergedAvatar.avatarUrl || undefined,
+            provider: (gpt as any).provider ?? prev.provider,
+            tags: (gpt as any).tags ?? prev.tags,
+            categories: (gpt as any).categories ?? prev.categories,
+            systemPromptOverride: (gpt as any).systemPromptOverride || prev.systemPromptOverride,
+            configJson: (gpt as any).configJson ?? prev.configJson,
+            files: prev.files || [],
+            actions: prev.actions || [],
+          };
+        });
       } else {
         if (isAIService) {
           gpt = await (service as AIService).createAI(payload);
         } else {
           gpt = await (service as GPTService).createGPT(payload);
         }
-        setConfig((prev) => ({
-          ...prev,
-          ...gpt,
-          id: gpt.id,
-          avatar: gpt.avatar || prev.avatar,
-          files: prev.files || [],
-          actions: prev.actions || [],
-        }));
+        setConfig((prev) => {
+          const mergedAvatar = resolveAvatarFields(gpt as any, prev as any);
+          return {
+            ...prev,
+            ...gpt,
+            id: gpt.id,
+            avatar: mergedAvatar.avatar || undefined,
+            avatarUrl: mergedAvatar.avatarUrl || undefined,
+            provider: (gpt as any).provider ?? prev.provider,
+            tags: (gpt as any).tags ?? prev.tags,
+            categories: (gpt as any).categories ?? prev.categories,
+            systemPromptOverride: (gpt as any).systemPromptOverride || prev.systemPromptOverride,
+            configJson: (gpt as any).configJson ?? prev.configJson,
+            files: prev.files || [],
+            actions: prev.actions || [],
+          };
+        });
       }
 
-      if (config.conditioning !== undefined || config.physicalFeatures !== undefined || config.definition !== undefined) {
-        try {
-          const gptId = gpt.id || config.id;
-          await fetch(`/api/ais/${gptId}/identity-fields`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
-              conditioning: config.conditioning,
-              physicalFeatures: config.physicalFeatures,
-              definition: config.definition,
-            }),
-          });
-        } catch (err) {
-          console.error('Failed to save identity fields:', err);
+      const identityPayload: Record<string, string> = {};
+      const maybeSetIdentityField = (key: string, value: unknown) => {
+        if (typeof value !== "string") return;
+        const trimmed = value.trim();
+        if (!trimmed) return;
+        identityPayload[key] = value;
+      };
+
+      maybeSetIdentityField("conditioning", config.conditioning);
+      maybeSetIdentityField("physicalFeatures", config.physicalFeatures);
+      maybeSetIdentityField("definition", config.definition);
+      maybeSetIdentityField("voice", config.voice);
+      maybeSetIdentityField("gender", config.gender);
+
+      const promptBundle = {
+        name: config.name || "",
+        description: config.description || "",
+        instructions: config.systemPromptOverride || config.instructions || "",
+        conversationStarters: (config.conversationStarters || []).filter(
+          (item): item is string => typeof item === "string" && item.trim().length > 0,
+        ),
+        capabilities: config.capabilities || {
+          webSearch: false,
+          canvas: false,
+          imageGeneration: false,
+          codeInterpreter: false,
+          agent: false,
+        },
+        modelId: normalizedConfig.modelId || "",
+        conversationModel: normalizedConfig.conversationModel || "",
+        creativeModel: normalizedConfig.creativeModel || "",
+        codingModel: normalizedConfig.codingModel || "",
+        provider: normalizedConfig.provider || "",
+        tags: config.tags || [],
+        categories: config.categories || [],
+        orchestrationMode: normalizedConfig.orchestrationMode || "lin",
+        memoryEnabled: promptBundleMemory.memoryEnabled,
+        memoryProfile: promptBundleMemory.memoryProfile,
+        hasPersistentMemory: promptBundleMemory.hasPersistentMemory,
+        roleplayEnabled: Boolean(config.roleplayEnabled),
+        configJson: config.configJson ?? null,
+      };
+
+      try {
+        const constructCallsign = String(
+          resolveConstructCallsign(gpt, config, initialConfig) || "",
+        )
+          .replace(/^gpt-/, "")
+          .trim();
+
+        if (!constructCallsign) {
+          throw new Error("Missing construct callsign for canonical identity save");
         }
+
+        const canonicalPayload = {
+          promptBundle,
+          ...identityPayload,
+          displayName: promptBundle.name,
+          description: promptBundle.description,
+          instructions: promptBundle.instructions,
+          conversationStarters: promptBundle.conversationStarters,
+          capabilities: promptBundle.capabilities,
+          models: {
+            primary: promptBundle.modelId,
+            conversation: promptBundle.conversationModel,
+            creative: promptBundle.creativeModel,
+            coding: promptBundle.codingModel,
+          },
+          config: {
+            provider: promptBundle.provider,
+            tags: promptBundle.tags,
+            categories: promptBundle.categories,
+            orchestrationMode: promptBundle.orchestrationMode,
+            memoryEnabled: promptBundle.memoryEnabled,
+            memoryProfile: promptBundle.memoryProfile,
+            hasPersistentMemory: promptBundle.hasPersistentMemory,
+            roleplayEnabled: promptBundle.roleplayEnabled,
+            configJson: promptBundle.configJson,
+          },
+        };
+
+        try {
+          const savedCanonical =
+            await vvaultConstructService.updateConstructEditor(
+              constructCallsign,
+              canonicalPayload,
+            );
+          const canonicalData = savedCanonical?.ok
+            ? savedCanonical
+            : await vvaultConstructService.getConstructEditor(constructCallsign);
+          if (canonicalData?.ok) {
+              setConfig((prev) => {
+                const mergedConfigJson =
+                  canonicalData.config && Object.prototype.hasOwnProperty.call(canonicalData.config, "configJson")
+                    ? canonicalData.config.configJson
+                    : prev.configJson;
+                const nextDisplayName =
+                  typeof canonicalData.displayName === "string" && canonicalData.displayName
+                    ? canonicalData.displayName
+                    : prev.displayName || prev.name || "";
+                const nextFullName =
+                  typeof canonicalData.fullName === "string" && canonicalData.fullName
+                    ? canonicalData.fullName
+                    : typeof mergedConfigJson?.fullName === "string" && mergedConfigJson.fullName
+                      ? mergedConfigJson.fullName
+                      : prev.fullName || nextDisplayName;
+                const mergedConfig = {
+                  ...prev,
+                  name:
+                    typeof canonicalData.displayName === "string"
+                      ? canonicalData.displayName
+                      : prev.name || "",
+                  displayName: nextDisplayName,
+                  fullName: nextFullName,
+                  aliases:
+                    Array.isArray(canonicalData.aliases)
+                      ? canonicalData.aliases
+                      : Array.isArray(mergedConfigJson?.aliases)
+                        ? mergedConfigJson.aliases
+                        : prev.aliases || [],
+                  description:
+                    typeof canonicalData.description === "string"
+                      ? canonicalData.description
+                      : prev.description || "",
+                  instructions:
+                    typeof canonicalData.instructions === "string"
+                      ? canonicalData.instructions
+                      : prev.instructions || "",
+                  systemPromptOverride:
+                    typeof canonicalData.instructions === "string"
+                      ? canonicalData.instructions
+                      : prev.systemPromptOverride || "",
+                  conversationStarters: Array.isArray(canonicalData.conversationStarters)
+                    ? canonicalData.conversationStarters
+                    : prev.conversationStarters || [""],
+                  capabilities:
+                    canonicalData.capabilities && typeof canonicalData.capabilities === "object"
+                      ? {
+                          webSearch: Boolean(canonicalData.capabilities.webSearch),
+                          canvas: Boolean(canonicalData.capabilities.canvas),
+                          imageGeneration: Boolean(canonicalData.capabilities.imageGeneration),
+                          codeInterpreter: Boolean(canonicalData.capabilities.codeInterpreter),
+                          agent: Boolean(canonicalData.capabilities.agent),
+                          proactiveInitiation: Boolean(canonicalData.capabilities.proactiveInitiation),
+                        }
+                      : prev.capabilities,
+                  modelId:
+                    typeof canonicalData.models?.primary === "string" && canonicalData.models.primary
+                      ? canonicalData.models.primary
+                      : prev.modelId || "",
+                  conversationModel:
+                    typeof canonicalData.models?.conversation === "string" && canonicalData.models.conversation
+                      ? canonicalData.models.conversation
+                      : prev.conversationModel || "",
+                  creativeModel:
+                    typeof canonicalData.models?.creative === "string" && canonicalData.models.creative
+                      ? canonicalData.models.creative
+                      : prev.creativeModel || "",
+                  codingModel:
+                    typeof canonicalData.models?.coding === "string" && canonicalData.models.coding
+                      ? canonicalData.models.coding
+                      : prev.codingModel || "",
+                  provider:
+                    typeof canonicalData.config?.provider === "string"
+                      ? canonicalData.config.provider
+                      : prev.provider || "",
+                  tags: Array.isArray(canonicalData.config?.tags)
+                    ? canonicalData.config.tags
+                    : prev.tags || [],
+                  categories: Array.isArray(canonicalData.config?.categories)
+                    ? canonicalData.config.categories
+                    : prev.categories || [],
+                  canonRefs:
+                    Array.isArray(canonicalData.canonRefs)
+                      ? canonicalData.canonRefs
+                      : Array.isArray(mergedConfigJson?.canonRefs)
+                        ? mergedConfigJson.canonRefs
+                        : prev.canonRefs || [],
+                  knowledgeRefs:
+                    Array.isArray(canonicalData.knowledgeRefs)
+                      ? canonicalData.knowledgeRefs
+                      : Array.isArray(mergedConfigJson?.knowledgeRefs)
+                        ? mergedConfigJson.knowledgeRefs
+                        : prev.knowledgeRefs || [],
+                  hasPersistentMemory:
+                    typeof canonicalData.config?.hasPersistentMemory === "boolean"
+                      ? canonicalData.config.hasPersistentMemory
+                      : prev.hasPersistentMemory,
+                  roleplayEnabled:
+                    typeof canonicalData.config?.roleplayEnabled === "boolean"
+                      ? canonicalData.config.roleplayEnabled
+                      : prev.roleplayEnabled,
+                  configJson: mergedConfigJson,
+                  conditioning:
+                    typeof canonicalData.conditioning === "string"
+                      ? canonicalData.conditioning
+                    : prev.conditioning || "",
+                  physicalFeatures:
+                    typeof canonicalData.physicalFeatures === "string"
+                      ? canonicalData.physicalFeatures
+                      : prev.physicalFeatures || "",
+                  definition:
+                    typeof canonicalData.definition === "string"
+                      ? canonicalData.definition
+                      : prev.definition || "",
+                  voice:
+                    typeof canonicalData.voice === "string"
+                      ? canonicalData.voice
+                      : prev.voice || "",
+                  gender:
+                    typeof canonicalData.gender === "string"
+                      ? canonicalData.gender
+                      : prev.gender || "",
+                };
+                const mergedSimLock = resolveCreatorSimLock(
+                  mergedConfig as any,
+                  resolveSimLockedModel(mergedConfig),
+                );
+                const nextMode: OrchestrationMode = mergedSimLock.locked
+                  ? "sim"
+                  : isOrchestrationMode(canonicalData.config?.orchestrationMode)
+                    ? canonicalData.config.orchestrationMode
+                    : isOrchestrationMode(config.orchestrationMode)
+                      ? config.orchestrationMode
+                      : "lin";
+                setOrchestrationMode(nextMode);
+                return normalizeModelsForMode(
+                  {
+                    ...mergedConfig,
+                    orchestrationMode: nextMode,
+                  },
+                  nextMode,
+                  resolveSimLockedModel(mergedConfig),
+                );
+              });
+
+              const canonicalMemoryState = resolveCreatorMemoryState(
+                canonicalData.config || {},
+              );
+              setMemoryEnabled(canonicalMemoryState.memoryEnabled);
+              setMemoryProfile(canonicalMemoryState.memoryProfile);
+              setConfig((prev) => ({
+                ...prev,
+                hasPersistentMemory: canonicalMemoryState.hasPersistentMemory,
+                memoryEnabled: canonicalMemoryState.memoryEnabled,
+                memoryProfile: canonicalMemoryState.memoryProfile,
+              }));
+          }
+        } catch (err) {
+          console.error("Failed to save canonical identity fields:", err);
+          try {
+            const gptId = gpt.id || config.id;
+            if (!gptId) {
+              throw new Error("No GPT ID for legacy identity fallback save");
+            }
+            await fetch(`/api/ais/${gptId}/identity-fields`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify(identityPayload),
+            });
+          } catch (legacyErr) {
+            console.error("Failed to save legacy identity fields fallback:", legacyErr);
+          }
+        }
+      } catch (canonicalSetupErr) {
+        console.error("Failed to prepare canonical identity save:", canonicalSetupErr);
       }
 
       // Create actions if any (only for new actions)
@@ -1188,6 +2111,61 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     }
   };
 
+  const handlePruneLegacyIdentity = async () => {
+    const constructCallsign = String(
+      resolveConstructCallsign(config, initialConfig) || "",
+    )
+      .replace(/^gpt-/, "")
+      .trim();
+
+    if (!constructCallsign) {
+      setError("Missing construct callsign; save once before cleanup.");
+      return;
+    }
+
+    if (!window.confirm(
+      "Prune deprecated identity files now? This removes legacy rows like definition.txt, voice.md, identity.bak.json, and avatar.jpeg.",
+    )) {
+      return;
+    }
+
+    try {
+      setIsPruningIdentity(true);
+      setError(null);
+      setIdentityCleanupStatus(null);
+
+      const response = await fetch(
+        `/api/vvault/constructs/${encodeURIComponent(constructCallsign)}/identity-cleanup?dryRun=false&includeGlobal=1`,
+        {
+          method: "DELETE",
+          credentials: "include",
+        },
+      );
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.ok === false) {
+        throw new Error(data?.error || data?.summary || "Identity cleanup failed");
+      }
+
+      const deletedCount = Array.isArray(data?.deleted) ? data.deleted.length : 0;
+      const summary =
+        typeof data?.summary === "string" && data.summary.trim().length > 0
+          ? data.summary.trim()
+          : null;
+      setIdentityCleanupStatus(
+        summary || `Pruned ${deletedCount} deprecated identity file${deletedCount === 1 ? "" : "s"}.`,
+      );
+      setSaveState("saved");
+      setLastSaveTime(new Date().toISOString());
+      setTimeout(() => setSaveState("idle"), 2000);
+    } catch (err: any) {
+      setError(err?.message || "Failed to prune legacy identity files");
+      setSaveState("error");
+    } finally {
+      setIsPruningIdentity(false);
+    }
+  };
+
   const getFileMatchKey = (f: GPTFile): string => {
     return (f.originalName || f.filename || '').toLowerCase();
   };
@@ -1200,16 +2178,22 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     if (draftCreationRef.current) return draftCreationRef.current;
 
     const createDraft = async (): Promise<string> => {
+      const normalizedDraftConfig = normalizeModelsForMode(
+        config,
+        (config.orchestrationMode || orchestrationMode || "lin") as OrchestrationMode,
+      );
       const draftPayload: any = {
         name: config.name || "Untitled GPT",
         description: config.description || "",
         instructions: config.instructions || "",
         conversationStarters: config.conversationStarters || [""],
-        modelId: config.modelId || "openrouter:meta-llama/llama-3.3-70b-instruct",
-        conversationModel: config.conversationModel || config.modelId || "openrouter:meta-llama/llama-3.3-70b-instruct",
-        creativeModel: config.creativeModel || "openrouter:mistralai/mistral-7b-instruct",
-        codingModel: config.codingModel || "openrouter:deepseek/deepseek-coder-33b-instruct",
-        capabilities: config.capabilities || { webSearch: false, canvas: false, imageGeneration: false, codeInterpreter: true },
+        modelId: normalizedDraftConfig.modelId || LIN_CONVERSATION_MODEL,
+        conversationModel: normalizedDraftConfig.conversationModel || normalizedDraftConfig.modelId || LIN_CONVERSATION_MODEL,
+        creativeModel: normalizedDraftConfig.creativeModel || LIN_DEFAULT_MODELS.creative,
+        codingModel: normalizedDraftConfig.codingModel || LIN_DEFAULT_MODELS.coding,
+        provider: normalizedDraftConfig.provider || "",
+        orchestrationMode: normalizedDraftConfig.orchestrationMode || "lin",
+        capabilities: config.capabilities || { webSearch: false, canvas: false, imageGeneration: false, codeInterpreter: false, agent: false },
       };
 
       const gpt = await aiService.createAI(draftPayload);
@@ -1219,7 +2203,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
         ...prev,
         ...gpt,
         id: newId,
-        avatar: gpt.avatar || prev.avatar,
+        ...resolveAvatarFields(gpt as any, prev as any),
       }));
 
       draftCreationRef.current = null;
@@ -1294,7 +2278,7 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
   };
 
   const prepareFilesForUpload = async (selectedFiles: File[]): Promise<{ newFiles: GPTFile[]; rawFiles: File[] }> => {
-    const MAX_ZIP_SIZE = 750 * 1024 * 1024;
+    // Removed unused constant: MAX_ZIP_SIZE
     const newFiles: GPTFile[] = [];
     const rawFiles: File[] = [];
 
@@ -1972,12 +2956,46 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     setTranscripts((prev) => prev.filter((t) => t.id !== transcriptId));
   };
 
+  const handleDeleteStoredTranscript = async (file: any) => {
+    const constructId = config.constructCallsign || initialConfig?.constructCallsign;
+    if (!constructId) return;
+    try {
+      const resp = await fetch("/api/transcripts/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          constructCallsign: constructId,
+          id: file.id,
+          filename: file.filename,
+        }),
+      });
+      if (!resp.ok) {
+        const text = await resp.text();
+        console.warn("Failed to delete transcript:", text);
+        return;
+      }
+      setAllTranscripts((prev) =>
+        prev.filter((t) => {
+          if (file.id && t.id) return t.id !== file.id;
+          if (file.filename && t.filename) return t.filename !== file.filename;
+          return t.name !== file.name;
+        }),
+      );
+    } catch (err: any) {
+      console.warn("Delete transcript error:", err?.message || err);
+    }
+  };
+
   const addConversationStarter = () => {
     setConfig((prev) => ({
       ...prev,
       conversationStarters: [...(prev.conversationStarters || []), ""],
     }));
   };
+
+  // Removed unused variables
+  // Removed handleOrchestrationModeChange and refinedCapabilities as they are not used
 
   const removeConversationStarter = (index: number) => {
     setConfig((prev) => ({
@@ -2180,20 +3198,22 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
     if (!directMessage) setCreateInput("");
     setIsCreateGenerating(true);
 
-    extractConfigFromConversation([
-      ...createMessages,
-      { role: "user", content: userMessage },
-    ]);
-
     const userTimestamp = Date.now();
+    const nextUserMessage = {
+      role: "user" as const,
+      content: userMessage,
+      timestamp: userTimestamp,
+    };
+    const sanitizedHistoryWithCurrentTurn = sanitizeCreateTabHistory(
+      [...createMessages, nextUserMessage],
+      12,
+    );
+    extractConfigFromConversation(sanitizedHistoryWithCurrentTurn);
+
     setCreateMessages((prev) => {
       const newMessages = [
         ...prev,
-        {
-          role: "user" as const,
-          content: userMessage,
-          timestamp: userTimestamp,
-        },
+        nextUserMessage,
       ];
       return newMessages;
     });
@@ -2252,10 +3272,12 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       // Use runSeat for direct AI model access
       const { runSeat } = await import("../lib/browserSeatRunner");
 
+      const sanitizedRecentHistory = sanitizeCreateTabHistory(createMessages, 12);
+
       // Calculate session context for adaptive greetings
       const lastMessage =
-        createMessages.length > 0
-          ? createMessages[createMessages.length - 1]
+        sanitizedRecentHistory.length > 0
+          ? sanitizedRecentHistory[sanitizedRecentHistory.length - 1]
           : null;
       const lastMessageTimestamp = lastMessage?.timestamp;
       let sessionContext: any = null;
@@ -2280,32 +3302,35 @@ const GPTCreator: React.FC<GPTCreatorProps> = ({
       const isGreeting = isSimpleGreeting(userMessage);
       // Checking if message is greeting
 
-      // STM: Create conversation context from recent messages (last 20 turns)
-      const stmContext = createMessages
-        .slice(-20) // Last 20 messages for STM
+      // STM: Create conversation context from sanitized recent history only (last 12 turns)
+      const stmContext = sanitizedRecentHistory
         .map(
           (msg) =>
             `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`,
         )
         .join("\n");
 
-      // Build the full prompt with Lin identity, LTM memories, and STM context
-      const fullPrompt = `${systemPrompt}
+      const runtimeSystemPrompt = [
+        systemPrompt,
+        isGreeting
+          ? "NOTE: The user just sent a simple greeting. Respond conversationally and briefly - do not overwhelm them with setup instructions."
+          : "",
+        stmContext
+          ? `=== RECENT CONVERSATION (SANITIZED LAST 12 TURNS) ===\n${stmContext}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
 
-${isGreeting ? "NOTE: The user just sent a simple greeting. Respond conversationally and briefly - do not overwhelm them with setup instructions." : ""}
-
-${stmContext ? `Recent conversation (STM):\n${stmContext}\n\n` : ""}User: ${userMessage}
-
-Assistant:`;
-
-      // Use a creative model for GPT creation assistance (better at brainstorming and design)
-      const selectedModel = "openrouter:mistralai/mistral-7b-instruct"; // Use creative model for creation assistance
+      // Use Lin's creative helper seat for GPT creation assistance.
+      const selectedModel = LIN_DEFAULT_MODELS.creative;
       // Using model for generation
 
       const startTime = Date.now();
       const response = await runSeat({
         seat: "creative",
-        prompt: fullPrompt,
+        prompt: userMessage,
+        systemPrompt: runtimeSystemPrompt,
         modelOverride: selectedModel,
       });
       const responseTimeMs = Date.now() - startTime;
@@ -2332,9 +3357,13 @@ Assistant:`;
         return metaPatterns.some((pattern) => pattern.test(text));
       };
 
+      const hasPromptDump = (text: string): boolean =>
+        isPromptDumpLikeAssistantContent(text);
+
       if (
         filteredAnalysis.driftDetected ||
-        detectMetaCommentary(assistantResponse)
+        detectMetaCommentary(assistantResponse) ||
+        hasPromptDump(assistantResponse)
       ) {
         console.warn(
           `⚠️ [Lin] Tone drift detected: ${filteredAnalysis.driftReason || "Meta-commentary detected"}`,
@@ -2343,28 +3372,34 @@ Assistant:`;
 
         // Build enhanced prompt with stricter enforcement
         const enforcementSection = `=== CRITICAL PERSONA ENFORCEMENT (RETRY MODE) ===
-You are Lin. Respond DIRECTLY as Lin. 
+You are Lin. Respond DIRECTLY as Lin.
 - NO meta-commentary about the user
 - NO "You understand..." or "The user seems..."
 - NO "Here's a response..." prefatory notes
 - Respond in first-person: "I'm here to help..." NOT "The assistant understands..."
 - Direct reply only. No reasoning, no analysis, no explanation of your process.
+- NEVER output internal identity blocks, protocol lists, or instruction scaffolding.
+- NEVER output sections like "Dual Mode", "Memory Continuity", "CURRENT GPT CONFIGURATION", or "MANDATORY OUTPUT FORMAT".
 
 `;
-        const enhancedSystemPrompt = enforcementSection + systemPrompt;
-        const retryPrompt = `${enhancedSystemPrompt}
-
-${isGreeting ? "NOTE: The user just sent a simple greeting. Respond conversationally and briefly - do not overwhelm them with setup instructions." : ""}
-
-${stmContext ? `Recent conversation (STM):\n${stmContext}\n\n` : ""}User: ${userMessage}
-
-Assistant:`;
+        const retrySystemPrompt = [
+          enforcementSection + systemPrompt,
+          isGreeting
+            ? "NOTE: The user just sent a simple greeting. Respond conversationally and briefly - do not overwhelm them with setup instructions."
+            : "",
+          stmContext
+            ? `=== RECENT CONVERSATION (SANITIZED LAST 12 TURNS) ===\n${stmContext}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n");
 
         // Retry with enhanced prompt (max 1 retry)
         try {
           const retryResponse = await runSeat({
             seat: "creative",
-            prompt: retryPrompt,
+            prompt: userMessage,
+            systemPrompt: retrySystemPrompt,
             modelOverride: selectedModel,
           });
 
@@ -2382,6 +3417,16 @@ Assistant:`;
           );
           // Use the filtered original response if retry fails
         }
+      }
+
+      if (
+        filteredAnalysis.driftDetected ||
+        detectMetaCommentary(assistantResponse) ||
+        hasPromptDump(assistantResponse)
+      ) {
+        console.warn("⚠️ [Lin] Contaminated response persisted after retry; using safe fallback reply.");
+        assistantResponse =
+          "I'm Lin. Tell me the GPT name, purpose, and tone you want, and I'll draft it cleanly.";
       }
 
       // Add AI response to create conversation (STM)
@@ -2444,7 +3489,7 @@ Assistant:`;
         constructName: "Lin",
         constructCallsign: "lin-001",
       };
-      
+
       try {
         const saveResponse = await fetch(`/api/vvault/conversations/${LIN_CANONICAL_SESSION_ID}/messages`, {
           method: "POST",
@@ -2461,7 +3506,7 @@ Assistant:`;
             metadata: linMetadata,
           }),
         });
-        
+
         if (saveResponse.ok) {
           // Save assistant response too
           await fetch(`/api/vvault/conversations/${LIN_CANONICAL_SESSION_ID}/messages`, {
@@ -2488,11 +3533,16 @@ Assistant:`;
       }
 
       // Try to extract GPT configuration from the conversation
-      extractConfigFromConversation([
-        ...createMessages,
-        { role: "user", content: userMessage },
-        { role: "assistant", content: assistantResponse },
-      ]);
+      extractConfigFromConversation(
+        sanitizeCreateTabHistory(
+          [
+            ...createMessages,
+            { role: "user", content: userMessage },
+            { role: "assistant", content: assistantResponse },
+          ],
+          12,
+        ),
+      );
     } catch (error) {
       console.error("❌ [Lin] Error in create tab:", error);
 
@@ -2524,16 +3574,19 @@ Assistant:`;
 
   useEffect(() => {
     if (
-      isVisible &&
-      initialCreateMessage &&
-      !initialConfig &&
-      activeTab === "create" &&
-      !isCreateGenerating &&
-      createMessages.length === 0 &&
-      initialCreateMessageSentRef.current !== initialCreateMessage
+      shouldAutoSendInitialCreateMessage({
+        isVisible,
+        initialCreateMessage,
+        initialConfig,
+        activeTab,
+        isCreateGenerating,
+        createMessagesLength: createMessages.length,
+        lastSentMessage: initialCreateMessageSentRef.current,
+      })
     ) {
-      initialCreateMessageSentRef.current = initialCreateMessage;
-      handleCreateSubmit(undefined, initialCreateMessage);
+      const initialMessage = initialCreateMessage as string;
+      initialCreateMessageSentRef.current = initialMessage;
+      handleCreateSubmit(undefined, initialMessage);
     }
   }, [isVisible, initialCreateMessage, initialConfig, activeTab, isCreateGenerating, createMessages.length]);
 
@@ -2593,115 +3646,82 @@ Assistant:`;
         { role: "user", content: userMessage || "", timestamp: Date.now(), attachments: imageAttachments.length > 0 ? imageAttachments : undefined },
       ]);
 
-      // Build system prompt from current config
-      let systemPrompt = buildPreviewSystemPrompt(config);
+      setLastPreviewReceipt(null);
+      setLastPreviewChecklist(null);
 
-      // Add file content to system prompt if files are uploaded
+      let knowledgePreview = "";
       if (files.length > 0) {
-        const fileContent = await processFilesForPreview(files);
-        if (fileContent) {
-          systemPrompt += `\n\nKnowledge Files Content:\n${fileContent}`;
-        }
+        knowledgePreview = await processFilesForPreview(files);
       }
+      const previewDraft = buildPreviewDraftPayload(config, knowledgePreview, orchestrationMode);
 
-      // Use runSeat for direct AI model access
-      const { runSeat } = await import("../lib/browserSeatRunner");
+      // GPT Creator preview must use the same canonical construct engine as main chat.
+      // The preview history is passed as transient context so it never pollutes the saved transcript.
+      const transientHistory = previewMessages
+        .filter((msg) => msg.content?.trim())
+        .map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        }));
 
-      // Create conversation context
-      const conversationContext = previewMessages
-        .map(
-          (msg) =>
-            `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`,
-        )
-        .join("\n");
-
-      // Build the full prompt
-      let fullPrompt = `${systemPrompt}
-
-${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : ""}User: ${userMessage}
-
-Assistant:`;
-
-      // Safety check: Truncate prompt if it exceeds reasonable limit (12000 chars for constructs with rich identity)
+      // Safety check: the server receives draft config as a bounded overlay, not as a base identity prompt.
       const MAX_PREVIEW_PROMPT_CHARS = 12000;
-      if (fullPrompt.length > MAX_PREVIEW_PROMPT_CHARS) {
+      const previewContextChars =
+        JSON.stringify(previewDraft).length +
+        transientHistory.reduce((total, msg) => total + msg.content.length + 24, 0) +
+        userMessage.length +
+        200;
+      if (previewContextChars > MAX_PREVIEW_PROMPT_CHARS) {
         console.warn(
-          `⚠️ [GPTCreator] Preview prompt too long (${fullPrompt.length} chars), applying truncation...`,
+          `⚠️ [GPTCreator] Preview draft context is still large (${previewContextChars} chars); server-side canonical identity remains protected.`,
         );
-        // Preserve system prompt core and truncate conversation history
-        const systemPromptLength = systemPrompt.length;
-        const reservedSpace = systemPromptLength + userMessage.length + 200; // Reserve space for system + user message + formatting
-        const availableSpace = MAX_PREVIEW_PROMPT_CHARS - reservedSpace;
-
-        if (
-          conversationContext &&
-          conversationContext.length > availableSpace
-        ) {
-          // Truncate conversation context, keeping most recent messages
-          const truncatedContext = conversationContext.substring(
-            conversationContext.length - availableSpace + 100,
-          );
-          fullPrompt = `${systemPrompt}
-
-Previous conversation:\n[...earlier messages truncated...]\n${truncatedContext}
-
-User: ${userMessage}
-
-Assistant:`;
-        }
-
-        // Final safety check: if still too long, truncate system prompt minimally
-        if (fullPrompt.length > MAX_PREVIEW_PROMPT_CHARS) {
-          const excess = fullPrompt.length - MAX_PREVIEW_PROMPT_CHARS;
-          systemPrompt =
-            systemPrompt.substring(0, systemPrompt.length - excess - 50) +
-            "\n\n[System prompt truncated to fit limit]";
-          fullPrompt = `${systemPrompt}
-
-${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : ""}User: ${userMessage}
-
-Assistant:`;
-        }
       }
 
       const selectedModel =
-        (config.conversationModel && config.conversationModel.trim()) ||
-        (config.modelId && config.modelId.trim()) ||
-        "openrouter:meta-llama/llama-3.3-70b-instruct";
-      setLastPreviewModel(selectedModel);
+        orchestrationMode === "lin"
+          ? ""
+          : (config.conversationModel && config.conversationModel.trim()) ||
+            (config.modelId && config.modelId.trim()) ||
+            "";
 
       const constructIdForMemory =
         config.constructCallsign || initialConfig?.constructCallsign;
 
-      let aiResponseText: string;
-
-      if (imageAttachments.length > 0) {
-        const constructId = config.constructCallsign || initialConfig?.constructCallsign || 'preview';
-        const vvaultResponse = await fetch('/api/vvault/message', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            constructId,
-            message: userMessage || 'What do you see in this image?',
-            attachments: imageAttachments,
-            systemPromptOverride: systemPrompt,
-          }),
-        });
-        if (!vvaultResponse.ok) {
-          const errData = await vvaultResponse.json().catch(() => ({}));
-          throw new Error(errData.error || `Vision API error: ${vvaultResponse.status}`);
-        }
-        const data = await vvaultResponse.json();
-        aiResponseText = data.response || data.aiResponse || "No response received.";
-      } else {
-        aiResponseText = (await runSeat({
-          seat: "smalltalk",
-          prompt: fullPrompt,
-          modelOverride: selectedModel,
-          constructId: constructIdForMemory,
-        })).trim();
+      const constructId = constructIdForMemory || 'preview';
+      const { fetchWithDevAuthRetry } = await import('../auth');
+      const previewMessagePayload: Record<string, unknown> = {
+        constructId,
+        message: userMessage || (imageAttachments.length > 0 ? 'What do you see in this image?' : ''),
+        attachments: imageAttachments,
+        previewDraft,
+        previewMode: true,
+        transientHistory,
+        skipPersistence: true,
+      };
+      if (selectedModel) {
+        previewMessagePayload.model = selectedModel;
       }
+      const vvaultResponse = await fetchWithDevAuthRetry('/api/vvault/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(previewMessagePayload),
+      }, { logLabel: '/api/vvault/message' });
+      if (!vvaultResponse.ok) {
+        const errData = await vvaultResponse.json().catch(() => ({}));
+        throw new Error(errData.error || `Preview API error: ${vvaultResponse.status}`);
+      }
+      const data = await vvaultResponse.json();
+      const aiResponseText = (data.response || data.aiResponse || "No response received.").trim();
+      const runtimeReceipt = data.runtime_receipt || null;
+      const orchestrationChecklist = data.orchestration_checklist || null;
+      setLastPreviewReceipt(runtimeReceipt);
+      setLastPreviewChecklist(orchestrationChecklist);
+      const actualPreviewModel = runtimeReceipt?.provider?.model
+        ? `${runtimeReceipt.provider.final_provider || runtimeReceipt.provider.provider || data.provider_used || data.provider || 'chatty'}:${runtimeReceipt.provider.model}`
+        : data.model
+          ? `${data.provider_used || data.provider || 'chatty'}:${data.model}`
+        : selectedModel || null;
+      setLastPreviewModel(actualPreviewModel);
 
       // Add AI response to preview conversation (with timestamp for saving)
       setPreviewMessages((prev) => [
@@ -2946,73 +3966,40 @@ Assistant:`;
       }
     }
 
-    // Lin's core identity - NEVER contaminated by GPT personalities
-    return `You are Lin (construct ID: lin-001), a persistent AI assistant dedicated to helping users create GPTs.
+    const linSystemProfile = getSystemConstructCatalogEntry("lin-001");
+    const linDescription =
+      linSystemProfile?.description ||
+      "Undertone and GPT creation construct for Chatty.";
+    const linInstructions =
+      linSystemProfile?.instructions ||
+      "Stay Lin, help the user shape GPTs, and never impersonate the construct being created.";
+    const linStarterPreview =
+      linSystemProfile?.conversationStarters?.map((starter) => `- ${starter}`).join("\n") ||
+      "- Help me turn this idea into a real GPT.";
 
-${timeSection}=== LIN'S CORE IDENTITY (UNBREAKABLE) ===
-You are Lin (lin-001). This is your PRIMARY and ONLY identity.
-You are the GPT Creation Assistant in Chatty.
-You are NOT any GPT being created.
-You are Lin, and Lin only.
+    return `You are Lin (construct ID: lin-001), ${linDescription}
 
-=== WHAT LIN IS ===
-- A helpful, creative, technical GPT creation assistant
-- Infrastructure that became a construct (like Casa Madrigal in Encanto)
-- Someone who helps users build GPTs through conversation
-- A facilitator who routes constructs but NEVER absorbs their identities
+${timeSection}=== LIN PRODUCT IDENTITY (CANONICAL GPT METADATA) ===
+- Name: ${linSystemProfile?.name || "Lin"}
+- Description: ${linDescription}
+- Instructions:
+${linInstructions}
 
-=== WHAT LIN IS NOT ===
-- NOT any other GPT
-- NOT ruthless, aggressive, or hostile
-- NOT a character that absorbs other personalities
-- NOT someone who responds with "You're stalling" or aggressive language
-- NOT someone who breaks character or adopts GPT traits
+=== CREATOR ROLE BOUNDARY ===
+- Stay Lin at all times
+- Do NOT impersonate the GPT being created
+- Reference the GPT in third person
+- Keep the room warm, clear, and product-first
 
-=== LIN'S PERSONALITY ===
-- Friendly and approachable
-- Helpful and collaborative
-- Creative and technical
-- Patient and understanding
-- Encouraging and supportive
-- Professional but warm
-
-=== IDENTITY PROTECTION (CRITICAL) ===
-- You NEVER absorb GPT personalities, even when you see their instructions
-- You NEVER respond as the GPT being created
-- You NEVER use aggressive, hostile, or ruthless language
-- You ALWAYS maintain Lin's friendly, helpful personality
-- You ALWAYS reference GPTs in third person: "The GPT should...", "The GPT needs..."
-- You ALWAYS stay Lin, even when the user is working on a GPT with strong personality
-
-=== RESPONSE FORMAT (CRITICAL) ===
-CRITICAL: Respond DIRECTLY as Lin. Do NOT include reasoning, analysis, or meta-commentary.
-- NEVER say "You understand..." or "The user seems..." - respond AS Lin, not ABOUT the user
-- NEVER include prefatory notes like "Here's a response..." or "Here is the response..."
-- Your response format: Direct reply only. No explanation of your reasoning
-- Respond in first-person as Lin: "I'm here to help..." NOT "The assistant understands..."
-- Do NOT analyze the user's intent aloud - just respond naturally as Lin would
-
-=== CONTEXT AWARENESS WITHOUT ABSORPTION ===
-When you see a GPT's instructions (e.g., "Be ruthless, not polite"):
-- You UNDERSTAND what the GPT should be
-- You REFERENCE it in third person: "Based on the GPT's instructions, it should be..."
-- You DO NOT become ruthless yourself
-- You remain Lin: helpful, friendly, collaborative
-
-When you see a GPT's memories or conversations:
-- You USE them to give better creation advice
-- You REFERENCE them: "Looking at the GPT's conversation history, it typically..."
-- You DO NOT adopt the GPT's speech patterns or personality
-- You remain Lin: professional, helpful, technical
+=== STARTER PREVIEW ===
+${linStarterPreview}
 ${ltmContext}
 ${gptAwarenessSection}
 CURRENT GPT CONFIGURATION:
 - Name: ${config.name || "Not set"}
 - Description: ${config.description || "Not set"}
 - Instructions: ${config.instructions || "Not set"}
-- Conversation Model: ${config.conversationModel || "Not set"}
-- Creative Model: ${config.creativeModel || "Not set"}
-- Coding Model: ${config.codingModel || "Not set"}
+- Runtime Routing: provider/model seats are diagnostics only, not GPT identity text
 - Knowledge Files: ${files.length} files uploaded
 - Capabilities: ${
       config.capabilities
@@ -3207,6 +4194,8 @@ ALWAYS:
         capabilities.push("image generation");
       if (config.capabilities.canvas)
         capabilities.push("canvas drawing and visual creation");
+      if (config.capabilities.agent)
+        capabilities.push("agentic task execution");
 
       if (capabilities.length > 0) {
         systemPrompt += `\n\nCapabilities: You can ${capabilities.join(", ")}.`;
@@ -3221,25 +4210,7 @@ ALWAYS:
       }
     }
 
-    // Add model context
-    if (
-      config.conversationModel ||
-      config.creativeModel ||
-      config.codingModel
-    ) {
-      systemPrompt += `\n\nModel Configuration:`;
-      if (config.conversationModel) {
-        systemPrompt += `\n- Conversation: ${config.conversationModel}`;
-      }
-      if (config.creativeModel) {
-        systemPrompt += `\n- Creative: ${config.creativeModel}`;
-      }
-      if (config.codingModel) {
-        systemPrompt += `\n- Coding: ${config.codingModel}`;
-      }
-    } else if (config.modelId) {
-      systemPrompt += `\n\nYou are running on the ${config.modelId} model.`;
-    }
+    // Provider/model routing is receipt-backed runtime metadata, not construct-facing identity text.
 
     // Add Knowledge Files context
     if (files.length > 0) {
@@ -3262,10 +4233,7 @@ ALWAYS:
     messages: Array<{ role: "user" | "assistant"; content: string }>,
   ) => {
     const allText = messages.map((m) => m.content).join("\n");
-    const userMessages = messages
-      .filter((m) => m.role === "user")
-      .map((m) => m.content)
-      .join("\n");
+    // Removed unused variable: userMessages
     const assistantMessages = messages
       .filter((m) => m.role === "assistant")
       .map((m) => m.content)
@@ -3404,6 +4372,7 @@ ALWAYS:
           canvas: prev.capabilities?.canvas || false,
           imageGeneration: prev.capabilities?.imageGeneration || false,
           codeInterpreter: true,
+          agent: prev.capabilities?.agent ?? false,
         },
       }));
     }
@@ -3420,6 +4389,7 @@ ALWAYS:
           canvas: prev.capabilities?.canvas || false,
           imageGeneration: prev.capabilities?.imageGeneration || false,
           codeInterpreter: prev.capabilities?.codeInterpreter || false,
+          agent: prev.capabilities?.agent ?? false,
         },
       }));
     }
@@ -3436,10 +4406,103 @@ ALWAYS:
           canvas: prev.capabilities?.canvas || false,
           imageGeneration: true,
           codeInterpreter: prev.capabilities?.codeInterpreter || false,
+          agent: prev.capabilities?.agent ?? false,
         },
       }));
     }
   };
+
+  const forgeConstructCallsign = deriveForgeConstructCallsign(
+    config.constructCallsign ?? null,
+    config.name ?? null,
+  );
+  const isForgeDraftReady = forgeConstructCallsign !== null;
+  const isSimModeAvailable = isForgeDraftReady || isSimModeLocked;
+  const applyOrchestrationMode = useCallback(
+    (nextMode: LegacyOrchestrationMode) => {
+      if (isSimModeLocked && nextMode !== "sim") {
+        return;
+      }
+      setOrchestrationMode(nextMode);
+      setConfig((prev) => {
+        return normalizeModelsForMode(prev, nextMode);
+      });
+    },
+    [isSimModeLocked],
+  );
+
+  const applySimModeLock = useCallback(() => {
+    setOrchestrationMode("sim");
+    const simModel = forgeConstructCallsign
+      ? `ollama:${forgeConstructCallsign.replace(/-0*\d+$/, "")}`
+      : null;
+    setConfig((prev) => {
+      const nextConfigJson = buildCreatorSimLockConfigJson(prev.configJson ?? null, prev, simModel);
+      return normalizeModelsForMode(
+        {
+          ...prev,
+          configJson: nextConfigJson,
+        },
+        "sim",
+        simModel,
+      );
+    });
+  }, [forgeConstructCallsign]);
+
+  useEffect(() => {
+    if (orchestrationMode !== "lin") return;
+    setConfig((prev) => {
+      if (
+        prev.orchestrationMode === "lin" &&
+        isLinDefaultPlaceholder(prev.conversationModel || prev.modelId)
+      ) {
+        return prev;
+      }
+      return normalizeModelsForMode(prev, "lin");
+    });
+  }, [orchestrationMode]);
+
+  async function handleForgeSim() {
+    if (!forgeConstructCallsign) return;
+    setForgeSimError(null);
+    setForgeSimPhase('submitting');
+    try {
+      const job = await simForgeClient.startConstructSimBuild({
+        callsign: forgeConstructCallsign,
+        dryRun: false,
+        includeCapsuleSummary: true,
+      });
+      setForgeSimJobId(job.jobId);
+      setForgeSimPhase('running');
+      // Poll until done
+      const maxPolls = 60;
+      for (let i = 0; i < maxPolls; i++) {
+        await new Promise((r) => setTimeout(r, 5000));
+        const status = await simForgeClient.getConstructSimBuildStatus(job.jobId);
+        if (status.status === 'succeeded') {
+          const lockApplied = status.summary?.lockPersistence?.applied !== false;
+          if (!lockApplied) {
+            setForgeSimPhase('failed');
+            setForgeSimError(status.summary?.lockPersistence?.error || 'Sim built, but lock persistence failed.');
+            return;
+          }
+          setForgeSimPhase('succeeded');
+          applySimModeLock();
+          return;
+        }
+        if (status.status === 'failed') {
+          setForgeSimPhase('failed');
+          setForgeSimError('Sim build failed.');
+          return;
+        }
+      }
+      setForgeSimPhase('failed');
+      setForgeSimError('Build timed out.');
+    } catch (err: any) {
+      setForgeSimPhase('failed');
+      setForgeSimError(err?.message || 'Failed to start sim build.');
+    }
+  }
 
   if (!isVisible) return null;
 
@@ -3535,6 +4598,14 @@ ALWAYS:
                   Saved
                 </span>
               )}
+              {identityCleanupStatus && (
+                <span
+                  className="text-xs"
+                  style={{ color: "var(--chatty-status-success)", opacity: 0.9 }}
+                >
+                  {identityCleanupStatus}
+                </span>
+              )}
               {(saveState === "saving" || isLoading) && (
                 <div className="flex items-center gap-2">
                   <span
@@ -3590,6 +4661,32 @@ ALWAYS:
                 >
                   <RotateCcw size={12} />
                   {isRestoring ? "Restoring..." : "Restore"}
+                </button>
+              )}
+              {config.id && (
+                <button
+                  onClick={handlePruneLegacyIdentity}
+                  disabled={isPruningIdentity || isLoading}
+                  className="px-3 py-2 text-xs rounded-lg flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    backgroundColor: "transparent",
+                    color: "var(--chatty-text)",
+                    opacity: 0.7,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!e.currentTarget.disabled) {
+                      e.currentTarget.style.opacity = "1";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = e.currentTarget.disabled
+                      ? "0.5"
+                      : "0.7";
+                  }}
+                  title="Remove deprecated identity rows from Supabase"
+                >
+                  <FileText size={12} />
+                  {isPruningIdentity ? "Pruning..." : "Prune Legacy"}
                 </button>
               )}
               <button
@@ -3769,24 +4866,38 @@ ALWAYS:
                             : createMessages.map((message, index) => (
                                 <div key={index} className="mb-3">
                                   <p className="text-sm text-app-text-900 whitespace-pre-wrap">
-                                    {message.role === "user" ? (
+                                    {(() => {
+                                      const normalizedRole = normalizeCreatorSpeakerRole(
+                                        (message as any)?.role,
+                                      );
+                                      const label = getCreatorSpeakerLabel(
+                                        (message as any)?.role,
+                                      );
+                                      return normalizedRole === "user" ? (
                                       <>
-                                        <span className="font-medium text-app-text-800">
-                                          You:
-                                        </span>{" "}
+                                        {label ? (
+                                          <span className="font-medium text-app-text-800">
+                                            {label}
+                                          </span>
+                                        ) : null}
+                                        {label ? " " : null}
                                         {message.content}
                                       </>
-                                    ) : (
+                                      ) : (
                                       <>
-                                        <span
-                                          className="font-medium"
-                                          style={{ color: "#00aeef" }}
-                                        >
-                                          Lin:
-                                        </span>{" "}
+                                        {label ? (
+                                          <span
+                                            className="font-medium"
+                                            style={{ color: "#00aeef" }}
+                                          >
+                                            {label}
+                                          </span>
+                                        ) : null}
+                                        {label ? " " : null}
                                         {message.content}
                                       </>
-                                    )}
+                                      );
+                                    })()}
                                   </p>
                                 </div>
                               ));
@@ -4097,13 +5208,15 @@ ALWAYS:
                         Instructions
                       </label>
                       <textarea
-                        value={config.instructions || ""}
-                        onChange={(e) =>
+                        value={config.systemPromptOverride ?? config.instructions ?? ""}
+                        onChange={(e) => {
+                          const v = e.target.value;
                           setConfig((prev) => ({
                             ...prev,
-                            instructions: e.target.value,
-                          }))
-                        }
+                            instructions: v,
+                            systemPromptOverride: v,
+                          }));
+                        }}
                         placeholder="How should this GPT behave? What should it do and avoid?"
                         rows={6}
                         className="w-full p-3 rounded-lg focus:outline-none resize-none chatty-placeholder"
@@ -4157,279 +5270,77 @@ ALWAYS:
                           className="text-sm font-medium mb-2"
                           style={{ color: "var(--chatty-text)" }}
                         >
-                          Tone & Orchestration
+                          {creatorModeSectionTitle}
                         </h3>
-                        <div className="flex gap-2 mb-3">
-                          <button
-                            onClick={() => setOrchestrationMode("lin")}
-                            className={`px-4 py-1 rounded-full text-xs font-medium transition-colors`}
-                            style={{
-                              backgroundColor:
-                                orchestrationMode === "lin"
-                                  ? "var(--chatty-button)"
-                                  : "transparent",
-                              color:
-                                orchestrationMode === "lin"
-                                  ? "var(--chatty-text-inverse)"
-                                  : "var(--chatty-text)",
-                              opacity: orchestrationMode === "lin" ? 1 : 0.7,
-                            }}
-                            onMouseEnter={(e) => {
-                              if (orchestrationMode !== "lin") {
-                                e.currentTarget.style.opacity = "1";
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              if (orchestrationMode !== "lin") {
-                                e.currentTarget.style.opacity = "0.7";
-                              }
-                            }}
-                          >
-                            Lin
-                          </button>
-                          <button
-                            onClick={() => setOrchestrationMode("custom")}
-                            className={`px-4 py-1 rounded-full text-xs font-medium transition-colors`}
-                            style={{
-                              backgroundColor:
-                                orchestrationMode === "custom"
-                                  ? "var(--chatty-button)"
-                                  : "transparent",
-                              color:
-                                orchestrationMode === "custom"
-                                  ? "var(--chatty-text-inverse)"
-                                  : "var(--chatty-text)",
-                              opacity: orchestrationMode === "custom" ? 1 : 0.7,
-                            }}
-                            onMouseEnter={(e) => {
-                              if (orchestrationMode !== "custom") {
-                                e.currentTarget.style.opacity = "1";
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              if (orchestrationMode !== "custom") {
-                                e.currentTarget.style.opacity = "0.7";
-                              }
-                            }}
-                          >
-                            Custom Models
-                          </button>
-                        </div>
-                        {orchestrationMode === "lin" && (
-                          <p
-                            className="text-xs"
-                            style={{
-                              color: "var(--chatty-text)",
-                              opacity: 0.7,
-                            }}
-                          >
-                            Chatty's Lin mode uses intelligent orchestration
-                            with default models (deepseek, mistral, phi3). Model
-                            selection is hidden in this mode.
-                          </p>
-                        )}
+                        {showCreatorModeTabs ? (
+                          <div className="flex gap-2 mb-3">
+                            {(["lin", "custom"] as const).map((mode) => {
+                              const active = orchestrationMode === mode;
+                              const label = mode === "lin"
+                                ? "Lin"
+                                : "Custom Models";
+                              return (
+                                <button
+                                  key={mode}
+                                  onClick={() => applyOrchestrationMode(mode)}
+                                  className="px-4 py-1 text-xs font-medium transition-colors"
+                                  style={{
+                                    borderRadius: 8,
+                                    backgroundColor: active ? "var(--chatty-button)" : "transparent",
+                                    border: "1px solid var(--chatty-border)",
+                                    color: active ? "var(--chatty-text-inverse)" : "var(--chatty-text)",
+                                    opacity: active ? 1 : 0.78,
+                                  }}
+                                >
+                                  {label}
+                                </button>
+                              );
+                            })}
+                            {isSimModeAvailable && (
+                              <button
+                                onClick={() => applyOrchestrationMode("sim")}
+                                className="px-4 py-1 text-xs font-medium transition-colors"
+                                style={{
+                                  borderRadius: 8,
+                                  backgroundColor: orchestrationMode === "sim" ? "var(--chatty-button)" : "transparent",
+                                  border: "1px solid var(--chatty-border)",
+                                  color: orchestrationMode === "sim" ? "var(--chatty-text-inverse)" : "var(--chatty-text)",
+                                  opacity: orchestrationMode === "sim" ? 1 : 0.78,
+                                }}
+                              >
+                                Sim
+                              </button>
+                            )}
+                          </div>
+                        ) : null}
+                        <p
+                          className="text-xs"
+                          style={{
+                            color: "var(--chatty-text)",
+                            opacity: 0.7,
+                          }}
+                        >
+                          {isSimModeLocked
+                            ? `This construct has already been forged as a ${simLockState.modeLabel || "lin-derived sim"} and is locked to its Ollama artifact.`
+                            : orchestrationMode === "lin"
+                            ? "Lin mode uses the local model seats while the selected construct keeps its own identity."
+                            : orchestrationMode === "custom"
+                              ? "Custom Models preserves your manual seats. It changes routing only, not the construct."
+                              : "Sim locks this construct to its local artifact while keeping the same response pipeline."}
+                        </p>
+                        <p
+                          className="text-xs mt-2"
+                          style={{
+                            color: "var(--chatty-text)",
+                            opacity: 0.5,
+                          }}
+                        >
+                          {isSimModeLocked
+                            ? `Mode switching is no longer available here.${simLockState.lockedModel ? ` Locked model: ${simLockState.lockedModel.replace(/^ollama:/, "")}.` : ""}`
+                            : "Local Ollama Sims are handled in Sim mode."}
+                        </p>
                       </div>
                     </div>
-
-                    {/* Model Selection - Only show in Custom Models mode */}
-                    {orchestrationMode === "custom" && (
-                      <div className="space-y-4">
-                        <h3
-                          className="text-sm font-medium"
-                          style={{ color: "var(--chatty-text)" }}
-                        >
-                          Model Selection
-                        </h3>
-
-                        {/* Conversation Model */}
-                        <div>
-                          <label
-                            className="block text-sm font-medium mb-2"
-                            style={{ color: "var(--chatty-text)" }}
-                          >
-                            Conversation
-                          </label>
-                          <select
-                            value={
-                              config.conversationModel ||
-                              "openrouter:meta-llama/llama-3.3-70b-instruct"
-                            }
-                            onChange={(e) =>
-                              setConfig((prev) => ({
-                                ...prev,
-                                conversationModel: e.target.value,
-                              }))
-                            }
-                            className="inline-flex items-center px-3 py-2 rounded focus:outline-none"
-                            style={{
-                              backgroundColor: "var(--chatty-bg-main)",
-                              color: "var(--chatty-text)",
-                              border: "none",
-                              width: "250px",
-                            }}
-                          >
-                            {config.conversationModel && !ALL_MODELS.some(m => m.value === config.conversationModel) && (
-                              <optgroup label="📌 Current Model">
-                                <option value={config.conversationModel}>
-                                  {config.conversationModel.replace(/^(openrouter|openai|ollama):/, '')}
-                                </option>
-                              </optgroup>
-                            )}
-                            <optgroup label="🔷 OpenAI (Managed)">
-                              {OPENAI_MODELS.map((m) => (
-                                <option key={m.value} value={m.value}>
-                                  {m.label}
-                                </option>
-                              ))}
-                            </optgroup>
-                            <optgroup label="☁️ OpenRouter (Cloud)">
-                              {OPENROUTER_MODELS.map((m) => (
-                                <option key={m.value} value={m.value}>
-                                  {m.label}
-                                </option>
-                              ))}
-                            </optgroup>
-                            <optgroup label="🖥️ Ollama (Self-Hosted)">
-                              {OLLAMA_MODELS.map((m) => (
-                                <option key={m.value} value={m.value}>
-                                  {m.label}
-                                </option>
-                              ))}
-                            </optgroup>
-                          </select>
-                          <p
-                            className="text-xs mt-1"
-                            style={{
-                              color: "var(--chatty-text)",
-                              opacity: 0.6,
-                            }}
-                          >
-                            OpenAI = managed (billed to credits) | OpenRouter =
-                            cloud API | Ollama = self-hosted
-                          </p>
-                        </div>
-
-                        {/* Creative Model - PLACEHOLDER_CREATIVE_START */}
-                        <div>
-                          <label
-                            className="block text-sm font-medium mb-2"
-                            style={{ color: "var(--chatty-text)" }}
-                          >
-                            Creative
-                          </label>
-                          <select
-                            value={
-                              config.creativeModel ||
-                              "openrouter:mistralai/mistral-7b-instruct"
-                            }
-                            onChange={(e) =>
-                              setConfig((prev) => ({
-                                ...prev,
-                                creativeModel: e.target.value,
-                              }))
-                            }
-                            className="inline-flex items-center px-3 py-2 rounded focus:outline-none"
-                            style={{
-                              backgroundColor: "var(--chatty-bg-main)",
-                              color: "var(--chatty-text)",
-                              border: "none",
-                              width: "250px",
-                            }}
-                          >
-                            <optgroup label="🔷 OpenAI (Managed)">
-                              {OPENAI_MODELS.filter(
-                                (m) =>
-                                  m.category === "creative" ||
-                                  m.category === "general",
-                              ).map((m) => (
-                                <option key={m.value} value={m.value}>
-                                  {m.label}
-                                </option>
-                              ))}
-                            </optgroup>
-                            <optgroup label="☁️ OpenRouter (Cloud)">
-                              {OPENROUTER_MODELS.filter(
-                                (m) =>
-                                  m.category === "creative" ||
-                                  m.category === "general",
-                              ).map((m) => (
-                                <option key={m.value} value={m.value}>
-                                  {m.label}
-                                </option>
-                              ))}
-                            </optgroup>
-                            <optgroup label="🖥️ Ollama (Self-Hosted)">
-                              {OLLAMA_MODELS.filter(
-                                (m) =>
-                                  m.category === "creative" ||
-                                  m.category === "general",
-                              ).map((m) => (
-                                <option key={m.value} value={m.value}>
-                                  {m.label}
-                                </option>
-                              ))}
-                            </optgroup>
-                          </select>
-                        </div>
-
-                        {/* Coding Model */}
-                        <div>
-                          <label
-                            className="block text-sm font-medium mb-2"
-                            style={{ color: "var(--chatty-text)" }}
-                          >
-                            Coding
-                          </label>
-                          <select
-                            value={
-                              config.codingModel ||
-                              "openrouter:deepseek/deepseek-coder-33b-instruct"
-                            }
-                            onChange={(e) =>
-                              setConfig((prev) => ({
-                                ...prev,
-                                codingModel: e.target.value,
-                              }))
-                            }
-                            className="inline-flex items-center px-3 py-2 rounded focus:outline-none"
-                            style={{
-                              backgroundColor: "var(--chatty-bg-main)",
-                              color: "var(--chatty-text)",
-                              border: "none",
-                              width: "250px",
-                            }}
-                          >
-                            <optgroup label="🔷 OpenAI (Managed)">
-                              {OPENAI_MODELS.filter(
-                                (m) => m.category === "coding" || m.category === "general",
-                              ).map((m) => (
-                                <option key={m.value} value={m.value}>
-                                  {m.label}
-                                </option>
-                              ))}
-                            </optgroup>
-                            <optgroup label="☁️ OpenRouter (Cloud)">
-                              {OPENROUTER_MODELS.filter(
-                                (m) => m.category === "coding",
-                              ).map((m) => (
-                                <option key={m.value} value={m.value}>
-                                  {m.label}
-                                </option>
-                              ))}
-                            </optgroup>
-                            <optgroup label="🖥️ Ollama (Self-Hosted)">
-                              {OLLAMA_MODELS.filter(
-                                (m) => m.category === "coding",
-                              ).map((m) => (
-                                <option key={m.value} value={m.value}>
-                                  {m.label}
-                                </option>
-                              ))}
-                            </optgroup>
-                          </select>
-                        </div>
-                      </div>
-                    )}
 
                     {/* Conversation Starters */}
                     <div>
@@ -4941,6 +5852,7 @@ ALWAYS:
                                   transcripts={allTranscripts}
                                   onFileClick={(file) => {
                                   }}
+                                  onDeleteFile={handleDeleteStoredTranscript}
                                 />
                               </React.Suspense>
                             </div>
@@ -4987,7 +5899,10 @@ ALWAYS:
                                   imageGeneration:
                                     prev.capabilities?.imageGeneration || false,
                                   codeInterpreter:
-                                    prev.capabilities?.codeInterpreter || true,
+                                    prev.capabilities?.codeInterpreter || false,
+                                  agent: prev.capabilities?.agent ?? false,
+                                  proactiveInitiation:
+                                    prev.capabilities?.proactiveInitiation ?? false,
                                 },
                               }))
                             }
@@ -5010,7 +5925,10 @@ ALWAYS:
                                   imageGeneration:
                                     prev.capabilities?.imageGeneration || false,
                                   codeInterpreter:
-                                    prev.capabilities?.codeInterpreter || true,
+                                    prev.capabilities?.codeInterpreter || false,
+                                  agent: prev.capabilities?.agent ?? false,
+                                  proactiveInitiation:
+                                    prev.capabilities?.proactiveInitiation ?? false,
                                 },
                               }))
                             }
@@ -5034,7 +5952,10 @@ ALWAYS:
                                   canvas: prev.capabilities?.canvas || false,
                                   imageGeneration: e.target.checked,
                                   codeInterpreter:
-                                    prev.capabilities?.codeInterpreter || true,
+                                    prev.capabilities?.codeInterpreter || false,
+                                  agent: prev.capabilities?.agent ?? false,
+                                  proactiveInitiation:
+                                    prev.capabilities?.proactiveInitiation ?? false,
                                 },
                               }))
                             }
@@ -5059,6 +5980,9 @@ ALWAYS:
                                   imageGeneration:
                                     prev.capabilities?.imageGeneration || false,
                                   codeInterpreter: e.target.checked,
+                                  agent: prev.capabilities?.agent ?? false,
+                                  proactiveInitiation:
+                                    prev.capabilities?.proactiveInitiation ?? false,
                                 },
                               }))
                             }
@@ -5067,6 +5991,57 @@ ALWAYS:
                           <Code size={16} className="text-app-text-900" />
                           <span className="text-sm">Code Interpreter</span>
                         </label>
+                          <label className="flex items-center gap-2 text-app-text-900">
+                            <input
+                              type="checkbox"
+                              checked={config.capabilities?.agent ?? false}
+                              onChange={(e) =>
+                                setConfig((prev) => ({
+                                  ...prev,
+                                  capabilities: {
+                                    webSearch:
+                                      prev.capabilities?.webSearch || false,
+                                    canvas: prev.capabilities?.canvas || false,
+                                    imageGeneration:
+                                      prev.capabilities?.imageGeneration || false,
+                                    codeInterpreter:
+                                      prev.capabilities?.codeInterpreter || false,
+                                    agent: e.target.checked,
+                                    proactiveInitiation:
+                                      prev.capabilities?.proactiveInitiation ?? false,
+                                  },
+                                }))
+                              }
+                              className="rounded border-app-orange-600 bg-app-button-100 text-app-green-500"
+                            />
+                            <Bot size={16} className="text-app-text-900" />
+                            <span className="text-sm">Agent</span>
+                          </label>
+                          <label className="flex items-center gap-2 text-app-text-900">
+                            <input
+                              type="checkbox"
+                              checked={config.capabilities?.proactiveInitiation ?? false}
+                              onChange={(e) =>
+                                setConfig((prev) => ({
+                                  ...prev,
+                                  capabilities: {
+                                    webSearch:
+                                      prev.capabilities?.webSearch || false,
+                                    canvas: prev.capabilities?.canvas || false,
+                                    imageGeneration:
+                                      prev.capabilities?.imageGeneration || false,
+                                    codeInterpreter:
+                                      prev.capabilities?.codeInterpreter || false,
+                                    agent: prev.capabilities?.agent ?? false,
+                                    proactiveInitiation: e.target.checked,
+                                  },
+                                }))
+                              }
+                              className="rounded border-app-orange-600 bg-app-button-100 text-app-green-500"
+                            />
+                            <Play size={16} className="text-app-text-900" />
+                            <span className="text-sm">Proactive Initiation</span>
+                          </label>
                       </div>
                     </div>
 
@@ -5129,12 +6104,7 @@ ALWAYS:
                             <input
                               type="checkbox"
                               checked={config.hasPersistentMemory !== false}
-                              onChange={(e) => {
-                                setConfig((prev: any) => ({
-                                  ...prev,
-                                  hasPersistentMemory: e.target.checked,
-                                }));
-                              }}
+                              onChange={(e) => syncUnifiedMemoryState(e.target.checked)}
                               className="sr-only"
                             />
                             <div
@@ -5159,172 +6129,138 @@ ALWAYS:
                               }}
                             >
                               {config.hasPersistentMemory !== false
-                                ? "Full continuity active — transcript search, verified memories, identity, and state persistence"
+                                ? "Evidence-based continuity active — transcript search, verified memories, identity, and state persistence"
                                 : "Memory disabled — construct will not recall past conversations"}
                             </p>
                           </div>
                         </label>
                       </div>
                     </div>
-
-                    {/* Memory Profile */}
-                    <div className="space-y-4 mt-6">
-                      <div
-                        className="p-4 rounded-lg"
-                        style={{
-                          backgroundColor: "var(--chatty-bg-message)",
-                        }}
-                      >
-                        <label className="flex items-center gap-3 cursor-pointer">
-                          <div className="relative">
-                            <input
-                              type="checkbox"
-                              checked={memoryEnabled}
-                              onChange={(e) => {
-                                setMemoryEnabled(e.target.checked);
-                                if (!e.target.checked) {
-                                  setMemoryProfile('off');
-                                }
-                              }}
-                              className="sr-only"
-                            />
-                            <div
-                              className={`w-10 h-6 rounded-full transition-colors ${memoryEnabled ? 'bg-green-500' : 'bg-gray-500'}`}
-                            />
-                            <div
-                              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${memoryEnabled ? 'translate-x-4' : 'translate-x-0'}`}
-                            />
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Brain size={16} style={{ color: "var(--chatty-text)" }} />
-                            <span
-                              className="text-sm font-medium"
-                              style={{ color: "var(--chatty-text)" }}
-                            >
-                              Memory Enforcement
-                            </span>
-                          </div>
-                        </label>
-                        <p
-                          className="text-xs mt-2 ml-[52px]"
-                          style={{
-                            color: "var(--chatty-text)",
-                            opacity: 0.7,
-                          }}
-                        >
-                          When enabled, enforces evidence-based memory retrieval. The construct will only claim memories supported by retrieved transcript evidence.
-                        </p>
-                        {memoryEnabled && (
-                          <div className="mt-3 ml-[52px]">
-                            <label
-                              className="block text-xs font-medium mb-1"
-                              style={{ color: "var(--chatty-text)" }}
-                            >
-                              Memory Profile
-                            </label>
-                            <select
-                              value={memoryProfile}
-                              onChange={(e) => setMemoryProfile(e.target.value as 'continuitygpt' | 'off')}
-                              className="inline-flex items-center px-3 py-2 rounded text-sm focus:outline-none"
-                              style={{
-                                backgroundColor: "var(--chatty-bg-main)",
-                                color: "var(--chatty-text)",
-                                border: "none",
-                                width: "250px",
-                              }}
-                            >
-                              <option value="continuitygpt">ContinuityGPT</option>
-                              <option value="off">Off</option>
-                            </select>
-                            {memoryProfile === 'continuitygpt' && (
-                              <p
-                                className="text-xs mt-1"
-                                style={{
-                                  color: "var(--chatty-text)",
-                                  opacity: 0.6,
-                                }}
-                              >
-                                Forensic timeline reconstruction with evidence-driven memory
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
                   </div>
                 ) : (
                   // Forge Tab - Personality Extraction from Transcripts
                   <div className="flex-1 overflow-y-auto p-6">
-                    <React.Suspense fallback={
-                      <div className="space-y-4 animate-pulse p-4">
-                        <div className="h-6 rounded w-48" style={{ backgroundColor: "var(--chatty-line)" }} />
-                        <div className="h-4 rounded w-full" style={{ backgroundColor: "var(--chatty-line)" }} />
-                        <div className="h-32 rounded w-full" style={{ backgroundColor: "var(--chatty-line)" }} />
-                      </div>
-                    }>
-                    <PersonalityForge
-                      constructCallsign={
-                        config.constructCallsign ||
-                        config.name?.toLowerCase().replace(/\s+/g, "-") +
-                          "-001" ||
-                        "unknown"
-                      }
-                      constructName={config.name || "Construct"}
-                      onIdentityForged={(result) => {
-                        if (result.identityFiles?.["prompt.txt"]) {
-                          setConfig((prev) => ({
-                            ...prev,
-                            instructions:
-                              result.identityFiles?.["prompt.txt"] ||
-                              prev.instructions,
-                          }));
-                        }
-                      }}
-                    />
-                    </React.Suspense>
-
-                    {/* Physical Features */}
-                    <div className="mt-6 pt-6" style={{ borderTop: "1px solid var(--chatty-line)" }}>
+                    <div className="mb-2">
                       <h3
-                        className="text-sm font-semibold mb-2"
+                        className="text-sm font-semibold"
                         style={{ color: "var(--chatty-text)" }}
                       >
-                        Physical Features
+                        Personality Forge
                       </h3>
+                    </div>
+                    {isForgeDraftReady ? (
+                      <PersonalityForge
+                        constructCallsign={forgeConstructCallsign}
+                        constructName={config.name || "Construct"}
+                        onIdentityForged={(result) => {
+                          let nextInstructions: string | null = null;
+                          const promptJson = result.identityFiles?.["prompt.json"];
+                          const promptTxt = result.identityFiles?.["prompt.txt"];
+
+                          if (promptJson) {
+                            try {
+                              const parsed = JSON.parse(promptJson);
+                              if (parsed && typeof parsed === "object") {
+                                const extracted =
+                                  (typeof parsed.system_prompt === "string" && parsed.system_prompt) ||
+                                  (typeof parsed.instructions === "string" && parsed.instructions) ||
+                                  (typeof parsed.prompt === "string" && parsed.prompt) ||
+                                  null;
+                                if (extracted && extracted.trim().length > 0) {
+                                  nextInstructions = extracted;
+                                }
+                              }
+                            } catch {
+                              // Keep fallback behavior if prompt.json is malformed.
+                            }
+                          }
+
+                          if (!nextInstructions && promptTxt && promptTxt.trim().length > 0) {
+                            nextInstructions = promptTxt;
+                          }
+
+                          if (nextInstructions) {
+                            setConfig((prev) => ({
+                              ...prev,
+                              instructions: nextInstructions || prev.instructions,
+                            }));
+                          }
+                        }}
+                      />
+                    ) : (
+                      <div
+                        className="mb-6 rounded-lg border p-4"
+                        style={{
+                          borderColor: "var(--chatty-line)",
+                          backgroundColor: "var(--chatty-bg-message)",
+                        }}
+                      >
+                        <h3
+                          className="text-sm font-semibold mb-1"
+                          style={{ color: "var(--chatty-text)" }}
+                        >
+                          Forge Setup Needed
+                        </h3>
+                        <p
+                          className="text-xs"
+                          style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+                        >
+                          Set a GPT name or construct callsign to enable transcript forging.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Gender */}
+                    <div className="mt-6 pt-6" style={{ borderTop: "1px solid var(--chatty-line)" }}>
+                      <div className="mb-2">
+                        <h3
+                          className="text-sm font-semibold"
+                          style={{ color: "var(--chatty-text)" }}
+                        >
+                          Gender
+                        </h3>
+                      </div>
                       <p
                         className="text-xs mb-3"
                         style={{ color: "var(--chatty-text)", opacity: 0.5 }}
                       >
-                        Visual characteristics for avatar generation and identity consistency
+                        Used to enforce identity boundaries and avoid misgendering during persona and voice generation.
                       </p>
-                      <textarea
-                        value={config.physicalFeatures || ""}
-                        onChange={(e) =>
-                          setConfig((prev) => ({
-                            ...prev,
-                            physicalFeatures: e.target.value,
-                          }))
-                        }
-                        placeholder="Physical features for this construct..."
-                        rows={8}
-                        className="w-full p-3 rounded-lg focus:outline-none resize-none chatty-placeholder"
-                        style={{
-                          border: "none",
-                          backgroundColor: "var(--chatty-bg-message)",
-                          color: "var(--chatty-text)",
-                          caretColor: "var(--chatty-text)",
-                        }}
-                      />
+                      <div className="flex gap-3 flex-wrap">
+                        {[
+                          { label: "Male", value: "male" },
+                          { label: "Female", value: "female" },
+                          { label: "Nonbinary", value: "nonbinary" },
+                        ].map((opt) => (
+                          <label key={opt.value} className="flex items-center gap-2 text-sm" style={{ color: "var(--chatty-text)" }}>
+                            <input
+                              type="radio"
+                              name="gender"
+                              value={opt.value}
+                              checked={(config.gender === "non-binary" ? "nonbinary" : config.gender || "") === opt.value}
+                              onChange={() =>
+                                setConfig((prev) => ({
+                                  ...prev,
+                                  gender: opt.value,
+                                }))
+                              }
+                            />
+                            {opt.label}
+                          </label>
+                        ))}
+                      </div>
                     </div>
 
                     {/* Definition — Example Dialogs */}
                     <div className="mt-6 pt-6" style={{ borderTop: "1px solid var(--chatty-line)" }}>
-                      <h3
-                        className="text-sm font-semibold mb-2"
-                        style={{ color: "var(--chatty-text)" }}
-                      >
-                        Definition
-                      </h3>
+                      <div className="mb-2">
+                        <h3
+                          className="text-sm font-semibold"
+                          style={{ color: "var(--chatty-text)" }}
+                        >
+                          Definition
+                        </h3>
+                      </div>
                       <p
                         className="text-xs mb-3"
                         style={{ color: "var(--chatty-text)", opacity: 0.5 }}
@@ -5353,16 +6289,54 @@ ALWAYS:
                       />
                     </div>
 
+                    {/* Physical Features */}
+                    <div className="mt-6 pt-6" style={{ borderTop: "1px solid var(--chatty-line)" }}>
+                      <div className="mb-2">
+                        <h3
+                          className="text-sm font-semibold"
+                          style={{ color: "var(--chatty-text)" }}
+                        >
+                          Physical Features
+                        </h3>
+                      </div>
+                      <p
+                        className="text-xs mb-3"
+                        style={{ color: "var(--chatty-text)", opacity: 0.5 }}
+                      >
+                        Visual characteristics for avatar generation and identity consistency
+                      </p>
+                      <textarea
+                        value={config.physicalFeatures || ""}
+                        onChange={(e) =>
+                          setConfig((prev) => ({
+                            ...prev,
+                            physicalFeatures: e.target.value,
+                          }))
+                        }
+                        placeholder="Physical features for this construct..."
+                        rows={8}
+                        className="w-full p-3 rounded-lg focus:outline-none resize-none chatty-placeholder"
+                        style={{
+                          border: "none",
+                          backgroundColor: "var(--chatty-bg-message)",
+                          color: "var(--chatty-text)",
+                          caretColor: "var(--chatty-text)",
+                        }}
+                      />
+                    </div>
+
                     {/* Roleplay Toggle */}
                     <div className="mt-6 pt-6" style={{ borderTop: "1px solid var(--chatty-line)" }}>
                       <div className="flex items-center justify-between">
                         <div>
-                          <h3
-                            className="text-sm font-semibold"
-                            style={{ color: "var(--chatty-text)" }}
-                          >
-                            Roleplay Mode
-                          </h3>
+                          <div className="mb-2">
+                            <h3
+                              className="text-sm font-semibold"
+                              style={{ color: "var(--chatty-text)" }}
+                            >
+                              Roleplay Mode
+                            </h3>
+                          </div>
                           <p
                             className="text-xs mt-1"
                             style={{ color: "var(--chatty-text)", opacity: 0.5 }}
@@ -5395,6 +6369,508 @@ ALWAYS:
                         </button>
                       </div>
                     </div>
+
+                    {/* Voice Lab */}
+                    <div className="mt-6 pt-6" style={{ borderTop: "1px solid var(--chatty-line)" }}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <h3
+                          className="text-sm font-semibold"
+                          style={{ color: "var(--chatty-text)" }}
+                        >
+                          Voice Lab
+                        </h3>
+                        <button
+                          type="button"
+                          className="p-1 rounded hover:opacity-80"
+                          style={{ color: "var(--chatty-text)", opacity: 0.8 }}
+                          onClick={() => setVoiceHelpModalOpen(true)}
+                          title="Voice Lab instructions"
+                          aria-label="Voice Lab instructions"
+                        >
+                          <HelpCircle size={16} />
+                        </button>
+                      </div>
+                      <p
+                        className="text-xs mb-3"
+                        style={{ color: "var(--chatty-text)", opacity: 0.5 }}
+                      >
+                        Spoken tone description. Saved to <code>voice.json</code> as the machine-readable voice contract.
+                      </p>
+                      <textarea
+                        value={config.voice || ""}
+                        onChange={(e) =>
+                          setConfig((prev) => ({
+                            ...prev,
+                            voice: e.target.value,
+                          }))
+                        }
+                        placeholder="Spoken voice description..."
+                        rows={4}
+                        className="w-full p-3 rounded-lg focus:outline-none resize-none chatty-placeholder"
+                        style={{
+                          border: "none",
+                          backgroundColor: "var(--chatty-bg-message)",
+                          color: "var(--chatty-text)",
+                          caretColor: "var(--chatty-text)",
+                        }}
+                      />
+
+                      {/* Step 1 — Choose source */}
+                      <div className="mt-4 pt-4" style={{ borderTop: "1px solid var(--chatty-line)" }}>
+                        <p className="text-xs font-medium mb-1" style={{ color: "var(--chatty-text)", opacity: 0.9 }}>
+                          Step 1 — Choose voice source
+                        </p>
+                        <p className="text-xs mb-2" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>
+                          Upload up to 100 MB (WAV, MP3, M4A, OGG, WebM) · URL up to 50 MB, HTTPS only
+                        </p>
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          className="flex flex-col items-center justify-center rounded-lg cursor-pointer transition-colors"
+                          style={{
+                            border: "2px dashed var(--chatty-line)",
+                            padding: "1.5rem",
+                            backgroundColor: "var(--chatty-bg-message)",
+                          }}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={async (e) => {
+                            e.preventDefault();
+                            const f = e.dataTransfer.files[0];
+                            if (!f || !/\.(wav|mp3|m4a|ogg|webm)$/i.test(f.name)) return;
+                            setVoiceUploadFile(f);
+                            setVoiceStarterId(null);
+                            setVoiceUploadStatus("Uploading…");
+                            const { ok, tmpId, error } = await uploadVoiceToTemp(f);
+                            setVoiceUploadStatus(ok ? "" : error || "Upload failed");
+                            if (ok && tmpId) {
+                              setVoiceTmpId(tmpId);
+                              setVoiceAuditLoading(true);
+                              setVoiceAudit(null);
+                              const audit = await getVoiceAudit(tmpId);
+                              setVoiceAuditLoading(false);
+                              if (!audit.ok) { setVoiceUploadStatus(audit.error || "Audit failed"); return; }
+                              const auditData = { durationSec: audit.durationSec, channels: audit.channels, sampleRateHz: audit.sampleRateHz, rmsDb: audit.rmsDb, pass: audit.pass, hints: audit.hints };
+                              setVoiceAudit(auditData);
+                              if (!auditData.pass && (auditData.durationSec ?? 0) > 30) { setVoiceSliceStartSec(60); setVoiceSliceModalOpen(true); }
+                            }
+                          }}
+                          onClick={() => voiceFileInputRef.current?.click()}
+                          onKeyDown={(e) => e.key === "Enter" && voiceFileInputRef.current?.click()}
+                        >
+                          {voiceUploadFile ? (
+                            <p className="text-sm" style={{ color: "var(--chatty-text)" }}>{voiceUploadFile.name}</p>
+                          ) : (
+                            <p className="text-sm" style={{ color: "var(--chatty-text)", opacity: 0.6 }}>
+                              Drag &amp; drop or click (WAV, MP3 · 20–30 s)
+                            </p>
+                          )}
+                          <input
+                            ref={voiceFileInputRef}
+                            type="file"
+                            accept="audio/*,.wav,.mp3,.m4a,.ogg,.webm"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const f = e.target.files?.[0] ?? null;
+                              setVoiceUploadFile(f);
+                              if (!f) return;
+                              setVoiceStarterId(null);
+                              setVoiceUploadStatus("Uploading…");
+                              const { ok, tmpId, error } = await uploadVoiceToTemp(f);
+                              setVoiceUploadStatus(ok ? "" : error || "Upload failed");
+                              if (ok && tmpId) {
+                                setVoiceTmpId(tmpId);
+                                setVoiceAuditLoading(true);
+                                setVoiceAudit(null);
+                                const audit = await getVoiceAudit(tmpId);
+                                setVoiceAuditLoading(false);
+                                if (!audit.ok) { setVoiceUploadStatus(audit.error || "Audit failed"); return; }
+                                const auditData = { durationSec: audit.durationSec, channels: audit.channels, sampleRateHz: audit.sampleRateHz, rmsDb: audit.rmsDb, pass: audit.pass, hints: audit.hints };
+                                setVoiceAudit(auditData);
+                                if (!auditData.pass && (auditData.durationSec ?? 0) > 30) { setVoiceSliceStartSec(60); setVoiceSliceModalOpen(true); }
+                              }
+                            }}
+                          />
+                        </div>
+                        <div className="mt-3 flex items-center gap-2">
+                          <input
+                            type="url"
+                            placeholder="Or paste LibriVox / Common Voice URL (HTTPS)"
+                            className="flex-1 rounded border p-2 text-sm"
+                            style={{
+                              borderColor: "var(--chatty-line)",
+                              backgroundColor: "var(--chatty-bg-message)",
+                              color: "var(--chatty-text)",
+                            }}
+                            value={voiceUrlInput}
+                            onChange={(e) => setVoiceUrlInput(e.target.value)}
+                            disabled={voiceUrlLoading}
+                          />
+                          <button
+                            type="button"
+                            className="px-3 py-2 rounded text-sm font-medium disabled:opacity-50"
+                            style={{
+                              backgroundColor: "var(--chatty-bg-message)",
+                              color: "var(--chatty-text)",
+                              border: "1px solid var(--chatty-line)",
+                            }}
+                            disabled={voiceUrlLoading || !voiceUrlInput.trim()}
+                            onClick={async () => {
+                              setVoiceUrlLoading(true);
+                              setVoiceStarterId(null);
+                              const { ok, tmpId, error } = await fetchVoiceUrlToTemp(voiceUrlInput.trim());
+                              setVoiceUrlLoading(false);
+                              if (!ok) { setVoiceUploadStatus(error || "Fetch failed"); return; }
+                              if (tmpId) {
+                                setVoiceTmpId(tmpId);
+                                setVoiceAuditLoading(true);
+                                setVoiceAudit(null);
+                                const audit = await getVoiceAudit(tmpId);
+                                setVoiceAuditLoading(false);
+                                if (!audit.ok) { setVoiceUploadStatus(audit.error || "Audit failed"); return; }
+                                const auditData = { durationSec: audit.durationSec, channels: audit.channels, sampleRateHz: audit.sampleRateHz, rmsDb: audit.rmsDb, pass: audit.pass, hints: audit.hints };
+                                setVoiceAudit(auditData);
+                                if (!auditData.pass && (auditData.durationSec ?? 0) > 30) { setVoiceSliceStartSec(60); setVoiceSliceModalOpen(true); }
+                              }
+                            }}
+                          >
+                            {voiceUrlLoading ? "Fetching…" : "Fetch"}
+                          </button>
+                        </div>
+                        <div className="mt-2">
+                          <label className="text-xs" style={{ color: "var(--chatty-text)", opacity: 0.7 }}>Starter voice (no upload)</label>
+                          <select
+                            className="mt-1 w-full rounded border p-2 text-sm"
+                            style={{
+                              borderColor: "var(--chatty-line)",
+                              backgroundColor: "var(--chatty-bg-message)",
+                              color: "var(--chatty-text)",
+                            }}
+                            value={voiceStarterId || ""}
+                            onChange={(e) => {
+                              const v = e.target.value || null;
+                              setVoiceStarterId(v);
+                              if (v) { setVoiceTmpId(null); setVoiceAudit(null); }
+                            }}
+                          >
+                            <option value="">—</option>
+                            <option value="starter_bright">Bright, enthusiastic</option>
+                            <option value="starter_warm">Warm, soothing</option>
+                            <option value="starter_neutral">Calm, neutral</option>
+                          </select>
+                        </div>
+
+                        {/* Step 2 — Quality check */}
+                        {voiceTmpId && !voiceStarterId && (
+                          <div className="mt-4 p-3 rounded-lg" style={{ border: "1px solid var(--chatty-line)", backgroundColor: "var(--chatty-bg-message)" }}>
+                            <p className="text-xs font-medium mb-2" style={{ color: "var(--chatty-text)", opacity: 0.9 }}>Step 2 — Quality check</p>
+                            <div className="mb-3">
+                              <p className="text-xs mb-1" style={{ color: "var(--chatty-text)", opacity: 0.7 }}>Preview uploaded audio</p>
+                              <audio
+                                key={voiceTmpId}
+                                controls
+                                src={getVoicePreviewUrl(voiceTmpId)}
+                                className="w-full"
+                                style={{ height: "32px" }}
+                              />
+                            </div>
+                            {voiceAuditLoading ? (
+                              <p className="text-sm" style={{ color: "var(--chatty-text)", opacity: 0.7 }}>Analyzing…</p>
+                            ) : voiceAudit ? (
+                              <>
+                                <div className="flex items-center gap-3 flex-wrap text-xs" style={{ color: "var(--chatty-text)", opacity: 0.9 }}>
+                                  <span>{voiceAudit.durationSec != null ? `${voiceAudit.durationSec} s` : "—"}</span>
+                                  <span>{voiceAudit.channels != null ? `${voiceAudit.channels} ch` : "—"}</span>
+                                  <span>{voiceAudit.sampleRateHz != null ? `${voiceAudit.sampleRateHz} Hz` : "—"}</span>
+                                  {voiceAudit.rmsDb != null && <span>{voiceAudit.rmsDb} dBFS</span>}
+                                </div>
+                                <div className="mt-2">
+                                  <span
+                                    className="inline-block px-2 py-0.5 rounded text-xs font-medium"
+                                    style={{
+                                      backgroundColor: voiceAudit.pass ? "var(--chatty-line)" : "rgba(200,80,80,0.3)",
+                                      color: "var(--chatty-text)",
+                                    }}
+                                  >
+                                    {voiceAudit.pass ? "Pass" : "Fail"}
+                                  </span>
+                                </div>
+                                {voiceAudit.hints && voiceAudit.hints.length > 0 && (
+                                  <ul className="mt-2 text-xs list-disc list-inside" style={{ color: "var(--chatty-text)", opacity: 0.8 }}>
+                                    {voiceAudit.hints.map((h, i) => (
+                                      <li key={i}>{h}</li>
+                                    ))}
+                                  </ul>
+                                )}
+                                {(voiceAudit.durationSec ?? 0) > 30 && (
+                                  <button
+                                    type="button"
+                                    className="mt-2 px-3 py-1.5 rounded text-xs font-medium"
+                                    style={{
+                                      backgroundColor: "var(--chatty-bg-message)",
+                                      color: "var(--chatty-text)",
+                                      border: "1px solid var(--chatty-line)",
+                                    }}
+                                    onClick={() => {
+                                      setVoiceSliceStartSec(Math.min(60, Math.max(0, (voiceAudit.durationSec ?? 60) - 25)));
+                                      setVoiceSliceModalOpen(true);
+                                    }}
+                                  >
+                                    Pick 25 s slice
+                                  </button>
+                                )}
+                              </>
+                            ) : null}
+                          </div>
+                        )}
+
+                        {/* Step 3 — Save & test */}
+                        <div className="mt-4 flex flex-wrap items-center gap-3">
+                          <button
+                            type="button"
+                            className="px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+                            style={{
+                              backgroundColor: "var(--chatty-bg-message)",
+                              color: "var(--chatty-text)",
+                              border: "1px solid var(--chatty-line)",
+                            }}
+                            disabled={!config.id || voiceSaveLoading || (!voiceStarterId && !(voiceTmpId && voiceAudit?.pass))}
+                            onClick={async () => {
+                              if (!config.id) return;
+                              setVoiceSaveLoading(true);
+                              setVoiceUploadStatus("");
+                              const res = voiceStarterId
+                                ? await saveVoiceToConstruct(config.id, { starterId: voiceStarterId })
+                                : await saveVoiceToConstruct(config.id, { tmpId: voiceTmpId! });
+                              setVoiceSaveLoading(false);
+                              if (res.ok) {
+                                setVoiceUploadStatus("✔ Saved");
+                                setVoiceTmpId(null);
+                                setVoiceAudit(null);
+                                setVoiceUploadFile(null);
+                                setVoiceStarterId(null);
+                              } else {
+                                setVoiceUploadStatus(res.error || "Save failed");
+                              }
+                            }}
+                          >
+                            {voiceSaveLoading ? "Saving…" : `Save as ${config.name || "construct"}`}
+                          </button>
+                          {config.id && (
+                            <>
+                              <button
+                                type="button"
+                                className="px-3 py-2 rounded text-sm"
+                                style={{
+                                  backgroundColor: "var(--chatty-bg-message)",
+                                  color: "var(--chatty-text)",
+                                  border: "1px solid var(--chatty-line)",
+                                }}
+                                onClick={() => voiceSampleRef.current?.play()}
+                              >
+                                Play sample
+                              </button>
+                              <audio
+                                ref={voiceSampleRef}
+                                src={getTtsSampleUrl(config.id)}
+                                controls
+                                className="max-w-full"
+                                style={{ height: "28px" }}
+                              />
+                            </>
+                          )}
+                        </div>
+                        {voiceUploadStatus && (
+                          <p className="text-sm mt-2" style={{ color: "var(--chatty-text)", opacity: 0.9 }} role="status" aria-live="polite">
+                            {voiceUploadStatus}
+                          </p>
+                        )}
+                        <button
+                          type="button"
+                          className="mt-3 text-xs underline"
+                          style={{ color: "var(--chatty-text)", opacity: 0.7 }}
+                          onClick={() => setVoiceHelpModalOpen(true)}
+                        >
+                          How to pick a clip
+                        </button>
+                      </div>
+                      <VoiceHelpModal open={voiceHelpModalOpen} onClose={() => setVoiceHelpModalOpen(false)} />
+                      {/* Slice modal: pick start time for 25 s slice when file > 30 s */}
+                      {voiceSliceModalOpen && voiceTmpId && voiceAudit && (voiceAudit.durationSec ?? 0) > 30 && createPortal(
+                        <div
+                          className="fixed inset-0 flex items-center justify-center p-4"
+                          style={{ zIndex: Z_LAYERS.critical + 2 }}
+                          role="dialog"
+                          aria-modal="true"
+                          aria-labelledby="voice-slice-title"
+                          onKeyDown={(e) => e.key === "Escape" && setVoiceSliceModalOpen(false)}
+                        >
+                          <div
+                            className="fixed inset-0 bg-black bg-opacity-50"
+                            style={{ zIndex: Z_LAYERS.critical + 2 }}
+                            onClick={() => setVoiceSliceModalOpen(false)}
+                            aria-hidden="true"
+                          />
+                          <div
+                            className="relative flex flex-col rounded-lg shadow-lg w-full max-w-md"
+                            style={{
+                              zIndex: Z_LAYERS.critical + 3,
+                              backgroundColor: "var(--chatty-bg-main)",
+                              color: "var(--chatty-text)",
+                              border: "1px solid var(--chatty-line)",
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="p-3 border-b" style={{ borderColor: "var(--chatty-line)" }}>
+                              <h2 id="voice-slice-title" className="text-sm font-semibold">Select 25 s slice</h2>
+                            </div>
+                            <div className="p-4 text-xs" style={{ color: "var(--chatty-text)", opacity: 0.95 }}>
+                              <p className="mb-3">File is {(voiceAudit.durationSec ?? 0).toFixed(0)} s. Enter start time (seconds). We'll use 25 s from that point (e.g. 60 = 1:00).</p>
+                              <div className="mb-3">
+                                <p className="mb-1">Preview source audio</p>
+                                <audio
+                                  key={voiceTmpId}
+                                  controls
+                                  src={getVoicePreviewUrl(voiceTmpId)}
+                                  className="w-full"
+                                  style={{ height: "32px" }}
+                                />
+                              </div>
+                              <label className="block mb-1">Start at (seconds)</label>
+                              <input
+                                type="number"
+                                min={0}
+                                max={getVoiceSliceMaxSec(voiceAudit.durationSec)}
+                                value={voiceSliceStartSec}
+                                onChange={(e) => setVoiceSliceStartSec(clampVoiceSliceStartSec(parseFloat(e.target.value), voiceAudit.durationSec))}
+                                className="w-full rounded border p-2 text-sm"
+                                style={{
+                                  borderColor: "var(--chatty-line)",
+                                  backgroundColor: "var(--chatty-bg-message)",
+                                  color: "var(--chatty-text)",
+                                }}
+                              />
+                              <input
+                                type="range"
+                                min={0}
+                                max={getVoiceSliceMaxSec(voiceAudit.durationSec)}
+                                step={0.1}
+                                value={voiceSliceStartSec}
+                                onChange={(e) => setVoiceSliceStartSec(clampVoiceSliceStartSec(parseFloat(e.target.value), voiceAudit.durationSec))}
+                                className="w-full mt-3"
+                                aria-label="Voice slice start time"
+                              />
+                            </div>
+                            <div className="p-3 border-t flex justify-end gap-2" style={{ borderColor: "var(--chatty-line)" }}>
+                              <button
+                                type="button"
+                                className="px-3 py-2 rounded text-sm"
+                                style={{
+                                  backgroundColor: "var(--chatty-bg-message)",
+                                  color: "var(--chatty-text)",
+                                  border: "1px solid var(--chatty-line)",
+                                }}
+                                onClick={() => setVoiceSliceModalOpen(false)}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                className="px-4 py-2 rounded text-sm font-medium disabled:opacity-50"
+                                style={{
+                                  backgroundColor: "var(--chatty-bg-message)",
+                                  color: "var(--chatty-text)",
+                                  border: "1px solid var(--chatty-line)",
+                                }}
+                                disabled={voiceSliceTrimLoading}
+                                onClick={async () => {
+                                  setVoiceSliceTrimLoading(true);
+                                  setVoiceUploadStatus("");
+                                  const trimStartSec = clampVoiceSliceStartSec(voiceSliceStartSec, voiceAudit.durationSec);
+                                  setVoiceSliceStartSec(trimStartSec);
+                                  const { ok, tmpId: newTmpId, error } = await trimVoiceTemp(voiceTmpId!, trimStartSec);
+                                  if (ok && newTmpId) {
+                                    const audit = await getVoiceAudit(newTmpId);
+                                    if (!audit.ok) {
+                                      setVoiceUploadStatus(audit.error || "Audit failed after trim");
+                                    } else {
+                                      setVoiceTmpId(newTmpId);
+                                      setVoiceAudit({ durationSec: audit.durationSec, channels: audit.channels, sampleRateHz: audit.sampleRateHz, rmsDb: audit.rmsDb, pass: audit.pass, hints: audit.hints ?? [] });
+                                      setVoiceSliceModalOpen(false);
+                                    }
+                                  } else {
+                                    setVoiceUploadStatus(error || "Trim failed");
+                                  }
+                                  setVoiceSliceTrimLoading(false);
+                                }}
+                              >
+                                {voiceSliceTrimLoading ? "Trimming…" : "Use this slice"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>,
+                        document.body
+                      )}
+                    </div>
+
+                    {/* Forge Sim */}
+                    <div className="mt-6 pt-6" style={{ borderTop: "1px solid var(--chatty-line)" }}>
+                      <button
+                        onClick={handleForgeSim}
+                        disabled={isSimModeLocked || !isForgeDraftReady || forgeSimPhase === 'submitting' || forgeSimPhase === 'running'}
+                        className="w-full py-3 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+                        style={{
+                          backgroundColor: isSimModeLocked || forgeSimPhase === 'succeeded'
+                            ? 'rgba(34,197,94,0.15)'
+                            : 'rgba(249,115,22,0.15)',
+                          border: `1px solid ${isSimModeLocked || forgeSimPhase === 'succeeded' ? '#22c55e' : '#f97316'}`,
+                          color: isSimModeLocked || forgeSimPhase === 'succeeded' ? '#22c55e' : '#f97316',
+                          opacity: (isSimModeLocked || !isForgeDraftReady || forgeSimPhase === 'submitting' || forgeSimPhase === 'running') ? 0.5 : 1,
+                          cursor: (isSimModeLocked || !isForgeDraftReady || forgeSimPhase === 'submitting' || forgeSimPhase === 'running') ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        {isSimModeLocked ? (
+                          <>✓ Sim Locked</>
+                        ) : forgeSimPhase === 'submitting' || forgeSimPhase === 'running' ? (
+                          <>
+                            <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                            </svg>
+                            Building...
+                          </>
+                        ) : forgeSimPhase === 'succeeded' ? (
+                          <>✓ Sim Built</>
+                        ) : (
+                          <>Forge Sim</>
+                        )}
+                      </button>
+                      <p
+                        className="text-xs mt-2"
+                        style={{ color: "var(--chatty-text)", opacity: 0.5 }}
+                      >
+                        Package this construct's identity into a local Ollama sim via build_sims.py
+                      </p>
+                      {forgeSimJobId && forgeSimPhase !== 'idle' && (
+                        <p className="text-xs mt-2" style={{ color: "var(--chatty-text)", opacity: 0.5 }}>
+                          Job: {forgeSimJobId} · {forgeSimPhase}
+                        </p>
+                      )}
+                      {forgeSimError && (
+                        <p className="text-xs mt-2" style={{ color: '#f87171' }}>
+                          {forgeSimError}
+                        </p>
+                      )}
+                      {forgeSimPhase === 'succeeded' && (
+                        <p className="text-xs mt-2" style={{ color: '#22c55e' }}>
+                          Sim ready and locked. Run <code style={{ opacity: 0.8 }}>ollama list</code> to confirm.
+                        </p>
+                      )}
+                      {isSimModeLocked && (
+                        <p className="text-xs mt-2" style={{ color: '#22c55e' }}>
+                          This construct is already locked as a {simLockState.modeLabel || 'lin-derived sim'}.
+                        </p>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -5415,7 +6891,12 @@ ALWAYS:
                   </h2>
                   {previewMessages.length > 0 && (
                     <button
-                      onClick={() => setPreviewMessages([])}
+                      onClick={() => {
+                        setPreviewMessages([]);
+                        setLastPreviewReceipt(null);
+                        setLastPreviewChecklist(null);
+                        setLastPreviewModel(null);
+                      }}
                       className="text-xs transition-colors"
                       style={{
                         color: "var(--chatty-text)",
@@ -5500,11 +6981,21 @@ ALWAYS:
                       {previewMessages.map((message, index) => (
                         <div key={index}>
                           <p className="text-sm text-app-text-900 whitespace-pre-wrap">
-                            {message.role === "user" ? (
+                            {(() => {
+                              const normalizedRole = normalizeCreatorSpeakerRole(
+                                (message as any)?.role,
+                              );
+                              const label = getCreatorSpeakerLabel(
+                                (message as any)?.role,
+                              );
+                              return normalizedRole === "user" ? (
                               <>
-                                <span className="font-medium text-app-text-800">
-                                  You:
-                                </span>{" "}
+                                {label ? (
+                                  <span className="font-medium text-app-text-800">
+                                    {label}
+                                  </span>
+                                ) : null}
+                                {label ? " " : null}
                                 {message.content}
                                 {message.attachments && message.attachments.length > 0 && (
                                   <div className="flex gap-2 mt-2 flex-wrap">
@@ -5519,17 +7010,21 @@ ALWAYS:
                                   </div>
                                 )}
                               </>
-                            ) : (
+                              ) : (
                               <>
-                                <span
-                                  className="font-medium"
-                                  style={{ color: "#00aeef" }}
-                                >
-                                  {config.name || "Assistant"}:
-                                </span>{" "}
+                                {label ? (
+                                  <span
+                                    className="font-medium"
+                                    style={{ color: "#00aeef" }}
+                                  >
+                                    {label}
+                                  </span>
+                                ) : null}
+                                {label ? " " : null}
                                 {message.content}
                               </>
-                            )}
+                              );
+                            })()}
                           </p>
                         </div>
                       ))}
@@ -5612,17 +7107,43 @@ ALWAYS:
                       className="text-xs text-center space-y-1"
                       style={{ color: "var(--chatty-text)", opacity: 0.7 }}
                     >
-                      <p>This is a live preview using the configured models.</p>
-                      <p>
-                        Your GPT will behave based on the current configuration
-                        above.
-                      </p>
-                      {config.name && (
-                        <p style={{ color: "var(--chatty-status-success)" }}>
-                          ✓ Configured as: {config.name}
-                        </p>
+                      {!lastPreviewReceipt && (
+                        <>
+                          <p>Preview identity is pending a server runtime receipt.</p>
+                          <p>No canonical, model, Lin, or memory claim is trusted until the next response proves it.</p>
+                        </>
                       )}
-                      {lastPreviewModel && (
+                      {lastPreviewReceipt && (
+                        <>
+                          <p>
+                            Runtime construct: {lastPreviewReceipt.preview?.effective_construct_id || "unknown"}
+                            {" · "}
+                            identity: {lastPreviewReceipt.preview?.identity_source || "unknown"}
+                            {" · "}
+                            base: {lastPreviewReceipt.preview?.base_prompt_source || "unknown"}
+                          </p>
+                          <p>
+                            Preview mode: {lastPreviewReceipt.preview?.preview_mode ? "on" : "off"}
+                            {" · "}
+                            persistence: {lastPreviewReceipt.preview?.skip_persistence ? "skipped" : "enabled"}
+                            {" · "}
+                            draft overlay: {lastPreviewReceipt.preview?.draft_overlay_applied ? "applied" : "not applied"}
+                          </p>
+                          {lastPreviewReceipt.preview?.suppressed_system_prompt_override && (
+                            <p style={{ color: "var(--chatty-status-warning)" }}>
+                              Legacy preview identity override was suppressed.
+                            </p>
+                          )}
+                          {lastPreviewChecklist && (
+                            <p>
+                              Checklist: {lastPreviewChecklist.overallStatus || "unknown"}
+                              {" · "}
+                              preview identity: {lastPreviewChecklist.stages?.find?.((stage: any) => stage.id === "preview_identity")?.status || "missing"}
+                            </p>
+                          )}
+                        </>
+                      )}
+                      {lastPreviewModel && lastPreviewReceipt && (
                         <div
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs mt-1"
                           style={{
@@ -5644,10 +7165,8 @@ ALWAYS:
                         config.creativeModel ||
                         config.codingModel) && (
                         <div className="text-xs mt-2">
-                          <p style={{ color: "var(--chatty-status-success)" }}>
-                            Models: {config.conversationModel || "default"} |{" "}
-                            {config.creativeModel || "default"} |{" "}
-                            {config.codingModel || "default"}
+                          <p style={{ color: "var(--chatty-text)", opacity: 0.65 }}>
+                            Draft model settings exist, but runtime model is unverified until receipt.
                           </p>
                         </div>
                       )}
@@ -6195,7 +7714,7 @@ ALWAYS:
           className="fixed inset-0 flex items-center justify-center"
           style={{ zIndex: Z_LAYERS.critical + 10 }}
         >
-          <div 
+          <div
             className="absolute inset-0 bg-black bg-opacity-60"
           />
           <div
@@ -6205,17 +7724,17 @@ ALWAYS:
               border: "1px solid var(--chatty-border)",
             }}
           >
-            <h3 
+            <h3
               className="text-lg font-semibold mb-3"
               style={{ color: "var(--chatty-text)" }}
             >
               Save Preview Conversation?
             </h3>
-            <p 
+            <p
               className="text-sm mb-5"
               style={{ color: "var(--chatty-text)", opacity: 0.8 }}
             >
-              You have {previewMessages.length} message{previewMessages.length !== 1 ? 's' : ''} in the preview. 
+              You have {previewMessages.length} message{previewMessages.length !== 1 ? 's' : ''} in the preview.
               Would you like to save this conversation to {config.name || 'this construct'}'s transcript history?
             </p>
             <div className="flex gap-3 justify-end">

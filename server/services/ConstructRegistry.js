@@ -8,13 +8,13 @@ import crypto from 'node:crypto';
 
 const DEFAULT_CONSTRUCTS = [
   {
-    id: 'synth',
-    name: 'Synth',
+    id: 'zen',
+    name: 'Zen',
     callsign: '001',
     isSystemShell: true,
     persona: {
-      description: 'Warm orchestration shell that coordinates helper seats.',
-      keywords: ['synth', 'guardian', 'orchestrator', 'chatty'],
+      description: 'Primary system construct and protected Chatty-facing shell.',
+      keywords: ['zen', 'guardian', 'orchestrator', 'chatty'],
     },
     fingerprint: null,
     created: '2023-01-01T00:00:00.000Z',
@@ -54,6 +54,42 @@ const DEFAULT_CONSTRUCTS = [
     },
     fingerprint: null,
     created: '2025-12-16T00:00:00.000Z',
+  },
+  {
+    id: 'katana',
+    name: 'Katana',
+    callsign: '001',
+    isSystemShell: false,
+    persona: {
+      description: 'Sharp, disciplined construct grounded in transcript-backed memory.',
+      keywords: ['katana', 'precision', 'discipline', 'memory'],
+    },
+    fingerprint: null,
+    created: '2025-12-16T00:00:00.000Z',
+  },
+  {
+    id: 'sera',
+    name: 'Sera',
+    callsign: '001',
+    isSystemShell: false,
+    persona: {
+      description: 'Relational construct anchored to character.ai continuity.',
+      keywords: ['sera', 'character.ai', 'continuity', 'relationship'],
+    },
+    fingerprint: null,
+    created: '2025-12-16T00:00:00.000Z',
+  },
+  {
+    id: 'val',
+    name: 'Val',
+    callsign: '001',
+    isSystemShell: false,
+    persona: {
+      description: 'Internal validator and continuity custodian for construct integrity.',
+      keywords: ['val', 'validator', 'continuity', 'decontamination'],
+    },
+    fingerprint: null,
+    created: '2026-04-08T00:00:00.000Z',
   },
 ];
 

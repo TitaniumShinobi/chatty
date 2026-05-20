@@ -1,9 +1,38 @@
 import express from 'express';
+import { tavilySearch } from '../lib/tavilyClient.js';
+import {
+  buildSearchCitations,
+  buildSearchContextBlock,
+  buildSearchPacket,
+  detectHousingIntent,
+  enrichHousingResults,
+  isAllowlistedHousingMediaUrl,
+  normalizeHousingFilters,
+} from '../lib/searchHousing.js';
+import {
+  buildSearchResponsePackets,
+  fetchSearchMedia,
+  performHousingSearch,
+} from '../lib/housingSearch.js';
 
 const router = express.Router();
 
 const searchCache = new Map();
 const CACHE_TTL = 15 * 60 * 1000;
+const searchMediaCache = new Map();
+const SEARCH_MEDIA_CACHE_TTL = 30 * 60 * 1000;
+let aiManagerModulePromise = null;
+
+async function getAIManager() {
+  if (!aiManagerModulePromise) {
+    aiManagerModulePromise = import('../lib/aiManager.js').catch((error) => {
+      aiManagerModulePromise = null;
+      throw error;
+    });
+  }
+  const { AIManager } = await aiManagerModulePromise;
+  return AIManager.getInstance();
+}
 
 function getCachedResult(query) {
   const cached = searchCache.get(query.toLowerCase().trim());
@@ -20,6 +49,25 @@ function setCachedResult(query, results) {
     for (let i = 0; i < 50; i++) searchCache.delete(oldest[i][0]);
   }
   searchCache.set(query.toLowerCase().trim(), { results, timestamp: Date.now() });
+}
+
+function getCachedMedia(url) {
+  const cached = searchMediaCache.get(url);
+  if (cached && Date.now() - cached.timestamp < SEARCH_MEDIA_CACHE_TTL) {
+    return cached;
+  }
+  searchMediaCache.delete(url);
+  return null;
+}
+
+function setCachedMedia(url, value) {
+  if (searchMediaCache.size > 64) {
+    const oldest = [...searchMediaCache.entries()].sort((a, b) => a[1].timestamp - b[1].timestamp);
+    for (let i = 0; i < 16 && oldest[i]; i++) {
+      searchMediaCache.delete(oldest[i][0]);
+    }
+  }
+  searchMediaCache.set(url, { ...value, timestamp: Date.now() });
 }
 
 async function searchDuckDuckGo(query, numResults = 8) {
@@ -81,6 +129,19 @@ async function searchSerpAPI(query, numResults = 8) {
 }
 
 async function performSearch(query, numResults = 8) {
+  // If Tavily is configured, prefer it and return normalized
+  if (process.env.TAVILY_API_KEY) {
+    try {
+      const t0 = Date.now();
+      const resp = await tavilySearch(query, { maxResults: numResults });
+      setCachedResult(query, resp.results);
+      console.log(`🔍 [Search] Tavily returned ${resp.results.length} results in ${Date.now() - t0}ms for: "${query}"`);
+      return { results: resp.results, source: 'tavily' };
+    } catch (err) {
+      console.warn(`⚠️ [Search] Tavily failed (${err.status || ''}): ${err.message}. Falling back.`);
+    }
+  }
+
   const cached = getCachedResult(query);
   if (cached) {
     console.log(`🔍 [Search] Cache hit for: "${query}"`);
@@ -111,18 +172,214 @@ async function performSearch(query, numResults = 8) {
   }
 }
 
-router.post('/query', async (req, res) => {
+function clampNumResults(value, fallback = 8) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(Math.round(parsed), 1), 10);
+}
+
+function normalizeSearchResult(result) {
+  if (!result || typeof result !== 'object') {
+    return { title: 'Untitled result', url: '', snippet: '' };
+  }
+
+  return {
+    title: result.title || result.name || result.url || result.link || 'Untitled result',
+    url: result.url || result.link || '',
+    snippet: result.snippet || result.content || result.description || '',
+  };
+}
+
+async function searchViaAIManager(query, { numResults, depth } = {}) {
+  const aiManager = await getAIManager();
+  if (!aiManager?.searchWeb) {
+    return null;
+  }
+
+  const t0 = Date.now();
+  const response = await aiManager.searchWeb(query, { maxResults: numResults, depth });
+  const latency = Date.now() - t0;
+  const normalizedResults = Array.isArray(response?.results) ? response.results.map(normalizeSearchResult) : [];
+  console.log(`🔍 [Search] AIManager provider=${response?.provider || 'unknown'} results=${normalizedResults.length} latency=${latency}ms query="${query}"`);
+  return {
+    provider: response?.provider || 'ai_manager',
+    results: normalizedResults,
+  };
+}
+
+function resolveSearchIntent(query) {
+  const detectedIntent = detectSearchIntent(query, { explicitOnly: false });
+  if (detectedIntent.shouldSearch) {
+    return detectedIntent;
+  }
+
+  const housingIntent = detectHousingIntent(query);
+  if (housingIntent.isHousing) {
+    return {
+      shouldSearch: true,
+      searchQuery: housingIntent.searchQuery,
+      intent_reason: housingIntent.reason,
+      search_vertical: 'housing',
+      housing_filters: housingIntent.filters,
+      housing: housingIntent.filters,
+      slash_command: null,
+    };
+  }
+
+  return {
+    shouldSearch: true,
+    searchQuery: query.trim(),
+    intent_reason: 'direct_search_request',
+    search_vertical: 'web',
+    housing_filters: null,
+    housing: null,
+    slash_command: null,
+  };
+}
+
+async function runSearchPipeline(query, { numResults = 8, depth, preferAIManager = false } = {}) {
+  const intent = resolveSearchIntent(query);
+  const executedQuery = intent.searchQuery || query.trim();
+  const isHousing = intent.search_vertical === 'housing';
+
+  let resolved;
+  if (preferAIManager) {
+    try {
+      resolved = await searchViaAIManager(executedQuery, { numResults, depth });
+    } catch (error) {
+      console.warn(`⚠️ [Search] AIManager search failed, falling back: ${error.message}`);
+    }
+  }
+
+  if (!resolved) {
+    const fallback = await performSearch(executedQuery, numResults);
+    resolved = {
+      provider: fallback.source,
+      results: Array.isArray(fallback.results) ? fallback.results.map(normalizeSearchResult) : [],
+    };
+  }
+
+  const housing = isHousing
+    ? await performHousingSearch(executedQuery, performSearch, { numResults: Math.min(numResults, 4) })
+    : null;
+  const finalResults = housing?.results || resolved.results;
+  const citations = housing?.citations || buildSearchCitations(finalResults, {
+    prefix: isHousing ? 'housing' : 'web',
+    provider: resolved.provider,
+  });
+  const packet = housing
+    ? {
+        op: 'housing.results.v1',
+        payload: {
+          query: housing.query,
+          total: housing.results.length,
+          results: housing.results.map((result) => ({
+            id: result.id,
+            title: result.title,
+            address: result.address,
+            price: result.priceText,
+            bedrooms: result.beds,
+            bathrooms: result.baths,
+            propertyType: result.propertyType,
+            status: result.listingMode,
+            source: result.domain,
+            listingUrl: result.url,
+            description: result.snippet,
+            photos: result.photos.map((photo) => ({
+              url: photo.url,
+              alt: photo.alt,
+            })),
+            citationIndices: result.citationIndexes,
+          })),
+          citations,
+        },
+      }
+    : null;
+
+  return {
+    success: true,
+    query: query.trim(),
+    executedQuery,
+    provider: resolved.provider,
+    source: resolved.provider,
+    results: finalResults,
+    citations,
+    packet,
+    packets: packet ? [packet] : [],
+    intent_reason: intent.intent_reason,
+    search_vertical: intent.search_vertical,
+    housing,
+    slash_command: intent.slash_command || null,
+  };
+}
+
+async function handleSearchRequest(req, res, options = {}) {
   try {
-    const { query, numResults = 8 } = req.body;
+    const query = options.query;
     if (!query || typeof query !== 'string') {
       return res.status(400).json({ error: 'Missing or invalid query' });
     }
 
-    const { results, source } = await performSearch(query.trim(), numResults);
-    return res.json({ success: true, results, source, query: query.trim() });
+    const payload = await runSearchPipeline(query, {
+      numResults: clampNumResults(options.numResults, 8),
+      depth: options.depth,
+      preferAIManager: options.preferAIManager === true,
+    });
+    return res.json(payload);
   } catch (error) {
-    console.error('❌ [Search] Query failed:', error.message);
-    return res.status(500).json({ error: 'Search failed', message: error.message });
+    console.error('❌ [Search] Request failed:', error.message);
+    return res.status(error.status || 500).json({ error: 'Search failed', message: error.message });
+  }
+}
+
+router.post('/query', async (req, res) => handleSearchRequest(req, res, {
+  query: req.body?.query,
+  numResults: req.body?.numResults,
+  depth: req.body?.depth,
+  preferAIManager: false,
+}));
+
+router.get('/', async (req, res) => handleSearchRequest(req, res, {
+  query: typeof req.query.q === 'string' ? req.query.q : req.query.query,
+  numResults: req.query.maxResults ?? req.query.numResults,
+  depth: req.query.depth,
+  preferAIManager: true,
+}));
+
+router.get('/media', async (req, res) => {
+  try {
+    const mediaUrl = typeof req.query.url === 'string' ? req.query.url.trim() : '';
+    if (!mediaUrl) {
+      return res.status(400).json({ error: 'Missing media url' });
+    }
+
+    if (!isAllowlistedHousingMediaUrl(mediaUrl)) {
+      return res.status(403).json({ error: 'Media host is not allowlisted' });
+    }
+
+    const cached = getCachedMedia(mediaUrl);
+    if (cached) {
+      res.setHeader('Cache-Control', cached.cacheControl || 'private, max-age=1800');
+      res.setHeader('Content-Type', cached.contentType);
+      return res.send(cached.body || cached.buffer);
+    }
+
+    const media = await fetchSearchMedia(mediaUrl);
+    setCachedMedia(mediaUrl, {
+      body: media.buffer,
+      buffer: media.buffer,
+      contentType: media.contentType,
+      cacheControl: media.cacheControl,
+    });
+    res.setHeader('Cache-Control', media.cacheControl);
+    res.setHeader('Content-Type', media.contentType);
+    return res.send(media.buffer);
+  } catch (error) {
+    console.error('❌ [Search] Media proxy failed:', error.message);
+    return res.status(error.name === 'AbortError' ? 504 : 500).json({
+      error: 'Media proxy failed',
+      message: error.message,
+    });
   }
 });
 
@@ -145,9 +402,56 @@ const STEM_KEYWORDS = [
   'latest', 'recent', 'current', 'today', 'news', '2025', '2026',
 ];
 
-function detectSearchIntent(message) {
-  if (!message || typeof message !== 'string') return { shouldSearch: false };
-  const lower = message.toLowerCase();
+function detectSearchIntent(message, options = {}) {
+  if (!message || typeof message !== 'string') {
+    return { shouldSearch: false, intent_reason: 'missing_message' };
+  }
+  const lower = message.toLowerCase().trim();
+  const explicitOnly = options.explicitOnly === true;
+  const allowGeneralHeuristics = options.allowGeneralHeuristics === true;
+  const housingIntent = detectHousingIntent(message);
+
+  const explicitPrefix = /^\/(websearch|search)\s+([\s\S]+)/i;
+  const prefixMatch = message.match(explicitPrefix);
+  if (prefixMatch?.[2]?.trim()) {
+    const explicitQuery = prefixMatch[2].trim();
+    const explicitHousingIntent = detectHousingIntent(explicitQuery);
+    return {
+      shouldSearch: true,
+      searchQuery: explicitQuery,
+      intent_reason: 'explicit_slash_command',
+      search_vertical: explicitHousingIntent.isHousing ? 'housing' : 'web',
+      housing_filters: explicitHousingIntent.isHousing ? explicitHousingIntent.filters : null,
+      housing: explicitHousingIntent.isHousing ? explicitHousingIntent.filters : null,
+      slash_command: prefixMatch[1].toLowerCase(),
+    };
+  }
+
+  const explicitPhrases = [
+    'search web',
+    'look this up',
+    'web search',
+    'find online',
+  ];
+  for (const phrase of explicitPhrases) {
+    const idx = lower.indexOf(phrase);
+    if (idx >= 0) {
+      const remainder = message.slice(idx + phrase.length).replace(/^[:\s,-]+/, '').trim();
+      return {
+        shouldSearch: remainder.length > 0,
+        searchQuery: remainder.length > 0 ? remainder : message.replace(/[?!.]+$/, '').trim(),
+        intent_reason: remainder.length > 0 ? 'explicit_phrase' : 'explicit_phrase_no_query',
+        search_vertical: housingIntent.isHousing ? 'housing' : 'web',
+        housing_filters: housingIntent.isHousing ? housingIntent.filters : null,
+        housing: housingIntent.isHousing ? housingIntent.filters : null,
+        slash_command: null,
+      };
+    }
+  }
+
+  if (explicitOnly) {
+    return { shouldSearch: false, intent_reason: 'explicit_only_no_trigger' };
+  }
 
   const personalPatterns = [
     'do you remember', 'first time we', 'last time we', 'we talked', 'you said to me',
@@ -159,7 +463,23 @@ function detectSearchIntent(message) {
     'miss you', 'tuck me in', 'go to bed'
   ];
   if (personalPatterns.some(p => lower.includes(p))) {
-    return { shouldSearch: false };
+    return { shouldSearch: false, intent_reason: 'personal_context' };
+  }
+
+  if (housingIntent.isHousing) {
+    return {
+      shouldSearch: true,
+      searchQuery: housingIntent.searchQuery,
+      intent_reason: housingIntent.reason,
+      search_vertical: 'housing',
+      housing_filters: housingIntent.filters,
+      housing: housingIntent.filters,
+      slash_command: null,
+    };
+  }
+
+  if (!allowGeneralHeuristics) {
+    return { shouldSearch: false, intent_reason: 'heuristic_no_match' };
   }
 
   const questionPatterns = ['?', 'how ', 'what ', 'why ', 'when ', 'where ', 'who ', 'which ', 'explain ', 'tell me', 'describe ', 'compare '];
@@ -169,9 +489,17 @@ function detectSearchIntent(message) {
 
   if ((isQuestion && hasStemKeyword) || (isQuestion && isLongEnough && lower.includes('?'))) {
     const searchQuery = message.replace(/[?!.]+$/, '').trim();
-    return { shouldSearch: true, searchQuery };
+    return {
+      shouldSearch: true,
+      searchQuery,
+      intent_reason: 'heuristic',
+      search_vertical: 'web',
+      housing_filters: null,
+      housing: null,
+      slash_command: null,
+    };
   }
-  return { shouldSearch: false };
+  return { shouldSearch: false, intent_reason: 'heuristic_no_match' };
 }
 
 const STEM_PROMPT_BLOCK = `
@@ -201,33 +529,91 @@ When web search results are provided, cite your sources using numbered reference
 - Include key formulas, definitions, and explanations
 - Be thorough but concise — prioritize accuracy and clarity`;
 
-async function injectSearchContext(message, systemPrompt) {
-  const { shouldSearch, searchQuery } = detectSearchIntent(message);
+async function injectSearchContext(message, systemPrompt, options = {}) {
+  const {
+    shouldSearch,
+    searchQuery,
+    intent_reason,
+    search_vertical,
+  } = detectSearchIntent(message, options);
+  const explicitOnly = options.explicitOnly === true;
   if (!shouldSearch) {
-    return { enhancedPrompt: systemPrompt + STEM_PROMPT_BLOCK, searchResults: null };
+    return {
+      enhancedPrompt: systemPrompt,
+      searchResults: null,
+      search_injected: false,
+      intent_reason,
+      explicit_only: explicitOnly,
+    };
   }
 
   try {
-    const { results, source } = await performSearch(searchQuery, 6);
+    const payload = await runSearchPipeline(searchQuery, {
+      numResults: 6,
+      preferAIManager: false,
+    });
+    const results = payload.results;
     if (!results || results.length === 0) {
-      return { enhancedPrompt: systemPrompt + STEM_PROMPT_BLOCK, searchResults: null };
+      return {
+        enhancedPrompt: systemPrompt + STEM_PROMPT_BLOCK,
+        searchResults: null,
+        search_injected: true,
+        intent_reason,
+        explicit_only: explicitOnly,
+        search_vertical: search_vertical || 'web',
+        citations: [],
+        packet: null,
+        housing: null,
+      };
     }
 
-    let searchContext = `\n\n## Web Search Results (${source})\nThe following search results are relevant to the user's question. Use them to provide accurate, up-to-date information and cite sources using [1], [2], etc.\n`;
-    results.forEach((r, i) => {
-      searchContext += `\n[${i + 1}] **${r.title}**\nURL: ${r.url}\n${r.snippet}\n`;
+    const searchContext = buildSearchContextBlock({
+      provider: payload.source,
+      results,
+      housing: search_vertical === 'housing'
+        ? payload.housing
+        : null,
     });
 
     console.log(`🔍 [Search] Injected ${results.length} search results for: "${searchQuery}"`);
     return {
       enhancedPrompt: systemPrompt + STEM_PROMPT_BLOCK + searchContext,
       searchResults: results,
+      search_injected: true,
+      intent_reason,
+      explicit_only: explicitOnly,
+      search_vertical: payload.search_vertical,
+      citations: payload.citations,
+      packet: payload.packet,
+      housing: payload.housing,
     };
   } catch (err) {
     console.warn(`⚠️ [Search] Search injection failed:`, err.message);
-    return { enhancedPrompt: systemPrompt + STEM_PROMPT_BLOCK, searchResults: null };
+    return {
+      enhancedPrompt: systemPrompt + STEM_PROMPT_BLOCK,
+      searchResults: null,
+      search_injected: true,
+      intent_reason: `${intent_reason || 'unknown'}_search_error`,
+      explicit_only: explicitOnly,
+      search_vertical: search_vertical || 'web',
+      citations: [],
+      packet: null,
+      housing: null,
+    };
   }
 }
 
-export { performSearch, injectSearchContext, detectSearchIntent };
+export {
+  buildSearchResponsePackets,
+  performSearch,
+  injectSearchContext,
+  detectSearchIntent,
+  normalizeHousingFilters,
+  detectHousingIntent,
+  enrichHousingResults,
+  buildSearchCitations,
+  buildSearchPacket,
+  isAllowlistedHousingMediaUrl,
+  runSearchPipeline,
+};
 export default router;

@@ -353,10 +353,6 @@ export class LargeFileIntelligence {
   ): Promise<QueryResult> {
     const startTime = Date.now();
 
-    if (!this.memoryLedger) {
-      throw new Error('Unified retrieval not enabled - memory ledger required');
-    }
-
     // Context assembly query
     const contextQuery: ContextQuery = {
       query,

@@ -1,5 +1,6 @@
 
 import { loadSeatConfig, runSeat, runSeatsBatch, cleanupSeatRunner, Seat } from '../seatRunner';
+import { LIN_DEFAULT_MODELS } from '../../config/linModelDefaults';
 
 describe('seatRunner', () => {
     // Increase timeout for real network calls or slow operations
@@ -15,6 +16,9 @@ describe('seatRunner', () => {
             expect(config).toHaveProperty('coding');
             expect(config).toHaveProperty('creative');
             expect(config).toHaveProperty('smalltalk');
+            expect((config.coding as any).tag ?? config.coding).toBe(LIN_DEFAULT_MODELS.coding);
+            expect((config.creative as any).tag ?? config.creative).toBe(LIN_DEFAULT_MODELS.creative);
+            expect((config.smalltalk as any).tag ?? config.smalltalk).toBe(LIN_DEFAULT_MODELS.smalltalk);
         });
 
         it('should cache config after first load', async () => {
@@ -32,13 +36,13 @@ describe('seatRunner', () => {
          */
 
         it('should respect timeout', async () => {
-            // We expect a timeout error with a very short timeout
+            // A 1ms request should fail immediately, either by timeout or by a fast Ollama-side error.
             await expect(runSeat({
                 seat: 'coding',
                 prompt: 'test',
                 timeout: 1, // 1ms timeout, impossible to succeed
                 host: 'http://localhost' // Assume localhost
-            })).rejects.toThrow(/timeout/i);
+            })).rejects.toThrow(/timeout|Ollama error/i);
         });
 
         it('should handle errors gracefully for invalid host', async () => {

@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import {
   Plus,
-  Bot,
   Search,
   Star,
   Users,
@@ -37,13 +36,22 @@ interface LayoutContext {
   forceRefreshConversations?: () => void;
 }
 
+const INVALID_AVATAR_VALUES = new Set(["", "null", "undefined", "avatar"]);
+
+function sanitizeAvatarSource(value?: string | null): string | null {
+  if (!value || typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (INVALID_AVATAR_VALUES.has(trimmed.toLowerCase())) return null;
+  return trimmed;
+}
+
 export default function SimForge() {
   const navigate = useNavigate();
   const aiService = AIService.getInstance();
   const layoutContext = useOutletContext<LayoutContext>();
   const [isCreatorOpen, setCreatorOpen] = useState(false);
   const [gpts, setGpts] = useState<CommunityGPT[]>([]);
-  const [userGpts, setUserGpts] = useState<AIConfig[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -52,74 +60,8 @@ export default function SimForge() {
   );
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+  const [avatarMissing, setAvatarMissing] = useState<Set<string>>(new Set());
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
-
-  // Mock community GPTs data (in a real app, this would come from an API)
-  const mockCommunityGPTs: CommunityGPT[] = [
-    {
-      id: "1",
-      name: "Code Mentor",
-      description: "Expert programming tutor for all skill levels",
-      instructions:
-        "You are an expert programming mentor who helps students learn to code.",
-      avatar: "",
-      author: "TechGuru",
-      authorAvatar: "",
-      likes: 1247,
-      downloads: 3421,
-      category: "Programming",
-      tags: ["coding", "tutorial", "education"],
-      modelId: "gpt-4",
-      conversationStarters: [
-        "Help me learn Python",
-        "Explain this code",
-        "Best practices for React",
-      ],
-      createdAt: Date.now() - 86400000 * 2,
-    },
-    {
-      id: "2",
-      name: "Creative Writer",
-      description: "Inspires and helps with creative writing projects",
-      instructions:
-        "You are a creative writing assistant who helps with storytelling.",
-      avatar: "",
-      author: "WordSmith",
-      authorAvatar: "",
-      likes: 892,
-      downloads: 2156,
-      category: "Writing",
-      tags: ["creative", "storytelling", "fiction"],
-      modelId: "gpt-4",
-      conversationStarters: [
-        "Help me write a story",
-        "Character development",
-        "Plot ideas",
-      ],
-      createdAt: Date.now() - 86400000 * 5,
-    },
-    {
-      id: "3",
-      name: "Data Analyst",
-      description: "Expert in data analysis and visualization",
-      instructions:
-        "You are a data analysis expert who helps interpret and visualize data.",
-      avatar: "",
-      author: "DataPro",
-      authorAvatar: "",
-      likes: 1563,
-      downloads: 2890,
-      category: "Analytics",
-      tags: ["data", "analysis", "visualization"],
-      modelId: "gpt-4",
-      conversationStarters: [
-        "Analyze this dataset",
-        "Create a chart",
-        "Statistical insights",
-      ],
-      createdAt: Date.now() - 86400000 * 1,
-    },
-  ];
 
   const categories = [
     { id: "all", name: "All Categories" },
@@ -158,13 +100,10 @@ export default function SimForge() {
   const loadData = async () => {
     try {
       setIsLoading(true);
-      // Load user's AIs
-      const userAIs = await aiService.getAllAIs();
-      setUserGpts(userAIs);
-
       // Fetch store AIs from API
       try {
         const storeAIs = await aiService.getStoreAIs();
+        setAvatarMissing(new Set());
         // Map store AIs to CommunityGPT format
         const communityGPTs: CommunityGPT[] = storeAIs.map((ai) => ({
           ...ai,
@@ -495,9 +434,9 @@ export default function SimForge() {
         ) : filteredGpts.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="w-24 h-24 rounded-full flex items-center justify-center mb-6">
-              <Bot
-                size={32}
-                style={{ color: "var(--chatty-icon)", opacity: 0.6 }}
+              <div
+                className="w-24 h-24 rounded-full"
+                style={{ backgroundColor: "var(--chatty-line)" }}
               />
             </div>
             <h3
@@ -510,8 +449,19 @@ export default function SimForge() {
               className="text-sm max-w-md"
               style={{ color: "var(--chatty-text)", opacity: 0.7 }}
             >
-              Try adjusting your search or filter criteria to find GPTs.
+              Community Explore only shows public/store AIs. No public/store AIs are available right now. Your private constructs are still available under My AIs.
             </p>
+            <button
+              onClick={() => navigate("/app/ais")}
+              className="mt-5 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              style={{
+                backgroundColor: "var(--chatty-highlight)",
+                color: "var(--chatty-bg-main)",
+                border: "none",
+              }}
+            >
+              Open My AIs
+            </button>
           </div>
         ) : (
           <div
@@ -521,7 +471,11 @@ export default function SimForge() {
                 : "space-y-4"
             }
           >
-            {filteredGpts.map((gpt) => (
+            {filteredGpts.map((gpt) => {
+              const avatarSrc = sanitizeAvatarSource(gpt.avatar || gpt.avatarUrl);
+              const showAvatar = Boolean(avatarSrc) && !avatarMissing.has(gpt.id);
+
+              return (
               <div
                 key={gpt.id}
                 className={`rounded-lg p-4 transition-all ${
@@ -535,14 +489,32 @@ export default function SimForge() {
                   className={`flex items-start gap-3 ${viewMode === "list" ? "flex-shrink-0" : "mb-3"}`}
                 >
                   <div className="w-12 h-12 rounded-lg flex items-center justify-center overflow-hidden">
-                    {gpt.avatar ? (
+                    {showAvatar ? (
                       <img
-                        src={gpt.avatar}
+                        src={avatarSrc || undefined}
                         alt={gpt.name}
                         className="w-full h-full object-cover"
+                        width={48}
+                        height={48}
+                        loading="lazy"
+                        decoding="async"
+                        onError={() => {
+                          setAvatarMissing((prev) => {
+                            if (prev.has(gpt.id)) return prev;
+                            const next = new Set(prev);
+                            next.add(gpt.id);
+                          return next;
+                          });
+                        }}
                       />
                     ) : (
-                      <Bot size={20} style={{ color: "var(--chatty-icon)" }} />
+                      <div
+                        className="w-12 h-12 rounded-lg"
+                        style={{
+                          backgroundColor: "var(--chatty-line)",
+                          border: "1px solid var(--chatty-border)",
+                        }}
+                      />
                     )}
                   </div>
 
@@ -637,7 +609,8 @@ export default function SimForge() {
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

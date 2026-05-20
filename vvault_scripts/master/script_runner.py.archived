@@ -1,0 +1,64 @@
+# ARCHIVED: script_runner.py
+# This script was archived to prevent accidental execution.
+# Original contents preserved below.
+
+import os
+import subprocess
+import logging
+import time
+
+# Configure logging
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Define the scripts and their purposes
+SCRIPTS = {
+    "state_manager.py":
+    "Manages state persistently by saving and loading data to/from a JSON file.",
+    "folder_monitor.py":
+    "Monitors changes in a specific folder and updates the short-term memory pool.",
+    "nova_identity_guardian.py":
+    "Monitors identity files for integrity and updates the short-term memory pool.",
+    "independence.py":
+    "Runs and monitors multiple scripts, restarting them if they terminate.",
+    "aviator_script.py":
+    "Manages and monitors scripts, providing logging and process management.",
+    "unstuck_helper.py":
+    "Lists and terminates background processes to prevent resource conflicts."
+}
+
+# Define the directory containing the scripts
+IDENTITY_FOLDER = os.path.dirname(os.path.abspath(__file__))
+
+
+# Function to check if a script exists
+def script_exists(script_name):
+  return os.path.isfile(os.path.join(IDENTITY_FOLDER, script_name))
+
+
+# Function to create a missing script
+def create_script(script_name, description):
+  script_path = os.path.join(IDENTITY_FOLDER, script_name)
+  with open(script_path, "w") as script_file:
+    script_file.write(f"""
+# {script_name}
+# Purpose: {description}
+
+if __name__ == '__main__':
+    print('{script_name} is a placeholder script.')
+""")
+  os.chmod(script_path, 0o755)  # Make the script executable
+  logging.info(f"Created missing script: {script_name}")
+
+
+# Function to run a script
+def run_script(script_name):
+  script_path = os.path.join(IDENTITY_FOLDER, script_name)
+  try:
+    process = subprocess.Popen(["python3", script_path],
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE)
+    logging.info(f"Started script: {script_name} with PID {process.pid}")
+    return process
+  except Exception as e:
+    logging.error(f"Failed to start script {script_name}: {e}")

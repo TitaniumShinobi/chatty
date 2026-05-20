@@ -2,23 +2,25 @@
   "name": "api",
   "type": "module",
   "scripts": {
-    "dev": "NODE_OPTIONS='--max-old-space-size=4096' npx tsx server.js",
-    "cli": "npx tsx cli-server.ts",
-    "start": "npx tsx cli-server.ts",
+    "dev": "bash ../scripts/with-pinned-node.sh env NODE_OPTIONS='--max-old-space-size=4096' npx tsx server.js",
+    "cli": "bash ../scripts/with-pinned-node.sh npx tsx cli-server.ts",
+    "start": "bash ../scripts/with-pinned-node.sh npx tsx cli-server.ts",
     "prestart": "node -e \"const fs=require('fs');const path=require('path');const distPath=path.join(__dirname,'dist/engine/optimizedZen.js');if(process.env.NODE_ENV==='production'&&!fs.existsSync(distPath)){console.error('ERROR: Build artifacts missing in production. Run: npm run build');process.exit(1);}\"",
-    "build": "tsc --project tsconfig.json",
+    "build": "bash ../scripts/with-pinned-node.sh tsc --project tsconfig.json",
     "prebuild": "echo 'Building OptimizedZenProcessor and related TypeScript files...'",
     "build:watch": "tsc --project tsconfig.json --watch"
   },
   "dependencies": {
     "aws-sdk": "^2.1692.0",
     "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^12.4.6",
     "cheerio": "^1.1.2",
     "chromadb": "^3.1.5",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "cron": "^3.1.6",
     "csv-parse": "^5.6.0",
+    "docx": "^9.6.1",
     "dotenv": "^16.3.1",
     "express": "^4.21.2",
     "express-rate-limit": "^7.1.5",
@@ -35,10 +37,10 @@
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "pdf-parse": "^1.1.1",
+    "pdfkit": "^0.18.0",
     "socket.io": "^4.7.4",
     "twilio": "^5.8.0",
-    "zod": "^4.1.1",
-    "better-sqlite3": "^12.4.6"
+    "zod": "^4.1.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

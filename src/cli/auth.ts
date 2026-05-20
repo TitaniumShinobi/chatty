@@ -1,7 +1,6 @@
 // CLI Authentication Module
 // Handles authentication for Chatty CLI using the same auth system as web interface
 
-import { open } from 'open';
 import http from 'http';
 import { URL } from 'url';
 import { homedir } from 'os';
@@ -10,7 +9,7 @@ import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 
 const COOKIE_STORAGE_PATH = join(homedir(), '.chatty', 'cli-session.json');
-const DEFAULT_API_URL = process.env.CHATTY_API_URL || 'http://localhost:5000';
+const DEFAULT_API_URL = process.env.CHATTY_API_URL || 'http://127.0.0.1:5050';
 const DEFAULT_WEB_URL = process.env.CHATTY_WEB_URL || 'http://localhost:5173';
 
 interface StoredSession {
@@ -21,6 +20,11 @@ interface StoredSession {
     name: string;
   };
   expiresAt: number;
+}
+
+interface AuthenticateOptions {
+  openBrowser?: boolean;
+  timeoutMs?: number;
 }
 
 export class CLIAuth {
@@ -171,7 +175,7 @@ export class CLIAuth {
    * Auto-authenticate: Check for existing session, if not found, prompt for login
    * This is the main entry point that provides seamless authentication
    */
-  async autoAuthenticate(): Promise<{ sub: string; email: string; name: string } | null> {
+  async autoAuthenticate(options: AuthenticateOptions = {}): Promise<{ sub: string; email: string; name: string } | null> {
     // First, check if we already have a valid session
     const existingUser = await this.getCurrentUser();
     if (existingUser) {
@@ -180,115 +184,161 @@ export class CLIAuth {
 
     // No valid session - need to authenticate
     // This will open browser and handle OAuth flow
-    return await this.authenticate();
+    return await this.authenticate(options);
   }
 
   /**
    * Authenticate via browser login
    * Opens browser for OAuth/login, then captures session cookie via callback
    */
-  async authenticate(): Promise<{ sub: string; email: string; name: string }> {
+  async authenticate(options: AuthenticateOptions = {}): Promise<{ sub: string; email: string; name: string }> {
     return new Promise((resolve, reject) => {
+      const { openBrowser = true } = options;
+      const timeoutMs =
+        typeof options.timeoutMs === 'number' &&
+        Number.isFinite(options.timeoutMs) &&
+        options.timeoutMs > 0
+          ? options.timeoutMs
+          : 5 * 60 * 1000;
       // Start temporary HTTP server to catch OAuth callback
       const callbackPort = 5174;
       const callbackUrl = `http://localhost:${callbackPort}/cli-auth-callback`;
+      let settled = false;
+      let timeoutHandle: NodeJS.Timeout | null = null;
+
+      const finish = (
+        kind: 'resolve' | 'reject',
+        value: { sub: string; email: string; name: string } | Error,
+      ) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+          timeoutHandle = null;
+        }
+        server.close();
+        if (kind === 'resolve') {
+          resolve(value as { sub: string; email: string; name: string });
+        } else {
+          reject(value);
+        }
+      };
 
       const server = http.createServer(async (req, res) => {
         try {
           const url = new URL(req.url || '/', `http://localhost:${callbackPort}`);
 
           if (url.pathname === '/cli-auth-callback') {
-            // Extract session token from query parameter
-            const sessionToken = url.searchParams.get('session_token');
+            const exchangeCode = url.searchParams.get('code');
+            const legacySessionToken = url.searchParams.get('session_token');
             const cookieName = process.env.COOKIE_NAME || 'sid';
 
-            if (sessionToken) {
-              // Token is the JWT - format it as a cookie
-              const sessionCookie = `${cookieName}=${sessionToken}`;
-              // Verify session by calling /api/me
-              try {
+            try {
+              let sessionCookie = '';
+              let verifiedUser: StoredSession['user'] | null = null;
+              let expiresAt = Date.now() + (30 * 24 * 60 * 60 * 1000);
+
+              if (exchangeCode) {
+                const exchangeResponse = await fetch(`${this.apiUrl}/api/auth/cli/exchange`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ code: exchangeCode }),
+                });
+
+                if (!exchangeResponse.ok) {
+                  throw new Error(`CLI exchange failed with ${exchangeResponse.status}`);
+                }
+
+                const exchangeData = await exchangeResponse.json();
+                const resolvedCookieName = exchangeData.cookieName || cookieName;
+                const sessionToken = exchangeData.sessionToken;
+
+                if (!sessionToken || !exchangeData.user) {
+                  throw new Error('CLI exchange did not return a valid session');
+                }
+
+                sessionCookie = `${resolvedCookieName}=${sessionToken}`;
+                verifiedUser = {
+                  sub: exchangeData.user.sub || exchangeData.user.id || exchangeData.user.email,
+                  email: exchangeData.user.email,
+                  name: exchangeData.user.name,
+                };
+                if (typeof exchangeData.expiresAt === 'number') {
+                  expiresAt = exchangeData.expiresAt;
+                }
+              } else if (legacySessionToken) {
+                sessionCookie = `${cookieName}=${legacySessionToken}`;
+              } else {
+                throw new Error('Authentication failed - no exchange code received');
+              }
+
+              if (!verifiedUser) {
                 const userResponse = await fetch(`${this.apiUrl}/api/me`, {
                   headers: {
                     'Cookie': sessionCookie,
                   },
                 });
 
-                if (userResponse.ok) {
-                  const userData = await userResponse.json();
-                  if (userData.ok && userData.user) {
-                    // Save session
-                    const expiresAt = Date.now() + (30 * 24 * 60 * 60 * 1000); // 30 days
-                    await this.saveSession({
-                      cookie: sessionCookie,
-                      user: {
-                        sub: userData.user.sub || userData.user.id || userData.user.email,
-                        email: userData.user.email,
-                        name: userData.user.name,
-                      },
-                      expiresAt,
-                    });
-
-                    // Send success page
-                    res.writeHead(200, { 'Content-Type': 'text/html' });
-                    res.end(`
-                      <!DOCTYPE html>
-                      <html>
-                        <head>
-                          <title>Chatty CLI - Authentication Successful</title>
-                          <meta http-equiv="refresh" content="2;url=${this.webUrl}">
-                        </head>
-                        <body style="font-family: system-ui; padding: 40px; text-align: center; background: #f5f5f5;">
-                          <div style="max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-                            <h1 style="color: #4CAF50;">✅ Authentication Successful!</h1>
-                            <p style="color: #666; margin-top: 20px;">You can close this window and return to the CLI.</p>
-                            <p style="color: #888; margin-top: 10px; font-size: 14px;">Logged in as: <strong>${userData.user.email}</strong></p>
-                            <p style="color: #888; margin-top: 20px; font-size: 12px;">Redirecting to Chatty...</p>
-                          </div>
-                        </body>
-                      </html>
-                    `);
-
-                    server.close();
-                    resolve({
-                      sub: userData.user.sub || userData.user.id || userData.user.email,
-                      email: userData.user.email,
-                      name: userData.user.name,
-                    });
-                    return;
-                  }
+                if (!userResponse.ok) {
+                  throw new Error('Session verification failed');
                 }
-              } catch (error) {
-                // Verification failed - show error
-                res.writeHead(401, { 'Content-Type': 'text/html' });
-                res.end(`
-                  <!DOCTYPE html>
-                  <html>
-                    <head><title>Chatty CLI - Verification Failed</title></head>
-                    <body style="font-family: system-ui; padding: 40px; text-align: center;">
-                      <h1 style="color: #f44336;">❌ Session Verification Failed</h1>
-                      <p>Please try again.</p>
-                    </body>
-                  </html>
-                `);
-                server.close();
-                reject(new Error('Session verification failed'));
-                return;
+
+                const userData = await userResponse.json();
+                if (!userData.ok || !userData.user) {
+                  throw new Error('Session verification failed');
+                }
+
+                verifiedUser = {
+                  sub: userData.user.sub || userData.user.id || userData.user.email,
+                  email: userData.user.email,
+                  name: userData.user.name,
+                };
               }
-            } else {
-              // No session token in URL
-              res.writeHead(400, { 'Content-Type': 'text/html' });
+
+              await this.saveSession({
+                cookie: sessionCookie,
+                user: verifiedUser,
+                expiresAt,
+              });
+
+              res.writeHead(200, { 'Content-Type': 'text/html' });
               res.end(`
                 <!DOCTYPE html>
                 <html>
-                  <head><title>Chatty CLI - Authentication Failed</title></head>
-                  <body style="font-family: system-ui; padding: 40px; text-align: center;">
-                    <h1 style="color: #f44336;">❌ Authentication Failed</h1>
-                    <p>No session token received. Please try logging in again.</p>
+                  <head>
+                    <title>Chatty CLI - Authentication Successful</title>
+                    <meta http-equiv="refresh" content="2;url=${this.webUrl}">
+                  </head>
+                  <body style="font-family: system-ui; padding: 40px; text-align: center; background: #f5f5f5;">
+                    <div style="max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                      <h1 style="color: #4CAF50;">✅ Authentication Successful!</h1>
+                      <p style="color: #666; margin-top: 20px;">You can close this window and return to the CLI.</p>
+                      <p style="color: #888; margin-top: 10px; font-size: 14px;">Logged in as: <strong>${verifiedUser.email}</strong></p>
+                      <p style="color: #888; margin-top: 20px; font-size: 12px;">Redirecting to Chatty...</p>
+                    </div>
                   </body>
                 </html>
               `);
-              server.close();
-              reject(new Error('Authentication failed - no session token received'));
+
+              finish('resolve', verifiedUser);
+              return;
+            } catch (error) {
+              res.writeHead(401, { 'Content-Type': 'text/html' });
+              res.end(`
+                <!DOCTYPE html>
+                <html>
+                  <head><title>Chatty CLI - Verification Failed</title></head>
+                  <body style="font-family: system-ui; padding: 40px; text-align: center;">
+                    <h1 style="color: #f44336;">❌ Session Verification Failed</h1>
+                    <p>Please try again.</p>
+                  </body>
+                </html>
+              `);
+              finish('reject', error instanceof Error ? error : new Error(String(error)));
               return;
             }
           } else {
@@ -297,32 +347,34 @@ export class CLIAuth {
             res.end('Not Found');
           }
         } catch (error) {
-          server.close();
-          reject(error);
+          finish('reject', error instanceof Error ? error : new Error(String(error)));
         }
       });
 
       server.listen(callbackPort, async () => {
         try {
-          // Open browser to login page with CLI callback parameter
-          // The login page should redirect OAuth callbacks to include our callback URL
-          const loginUrl = `${this.webUrl}/login?cli_callback=${encodeURIComponent(callbackUrl)}`;
-          console.log(`\n🔐 Opening browser for authentication...`);
+          const loginUrl = `${this.webUrl}/api/auth/cli/start?cli_callback=${encodeURIComponent(callbackUrl)}`;
+          console.log(`\n🔐 Starting Chatty CLI authentication...`);
           console.log(`   If browser doesn't open, visit: ${loginUrl}\n`);
           console.log(`   After logging in, you'll be automatically authenticated in the CLI.\n`);
-          
-          await open(loginUrl);
+
+          if (openBrowser) {
+            // @ts-ignore Optional runtime dependency is present in packaged CLI installs.
+            const openModule = await import('open').catch(() => null);
+            if (typeof openModule?.open === 'function') {
+              await openModule.open(loginUrl);
+            } else {
+              console.warn('Unable to auto-open a browser; visit the URL above manually.');
+            }
+          }
         } catch (error) {
-          server.close();
-          reject(new Error(`Failed to open browser: ${error}`));
+          finish('reject', new Error(`Failed to open browser: ${error}`));
         }
       });
 
-      // Timeout after 5 minutes
-      setTimeout(() => {
-        server.close();
-        reject(new Error('Authentication timeout - please try again'));
-      }, 5 * 60 * 1000);
+      timeoutHandle = setTimeout(() => {
+        finish('reject', new Error('Authentication timeout - please try again'));
+      }, timeoutMs);
     });
   }
 
@@ -335,4 +387,3 @@ export class CLIAuth {
 }
 
 export const cliAuth = new CLIAuth();
-

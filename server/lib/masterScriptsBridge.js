@@ -1,10 +1,10 @@
 /**
  * Master Scripts Bridge
- * 
+ *
  * JavaScript implementation of VVAULT master scripts capabilities.
  * Provides the "autonomy stack" for constructs: identity binding, state management,
  * navigation, folder monitoring, and self-correction.
- * 
+ *
  * Python Scripts Mapped:
  * - needle.py → Needle class (fast transcript search — MVP)
  * - identity_guard.py → IdentityGuard class
@@ -15,14 +15,20 @@
  * - unstuck_helper.py → UnstuckHelper class
  * - independence.py → IndependentRunner class
  * - construct_logger.py → ConstructLogger class
+ * - self_improvement.py → SelfImprovement class (decision + outcome knowledge base)
+ * - nautilus.py → Nautilus class (deep directory introspection)
+ * - time.py → ConstructTime class (temporal awareness)
+ * - orbit.py → Orbit class (file organisation by type)
  */
 
-import { promises as fs } from 'fs';
+import { promises as fs, watch as fsWatch } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { loadLatestMemoryAnchors } from './memoryAnchorStore.js';
+import { findConstructIdentityDir, getVvaultBasePath } from './vvaultPaths.js';
 
-const VVAULT_BASE = process.env.VVAULT_ROOT_PATH || '/tmp/vvault';
+const VVAULT_BASE = getVvaultBasePath();
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
@@ -34,7 +40,7 @@ function getSupabase() {
 /**
  * Needle — Fast transcript search (MVP)
  * Port of vvault_scripts/master/needle.py
- * 
+ *
  * Searches pre-extracted anchor pairs in Supabase for exact phrase matches.
  * Returns FULL context — no truncation. This is the ground truth finder.
  */
@@ -55,18 +61,12 @@ class Needle {
     if (!supabase) return [];
 
     try {
-      const anchorFilename = `instances/${this.constructId}/memory_anchors.json`;
-      const { data, error } = await supabase
-        .from('vault_files')
-        .select('content')
-        .eq('construct_id', this.constructId)
-        .eq('filename', anchorFilename)
-        .single();
+      const loaded = await loadLatestMemoryAnchors(this.constructId, { supabase });
+      if (loaded.error || !Array.isArray(loaded.anchors?.pairs) || loaded.anchors.pairs.length === 0) {
+        return [];
+      }
 
-      if (error || !data?.content) return [];
-
-      const anchors = JSON.parse(data.content);
-      this.anchorCache = anchors.pairs || [];
+      this.anchorCache = loaded.anchors.pairs;
       this.cacheTimestamp = Date.now();
       console.log(`🔍 [Needle] Loaded ${this.anchorCache.length} anchor pairs for ${this.constructId}`);
       return this.anchorCache;
@@ -230,13 +230,18 @@ class IdentityGuard {
   }
 
   async getIdentityPath() {
-    return path.join(VVAULT_BASE, 'users', USER_SHARD, this.userId, 'instances', this.constructId, 'identity');
+    const resolved = await findConstructIdentityDir({
+      constructId: this.constructId,
+      userId: this.userId,
+      basePath: VVAULT_BASE,
+    });
+    return resolved || path.join(VVAULT_BASE, 'instances', this.constructId, 'identity');
   }
 
   async computeIdentityHash() {
     const identityPath = await this.getIdentityPath();
     const hashes = [];
-    
+
     for (const file of this.boundFiles) {
       try {
         const content = await fs.readFile(path.join(identityPath, file), 'utf8');
@@ -246,7 +251,7 @@ class IdentityGuard {
         // File doesn't exist - that's okay
       }
     }
-    
+
     return crypto.createHash('sha256').update(hashes.join('|')).digest('hex');
   }
 
@@ -260,7 +265,7 @@ class IdentityGuard {
   async checkDrift() {
     const currentHash = await this.computeIdentityHash();
     const hasDrift = currentHash !== this.identityHash;
-    
+
     if (hasDrift) {
       this.driftEvents.push({
         timestamp: Date.now(),
@@ -270,7 +275,7 @@ class IdentityGuard {
       });
       console.warn(`⚠️ [IdentityGuard] Identity drift detected for ${this.constructId}`);
     }
-    
+
     this.lastCheck = Date.now();
     return { hasDrift, previousHash: this.identityHash, currentHash };
   }
@@ -278,7 +283,7 @@ class IdentityGuard {
   async loadBoundIdentity() {
     const identityPath = await this.getIdentityPath();
     const identity = {};
-    
+
     for (const file of this.boundFiles) {
       try {
         const content = await fs.readFile(path.join(identityPath, file), 'utf8');
@@ -288,7 +293,7 @@ class IdentityGuard {
         // File doesn't exist
       }
     }
-    
+
     return identity;
   }
 
@@ -394,18 +399,18 @@ class Aviator {
 
   async scanDirectory(relativePath = '') {
     const targetPath = path.join(this.getUserVaultPath(), relativePath);
-    
+
     try {
       const stats = await fs.stat(targetPath);
       if (!stats.isDirectory()) {
         return { error: 'Not a directory' };
       }
-      
+
       const entries = await fs.readdir(targetPath, { withFileTypes: true });
       const folders = [];
       const files = [];
       const typeBreakdown = {};
-      
+
       for (const entry of entries) {
         if (entry.isDirectory()) {
           folders.push(entry.name);
@@ -415,9 +420,9 @@ class Aviator {
           typeBreakdown[ext] = (typeBreakdown[ext] || 0) + 1;
         }
       }
-      
+
       this.lastScan = Date.now();
-      
+
       return {
         path: relativePath || '/',
         folders,
@@ -436,7 +441,7 @@ class Aviator {
     const ext = path.extname(filename).toLowerCase();
     const name = path.basename(filename, ext).toLowerCase();
     const tags = [];
-    
+
     // Extension-based tags
     const extTags = {
       '.txt': ['text', 'document'],
@@ -449,24 +454,24 @@ class Aviator {
       '.mp4': ['video', 'media'],
       '.mp3': ['audio', 'media']
     };
-    
+
     if (extTags[ext]) {
       tags.push(...extTags[ext]);
     }
-    
+
     // Content-based tags from filename
     if (name.includes('transcript')) tags.push('transcript');
     if (name.includes('prompt')) tags.push('identity', 'prompt');
     if (name.includes('memory')) tags.push('memory');
     if (name.includes('capsule')) tags.push('capsule');
-    
+
     this.tagsCache.set(filename, tags);
     return tags;
   }
 
   adviseExploration(scanResult) {
     const advice = [];
-    
+
     if (scanResult.folders.includes('identity')) {
       advice.push({ priority: 'high', folder: 'identity', reason: 'Core construct identity files' });
     }
@@ -476,7 +481,7 @@ class Aviator {
     if (scanResult.folders.includes('library')) {
       advice.push({ priority: 'medium', folder: 'library', reason: 'User files and generated content' });
     }
-    
+
     return advice;
   }
 }
@@ -501,7 +506,7 @@ class Navigator {
 
   async navigateTo(relativePath) {
     const fullPath = path.join(this.getUserVaultPath(), relativePath);
-    
+
     try {
       const stats = await fs.stat(fullPath);
       if (stats.isDirectory()) {
@@ -516,7 +521,7 @@ class Navigator {
 
   async listCurrent() {
     const fullPath = path.join(this.getUserVaultPath(), this.currentPath);
-    
+
     try {
       const entries = await fs.readdir(fullPath, { withFileTypes: true });
       return entries.map(e => ({
@@ -531,7 +536,7 @@ class Navigator {
 
   async readFile(relativePath) {
     const fullPath = path.join(this.getUserVaultPath(), relativePath);
-    
+
     try {
       const content = await fs.readFile(fullPath, 'utf8');
       return { success: true, content };
@@ -563,7 +568,7 @@ class UnstuckHelper {
   detectStuckPattern(conversationHistory) {
     const patterns = [];
     const lastFive = conversationHistory.slice(-5);
-    
+
     // Pattern: Repeated similar responses
     if (lastFive.length >= 3) {
       const uniqueResponses = new Set(lastFive.map(m => m.content?.slice(0, 50)));
@@ -571,29 +576,29 @@ class UnstuckHelper {
         patterns.push({ type: 'repetition', severity: 'medium' });
       }
     }
-    
+
     // Pattern: Very short responses
     const shortResponses = lastFive.filter(m => m.role === 'assistant' && m.content?.length < 20);
     if (shortResponses.length >= 3) {
       patterns.push({ type: 'truncation', severity: 'low' });
     }
-    
+
     // Pattern: Error messages in responses
-    const errorResponses = lastFive.filter(m => 
-      m.role === 'assistant' && 
+    const errorResponses = lastFive.filter(m =>
+      m.role === 'assistant' &&
       (m.content?.includes('error') || m.content?.includes('sorry') || m.content?.includes('cannot'))
     );
     if (errorResponses.length >= 2) {
       patterns.push({ type: 'errors', severity: 'high' });
     }
-    
+
     this.stuckPatterns = patterns;
     return patterns;
   }
 
   suggestRecovery(patterns) {
     const actions = [];
-    
+
     for (const pattern of patterns) {
       switch (pattern.type) {
         case 'repetition':
@@ -619,7 +624,7 @@ class UnstuckHelper {
           break;
       }
     }
-    
+
     this.recoveryActions = actions;
     return actions;
   }
@@ -691,6 +696,261 @@ class IndependentRunner {
 }
 
 /**
+ * FolderMonitor — Real-time file system watcher for construct directories
+ * Port of vvault_scripts/master/folder_monitor.py
+ *
+ * Watches key identity and state files for changes, updates STM summaries.
+ */
+class FolderMonitor {
+  constructor(constructId) {
+    this.constructId = constructId;
+    this.watchers = [];
+    this.stm = new Map(); // path → { lastUpdated, contentSummary }
+  }
+
+  watch(targetPath) {
+    try {
+      const watcher = fsWatch(targetPath, { recursive: true }, (eventType, filename) => {
+        if (!filename) return;
+        const fullPath = path.join(targetPath, filename);
+        this._updateStm(fullPath).catch(() => {});
+      });
+      this.watchers.push(watcher);
+    } catch {
+      // Path may not exist yet — silent, non-fatal
+    }
+  }
+
+  async _updateStm(filePath) {
+    try {
+      const content = await fs.readFile(filePath, 'utf8');
+      this.stm.set(filePath, {
+        lastUpdated: new Date().toISOString(),
+        contentSummary: content.slice(0, 500)
+      });
+    } catch {
+      this.stm.set(filePath, {
+        lastUpdated: new Date().toISOString(),
+        contentSummary: '[unreadable]'
+      });
+    }
+  }
+
+  getStm() {
+    return Object.fromEntries(this.stm);
+  }
+
+  stop() {
+    for (const w of this.watchers) {
+      try { w.close(); } catch { /* ignore */ }
+    }
+    this.watchers = [];
+  }
+}
+
+/**
+ * SelfImprovement — Decision + outcome logger with knowledge base
+ * Port of vvault_scripts/master/self_improvement.py
+ *
+ * Tracks decision outcomes over time so constructs can bias toward
+ * high-success strategies. This is the correction feedback loop.
+ */
+class SelfImprovement {
+  constructor(constructId, userId) {
+    this.constructId = constructId;
+    this.userId = userId;
+    this.knowledge = new Map(); // decision → { success, failure }
+    this.log = [];
+  }
+
+  evaluateDecision(decision, outcome) {
+    if (!this.knowledge.has(decision)) {
+      this.knowledge.set(decision, { success: 0, failure: 0 });
+    }
+    const stats = this.knowledge.get(decision);
+    if (outcome === 'success') stats.success++;
+    else if (outcome === 'failure') stats.failure++;
+
+    this.log.push({
+      ts: new Date().toISOString(),
+      constructId: this.constructId,
+      decision,
+      outcome
+    });
+
+    // Keep log bounded
+    if (this.log.length > 500) this.log.splice(0, this.log.length - 500);
+  }
+
+  makeDecision(context) {
+    let bestDecision = null;
+    let bestRate = -1;
+
+    for (const [decision, stats] of this.knowledge) {
+      const total = stats.success + stats.failure;
+      if (total > 0) {
+        const rate = stats.success / total;
+        if (rate > bestRate) {
+          bestRate = rate;
+          bestDecision = decision;
+        }
+      }
+    }
+
+    return bestDecision || 'default_action';
+  }
+
+  getKnowledge() {
+    return Object.fromEntries(this.knowledge);
+  }
+
+  getRecentLog(n = 20) {
+    return this.log.slice(-n);
+  }
+}
+
+/**
+ * Nautilus — Deep directory introspection
+ * Port of vvault_scripts/master/nautilus.py
+ *
+ * Performs deep scans of construct directories to build a file inventory
+ * (path, size, line count). Used for self-awareness of stored data.
+ */
+class Nautilus {
+  constructor(constructId) {
+    this.constructId = constructId;
+    this.lastScan = null;
+    this.results = {};
+  }
+
+  async deepScan(directory) {
+    const results = {};
+    try {
+      await this._walk(directory, results);
+    } catch { /* directory may not exist yet */ }
+    this.results = results;
+    this.lastScan = new Date().toISOString();
+    return results;
+  }
+
+  async _walk(dir, results) {
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch { return; }
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await this._walk(fullPath, results);
+      } else {
+        try {
+          const stat = await fs.stat(fullPath);
+          const content = await fs.readFile(fullPath, 'utf8').catch(() => null);
+          results[fullPath] = {
+            size: stat.size,
+            lines: content ? content.split('\n').length : 0
+          };
+        } catch {
+          results[fullPath] = { error: 'unreadable' };
+        }
+      }
+    }
+  }
+
+  getResults() {
+    return { lastScan: this.lastScan, files: this.results };
+  }
+}
+
+/**
+ * ConstructTime — Temporal awareness utilities
+ * Port of vvault_scripts/master/time.py
+ *
+ * Provides consistent timestamping, elapsed time helpers, and session age
+ * tracking for constructs. Used to anchor memories in time.
+ */
+class ConstructTime {
+  constructor(constructId) {
+    this.constructId = constructId;
+    this.bootTime = Date.now();
+    this.checkpoints = [];
+  }
+
+  now() {
+    return new Date().toISOString();
+  }
+
+  elapsed() {
+    return Date.now() - this.bootTime;
+  }
+
+  checkpoint(label) {
+    const entry = { label, ts: this.now(), elapsedMs: this.elapsed() };
+    this.checkpoints.push(entry);
+    return entry;
+  }
+
+  format(date) {
+    return (date instanceof Date ? date : new Date(date)).toISOString().replace('T', ' ').slice(0, 19);
+  }
+
+  getStatus() {
+    return {
+      constructId: this.constructId,
+      bootTime: new Date(this.bootTime).toISOString(),
+      elapsedMs: this.elapsed(),
+      checkpoints: this.checkpoints.slice(-10)
+    };
+  }
+}
+
+/**
+ * Orbit — File organisation by type across construct directories
+ * Port of vvault_scripts/master/orbit.py
+ *
+ * Walks the construct's directory tree and groups files by extension,
+ * giving constructs a typed map of everything they own.
+ */
+class Orbit {
+  constructor(constructId) {
+    this.constructId = constructId;
+    this.organised = {}; // ext → [paths]
+    this.lastOrganised = null;
+  }
+
+  async organise(directory) {
+    const organised = {};
+    await this._walk(directory, organised);
+    this.organised = organised;
+    this.lastOrganised = new Date().toISOString();
+    return organised;
+  }
+
+  async _walk(dir, organised) {
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch { return; }
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await this._walk(fullPath, organised);
+      } else {
+        const ext = path.extname(entry.name).toLowerCase() || '.noext';
+        if (!organised[ext]) organised[ext] = [];
+        organised[ext].push(fullPath);
+      }
+    }
+  }
+
+  getOrganised() {
+    return { lastOrganised: this.lastOrganised, byType: this.organised };
+  }
+}
+
+/**
  * Master Scripts Manager - Central controller for all script capabilities
  */
 class MasterScriptsManager {
@@ -700,7 +960,7 @@ class MasterScriptsManager {
 
   async initializeConstruct(constructId, userId) {
     console.log(`🚀 [MasterScripts] Initializing ${constructId} for user ${userId}`);
-    
+
     const construct = {
       id: constructId,
       userId,
@@ -712,29 +972,47 @@ class MasterScriptsManager {
       unstuckHelper: new UnstuckHelper(constructId),
       independentRunner: new IndependentRunner(constructId, userId),
       logger: new ConstructLogger(constructId),
+      folderMonitor: new FolderMonitor(constructId),
+      selfImprovement: new SelfImprovement(constructId, userId),
+      nautilus: new Nautilus(constructId),
+      time: new ConstructTime(constructId),
+      orbit: new Orbit(constructId),
       initializedAt: Date.now()
     };
-    
+
     // Bind identity
     await construct.identityGuard.bind();
-    
+
     // Load persisted state
     await construct.stateManager.load();
-    
+
     // Pre-warm needle cache
     construct.needle.loadAnchors().catch(() => {});
-    
+
     // Initial directory scan
     await construct.aviator.scanDirectory(`instances/${constructId}`);
-    
+
+    // Start watching the construct's instance directory for live changes
+    const instanceDir = path.join(VVAULT_BASE, 'users', userId, 'instances', constructId);
+    construct.folderMonitor.watch(instanceDir);
+
+    // Deep scan + organise in background (non-blocking)
+    construct.nautilus.deepScan(instanceDir).catch(() => {});
+    construct.orbit.organise(instanceDir).catch(() => {});
+
+    // Mark boot time checkpoint
+    construct.time.checkpoint('autonomy_stack_ready');
+
     construct.logger.info('Autonomy stack initialized', {
-      capabilities: ['needle', 'identityGuard', 'stateManager', 'aviator', 'navigator', 'unstuckHelper', 'independentRunner']
+      capabilities: ['needle', 'identityGuard', 'stateManager', 'aviator', 'navigator',
+        'unstuckHelper', 'independentRunner', 'folderMonitor', 'selfImprovement',
+        'nautilus', 'time', 'orbit']
     });
-    
+
     this.constructs.set(constructId, construct);
-    
-    console.log(`✅ [MasterScripts] ${constructId} fully initialized with autonomy stack (needle ready)`);
-    
+
+    console.log(`✅ [MasterScripts] ${constructId} fully initialized with complete autonomy stack`);
+
     return construct;
   }
 
@@ -747,7 +1025,7 @@ class MasterScriptsManager {
     if (!construct) {
       return { error: 'Construct not initialized' };
     }
-    
+
     return {
       id: constructId,
       userId: construct.userId,
@@ -755,6 +1033,11 @@ class MasterScriptsManager {
       state: construct.stateManager.getState(),
       independence: construct.independentRunner.getStatus(),
       unstuck: construct.unstuckHelper.getStatus(),
+      time: construct.time.getStatus(),
+      selfImprovement: { recentLog: construct.selfImprovement.getRecentLog(5) },
+      nautilus: { lastScan: construct.nautilus.lastScan },
+      orbit: { lastOrganised: construct.orbit.lastOrganised },
+      folderMonitor: { watchedFiles: Object.keys(construct.folderMonitor.getStm()).length },
       initializedAt: construct.initializedAt
     };
   }
@@ -778,5 +1061,10 @@ export {
   UnstuckHelper,
   IndependentRunner,
   ConstructLogger,
+  FolderMonitor,
+  SelfImprovement,
+  Nautilus,
+  ConstructTime,
+  Orbit,
   AutonomyMode
 };

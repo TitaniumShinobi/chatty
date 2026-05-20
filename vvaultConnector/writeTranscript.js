@@ -1,13 +1,12 @@
 /**
- * VVAULT writeTranscript - Supabase-backed with PostgreSQL fallback
- * 
- * Priority: Supabase (source of truth) → PostgreSQL (cache/fallback)
- * 
- * Both Chatty and VVAULT share Supabase (vault_files table), so writes here
- * are visible to VVAULT when it reads transcripts.
+ * VVAULT writeTranscript - VVAULT-body first.
+ *
+ * Priority: VVAULT API → VVAULT/Postgres cache → local deferred fallback.
+ * Supabase transcript writes are retired and are not a fallback path.
  */
 import pg from 'pg';
-import { writeConversationToSupabase } from './supabaseStore.js';
+import * as vvaultApi from './vvaultApiClient.js';
+import { writeConversationToLocalFallback } from './localConversationFallback.js';
 
 let pool = null;
 const _vvaultUserIdCache = new Map();
@@ -22,6 +21,28 @@ function getPool() {
   }
   return pool;
 }
+
+function normalizeConstructCallsign(constructCallsign, constructId) {
+  let normalizedConstructId = constructCallsign || constructId || 'zen-001';
+  if (normalizedConstructId !== 'unknown' && !/\-\d{3}$/.test(normalizedConstructId)) {
+    normalizedConstructId = `${normalizedConstructId}-001`;
+  }
+  return normalizedConstructId;
+}
+
+function legacySupabaseWritesEnabled() {
+  return false;
+}
+
+const CANONICAL_VVAULT_BODY_RECEIPT = {
+  source: 'vvault_body',
+  writePath: 'vvault-api',
+  persistenceOwner: 'vvault_body',
+  canonicalTarget: 'vvault_body_transcripts',
+  canonicalTargetTable: 'ovvaults.transcripts',
+  canonicalWritePath: 'vvault_api:/api/chatty/transcript/:constructId/message',
+  fallbackUsed: false,
+};
 
 async function ensureTable() {
   const db = getPool();
@@ -142,30 +163,143 @@ async function writeTranscriptToPostgres(params) {
 
 async function writeTranscript(params) {
   console.log(`📝 [VVAULT] Writing transcript for session: ${params?.sessionId}`);
-  
-  try {
-    const supabaseResult = await writeConversationToSupabase(params);
-    if (supabaseResult !== null) {
-      console.log(`✅ [VVAULT] Supabase write successful`);
-      
-      writeTranscriptToPostgres(params).catch(err => 
-        console.warn(`⚠️ [VVAULT] PostgreSQL cache sync failed: ${err.message}`)
-      );
-      
-      return supabaseResult;
-    }
-  } catch (err) {
-    console.warn(`⚠️ [VVAULT] Supabase write failed, falling back to PostgreSQL: ${err.message}`);
+
+  const requireVvaultBodySuccess = params?.requireVvaultBodySuccess === true;
+
+  if (params?.preferDirectSupabase === true || params?.requireCanonicalSupabaseSuccess === true) {
+    console.warn('⚠️ [VVAULT] Ignoring legacy direct-Supabase transcript flags; VVAULT body remains canonical');
+  }
+
+  const apiResult = await writeTranscriptViaVvaultApi(params);
+  if (apiResult !== null) {
+    return apiResult;
+  }
+
+  if (requireVvaultBodySuccess) {
+    console.error('❌ [VVAULT] Required VVAULT body write failed before fallback; canonical persistence blocked');
+    return {
+      success: false,
+      source: 'vvault-api',
+      reason: 'vvault_body_write_unavailable',
+      canonicalTarget: 'vvault_body_transcripts',
+    };
   }
 
   const pgResult = await writeTranscriptToPostgres(params);
   if (pgResult !== null) {
-    console.log(`✅ [VVAULT] PostgreSQL fallback write successful`);
+    console.log(`✅ [VVAULT] VVAULT/PostgreSQL write successful`);
     return pgResult;
+  }
+
+  const localResult = await writeConversationToLocalFallback(params);
+  if (localResult !== null) {
+    console.warn('⚠️ [VVAULT] Remote write targets failed; using local deferred fallback');
+    return localResult;
   }
 
   console.error('❌ [VVAULT] All write targets failed');
   return { success: false };
+}
+
+async function writeTranscriptViaVvaultApi(params) {
+  if (!vvaultApi.getBaseUrl()) {
+    return null;
+  }
+
+  const {
+    constructId,
+    constructCallsign,
+    role,
+    content,
+    timestamp,
+    userEmail,
+    userId,
+    supabaseUserId,
+    metadata = {},
+  } = params || {};
+  const normalizedConstructId = normalizeConstructCallsign(constructCallsign, constructId);
+  const contentStr = typeof content === 'string' ? content : '';
+  const isConversationCreated = contentStr.startsWith('CONVERSATION_CREATED:');
+  const userHeader = userEmail || (String(userId || '').includes('@') ? userId : null);
+  const hasVvaultAuthContext = Boolean(userHeader || supabaseUserId || process.env.VVAULT_SERVICE_TOKEN);
+
+  if (!hasVvaultAuthContext) {
+    return null;
+  }
+
+  try {
+    if (isConversationCreated) {
+      const transcript = await vvaultApi.getTranscript(normalizedConstructId, {
+        userEmail: userHeader,
+        supabaseUserId,
+      });
+      if (transcript?.success) {
+        console.log(`✅ [VVAULT] VVAULT API ensured transcript for ${normalizedConstructId}`);
+        return {
+          success: true,
+          ...CANONICAL_VVAULT_BODY_RECEIPT,
+          action: transcript.created ? 'created' : 'ensured',
+          threadId: transcript.thread_id || null,
+        };
+      }
+      return null;
+    }
+
+    const hasAttachments = Array.isArray(metadata?.attachments) && metadata.attachments.length > 0;
+    if (!contentStr.trim() && !hasAttachments) {
+      return null;
+    }
+
+    let appendResult = await vvaultApi.appendMessage({
+      constructId: normalizedConstructId,
+      role,
+      content: contentStr,
+      name: metadata?.userName,
+      timestamp,
+      userEmail: userHeader,
+      supabaseUserId,
+      metadata,
+      attachments: metadata?.attachments,
+      projectName: metadata?.projectName,
+      rootPath: metadata?.rootPath,
+    });
+
+    if (!appendResult && normalizedConstructId === 'zen-001') {
+      const hydrated = await vvaultApi.getTranscript(normalizedConstructId, {
+        userEmail: userHeader,
+        supabaseUserId,
+      });
+      if (hydrated?.success) {
+        appendResult = await vvaultApi.appendMessage({
+          constructId: normalizedConstructId,
+          role,
+          content: contentStr,
+          name: metadata?.userName,
+          timestamp,
+          userEmail: userHeader,
+          supabaseUserId,
+          metadata,
+          attachments: metadata?.attachments,
+          projectName: metadata?.projectName,
+          rootPath: metadata?.rootPath,
+        });
+      }
+    }
+
+    if (appendResult?.success) {
+      console.log(`✅ [VVAULT] VVAULT API appended transcript message for ${normalizedConstructId}`);
+      return {
+        success: true,
+        ...CANONICAL_VVAULT_BODY_RECEIPT,
+        action: appendResult.action || 'appended',
+        threadId: appendResult.thread_id || null,
+      };
+    }
+  } catch (error) {
+    console.warn(`⚠️ [VVAULT] VVAULT API write failed, falling back: ${error.message}`);
+  }
+
+  return null;
 }
 
 async function resolveVVAULTUserId(userId, email, autoCreate = false) {
@@ -179,36 +313,15 @@ async function resolveVVAULTUserId(userId, email, autoCreate = false) {
   }
 
   try {
-    const { getSupabaseClient } = await import('../server/lib/supabaseClient.js');
-    const supabase = getSupabaseClient();
-    if (supabase && email) {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, name')
-        .or(`email.eq.${email},name.eq.${email}`)
-        .limit(1)
-        .single();
-
-      if (!error && data) {
-        const vvaultId = data.name || data.id;
-        console.log(`✅ [resolveVVAULTUserId] Supabase resolved ${email} → ${vvaultId}`);
-        _vvaultUserIdCache.set(cacheKey, { id: vvaultId, ts: Date.now() });
-        return vvaultId;
-      }
-
-      const { data: shardUser, error: shardError } = await supabase
-        .from('users')
-        .select('id, name')
-        .eq('name', 'shard_0000')
-        .limit(1)
-        .single();
-
-      if (!shardError && shardUser) {
-        const vvaultId = shardUser.name || shardUser.id;
-        console.log(`✅ [resolveVVAULTUserId] Supabase shard fallback for ${email} → ${vvaultId}`);
-        _vvaultUserIdCache.set(cacheKey, { id: vvaultId, ts: Date.now() });
-        return vvaultId;
-      }
+    const { resolveSupabaseUserId } = await import('../server/auth/lib/supabaseUserResolver.js');
+    const { supabaseUserId } = await resolveSupabaseUserId({
+      email: email || null,
+      chattyUserId: userId || null,
+    });
+    if (supabaseUserId) {
+      console.log(`✅ [resolveVVAULTUserId] Auth resolver mapped ${cacheKey} → ${supabaseUserId}`);
+      _vvaultUserIdCache.set(cacheKey, { id: supabaseUserId, ts: Date.now() });
+      return supabaseUserId;
     }
   } catch (err) {
     console.warn(`⚠️ [resolveVVAULTUserId] Supabase lookup failed: ${err.message}`);
@@ -220,6 +333,7 @@ async function resolveVVAULTUserId(userId, email, autoCreate = false) {
 export {
   writeTranscript,
   resolveVVAULTUserId,
+  legacySupabaseWritesEnabled,
   getPool,
   ensureTable
 };

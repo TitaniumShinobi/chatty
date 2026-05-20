@@ -1,4 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
+import {
+  matchesHistoricalSourcePolicy,
+  rankHistoricalSource,
+} from './constructMemoryPolicy.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -237,25 +241,33 @@ async function generateTestsFromTranscripts(constructId, maxTests = 5) {
 
   const { data: files, error } = await supabase
     .from('vault_files')
-    .select('filename, content')
+    .select('filename, content, metadata, created_at')
     .eq('construct_id', constructId)
-    .or('filename.like.%chatgpt%,filename.like.%character_ai%,filename.like.%transcript%,filename.like.%K1.md,filename.like.%test_%')
-    .not('filename', 'like', '%chat_with_%')
+    .or('filename.like.%chatgpt%,filename.like.%character_ai%,filename.like.%character.ai%,filename.like.%transcript%,filename.like.%K1.md,filename.like.%test_%')
     .not('filename', 'like', '%memory_anchors%')
     .not('filename', 'like', '%continuity_%')
     .not('filename', 'like', '%CONTINUITY_%')
     .order('created_at', { ascending: false })
-    .limit(15);
+    .limit(30);
 
   if (error) {
     console.error(`❌ [ContinuityTest] File query failed:`, error.message);
     return { error: error.message, tests: [] };
   }
 
-  console.log(`📂 [ContinuityTest] Found ${files?.length || 0} transcript files for ${constructId}`);
+  const filteredFiles = (files || [])
+    .filter((file) => matchesHistoricalSourcePolicy(file, constructId))
+    .sort((left, right) => {
+      const rankDelta = rankHistoricalSource(left, constructId) - rankHistoricalSource(right, constructId);
+      if (rankDelta !== 0) return rankDelta;
+      return new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime();
+    })
+    .slice(0, 15);
+
+  console.log(`📂 [ContinuityTest] Found ${filteredFiles.length} source-matched transcript files for ${constructId}`);
 
   const allExchanges = [];
-  for (const file of (files || [])) {
+  for (const file of filteredFiles) {
     if (!file.content || file.content.length < 100) continue;
     if (file.filename.endsWith('.png') || file.filename.endsWith('.jpg') || file.filename.endsWith('.pdf')) continue;
 
@@ -264,7 +276,7 @@ async function generateTestsFromTranscripts(constructId, maxTests = 5) {
     allExchanges.push(...exchanges);
   }
 
-  console.log(`📝 [ContinuityTest] Parsed ${allExchanges.length} exchanges from ${files.length} files`);
+  console.log(`📝 [ContinuityTest] Parsed ${allExchanges.length} exchanges from ${filteredFiles.length} files`);
 
   const scored = allExchanges.map(scoreExchangeForTesting)
     .filter(e => e.testScore >= 4 && e.facts.length >= 1)
@@ -301,7 +313,7 @@ async function generateTestsFromTranscripts(constructId, maxTests = 5) {
   });
 
   console.log(`✅ [ContinuityTest] Generated ${tests.length} continuity tests for ${constructId}`);
-  return { tests, exchangeCount: allExchanges.length, fileCount: files.length };
+  return { tests, exchangeCount: allExchanges.length, fileCount: filteredFiles.length };
 }
 
 function buildTestPrompt(exchange, index) {
@@ -324,7 +336,8 @@ function buildTestPrompt(exchange, index) {
     return userQ.length > 200 ? userQ.substring(0, 200) : userQ;
   }
 
-  return userQ.length > 200 ? userQ.substring(0, 200) : userQ;
+  const truncated = userQ.length > 200 ? userQ.substring(0, 200) : userQ;
+  return `Do you remember when I said: "${truncated}"? Answer from your continuity records with specific transcript-backed details.`;
 }
 
 function buildTestName(exchange, index) {
@@ -598,5 +611,6 @@ export {
   runFullContinuityTest,
   generateReport,
   parseTranscriptExchanges,
-  extractTestableContent
+  extractTestableContent,
+  buildTestPrompt
 };

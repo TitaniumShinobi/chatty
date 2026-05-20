@@ -32,6 +32,7 @@ export interface GPTAction {
 export interface GPTConfig {
   id: string;
   name: string;
+  callsign?: string;
   description: string;
   instructions: string;
   conversationStarters: string[];
@@ -41,12 +42,15 @@ export interface GPTConfig {
     canvas: boolean;
     imageGeneration: boolean;
     codeInterpreter: boolean;
+    agent: boolean;
+    proactiveInitiation: boolean;
   };
   modelId: string;
   files: GPTFile[];
   actions: GPTAction[];
   isActive: boolean;
   roleplayEnabled?: boolean;
+  conversationModel?: string;
   createdAt: string;
   updatedAt: string;
   userId: string;
@@ -69,12 +73,12 @@ export class GPTManager {
   private constructor() {
     this.isBrowserEnvironment =
       typeof window !== 'undefined' && typeof window.document !== 'undefined';
-    
+
     // Prevent instantiation in browser environment
     if (this.isBrowserEnvironment) {
       throw new Error('[GPTManager] Cannot instantiate GPTManager in browser environment. Use gptManagerFactory.createGPTManager() instead.');
     }
-    
+
     this.db = new Database('chatty.db');
     this.uploadDir = path.join(process.cwd(), 'gpt-uploads');
     this.initializeDatabase();
@@ -86,7 +90,7 @@ export class GPTManager {
     if (typeof window !== 'undefined' && typeof window.document !== 'undefined') {
       throw new Error('[GPTManager] Cannot instantiate GPTManager in browser environment. Use gptManagerFactory.createGPTManager() instead.');
     }
-    
+
     if (!GPTManager.instance) {
       GPTManager.instance = new GPTManager();
     }
@@ -218,9 +222,11 @@ export class GPTManager {
     };
   }
 
-  async getAllGPTs(userId: string): Promise<GPTConfig[]> {
-    const stmt = this.db.prepare('SELECT * FROM gpts WHERE user_id = ? ORDER BY updated_at DESC');
-    const rows = stmt.all(userId) as any[];
+  async getAllGPTs(userId?: string): Promise<GPTConfig[]> {
+    const stmt = userId
+      ? this.db.prepare('SELECT * FROM gpts WHERE user_id = ? ORDER BY updated_at DESC')
+      : this.db.prepare('SELECT * FROM gpts ORDER BY updated_at DESC');
+    const rows = (userId ? stmt.all(userId) : stmt.all()) as any[];
 
     const gpts: GPTConfig[] = [];
     for (const row of rows) {
@@ -230,6 +236,7 @@ export class GPTManager {
       gpts.push({
         id: row.id,
         name: row.name,
+        callsign: row.name,
         description: row.description,
         instructions: row.instructions,
         conversationStarters: JSON.parse(row.conversation_starters || '[]'),
@@ -248,12 +255,29 @@ export class GPTManager {
     return gpts;
   }
 
+  async getGPTByCallsign(callsign: string): Promise<GPTConfig | null> {
+    const normalizedCallsign = callsign.toLowerCase();
+    const gpts = await this.getAllGPTs();
+    return (
+      gpts.find((gpt) => {
+        const id = gpt.id.toLowerCase();
+        const name = gpt.name.toLowerCase();
+        const runtimeCallsign = gpt.callsign?.toLowerCase() || '';
+        return (
+          id === normalizedCallsign ||
+          name === normalizedCallsign ||
+          runtimeCallsign === normalizedCallsign
+        );
+      }) || null
+    );
+  }
+
   async updateGPT(id: string, updates: Partial<Omit<GPTConfig, 'id' | 'createdAt' | 'files' | 'actions'>>): Promise<GPTConfig | null> {
     const existing = await this.getGPT(id);
     if (!existing) return null;
 
     const stmt = this.db.prepare(`
-      UPDATE gpts 
+      UPDATE gpts
       SET name = ?, description = ?, instructions = ?, conversation_starters = ?, avatar = ?, capabilities = ?, model_id = ?, is_active = ?, updated_at = ?
       WHERE id = ?
     `);

@@ -33,6 +33,26 @@ export interface ConstructMetadata {
   fingerprint: string;
   lastValidated: number;
 }
+
+type ConstructRow = {
+  id: string;
+  name: string;
+  description?: string | null;
+  role_lock_json: string;
+  legal_doc_sha256: string;
+  vault_pointer?: string | null;
+  fingerprint: string;
+  is_system_shell: number;
+  hosting_runtime?: string | null;
+  current_persona?: string | null;
+  created_at: number;
+  updated_at: number;
+  is_active: number;
+};
+
+type CountRow = { count: number };
+type ConstructTimeRangeRow = { oldest?: number; newest?: number };
+
 export class ConstructRegistry implements IConstructRegistry {
   private static instance: ConstructRegistry;
   private constructs = new Map<string, ConstructMetadata>();
@@ -116,7 +136,7 @@ export class ConstructRegistry implements IConstructRegistry {
         WHERE id = ? AND is_active = 1
       `);
 
-      const row = stmt.get(constructId);
+      const row = stmt.get(constructId) as ConstructRow | undefined;
       if (!row) {
         return null;
       }
@@ -218,15 +238,15 @@ export class ConstructRegistry implements IConstructRegistry {
         ORDER BY created_at DESC
       `);
 
-      const rows = stmt.all();
+      const rows = stmt.all() as ConstructRow[];
 
       return rows.map(row => ({
         id: row.id,
         name: row.name,
-        description: row.description,
+        description: row.description || undefined,
         roleLock: JSON.parse(row.role_lock_json),
         legalDocSha256: row.legal_doc_sha256,
-        vaultPointer: row.vault_pointer,
+        vaultPointer: row.vault_pointer || undefined,
         fingerprint: row.fingerprint,
         isSystemShell: Boolean(row.is_system_shell),
         hostingRuntime: row.hosting_runtime || undefined,
@@ -285,19 +305,19 @@ export class ConstructRegistry implements IConstructRegistry {
     try {
       // Total constructs
       const totalStmt = db.prepare('SELECT COUNT(*) as count FROM constructs');
-      const totalResult = totalStmt.get();
+      const totalResult = totalStmt.get() as CountRow;
 
       // Active constructs
       const activeStmt = db.prepare('SELECT COUNT(*) as count FROM constructs WHERE is_active = 1');
-      const activeResult = activeStmt.get();
+      const activeResult = activeStmt.get() as CountRow;
 
       // Total vault entries
       const vaultStmt = db.prepare('SELECT COUNT(*) as count FROM vault_entries');
-      const vaultResult = vaultStmt.get();
+      const vaultResult = vaultStmt.get() as CountRow;
 
       // Time range
       const timeStmt = db.prepare('SELECT MIN(created_at) as oldest, MAX(created_at) as newest FROM constructs');
-      const timeResult = timeStmt.get();
+      const timeResult = timeStmt.get() as ConstructTimeRangeRow;
 
       return {
         totalConstructs: totalResult.count,

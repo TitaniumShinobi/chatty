@@ -28,7 +28,7 @@ const MirrorSetup: React.FC<MirrorSetupProps> = ({ isOpen, onClose, onStart }) =
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
       <div className="w-full max-w-md bg-app-orange-800 border border-app-orange-700 rounded-xl shadow-2xl">
         <div className="flex items-center justify-between p-4 border-b border-app-orange-700">
-          <h2 className="text-white font-semibold text-lg">Mirror Setup</h2>
+          <h2 className="text-white font-semibold text-lg">Screenshare Setup</h2>
           <button onClick={handleClose} className="text-app-orange-400 hover:text-white transition-colors">
             <X size={18} />
           </button>
@@ -101,7 +101,7 @@ const MirrorSetup: React.FC<MirrorSetupProps> = ({ isOpen, onClose, onStart }) =
 
           {step === 3 && (
             <div className="text-center">
-              <p className="text-app-orange-400 text-sm mb-6">Ready to start Mirror</p>
+              <p className="text-app-orange-400 text-sm mb-6">Ready to start screenshare</p>
               <div className="bg-app-orange-700/50 rounded-lg p-4 mb-6 text-left space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-app-orange-400">Source</span>
@@ -116,7 +116,7 @@ const MirrorSetup: React.FC<MirrorSetupProps> = ({ isOpen, onClose, onStart }) =
                 onClick={handleStart}
                 className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors font-medium"
               >
-                <Play size={16} /> Start Mirror
+                <Play size={16} /> Start Screenshare
               </button>
             </div>
           )}

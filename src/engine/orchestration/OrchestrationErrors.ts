@@ -62,7 +62,7 @@ export class TriadFailureError extends OrchestrationError {
       userMessage: `Some AI models are currently unavailable (${failedSeats.join(", ")}). Please check that Ollama is running and all required models are installed.`,
       technicalDetails: `Triad validation failed. Unavailable models: ${failedSeats.join(", ")}`,
       recoverySuggestion:
-        "Ensure Ollama is running and the required models (deepseek-coder:6.7b, phi3:latest, mistral:latest) are installed.",
+        "Ensure Ollama is running and the required Lin default models are installed.",
       context: { failedSeats, ...context },
     });
   }
@@ -101,6 +101,26 @@ export class CapsuleLoadError extends OrchestrationError {
       recoverySuggestion:
         "The system will use blueprint identity instead. Capsule may be unavailable or corrupted.",
       context: { callsign, reason, ...context },
+    });
+  }
+}
+
+/**
+ * Identity unavailable - when a required construct identity cannot be loaded
+ */
+export class IdentityUnavailableError extends OrchestrationError {
+  constructor(
+    constructId: string,
+    callsign: string,
+    context?: Record<string, any>,
+  ) {
+    super({
+      code: "IDENTITY_UNAVAILABLE",
+      userMessage: `Unable to load required identity for ${callsign || constructId}. The construct will not speak from an empty or generic persona.`,
+      technicalDetails: `Required identity unavailable for ${constructId}-${callsign}. Empty blueprint fallback is disabled for identity-bound constructs.`,
+      recoverySuggestion:
+        "Restore the Supabase-backed identity bundle and transcript-derived blueprint before retrying.",
+      context: { constructId, callsign, ...context },
     });
   }
 }

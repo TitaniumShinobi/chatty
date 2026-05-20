@@ -1,46 +1,42 @@
 import { OP, Packet } from "../proto/opcodes";
 import { P_HELLO, P_FILE_UP, P_IDLE, P_QA, P_CODE, P_SUM, P_AUTH, P_ERR } from "../proto/payloads";
-import { R } from "./render";
 import { lexicon as lex } from "../data/lexicon";
+import { renderLex } from "./lexRender";
 
 type Handler = (p: Packet) => Promise<string>;
 
-const H: Record<OP, Handler> = {
+const H: Partial<Record<OP, Handler>> = {
   [OP.HELLO]: async (p) => {
     const data = P_HELLO.parse(decode(p.payload));
-    return R({ join: [lex.tokens.hello, data.userNameId] });
+    return renderLex({ join: [lex.tokens.hello, data.userNameId] });
   },
   [OP.FILE_UPLOADED]: async (p) => {
     const d = P_FILE_UP.parse(decode(p.payload));
-    return R(
-      { join: [lex.tokens.file, d.nameId, lex.tokens.uploaded] },
-      { br: true },
-      lex.tokens.askNext
-    );
+    return renderLex({ join: [lex.tokens.file, d.nameId, lex.tokens.uploaded] });
   },
   [OP.IDLE_TIMEOUT]: async (p) => {
     P_IDLE.parse(decode(p.payload));
-    return R(lex.tokens.idlePing);
+    return renderLex(lex.tokens.idlePing);
   },
   [OP.INTENT_QA]: async (p) => {
     P_QA.parse(decode(p.payload));
-    return R(lex.tokens.qaReady);
+    return renderLex(lex.tokens.qaReady);
   },
   [OP.INTENT_CODE]: async (p) => {
     const d = P_CODE.parse(decode(p.payload));
-    return R({ join: [lex.tokens.codeReady, d.langId, d.taskId] });
+    return renderLex({ join: [lex.tokens.codeReady, d.langId, d.taskId] });
   },
   [OP.INTENT_SUMMARY]: async (p) => {
     P_SUM.parse(decode(p.payload));
-    return R(lex.tokens.summaryReady);
+    return renderLex(lex.tokens.summaryReady);
   },
   [OP.AUTH_SUCCESS]: async (p) => {
     const d = P_AUTH.parse(decode(p.payload));
-    return R({ join: [lex.tokens.authOk, d.displayNameId] });
+    return renderLex({ join: [lex.tokens.authOk, d.displayNameId] });
   },
   [OP.ERROR]: async (p) => {
     P_ERR.parse(decode(p.payload));
-    return R(lex.tokens.errGeneric);
+    return renderLex(lex.tokens.errGeneric);
   }
 };
 

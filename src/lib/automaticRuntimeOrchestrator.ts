@@ -10,7 +10,7 @@
 
 import { createGPTManager, type IGPTManager } from './gptManagerFactory';
 import { shouldUseBrowserStubs, createBrowserSafeRuntimeOrchestrator } from './browserStubs';
-import type { GPTConfig } from './types';
+import type { GPTConfig } from './gptManager';
 
 export interface RuntimeDetectionContext {
   conversationContent?: string;
@@ -517,6 +517,15 @@ export class AutomaticRuntimeOrchestrator {
    * Validate existing runtime is still appropriate
    */
   private async validateExistingRuntime(constructId: string, context: RuntimeDetectionContext): Promise<RuntimeAssignment> {
+    if (!this.gptManager) {
+      return {
+        constructId,
+        runtimeId: `${constructId}-runtime`,
+        confidence: 0,
+        reasoning: 'Runtime manager unavailable'
+      };
+    }
+
     const gpt = await this.gptManager.getGPTByCallsign(constructId);
     
     if (!gpt) {

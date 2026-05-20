@@ -8,8 +8,11 @@
  */
 
 import { DriftGuard, DriftAnalysis } from '../identity/DriftGuard.js';
-import { IdentityDriftDetector, DriftDetectionResult } from '../identity/IdentityDriftDetector.js';
-import { enforceLinTone } from '../../lib/linToneLock';
+import { IdentityDriftDetector } from '../identity/IdentityDriftDetector.js';
+
+function enforceLinTone(input: string): string {
+  return input;
+}
 
 export interface PersonaRoutingDecision {
   shouldRouteToLin: boolean;
@@ -121,7 +124,7 @@ export class PersonaRouter {
       // Check for construct instability (identity drift across sessions)
       try {
         const identityDrift = await this.driftDetector.detectDrift(constructId);
-        if (identityDrift.driftDetected) {
+        if (identityDrift.hasDrift) {
           baseDecision.constructInstability = true;
           baseDecision.confidence = Math.min(1.0, baseDecision.confidence + 0.2);
           baseDecision.reason += ` Identity drift detected across sessions.`;
@@ -192,7 +195,7 @@ export class PersonaRouter {
    * Applies tone enforcement if Lin is active.
    */
   public async routeInput(input: string, constructId: string): Promise<string> {
-    const routingDecision = await this.driftDetector.analyzeDrift(input, constructId);
+    const routingDecision = await this.shouldRouteToLin(constructId, input, []);
 
     if (routingDecision.shouldRouteToLin) {
       console.log(`[PersonaRouter] Routing to Lin for construct ${constructId} due to: ${routingDecision.reason}`);
@@ -218,4 +221,3 @@ export function getPersonaRouter(config?: Partial<PersonaRouterConfig>): Persona
   }
   return personaRouterInstance;
 }
-

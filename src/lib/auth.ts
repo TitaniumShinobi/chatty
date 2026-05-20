@@ -1,4 +1,21 @@
-export type User = { sub: string; email: string; name: string; picture?: string };
+import { resolveClientDoorContract, resolveClientDoorName } from "./chattyVvaultDoor";
+
+export type User = {
+  sub: string;
+  id?: string;
+  email: string;
+  name: string;
+  picture?: string;
+  authSource?: string | null;
+  vvaultReady?: boolean;
+  vvaultSession?: {
+    ready: boolean;
+    authSource?: string | null;
+    vvaultUserId?: string | null;
+    supabaseUserId?: string | null;
+    reason?: string | null;
+  };
+};
 
 export function getUserId(user: User | null | undefined): string | null {
   if (!user) return null;
@@ -70,6 +87,7 @@ export function attachGoogleProfileImage() {
 }
 
 export function loginWithGoogle() {
+  const loginUrl = buildGoogleLoginUrl();
   // Check OAuth health before attempting login
   fetch("/api/auth/google/health")
     .then(r => r.json())
@@ -80,28 +98,101 @@ export function loginWithGoogle() {
         return;
       }
   // hard navigate so cookies flow through; rely on server redirect back
-  window.location.href = "/api/auth/google";
+  window.location.href = loginUrl;
     })
     .catch(error => {
       console.error('❌ [Auth] Failed to check OAuth health:', error);
       // Proceed anyway - might be a temporary network issue
-      window.location.href = "/api/auth/google";
+      window.location.href = loginUrl;
     });
 }
 
+export function buildGoogleLoginUrl(currentHref?: string) {
+  const currentUrl =
+    typeof currentHref === "string" && currentHref.trim()
+      ? new URL(currentHref)
+      : new URL(window.location.href);
+  if (resolveClientDoorName() === "public") {
+    const door = resolveClientDoorContract();
+    const loginUrl = new URL("/api/auth/google", door.authPublicOrigin);
+    loginUrl.searchParams.set("origin", currentUrl.origin);
+    return loginUrl.toString();
+  }
+  const loginUrl = new URL("/api/auth/google", currentUrl.origin);
+  const cliCallback = currentUrl.searchParams.get("cli_callback");
+  if (cliCallback) {
+    loginUrl.searchParams.set("cli_callback", cliCallback);
+  }
+  return `${loginUrl.pathname}${loginUrl.search}`;
+}
+
 export function loginWithMicrosoft() {
+  if (resolveClientDoorName() === "public") {
+    const currentUrl = new URL(window.location.href);
+    const door = resolveClientDoorContract();
+    const loginUrl = new URL("/api/auth/microsoft", door.authPublicOrigin);
+    loginUrl.searchParams.set("origin", currentUrl.origin);
+    window.location.href = loginUrl.toString();
+    return;
+  }
   window.location.href = "/api/auth/microsoft";
 }
 
 export function loginWithApple() {
+  if (resolveClientDoorName() === "public") {
+    const currentUrl = new URL(window.location.href);
+    const door = resolveClientDoorContract();
+    const loginUrl = new URL("/api/auth/apple", door.authPublicOrigin);
+    loginUrl.searchParams.set("origin", currentUrl.origin);
+    window.location.href = loginUrl.toString();
+    return;
+  }
   window.location.href = "/api/auth/apple";
 }
 
 export function loginWithGithub() {
+  if (resolveClientDoorName() === "public") {
+    const currentUrl = new URL(window.location.href);
+    const door = resolveClientDoorContract();
+    const loginUrl = new URL("/api/auth/github", door.authPublicOrigin);
+    loginUrl.searchParams.set("origin", currentUrl.origin);
+    window.location.href = loginUrl.toString();
+    return;
+  }
   window.location.href = "/api/auth/github";
 }
 
-export async function loginWithEmail(email: string, password: string): Promise<User | null> {
+export function buildHostedAuthUrl(
+  mode: "login" | "signup",
+  currentHref?: string,
+  reason?: string,
+) {
+  const currentUrl =
+    typeof currentHref === "string" && currentHref.trim()
+      ? new URL(currentHref)
+      : new URL(window.location.href);
+  const door = resolveClientDoorContract();
+  const hostedUrl = new URL("/", door.authPublicOrigin);
+  hostedUrl.searchParams.set("origin", currentUrl.origin);
+  hostedUrl.searchParams.set("mode", mode);
+  if (reason) {
+    hostedUrl.searchParams.set("reason", reason);
+  }
+  return hostedUrl.toString();
+}
+
+export type EmailLoginResult =
+  | { ok: true; user: User }
+  | {
+      ok: false;
+      error: string;
+      lifeRegistryMatch?: boolean;
+      oauthOnly?: boolean;
+      credentialLoginUnavailable?: boolean;
+      authProvider?: string;
+    };
+
+export async function loginWithEmail(email: string, password: string): Promise<EmailLoginResult> {
   try {
     const response = await fetch("/api/auth/login", {
       method: "POST",
@@ -112,15 +203,21 @@ export async function loginWithEmail(email: string, password: string): Promise<U
       body: JSON.stringify({ email, password }),
     });
 
-    if (!response.ok) {
-      throw new Error("Login failed");
+    const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    if (response.ok && data?.user) {
+      return { ok: true, user: data.user as User };
     }
-
-    const data = await response.json();
-    return data.user || null;
+    return {
+      ok: false,
+      error: typeof data?.error === "string" ? data.error : "Login failed",
+      lifeRegistryMatch: data?.lifeRegistryMatch === true,
+      oauthOnly: data?.oauthOnly === true,
+      credentialLoginUnavailable: data?.credentialLoginUnavailable === true,
+      authProvider: typeof data?.authProvider === "string" ? data.authProvider : undefined,
+    };
   } catch (error) {
     console.error("Login error:", error);
-    return null;
+    return { ok: false, error: "Login failed" };
   }
 }
 

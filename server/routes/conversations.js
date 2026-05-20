@@ -1,29 +1,61 @@
+/**
+ * /api/conversations/*
+ *
+ * ROUTE CLASSIFICATION: NONCANONICAL (separate path)
+ * These routes bypass the canonical /api/vvault/message runtime path.
+ * They use gptRuntimeBridge directly and emit stub runtime_receipt
+ * and orchestration_checklist fields for observability parity.
+ *
+ * New consumers should target /api/vvault/message for the canonical runtime path.
+ */
+
 import express from "express";
 import { Store } from "../store.js";
 import { getGPTRuntimeBridge } from "../lib/gptRuntimeBridge.js";
 import { getGPTSaveHook } from "../lib/gptSaveHook.js";
-import { existsSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { readConversationsFromSupabase } from '../../vvaultConnector/supabaseStore.js';
+import { dirname } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { readConversations } from '../../vvaultConnector/readConversations.js';
+import { writeTranscript } from '../../vvaultConnector/writeTranscript.js';
+import {
+  isConstructBackedId,
+  constructIdFromConversationId,
+  listCanonicalConversations,
+  getCanonicalConversationMessages,
+  ensureCanonicalConversation,
+  appendCanonicalConversationMessages,
+  buildConversationHistory,
+} from "../lib/conversationRepository.js";
+import { resolveRequestUser } from "../auth/lib/supabaseUserResolver.js";
+import { applyHumanConversationGuard } from "../lib/humanConversationGuard.js";
+import {
+  isLinOrchestratedConstruct,
+  isProtectedZenConstruct,
+} from "../lib/constructMemoryPolicy.js";
+import { resolveOptimizedZenBuildArtifact } from "../lib/healthChecks.js";
 
-// Helper to sync GPT conversations to Supabase
-async function syncGPTConversationToSupabase(userId, userEmail, conversationId, gptId, gptName, userMessage, aiMessage) {
+// Helper to sync GPT conversations to the VVAULT body.
+async function syncGPTConversationToVvault(userId, userEmail, conversationId, gptId, gptName, userMessage, aiMessage) {
   try {
-    const { writeConversationToSupabase } = await import('../../vvaultConnector/supabaseStore.js');
-    
+    const { assertNotLocked } = await import('../lib/runtimeLock.js');
+    await assertNotLocked();
+  } catch (lockErr) {
+    console.warn(`⚠️ [Conversations API] VVAULT runtime locked, skipping conversation sync:`, lockErr?.message);
+    return;
+  }
+  try {
     // Extract construct callsign from gptId (e.g., 'katana' -> 'katana-001')
     let constructId = gptId;
     if (!constructId.match(/-\d+$/)) {
       constructId += '-001';
     }
-    
+
     const sessionId = `${constructId}_chat_with_${constructId}`;
     const timestamp = new Date().toISOString();
-    
+
     // Save user message
     if (userMessage) {
-      await writeConversationToSupabase({
+      await writeTranscript({
         userId,
         userEmail,
         sessionId,
@@ -37,10 +69,10 @@ async function syncGPTConversationToSupabase(userId, userEmail, conversationId, 
         metadata: { source: 'chatty' }
       });
     }
-    
+
     // Save AI response
     if (aiMessage) {
-      await writeConversationToSupabase({
+      await writeTranscript({
         userId,
         userEmail,
         sessionId,
@@ -54,10 +86,10 @@ async function syncGPTConversationToSupabase(userId, userEmail, conversationId, 
         metadata: { source: 'chatty' }
       });
     }
-    
-    console.log(`✅ [Conversations API] Synced GPT conversation to Supabase: ${constructId}`);
+
+    console.log(`✅ [Conversations API] Synced GPT conversation to VVAULT: ${constructId}`);
   } catch (error) {
-    console.warn(`⚠️ [Conversations API] Supabase sync failed:`, error.message);
+    console.warn(`⚠️ [Conversations API] VVAULT sync failed:`, error.message);
     // Don't fail the request if sync fails
   }
 }
@@ -67,18 +99,37 @@ const __dirname = dirname(__filename);
 
 const r = express.Router();
 
+const USE_CANONICAL_CONVERSATIONS = process.env.CHATTY_CANONICAL_CONVERSATIONS !== 'false';
+const DUAL_WRITE_CONVERSATIONS = process.env.CHATTY_CONVERSATION_DUAL_WRITE !== 'false';
+const ZEN_CANONICAL_CONSTRUCT_ID = 'zen-001';
+const ZEN_CANONICAL_THREAD_ID = `${ZEN_CANONICAL_CONSTRUCT_ID}_chat_with_${ZEN_CANONICAL_CONSTRUCT_ID}`;
+
 r.get("/", async (req, res) => {
   try {
+    const { supabaseUserId } = await resolveRequestUser(req);
+    const chattyUserId = req.user?.id || req.user?.uid || req.user?.sub;
+
+    if (USE_CANONICAL_CONVERSATIONS && supabaseUserId) {
+      const t0 = Date.now();
+      const canonicalList = await listCanonicalConversations({ supabaseUserId, userEmail: req.user?.email });
+      const storeRows = await Store.listConversations(req.user.id);
+      const storeNonConstruct = (storeRows || []).filter((row) => !isConstructBackedId(row._id || row.constructId || ''));
+      const merged = [...canonicalList.map((c) => ({ ...c, owner: chattyUserId })), ...storeNonConstruct];
+      merged.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+      const elapsed = Date.now() - t0;
+      console.log(`📥 [Conversations API] conversation read source: vvault-body (${canonicalList.length}) + store-legacy (${storeNonConstruct.length}) in ${elapsed}ms`);
+      return res.json({ ok: true, conversations: merged });
+    }
+
     const rows = await Store.listConversations(req.user.id);
-    
-    let supabaseConversations = [];
+    let vvaultConversations = [];
     try {
       const userEmail = req.user.email;
       if (userEmail) {
-        const sbConvos = await readConversationsFromSupabase(userEmail);
-        if (sbConvos && sbConvos.length > 0) {
-          console.log(`📥 [Conversations API] Found ${sbConvos.length} conversations from Supabase for ${userEmail}`);
-          supabaseConversations = sbConvos.map(c => ({
+        const bodyConvos = await readConversations({ userEmail });
+        if (bodyConvos && bodyConvos.length > 0) {
+          console.log(`📥 [Conversations API] Found ${bodyConvos.length} conversations from VVAULT for ${userEmail}`);
+          vvaultConversations = bodyConvos.map(c => ({
             _id: c.sessionId,
             owner: req.user.id,
             title: c.title || 'Untitled',
@@ -89,25 +140,25 @@ r.get("/", async (req, res) => {
             createdAt: c.createdAt || new Date().toISOString(),
             updatedAt: c.updatedAt || new Date().toISOString(),
             messageCount: c.messages?.length || 0,
-            source: 'supabase'
+            source: c.persistenceSource || 'vvault-body'
           }));
         }
       }
-    } catch (sbError) {
-      console.warn('⚠️ [Conversations API] Supabase hydration failed:', sbError.message);
+    } catch (vvaultError) {
+      console.warn('⚠️ [Conversations API] VVAULT hydration failed:', vvaultError.message);
     }
-    
+
     const existingIds = new Set(rows.map(r => r._id));
     const merged = [...rows];
-    for (const sc of supabaseConversations) {
+    for (const sc of vvaultConversations) {
       if (!existingIds.has(sc._id)) {
         merged.push(sc);
         existingIds.add(sc._id);
       }
     }
-    
+
     merged.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-    
+
     res.json({ ok: true, conversations: merged });
   } catch (error) {
     console.error("List conversations error:", error);
@@ -117,7 +168,48 @@ r.get("/", async (req, res) => {
 
 r.post("/", async (req, res) => {
   try {
-    const doc = await Store.createConversation(req.user.id, req.body || {});
+    const body = req.body || {};
+    const constructId = body.constructId || body.constructCallsign;
+    const { supabaseUserId } = await resolveRequestUser(req);
+
+    if (USE_CANONICAL_CONVERSATIONS && constructId && isConstructBackedId(constructId) && supabaseUserId) {
+      const normalizedId = /-\d+$/.test(constructId) ? constructId : `${constructId}-001`;
+      const sessionId =
+        normalizedId === ZEN_CANONICAL_CONSTRUCT_ID
+          ? ZEN_CANONICAL_THREAD_ID
+          : body.sessionId || normalizedId;
+      const title = body.title || normalizedId.replace(/-\d+$/, '').replace(/^./, (c) => c.toUpperCase());
+      await ensureCanonicalConversation({
+        supabaseUserId,
+        userEmail: req.user?.email,
+        sessionId,
+        title,
+        constructId: normalizedId,
+        constructName: body.constructName || title,
+        constructCallsign: normalizedId,
+      });
+      const conversation = {
+        _id: sessionId,
+        owner: req.user?.id,
+        title,
+        constructId: normalizedId,
+        constructName: body.constructName || title,
+        constructCallsign: normalizedId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        source: 'vvault-body',
+      };
+      if (DUAL_WRITE_CONVERSATIONS) {
+        try {
+          await Store.createConversation(req.user.id, { ...body, _id: sessionId, title });
+        } catch (e) {
+          console.warn('⚠️ [Conversations API] dual-write Store failed:', e?.message);
+        }
+      }
+      return res.status(201).json({ ok: true, conversation });
+    }
+
+    const doc = await Store.createConversation(req.user.id, body);
     res.status(201).json({ ok: true, conversation: doc });
   } catch (error) {
     console.error("Create conversation error:", error);
@@ -127,40 +219,56 @@ r.post("/", async (req, res) => {
 
 r.get("/:id/messages", async (req, res) => {
   try {
+    const conversationId = req.params.id;
+    const { supabaseUserId } = await resolveRequestUser(req);
+
+    if (USE_CANONICAL_CONVERSATIONS && isConstructBackedId(conversationId) && supabaseUserId) {
+      const t0 = Date.now();
+      const messages = await getCanonicalConversationMessages({
+        supabaseUserId,
+        userEmail: req.user?.email,
+        conversationId,
+        constructId: constructIdFromConversationId(conversationId),
+      });
+      console.log(`📥 [Conversations API] conversation read source: vvault-body (messages: ${messages.length}) in ${Date.now() - t0}ms`);
+      if (messages.length > 0) {
+        return res.json({ ok: true, messages });
+      }
+    }
+
     const rows = await Store.listMessages(req.user.id, req.params.id);
-    
+
     if (rows && rows.length > 0) {
       return res.json({ ok: true, messages: rows });
     }
-    
+
     try {
       const userEmail = req.user.email;
-      const conversationId = req.params.id;
       if (userEmail) {
-        const sbConvos = await readConversationsFromSupabase(userEmail);
-        if (sbConvos && sbConvos.length > 0) {
-          const match = sbConvos.find(c => c.sessionId === conversationId);
+        const bodyConvos = await readConversations({ userEmail });
+        if (bodyConvos && bodyConvos.length > 0) {
+          const match = bodyConvos.find(c => c.sessionId === conversationId);
           if (match && match.messages && match.messages.length > 0) {
-            console.log(`📥 [Conversations API] Hydrating ${match.messages.length} messages from Supabase for ${conversationId}`);
+            console.log(`📥 [Conversations API] Hydrating ${match.messages.length} messages from VVAULT for ${conversationId}`);
             const hydratedMessages = match.messages
               .filter(m => !m.isDateHeader)
               .map((m, idx) => ({
-                _id: `sb_${conversationId}_${idx}`,
+                _id: `vvault_${conversationId}_${idx}`,
                 conversation: conversationId,
                 owner: req.user.id,
                 role: m.role || 'user',
                 content: m.content || '',
                 createdAt: m.timestamp || match.createdAt || new Date().toISOString(),
-                source: 'supabase'
+                source: match.persistenceSource || 'vvault-body'
               }));
             return res.json({ ok: true, messages: hydratedMessages });
           }
         }
       }
-    } catch (sbError) {
-      console.warn('⚠️ [Conversations API] Supabase message hydration failed:', sbError.message);
+    } catch (vvaultError) {
+      console.warn('⚠️ [Conversations API] VVAULT message hydration failed:', vvaultError.message);
     }
-    
+
     res.json({ ok: true, messages: rows });
   } catch (error) {
     console.error("List messages error:", error);
@@ -175,8 +283,7 @@ r.get("/:id/messages", async (req, res) => {
  */
 async function loadOptimizedZenProcessor() {
   const isProduction = process.env.NODE_ENV === 'production';
-  const compiledJsPath = join(__dirname, '../../dist/engine/optimizedZen.js');
-  const compiledJsExists = existsSync(compiledJsPath);
+  const { compiledJsPath, candidates, exists: compiledJsExists } = resolveOptimizedZenBuildArtifact();
 
   // Build verification: Check if compiled JS exists
   if (!compiledJsExists) {
@@ -184,6 +291,7 @@ async function loadOptimizedZenProcessor() {
       // CRITICAL: Log multiple warnings but allow fallback
       console.error('🚨🚨🚨 CRITICAL PRODUCTION WARNING 🚨🚨🚨');
       console.error(`🚨 PRODUCTION DEPLOYMENT MISCONFIGURED: Compiled JS not found at ${compiledJsPath}`);
+      console.error(`🚨 Checked build artifact paths: ${candidates.join(', ')}`);
       console.error('🚨 Build artifacts required for production. Run: cd server && npm run build');
       console.error('🚨 Falling back to TS source (requires tsx) - THIS IS NOT RECOMMENDED');
       console.error('🚨 Zen will work but deployment is incorrect. Fix immediately.');
@@ -200,7 +308,7 @@ async function loadOptimizedZenProcessor() {
   // Try compiled JS first (production)
   if (compiledJsExists) {
     try {
-      const jsModule = await import('../../dist/engine/optimizedZen.js');
+      const jsModule = await import(pathToFileURL(compiledJsPath).href);
       OptimizedZenProcessor = jsModule.OptimizedZenProcessor;
       if (OptimizedZenProcessor) {
         console.log('✅ [Conversations API] Loaded OptimizedZenProcessor from compiled JS');
@@ -236,21 +344,111 @@ async function loadOptimizedZenProcessor() {
 
 r.post("/:id/messages", async (req, res) => {
   try {
+    const conversationId = req.params.id;
+    const normalizedConstructId = constructIdFromConversationId(req.body.constructId || conversationId) || null;
+    const gptId = normalizedConstructId || (conversationId.startsWith('gpt-') ? conversationId.substring(4) : conversationId);
+    const constructId = req.body.constructId || normalizedConstructId || gptId || 'zen-001';
+    const { supabaseUserId } = await resolveRequestUser(req);
+    const useCanonicalConversation = USE_CANONICAL_CONVERSATIONS && isConstructBackedId(conversationId) && Boolean(supabaseUserId && normalizedConstructId);
+    const canonicalCallsign = normalizedConstructId || (/-\d+$/.test(constructId) ? constructId : `${constructId}-001`);
+    const canonicalTitle = (req.body.constructName || canonicalCallsign).replace(/-\d+$/, '').replace(/^./, (c) => c.toUpperCase());
 
     console.log(`🔍🔍🔍 [Conversations API] POST /:id/messages called - NEW CODE VERSION 🔍🔍🔍`);
-    console.log(`   Conversation ID: ${req.params.id}`);
+    console.log(`   Conversation ID: ${conversationId}`);
     console.log(`   User ID: ${req.user.id}`);
     console.log(`   Message: "${req.body.message || req.body.content}"`);
 
-    // Store the user message
-    const userMessage = await Store.createMessage(req.user.id, req.params.id, req.body);
+    if (useCanonicalConversation) {
+      const userContent = req.body.message || req.body.content || '';
+      await ensureCanonicalConversation({
+        supabaseUserId,
+        userEmail: req.user?.email,
+        sessionId: conversationId,
+        title: canonicalTitle,
+        constructId: canonicalCallsign,
+        constructName: req.body.constructName || canonicalTitle,
+        constructCallsign: canonicalCallsign,
+      });
+      await appendCanonicalConversationMessages({
+        supabaseUserId,
+        userEmail: req.user?.email,
+        sessionId: conversationId,
+        title: canonicalTitle,
+        constructId: canonicalCallsign,
+        constructName: req.body.constructName || canonicalTitle,
+        constructCallsign: canonicalCallsign,
+        userMessage: { content: userContent, timestamp: new Date().toISOString() },
+        assistantMessage: null,
+        userMetadata: {
+          attachments: Array.isArray(req.body.attachments) ? req.body.attachments : undefined,
+        },
+      });
+      console.log(`[Conversations API] conversation write result: vvault-body-success role=user conversation=${conversationId}`);
+    }
 
-    // Extract GPT ID from conversation ID (e.g., "gpt-katana-001" -> "katana-001")
-    const conversationId = req.params.id;
-    const gptId = conversationId.startsWith('gpt-') ? conversationId.substring(4) : conversationId;
+    const createLocalRouteMessage = (role, content, timestamp = new Date().toISOString()) => ({
+      _id: `sb_${conversationId}_${role}_${Date.now()}`,
+      conversation: conversationId,
+      owner: req.user.id,
+      role,
+      content,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      source: useCanonicalConversation ? 'vvault-body' : 'store',
+    });
 
-    // Extract constructId from body or derive from gptId
-    const constructId = req.body.constructId || gptId || 'zen-001';
+    const maybeDualWriteStoreMessage = async (role, content, metadata = {}) => {
+      if (!useCanonicalConversation || !DUAL_WRITE_CONVERSATIONS) return null;
+      try {
+        return await Store.createMessage(req.user.id, req.params.id, {
+          role,
+          content,
+          message: content,
+          metadata,
+        });
+      } catch (storeError) {
+        console.warn(`[Conversations API] dual-write-store-failed role=${role} conversation=${conversationId}: ${storeError.message}`);
+        return null;
+      }
+    };
+
+    const userMessage = useCanonicalConversation
+      ? (await maybeDualWriteStoreMessage('user', req.body.message || req.body.content || '', {
+          attachments: Array.isArray(req.body.attachments) ? req.body.attachments : undefined,
+        })) || createLocalRouteMessage('user', req.body.message || req.body.content || '')
+      : await Store.createMessage(req.user.id, req.params.id, req.body);
+
+    async function persistAssistantToCanonical(assistantContent) {
+      if (!useCanonicalConversation || assistantContent == null) return null;
+      const content = typeof assistantContent === 'string' ? assistantContent : (assistantContent?.content ?? assistantContent?.message ?? '');
+      const timestamp = assistantContent?.timestamp || new Date().toISOString();
+      await appendCanonicalConversationMessages({
+        supabaseUserId,
+        userEmail: req.user?.email,
+        sessionId: conversationId,
+        title: canonicalTitle,
+        constructId: canonicalCallsign,
+        constructName: req.body.constructName || canonicalTitle,
+        constructCallsign: canonicalCallsign,
+        userMessage: null,
+        assistantMessage: { content, timestamp },
+      });
+      await maybeDualWriteStoreMessage('assistant', content, assistantContent?.metadata || {});
+      console.log(`[Conversations API] conversation write result: vvault-body-success role=assistant conversation=${conversationId}`);
+      return createLocalRouteMessage('assistant', content, timestamp);
+    }
+
+    async function loadConversationMessages() {
+      if (useCanonicalConversation) {
+        return getCanonicalConversationMessages({
+          supabaseUserId,
+          userEmail: req.user?.email,
+          conversationId,
+          constructId: canonicalCallsign,
+        });
+      }
+      return Store.listMessages(req.user.id, conversationId);
+    }
 
     console.log(`🎯 [Conversations API] Extracted GPT ID: ${gptId} from conversation: ${conversationId}`);
     console.log(`🔍 [Conversations API] constructId resolution:`, {
@@ -263,16 +461,16 @@ r.post("/:id/messages", async (req, res) => {
 
     // Pre-load identity (prompt/conditioning) for Zen/Lin so it is available even when orchestration is off
     let identityFiles = null;
-    if (constructId === 'zen-001' || constructId === 'zen' || constructId === 'lin-001' || constructId === 'lin') {
+    if (isLinOrchestratedConstruct(constructId)) {
       try {console.log(`🔍 [Conversations API] Attempting to import identityLoader...`);
         const identityLoader = await import('../lib/identityLoader.js');
         console.log(`✅ [Conversations API] identityLoader imported successfully, calling loadIdentityFiles...`);// Load undertone capsule for lin-001 (mandatory layer)
-        const includeUndertone = constructId === 'lin-001' || constructId === 'lin';
+        const includeUndertone = !isProtectedZenConstruct(constructId);
         identityFiles = await identityLoader.loadIdentityFiles(req.user.id, constructId, includeUndertone);
-        console.log(`✅ [Conversations API] Identity loaded:`, { 
-          hasPrompt: !!identityFiles?.prompt, 
+        console.log(`✅ [Conversations API] Identity loaded:`, {
+          hasPrompt: !!identityFiles?.prompt,
           hasConditioning: !!identityFiles?.conditioning,
-          hasUndertone: !!identityFiles?.undertone 
+          hasUndertone: !!identityFiles?.undertone
         });
       } catch (identityError) {console.error(`❌ [Conversations API] Failed to load identity for ${constructId}:`, identityError);
         console.error(`❌ [Conversations API] Error details:`, {
@@ -284,14 +482,14 @@ r.post("/:id/messages", async (req, res) => {
       }
     }
 
-    if (constructId === 'zen-001' || constructId === 'zen') {
+    if (isProtectedZenConstruct(constructId)) {
       const missingIdentityParts = [];
       if (!identityFiles?.prompt) missingIdentityParts.push('prompt.txt');
       if (!identityFiles?.conditioning) missingIdentityParts.push('conditioning.txt');
 
       if (missingIdentityParts.length) {
         const missingList = missingIdentityParts.join(' and ');
-        const errMessage = `Zen identity incomplete (${missingList}). DeepSeek, Mistral, and Phi3 require prompt.txt + conditioning.txt before orchestration can run. Restore ${missingList} in the identity directory and retry.`;
+        const errMessage = `Zen identity incomplete (${missingList}). Lin/Zen Intelligence, Ingenuity, and Interaction seats require prompt.txt + conditioning.txt before orchestration can run. Restore ${missingList} in the identity directory and retry.`;
         console.error(`❌ [Conversations API] ${errMessage}`);
         return res.status(500).json({
           ok: false,
@@ -303,15 +501,14 @@ r.post("/:id/messages", async (req, res) => {
     }
 
     // Optional: Use orchestration if enabled and constructId is zen or lin
-    const useOrchestration = req.body.useOrchestration !== false &&
-      (constructId === 'zen-001' || constructId === 'zen' ||
-        constructId === 'lin-001' || constructId === 'lin');if (useOrchestration) {
+    const useOrchestration =
+      req.body.useOrchestration !== false && isLinOrchestratedConstruct(constructId);
+    if (useOrchestration) {
       try {
         const { routeViaOrchestration, isOrchestrationEnabled } = await import('../services/orchestrationBridge.js');
 
         const enabled = isOrchestrationEnabled();if (enabled) {
-          // Extract agent ID from constructId
-          const agentId = constructId.replace(/-001$/, '').replace(/-\d+$/, '') || 'zen';
+          const agentId = isProtectedZenConstruct(constructId) ? 'zen' : 'lin';
           const message = req.body.message || req.body.content;
 
           console.log(`🎭 [Conversations API] Routing via orchestration: agent=${agentId}, constructId=${constructId}`);
@@ -331,7 +528,7 @@ r.post("/:id/messages", async (req, res) => {
             identityContext
           );
 
-          if ((constructId === 'zen-001' || constructId === 'zen') && orchestrationResult.status !== 'error') {
+          if (isProtectedZenConstruct(constructId) && orchestrationResult.status !== 'error') {
             console.log('🧭 [Conversations API] Override orchestration status for zen: forcing optimized zen delegation');
             orchestrationResult = {
               ...orchestrationResult,
@@ -341,7 +538,7 @@ r.post("/:id/messages", async (req, res) => {
           }
 
           // Handle Orchestration Bridge response
-          if (orchestrationResult.status !== 'error') {
+          if (orchestrationResult.status !== 'error' && orchestrationResult.status !== 'placeholder') {
 
             // Check for delegation to OptimizedZenProcessor (Multi-Model Synthesis)
             if (orchestrationResult.status === 'delegate_to_optimized_zen') {
@@ -361,19 +558,11 @@ r.post("/:id/messages", async (req, res) => {
                 // Setup Processor
                 const brain = new ServerPersonaBrain(req.user.id);
                 const config = {
-                  models: { coding: 'deepseek-coder', creative: 'mistral', smalltalk: 'phi3' },
                   toneModulation: { enabled: true }
                 };
 
-                // Load conversation history from Store
-                const allMessages = await Store.listMessages(req.user.id, conversationId);
-                const conversationHistory = allMessages
-                  .filter(msg => msg.role === 'user' || msg.role === 'assistant')
-                  .map(msg => ({
-                    text: msg.content || msg.message || '',
-                    timestamp: msg.createdAt ? new Date(msg.createdAt).toISOString() : new Date().toISOString(),
-                    role: msg.role
-                  }));
+                const allMessages = await loadConversationMessages();
+                const conversationHistory = buildConversationHistory(allMessages);
 
                 const processor = new OptimizedZenProcessor(brain, config);
 
@@ -385,23 +574,31 @@ r.post("/:id/messages", async (req, res) => {
                   identityFiles
                 );
 
-                // Store response
-                const aiMessage = await Store.createMessage(
-                  req.user.id,
-                  conversationId,
-                  {
-                    content: zenResponse.response,
-                    role: 'assistant',
-                    gptId: gptId,
-                    metadata: {
-                      model: 'optimized-zen-multi-model',
-                      orchestration_status: 'optimized_zen_success',
-                      agent_id: 'zen-multi-model',
-                      timestamp: new Date().toISOString()
-                    }
-                  }
-                );
-
+                const aiMessage = useCanonicalConversation
+                  ? await persistAssistantToCanonical({
+                      content: zenResponse.response,
+                      timestamp: new Date().toISOString(),
+                      metadata: {
+                        model: 'optimized-zen-multi-model',
+                        orchestration_status: 'optimized_zen_success',
+                        agent_id: 'zen-multi-model',
+                      },
+                    })
+                  : await Store.createMessage(
+                      req.user.id,
+                      conversationId,
+                      {
+                        content: zenResponse.response,
+                        role: 'assistant',
+                        gptId: gptId,
+                        metadata: {
+                          model: 'optimized-zen-multi-model',
+                          orchestration_status: 'optimized_zen_success',
+                          agent_id: 'zen-multi-model',
+                          timestamp: new Date().toISOString()
+                        }
+                      }
+                    );
                 return res.status(201).json(aiMessage);
 
               } catch (err) {
@@ -413,19 +610,31 @@ r.post("/:id/messages", async (req, res) => {
 
             if (orchestrationResult.response) {
               console.log(`✅ [Conversations API] Orchestration returned response for ${agentId}`);// Store the AI response
-              const aiMessage = await Store.createMessage(req.user.id, req.params.id, {
-                message: orchestrationResult.response,
-                content: orchestrationResult.response,
-                role: 'assistant',
-                gptId: gptId,
-                metadata: {
-                  model: 'orchestration',
-                  orchestration_status: orchestrationResult.status,
-                  agent_id: orchestrationResult.agent_id,
-                  timestamp: new Date().toISOString()
-                }
+              const guardedOrchestrationResponse = applyHumanConversationGuard(orchestrationResult.response, {
+                userMessage: req.body.message || req.body.content,
               });
-
+              const aiMessage = useCanonicalConversation
+                ? await persistAssistantToCanonical({
+                    content: guardedOrchestrationResponse,
+                    timestamp: new Date().toISOString(),
+                    metadata: {
+                      model: 'orchestration',
+                      orchestration_status: orchestrationResult.status,
+                      agent_id: orchestrationResult.agent_id,
+                    },
+                  })
+                : await Store.createMessage(req.user.id, req.params.id, {
+                  message: guardedOrchestrationResponse,
+                  content: guardedOrchestrationResponse,
+                    role: 'assistant',
+                    gptId: gptId,
+                    metadata: {
+                      model: 'orchestration',
+                      orchestration_status: orchestrationResult.status,
+                      agent_id: orchestrationResult.agent_id,
+                      timestamp: new Date().toISOString()
+                    }
+                  });
               return res.status(201).json(aiMessage);
             }
           } else {
@@ -436,10 +645,10 @@ r.post("/:id/messages", async (req, res) => {
         console.warn(`⚠️ [Conversations API] Orchestration failed, falling back to direct routing:`, orchestrationError.message);
       }
     }
-    
+
     // 🔒 HARD-FORCE ZEN DELEGATION - Bypass all template/placeholder logic
     console.log(`🔍 [Conversations API] Checking Zen delegation - constructId: "${constructId}"`);
-    
+
     if (constructId === 'zen-001' || constructId === 'zen') {
       console.log('🚀 [Conversations API] ZEN DETECTED - Forcing OptimizedZenProcessor delegation');
 
@@ -454,21 +663,13 @@ r.post("/:id/messages", async (req, res) => {
           getContext(u) { return { persona: null, recentHistory: '', contextSummary: '' }; }
         }
 
-        // Load conversation history from Store
-        const allMessages = await Store.listMessages(req.user.id, conversationId);
-        const conversationHistory = allMessages
-          .filter(msg => msg.role === 'user' || msg.role === 'assistant')
-          .map(msg => ({
-            text: msg.content || msg.message || '',
-            timestamp: msg.createdAt ? new Date(msg.createdAt).toISOString() : new Date().toISOString(),
-            role: msg.role
-          }));
+        const allMessages = await loadConversationMessages();
+        const conversationHistory = buildConversationHistory(allMessages);
 
         console.log(`📚 [Conversations API] Loaded ${conversationHistory.length} messages from conversation history`);
 
         const brain = new ServerPersonaBrain(req.user.id);
         const config = {
-          models: { coding: 'deepseek-coder', creative: 'mistral', smalltalk: 'phi3' },
           toneModulation: { enabled: true }
         };
 
@@ -483,21 +684,32 @@ r.post("/:id/messages", async (req, res) => {
           identityFiles
         );console.log(`✅ [Conversations API] OptimizedZenProcessor returned response (${zenResponse.response.length} chars)`);
 
-        const aiMessage = await Store.createMessage(req.user.id, req.params.id, {
-          content: zenResponse.response,
-          role: 'assistant',
-          gptId: gptId,
-          metadata: {
-            model: 'zen-multi-model',
-            timestamp: new Date().toISOString()
-          }
+        const guardedZenResponse = applyHumanConversationGuard(zenResponse.response, {
+          userMessage: req.body.message || req.body.content,
         });
 
+        const aiMessage = useCanonicalConversation
+          ? await persistAssistantToCanonical({
+              content: guardedZenResponse,
+              timestamp: new Date().toISOString(),
+              metadata: {
+                model: 'zen-multi-model',
+              },
+            })
+          : await Store.createMessage(req.user.id, req.params.id, {
+              content: guardedZenResponse,
+              role: 'assistant',
+              gptId: gptId,
+              metadata: {
+                model: 'zen-multi-model',
+                timestamp: new Date().toISOString()
+              }
+            });
         return res.status(201).json({
           ok: true,
           message: req.body.message || req.body.content,
           aiResponse: aiMessage,
-          content: zenResponse.response
+          content: guardedZenResponse
         });
       } catch (zenError) {
         console.error('❌ [Conversations API] Zen direct path failed:', zenError);
@@ -530,17 +742,9 @@ r.post("/:id/messages", async (req, res) => {
 
       const gptRuntime = getGPTRuntimeBridge();
 
-      // 🚀 LOAD CONVERSATION HISTORY for GPT seats (mirrors Zen's flow)
-      const allMessages = await Store.listMessages(req.user.id, conversationId);
-      const conversationHistory = allMessages
-        .filter(msg => msg.role === 'user' || msg.role === 'assistant')
-        .map(msg => ({
-          text: msg.content || msg.message || '',
-          role: msg.role,
-          timestamp: msg.createdAt ? new Date(msg.createdAt).toISOString() : new Date().toISOString(),
-        }))
-        .slice(-50); // Cap to keep context manageable
-      
+      const allMessages = await loadConversationMessages();
+      const conversationHistory = buildConversationHistory(allMessages).slice(-50);
+
       console.log(`📚 [Conversations API] Loaded ${conversationHistory.length} messages for GPT seat context`);
 
       // Process message with unlimited conversational scope + conversation history
@@ -549,7 +753,7 @@ r.post("/:id/messages", async (req, res) => {
       if (attachments.length > 0) {
         console.log(`📎 [Conversations API] Processing ${attachments.length} image attachments`);
       }
-      
+
       const aiResponse = await gptRuntime.processMessage(
         gptId,
         req.body.message || req.body.content,
@@ -565,19 +769,33 @@ r.post("/:id/messages", async (req, res) => {
       console.log(`   Freedom: ${aiResponse.conversational_freedom}`);
       console.log(`   Restrictions: ${aiResponse.topic_restrictions}`);
 
-      // Store the AI response as a message
-      const aiMessage = await Store.createMessage(req.user.id, req.params.id, {
-        message: aiResponse.content,
-        content: aiResponse.content,
-        role: 'assistant',
-        gptId: gptId,
-        metadata: {
-          model: aiResponse.model,
-          files: aiResponse.files,
-          actions: aiResponse.actions,
-          timestamp: aiResponse.timestamp
-        }
+      const guardedRuntimeResponse = applyHumanConversationGuard(aiResponse.content, {
+        userMessage: req.body.message || req.body.content,
       });
+
+      const aiMessage = useCanonicalConversation
+        ? await persistAssistantToCanonical({
+            content: guardedRuntimeResponse,
+            timestamp: aiResponse.timestamp,
+            metadata: {
+              model: aiResponse.model,
+              files: aiResponse.files,
+              actions: aiResponse.actions,
+              attachments,
+            },
+          })
+        : await Store.createMessage(req.user.id, req.params.id, {
+          message: guardedRuntimeResponse,
+          content: guardedRuntimeResponse,
+            role: 'assistant',
+            gptId: gptId,
+            metadata: {
+              model: aiResponse.model,
+              files: aiResponse.files,
+              actions: aiResponse.actions,
+              timestamp: aiResponse.timestamp
+            }
+          });
 
       console.log(`✅ [Conversations API] Unrestricted AI response generated and stored`);
 
@@ -586,7 +804,7 @@ r.post("/:id/messages", async (req, res) => {
         const saveHook = getGPTSaveHook();
         await saveHook.onMessageAdded(gptId, {
           role: 'assistant',
-          content: aiResponse.content,
+          content: guardedRuntimeResponse,
           timestamp: aiResponse.timestamp
         });
       } catch (hookError) {
@@ -594,23 +812,41 @@ r.post("/:id/messages", async (req, res) => {
         // Don't fail the request if capsule update fails
       }
 
-      // Sync GPT conversation to Supabase for persistence
-      await syncGPTConversationToSupabase(
-        req.user.id,
-        req.user.email,
-        conversationId,
-        gptId,
-        gptId, // Use gptId as name (will be formatted properly)
-        req.body.message || req.body.content,
-        aiResponse.content
-      );
+      if (!useCanonicalConversation) {
+        await syncGPTConversationToVvault(
+          req.user.id,
+          req.user.email,
+          conversationId,
+          gptId,
+          gptId,
+          req.body.message || req.body.content,
+          guardedRuntimeResponse
+        );
+      }
 
       // Return both the user message and AI response with unrestricted metadata
       res.status(201).json({
         ok: true,
         message: userMessage,
         aiResponse: aiMessage,
-        content: aiResponse.content // For compatibility with test expectations
+        content: guardedRuntimeResponse, // For compatibility with test expectations
+        runtime_receipt: {
+          created_at: new Date().toISOString(),
+          route_mode: 'conversations_message',
+          construct_id: constructId,
+          _noncanonical: true,
+          _canonical_path: '/api/vvault/message',
+          _disclaimer: 'Stub receipt. Canonical runtime: /api/vvault/message.',
+        },
+        orchestration_checklist: {
+          responseStatus: 'conversations_routed',
+          route: '/api/conversations/:id/messages',
+          _noncanonical: true,
+          _canonical_path: '/api/vvault/message',
+          _disclaimer: 'Stub checklist. Canonical runtime: /api/vvault/message.',
+        },
+        _noncanonical: true,
+        _canonical_path: '/api/vvault/message',
       });
 
     } catch (aiError) {

@@ -7,10 +7,8 @@
  */
 
 import fs from 'fs/promises';
-import path from 'path';
 
-const TARGET_FILE = process.argv[2] || 
-  '/Users/devonwoodson/Documents/GitHub/vvault/users/shard_0000/devon_woodson_1762969514958/instances/synth-001/chatty/chat_with_synth-001.md';
+const TARGET_FILE = process.argv[2] || process.env.CLEANUP_TARGET_FILE;
 
 async function cleanupMarkdownFile(filePath) {
   try {
@@ -113,13 +111,14 @@ async function cleanupMarkdownFile(filePath) {
 (async () => {
   console.log('🧹 Starting markdown cleanup...\n');
   
-  if (!process.argv[2]) {
-    console.log(`📝 Using default file: ${TARGET_FILE}`);
-    console.log(`💡 Tip: Pass a file path as argument to clean a different file\n`);
+  if (!TARGET_FILE) {
+    console.error('❌ Missing target markdown file.');
+    console.error('Usage: node scripts/cleanup-duplicate-entries.js /path/to/chat_with_construct.md');
+    console.error('Or set CLEANUP_TARGET_FILE=/path/to/chat_with_construct.md');
+    process.exit(1);
   }
   
   await cleanupMarkdownFile(TARGET_FILE);
   
   console.log('\n✅ Cleanup complete!');
 })();
-

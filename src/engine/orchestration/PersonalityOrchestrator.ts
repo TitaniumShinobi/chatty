@@ -20,6 +20,8 @@ import { detectToneEnhanced, matchMemoriesByTone } from '../../lib/toneDetector'
 import type { SynthMemoryContext } from './types';
 import type { PersonaSignal } from '../character/PersonaDetectionEngine';
 import type { ContextLock } from '../character/ContextLock';
+import { IdentityUnavailableError } from './OrchestrationErrors';
+import { LIN_MODEL_DEFAULTS } from '../../config/linModelDefaults';
 
 export interface UserPersonalizationProfile {
   accountName?: string;
@@ -28,6 +30,8 @@ export interface UserPersonalizationProfile {
   tags?: string[];
   aboutYou?: string;
 }
+
+const STRICT_IDENTITY_CONSTRUCTS = new Set(['nova-001', 'lin-001', 'lin']);
 
 export class PersonalityOrchestrator {
   private identityMatcher: IdentityMatcher;
@@ -42,10 +46,20 @@ export class PersonalityOrchestrator {
     this.driftPrevention = new DriftPrevention(model);
     this.promptBuilder = new UnbreakableCharacterPrompt();
     this.greetingSynthesizer = new GreetingSynthesizer();
-    // Browser-safe environment variable access (no direct process reference)
+    // Browser-safe environment variable access (no direct process reference).
+    // We wrap import.meta in an eval so that CJS environments (like Jest) don't
+    // throw a syntax error parsing the file.  The check still occurs at runtime.
     const envValue =
       (typeof globalThis !== 'undefined' && (globalThis as any).process?.env?.PERSONA_CONFIDENCE_THRESHOLD) ||
-      (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_PERSONA_CONFIDENCE_THRESHOLD) ||
+      ((): string | undefined => {
+        try {
+          // eslint-disable-next-line no-eval
+          const meta: any = eval('import.meta');
+          return meta?.env?.VITE_PERSONA_CONFIDENCE_THRESHOLD;
+        } catch {
+          return undefined;
+        }
+      })() ||
       undefined;
     const parsedThreshold = parseFloat(envValue || '');
     this.confidenceThreshold = Number.isFinite(parsedThreshold) ? parsedThreshold : 0.7;
@@ -77,19 +91,19 @@ export class PersonalityOrchestrator {
       if (contextLock) {
         throw new Error('[PersonalityOrchestrator] Context lock active but no personality blueprint loaded');
       }
-      // REMOVED: Katana-specific check - Katana is a user-created GPT, not a core construct
-      // Only core constructs (Lin, Nova) require blueprints
-      const requiresBlueprint = constructId.toLowerCase().includes('lin') ||
-                                 constructId.toLowerCase().includes('nova');
-      
+      const requiresBlueprint = this.requiresStrictIdentity(constructId, callsign);
       if (requiresBlueprint) {
-        throw new Error(
-          `[PersonalityOrchestrator] Persona context required for ${constructId}-${callsign} but blueprint not found. ` +
-          `Cannot generate response without full persona context. Upload transcripts to create blueprint.`
-        );
+        throw new IdentityUnavailableError(constructId, callsign, {
+          userId,
+          source: 'personality_blueprint',
+        });
       }
-      
-      // Only allow empty blueprint for non-persona constructs
+
+      console.warn(
+        `[PersonalityOrchestrator] no blueprint found for ${constructId}-${callsign}; ` +
+        `using degraded empty blueprint for non-strict construct only.`
+      );
+
       return {
         response: '',
         personalityContext: {
@@ -191,7 +205,7 @@ export class PersonalityOrchestrator {
           relationshipHistory: personalityContext.currentState.relationalState,
         },
       },
-      'phi3:latest'
+      LIN_MODEL_DEFAULTS.conversation
     );
 
     // 4. Retrieve relevant memories (prioritize personal anchors)
@@ -830,6 +844,17 @@ export class PersonalityOrchestrator {
     };
   }
 
+  private requiresStrictIdentity(constructId: string, callsign: string): boolean {
+    const candidates = [constructId, callsign]
+      .filter(Boolean)
+      .map(value => value.toLowerCase());
+    return candidates.some(value =>
+      STRICT_IDENTITY_CONSTRUCTS.has(value) ||
+      value.startsWith('nova') ||
+      value.startsWith('lin')
+    );
+  }
+
   /**
    * Clear cache (useful for testing or when blueprints are updated)
    */
@@ -881,6 +906,21 @@ export class PersonalityOrchestrator {
       return Array.from(map.values()).slice(0, 5);
     };
 
+    const mergeBehavioralList = (
+      base: PersonalityBlueprint['behavioralMarkers'],
+      incoming: PersonalityBlueprint['behavioralMarkers']
+    ): PersonalityBlueprint['behavioralMarkers'] => {
+      const map = new Map<string, PersonalityBlueprint['behavioralMarkers'][number]>();
+      base.forEach(item => map.set(`${item.situation.toLowerCase()}::${item.responsePattern.toLowerCase()}`, item));
+      incoming.forEach(item => {
+        const key = `${item.situation.toLowerCase()}::${item.responsePattern.toLowerCase()}`;
+        if (!map.has(key)) {
+          map.set(key, item);
+        }
+      });
+      return Array.from(map.values()).slice(0, 5);
+    };
+
     const mergeWorldviewList = (
       base: PersonalityBlueprint['worldview'],
       incoming: PersonalityBlueprint['worldview']
@@ -900,7 +940,7 @@ export class PersonalityOrchestrator {
       ...primary,
       coreTraits: Array.from(new Set([...primary.coreTraits, ...detected.coreTraits])),
       speechPatterns: mergePatternList(primary.speechPatterns, detected.speechPatterns),
-      behavioralMarkers: mergePatternList(primary.behavioralMarkers, detected.behavioralMarkers),
+      behavioralMarkers: mergeBehavioralList(primary.behavioralMarkers, detected.behavioralMarkers),
       worldview: mergeWorldviewList(primary.worldview, detected.worldview),
       relationshipPatterns: [...primary.relationshipPatterns, ...detected.relationshipPatterns].slice(0, 6),
       memoryAnchors: mergeAnchors(),

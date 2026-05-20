@@ -8,6 +8,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { getVVAULTTranscriptLoader } from './VVAULTTranscriptLoader';
+import { getHistoricalMemorySources } from './constructMemoryPolicy';
 
 export interface WatchedConstruct {
   constructCallsign: string;
@@ -23,7 +24,7 @@ export class VVAULTWatcher {
   private isWatching = false;
   private scanIntervalMs = 30000; // 30 seconds
 
-  constructor(private vvaultBasePath: string = '/Users/devonwoodson/Documents/GitHub/vvault') {}
+  constructor(private vvaultBasePath: string = process.env.VVAULT_ROOT_PATH || process.env.VVAULT_PATH || '') {}
 
   /**
    * Start watching transcript files for changes
@@ -74,47 +75,71 @@ export class VVAULTWatcher {
   /**
    * Add a construct to watch
    */
-  async addConstruct(constructCallsign: string, userId: string = 'devon_woodson_1762969514958'): Promise<void> {
-    const transcriptDir = path.join(
-      this.vvaultBasePath,
-      'users',
-      'shard_0000',
-      userId,
-      'instances',
-      constructCallsign,
-      'chatgpt'
+  async addConstruct(constructCallsign: string, userId?: string): Promise<void> {
+    const resolvedUserId = userId || process.env.VVAULT_MEMORY_USER_ID || '';
+    if (!resolvedUserId) {
+      console.warn(`⚠️ [VVAULTWatcher] No userId provided for ${constructCallsign}; skipping watch registration`);
+      return;
+    }
+
+    const transcriptDirs = getHistoricalMemorySources(constructCallsign).map((source) =>
+      path.join(
+        this.vvaultBasePath,
+        'users',
+        'shard_0000',
+        resolvedUserId,
+        'instances',
+        constructCallsign,
+        source
+      )
     );
 
-    const watchKey = `${userId}-${constructCallsign}`;
-    
-    try {
-      // Check if directory exists
-      await fs.access(transcriptDir);
-      
-      const watched: WatchedConstruct = {
-        constructCallsign,
-        userId,
-        transcriptDir,
-        lastScan: Date.now()
-      };
+    let addedWatch = false;
+    for (const transcriptDir of transcriptDirs) {
+      const watchKey = `${resolvedUserId}-${constructCallsign}-${path.basename(transcriptDir)}`;
 
-      this.watchedConstructs.set(watchKey, watched);
-      
-      // Initial load of transcripts
-      await this.transcriptLoader.loadTranscriptFragments(constructCallsign, userId);
-      
-      console.log(`📁 [VVAULTWatcher] Added construct to watch: ${constructCallsign} (${transcriptDir})`);
-    } catch (error) {
-      console.warn(`⚠️ [VVAULTWatcher] Failed to add construct ${constructCallsign}:`, error);
+      try {
+        await fs.access(transcriptDir);
+
+        const watched: WatchedConstruct = {
+          constructCallsign,
+          userId: resolvedUserId,
+          transcriptDir,
+          lastScan: Date.now()
+        };
+
+        this.watchedConstructs.set(watchKey, watched);
+        addedWatch = true;
+      } catch (error) {
+        const err = error as NodeJS.ErrnoException;
+        const code = err?.code ?? (err?.errno === -2 ? 'ENOENT' : undefined);
+        if (code !== 'ENOENT') {
+          console.warn(`⚠️ [VVAULTWatcher] Failed to add construct ${constructCallsign}:`, error);
+        }
+      }
+    }
+
+    if (addedWatch) {
+      await this.transcriptLoader.loadTranscriptFragments(constructCallsign, resolvedUserId);
+      console.log(`📁 [VVAULTWatcher] Added construct to watch: ${constructCallsign} (${transcriptDirs.join(', ')})`);
     }
   }
 
   /**
    * Remove a construct from watching
    */
-  removeConstruct(constructCallsign: string, userId: string = 'devon_woodson_1762969514958'): void {
-    const watchKey = `${userId}-${constructCallsign}`;
-    if (this.watchedConstructs.delete(watchKey)) {
+  removeConstruct(constructCallsign: string, userId?: string): void {
+    const resolvedUserId = userId || process.env.VVAULT_MEMORY_USER_ID || '';
+    if (!resolvedUserId) return;
+
+    let removed = false;
+    for (const key of Array.from(this.watchedConstructs.keys())) {
+      if (key.startsWith(`${resolvedUserId}-${constructCallsign}-`)) {
+        this.watchedConstructs.delete(key);
+        removed = true;
+      }
+    }
+    if (removed) {
       console.log(`🗑️ [VVAULTWatcher] Removed construct from watch: ${constructCallsign}`);
     }
   }
@@ -140,14 +165,7 @@ export class VVAULTWatcher {
             const constructs = await fs.readdir(instancesDir);
             
             for (const constructCallsign of constructs) {
-              const chatgptDir = path.join(instancesDir, constructCallsign, 'chatgpt');
-              
-              try {
-                await fs.access(chatgptDir);
-                await this.addConstruct(constructCallsign, userId);
-              } catch {
-                // No chatgpt directory, skip
-              }
+              await this.addConstruct(constructCallsign, userId);
             }
           } catch {
             // No instances directory, skip user
@@ -155,7 +173,11 @@ export class VVAULTWatcher {
         }
       }
     } catch (error) {
-      console.warn('[VVAULTWatcher] Failed to scan all constructs:', error);
+      const err = error as NodeJS.ErrnoException;
+      const code = err?.code ?? (err?.errno === -2 ? 'ENOENT' : undefined);
+      if (code !== 'ENOENT') {
+        console.warn('[VVAULTWatcher] Failed to scan all constructs:', error);
+      }
     }
   }
 
@@ -257,9 +279,15 @@ export class VVAULTWatcher {
   /**
    * Manually trigger a scan for a specific construct
    */
-  async scanConstruct(constructCallsign: string, userId: string = 'devon_woodson_1762969514958'): Promise<boolean> {
-    const watchKey = `${userId}-${constructCallsign}`;
-    const watched = this.watchedConstructs.get(watchKey);
+  async scanConstruct(constructCallsign: string, userId?: string): Promise<boolean> {
+    const resolvedUserId = userId || process.env.VVAULT_MEMORY_USER_ID || '';
+    if (!resolvedUserId) return false;
+
+    const watchKeyPrefix = `${resolvedUserId}-${constructCallsign}-`;
+    const watchEntry = Array.from(this.watchedConstructs.entries()).find(([key]) =>
+      key.startsWith(watchKeyPrefix)
+    );
+    const watched = watchEntry?.[1];
     
     if (!watched) {
       console.warn(`[VVAULTWatcher] Construct ${constructCallsign} not being watched`);

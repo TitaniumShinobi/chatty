@@ -26,6 +26,8 @@ export interface VVAULTMemoryHit {
   response?: string;
   metadata?: Record<string, any>;
   relevance?: number;
+  timestamp?: string;
+  memoryType?: 'short-term' | 'long-term';
   detectedTone?: ToneDetectionResult;
 }
 
@@ -148,6 +150,11 @@ export class VVAULTRetrievalWrapper {
         response: memory.response,
         metadata: memory.metadata,
         relevance: memory.relevance,
+        timestamp: typeof memory.metadata?.timestamp === 'string' ? memory.metadata.timestamp : undefined,
+        memoryType:
+          memory.metadata?.memoryType === 'short-term' || memory.metadata?.memoryType === 'long-term'
+            ? memory.metadata.memoryType
+            : undefined,
         detectedTone: toneMatch.detectedTone,
       });
 

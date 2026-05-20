@@ -3,7 +3,7 @@ import express from "express";
 const router = express.Router();
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
-const REQUIRED_MODELS = ["deepseek-coder", "mistral", "phi3"];
+const REQUIRED_MODELS = ["qwen2.5-coder:latest", "mistral", "phi3"];
 
 router.get("/ollama-status", async (_req, res) => {
   const timeoutMs = 8000;

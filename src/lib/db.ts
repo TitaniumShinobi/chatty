@@ -2,9 +2,13 @@
 // Uses better-sqlite3 (synchronous, zero-dependency native bindings)
 
 import Database from 'better-sqlite3';
+import fs from 'fs';
 import path from 'path';
+import { getChattyCliDbPath } from '../cli/paths.js';
 
-const DB_PATH = process.env.CHATTY_DB_PATH || path.resolve('./chatty.db');
+const DB_PATH = process.env.CHATTY_DB_PATH || getChattyCliDbPath();
+
+fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
 // `better-sqlite3` provides a synchronous constructor returning a Database
 // instance that already exposes `prepare().run/all/get` methods, so no custom

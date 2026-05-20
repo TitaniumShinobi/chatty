@@ -3,7 +3,7 @@
  */
 
 import type { EmotionalState, RelationalState } from '../character/types';
-import type { ToneLabel } from '../../../lib/toneDetector';
+import type { ToneLabel } from '../../lib/toneDetector';
 import type { PersonaSignal } from '../character/PersonaDetectionEngine';
 import type { ContextLock } from '../character/ContextLock';
 
@@ -309,4 +309,9 @@ export interface OrchestratedResponse {
   systemPrompt?: string;
   detectedPersona?: PersonaSignal;
   contextLock?: ContextLock | null;
+  personaFallback?: {
+    reason: 'blueprint_missing';
+    constructId: string;
+    callsign: string;
+  };
 }

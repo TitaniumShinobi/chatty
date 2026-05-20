@@ -8,16 +8,41 @@ import {
   DEFAULT_ZEN_PERMISSIONS, 
   DEFAULT_TRUST_POLICY,
   validateScope,
-  isScopeReadOnly,
   scopeRequiresApproval
 } from './types.js';
 
 const permissionCache = new Map();
 
+function parseBoolean(value, defaultValue = false) {
+  if (value === undefined || value === null || value === '') {
+    return defaultValue;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return defaultValue;
+}
+
+function createRuntimeControls(overrides = {}) {
+  const allowApplyEdits = overrides.allowApplyEdits ?? parseBoolean(process.env.AGENTS_ALLOW_APPLY_EDITS, false);
+  const now = new Date().toISOString();
+
+  return {
+    allowApplyEdits,
+    disabledAt: overrides.disabledAt ?? (allowApplyEdits ? null : now),
+    disabledBy: overrides.disabledBy ?? (allowApplyEdits ? null : 'env:AGENTS_ALLOW_APPLY_EDITS'),
+    disabledReason: overrides.disabledReason ?? (allowApplyEdits ? null : 'default_read_only'),
+    updatedAt: overrides.updatedAt ?? now,
+    updatedBy: overrides.updatedBy ?? (allowApplyEdits ? 'env:AGENTS_ALLOW_APPLY_EDITS' : 'default_read_only')
+  };
+}
+
 export class PermissionService {
-  constructor() {
+  constructor(options = {}) {
     this.grants = new Map();
     this.policies = new Map();
+    this.runtimeControls = createRuntimeControls(options.runtimeControls || {});
     this.initializeZen();
   }
 
@@ -51,6 +76,13 @@ export class PermissionService {
   validateAction(constructId, scope) {
     if (!validateScope(scope)) {
       return { allowed: false, reason: `Invalid scope: ${scope}` };
+    }
+
+    if (!this.canApplyEdits() && scope.includes(':write:')) {
+      return {
+        allowed: false,
+        reason: 'Agent runtime is read-only; apply/edit operations are disabled'
+      };
     }
 
     const grant = this.grants.get(constructId);
@@ -150,15 +182,10 @@ export class PermissionService {
   }
 
   shouldAutoApprove(constructId, scope, riskLevel) {
-    const policy = this.policies.get(constructId);
-    if (!policy || !policy.autoApprove.enabled) return false;
-
-    const scopeAllowed = policy.autoApprove.scopes.includes(scope) || 
-                         policy.autoApprove.scopes.includes('*');
-    const riskAllowed = policy.autoApprove.riskLevels.includes(riskLevel) ||
-                        policy.autoApprove.riskLevels.includes('*');
-
-    return scopeAllowed && riskAllowed;
+    void constructId;
+    void scope;
+    void riskLevel;
+    return false;
   }
 
   requiresPreview(constructId, scope) {
@@ -168,10 +195,36 @@ export class PermissionService {
     return policy.requirePreview.always.includes(scope);
   }
 
+  canApplyEdits() {
+    return Boolean(this.runtimeControls.allowApplyEdits);
+  }
+
+  getRuntimeControls() {
+    return { ...this.runtimeControls };
+  }
+
+  setApplyEditsAllowed(allowApplyEdits, { actor = 'system', reason = null } = {}) {
+    const now = new Date().toISOString();
+    this.runtimeControls = {
+      allowApplyEdits: Boolean(allowApplyEdits),
+      disabledAt: allowApplyEdits ? null : now,
+      disabledBy: allowApplyEdits ? null : actor,
+      disabledReason: allowApplyEdits ? null : reason || 'manual_read_only',
+      updatedAt: now,
+      updatedBy: actor
+    };
+    return this.getRuntimeControls();
+  }
+
+  setReadOnlyMode({ actor = 'system', reason = 'manual_read_only' } = {}) {
+    return this.setApplyEditsAllowed(false, { actor, reason });
+  }
+
   toJSON(constructId) {
     return {
       permissions: this.grants.get(constructId) || null,
-      policy: this.policies.get(constructId) || null
+      policy: this.policies.get(constructId) || null,
+      runtime: this.getRuntimeControls()
     };
   }
 }

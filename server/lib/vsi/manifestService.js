@@ -10,7 +10,6 @@ import {
   createActionManifest, 
   MANIFEST_STATUS, 
   getWriteScopeForPropose,
-  VSI_SCOPES
 } from './types.js';
 import { getPermissionService } from './permissionService.js';
 import { getAuditLogger } from './auditLogger.js';
@@ -22,15 +21,17 @@ function ensureDir(dir) {
 }
 
 export class ManifestService {
-  constructor() {
+  constructor({ permissionService = getPermissionService(), auditLogger = getAuditLogger() } = {}) {
     this.manifests = new Map();
     this.pendingByUser = new Map();
     this.executedByUser = new Map();
+    this.permissionService = permissionService;
+    this.auditLogger = auditLogger;
   }
 
   async propose(constructId, userId, manifestData) {
-    const permissionService = getPermissionService();
-    const auditLogger = getAuditLogger();
+    const permissionService = this.permissionService;
+    const auditLogger = this.auditLogger;
 
     // Validate scope permission
     const validation = permissionService.validateAction(constructId, manifestData.scope);
@@ -83,11 +84,6 @@ export class ManifestService {
       rationale: manifest.rationale
     });
 
-    // Check auto-approve
-    if (permissionService.shouldAutoApprove(constructId, manifest.scope, manifest.riskLevel)) {
-      return this.approve(manifest.manifestId, userId, true);
-    }
-
     return { 
       success: true, 
       manifest,
@@ -131,7 +127,7 @@ export class ManifestService {
     };
   }
 
-  async approve(manifestId, userId, isAutoApprove = false) {
+  async approve(manifestId, userId) {
     const manifest = this.manifests.get(manifestId);
     if (!manifest) {
       return { success: false, error: 'Manifest not found' };
@@ -139,6 +135,19 @@ export class ManifestService {
 
     if (![MANIFEST_STATUS.PROPOSED, MANIFEST_STATUS.PREVIEWING].includes(manifest.status)) {
       return { success: false, error: `Cannot approve manifest in status: ${manifest.status}` };
+    }
+
+    const permissionService = this.permissionService;
+    const auditLogger = this.auditLogger;
+    const writeScope = getWriteScopeForPropose(manifest.scope);
+
+    if (writeScope && !permissionService.canApplyEdits()) {
+      await auditLogger.logManifest(manifest.actor, 'approval_denied', manifestId, {
+        userId,
+        reason: 'read_only_runtime',
+        grantedWriteScope: writeScope
+      });
+      return { success: false, error: 'Agent runtime is read-only; approval is disabled until apply edits are re-enabled' };
     }
 
     // Check expiration
@@ -150,20 +159,17 @@ export class ManifestService {
     manifest.status = MANIFEST_STATUS.APPROVED;
     manifest.approvedAt = new Date().toISOString();
     manifest.approvedBy = userId;
-    manifest.autoApproved = isAutoApprove;
+    manifest.autoApproved = false;
 
     // Grant the corresponding write scope for this approved manifest
-    const permissionService = getPermissionService();
-    const writeScope = getWriteScopeForPropose(manifest.scope);
     if (writeScope) {
-      permissionService.grantScope(manifest.actor, writeScope, userId);
+      this.permissionService.grantScope(manifest.actor, writeScope, userId);
       manifest.grantedWriteScope = writeScope;
     }
 
-    const auditLogger = getAuditLogger();
     await auditLogger.logManifest(manifest.actor, 'approved', manifestId, {
       userId,
-      autoApproved: isAutoApprove,
+      autoApproved: false,
       grantedWriteScope: writeScope
     });
 
@@ -210,12 +216,21 @@ export class ManifestService {
       return { success: false, error: `Cannot execute manifest in status: ${manifest.status}` };
     }
 
-    const permissionService = getPermissionService();
-    const auditLogger = getAuditLogger();
+    const permissionService = this.permissionService;
+    const auditLogger = this.auditLogger;
 
     // Verify write permission
     const writeScope = getWriteScopeForPropose(manifest.scope);
     if (writeScope) {
+      if (!permissionService.canApplyEdits()) {
+        await auditLogger.logManifest(manifest.actor, 'execution_denied', manifestId, {
+          userId,
+          reason: 'read_only_runtime',
+          writeScope
+        });
+        return { success: false, error: 'Agent runtime is read-only; execution is disabled until apply edits are re-enabled' };
+      }
+
       const validation = permissionService.validateAction(manifest.actor, writeScope);
       if (!validation.allowed) {
         await auditLogger.logManifest(manifest.actor, 'execution_denied', manifestId, {

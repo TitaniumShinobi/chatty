@@ -132,6 +132,13 @@ function computeRankedScore(hit, activeConstructId) {
   };
 }
 
+function hasSemanticReceipt(hit) {
+  return typeof hit?.source_file === 'string' &&
+    hit.source_file.trim().length > 0 &&
+    typeof hit?.content === 'string' &&
+    hit.content.trim().length > 0;
+}
+
 function trackInjectedMemory(id) {
   if (!id) return;
   recentlyInjectedIds.set(id, Date.now());
@@ -168,11 +175,10 @@ export async function retrieveSemanticMemories(query, userId, constructId, match
       .map(hit => computeRankedScore(hit, constructId))
       .sort((a, b) => b.finalScore - a.finalScore);
 
-    let filtered = ranked.filter(hit => hit.confidence >= 0.40);
+    let filtered = ranked.filter(hit => hit.confidence >= 0.40 && hasSemanticReceipt(hit));
 
     if (filtered.length === 0 && ranked.length > 0) {
-      filtered = ranked.slice(0, Math.min(3, matchCount));
-      console.log(`⚠️ [EmbeddingService] No hits above confidence 0.40, using top ${filtered.length} by score (adaptive fallback)`);
+      console.log(`⚠️ [EmbeddingService] Semantic hits found but none had confidence >= 0.40 plus source_file/content receipts; returning no recall evidence`);
     }
 
     const selected = filtered.slice(0, matchCount);

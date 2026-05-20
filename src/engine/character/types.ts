@@ -112,3 +112,14 @@ export interface SessionBridge {
   continuityMarkers: string[];
 }
 
+export interface ConversationContext {
+  userMessage?: string;
+  conversationHistory?: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp?: number;
+  }>;
+  conversationStart?: boolean;
+  conversationEnd?: boolean;
+  topicShift?: boolean;
+}

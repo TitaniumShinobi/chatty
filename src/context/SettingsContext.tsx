@@ -19,7 +19,23 @@ const DEFAULT_PERSONALIZATION: PersonalizationSettings = {
   nickname: '',
   occupation: '',
   tags: [],
-  aboutYou: ''
+  aboutYou: '',
+  baseStyleTone: 'Default',
+  warm: 'Default',
+  enthusiastic: 'Default',
+  headersLists: 'Default',
+  emojis: 'Default',
+  customInstructions: '',
+  referenceSavedMemories: false,
+  referenceBrowserMemories: false,
+  referenceChatHistory: false,
+  recordHistory: false,
+  webSearch: false,
+  code: false,
+  canvas: false,
+  chattyVoice: false,
+  advancedVoice: false,
+  connectorSearch: false
 };
 
 const DEFAULT_NOTIFICATIONS: NotificationSettings = {
@@ -36,6 +52,8 @@ const DEFAULT_GENERAL: GeneralSettings = {
   language: 'Auto-detect',
   spokenLanguage: 'Auto-detect',
   voice: 'Maple',
+  zenVoice: 'zen_primary',
+  linVoice: 'lin_primary',
   showAdditionalModels: true
 };
 
@@ -114,6 +132,23 @@ const DEFAULT_SETTINGS: ChattySettings = {
 
 const STORAGE_KEY = "chatty_settings_v2";
 
+function deepMergeGeneral(parsed: Partial<GeneralSettings> | undefined): GeneralSettings {
+  const merged = { ...DEFAULT_GENERAL, ...parsed } as GeneralSettings;
+  if (typeof parsed?.voice === 'string' && parsed.voice !== '' && parsed.zenVoice === undefined && parsed.linVoice === undefined) {
+    merged.zenVoice = parsed.voice;
+    merged.linVoice = parsed.voice;
+  }
+  return merged;
+}
+
+function deepMergePersonalization(parsed: Partial<PersonalizationSettings> | undefined): PersonalizationSettings {
+  const merged = { ...DEFAULT_PERSONALIZATION, ...parsed } as PersonalizationSettings;
+  if (parsed?.allowMemory === true && merged.referenceSavedMemories === false && merged.referenceBrowserMemories === false && merged.referenceChatHistory === false) {
+    merged.referenceSavedMemories = true;
+  }
+  return merged;
+}
+
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
 export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -126,8 +161,13 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        // Merge with defaults to handle new settings
-        setSettings({ ...DEFAULT_SETTINGS, ...parsed });
+        const next: ChattySettings = {
+          ...DEFAULT_SETTINGS,
+          ...parsed,
+          general: deepMergeGeneral(parsed?.general),
+          personalization: deepMergePersonalization(parsed?.personalization)
+        };
+        setSettings(next);
       }
     } catch (error) {
       console.warn('Failed to load settings from localStorage:', error);
@@ -235,7 +275,13 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const importSettings = useCallback((jsonData: string) => {
     try {
       const imported = JSON.parse(jsonData);
-      setSettings({ ...DEFAULT_SETTINGS, ...imported });
+      const next: ChattySettings = {
+        ...DEFAULT_SETTINGS,
+        ...imported,
+        general: deepMergeGeneral(imported?.general),
+        personalization: deepMergePersonalization(imported?.personalization)
+      };
+      setSettings(next);
       return true;
     } catch (error) {
       console.error('Failed to import settings:', error);

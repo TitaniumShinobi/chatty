@@ -24,6 +24,7 @@ const FinancePage: React.FC = () => {
   const handleAppClick = (app: FinanceApp) => {
     navigate(app.route);
   };
+  const hasFinanceApps = apps.length > 0;
 
   return (
     <div
@@ -59,16 +60,34 @@ const FinancePage: React.FC = () => {
                     Connect your trading accounts, view real-time analytics, and
                     get AI-powered insights to improve your trading performance.
                   </p>
-                  <button
-                    onClick={() => navigate('/app/finance/fxshinobi')}
-                    className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                    style={{
-                      backgroundColor: 'white',
-                      color: '#059669',
-                    }}
-                  >
-                    Open FXShinobi Dashboard
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    {hasFinanceApps ? (
+                      apps.slice(0, 2).map((app) => (
+                        <button
+                          key={app.id}
+                          onClick={() => handleAppClick(app)}
+                          className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                          style={{
+                            backgroundColor: 'white',
+                            color: '#059669',
+                          }}
+                        >
+                          Open {app.name}
+                        </button>
+                      ))
+                    ) : (
+                      <button
+                        disabled
+                        className="px-4 py-2 rounded-lg text-sm font-medium opacity-60 cursor-not-allowed"
+                        style={{
+                          backgroundColor: '#d1d5db',
+                          color: '#374151',
+                        }}
+                      >
+                        No finance apps enabled
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <TrendingUp size={48} className="text-white/30" />
               </div>
@@ -158,18 +177,6 @@ const FinancePage: React.FC = () => {
                   <ChevronRight size={20} className="opacity-50 flex-shrink-0" />
                 </button>
               ))}
-
-              <div
-                className="flex items-center justify-center p-6 rounded-xl border-2 border-dashed opacity-50"
-                style={{
-                  borderColor: 'var(--chatty-border)',
-                }}
-              >
-                <div className="text-center">
-                  <Plus size={24} className="mx-auto mb-2" />
-                  <p className="text-sm">More integrations coming soon</p>
-                </div>
-              </div>
             </div>
           </div>
 

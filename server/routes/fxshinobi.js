@@ -9,8 +9,7 @@ const VVAULT_SERVICE_TOKEN = process.env.VVAULT_SERVICE_TOKEN || '';
 
 function normalizeFxBase(base) {
   // Allow either:
-  // - https://fxshinobi.thewreck.org
-  // - https://fxshinobi.thewreck.org/api
+  // - FXSHINOBI_API_BASE_URL (with or without /api)
   // Internally we want the origin (no trailing /api).
   if (!base) return '';
   let b = String(base).trim().replace(/\/+$/, '');

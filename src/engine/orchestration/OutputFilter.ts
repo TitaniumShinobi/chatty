@@ -199,7 +199,7 @@ export class OutputFilter {
     /**
      * Main entry point: Process output
      */
-    public static processOutput(text: string): OutputAnalysis {
+    public static processOutput(text: string, constructId?: string): OutputAnalysis {
         const original = text;
         let current = text;
 
@@ -216,6 +216,22 @@ export class OutputFilter {
 
         // 2. Strip leaks
         current = this.stripNarratorLeak(current);
+
+        if (constructId && constructId.toLowerCase().includes('zen')) {
+            const pluralLeak = /(we|our|us) (are|will|can)/i.test(current) && current.toLowerCase().includes('model');
+            const missingZen = !current.toLowerCase().includes('zen');
+            const missingVSI = !current.toLowerCase().includes('vsi');
+            const missingLegal = !current.includes('VBEA') || !current.includes('WRECK') || !current.includes('NRCL') || !current.includes('EECCD');
+
+            if (pluralLeak || (missingZen && missingVSI) || missingLegal) {
+                return {
+                    cleanedText: current,
+                    wasfiltered: false,
+                    driftDetected: true,
+                    driftReason: '[ZenGuard] Identity or legal markers missing (VSI/legal/plural leak)'
+                };
+            }
+        }
 
         return {
             cleanedText: current,

@@ -6,6 +6,39 @@ jest.mock('../../lib/browserSeatRunner', () => ({
   getSeatRole: jest.fn()
 }), { virtual: true });
 
+jest.mock('../seatRunner', () => ({
+  runSeat: jest.fn(),
+  loadSeatConfig: jest.fn().mockResolvedValue({
+    coding: { tag: 'ollama:qwen3-coder:30b', role: 'Intelligence' },
+    creative: { tag: 'ollama:mistral-small3.2:24b', role: 'creative' },
+    smalltalk: { tag: 'ollama:phi4-mini:latest', role: 'smalltalk' },
+  }),
+  getSeatRole: jest.fn((seat: string) => seat),
+}));
+
+jest.mock('../../lib/orchestration/triad_sanity_check', () => ({
+  triadSanityCheck: jest.fn().mockResolvedValue({ failedSeats: [] }),
+  routeToLinRecovery: jest.fn(),
+  logTriadLineage: jest.fn(),
+}));
+
+jest.mock('../orchestration/OutputFilter', () => ({
+  OutputFilter: {
+    processOutput: jest.fn((text: string) => ({
+      cleanedText: text,
+      wasfiltered: false,
+      driftDetected: false,
+      driftReason: null,
+    })),
+  },
+}));
+
+jest.mock('../characterLogic', () => ({
+  applyConversationalLogic: jest.fn().mockResolvedValue({
+    postProcessHooks: [],
+  }),
+}));
+
 // Mock other dependencies that use .js extensions causing resolution issues
 jest.mock('../toneModulation.js', () => ({
   ToneModulator: jest.fn().mockImplementation(() => ({
@@ -51,7 +84,7 @@ describe('OptimizedZenProcessor identity wiring', () => {
 
     const identity = {
       prompt: 'YOU ARE ZEN TEST PROMPT',
-      conditioning: 'Stay concise. Mention your model ensemble: DeepSeek, Phi3, Mistral.'
+      conditioning: 'Stay concise. Model seats are routing preferences, not Zen identity.'
     }
 
     await processor.processMessage('Who are you?', [], 'tester', identity)
@@ -63,8 +96,7 @@ describe('OptimizedZenProcessor identity wiring', () => {
     })
 
     const finalPrompt = processor.capturedPrompts[processor.capturedPrompts.length - 1]
-    expect(finalPrompt).toContain('DeepSeek')
-    expect(finalPrompt).toContain('Phi3')
-    expect(finalPrompt).toContain('Mistral')
-  })
+    expect(finalPrompt).toContain('Model seats are routing preferences')
+    expect(finalPrompt).not.toContain('Mention your model ensemble')
+  }, 15000)
 })

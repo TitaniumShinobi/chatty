@@ -83,7 +83,7 @@ export async function processConversationsHtml(
 
     // Detect construct name from conversation context (like ContinuityGPT)
     // Use first conversation to detect name, or scan all if needed
-    // Extract email handle from userEmail for fallback format (e.g., "devon" from "devon@thewreck.org")
+    // Extract email handle from userEmail for fallback format (e.g., "user" from "user@example.com")
     const emailHandle = context.userEmail?.split('@')[0] || null;
     let detectedConstructName = context.constructId || buildDefaultInstanceId(context.source || 'chatgpt', emailHandle); // Start with provided constructId
     
@@ -137,7 +137,8 @@ export async function processConversationsHtml(
         const { filename: templateFilename, content, conversationId } = await convertToMarkdown(parsed, importMeta);
 
         const { yearSegment, monthSegment } = determineDateSegments(parsed);
-        const relativeSubdir = path.join(yearSegment, monthSegment);
+        const providerSource = normalizeProviderSource(context.source || 'chatgpt');
+        const relativeSubdir = path.join(providerSource, yearSegment, monthSegment);
         const customFileName = buildConversationFileName(importMeta.conversationTitle, conversationId);
 
         // Write file
@@ -246,6 +247,29 @@ function buildDefaultInstanceId(source: string, emailHandle?: string | null): st
     }
   }
   return provider;
+}
+
+function normalizeProviderSource(source: string): string {
+  const cleaned = String(source || '')
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\/+|\/+$/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9._-]/g, '');
+  if (!cleaned || ['transcripts', 'other', 'unknown'].includes(cleaned)) {
+    return 'review_required';
+  }
+  if (['character_ai', 'character-ai', 'character'].includes(cleaned)) {
+    return 'character.ai';
+  }
+  if (['chat_gpt', 'chat-gpt'].includes(cleaned)) {
+    return 'chatgpt';
+  }
+  if (['github-copilot', 'github_copilot', 'copilot'].includes(cleaned)) {
+    return 'github_copilot';
+  }
+  return cleaned;
 }
 
 function sanitizeInstanceId(value?: string | null): string {

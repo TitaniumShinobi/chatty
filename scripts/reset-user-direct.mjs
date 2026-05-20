@@ -7,8 +7,8 @@
 
 import { MongoClient } from 'mongodb';
 
-const MONGODB_URI = 'mongodb+srv://dwoodson92_db_user:36f663a227926983c99b7f1e1eaa539c@chatty.obnxwcm.mongodb.net/?retryWrites=true&w=majority&appName=Chatty';
-const TARGET_EMAIL = 'dwoodson92@gmail.com';
+const MONGODB_URI = process.env.MONGODB_URI || '';
+const TARGET_EMAIL = process.env.TARGET_EMAIL || process.env.CHATTY_TEST_EMAIL || '';
 
 async function resetUserDirectly() {
   let client;
@@ -97,7 +97,7 @@ console.log('');
 resetUserDirectly().then(() => {
   console.log('');
   console.log('🎉 Reset process completed!');
-  console.log('💡 You can now test the complete signup flow with dwoodson92@gmail.com');
+  console.log(`💡 You can now test the complete signup flow with ${TARGET_EMAIL}`);
   console.log('📱 The phone verification modal should appear after signup');
 }).catch(error => {
   console.error('💥 Reset failed:', error);

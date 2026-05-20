@@ -1,0 +1,8 @@
+{
+  "conversation": "ollama:phi4-mini:latest",
+  "smalltalk": "ollama:phi4-mini:latest",
+  "creative": "ollama:mistral-small3.2:24b",
+  "coding": "ollama:qwen3-coder:30b",
+  "intelligence": "ollama:qwen3-coder:30b",
+  "codingFallback": "ollama:qwen3-coder:30b"
+}

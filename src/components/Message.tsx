@@ -5,6 +5,7 @@ import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
+import { slashKeys } from "../lib/commands";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import {
@@ -16,12 +17,17 @@ import {
   FileCode,
   ExternalLink,
   Globe,
+  Volume2,
 } from "lucide-react";
 import { MessageProps, Attachment } from "../types";
 import { formatDate } from "../lib/utils";
 import { cn } from "../lib/utils";
 import { R } from "../runtime/render";
 import AttachmentDisplay from "./AttachmentDisplay";
+import { isBrowserTtsAvailable, speakBrowser, speakPremium, getSavedTtsConfig, getResolvedTtsForPlayback } from "../lib/tts";
+import { toSpokenVariant } from "../lib/spokenVariant";
+import { useSettings } from "../context/SettingsContext";
+import { useTtsPlayback } from "../context/TtsPlaybackContext";
 
 interface SourceInfo {
   index: number;
@@ -55,31 +61,22 @@ function extractSources(content: string): { cleanContent: string; sources: Sourc
   return { cleanContent, sources };
 }
 
-const MessageComponent: React.FC<MessageProps> = ({ message }) => {
-  const [copiedCode, setCopiedCode] = React.useState<string | null>(null);
+/** Get plain text for TTS from message (string content or answer.v1 packets). */
+function getMessageTextForTts(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((p: any) => p?.op === 'answer.v1' && p?.payload?.content)
+    .map((p: any) => String(p.payload.content))
+    .join('\n');
+}
 
-  // Handle typing indicator
-  if ((message as any).typing) {
-    return (
-      <div className="flex items-start gap-3 p-4 bg-app-chat-50 rounded-lg">
-        <div className="w-8 h-8 rounded-full bg-app-green-600 flex items-center justify-center flex-shrink-0">
-          <span className="text-app-text-900 text-sm font-bold">AI</span>
-        </div>
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <div className="flex space-x-1">
-              <div className="typing-indicator"></div>
-              <div className="typing-indicator"></div>
-              <div className="typing-indicator"></div>
-            </div>
-            <span className="text-app-text-800 text-sm">
-              {(message as any).text || "AI is thinking..."}
-            </span>
-          </div>
-        </div>
-      </div>
-    );
-  }
+const MessageComponent: React.FC<MessageProps> = ({ message, sessionStartMs, latestAssistantMessageId, threadId, onMarkSpoken }) => {
+  const [copiedCode, setCopiedCode] = React.useState<string | null>(null);
+  const isUser = message.role === "user";
+  const playedMessageIdsRef = React.useRef<Set<string>>(new Set());
+  const { settings } = useSettings();
+  const { setTtsPlaying, setCurrentAudioElement } = useTtsPlayback();
 
   const contentString =
     typeof message.content === "string" ? message.content : "";
@@ -113,8 +110,137 @@ const MessageComponent: React.FC<MessageProps> = ({ message }) => {
     }
   };
 
-  const isUser = message.role === "user";
   const isUnsaved = Boolean((message as any)?.metadata?.unsaved);
+
+  React.useEffect(() => {
+    // Auto-play assistant messages only for newest assistant message in current session
+    try {
+      if (!message || message.role === 'user') return;
+      const genericConfig = getSavedTtsConfig();
+      const resolved = getResolvedTtsForPlayback(threadId ?? undefined, settings.general, genericConfig);
+      if (!resolved.enabled) return;
+
+      // Derive message time (ms)
+      const messageTime = message.timestamp ? new Date(message.timestamp).getTime() : (typeof (message as any).ts === 'number' ? (message as any).ts : 0);
+
+      const isNewInSession = typeof sessionStartMs === 'number' ? messageTime >= sessionStartMs : false;
+      const isNewestAssistant = latestAssistantMessageId != null ? message.id === latestAssistantMessageId : false;
+      const alreadyPlayed = playedMessageIdsRef.current.has(message.id);
+
+      if (!isNewInSession || !isNewestAssistant || alreadyPlayed) return;
+
+      const rawText = getMessageTextForTts(message.content);
+      if (!rawText.trim()) return;
+      const storedSpeech = (message as any).metadata?.speechText;
+      const toSpeak =
+        (typeof storedSpeech === "string" && storedSpeech.trim())
+          ? storedSpeech.trim()
+          : toSpokenVariant(rawText) || rawText;
+
+      // Mark as played immediately to guard against duplicate playback on re-renders
+      playedMessageIdsRef.current.add(message.id);
+
+      const markSpokenOnSuccess = (success: boolean) => {
+        setTtsPlaying(false);
+        if (success && onMarkSpoken) {
+          onMarkSpoken(message.id, {
+            outputMode: "voice",
+            speechText: toSpeak || undefined,
+            voiceReply: true,
+          });
+        }
+      };
+
+      setTtsPlaying(true);
+      if (resolved.provider === "browser" && isBrowserTtsAvailable()) {
+        speakBrowser(toSpeak, { voiceName: resolved.voiceName })
+          .then(() => markSpokenOnSuccess(true))
+          .catch(() => markSpokenOnSuccess(false));
+      } else {
+        speakPremium(toSpeak, {
+          voice: resolved.voiceName,
+          threadId,
+          style: resolved.style,
+          speechProfile: resolved.speechProfile,
+          onAudioElement: (el) => setCurrentAudioElement(el ?? null),
+        })
+          .then(() => markSpokenOnSuccess(true))
+          .catch(() => markSpokenOnSuccess(false));
+      }
+    } catch (err) {
+      console.warn("TTS error", err);
+      setTtsPlaying(false);
+    }
+  }, [message?.id, message?.content, latestAssistantMessageId, sessionStartMs, threadId, settings.general.zenVoice, settings.general.linVoice, setTtsPlaying, setCurrentAudioElement, onMarkSpoken]);
+
+  // Handle typing indicator
+  if ((message as any).typing) {
+    return (
+      <div className="flex items-start gap-3 p-4 bg-app-chat-50 rounded-lg">
+        <div className="w-8 h-8 rounded-full bg-app-green-600 flex items-center justify-center flex-shrink-0">
+          <span className="text-app-text-900 text-sm font-bold">AI</span>
+        </div>
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <div className="flex space-x-1">
+              <div className="typing-indicator"></div>
+              <div className="typing-indicator"></div>
+              <div className="typing-indicator"></div>
+            </div>
+            <span className="text-app-text-800 text-sm">
+              {(message as any).text || "AI is thinking..."}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // System receipt: small chip with optional status (pending/ok/error/blocked)
+  if (message.role === "system") {
+    const text =
+      (typeof message.content === "string"
+        ? message.content
+        : (message as any).text) ?? "";
+    const status = (message as any).status as
+      | "pending"
+      | "ok"
+      | "error"
+      | "blocked"
+      | undefined;
+    return (
+      <div
+        className="py-1 px-4 text-left flex items-center gap-1.5"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {status === "pending" && (
+          <span
+            className="inline-block w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin"
+            style={{ color: "var(--chatty-text)", opacity: 0.5 }}
+            aria-hidden="true"
+          />
+        )}
+        <span
+          className="text-xs"
+          style={{
+            color:
+              status === "ok"
+                ? "var(--chatty-success, #22c55e)"
+                : status === "error"
+                ? "var(--chatty-error, #ef4444)"
+                : status === "blocked"
+                ? "var(--chatty-warning, #f59e0b)"
+                : "var(--chatty-text)",
+            opacity: status ? 1 : 0.7,
+          }}
+        >
+          {text}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -181,11 +307,9 @@ const MessageComponent: React.FC<MessageProps> = ({ message }) => {
               remarkPlugins={[remarkBreaks, remarkMath]}
               rehypePlugins={[rehypeKatex]}
               components={{
-                // Code blocks with syntax highlighting
                 code({ node, inline, className, children, ...props }) {
                   const match = /language-(\w+)/.exec(className || "");
                   const code = String(children).replace(/\n$/, "");
-
                   if (!inline && match) {
                     const { ref: _unusedRef, node, ...rest } = props as any;
                     const lang = match[1];
@@ -227,7 +351,6 @@ const MessageComponent: React.FC<MessageProps> = ({ message }) => {
                       </div>
                     );
                   }
-
                   // Inline code
                   return (
                     <code className="bg-app-orange-600 px-1 py-0.5 rounded text-sm font-mono">
@@ -235,78 +358,22 @@ const MessageComponent: React.FC<MessageProps> = ({ message }) => {
                     </code>
                   );
                 },
-
-                // Headers
-                h1: ({ children }) => (
-                  <h1 className="text-2xl font-bold mb-4 text-app-text-900">
-                    {children}
-                  </h1>
-                ),
-                h2: ({ children }) => (
-                  <h2 className="text-xl font-bold mb-3 text-app-text-900">
-                    {children}
-                  </h2>
-                ),
-                h3: ({ children }) => (
-                  <h3 className="text-lg font-bold mb-2 text-app-text-900">
-                    {children}
-                  </h3>
-                ),
-
-                // Lists
-                ul: ({ children }) => (
-                  <ul className="list-disc list-inside mb-4 space-y-1">
-                    {children}
-                  </ul>
-                ),
-                ol: ({ children }) => (
-                  <ol className="list-decimal list-inside mb-4 space-y-1">
-                    {children}
-                  </ol>
-                ),
-
-                // Links
-                a: ({ href, children }) => (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-app-text-800 hover:text-app-text-700 underline"
-                  >
-                    {children}
-                  </a>
-                ),
-
-                // Blockquotes
-                blockquote: ({ children }) => (
-                  <blockquote className="border-l-4 border-app-orange-500 pl-4 italic text-app-text-800 mb-4">
-                    {children}
-                  </blockquote>
-                ),
-
-                // Tables
-                table: ({ children }) => (
-                  <div className="overflow-x-auto mb-4">
-                    <table className="min-w-full border-collapse border border-app-orange-600">
-                      {children}
-                    </table>
-                  </div>
-                ),
-                th: ({ children }) => (
-                  <th className="border border-app-orange-600 px-3 py-2 bg-app-chat-50 text-left font-semibold">
-                    {children}
-                  </th>
-                ),
-                td: ({ children }) => (
-                  <td className="border border-app-orange-600 px-3 py-2">
-                    {children}
-                  </td>
-                ),
-
-                // Paragraphs
-                p: ({ children }) => (
-                  <p className="mb-4 leading-relaxed">{children}</p>
-                ),
+                p: ({ children }) => {
+                  // Centralized slash-command styling
+                  const text = Array.isArray(children) ? children.map(String).join("") : String(children);
+                  for (const cmd of slashKeys) {
+                    if (text.startsWith(cmd)) {
+                      const rest = text.slice(cmd.length);
+                      return (
+                        <div className="mb-4 leading-relaxed">
+                          <span className="text-blue-400">{cmd}</span>{rest}
+                        </div>
+                      );
+                    }
+                  }
+                  return <div className="mb-4 leading-relaxed">{children}</div>;
+                },
+                // ...existing code...
               }}
               className="text-app-text-900"
             >
@@ -355,6 +422,14 @@ const MessageComponent: React.FC<MessageProps> = ({ message }) => {
             <span className="ml-2 text-red-400 font-semibold">[unsaved]</span>
           )}
         </div>
+
+        {/* Voice reply badge (assistant messages that were spoken in voice mode) */}
+        {!isUser && ((message as any).metadata?.outputMode === "voice" || (message as any).metadata?.voiceReply) && (
+          <div className="flex items-center gap-1.5 text-xs mt-1 text-app-text-800 opacity-75">
+            <Volume2 size={12} />
+            <span>Spoken</span>
+          </div>
+        )}
 
         {/* Tool Trace Pills (server-authored, assistant messages only) */}
         {!isUser && Array.isArray((message as any)?.metadata?.tool_trace) && (message as any).metadata.tool_trace.length > 0 && (

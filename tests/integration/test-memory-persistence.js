@@ -10,6 +10,8 @@
 import { getMemoryStore } from './src/lib/MemoryStore.ts';
 import { getVVAULTTranscriptLoader } from './src/lib/VVAULTTranscriptLoader.ts';
 
+const TEST_USER_ID = process.env.CHATTY_TEST_USER_ID || process.env.VVAULT_USER_ID || 'devon_woodson_1774390416168';
+
 async function testMemoryPersistence() {
   console.log('🧪 Memory Persistence Validation Test');
   console.log('=====================================\n');
@@ -23,7 +25,7 @@ async function testMemoryPersistence() {
     await memoryStore.initialize();
     
     // Store test data
-    const userId = 'devon_woodson_1762969514958';
+    const userId = TEST_USER_ID;
     const gptId = 'katana-001';
     
     await memoryStore.persistMessage(userId, gptId, 'Test user message', 'user');

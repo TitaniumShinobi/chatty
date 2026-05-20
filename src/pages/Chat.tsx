@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import * as React from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate, useOutletContext } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -13,6 +14,7 @@ import { VVAULTConversationManager } from "../lib/vvaultConversationManager";
 import { getUserId } from "../lib/auth";
 import MessageBar, { ImageAttachment } from "../components/MessageBar";
 import { prepareMessageContent, stripDateLines } from "../utils/text";
+import { isAddressBookConstructVisible } from "../lib/addressBookContacts";
 const GPTCreator = React.lazy(() => import("../components/GPTCreator"));
 const Mirror = React.lazy(() => import("../components/Mirror"));
 const MirrorSetup = React.lazy(() => import("../components/MirrorSetup"));
@@ -22,12 +24,13 @@ import type { GPTConfig } from "../lib/gptService";
 
 type Message = {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   text?: string;
   packets?: import("../types").AssistantPacket[];
   ts: number;
   files?: { name: string; size: number }[];
   typing?: boolean; // For typing indicators
+  status?: string;
 };
 
 type Thread = {
@@ -46,6 +49,56 @@ type Thread = {
 // e.g., "November 20, 2025", "## December 12, 2025", "### december 13 2025"
 const DATE_HEADER_PATTERN = /^#{0,6}\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\s*$/i;
 
+const assistantCodeStyles = `
+  .assistant-code-scope,
+  .assistant-code-scope * {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent;
+  }
+  .assistant-code-scope pre {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: pre !important;
+    word-break: normal !important;
+    overflow-wrap: normal !important;
+    word-wrap: normal !important;
+    background: #2d2d2d;
+    color: #fffff0;
+    border-radius: 12px;
+    padding: 12px;
+    margin: 12px 0;
+    font-size: 15px;
+    line-height: 1.45;
+  }
+  .assistant-code-scope code {
+    white-space: pre !important;
+    word-break: normal !important;
+    overflow-wrap: normal !important;
+    word-wrap: normal !important;
+    background: transparent;
+  }
+  .assistant-code-scope pre::-webkit-scrollbar {
+    height: 10px;
+  }
+  .assistant-code-scope pre::-webkit-scrollbar-track {
+    background: #2d2d2d;
+    border-radius: 12px;
+  }
+  .assistant-code-scope pre::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.25);
+    border-radius: 12px;
+  }
+  .assistant-code-scope pre::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.35);
+  }
+`;
+
 // Check if a message is a date header (by flag OR by content pattern)
 function isDateHeaderMessage(msg: any): boolean {
   // Priority 1: Explicit flag from server/parser
@@ -61,6 +114,402 @@ function isDateHeaderMessage(msg: any): boolean {
   if (text.length > 40) return false;
 
   return DATE_HEADER_PATTERN.test(text);
+}
+
+function isCanonicalSelfThreadId(threadId?: string | null): boolean {
+  return typeof threadId === "string" && /^([a-z0-9-]+)_chat_with_\1$/i.test(threadId);
+}
+
+type ChatRouteClassification = {
+  threadId: string | null;
+  constructId: string | null;
+  displayName: string | null;
+  kind: "system" | "address-book-contact" | "custom-gpt" | "non-canonical";
+  isCanonical: boolean;
+  isSystem: boolean;
+  isAddressBookContact: boolean;
+  isCustomGPT: boolean;
+  isZen: boolean;
+  isLin: boolean;
+  isVal: boolean;
+};
+
+const SYSTEM_CANONICAL_CONSTRUCT_NAMES: Record<string, string> = {
+  "zen-001": "Zen",
+  "lin-001": "Lin",
+  "val-001": "Val",
+};
+
+function formatConstructDisplayName(constructId: string): string {
+  const base = constructId.replace(/-\d+$/i, "");
+  return base.charAt(0).toUpperCase() + base.slice(1);
+}
+
+export function classifyChatRouteThread(
+  threadId?: string | null,
+): ChatRouteClassification {
+  if (!threadId || !threadId.includes("_chat_with_")) {
+    return {
+      threadId: threadId || null,
+      constructId: null,
+      displayName: null,
+      kind: "non-canonical",
+      isCanonical: false,
+      isSystem: false,
+      isAddressBookContact: false,
+      isCustomGPT: false,
+      isZen: false,
+      isLin: false,
+      isVal: false,
+    };
+  }
+
+  const constructId = threadId.split("_chat_with_")[0]?.trim().toLowerCase() || null;
+  if (!constructId) {
+    return {
+      threadId,
+      constructId: null,
+      displayName: null,
+      kind: "non-canonical",
+      isCanonical: false,
+      isSystem: false,
+      isAddressBookContact: false,
+      isCustomGPT: false,
+      isZen: false,
+      isLin: false,
+      isVal: false,
+    };
+  }
+
+  const systemName = SYSTEM_CANONICAL_CONSTRUCT_NAMES[constructId] || null;
+  const isSystem = Boolean(systemName);
+  const isAddressBookContact = isAddressBookConstructVisible(constructId);
+  const kind = isSystem
+    ? "system"
+    : isAddressBookContact
+      ? "address-book-contact"
+      : "custom-gpt";
+
+  return {
+    threadId,
+    constructId,
+    displayName: systemName || formatConstructDisplayName(constructId),
+    kind,
+    isCanonical: true,
+    isSystem,
+    isAddressBookContact,
+    isCustomGPT: kind === "custom-gpt",
+    isZen: constructId === "zen-001",
+    isLin: constructId === "lin-001",
+    isVal: constructId === "val-001",
+  };
+}
+
+export function canSendOnActiveThread({
+  activeThreadHydration,
+  thread,
+  routeThreadId,
+}: {
+  activeThreadHydration?:
+    | {
+        status?: string | null;
+        hydrationSource?: string | null;
+        hydrationComplete?: boolean;
+      }
+    | null
+    | undefined;
+  thread?:
+    | {
+        id?: string;
+        isIndexHydrated?: boolean;
+        messages?: { length: number };
+      }
+    | null
+    | undefined;
+  routeThreadId?: string | null;
+}): boolean {
+  if (!thread) {
+    return false;
+  }
+
+  const routeClassification = classifyChatRouteThread(routeThreadId || thread.id);
+
+  // Allow sending on fresh canonical threads with no messages yet.
+  // These are threads created by startConversationWithConstruct that
+  // haven't had their first message sent. Without this, reloadThreadMessages
+  // fetches an empty VVAULT transcript and sets isIndexHydrated=true,
+  // permanently deadlocking the composer.
+  const emptyCanonical =
+    routeClassification.isCanonical &&
+    (thread.messages?.length ?? 0) === 0;
+  if (emptyCanonical) {
+    return true;
+  }
+
+  if (thread.isIndexHydrated === true) {
+    return false;
+  }
+
+  if (!routeClassification.isCanonical) {
+    return true;
+  }
+
+  return (
+    activeThreadHydration?.status === "ready" &&
+    activeThreadHydration?.hydrationSource === "full" &&
+    activeThreadHydration?.hydrationComplete === true
+  );
+}
+
+function isImportedSeatValue(value: unknown): boolean {
+  return typeof value === "string" && value.trim().toLowerCase() === "codex";
+}
+
+function formatMessageTimestamp(ts: number): string {
+  const date = new Date(ts);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const messageDate = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  );
+
+  // If today, show just time
+  if (messageDate.getTime() === today.getTime()) {
+    return date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  }
+
+  // If yesterday
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (messageDate.getTime() === yesterday.getTime()) {
+    return `Yesterday ${date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}`;
+  }
+
+  // If this week, show day and time
+  const daysDiff = Math.floor(
+    (today.getTime() - messageDate.getTime()) / (1000 * 60 * 60 * 24),
+  );
+  if (daysDiff < 7) {
+    return date.toLocaleDateString("en-US", {
+      weekday: "short",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  }
+
+  // Otherwise show full date and time
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function isBlockParagraphChild(child: React.ReactNode): boolean {
+  if (!React.isValidElement(child) || typeof child.type !== "string") {
+    return false;
+  }
+
+  return [
+    "div",
+    "pre",
+    "ul",
+    "ol",
+    "blockquote",
+    "table",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+  ].includes(child.type);
+}
+
+export function shouldRenderUserMarkdownParagraphAsBlock(
+  children: React.ReactNode,
+): boolean {
+  return React.Children.toArray(children).some((child) => isBlockParagraphChild(child));
+}
+
+export function renderUserMessageParagraph(
+  children: React.ReactNode,
+): React.ReactElement {
+  const className = "mb-2 last:mb-0 leading-relaxed";
+  const style = { color: "var(--chatty-text)" };
+
+  if (shouldRenderUserMarkdownParagraphAsBlock(children)) {
+    return (
+      <div className={className} style={style}>
+        {children}
+      </div>
+    );
+  }
+
+  return (
+    <p className={className} style={style}>
+      {children}
+    </p>
+  );
+}
+
+export function isImportedCodexRelayUserMessage(message: {
+  role?: string | null;
+  metadata?: Record<string, unknown> | null;
+} | null | undefined): boolean {
+  if (!message || message.role !== "user" || !message.metadata) {
+    return false;
+  }
+
+  const { sourceProduct, sourceSeat, relayImportedAt } = message.metadata;
+  return Boolean(relayImportedAt) && (
+    isImportedSeatValue(sourceProduct) || isImportedSeatValue(sourceSeat)
+  );
+}
+
+export function getUserMessageRenderMode(message: {
+  role?: string | null;
+  text?: string | null;
+  metadata?: Record<string, unknown> | null;
+} | null | undefined): "live-user" | "imported-codex-context" {
+  return isImportedCodexRelayUserMessage(message)
+    ? "imported-codex-context"
+    : "live-user";
+}
+
+export function buildImportedCodexRelayPreview(
+  text?: string | null,
+  maxLength = 400,
+): string {
+  const normalized = String(text || "")
+    .replace(/!\[[^\]]*]\(([^)]+)\)/g, "[imported image: $1]")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength).trimEnd()}...`;
+}
+
+export function renderImportedCodexRelayContext({
+  text,
+  importedAt,
+}: {
+  text?: string | null;
+  importedAt?: string | null;
+}): React.ReactElement {
+  const preview = buildImportedCodexRelayPreview(text, 400);
+
+  return (
+    <div
+      className="rounded-xl border px-4 py-3 space-y-2"
+      style={{
+        borderColor: "rgba(255, 255, 255, 0.12)",
+        backgroundColor: "rgba(255, 255, 255, 0.04)",
+        color: "var(--chatty-text)",
+      }}
+    >
+      <div className="text-xs uppercase tracking-[0.16em]" style={{ opacity: 0.72 }}>
+        Imported Codex handoff context
+      </div>
+      {importedAt ? (
+        <div className="text-xs" style={{ opacity: 0.65 }}>
+          Imported at {importedAt}
+        </div>
+      ) : null}
+      <p className="text-sm leading-relaxed">{preview}</p>
+      <p className="text-xs leading-relaxed" style={{ opacity: 0.72 }}>
+        Full imported content remains in canonical storage.
+      </p>
+    </div>
+  );
+}
+
+export function shouldWindowThreadHistory(thread: {
+  isIndexHydrated?: boolean;
+} | null | undefined): boolean {
+  return thread?.isIndexHydrated === true;
+}
+
+export function getRenderableThreadMessages<T extends { text?: string; isDateHeader?: boolean }>(
+  messages: T[] | null | undefined,
+  messageWindowSize: number,
+  thread: { isIndexHydrated?: boolean } | null | undefined,
+): T[] {
+  const filteredMessages = Array.isArray(messages)
+    ? messages.filter((message) => !isDateHeaderMessage(message))
+    : [];
+
+  if (!shouldWindowThreadHistory(thread)) {
+    return filteredMessages;
+  }
+
+  const windowStart = Math.max(0, filteredMessages.length - messageWindowSize);
+  return filteredMessages.slice(windowStart);
+}
+
+export function shouldBlockActiveThreadRender({
+  activeThreadHydration,
+  thread,
+}: {
+  activeThreadHydration?:
+    | {
+        status?: string | null;
+        hydrationSource?: string | null;
+        hydrationComplete?: boolean;
+      }
+    | null
+    | undefined;
+  thread?:
+    | {
+        id?: string;
+        isIndexHydrated?: boolean;
+      }
+    | null
+    | undefined;
+}): boolean {
+  if (!thread) {
+    return false;
+  }
+
+  return activeThreadHydration?.status === "loading";
+}
+
+export function shouldRequestActiveThreadReload({
+  activeThreadHydration,
+  thread,
+}: Parameters<typeof shouldBlockActiveThreadRender>[0]): boolean {
+  if (!thread) {
+    return false;
+  }
+
+  if (thread.isIndexHydrated === true) {
+    return true;
+  }
+
+  if (!isCanonicalSelfThreadId(thread.id)) {
+    return false;
+  }
+
+  if (activeThreadHydration?.status !== "ready") {
+    return true;
+  }
+
+  return (
+    activeThreadHydration?.hydrationSource !== "full" ||
+    activeThreadHydration?.hydrationComplete !== true
+  );
 }
 
 // Markdown components for user messages (styled for bubble with #ADA587 background)
@@ -277,11 +726,7 @@ const userMessageMarkdownComponents: Components = {
   ),
 
   // Paragraphs
-  p: ({ children }) => (
-    <p className="mb-2 last:mb-0 leading-relaxed" style={{ color: "var(--chatty-text)" }}>
-      {children}
-    </p>
-  ),
+  p: ({ children }) => renderUserMessageParagraph(children),
 
   // Lists
   ul: ({ children }) => (
@@ -385,7 +830,14 @@ const userMessageMarkdownComponents: Components = {
 
 interface LayoutContext {
   threads: Thread[];
-  sendMessage: (threadId: string, text: string, files: File[], imageAttachments?: ImageAttachment[]) => void;
+  isLoading: boolean;
+  sendMessage: (
+    threadId: string,
+    text: string,
+    files: File[],
+    imageAttachments?: ImageAttachment[],
+    uiOverrides?: unknown,
+  ) => void;
   renameThread: (threadId: string, title: string) => void;
   newThread: (options?: {
     title?: string;
@@ -393,20 +845,40 @@ interface LayoutContext {
     files?: File[];
   }) => void | Promise<any>;
   reloadThreadMessages?: (threadId: string) => Promise<void>;
+  exportThreadTranscript?: (
+    threadId: string,
+    format: "md" | "pdf" | "docx",
+  ) => Promise<{ blob: Blob; filename: string; contentType: string }>;
   user?: any;
   handleGPTCreated?: (gptConfig: { constructId?: string; constructCallsign?: string; name?: string }) => void;
   forceRefreshConversations?: () => void;
+  showOrchestrationLog?: boolean;
+  toggleOrchestrationLog?: () => void;
+  activeThreadHydration?:
+    | {
+        threadId?: string;
+        status?: string | null;
+        hydrationSource?: string | null;
+        hydrationComplete?: boolean;
+      }
+    | null
+    | undefined;
 }
 
 export default function Chat() {
   const {
     threads,
+    isLoading,
     sendMessage: onSendMessage,
     reloadThreadMessages,
+    exportThreadTranscript,
     newThread,
     user,
     handleGPTCreated,
     forceRefreshConversations,
+    showOrchestrationLog = false,
+    toggleOrchestrationLog,
+    activeThreadHydration,
   } = useOutletContext<LayoutContext>();
   const { threadId } = useParams<{ threadId: string }>();
   const navigate = useNavigate();
@@ -421,7 +893,11 @@ export default function Chat() {
   const [gptCreatorInitialMessage, setGptCreatorInitialMessage] = useState<string | null>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [messageWindowSize, setMessageWindowSize] = useState(50);
+  const [composerFooterHeight, setComposerFooterHeight] = useState(0);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<"md" | "pdf" | "docx" | null>(null);
   const MESSAGE_WINDOW_STEP = 30;
+  const THREAD_RELOAD_STALL_WARNING_MS = 15000;
   const mirrorContextRef = useRef<string>('');
   const [mirrorConfig, setMirrorConfig] = useState<{source: 'tab'|'window'|'screen', permission: 'read'|'write'|'both'} | null>(null);
   const [mirrorActive, setMirrorActive] = useState(false);
@@ -430,9 +906,10 @@ export default function Chat() {
   const [mirrorStatus, setMirrorStatus] = useState<{text: string, count: number}>({text: 'idle', count: 0});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const [zenMarkdown, setZenMarkdown] = useState<string | null>(null);
-  const [zenMarkdownError, setZenMarkdownError] = useState<string | null>(null);
-  const [isZenMarkdownLoading, setIsZenMarkdownLoading] = useState(false);
+  const composerFooterRef = useRef<HTMLDivElement>(null);
+  const missingCanonicalReloadInFlightRef = useRef<Set<string>>(new Set());
+  const missingCanonicalReloadAttemptedRef = useRef<Set<string>>(new Set());
+  const missingCanonicalReloadThreadIdRef = useRef<string | null>(null);
 
   // Dev toggle for showing raw vs filtered output (only in development)
   const isDev = process.env.NODE_ENV === "development";
@@ -449,6 +926,11 @@ export default function Chat() {
       localStorage.setItem("chatty-dev-toggle", showDevInfo.toString());
     }
   }, [showDevInfo, isDev]);
+
+  useEffect(() => {
+    setIsReloading(false);
+    setReloadAttempted(false);
+  }, [threadId]);
 
   // Find thread with preference for threads that have messages (to handle duplicate ID cases)
   const matchingThreads = threads.filter((t) => t.id === threadId);
@@ -469,34 +951,11 @@ export default function Chat() {
       return false;
     });
 
-  const isZenSessionThread = Boolean(
-    threadId && threadId.startsWith("zen-001_chat_with_"),
+  const routeClassification = React.useMemo(
+    () => classifyChatRouteThread(threadId),
+    [threadId],
   );
-
-  const isLinSessionThread = Boolean(
-    threadId && threadId.startsWith("lin-001_chat_with_"),
-  );
-
-  // GPT canonical session: {constructId}_chat_with_{constructId} (not Zen or Lin)
-  const isGPTSessionThread = Boolean(
-    threadId &&
-    threadId.includes("_chat_with_") &&
-    !threadId.startsWith("zen-001_") &&
-    !threadId.startsWith("lin-001_")
-  );
-
-  // Extract GPT construct name for display
-  const gptConstructName = isGPTSessionThread
-    ? threadId?.split("_chat_with_")[0]?.replace(/-\d+$/, "")?.charAt(0).toUpperCase() +
-    threadId?.split("_chat_with_")[0]?.replace(/-\d+$/, "")?.slice(1)
-    : null;
-
-  const isNovaSessionThread = Boolean(
-    threadId && threadId.startsWith("nova-001_chat_with_"),
-  );
-
-  const isSystemConstructThread = isZenSessionThread || isLinSessionThread;
-  const isCanonicalThread = isSystemConstructThread || isGPTSessionThread;
+  const isCanonicalThread = routeClassification.isCanonical;
 
   const selfpromptLastPollRef = useRef<string>(new Date().toISOString());
   const [selfpromptEnabled, setSelfpromptEnabled] = useState(false);
@@ -546,16 +1005,25 @@ export default function Chat() {
 
     if (!thread && threadId) {
       if (isCanonicalThread) {
-        console.warn(
-          "⚠️ [Chat] Canonical thread not found yet - loading transcript fallback",
-          { threadId, isZen: isZenSessionThread, isLin: isLinSessionThread, isGPT: isGPTSessionThread },
+        console.info(
+          "ℹ️ [Chat] Canonical thread not found in index yet - requesting exact thread hydration",
+          {
+            threadId,
+            constructId: routeClassification.constructId,
+            kind: routeClassification.kind,
+            isZen: routeClassification.isZen,
+            isLin: routeClassification.isLin,
+            isVal: routeClassification.isVal,
+            isAddressBookContact: routeClassification.isAddressBookContact,
+            isGPT: routeClassification.isCustomGPT,
+          },
         );
         return;
       }
       console.warn("⚠️ [Chat] Thread not found, redirecting");
       navigate("/app");
     }
-  }, [thread, threadId, navigate, threads, isCanonicalThread, isZenSessionThread, isLinSessionThread, isGPTSessionThread]);
+  }, [thread, threadId, navigate, threads, isCanonicalThread, routeClassification]);
 
   const prevThreadId = useRef(thread?.id);
   useEffect(() => {
@@ -567,6 +1035,12 @@ export default function Chat() {
       prevThreadId.current = thread?.id;
     }
   }, [thread?.id]);
+
+  useEffect(() => {
+    if (!thread || thread.messages.length === 0) return;
+    if (shouldBlockActiveThreadRender({ activeThreadHydration, thread })) return;
+    scrollToBottom(false);
+  }, [thread?.id, thread?.messages.length, activeThreadHydration]);
 
   // Auto-scroll only after user has interacted (sent a message)
   useEffect(() => {
@@ -593,74 +1067,89 @@ export default function Chat() {
     return () => container.removeEventListener("scroll", onScroll);
   }, [thread?.id, thread?.messages?.length]);
 
-  // Load transcript for canonical threads (Zen, Lin, or GPTs)
-  // Only attempt fallback transcript loading if threads have loaded (threads.length > 0)
-  // This prevents race condition where thread appears undefined during initial data fetch
   useEffect(() => {
-    if (thread || !threadId || !isCanonicalThread || threads.length === 0) return;
+    const footer = composerFooterRef.current;
+    if (!footer) return;
 
-    let cancelled = false;
-    const constructName = isZenSessionThread ? "Zen" : isLinSessionThread ? "Lin" : gptConstructName || "GPT";
-
-    const loadCanonicalTranscript = async () => {
-      setIsZenMarkdownLoading(true);
-      setZenMarkdown(null);
-      setZenMarkdownError(null);
-
-      try {
-        const response = await fetch(
-          `/api/vvault/chat/${encodeURIComponent(threadId)}`,
-          {
-            credentials: "include",
-          },
-        );
-        const data = await response.json();
-
-        if (!response.ok || !data.ok) {
-          throw new Error(
-            data?.error ||
-            response.statusText ||
-            `Failed to load ${constructName} transcript`,
-          );
-        }
-
-        if (!cancelled) {
-          setZenMarkdown(data.content || "");
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setZenMarkdownError(
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setIsZenMarkdownLoading(false);
-        }
-      }
+    const measure = () => {
+      const rect = footer.getBoundingClientRect();
+      setComposerFooterHeight(Math.max(0, Math.ceil(rect.height) + 8));
     };
 
-    loadCanonicalTranscript();
-    return () => {
-      cancelled = true;
-    };
-  }, [thread, threadId, isCanonicalThread, isZenSessionThread, isLinSessionThread, gptConstructName, threads.length]);
+    measure();
+    const observer = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(() => measure())
+      : null;
+    observer?.observe(footer);
+    return () => observer?.disconnect();
+  }, [thread?.id]);
+
+  // Deep-linked canonical routes hydrate through Layout so successful loads
+  // always re-enter the normal thread.messages chat renderer.
+  useEffect(() => {
+    if (thread || !threadId || !isCanonicalThread || !reloadThreadMessages) return;
+
+    if (missingCanonicalReloadThreadIdRef.current !== threadId) {
+      missingCanonicalReloadThreadIdRef.current = threadId;
+      missingCanonicalReloadInFlightRef.current.clear();
+      missingCanonicalReloadAttemptedRef.current.clear();
+    }
+
+    const inFlight = missingCanonicalReloadInFlightRef.current;
+    const attempted = missingCanonicalReloadAttemptedRef.current;
+    if (inFlight.has(threadId)) return;
+    if (attempted.has(threadId)) return;
+
+    inFlight.add(threadId);
+    attempted.add(threadId);
+    console.info(
+      "ℹ️ [Chat] Canonical thread missing - hydrating exact thread through Layout",
+      {
+        threadId,
+        constructId: routeClassification.constructId,
+        kind: routeClassification.kind,
+        isZen: routeClassification.isZen,
+        isLin: routeClassification.isLin,
+        isVal: routeClassification.isVal,
+        isAddressBookContact: routeClassification.isAddressBookContact,
+        isGPT: routeClassification.isCustomGPT,
+      },
+    );
+
+    reloadThreadMessages(threadId)
+      .catch((error) => {
+        console.error("❌ [Chat] Failed to hydrate missing canonical thread:", error);
+      })
+      .finally(() => {
+        inFlight.delete(threadId);
+      });
+  }, [thread, threadId, isCanonicalThread, reloadThreadMessages, routeClassification]);
 
   // Hydration check: If thread has no messages, attempt to reload
   useEffect(() => {
     if (!thread || !threadId || !reloadThreadMessages) return;
 
-    if (thread.messages.length === 0 && !isReloading && !reloadAttempted) {
+    const exactThreadReloadNeeded =
+      shouldRequestActiveThreadReload({
+        activeThreadHydration,
+        thread,
+      }) && !isReloading && !reloadAttempted;
+
+    if ((thread.messages.length === 0 || exactThreadReloadNeeded) && !isReloading && !reloadAttempted) {
       setIsReloading(true);
       setReloadAttempted(true);
 
-      // Add timeout to prevent infinite loading
+      // Warn on slow VVAULT hydration, but keep loading state tied to the real request.
       const timeoutId = setTimeout(() => {
         console.warn(
-          "⏱️ [Chat] Reload timeout after 10s - resetting loading state",
+          "⏳ [Chat] Reload still waiting after 15s - keeping loading state until VVAULT returns",
+          {
+            threadId,
+            hydrationStatus: activeThreadHydration?.status,
+            hydrationSource: activeThreadHydration?.hydrationSource,
+          },
         );
-        setIsReloading(false);
-      }, 3000); // 3 second timeout (reduced from 10s)
+      }, THREAD_RELOAD_STALL_WARNING_MS);
 
       reloadThreadMessages(threadId)
         .then(() => {
@@ -679,579 +1168,69 @@ export default function Chat() {
   }, [
     thread?.id,
     thread?.messages.length,
+    thread?.isIndexHydrated,
     threadId,
     reloadThreadMessages,
     threads.length,
     isReloading,
     reloadAttempted,
+    activeThreadHydration,
   ]); // Watch threads.length to detect updates
 
   // Get the construct name for display (system constructs or GPTs)
-  const canonicalConstructName = isZenSessionThread ? "Zen" : isLinSessionThread ? "Lin" : gptConstructName;
+  const canonicalConstructName = routeClassification.displayName;
+  const renderAvailableShellWithoutThread = (reason: string) => (
+    <div
+      className="flex flex-col h-full"
+      style={{ backgroundColor: "var(--chatty-bg-main)" }}
+    >
+      <div
+        ref={messagesContainerRef}
+        data-testid="chat-message-scroller"
+        className="flex-1 overflow-auto min-h-0"
+      />
+      <div
+        ref={composerFooterRef}
+        data-testid="chat-composer-footer"
+        className="p-4 border-t flex-shrink-0"
+        style={{
+          borderColor: "var(--chatty-bg-main)",
+          backgroundColor: "var(--chatty-bg-main)",
+        }}
+      >
+        <MessageBar
+          onSubmit={() => {}}
+          placeholder={`Message ${canonicalConstructName || "Chatty"}…`}
+          showVoiceButton={false}
+          showFileAttachment={false}
+          showOrchestrationButton={true}
+          onOrchestrationClick={toggleOrchestrationLog}
+          orchestrationLogVisible={showOrchestrationLog}
+          disabled={true}
+        />
+      </div>
+    </div>
+  );
 
   if (!thread) {
-    // If threads haven't loaded yet, show a loading state
-    // This prevents race condition where we try to show zenMarkdown before thread data arrives
-    if (threads.length === 0) {
-      return (
-        <div
-          className="flex flex-col h-full"
-          style={{ backgroundColor: "var(--chatty-bg-main)" }}
-        >
-          <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
-            <h2
-              className="text-xl font-semibold mb-2"
-              style={{ color: "var(--chatty-text)" }}
-            >
-              Loading conversation…
-            </h2>
-            <p style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
-              Please wait while we fetch your data.
-            </p>
-          </div>
-        </div>
-      );
-    }
-
     if (isCanonicalThread) {
-      if (isZenMarkdownLoading) {
-        return (
-          <div
-            className="flex flex-col h-full"
-            style={{ backgroundColor: "var(--chatty-bg-main)" }}
-          >
-            <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
-              <h2
-                className="text-xl font-semibold mb-2"
-                style={{ color: "var(--chatty-text)" }}
-              >
-                Loading {canonicalConstructName} transcript…
-              </h2>
-              <p style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
-                Fetching the saved markdown from VVAULT.
-              </p>
-            </div>
-          </div>
-        );
-      }
-
-      if (zenMarkdownError) {
-        return (
-          <div
-            className="flex flex-col h-full"
-            style={{ backgroundColor: "var(--chatty-bg-main)" }}
-          >
-            <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
-              <h2
-                className="text-xl font-semibold mb-2"
-                style={{ color: "var(--chatty-text)" }}
-              >
-                Unable to load {canonicalConstructName} transcript
-              </h2>
-              <p
-                className="mb-4"
-                style={{ color: "var(--chatty-text)", opacity: 0.7 }}
-              >
-                {zenMarkdownError}
-              </p>
-              <button
-                className="px-4 py-2 rounded-lg transition-colors"
-                style={{
-                  backgroundColor: "var(--chatty-button)",
-                  color: "var(--chatty-text-inverse, #fffff0)",
-                  border: "1px solid var(--chatty-line)",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "var(--chatty-hover)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor =
-                    "var(--chatty-button)";
-                }}
-                onClick={() => navigate("/app")}
-              >
-                Go Home
-              </button>
-            </div>
-          </div>
-        );
-      }
-
-      if (zenMarkdown) {
-        // Parse zenMarkdown transcript into styled messages
-        const parseTranscriptToMessages = (markdown: string): Message[] => {
-          const messages: Message[] = [];
-          const lines = markdown.split('\n');
-          let currentMessage: { role: 'user' | 'assistant'; text: string; ts: number } | null = null;
-
-          // Track current date from day headers like "## November 14, 2025"
-          let currentDateForDay: string | null = null;
-          const DAY_HEADER_PATTERN = /^##\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})\s*$/i;
-          // Pattern for VVAULT time format: "**01:07:38 PM EST - Synth**:" or "**01:07:38 PM EST - Devon**:"
-          const VVAULT_TIME_PATTERN = /^\*\*(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)\s*([A-Z]{2,5})?\s*-\s*([^*]+)\*\*:?\s*(.*)$/i;
-          // ISO bracket pattern for inline timestamps
-          const ISO_BRACKET_PATTERN = /\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\]/;
-
-          // Helper to derive timestamp from VVAULT time format + current day
-          const deriveTimestampFromVVAULT = (hh: string, mm: string, ss: string, ampm: string): number => {
-            if (!currentDateForDay) {
-              return Date.now() - (messages.length * 1000); // fallback
-            }
-            try {
-              const base = new Date(currentDateForDay);
-              if (isNaN(base.getTime())) {
-                return Date.now() - (messages.length * 1000);
-              }
-              let hour = parseInt(hh, 10) % 12;
-              if (ampm.toUpperCase() === 'PM') hour += 12;
-              base.setHours(hour, parseInt(mm, 10), parseInt(ss, 10), 0);
-              return base.getTime();
-            } catch {
-              return Date.now() - (messages.length * 1000);
-            }
-          };
-
-          for (const line of lines) {
-            const trimmedLine = line.trim();
-
-            // Check for day header: "## November 14, 2025"
-            const dayHeaderMatch = trimmedLine.match(DAY_HEADER_PATTERN);
-            if (dayHeaderMatch) {
-              currentDateForDay = `${dayHeaderMatch[1]} ${dayHeaderMatch[2]}, ${dayHeaderMatch[3]}`;
-              continue; // Skip this line, it's just a date marker
-            }
-
-            // Pattern 1: "10:26:07 AM EST - Devon Woodson [2026-01-20T15:26:07.457Z]: Message"
-            const timestampMatch = line.match(/^\d{1,2}:\d{2}:\d{2}\s*(?:AM|PM)?\s*(?:[A-Z]{2,5})?\s*-\s*(.+?)\s*\[([^\]]+)\]:\s*(.*)$/i);
-            // Pattern 2: VVAULT format "**01:07:38 PM EST - Synth**:" with time but no ISO bracket
-            const vvaultTimeMatch = trimmedLine.match(VVAULT_TIME_PATTERN);
-            // Pattern 3: "**Speaker:** Message" (bold speaker without time)
-            const boldMatch = line.match(/^\*\*(.+?):\*\*\s*(.*)$/);
-            // Pattern 4: "Speaker: Message" (simple format)
-            const simpleMatch = line.match(/^(Devon|Zen|Lin|Katana|User|Assistant|You):\s*(.*)$/i);
-            // Pattern 5: "You said:" / "Construct said:" format
-            const youSaidMatch = trimmedLine.match(/^You said:\s*(.*)$/i);
-            const constructSaidMatch = trimmedLine.match(/^(Synth|Zen|Lin|Katana|Nova) said:\s*(.*)$/i);
-
-            // Check for ISO bracket anywhere in the line as a fallback timestamp source
-            const isoBracketMatch = line.match(ISO_BRACKET_PATTERN);
-
-            if (timestampMatch) {
-              // Save previous message
-              if (currentMessage) {
-                messages.push({
-                  id: `fallback_${messages.length}_${Date.now()}`,
-                  role: currentMessage.role,
-                  text: currentMessage.text.trim(),
-                  ts: currentMessage.ts,
-                });
-              }
-
-              const speaker = timestampMatch[1].trim();
-              const timestamp = timestampMatch[2];
-              const content = timestampMatch[3];
-              const isUser = speaker.toLowerCase().includes('devon') ||
-                speaker.toLowerCase().includes('user') ||
-                speaker.toLowerCase().includes('you');
-
-              currentMessage = {
-                role: isUser ? 'user' : 'assistant',
-                text: content,
-                ts: new Date(timestamp).getTime() || Date.now(),
-              };
-            } else if (vvaultTimeMatch) {
-              // VVAULT time format: **HH:MM:SS AM/PM TZ - Speaker**:
-              if (currentMessage) {
-                messages.push({
-                  id: `fallback_${messages.length}_${Date.now()}`,
-                  role: currentMessage.role,
-                  text: currentMessage.text.trim(),
-                  ts: currentMessage.ts,
-                });
-              }
-
-              const [, hh, mm, ss, ampm, , speaker, content] = vvaultTimeMatch;
-              const isUser = speaker.toLowerCase().includes('devon') ||
-                speaker.toLowerCase().includes('user') ||
-                speaker.toLowerCase().includes('you');
-
-              // Use ISO bracket if present, otherwise derive from current day + time
-              let ts: number;
-              if (isoBracketMatch) {
-                ts = new Date(isoBracketMatch[1]).getTime() || deriveTimestampFromVVAULT(hh, mm, ss, ampm);
-              } else {
-                ts = deriveTimestampFromVVAULT(hh, mm, ss, ampm);
-              }
-
-              currentMessage = {
-                role: isUser ? 'user' : 'assistant',
-                text: content || '',
-                ts,
-              };
-            } else if (youSaidMatch) {
-              if (currentMessage) {
-                messages.push({
-                  id: `fallback_${messages.length}_${Date.now()}`,
-                  role: currentMessage.role,
-                  text: currentMessage.text.trim(),
-                  ts: currentMessage.ts,
-                });
-              }
-
-              // Use ISO bracket if present
-              let ts = Date.now() - (messages.length * 1000);
-              if (isoBracketMatch) {
-                ts = new Date(isoBracketMatch[1]).getTime() || ts;
-              }
-
-              currentMessage = {
-                role: 'user',
-                text: youSaidMatch[1] || '',
-                ts,
-              };
-            } else if (constructSaidMatch) {
-              if (currentMessage) {
-                messages.push({
-                  id: `fallback_${messages.length}_${Date.now()}`,
-                  role: currentMessage.role,
-                  text: currentMessage.text.trim(),
-                  ts: currentMessage.ts,
-                });
-              }
-
-              // Use ISO bracket if present
-              let ts = Date.now() - (messages.length * 1000);
-              if (isoBracketMatch) {
-                ts = new Date(isoBracketMatch[1]).getTime() || ts;
-              }
-
-              currentMessage = {
-                role: 'assistant',
-                text: constructSaidMatch[2] || '',
-                ts,
-              };
-            } else if (boldMatch && !vvaultTimeMatch) {
-              // Only match bold if it's not already caught by VVAULT time pattern
-              if (currentMessage) {
-                messages.push({
-                  id: `fallback_${messages.length}_${Date.now()}`,
-                  role: currentMessage.role,
-                  text: currentMessage.text.trim(),
-                  ts: currentMessage.ts,
-                });
-              }
-
-              const speaker = boldMatch[1].trim();
-              const content = boldMatch[2];
-              const isUser = speaker.toLowerCase().includes('devon') ||
-                speaker.toLowerCase().includes('user') ||
-                speaker.toLowerCase().includes('you');
-
-              // Use ISO bracket if present
-              let ts = Date.now() - (messages.length * 1000);
-              if (isoBracketMatch) {
-                ts = new Date(isoBracketMatch[1]).getTime() || ts;
-              }
-
-              currentMessage = {
-                role: isUser ? 'user' : 'assistant',
-                text: content,
-                ts,
-              };
-            } else if (simpleMatch) {
-              if (currentMessage) {
-                messages.push({
-                  id: `fallback_${messages.length}_${Date.now()}`,
-                  role: currentMessage.role,
-                  text: currentMessage.text.trim(),
-                  ts: currentMessage.ts,
-                });
-              }
-
-              const speaker = simpleMatch[1].trim();
-              const content = simpleMatch[2];
-              const isUser = speaker.toLowerCase().includes('devon') ||
-                speaker.toLowerCase().includes('user') ||
-                speaker.toLowerCase().includes('you');
-
-              // Use ISO bracket if present
-              let ts = Date.now() - (messages.length * 1000);
-              if (isoBracketMatch) {
-                ts = new Date(isoBracketMatch[1]).getTime() || ts;
-              }
-
-              currentMessage = {
-                role: isUser ? 'user' : 'assistant',
-                text: content,
-                ts,
-              };
-            } else if (currentMessage && line.trim()) {
-              // Continuation of previous message
-              currentMessage.text += '\n' + line;
-            }
-          }
-
-          // Don't forget last message
-          if (currentMessage) {
-            messages.push({
-              id: `fallback_${messages.length}_${Date.now()}`,
-              role: currentMessage.role,
-              text: currentMessage.text.trim(),
-              ts: currentMessage.ts,
-            });
-          }
-
-          return messages;
-        };
-
-        // Filter out date header messages and sanitize content
-        const parsedMessages = parseTranscriptToMessages(zenMarkdown)
-          .filter(m => {
-            // Filter out standalone date header messages
-            const text = (m.text || "").trim();
-            const dateLinePattern = /^#{0,6}\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\s*$/i;
-            return !dateLinePattern.test(text);
-          });
-
-        // If parsing yielded messages, render them styled; otherwise fallback to prose
-        if (parsedMessages.length > 0) {
-          return (
-            <div
-              className="flex flex-col h-full"
-              style={{ backgroundColor: "var(--chatty-bg-main)" }}
-            >
-              <div ref={messagesContainerRef} className="flex-1 overflow-auto min-h-0">
-                <div className="mb-2 px-4 pt-4"></div>
-                {parsedMessages.map((m, index) => {
-                  const isUserMsg = m.role === 'user';
-                  // Apply sanitization to remove embedded date headers
-                  const content = prepareMessageContent(m.text);
-                  const contentLength = content.length;
-                  let maxWidth = "max-w-[85%] sm:max-w-[80%] md:max-w-[75%] lg:max-w-[70%]";
-                  if (contentLength <= 20) maxWidth = "max-w-[200px]";
-                  else if (contentLength <= 100) maxWidth = "max-w-[300px] sm:max-w-[400px]";
-
-                  if (isUserMsg) {
-                    return (
-                      <div key={m.id} className="group relative flex items-end gap-3 py-3 px-4 flex-row-reverse">
-                        <div className="flex flex-col items-end">
-                          <div
-                            className={`px-4 py-3 shadow-sm transition-colors inline-block ${maxWidth} ml-auto text-left relative`}
-                            style={{
-                              backgroundColor: "rgba(173, 165, 135, 0.25)",
-                              borderRadius: "22px 22px 6px 22px",
-                              border: "none",
-                              boxShadow: "0 1px 0 rgba(58, 46, 20, 0.12)",
-                              color: "var(--chatty-text)",
-                              overflow: "hidden",
-                              minWidth: 0,
-                              boxSizing: "border-box",
-                            }}
-                          >
-                            <div className="break-words" style={{ maxWidth: "100%", minWidth: 0, width: "100%" }}>
-                              <ReactMarkdown components={userMessageMarkdownComponents} remarkPlugins={[remarkBreaks]} rehypePlugins={[rehypeRaw]}>
-                                {stripDateLines(content)}
-                              </ReactMarkdown>
-                            </div>
-                          </div>
-                          <div className="mt-1 flex items-center gap-2">
-                            <span className="opacity-0 group-hover:opacity-100 transition-opacity text-xs" style={{ color: "#ADA587" }}>
-                              {formatMessageTimestamp(m.ts)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  // AI/Construct messages: left-aligned, no bubble
-                  return (
-                    <div key={m.id} className="group relative flex items-start gap-3 py-3 px-4">
-                      <div className="flex flex-col items-start text-left w-full">
-                        <div
-                          className="whitespace-normal w-full assistant-code-scope chat-markdown"
-                          style={{ color: "var(--chatty-text)", overflow: "hidden", maxWidth: "100%" }}
-                        >
-                          <style dangerouslySetInnerHTML={{ __html: assistantCodeStyles }} />
-                          <R
-                            packets={[{ op: "answer.v1", payload: { content: content } }]}
-                          />
-                        </div>
-                        <div className="mt-1 flex items-center gap-2">
-                          <span className="opacity-0 group-hover:opacity-100 transition-opacity text-xs" style={{ color: "var(--chatty-text)", opacity: 0.5 }}>
-                            {formatMessageTimestamp(m.ts)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                <div className="h-4" />
-              </div>
-              <MessageBar
-                placeholder={`Message ${canonicalConstructName || "AI"}...`}
-                onSubmit={(text: string) => {
-                  // For fallback mode, just log - full send requires thread context
-                }}
-              />
-            </div>
-          );
-        }
-
-        // Fallback to prose if parsing failed
-        return (
-          <div
-            className="flex flex-col h-full"
-            style={{ backgroundColor: "var(--chatty-bg-main)" }}
-          >
-            <div className="flex-1 overflow-auto p-6">
-              <h2
-                className="text-2xl font-semibold mb-4"
-                style={{ color: "var(--chatty-text)" }}
-              >
-                {canonicalConstructName} transcript
-              </h2>
-              <div
-                className="prose max-w-none break-words chat-markdown"
-                style={{ color: "var(--chatty-text)", lineHeight: 1.7 }}
-              >
-                <ReactMarkdown remarkPlugins={[remarkBreaks]}>
-                  {stripDateLines(zenMarkdown)}
-                </ReactMarkdown>
-              </div>
-            </div>
-          </div>
-        );
-      }
-
-      return (
-        <div
-          className="flex flex-col h-full"
-          style={{ backgroundColor: "var(--chatty-bg-main)" }}
-        >
-          <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
-            <h2
-              className="text-xl font-semibold mb-2"
-              style={{ color: "var(--chatty-text)" }}
-            >
-              {canonicalConstructName} transcript unavailable
-            </h2>
-            <p style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
-              We couldn't render the saved transcript right now.
-            </p>
-            <button
-              className="px-4 py-2 rounded-lg transition-colors"
-              style={{
-                backgroundColor: "var(--chatty-button)",
-                color: "var(--chatty-text-inverse, #fffff0)",
-                border: "1px solid var(--chatty-line)",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "var(--chatty-hover)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "var(--chatty-button)";
-              }}
-              onClick={() => navigate("/app")}
-            >
-              Go Home
-            </button>
-          </div>
-        </div>
-      );
+      return renderAvailableShellWithoutThread("canonical-thread-hydrating");
     }
 
-    return (
-      <div
-        className="flex flex-col h-full"
-        style={{ backgroundColor: "var(--chatty-bg-main)" }}
-      >
-        <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
-          <h2
-            className="text-xl font-semibold mb-2"
-            style={{ color: "var(--chatty-text)" }}
-          >
-            Thread not found
-          </h2>
-          <p
-            className="mb-4"
-            style={{ color: "var(--chatty-text)", opacity: 0.7 }}
-          >
-            This conversation could not be found.
-          </p>
-          <button
-            className="px-4 py-2 rounded-lg transition-colors"
-            style={{
-              backgroundColor: "var(--chatty-button)",
-              color: "var(--chatty-text-inverse, #fffff0)",
-              border: "1px solid var(--chatty-line)",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "var(--chatty-hover)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "var(--chatty-button)";
-            }}
-            onClick={() => navigate("/app")}
-          >
-            Go Home
-          </button>
-        </div>
-      </div>
-    );
+    if (isLoading === true) {
+      return renderAvailableShellWithoutThread("layout-loading");
+    }
+
+    return renderAvailableShellWithoutThread("thread-missing");
   }
 
-  const isUser = (role: string) => role === "user";
+  const canSendToActiveThread = canSendOnActiveThread({
+    activeThreadHydration,
+    thread,
+    routeThreadId: threadId,
+  });
 
-  const assistantCodeStyles = `
-    .assistant-code-scope,
-    .assistant-code-scope * {
-      border: none !important;
-      outline: none !important;
-      box-shadow: none !important;
-      background: transparent;
-    }
-    .assistant-code-scope pre {
-      display: block;
-      width: 100%;
-      min-width: 0;
-      max-width: 100%;
-      overflow-x: auto;
-      overflow-y: hidden;
-      white-space: pre !important;
-      word-break: normal !important;
-      overflow-wrap: normal !important;
-      word-wrap: normal !important;
-      background: #2d2d2d;
-      color: #fffff0;
-      border-radius: 12px;
-      padding: 12px;
-      margin: 12px 0;
-      font-size: 15px;
-      line-height: 1.45;
-    }
-    .assistant-code-scope code {
-      white-space: pre !important;
-      word-break: normal !important;
-      overflow-wrap: normal !important;
-      word-wrap: normal !important;
-      background: transparent;
-    }
-    .assistant-code-scope pre::-webkit-scrollbar {
-      height: 10px;
-    }
-    .assistant-code-scope pre::-webkit-scrollbar-track {
-      background: #2d2d2d;
-      border-radius: 12px;
-    }
-    .assistant-code-scope pre::-webkit-scrollbar-thumb {
-      background: rgba(255,255,255,0.25);
-      border-radius: 12px;
-    }
-    .assistant-code-scope pre::-webkit-scrollbar-thumb:hover {
-      background: rgba(255,255,255,0.35);
-    }
-  `;
+  const isUser = (role: string) => role === "user";
 
   // Action handlers for message options menu
   const handleCopyMessage = async (text: string) => {
@@ -1267,6 +1246,25 @@ export default function Chat() {
     if (newThread) {
       newThread({ starter: text });
       navigate("/app");
+    }
+  };
+
+  const handleExportThread = async (format: "md" | "pdf" | "docx") => {
+    if (!thread || !exportThreadTranscript) return;
+    setExportingFormat(format);
+    try {
+      const result = await exportThreadTranscript(thread.id, format);
+      const url = URL.createObjectURL(result.blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = result.filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } finally {
+      setExportingFormat(null);
+      setIsExportMenuOpen(false);
     }
   };
 
@@ -1380,63 +1378,17 @@ export default function Chat() {
     return removedMessages.has(messageId);
   };
 
-  // Format timestamp for display
-  const formatMessageTimestamp = (ts: number): string => {
-    const date = new Date(ts);
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const messageDate = new Date(
-      date.getFullYear(),
-      date.getMonth(),
-      date.getDate(),
-    );
-
-    // If today, show just time
-    if (messageDate.getTime() === today.getTime()) {
-      return date.toLocaleTimeString("en-US", {
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-      });
-    }
-
-    // If yesterday
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    if (messageDate.getTime() === yesterday.getTime()) {
-      return `Yesterday ${date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}`;
-    }
-
-    // If this week, show day and time
-    const daysDiff = Math.floor(
-      (today.getTime() - messageDate.getTime()) / (1000 * 60 * 60 * 24),
-    );
-    if (daysDiff < 7) {
-      return date.toLocaleDateString("en-US", {
-        weekday: "short",
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-      });
-    }
-
-    // Otherwise show full date and time
-    return date.toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
-  };
-
   // Scroll to bottom of messages
   const scrollToBottom = (smooth = true) => {
     if (messagesContainerRef.current) {
-      messagesContainerRef.current.scrollTo({
-        top: messagesContainerRef.current.scrollHeight,
-        behavior: smooth ? "smooth" : "auto",
-      });
+      if (typeof messagesContainerRef.current.scrollTo === "function") {
+        messagesContainerRef.current.scrollTo({
+          top: messagesContainerRef.current.scrollHeight,
+          behavior: smooth ? "smooth" : "auto",
+        });
+        return;
+      }
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
   };
 
@@ -1571,7 +1523,7 @@ export default function Chat() {
 
   return (
     <div
-      className="flex flex-col h-full"
+      className="relative flex flex-col h-full"
       style={{ backgroundColor: "var(--chatty-bg-main)" }}
     >
       {/* Dev Toggle (only in development) */}
@@ -1605,7 +1557,12 @@ export default function Chat() {
           )}
         </div>
       )}
-      <div ref={messagesContainerRef} className="flex-1 overflow-auto min-h-0" style={{ scrollBehavior: "smooth", WebkitOverflowScrolling: "touch" }}>
+      <div
+        ref={messagesContainerRef}
+        data-testid="chat-message-scroller"
+        className="flex-1 overflow-auto min-h-0"
+        style={{ scrollBehavior: "smooth", WebkitOverflowScrolling: "touch" }}
+      >
 
         {/* Loading state while reloading */}
         {isReloading && (
@@ -1643,6 +1600,25 @@ export default function Chat() {
               const user = isUser(m.role);
               const isLatest = index === filteredMessages.length - 1;
               const isRemoved = isMessageRemoved(m.id);
+
+              if (m.role === "system") {
+                return (
+                  <div key={m.id} className="px-4 py-3">
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className="rounded-xl border px-4 py-3 text-sm"
+                      style={{
+                        color: "var(--chatty-text)",
+                        borderColor: "rgba(173, 165, 135, 0.28)",
+                        backgroundColor: "rgba(173, 165, 135, 0.08)",
+                      }}
+                    >
+                      {prepareMessageContent(m.text) || "System status update."}
+                    </div>
+                  </div>
+                );
+              }
 
               // User messages: right-aligned with iMessage-style bubble
               if (user) {
@@ -1978,6 +1954,10 @@ export default function Chat() {
         {!userHasInteracted && thread.messages.length > 0 && (
           <div style={{ height: "calc(100vh - 200px)" }} />
         )}
+        <div
+          data-testid="chat-footer-spacer"
+          style={{ height: `${composerFooterHeight}px` }}
+        />
         <div ref={messagesEndRef} />
       </div>
 
@@ -2058,32 +2038,85 @@ export default function Chat() {
         </div>
       )}
 
-      <div className="p-4 border-t flex-shrink-0" style={{ borderColor: "var(--chatty-bg-main)" }}>
-        <MessageBar
-          onSubmit={(messageText, messageFiles, imageAttachments) => {
-            if (thread) {
-              setUserHasInteracted(true);
-              let finalText = messageText;
-              if (mirrorActive && mirrorConfig && mirrorContextRef.current) {
-                finalText = `${mirrorContextRef.current}\n\n${messageText}`;
-                mirrorContextRef.current = '';
-              }
-              onSendMessage(thread.id, finalText, messageFiles || [], imageAttachments);
-            }
-          }}
-          placeholder={`Message ${canonicalConstructName || "Chatty"}…`}
-          showVoiceButton={true}
-          showFileAttachment={true}
-          autoFocus={true}
-          disabled={!thread}
-        />
-      </div>
-
       <div
-        className="text-center text-xs py-2 px-4 flex-shrink-0"
-        style={{ color: "var(--chatty-text)", opacity: 0.5 }}
+        ref={composerFooterRef}
+        data-testid="chat-composer-footer"
+        className="absolute inset-x-0 bottom-0 pointer-events-none"
       >
-        Chatty can make mistakes. Consider checking important information.
+        <div
+          className="p-4 border-t flex-shrink-0 pointer-events-auto"
+          style={{
+            borderColor: "var(--chatty-bg-main)",
+            backgroundColor: "var(--chatty-bg-main)",
+          }}
+        >
+          <div className="flex items-center justify-between gap-3 mb-2">
+            {exportThreadTranscript && thread ? (
+              <div className="relative">
+                <button
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={isExportMenuOpen}
+                  onClick={() => setIsExportMenuOpen((value) => !value)}
+                  className="text-xs px-3 py-1.5 rounded-full transition-colors"
+                  style={{
+                    backgroundColor: "var(--chatty-bg-message)",
+                    color: "var(--chatty-text)",
+                    opacity: 0.82,
+                  }}
+                >
+                  Open export menu
+                </button>
+                {isExportMenuOpen ? (
+                  <div
+                    role="menu"
+                    className="absolute left-0 bottom-full mb-2 rounded-xl border p-2 min-w-[180px]"
+                    style={{
+                      backgroundColor: "var(--chatty-bg-main)",
+                      borderColor: "var(--chatty-line)",
+                    }}
+                  >
+                    <button role="menuitem" className="block w-full text-left px-3 py-2 text-sm rounded-lg" onClick={() => handleExportThread("md")}>
+                      Export as Markdown
+                    </button>
+                    <button role="menuitem" className="block w-full text-left px-3 py-2 text-sm rounded-lg" onClick={() => handleExportThread("pdf")}>
+                      Export as PDF
+                    </button>
+                    <button role="menuitem" className="block w-full text-left px-3 py-2 text-sm rounded-lg" onClick={() => handleExportThread("docx")}>
+                      Export as DOCX
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : <div />}
+            {exportingFormat ? (
+              <div className="text-xs" style={{ color: "var(--chatty-text)", opacity: 0.72 }}>
+                {`Preparing ${exportingFormat.toUpperCase()}`}
+              </div>
+            ) : null}
+          </div>
+          <MessageBar
+            onSubmit={(messageText, messageFiles, imageAttachments) => {
+              if (thread) {
+                setUserHasInteracted(true);
+                let finalText = messageText;
+                if (mirrorActive && mirrorConfig && mirrorContextRef.current) {
+                  finalText = `${mirrorContextRef.current}\n\n${messageText}`;
+                  mirrorContextRef.current = '';
+                }
+                onSendMessage(thread.id, finalText, messageFiles || [], imageAttachments, undefined);
+              }
+            }}
+            placeholder={`Message ${canonicalConstructName || "Chatty"}…`}
+            showVoiceButton={true}
+            showFileAttachment={true}
+            showOrchestrationButton={true}
+            onOrchestrationClick={toggleOrchestrationLog}
+            orchestrationLogVisible={showOrchestrationLog}
+            autoFocus={true}
+            disabled={!canSendToActiveThread}
+          />
+        </div>
       </div>
 
       {isGPTCreatorOpen && (

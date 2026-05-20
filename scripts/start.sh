@@ -53,15 +53,14 @@ fi
 # Start both frontend and backend servers
 echo -e "${GREEN}🌟 Starting Chatty servers...${NC}"
 echo -e "${BLUE}   Frontend: http://localhost:5173${NC}"
-echo -e "${BLUE}   Backend:  http://localhost:3001${NC}"
-echo -e "${BLUE}   Health:   http://localhost:3001/health${NC}"
+echo -e "${BLUE}   Backend:  http://localhost:5050${NC}"
+echo -e "${BLUE}   Health:   http://localhost:5050/health${NC}"
 echo ""
 echo -e "${YELLOW}Press Ctrl+C to stop both servers${NC}"
 echo ""
 
 # Start both servers using concurrently
 exec npm run dev:full
-
 
 
 

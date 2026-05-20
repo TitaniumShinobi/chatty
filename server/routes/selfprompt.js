@@ -2,7 +2,7 @@ import express from 'express';
 import Database from 'better-sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth } from '../auth/middleware/auth.js';
 import { buildEnrichedContext } from '../lib/memoryContextBuilder.js';
 import { GPTManager } from '../lib/gptManager.js';
 

@@ -5,7 +5,6 @@ import path from "path";
 import fs from "fs/promises";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
-import { AIManager } from "../lib/aiManager.js";
 import VVAULTMemoryManager from "../lib/vvaultMemoryManager.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -31,7 +30,18 @@ const buildConstructBase = (source = 'imported', identity = null, fallbackId = '
   return sanitizeConstructId(`${provider}-${suffix}`);
 };
 
-const aiManager = AIManager.getInstance();
+let aiManagerModulePromise = null;
+
+async function getAIManager() {
+  if (!aiManagerModulePromise) {
+    aiManagerModulePromise = import("../lib/aiManager.js").catch((error) => {
+      aiManagerModulePromise = null;
+      throw error;
+    });
+  }
+  const { AIManager } = await aiManagerModulePromise;
+  return AIManager.getInstance();
+}
 
 // Allow repairing slightly truncated ZIP archives (up to ~5MB padding)
 const MAX_TRUNCATED_ZIP_PAD_BYTES = 5 * 1024 * 1024;
@@ -116,7 +126,7 @@ const KNOWN_EXPORT_PATHS = [
 
 function describeArchiveEntry(entryName, isDirectory) {
   const normalized = entryName.replace(/^\.\/+/, "");
-  
+
   // Skip directories for media category patterns (they're for files only)
   if (!isDirectory) {
     for (const known of KNOWN_EXPORT_PATHS) {
@@ -131,11 +141,11 @@ function describeArchiveEntry(entryName, isDirectory) {
       }
     }
   }
-  
+
   // Check other patterns
   for (const known of KNOWN_EXPORT_PATHS) {
     if (known.isMediaCategory) continue; // Already checked above
-    
+
     const matchesDirectory = Boolean(known.matchDirectories && isDirectory);
     if (known.pattern.test(normalized)) {
       if (matchesDirectory || !isDirectory) {
@@ -219,6 +229,10 @@ export async function createPrimaryConversationFile(
 ) {
   if (!constructId || !userId || !vvaultRoot) {
     throw new Error('Missing required parameters for canonical conversation creation');
+  }
+
+  if (!/-\d+$/.test(constructId)) {
+    throw new Error(`constructId must include callsign suffix (e.g., katana-001). Received: "${constructId}"`);
   }
 
   const providerLabel = provider
@@ -306,7 +320,7 @@ async function summarizeExport(zip) {
       if (description.mediaType && mediaCounts[description.mediaType] !== undefined) {
         mediaCounts[description.mediaType]++;
       }
-      
+
       // Only add category entries once (not per file)
       if (description.isMediaCategory) {
         const existingCategory = knownEntries.find(
@@ -398,12 +412,12 @@ function finalizeRange(range) {
 
 async function parseChatGPTExport(file, identity) {
   const raw = await file.async("string");
-  
+
   // Handle empty or malformed JSON
   if (!raw || raw.trim().length === 0) {
     throw new Error(`Empty or invalid conversations file: ${file.name}`);
   }
-  
+
   let conversations;
   try {
     conversations = JSON.parse(raw);
@@ -413,7 +427,7 @@ async function parseChatGPTExport(file, identity) {
     }
     throw new Error(`Failed to parse conversations file ${file.name}: ${error.message}`);
   }
-  
+
   if (!Array.isArray(conversations)) {
     throw new Error(`Invalid conversations format: expected array, got ${typeof conversations}`);
   }
@@ -769,10 +783,10 @@ const PROVIDER_PRESETS = {
  */
 function readImportMetadata(ai) {
   if (!ai.files || !Array.isArray(ai.files)) return null;
-  
+
   const metadataFile = ai.files.find(f => f.name === 'import-metadata.json' || f.originalname === 'import-metadata.json');
   if (!metadataFile) return null;
-  
+
   try {
     // Try to parse metadata from file content or extracted_text
     const content = metadataFile.content || metadataFile.extracted_text || metadataFile.metadata;
@@ -784,7 +798,7 @@ function readImportMetadata(ai) {
   } catch (error) {
     console.warn(`Failed to parse import metadata for AI ${ai.id}:`, error);
   }
-  
+
   return null;
 }
 
@@ -797,14 +811,15 @@ function readImportMetadata(ai) {
  */
 async function checkForDuplicateRuntime(userId, source, identity) {
   const preset = PROVIDER_PRESETS[source] || PROVIDER_PRESETS.default;
-  
+
   // Build expected constructId to check for duplicates (e.g., "chatgpt-devon-001")
   const expectedConstructBase = buildConstructBase(source, identity, '');
   const expectedConstructId = expectedConstructBase.endsWith('-001') ? expectedConstructBase : `${expectedConstructBase}-001`;
-  
+
   // Get all GPTs for this user
+  const aiManager = await getAIManager();
   const allAIs = await aiManager.getAllAIs(userId);
-  
+
   // Check for duplicate by constructId (not name, since name is just provider label)
   for (const ai of allAIs) {
     const importMetadata = readImportMetadata(ai);
@@ -841,7 +856,7 @@ async function checkForDuplicateRuntime(userId, source, identity) {
       }
     }
   }
-  
+
   return null;
 }
 
@@ -853,7 +868,7 @@ export async function createImportedRuntime({
   allowDuplicate = false, // Set to true to skip duplicate check
 }) {
   console.log(`🔵 [createImportedRuntime] Creating runtime for userId: ${userId}, source: ${source}, email: ${identity?.email || 'unknown'}`);
-  
+
   // Check for duplicates unless explicitly allowed
   if (!allowDuplicate) {
     const duplicate = await checkForDuplicateRuntime(userId, source, identity);
@@ -866,7 +881,7 @@ export async function createImportedRuntime({
       };
     }
   }
-  
+
   const preset = PROVIDER_PRESETS[source] || PROVIDER_PRESETS.default;
   // Runtime name should be just the provider label (e.g., "ChatGPT") for display
   // The constructId handles the email-based identification (e.g., "chatgpt-devon-001")
@@ -919,6 +934,7 @@ export async function createImportedRuntime({
   }
 
   console.log(`💾 [createImportedRuntime] Creating AI entry with userId: ${userId}`);
+  const aiManager = await getAIManager();
   const runtimeConfig = await aiManager.createAI({
     name: runtimeName,
     description,
@@ -929,7 +945,9 @@ export async function createImportedRuntime({
       webSearch: false,
       canvas: false,
       imageGeneration: false,
-      codeInterpreter: true,
+      codeInterpreter: false,
+      agent: false,
+      proactiveInitiation: false,
       synthesisMode: 'lin',
     },
     modelId: preset.defaultModel,
@@ -992,7 +1010,7 @@ async function extractChatGPTConfig(conversation, zip = null) {
   const conversationTemplateId = conversation.conversation_template_id;
   const mappingSlug = conversation.mapping_slug;
   const model = conversation.model;
-  
+
   // Try to extract GPT configuration from conversation metadata
   let gptConfig = {
     name: null,
@@ -1001,7 +1019,7 @@ async function extractChatGPTConfig(conversation, zip = null) {
     capabilities: null,
     conversationStarters: null
   };
-  
+
   // Check conversation metadata for GPT config
   if (conversation.metadata) {
     gptConfig.name = conversation.metadata.gpt_name || conversation.metadata.name || null;
@@ -1010,7 +1028,7 @@ async function extractChatGPTConfig(conversation, zip = null) {
     gptConfig.capabilities = conversation.metadata.capabilities || null;
     gptConfig.conversationStarters = conversation.metadata.conversation_starters || null;
   }
-  
+
   // Check for GPT config in the first system message
   if (!gptConfig.instructions && conversation.mapping) {
     const nodes = Object.values(conversation.mapping);
@@ -1030,7 +1048,7 @@ async function extractChatGPTConfig(conversation, zip = null) {
       }
     }
   }
-  
+
   // Check prompts folder in zip for GPT config files
   if (zip && conversationTemplateId) {
     try {
@@ -1068,14 +1086,14 @@ async function extractChatGPTConfig(conversation, zip = null) {
       // Ignore errors reading prompt files
     }
   }
-  
+
   // Custom GPT detection
   if (conversationTemplateId || mappingSlug) {
     // Extract GPT name from config, title, or use default
     const gptName = gptConfig.name || conversation.title || 'Custom GPT';
     // Normalize name for construct ID (lowercase, replace spaces with hyphens)
     const constructId = gptName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'custom-gpt';
-    
+
     return {
       modelId: model || mappingSlug || 'gpt-4',
       constructId: constructId,
@@ -1089,7 +1107,7 @@ async function extractChatGPTConfig(conversation, zip = null) {
       hasFullConfig: !!(gptConfig.instructions || gptConfig.description)
     };
   }
-  
+
   // Default ChatGPT model detection
   const detectedModel = model || mappingSlug || 'gpt-4';
   return {
@@ -1118,18 +1136,18 @@ async function extractChatGPTConfig(conversation, zip = null) {
 async function convertConversationToTranscript(conversation, userId, userName, gptConfig, zip = null) {
   const { appendToConstructTranscript } = require('../../vvaultConnector/writeTranscript');
   const crypto = require('crypto');
-  
+
   // Use detected construct or default to zen
   // CRITICAL: Always use constructCallsign format (e.g., "zen-001"), never just "zen"
   const constructId = gptConfig.constructId || 'zen-001';
-  
+
   // Create unique callsign for each conversation to ensure separate files
   // Use a hash of conversation ID to get a consistent callsign (1-999 range)
   const conversationId = conversation.id || conversation.conversation_id || crypto.randomUUID();
   const hash = crypto.createHash('md5').update(conversationId).digest('hex');
   const hashInt = parseInt(hash.substring(0, 6), 16);
   const callsign = (hashInt % 999) + 1; // Range: 1-999
-  
+
   // Extract messages from conversation.mapping
   // ChatGPT uses a tree structure - we need to traverse from root to current_node
   const messages = [];
@@ -1137,36 +1155,36 @@ async function convertConversationToTranscript(conversation, userId, userName, g
     // Find root node (node with no parent or is the root)
     const rootNodeId = conversation.current_node || Object.keys(conversation.mapping)[0];
     const visited = new Set();
-    
+
     // Recursive function to traverse the tree and collect messages in order
     const traverseTree = (nodeId) => {
       if (!nodeId || visited.has(nodeId)) return;
-      
+
       const node = conversation.mapping[nodeId];
       if (!node) return;
-      
+
       visited.add(nodeId);
-      
+
       // Process children first (they come before this node chronologically)
       if (node.children && Array.isArray(node.children)) {
         for (const childId of node.children) {
           traverseTree(childId);
         }
       }
-      
+
       // Then process this node's message
       if (node.message) {
         const msg = node.message;
         const author = msg.author?.role || msg.author?.name || 'unknown';
         const contentParts = msg.content?.parts || [];
-        const content = contentParts.length > 0 
+        const content = contentParts.length > 0
           ? contentParts.map(part => typeof part === 'string' ? part : part.text || '').join('\n').trim()
           : (msg.content?.text || msg.content || '');
-        
+
         if (content && typeof content === 'string' && content.trim()) {
           // Determine role - ChatGPT uses 'user' for user, everything else is assistant
           const role = author === 'user' || author === 'human' ? 'user' : 'assistant';
-          
+
           messages.push({
             role,
             content: content.trim(),
@@ -1175,10 +1193,10 @@ async function convertConversationToTranscript(conversation, userId, userName, g
         }
       }
     };
-    
+
     // Start traversal from root
     traverseTree(rootNodeId);
-    
+
     // If no messages found, try simpler approach - just iterate all nodes
     if (messages.length === 0) {
       const allNodes = Object.values(conversation.mapping);
@@ -1188,16 +1206,16 @@ async function convertConversationToTranscript(conversation, userId, userName, g
         const timeB = b.message?.create_time || 0;
         return timeA - timeB;
       });
-      
+
       for (const node of allNodes) {
         if (node.message) {
           const msg = node.message;
           const author = msg.author?.role || msg.author?.name || 'unknown';
           const contentParts = msg.content?.parts || [];
-          const content = contentParts.length > 0 
+          const content = contentParts.length > 0
             ? contentParts.map(part => typeof part === 'string' ? part : part.text || '').join('\n').trim()
             : (msg.content?.text || msg.content || '');
-          
+
           if (content && typeof content === 'string' && content.trim()) {
             const role = author === 'user' || author === 'human' ? 'user' : 'assistant';
             messages.push({
@@ -1210,7 +1228,7 @@ async function convertConversationToTranscript(conversation, userId, userName, g
       }
     }
   }
-  
+
   // If no messages found, try alternative structure
   if (messages.length === 0 && conversation.messages) {
     conversation.messages.forEach(msg => {
@@ -1224,17 +1242,17 @@ async function convertConversationToTranscript(conversation, userId, userName, g
       }
     });
   }
-  
+
   // Extract conversation title
   const conversationTitle = conversation.title || 'Untitled conversation';
-  
+
   // Write all messages to transcript
   let transcriptPath = null;
   for (const msg of messages) {
-    const timestamp = typeof msg.timestamp === 'number' 
+    const timestamp = typeof msg.timestamp === 'number'
       ? (msg.timestamp > 1e12 ? new Date(msg.timestamp).toISOString() : new Date(msg.timestamp * 1000).toISOString())
       : new Date(msg.timestamp || Date.now()).toISOString();
-    
+
     transcriptPath = await appendToConstructTranscript(
       constructId,
       callsign,
@@ -1258,12 +1276,12 @@ async function convertConversationToTranscript(conversation, userId, userName, g
       }
     );
   }
-  
+
   // Add placeholder message at the end of ALL imported conversations
   // This helps users understand they can recreate the GPT/construct in Chatty
   if (transcriptPath && messages.length > 0) {
     let placeholderMessage = '';
-    
+
     if (gptConfig.isCustomGPT && gptConfig.hasFullConfig) {
       // Custom GPT with full config - offer to recreate with exact config
       placeholderMessage = `This conversation was imported from ChatGPT. The GPT configuration (instructions, description, etc.) was detected and can be automatically recreated in Chatty. Use the "+ Register Construct" button to restore this GPT: "${gptConfig.gptName}".`;
@@ -1274,7 +1292,7 @@ async function convertConversationToTranscript(conversation, userId, userName, g
       // Regular ChatGPT conversation - general guidance
       placeholderMessage = `This conversation was imported from ChatGPT (model: ${gptConfig.modelId || 'unknown'}). To recreate a similar GPT with the same behavior, use the "+ Register Construct" button in Chatty.`;
     }
-    
+
     await appendToConstructTranscript(
       constructId,
       callsign,
@@ -1298,7 +1316,7 @@ async function convertConversationToTranscript(conversation, userId, userName, g
       }
     );
   }
-  
+
   return transcriptPath;
 }
 
@@ -1307,7 +1325,7 @@ async function convertConversationToTranscript(conversation, userId, userName, g
  * Converts conversations to markdown transcripts and detects model/construct for each
  * Saves to provider-specific folders: users/{shard}/{user_id}/constructs/{construct}-001/chatty/
  * Also extracts and saves media files to {provider}/media/ (provider root level)
- * 
+ *
  * @param {Buffer} buffer - ZIP file buffer
  * @param {string} userId - User ID
  * @param {string} source - Provider source ('chatgpt', 'gemini', 'claude', etc.)
@@ -1360,7 +1378,7 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
       throw new Error(errorMessage || 'Failed to read ZIP archive');
     }
   }
-  
+
   // Use config for VVAULT root path (lowercase 'vvault')
   const { VVAULT_ROOT } = require('../../vvaultConnector/config');
 
@@ -1375,17 +1393,17 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
     runtimeMetadata?.constructId ||
     buildConstructBase(source, identity, runtimeMetadata?.runtimeId || runtimeMetadata?.id || userId)
   );
-  
+
   // Parse conversations based on source
   let conversations = [];
-  
+
   if (source === 'chatgpt') {
     // Try JSON first (preferred)
     const chatGptFiles = zip.file(CHATGPT_FILE_REGEX);
     if (chatGptFiles?.length) {
       const conversationsEntry = chatGptFiles[0];
       const raw = await conversationsEntry.async("string");
-      
+
       // Handle empty or malformed JSON
       if (raw && raw.trim().length > 0) {
         try {
@@ -1407,60 +1425,60 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
         }
       }
     }
-    
+
     // If no JSON conversations found, try HTML parsing with new markdown importer
     if (conversations.length === 0) {
       // Check for both conversations.html and chat.html
       console.log(`🔍 [persistImportToVVAULT] Checking for HTML files in ZIP...`);
       const htmlFiles = zip.file(/(^|\/)(conversations|chat)\.html$/i);
       console.log(`🔍 [persistImportToVVAULT] HTML file search result: ${htmlFiles?.length || 0} files found`);
-      
+
       if (htmlFiles?.length) {
         console.log(`📄 [persistImportToVVAULT] Found ${htmlFiles.length} HTML file(s):`, htmlFiles.map(f => f.name));
         console.log(`📄 [persistImportToVVAULT] Using HTML file: ${htmlFiles[0].name}, using new markdown importer...`);
-        
+
         try {
           const { processHtmlImport } = await import('./htmlMarkdownImporter.js');
           const { VVAULT_ROOT } = require('../../vvaultConnector/config');
           const { resolveVVAULTUserId } = require('../../vvaultConnector/writeTranscript');
-          
+
           // Resolve VVAULT user ID
           console.log(`🔍 [persistImportToVVAULT] Resolving VVAULT user ID...`);
           console.log(`   Input userId: ${userId}`);
           console.log(`   Input email: ${identity?.email || 'none'}`);
-          
+
           const vvaultUserId = await resolveVVAULTUserId(userId, identity?.email);
           if (!vvaultUserId) {
             throw new Error(`Cannot resolve VVAULT user ID for: ${userId} (email: ${identity?.email || 'none'})`);
           }
-          
+
           console.log(`✅ [persistImportToVVAULT] Resolved VVAULT user ID: ${vvaultUserId}`);
-          
+
           // Get HTML content
           console.log(`📖 [persistImportToVVAULT] Reading HTML content from ZIP (file: ${htmlFiles[0].name})...`);
           const htmlContent = await htmlFiles[0].async("string");
           console.log(`✅ [persistImportToVVAULT] HTML content read: ${htmlContent.length} characters`);
-          
+
           if (!htmlContent || htmlContent.trim().length === 0) {
             throw new Error(`HTML file is empty or could not be read (file: ${htmlFiles[0].name})`);
           }
-          
+
           console.log(`📄 [persistImportToVVAULT] Processing HTML with new markdown importer`);
           console.log(`   userId: ${vvaultUserId}`);
           console.log(`   email: ${identity?.email || 'none'}`);
           console.log(`   provider: ${source || 'chatgpt'}`);
           console.log(`   VVAULT_ROOT: ${VVAULT_ROOT}`);
-          
+
           // Process HTML - this writes files directly to VVAULT in chronological structure
           // CRITICAL: Use constructId from runtimeMetadata to ensure files are written to the correct instance folder
           // The constructId should match what the runtime expects (e.g., "chatgpt-devon-001")
-          const instanceIdForImport = runtimeMetadata?.constructId || 
+          const instanceIdForImport = runtimeMetadata?.constructId ||
                                      buildConstructBase(source || 'chatgpt', identity, userId) + '-001';
-          
+
           console.log(`🔑 [persistImportToVVAULT] Using instanceId for import: ${instanceIdForImport}`);
           console.log(`   From runtimeMetadata.constructId: ${runtimeMetadata?.constructId || 'none'}`);
           console.log(`   Fallback buildConstructBase: ${buildConstructBase(source || 'chatgpt', identity, userId)}`);
-          
+
           const result = await processHtmlImport(htmlContent, {
             userId: vvaultUserId,
             email: identity?.email || userId,
@@ -1469,11 +1487,11 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
             vvaultRoot: VVAULT_ROOT,
             shardId: 'shard_0000'
           });
-          
+
           console.log(`✅ [persistImportToVVAULT] Markdown importer completed`);
           console.log(`   Created: ${result.created} files`);
           console.log(`   Errors: ${result.errors.length}`);
-          
+
           if (result.files.length > 0) {
             console.log(`📄 Created files (first 10):`);
             result.files.slice(0, 10).forEach((file, idx) => {
@@ -1490,7 +1508,7 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
             console.warn(`   - File writing failed silently`);
             console.warn(`   Check htmlMarkdownImporter logs above for details`);
           }
-          
+
           if (result.errors.length > 0) {
             console.warn(`⚠️ [persistImportToVVAULT] ${result.errors.length} errors during HTML processing:`);
             result.errors.forEach(err => {
@@ -1518,10 +1536,10 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
               console.error('❌ [persistImportToVVAULT] Failed to create canonical conversation file:', canonicalError);
             }
           }
-          
+
           // Return early - markdown importer handles file writing directly
           return;
-          
+
         } catch (error) {
           console.error(`❌ [persistImportToVVAULT] New markdown importer failed:`, error);
           if (error instanceof Error) {
@@ -1534,18 +1552,18 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
             const { processConversationsHtml } = await import('./importHtmlProcessor.js');
             const { VVAULT_ROOT } = require('../../vvaultConnector/config');
             const { resolveVVAULTUserId } = require('../../vvaultConnector/writeTranscript');
-            
+
             const vvaultUserId = await resolveVVAULTUserId(userId, identity?.email);
             if (!vvaultUserId) {
               throw new Error(`Cannot resolve VVAULT user ID for: ${userId}`);
             }
-            
+
             const htmlContent = await htmlFiles[0].async("string");
           let constructId = runtimeMetadata?.constructId || 'chatgpt-devon-001';
           if (!constructId.endsWith('-001')) {
             constructId = `${constructId}-001`;
           }
-          
+
           const context = {
               shardId: 'shard_0000',
             userId: vvaultUserId,
@@ -1556,13 +1574,13 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
             importSourceFilename: htmlFiles[0].name,
             importedBy: identity?.email || userId
           };
-          
+
           const options = {
             destRootPath: VVAULT_ROOT,
             overwrite: false,
             dedupe: 'byConversationId'
           };
-          
+
           const summary = await processConversationsHtml(htmlContent, context, options);
             console.log(`✅ [persistImportToVVAULT] Legacy processor created ${summary.totalCreated} conversations`);
           return;
@@ -1582,7 +1600,7 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
         }
       }
     }
-    
+
     // If still no conversations, return early
     if (conversations.length === 0) {
       console.warn(`⚠️ No conversations found in ${source} import (checked JSON and HTML)`);
@@ -1593,7 +1611,7 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
                         zip.file(GEMINI_FILE_REGEX)[0] ||
                         zip.file(/bard\/conversations\.jsonl?$/i)[0];
     if (!geminiMatch) return;
-    
+
     const raw = await geminiMatch.async("string");
     try {
       conversations = JSON.parse(raw);
@@ -1614,7 +1632,7 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
   }
 
   const fsPromises = await import('fs/promises');
-  
+
   // Try to extract user name from import data (user.json) or use default
   let userName = 'User';
   try {
@@ -1635,17 +1653,17 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
   } catch (error) {
     console.warn('⚠️ Could not extract user name from import, using default');
   }
-  
+
   // Process each conversation and convert to markdown transcripts
   // Each conversation is detected for its model/construct and saved accordingly
   let processedCount = 0;
   let errorCount = 0;
   const constructStats = {}; // Track how many conversations per construct
-  
+
   for (const convo of conversations) {
     try {
       // Extract GPT configuration for this conversation
-      const gptConfig = source === 'chatgpt' 
+      const gptConfig = source === 'chatgpt'
         ? await extractChatGPTConfig(convo, zip)
         : {
             modelId: 'unknown',
@@ -1659,11 +1677,11 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
             gptName: null,
             hasFullConfig: false
           };
-      
+
       if (!gptConfig.isCustomGPT) {
         gptConfig.constructId = runtimeConstructBase;
       }
-      
+
       // Track construct usage
       const constructKey = gptConfig.constructId;
       if (!constructStats[constructKey]) {
@@ -1676,12 +1694,12 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
           constructStats[constructKey].withFullConfig++;
         }
       }
-      
+
       // Convert conversation to markdown transcript
       // Pass userId consistently to ensure VVAULT uses same user ID as database
       await convertConversationToTranscript(convo, userId, userName, gptConfig, source, runtimeMetadata, zip);
       processedCount++;
-      
+
       if (processedCount % 10 === 0) {
         console.log(`📝 Processed ${processedCount}/${conversations.length} conversations...`);
       }
@@ -1690,7 +1708,7 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
       errorCount++;
     }
   }
-  
+
   // Log summary
   console.log(`\n✅ Import Summary:`);
   console.log(`   Total conversations: ${conversations.length}`);
@@ -1722,27 +1740,27 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
   );
   const mediaPath = path.join(importsBasePath, 'media');
   await fsPromises.mkdir(mediaPath, { recursive: true });
-  
+
   let mediaCount = 0;
   let imageCount = 0;
   let videoCount = 0;
   let audioCount = 0;
-  
+
   for (const [entryName, entry] of Object.entries(zip.files)) {
     // Skip directories
     if (entry.dir) continue;
-    
+
     // Check if it's a media file (in media/files directories OR by extension)
     const isInMediaDir = entryName.match(/^media\//i) || entryName.match(/^files\//i);
     const isImage = IMAGE_EXTENSIONS.test(entryName);
     const isVideo = VIDEO_EXTENSIONS.test(entryName);
     const isAudio = AUDIO_EXTENSIONS.test(entryName);
-    
+
     if (!isInMediaDir && !isImage && !isVideo && !isAudio) continue;
-    
+
     try {
       const fileBuffer = await entry.async('nodebuffer');
-      
+
       // Preserve directory structure if in media/files folders, otherwise organize by type
       let relativePath;
       if (isInMediaDir) {
@@ -1753,16 +1771,16 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
         const mediaType = isImage ? 'images' : (isVideo ? 'videos' : 'audio');
         relativePath = path.join(mediaType, fileName);
       }
-      
+
       const mediaFilePath = path.join(mediaPath, relativePath);
-      
+
       // Create subdirectories if needed
       const mediaFileDir = path.dirname(mediaFilePath);
       await fsPromises.mkdir(mediaFileDir, { recursive: true });
-      
+
       await fsPromises.writeFile(mediaFilePath, fileBuffer);
       mediaCount++;
-      
+
       if (isImage) imageCount++;
       else if (isVideo) videoCount++;
       else if (isAudio) audioCount++;
@@ -1770,7 +1788,7 @@ export async function persistImportToVVAULT(buffer, userId, source, runtimeMetad
       console.warn(`⚠️ Failed to extract media file ${entryName}:`, error.message);
     }
   }
-  
+
   if (mediaCount > 0) {
     const breakdown = [];
     if (imageCount > 0) breakdown.push(`${imageCount} image${imageCount !== 1 ? 's' : ''}`);

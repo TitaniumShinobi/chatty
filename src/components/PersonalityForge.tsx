@@ -1,5 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { simForgeClient, ForgeResult, ForgePreview, PersonalityAnalysis } from '../lib/simForge';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  simForgeClient,
+  ForgeResult,
+  ForgePreview,
+  PersonalityAnalysis,
+  SimBuildJob,
+} from '../lib/simForge';
 import { Flame, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
 
 interface PersonalityForgeProps {
@@ -14,10 +20,93 @@ export default function PersonalityForge({ constructCallsign, constructName, onI
   const [isLoading, setIsLoading] = useState(true);
   const [isForging, setIsForging] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [simBuildJob, setSimBuildJob] = useState<SimBuildJob | null>(null);
+  const [simBuildError, setSimBuildError] = useState<string | null>(null);
+  const [simBuildPhase, setSimBuildPhase] = useState<'idle' | 'submitting' | 'queued' | 'running' | 'succeeded' | 'failed' | 'timed_out'>('idle');
+  const isMountedRef = useRef(true);
+  const normalizedCallsign = constructCallsign.trim().toLowerCase();
+  const isPlatformConstruct =
+    normalizedCallsign === 'zen' ||
+    normalizedCallsign === 'zen-001' ||
+    normalizedCallsign === 'lin' ||
+    normalizedCallsign === 'lin-001';
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     loadPreview();
+    setSimBuildJob(null);
+    setSimBuildError(null);
+    setSimBuildPhase('idle');
   }, [constructCallsign]);
+
+  function isTerminalStatus(status?: string) {
+    return status === 'succeeded' || status === 'failed' || status === 'timed_out';
+  }
+
+  function mapBuildPhase(status?: string): 'queued' | 'running' | 'succeeded' | 'failed' | 'timed_out' {
+    if (status === 'queued') return 'queued';
+    if (status === 'running') return 'running';
+    if (status === 'succeeded') return 'succeeded';
+    if (status === 'timed_out') return 'timed_out';
+    return 'failed';
+  }
+
+  async function pollConstructBuild(jobId: string) {
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      if (!isMountedRef.current) return;
+
+      const job = await simForgeClient.getConstructSimBuildStatus(jobId);
+      if (!isMountedRef.current) return;
+
+      setSimBuildJob(job);
+      setSimBuildPhase(mapBuildPhase(job.status));
+
+      if (isTerminalStatus(job.status)) return;
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+
+    setSimBuildPhase('timed_out');
+    setSimBuildError('Build polling timed out.');
+  }
+
+  async function handleConstructBuild() {
+    setSimBuildError(null);
+    setSimBuildPhase('submitting');
+
+    try {
+      const job = await simForgeClient.startConstructSimBuild({
+        callsign: constructCallsign,
+        dryRun: true,
+        includeCapsuleSummary: true,
+      });
+
+      if (!isMountedRef.current) return;
+
+      setSimBuildJob(job);
+      setSimBuildPhase(mapBuildPhase(job.status));
+
+      if (!isTerminalStatus(job.status)) {
+        await pollConstructBuild(job.jobId);
+      }
+    } catch (err: any) {
+      if (!isMountedRef.current) return;
+
+      if (err?.statusCode === 409 && err?.activeJobId) {
+        setSimBuildPhase('running');
+        await pollConstructBuild(String(err.activeJobId));
+        return;
+      }
+
+      setSimBuildPhase('failed');
+      setSimBuildError(err?.message || 'Failed to start sim build.');
+    }
+  }
 
   async function loadPreview() {
     setIsLoading(true);
@@ -37,7 +126,7 @@ export default function PersonalityForge({ constructCallsign, constructName, onI
     setError(null);
 
     try {
-      const result = save 
+      const result = save
         ? await simForgeClient.forgeAndSave(constructCallsign, constructName)
         : await simForgeClient.forge(constructCallsign, constructName);
 
@@ -68,7 +157,7 @@ export default function PersonalityForge({ constructCallsign, constructName, onI
           <AlertCircle size={18} />
           <span>{error}</span>
         </div>
-        <button 
+        <button
           onClick={loadPreview}
           className="mt-3 text-sm text-[#ADA587] hover:underline"
         >
@@ -126,7 +215,7 @@ export default function PersonalityForge({ constructCallsign, constructName, onI
           {preview.readyToForge ? (
             <div className="space-y-3">
               <p className="text-sm text-[#8a8478]">
-                simForge will analyze {constructName}'s communication patterns, personality traits, 
+                simForge will analyze {constructName}'s communication patterns, personality traits,
                 and behavioral signatures to create authentic identity files.
               </p>
               <div className="flex gap-3">
@@ -153,6 +242,55 @@ export default function PersonalityForge({ constructCallsign, constructName, onI
                   )}
                 </button>
               </div>
+
+              {isPlatformConstruct ? (
+                <div className="rounded-lg border border-slate-500/30 bg-slate-900/20 p-3 space-y-1">
+                  <p className="text-sm font-medium text-slate-300">System Construct: Sim lane is platform-managed</p>
+                  <p className="text-xs text-slate-200/80">
+                    {normalizedCallsign === 'lin' || normalizedCallsign === 'lin-001' ? 'lin-001' : 'zen-001'} is a platform construct and does not expose user Build Sim or Forge Sim controls.
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-cyan-500/30 bg-cyan-900/10 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-cyan-300">Sim Lane Target: {constructCallsign}</p>
+                      <p className="text-xs text-cyan-100/80">
+                        {"User-made constructs follow GPT -> Sim -> VSI lifecycle."}
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleConstructBuild}
+                      disabled={simBuildPhase === 'submitting' || simBuildPhase === 'queued' || simBuildPhase === 'running'}
+                      className="px-4 py-2 rounded-lg bg-cyan-500/20 border border-cyan-300 text-cyan-200 text-sm font-medium hover:bg-cyan-500/30 disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {simBuildPhase === 'submitting' || simBuildPhase === 'queued' || simBuildPhase === 'running' ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" /> Building Sim...</>
+                      ) : (
+                        <>Build Sim</>
+                      )}
+                    </button>
+                  </div>
+
+                  <p className="text-xs text-cyan-100/70">
+                    Memory policy: runtime memory remains inference-time context and is not baked into model weights.
+                  </p>
+
+                  {simBuildJob && (
+                    <p className="text-xs text-cyan-100/80">
+                      Job {simBuildJob.jobId}: {simBuildJob.status}
+                    </p>
+                  )}
+
+                  {simBuildPhase === 'timed_out' && (
+                    <p className="text-xs text-amber-300">Build timed out. You can retry safely.</p>
+                  )}
+
+                  {simBuildError && (
+                    <p className="text-xs text-red-300">{simBuildError}</p>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-center py-6 text-[#8a8478] bg-[#1a1a1a] rounded-lg border border-[#ADA587]/10">
@@ -198,7 +336,7 @@ function ForgeResultView({ result, onReset }: { result: ForgeResult; onReset: ()
             }`}
           >
             {tab === 'analysis' ? 'Analysis' :
-             tab === 'prompt' ? 'prompt.txt' : 'conditioning.txt'}
+             tab === 'prompt' ? 'prompt.json' : 'conditioning.txt'}
           </button>
         ))}
       </div>
@@ -207,13 +345,13 @@ function ForgeResultView({ result, onReset }: { result: ForgeResult; onReset: ()
         {activeTab === 'analysis' && result.analysis && (
           <AnalysisView analysis={result.analysis} />
         )}
-        
+
         {activeTab === 'prompt' && result.identityFiles && (
           <pre className="bg-[#1a1a1a] p-4 rounded text-sm overflow-x-auto whitespace-pre-wrap text-[#e8e0d5] max-h-80 overflow-y-auto border border-[#ADA587]/10">
-            {result.identityFiles['prompt.txt']}
+            {result.identityFiles['prompt.json'] || result.identityFiles['prompt.txt']}
           </pre>
         )}
-        
+
         {activeTab === 'conditioning' && result.identityFiles && (
           <pre className="bg-[#1a1a1a] p-4 rounded text-sm overflow-x-auto whitespace-pre-wrap text-[#e8e0d5] max-h-80 overflow-y-auto border border-[#ADA587]/10">
             {result.identityFiles['conditioning.txt']}

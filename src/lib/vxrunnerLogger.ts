@@ -27,6 +27,14 @@ function getDevIngestUrl(port: number, ingestId: string): string {
   return u.toString()
 }
 
+function getRuntimeEnv(): Record<string, any> {
+  try {
+    return (0, eval)('typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {}')
+  } catch {
+    return typeof process !== 'undefined' && process.env ? process.env : {}
+  }
+}
+
 /**
  * Log persona violation to VXRunner endpoint or JSON file
  * Non-blocking - failures won't break response flow
@@ -35,9 +43,10 @@ export function logPersonaViolation(violation: PersonaViolation): void {
   try {
     // In production, only log remotely if explicitly configured.
     // In dev, allow a localhost default for convenience.
+    const env = getRuntimeEnv()
     const vxrunnerEndpoint =
-      import.meta.env.VITE_VXRUNNER_ENDPOINT ||
-      (import.meta.env.DEV
+      env.VITE_VXRUNNER_ENDPOINT ||
+      (env.DEV
         ? getDevIngestUrl(7242, 'ec2d9602-9db8-40be-8c6f-4790712d2073')
         : '');
 

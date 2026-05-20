@@ -1,7 +1,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import SunCalc from 'suncalc'
 import { type User } from './auth'
 import { getActiveThemeScript, getAvailableThemeScripts, isThemeScriptActive, type ThemeScript } from './calendarThemeService'
+
+// Time-based theme: light 7:00–19:00, night 19:00–7:00 (no geolocation/OS)
+export function getTimeBasedTheme(): 'light' | 'night' {
+  const hour = new Date().getHours()
+  return (hour >= 19 || hour < 7) ? 'night' : 'light'
+}
 
 export type Theme = 'light' | 'night' | 'auto'
 export type ThemeScriptId = 'none' | 'auto' | string
@@ -35,31 +40,25 @@ interface ThemeProviderProps {
   user: User | null
 }
 
-// Default coordinates (Atlanta, GA - Devon's approximate location based on EST timezone)
-const DEFAULT_COORDS = { lat: 33.749, lng: -84.388 }
-
-// Calculate initial theme based on time of day (before component mounts)
-function getInitialSystemTheme(): 'light' | 'night' {
-  const now = new Date()
-  const savedLat = typeof window !== 'undefined' ? localStorage.getItem('chatty_user_lat') : null
-  const savedLng = typeof window !== 'undefined' ? localStorage.getItem('chatty_user_lng') : null
-  const coords = savedLat && savedLng 
-    ? { lat: parseFloat(savedLat), lng: parseFloat(savedLng) }
-    : DEFAULT_COORDS
-  const times = SunCalc.getTimes(now, coords.lat, coords.lng)
-  const isDay = now >= times.sunrise && now < times.sunset
-  return isDay ? 'light' : 'night'
+// Fixed day boundaries for display (7:00 / 19:00)
+function getFixedSunTimesForToday(): { sunrise: Date; sunset: Date } {
+  const d = new Date()
+  const sunrise = new Date(d)
+  sunrise.setHours(7, 0, 0, 0)
+  const sunset = new Date(d)
+  sunset.setHours(19, 0, 0, 0)
+  return { sunrise, sunset }
 }
 
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) => {
   const [theme, setThemeInternal] = useState<Theme>('auto')
   const [sessionThemeOverride, setSessionThemeOverride] = useState<'light' | 'night' | null>(null)
-  const [systemTheme, setSystemTheme] = useState<'light' | 'night'>(getInitialSystemTheme)
-  const [coords, setCoords] = useState<{ lat: number; lng: number }>(DEFAULT_COORDS)
-  const [sunTimes, setSunTimes] = useState<{ sunrise: Date; sunset: Date } | null>(null)
+  const [systemTheme, setSystemTheme] = useState<'light' | 'night'>(getTimeBasedTheme)
+  const [sunTimes, setSunTimes] = useState<{ sunrise: Date; sunset: Date } | null>(() => getFixedSunTimesForToday())
   const [themeScriptSetting, setThemeScriptSetting] = useState<ThemeScriptId>('auto')
   const [activeThemeScript, setActiveThemeScript] = useState<ThemeScript | null>(null)
   const [themeInitialized, setThemeInitialized] = useState(false)
+  const [themeScriptCalendarTick, setThemeScriptCalendarTick] = useState(0)
   const availableThemeScripts = useMemo(() => getAvailableThemeScripts(), [])
   const lastAppliedScriptIdRef = useRef<string | null>(null)
   
@@ -77,73 +76,20 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
     }
   }, [theme, sessionThemeOverride, systemTheme])
 
-  // === GEOLOCATION - Get user's location for accurate sunrise/sunset ===
+  // === TIME-BASED THEME (7:00–19:00 light, 19:00–7:00 night) - no geolocation/OS ===
   useEffect(() => {
-    // Try to get saved location first
-    const savedLat = localStorage.getItem('chatty_user_lat')
-    const savedLng = localStorage.getItem('chatty_user_lng')
-    
-    if (savedLat && savedLng) {
-      setCoords({ lat: parseFloat(savedLat), lng: parseFloat(savedLng) })
-      console.log('[Theme] Using saved location:', { lat: savedLat, lng: savedLng })
-    } else if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords
-          setCoords({ lat: latitude, lng: longitude })
-          localStorage.setItem('chatty_user_lat', latitude.toString())
-          localStorage.setItem('chatty_user_lng', longitude.toString())
-          console.log('[Theme] Got geolocation:', { lat: latitude, lng: longitude })
-        },
-        (error) => {
-          console.log('[Theme] Geolocation denied/unavailable, using default:', DEFAULT_COORDS, error.message)
-        },
-        { timeout: 5000, maximumAge: 86400000 } // Cache for 24 hours
-      )
-    }
-  }, [])
-
-  // === SUNRISE/SUNSET CALCULATION - START ===
-  useEffect(() => {
-    const calculateSunTheme = (): 'light' | 'night' => {
-      const now = new Date()
-      const times = SunCalc.getTimes(now, coords.lat, coords.lng)
-      
-      const isDay = now >= times.sunrise && now < times.sunset
-      
-      setSunTimes(prev => {
-        const newRise = times.sunrise.getTime()
-        const newSet = times.sunset.getTime()
-        if (prev && prev.sunrise.getTime() === newRise && prev.sunset.getTime() === newSet) return prev
-        console.log('[Theme] Sunrise/Sunset detection:', { 
-          now: now.toLocaleTimeString(),
-          sunrise: times.sunrise.toLocaleTimeString(),
-          sunset: times.sunset.toLocaleTimeString(),
-          isDay,
-          coords
-        })
-        return { sunrise: times.sunrise, sunset: times.sunset }
-      })
-      
-      return isDay ? 'light' : 'night'
-    }
-    
-    const detectedTheme = calculateSunTheme()
-    setSystemTheme(detectedTheme)
-
-    const intervalId = setInterval(() => {
-      const newTheme = calculateSunTheme()
+    const tick = () => {
+      const next = getTimeBasedTheme()
       setSystemTheme(prev => {
-        if (prev !== newTheme) {
-          console.log('[Theme] Sun-based theme changed:', { newTheme })
-        }
-        return newTheme
+        if (prev !== next) console.log('[Theme] Time-based theme changed:', { next })
+        return next
       })
-    }, 60000)
-
+      setSunTimes(getFixedSunTimesForToday())
+    }
+    tick()
+    const intervalId = setInterval(tick, 60000)
     return () => clearInterval(intervalId)
-  }, [coords])
-  // === SUNRISE/SUNSET CALCULATION - END ===
+  }, [])
 
   // Load theme from localStorage when user changes
   useEffect(() => {
@@ -177,10 +123,17 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
     setThemeInitialized(true)
   }, [user])
 
+  // When Theme is Auto, re-check calendar every minute so seasonal theme updates at midnight without refresh
+  useEffect(() => {
+    if (themeScriptSetting !== 'auto') return
+    const id = setInterval(() => setThemeScriptCalendarTick((t) => t + 1), 60000)
+    return () => clearInterval(id)
+  }, [themeScriptSetting])
+
   // === THEME SCRIPT DETECTION ===
   useEffect(() => {
     let script: ThemeScript | null = null
-    
+
     if (themeScriptSetting === 'none') {
       script = null
     } else if (themeScriptSetting === 'auto') {
@@ -193,7 +146,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
         script = found
       }
     }
-    
+
     const nextId = script?.id ?? null
     const prevId = lastAppliedScriptIdRef.current
 
@@ -202,17 +155,17 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
     lastAppliedScriptIdRef.current = nextId
 
     setActiveThemeScript(script)
-    
+
     const root = document.documentElement
     availableThemeScripts.forEach(s => {
       root.classList.remove(`theme-script-${s.id}`)
     })
-    
+
     if (script) {
       root.classList.add(`theme-script-${script.id}`)
       console.log('[Theme] Applied theme script:', script.id)
     }
-  }, [themeScriptSetting, availableThemeScripts])
+  }, [themeScriptSetting, availableThemeScripts, themeScriptCalendarTick])
 
   // Save theme script setting to localStorage (only after initial load)
   useEffect(() => {
@@ -230,29 +183,34 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, user }) 
     : theme
 
   // === THEME APPLICATION - START ===
-  // Apply theme to document
+  // Apply theme to document; when auto, do not override if data-theme-manual is set
   useEffect(() => {
     const root = document.documentElement
-    const resolved = theme === 'auto' 
-      ? (sessionThemeOverride ?? systemTheme) 
+    if (theme === 'auto' && root.hasAttribute('data-theme-manual')) return
+
+    const resolved = theme === 'auto'
+      ? (sessionThemeOverride ?? systemTheme)
       : theme
-    
-    console.log('[Theme] Applying theme:', { 
-      setting: theme, 
-      systemTheme, 
+
+    console.log('[Theme] Applying theme:', {
+      setting: theme,
+      systemTheme,
       resolved,
       localStorage: localStorage.getItem('chatty-theme')
     })
 
-    // Clear previous state
     root.classList.remove('theme-light', 'theme-night', 'night-mode')
     root.removeAttribute('data-theme')
 
-    // Apply classes/attributes so CSS variables take effect
     root.setAttribute('data-theme', resolved)
     root.classList.add(`theme-${resolved}`)
     if (resolved === 'night') {
       root.classList.add('night-mode')
+    }
+    if (theme === 'light' || theme === 'night') {
+      root.setAttribute('data-theme-manual', 'true')
+    } else {
+      root.removeAttribute('data-theme-manual')
     }
   }, [theme, systemTheme, sessionThemeOverride])
   // === THEME APPLICATION - END ===

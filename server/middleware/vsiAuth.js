@@ -118,4 +118,33 @@ export function attachVSIContext(req, res, next) {
   next();
 }
 
-export default { requireVSIScope, requireVSIConstruct, attachVSIContext };
+export function requireVSIAdminAccess(req, res, next) {
+  const configuredToken = process.env.VSI_ADMIN_TOKEN?.trim();
+  if (!configuredToken) {
+    return res.status(503).json({
+      ok: false,
+      error: 'VSI admin token is not configured'
+    });
+  }
+
+  const headerToken = req.headers['x-vsi-admin-token'];
+  const authHeader = req.headers.authorization || '';
+  const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  const presentedToken = String(headerToken || bearerToken || '').trim();
+
+  if (!presentedToken || presentedToken !== configuredToken) {
+    return res.status(403).json({
+      ok: false,
+      error: 'admin_auth_required'
+    });
+  }
+
+  req.vsiAdmin = {
+    actor: req.user?.email || req.user?.sub || req.user?.id || 'admin',
+    tokenAuthenticated: true
+  };
+
+  next();
+}
+
+export default { requireVSIScope, requireVSIConstruct, attachVSIContext, requireVSIAdminAccess };

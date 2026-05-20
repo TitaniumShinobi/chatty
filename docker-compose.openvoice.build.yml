@@ -1,0 +1,6 @@
+services:
+  openvoice:
+    build:
+      context: ${OPENVOICE_BUILD_CONTEXT:-../OpenVoice}
+      dockerfile: ${OPENVOICE_DOCKERFILE:-Dockerfile}
+    image: ${OPENVOICE_IMAGE:-chatty-openvoice:local}

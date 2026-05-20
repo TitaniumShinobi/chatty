@@ -20,8 +20,8 @@ export type PrimaryConversationParams = {
 /**
  * Create the canonical conversation markdown file for a runtime construct.
  * CRITICAL PATH PATTERN (NEVER DEVIATE):
- * /vvault_files/users/{shard}/{userId}/instances/{constructName}/chatty/chat_with_{constructId}.md
- * Where constructName = constructId WITHOUT version suffix (zen-001 -> zen)
+ * /vvault_files/users/{shard}/{userId}/instances/{constructCallsign}/chatty/chat_with_{constructCallsign}.md
+ * constructCallsign MUST be the full ID (e.g., katana-001, zen-001). Do not strip suffixes.
  * A metadata block is written to align runtime pinning and canonical detection.
  */
 export async function createPrimaryConversationFile(params: PrimaryConversationParams): Promise<string> {
@@ -39,11 +39,14 @@ export async function createPrimaryConversationFile(params: PrimaryConversationP
     throw new Error('constructId and userId are required to create canonical conversation file');
   }
 
-  const resolvedRuntimeId = runtimeId || constructId.replace(/-001$/, '') || constructId;
-  // CRITICAL: Use constructName (without version suffix) for folder, constructId for filename
-  const constructName = constructId.replace(/-\d+$/, '');
-  const canonicalDir = path.join(vvaultRoot, 'users', shardId, userId, 'instances', constructName, 'chatty');
-  const filePath = path.join(canonicalDir, `chat_with_${constructId}.md`);
+  if (!/-\d+$/.test(constructId)) {
+    throw new Error(`constructId must include callsign suffix (e.g., katana-001). Received: "${constructId}"`);
+  }
+
+  const resolvedRuntimeId = runtimeId || constructId;
+  const constructCallsign = constructId;
+  const canonicalDir = path.join(vvaultRoot, 'users', shardId, userId, 'instances', constructCallsign, 'chatty');
+  const filePath = path.join(canonicalDir, `chat_with_${constructCallsign}.md`);
   const sessionId = `${constructId}_chat_with_${constructId}`;
   const timestamp = new Date().toISOString();
 

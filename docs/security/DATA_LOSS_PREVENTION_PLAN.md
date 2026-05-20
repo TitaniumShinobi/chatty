@@ -94,7 +94,7 @@ After making changes:
 - [ ] Fix `loadRuntimes()` to filter deleted runtimes
 - [ ] Add runtime persistence check to startup
 - [ ] Ensure conversations.html imports appear in sidebar
-- [ ] Implement Lin personality extraction
+- [ ] Review and remove outdated Lin-specific assumptions before changing identity-related persistence logic
 - [ ] Update Project State Ledger with all recent changes
 - [ ] Create pre-change verification script
 - [ ] Add post-change verification to CI/CD (if applicable)
@@ -110,4 +110,3 @@ After making changes:
 ---
 
 **CRITICAL REMINDER**: Data loss is unacceptable. When in doubt, preserve existing data and add new functionality alongside, never replace.
-

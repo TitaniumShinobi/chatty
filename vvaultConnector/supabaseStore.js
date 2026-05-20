@@ -1,11 +1,14 @@
 /**
  * Supabase Store for VVAULT Conversations
- * 
- * Priority: VVAULT API (source of truth) → Supabase (fallback)
- * 
- * The VVAULT API is the canonical source for conversation transcripts.
- * Supabase is used as a fallback when the API is unavailable.
- * 
+ *
+ * Legacy Supabase Store for VVAULT Conversations
+ *
+ * Priority: VVAULT API → legacy Supabase fallback.
+ *
+ * This module still contains the legacy vault_files adapter while Chatty is
+ * being moved to the VVAULT body. Callers that need canonical conversation
+ * truth should prefer vvaultConnector/readConversations.js.
+ *
  * Convention (CRITICAL - NEVER DEVIATE):
  * - Supabase path: "/vvault_files/users/{shard}/{userId}/instances/{constructId}/chatty/chat_with_{constructId}.md"
  * - filename in table: "instances/{constructId}/chatty/chat_with_{constructId}.md"
@@ -25,6 +28,210 @@ function sha256(content) {
 const _supabaseUserIdCache = new Map();
 const SUPABASE_USER_CACHE_TTL = 5 * 60 * 1000;
 
+function looksLikeEmail(value) {
+  return typeof value === 'string' && value.includes('@');
+}
+
+function normalizeUserLookupContext(userEmailOrId) {
+  if (userEmailOrId && typeof userEmailOrId === 'object' && !Array.isArray(userEmailOrId)) {
+    const userEmail = userEmailOrId.userEmail || userEmailOrId.email || null;
+    const supabaseUserId = userEmailOrId.supabaseUserId || userEmailOrId.supabase_user_id || null;
+    const userId = userEmailOrId.userId || userEmailOrId.uid || userEmail || supabaseUserId || null;
+    return {
+      userId,
+      userEmail,
+      supabaseUserId,
+      primaryLookupId: supabaseUserId || userEmail || userId,
+    };
+  }
+  const value = userEmailOrId || null;
+  return {
+    userId: value,
+    userEmail: looksLikeEmail(value) ? value : null,
+    supabaseUserId: looksLikeEmail(value) ? null : value,
+    primaryLookupId: value,
+  };
+}
+
+function shouldPreferVvaultApiConversationRead(lookup) {
+  return Boolean(lookup?.userEmail);
+}
+
+function normalizeConstructCallsign(constructCallsign, constructId) {
+  let normalizedConstructId = constructCallsign || constructId || 'unknown';
+  if (normalizedConstructId !== 'unknown' && !/\-\d{3}$/.test(normalizedConstructId)) {
+    console.warn(`⚠️ [SupabaseStore] constructId "${normalizedConstructId}" missing callsign suffix, normalizing to "${normalizedConstructId}-001"`);
+    normalizedConstructId = `${normalizedConstructId}-001`;
+  }
+  return normalizedConstructId;
+}
+
+function resolveVaultFileUpdatedAt(row = {}) {
+  const metadata = typeof row.metadata === 'string'
+    ? (() => {
+        try {
+          return JSON.parse(row.metadata);
+        } catch {
+          return {};
+        }
+      })()
+    : (row.metadata || {});
+
+  return (
+    row.updated_at ||
+    metadata.updatedAt ||
+    metadata.lastUpdated ||
+    row.created_at ||
+    new Date().toISOString()
+  );
+}
+
+function slugifyHydroProjectName(value = '') {
+  return value
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'workspace';
+}
+
+function parseHydroProjectSlug(filename = '') {
+  const match = filename.match(/instances\/hydro-001\/code\/(.+)_hydro_chat\.md$/i);
+  return match ? match[1] : null;
+}
+
+function resolveConversationStorageTarget({ normalizedConstructId, sessionId, metadata = {} }) {
+  const explicitStoragePath = typeof metadata.transcriptPath === 'string' && metadata.transcriptPath.trim()
+    ? metadata.transcriptPath.trim().replace(/^\/+/, '')
+    : null;
+
+  if (explicitStoragePath) {
+    const hydroProjectSlug = parseHydroProjectSlug(explicitStoragePath);
+    return {
+      filename: explicitStoragePath,
+      storagePath: explicitStoragePath,
+      sessionId: sessionId || (hydroProjectSlug
+        ? `${normalizedConstructId}_${hydroProjectSlug}_hydro_chat`
+        : `${normalizedConstructId}_chat_with_${normalizedConstructId}`),
+      projectSlug: hydroProjectSlug,
+    };
+  }
+
+  if (normalizedConstructId === 'hydro-001' && metadata.projectName) {
+    const projectSlug = slugifyHydroProjectName(metadata.projectName);
+    const storagePath = `instances/${normalizedConstructId}/code/${projectSlug}_hydro_chat.md`;
+    return {
+      filename: storagePath,
+      storagePath,
+      sessionId: sessionId || `${normalizedConstructId}_${projectSlug}_hydro_chat`,
+      projectSlug,
+    };
+  }
+
+  const storagePath = `instances/${normalizedConstructId}/chatty/chat_with_${normalizedConstructId}.md`;
+  return {
+    filename: storagePath,
+    storagePath,
+    sessionId: sessionId || `${normalizedConstructId}_chat_with_${normalizedConstructId}`,
+    projectSlug: null,
+  };
+}
+
+function sanitizeAttachmentReference(attachment = {}, fallbackId) {
+  const mimeType = typeof attachment.mimeType === 'string' && attachment.mimeType.trim()
+    ? attachment.mimeType.trim()
+    : 'application/octet-stream';
+  return {
+    id: typeof attachment.id === 'string' && attachment.id.trim() ? attachment.id.trim() : fallbackId,
+    name: typeof attachment.name === 'string' && attachment.name.trim() ? attachment.name.trim() : fallbackId,
+    filename: typeof attachment.filename === 'string' && attachment.filename.trim() ? attachment.filename.trim() : undefined,
+    mimeType,
+    size: Number.isFinite(attachment.size) ? Number(attachment.size) : 0,
+    category: attachment.category === 'image' || mimeType.startsWith('image/') ? 'image' : 'document',
+    storagePath: typeof attachment.storagePath === 'string' && attachment.storagePath.trim() ? attachment.storagePath.trim() : undefined,
+    sha256: typeof attachment.sha256 === 'string' && attachment.sha256.trim() ? attachment.sha256.trim() : undefined,
+  };
+}
+
+function buildAttachmentStoragePath(normalizedConstructId, attachment, metadata = {}, index = 0) {
+  if (typeof attachment.storagePath === 'string' && attachment.storagePath.trim()) {
+    return attachment.storagePath.trim().replace(/^\/+/, '');
+  }
+  const safeName = (attachment.name || attachment.filename || `attachment_${index + 1}`)
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '') || `attachment_${index + 1}`;
+  const prefix = metadata.projectName ? `${slugifyHydroProjectName(metadata.projectName)}_` : '';
+  const folder = attachment.category === 'image' || String(attachment.mimeType || '').startsWith('image/')
+    ? 'assets'
+    : 'documents';
+  return `instances/${normalizedConstructId}/${folder}/${prefix}${safeName}`;
+}
+
+function extractAttachmentContent(attachment = {}) {
+  if (typeof attachment.textContent === 'string') return attachment.textContent;
+  if (typeof attachment.dataUrl === 'string') return attachment.dataUrl;
+  if (typeof attachment.content === 'string') return attachment.content;
+  return '';
+}
+
+async function persistAttachmentFiles({ supabase, supabaseUserId, normalizedConstructId, attachments = [], metadata = {}, sessionId }) {
+  if (!attachments.length) return [];
+
+  const persisted = [];
+  for (let index = 0; index < attachments.length; index += 1) {
+    const attachment = attachments[index] || {};
+    const storagePath = buildAttachmentStoragePath(normalizedConstructId, attachment, metadata, index);
+    const content = extractAttachmentContent(attachment);
+    const reference = sanitizeAttachmentReference({
+      ...attachment,
+      storagePath,
+      filename: attachment.filename || attachment.name,
+      sha256: attachment.sha256 || (content ? sha256(content) : undefined),
+    }, `attachment-${index + 1}`);
+    const record = {
+      user_id: supabaseUserId,
+      construct_id: normalizedConstructId,
+      filename: storagePath,
+      storage_path: storagePath,
+      content,
+      sha256: reference.sha256 || sha256(`${sessionId}:${storagePath}`),
+      metadata: {
+        source: 'hydro-ask-attachment',
+        linkedSessionId: sessionId,
+        linkedTranscriptPath: metadata.transcriptPath,
+        originalFilename: attachment.name || attachment.filename || reference.name,
+        mimeType: reference.mimeType,
+        size: reference.size,
+        category: reference.category,
+      },
+      file_type: reference.category === 'image' ? 'asset' : 'document',
+    };
+
+    const { data: existing } = await supabase
+      .from('vault_files')
+      .select('id')
+      .eq('user_id', supabaseUserId)
+      .eq('filename', storagePath)
+      .maybeSingle();
+
+    if (existing?.id) {
+      const { error } = await supabase
+        .from('vault_files')
+        .update(record)
+        .eq('id', existing.id);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from('vault_files')
+        .insert(record);
+      if (error) throw error;
+    }
+
+    persisted.push(reference);
+  }
+
+  return persisted;
+}
+
 function formatMarkdownTranscript(title, messages) {
   let md = `# ${title || 'Conversation'}\n\n`;
   for (const msg of messages || []) {
@@ -32,6 +239,9 @@ function formatMarkdownTranscript(title, messages) {
     if (msg.isDateHeader) {
       md += `${msg.content}\n\n`;
     } else {
+      const timestampPrefix = typeof msg.timestamp === 'string' && msg.timestamp.trim()
+        ? `[${msg.timestamp.trim()}] `
+        : '';
       const roleLabel = msg.role === 'user' ? '**User**' : '**Assistant**';
       let displayContent = typeof msg.content === 'string' ? msg.content : (msg.content == null ? '' : String(msg.content));
       const hasNoContent = !displayContent || displayContent.trim() === '';
@@ -42,10 +252,118 @@ function formatMarkdownTranscript(title, messages) {
           .filter(Boolean);
         displayContent = `[attached: ${names.length ? names.join(', ') : 'attachment'}]`;
       }
-      md += `${roleLabel}: ${displayContent}\n\n`;
+      md += `${timestampPrefix}${roleLabel}: ${displayContent}\n\n`;
     }
   }
   return md;
+}
+
+function messageFingerprint(message = {}) {
+  const role = message.role || 'user';
+  const timestamp = message.timestamp || '';
+  const content = typeof message.content === 'string' ? message.content.trim() : '';
+  const attachmentNames = Array.isArray(message.attachments)
+    ? message.attachments
+        .map((attachment) => attachment?.storagePath || attachment?.filename || attachment?.name || '')
+        .filter(Boolean)
+        .join('|')
+    : '';
+  return `${role}:${timestamp}:${content}:${attachmentNames}`;
+}
+
+function buildConversationFallbackMessageId(sessionId, message = {}, indexes = {}) {
+  if (message?.isDateHeader) {
+    const nextDateIndex = indexes.dateHeader ?? 0;
+    indexes.dateHeader = nextDateIndex + 1;
+    return `${sessionId}_date_${nextDateIndex}`;
+  }
+
+  const nextMessageIndex = indexes.message ?? 0;
+  indexes.message = nextMessageIndex + 1;
+  return `${sessionId}_msg_${nextMessageIndex}`;
+}
+
+function normalizeConversationMessages(sessionId, messages = []) {
+  const normalized = [];
+  const seenIds = new Set();
+  const seenFingerprints = new Set();
+  const duplicateCounts = new Map();
+  const fallbackIndexes = { message: 0, dateHeader: 0 };
+
+  for (const originalMessage of Array.isArray(messages) ? messages : []) {
+    if (!originalMessage || typeof originalMessage !== 'object') {
+      continue;
+    }
+
+    const message = { ...originalMessage };
+    const fingerprint = messageFingerprint(message);
+    if (seenFingerprints.has(fingerprint)) {
+      continue;
+    }
+
+    const baseId = typeof message.id === 'string' && message.id.trim()
+      ? message.id.trim()
+      : buildConversationFallbackMessageId(sessionId, message, fallbackIndexes);
+
+    let resolvedId = baseId;
+    if (seenIds.has(resolvedId)) {
+      let duplicateIndex = duplicateCounts.get(baseId) ?? 1;
+      do {
+        resolvedId = `${baseId}__dup${duplicateIndex}`;
+        duplicateIndex += 1;
+      } while (seenIds.has(resolvedId));
+      duplicateCounts.set(baseId, duplicateIndex);
+    } else {
+      duplicateCounts.set(baseId, 1);
+    }
+
+    message.id = resolvedId;
+    seenIds.add(resolvedId);
+    seenFingerprints.add(fingerprint);
+    normalized.push(message);
+  }
+
+  return normalized;
+}
+
+function mergeConversationGroupMessages(canonicalConversation, otherConversations = []) {
+  if (!canonicalConversation) {
+    return canonicalConversation;
+  }
+
+  const mergedMessages = Array.isArray(canonicalConversation.messages)
+    ? [...canonicalConversation.messages]
+    : [];
+  const existingFingerprints = new Set(
+    mergedMessages.map((message) => messageFingerprint(message))
+  );
+
+  for (const otherConversation of otherConversations) {
+    for (const message of otherConversation?.messages || []) {
+      const fingerprint = messageFingerprint(message);
+      if (existingFingerprints.has(fingerprint)) {
+        continue;
+      }
+      mergedMessages.push(message);
+      existingFingerprints.add(fingerprint);
+    }
+  }
+
+  mergedMessages.sort((a, b) => {
+    if (a.isDateHeader && !b.isDateHeader) return -1;
+    if (!a.isDateHeader && b.isDateHeader) return 1;
+    const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+    const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+    return ta - tb;
+  });
+
+  return {
+    ...canonicalConversation,
+    messages: normalizeConversationMessages(
+      canonicalConversation.sessionId || canonicalConversation.id || 'session',
+      mergedMessages,
+    ),
+  };
 }
 
 // Format a date as a readable date header (e.g., "January 20, 2026")
@@ -80,7 +398,8 @@ function parseMarkdownTranscript(content, debugPath = null) {
   let currentDateForDay = null; // Track current date from day headers like "## November 14, 2025"
   const DEBUG = debugPath && debugPath.includes('chat_with_zen-001.md') && !debugPath.includes('instances');
   if (DEBUG) console.log(`🔍 [Parser-Legacy] Parsing ${lines.length} lines from ${debugPath}, first 3 lines:`, lines.slice(0, 10).map((l, i) => `[${i}] ${l.substring(0, 80)}`));
-  
+
+
   // PRE-SCAN: Find the first date header in the file to use as fallback for legacy files
   // This handles files where the date header appears before we start matching messages
   const PRE_DATE_PATTERN = /^(?:#{1,3}\s+)?((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4})/i;
@@ -98,10 +417,12 @@ function parseMarkdownTranscript(content, debugPath = null) {
   // Updated to match names that START with common user identifiers or are exact matches
   const USER_EXACT_PATTERNS = /^(you|user|human|me|i)$/i;
   const USER_PREFIX_PATTERNS = /^(devon|user)\b/i; // Names that start with these are users
-  
+
+
   // AI/Construct identifiers - these are ALWAYS assistant messages
   const AI_PATTERNS = /^(zen|lin|katana|synth|assistant|ai|bot|gpt|chatgpt|claude|gemini)/i;
-  
+
+
   // Detect if speaker is user (returns true) or assistant (returns false)
   function isUserSpeaker(name) {
     if (!name) return false;
@@ -115,7 +436,8 @@ function parseMarkdownTranscript(content, debugPath = null) {
     // Default: unknown speakers are treated as user (since most transcripts feature user vs single AI)
     return true;
   }
-  
+
+
   // Helper: Derive ISO timestamp from day header + time string (e.g., "01:07:38 PM EST")
   function deriveTimestampFromDayAndTime(timeStr) {
     if (!currentDateForDay || !timeStr) return null;
@@ -123,16 +445,18 @@ function parseMarkdownTranscript(content, debugPath = null) {
       // Parse time: "01:07:38 PM" or "01:07:38 PM EST"
       const timeMatch = timeStr.match(/^(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)/i);
       if (!timeMatch) return null;
-      
+
       let hour = parseInt(timeMatch[1], 10) % 12;
       if (timeMatch[4].toUpperCase() === 'PM') hour += 12;
       const minute = parseInt(timeMatch[2], 10);
       const second = parseInt(timeMatch[3], 10);
-      
+
+
       // Create date from currentDateForDay (e.g., "November 14, 2025")
       const base = new Date(currentDateForDay);
       if (isNaN(base.getTime())) return null;
-      
+
+
       base.setHours(hour, minute, second, 0);
       return base.toISOString();
     } catch {
@@ -148,7 +472,8 @@ function parseMarkdownTranscript(content, debugPath = null) {
 
   for (const line of lines) {
     const trimmedLine = line.trim();
-    
+
+
     // Check for day header with ## prefix to capture date for timestamp derivation
     // Pattern: "## November 14, 2025"
     const dayHeaderCapture = trimmedLine.match(DAY_HEADER_CAPTURE_PATTERN);
@@ -165,14 +490,16 @@ function parseMarkdownTranscript(content, debugPath = null) {
       // Don't add day headers as messages - they're just date context markers
       continue;
     }
-    
+
+
     // Early detection: If line is a date header on its own (without ##), save as a separate message
     if (DATE_HEADER_PATTERN.test(trimmedLine)) {
       // Also capture this as current date for timestamp derivation
       currentDateForDay = trimmedLine;
       if (DEBUG) console.log(`📅 [Parser-Legacy] Set currentDateForDay from bare header: "${currentDateForDay}"`);
     }
-    
+
+
     // Also check for markdown header date formats like "## November 9, 2025" or "# November 9, 2025"
     const mdDateHeaderMatch = trimmedLine.match(/^#{1,3}\s+((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4})/i);
     if (mdDateHeaderMatch) {
@@ -193,12 +520,34 @@ function parseMarkdownTranscript(content, debugPath = null) {
       });
       continue;
     }
-    
-    // Match timestamp lines like [2025-11-09T...] or (2026-01-20T12:33:50.563179)
-    const timestampMatch = line.match(/^\[(\d{4}-\d{2}-\d{2}T[^\]]+)\]/) || 
-                           line.match(/\((\d{4}-\d{2}-\d{2}T[\d:.]+)\)/);
+
+
+    // Match standalone timestamp lines like [2025-11-09T...] or (2026-01-20T12:33:50.563179)
+    const timestampMatch = line.match(/^\[(\d{4}-\d{2}-\d{2}T[^\]]+)\]\s*$/) ||
+                           line.match(/^\((\d{4}-\d{2}-\d{2}T[\d:.]+)\)\s*$/);
     if (timestampMatch) {
       currentTimestamp = timestampMatch[1];
+      continue;
+    }
+
+    // FORMAT 0: Inline ISO timestamped Chatty format - "[ISO_TIMESTAMP] **Speaker**: content"
+    // Example: "[2026-04-25T21:05:12.000Z] **User**: Hello"
+    const inlineIsoBoldMatch = line.match(/^\[(\d{4}-\d{2}-\d{2}T[^\]]+)\]\s+\*\*([^*]+)\*\*:\s*(.*)$/);
+    if (inlineIsoBoldMatch) {
+      const isoTimestamp = inlineIsoBoldMatch[1];
+      const speaker = inlineIsoBoldMatch[2].trim();
+      const inlineContent = inlineIsoBoldMatch[3];
+
+      if (currentRole && currentContent.length) {
+        const msg = { role: currentRole, content: currentContent.join('\n').trim() };
+        if (currentTimestamp) msg.timestamp = currentTimestamp;
+        messages.push(msg);
+      }
+
+      currentRole = isUserSpeaker(speaker) ? 'user' : 'assistant';
+      currentContent = inlineContent ? [inlineContent] : [];
+      currentTimestamp = isoTimestamp;
+      continue;
     }
 
     // FORMAT 5: Bold timestamp with ISO in brackets - "**HH:MM:SS AM/PM TZ - Speaker** [ISO_TIMESTAMP]: content"
@@ -208,20 +557,23 @@ function parseMarkdownTranscript(content, debugPath = null) {
       const speaker = boldTimestampIsoMatch[2].trim();
       const isoTimestamp = boldTimestampIsoMatch[3];
       const inlineContent = boldTimestampIsoMatch[4];
-      
+
+
       // Save previous message
       if (currentRole && currentContent.length) {
         const msg = { role: currentRole, content: currentContent.join('\n').trim() };
         if (currentTimestamp) msg.timestamp = currentTimestamp;
         messages.push(msg);
       }
-      
+
+
       currentRole = isUserSpeaker(speaker) ? 'user' : 'assistant';
       currentContent = inlineContent ? [inlineContent] : [];
       currentTimestamp = isoTimestamp;
       continue;
     }
-    
+
+
     // FORMAT 6: Bold timestamp without ISO - "**HH:MM:SS AM/PM TZ - Speaker**: content"
     // Example: "**01:07:38 PM EST - Synth**: CONVERSATION_CREATED:Synth"
     const boldTimestampMatch = line.match(/^\*\*(\d{1,2}:\d{2}:\d{2}\s+(?:AM|PM)(?:\s+[A-Z]{2,5})?)\s+-\s+(.+?)\*\*:\s*(.*)$/i);
@@ -229,14 +581,16 @@ function parseMarkdownTranscript(content, debugPath = null) {
       const timeStr = boldTimestampMatch[1].trim();
       const speaker = boldTimestampMatch[2].trim();
       const inlineContent = boldTimestampMatch[3];
-      
+
+
       // Save previous message
       if (currentRole && currentContent.length) {
         const msg = { role: currentRole, content: currentContent.join('\n').trim() };
         if (currentTimestamp) msg.timestamp = currentTimestamp;
         messages.push(msg);
       }
-      
+
+
       currentRole = isUserSpeaker(speaker) ? 'user' : 'assistant';
       currentContent = inlineContent ? [inlineContent] : [];
       // Derive timestamp from current day header + time string
@@ -249,14 +603,16 @@ function parseMarkdownTranscript(content, debugPath = null) {
     if (boldMatch) {
       const speaker = boldMatch[1].trim();
       const inlineContent = boldMatch[2];
-      
+
+
       // Save previous message
       if (currentRole && currentContent.length) {
         const msg = { role: currentRole, content: currentContent.join('\n').trim() };
         if (currentTimestamp) msg.timestamp = currentTimestamp;
         messages.push(msg);
       }
-      
+
+
       currentRole = isUserSpeaker(speaker) ? 'user' : 'assistant';
       currentContent = inlineContent ? [inlineContent] : [];
       // Use day header date as fallback (timestamp at midnight for that day)
@@ -279,20 +635,23 @@ function parseMarkdownTranscript(content, debugPath = null) {
       }
       continue;
     }
-    
+
+
     // FORMAT 2: ChatGPT export - "You said:" / "Name said:" patterns
     // Handle both "You said:" (user) and "Name said:" (assistant) on their own line
     const saidMatch = line.match(/^([A-Za-z][A-Za-z0-9_\s-]*)\s+said:\s*$/i);
     if (saidMatch) {
       const speaker = saidMatch[1].trim();
-      
+
+
       // Save previous message
       if (currentRole && currentContent.length) {
         const msg = { role: currentRole, content: currentContent.join('\n').trim() };
         if (currentTimestamp) msg.timestamp = currentTimestamp;
         messages.push(msg);
       }
-      
+
+
       currentRole = isUserSpeaker(speaker) ? 'user' : 'assistant';
       currentContent = [];
       // Use day header date as fallback (timestamp at midnight for that day)
@@ -314,7 +673,8 @@ function parseMarkdownTranscript(content, debugPath = null) {
       }
       continue;
     }
-    
+
+
     // FORMAT 4: VVAULT timestamp format - "HH:MM:SS AM/PM TIMEZONE - Speaker Name [ISO_TIMESTAMP]: message content"
     // Example: "10:26:07 AM EST - Devon Woodson [2026-01-20T15:26:07.457Z]: Hello Zen, this is a test from Chatty!"
     const vvaultTimestampMatch = line.match(/^(\d{1,2}:\d{2}:\d{2}\s+(?:AM|PM)(?:\s+[A-Z]{2,5})?)\s+-\s+(.+?)\s+\[(\d{4}-\d{2}-\d{2}T[^\]]+)\]:\s*(.*)$/i);
@@ -322,26 +682,30 @@ function parseMarkdownTranscript(content, debugPath = null) {
       const speaker = vvaultTimestampMatch[2].trim();
       const isoTimestamp = vvaultTimestampMatch[3];
       const inlineContent = vvaultTimestampMatch[4];
-      
+
+
       // Save previous message
       if (currentRole && currentContent.length) {
         const msg = { role: currentRole, content: currentContent.join('\n').trim() };
         if (currentTimestamp) msg.timestamp = currentTimestamp;
         messages.push(msg);
       }
-      
+
+
       currentRole = isUserSpeaker(speaker) ? 'user' : 'assistant';
       currentContent = inlineContent ? [inlineContent] : [];
       currentTimestamp = isoTimestamp;
       continue;
     }
-    
+
+
     // FORMAT 3: Simple "Name:" at start of line (common in transcripts)
     const simpleMatch = line.match(/^([A-Za-z][A-Za-z0-9_-]*):\s+(.+)$/);
     if (simpleMatch && simpleMatch[1].length < 20) { // Name shouldn't be too long
       const speaker = simpleMatch[1].trim();
       const inlineContent = simpleMatch[2];
-      
+
+
       // Only treat as speaker label if it looks like a name (not a URL or timestamp)
       if (!speaker.includes('http') && !speaker.match(/^\d/)) {
         // Save previous message
@@ -350,7 +714,8 @@ function parseMarkdownTranscript(content, debugPath = null) {
           if (currentTimestamp) msg.timestamp = currentTimestamp;
           messages.push(msg);
         }
-        
+
+
         currentRole = isUserSpeaker(speaker) ? 'user' : 'assistant';
         currentContent = [inlineContent];
         // Use day header date as fallback (timestamp at midnight for that day)
@@ -373,7 +738,8 @@ function parseMarkdownTranscript(content, debugPath = null) {
         continue;
       }
     }
-    
+
+
     // Add content to current message (skip empty lines at start)
     // CRITICAL: Do NOT absorb date headers into message content
     if (currentRole && line.trim()) {
@@ -424,7 +790,8 @@ function parseMarkdownTranscript(content, debugPath = null) {
     /^-{2,}.*response.*-{2,}$/i, // Separator lines like "--- Providing an appropriate and consistent response ----"
     /^-{2,}\s+\w+.*-{2,}$/i, // Generic separator with text between dashes
   ];
-  
+
+
   const isGarbageMessage = (content) => {
     if (!content) return true;
     const trimmed = content.trim();
@@ -435,24 +802,28 @@ function parseMarkdownTranscript(content, debugPath = null) {
     }
     return false;
   };
-  
+
+
   // Patterns to strip from the END of message content (trailing garbage)
   const TRAILING_GARBAGE_PATTERNS = [
     DATE_HEADER_PATTERN, // Date headers like "December 17, 2025"
     /^-{2,}.*-{2,}$/im, // Separator lines like "--- text ----"
   ];
-  
+
+
   // Strip trailing garbage from message content (date headers, separators that got absorbed)
   function sanitizeMessageContent(content) {
     if (!content) return content;
     let sanitized = content.trim();
     let changed = true;
-    
+
+
     // Keep stripping until no more changes (handles multiple trailing garbage lines)
     while (changed) {
       changed = false;
       const lines = sanitized.split('\n');
-      
+
+
       // Check last few lines for garbage
       while (lines.length > 0) {
         const lastLine = lines[lines.length - 1].trim();
@@ -461,7 +832,8 @@ function parseMarkdownTranscript(content, debugPath = null) {
           changed = true;
           continue;
         }
-        
+
+
         // Check if last line is garbage
         const isTrailingGarbage = TRAILING_GARBAGE_PATTERNS.some(p => p.test(lastLine));
         if (isTrailingGarbage) {
@@ -471,13 +843,16 @@ function parseMarkdownTranscript(content, debugPath = null) {
           break;
         }
       }
-      
+
+
       sanitized = lines.join('\n').trim();
     }
-    
+
+
     return sanitized;
   }
-  
+
+
   // Filter out garbage, preserve isDateHeader flag that was already set during parsing
   return messages
     .filter(m => !isGarbageMessage(m.content))
@@ -501,42 +876,20 @@ async function resolveSupabaseUserId(emailOrId) {
     return cached.id;
   }
 
-  const supabase = getSupabaseClient();
-  if (!supabase) return null;
-
   try {
-    const { data, error } = await supabase
-      .from('users')
-      .select('id')
-      .or(`email.eq.${emailOrId},name.eq.${emailOrId}`)
-      .limit(1)
-      .single();
-
-    if (!error && data) {
-      console.log(`✅ [SupabaseStore] Found user by email/name: ${emailOrId} -> ${data.id}`);
-      _supabaseUserIdCache.set(emailOrId, { id: data.id, ts: Date.now() });
-      return data.id;
+    const { resolveSupabaseUserIdFromEmailOrId } = await import('../server/auth/lib/supabaseUserResolver.js');
+    const resolved = await resolveSupabaseUserIdFromEmailOrId(emailOrId);
+    if (resolved) {
+      console.log(`✅ [SupabaseStore] Auth resolver mapped ${emailOrId} -> ${resolved}`);
+      _supabaseUserIdCache.set(emailOrId, { id: resolved, ts: Date.now() });
+      return resolved;
     }
-
-    const { data: shardUser, error: shardError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('name', 'shard_0000')
-      .limit(1)
-      .single();
-
-    if (!shardError && shardUser) {
-      console.log(`✅ [SupabaseStore] Using shard_0000 user for: ${emailOrId} -> ${shardUser.id}`);
-      _supabaseUserIdCache.set(emailOrId, { id: shardUser.id, ts: Date.now() });
-      return shardUser.id;
-    }
-
-    console.log(`⚠️ [SupabaseStore] User not found for: ${emailOrId}`);
-    return null;
   } catch (err) {
     console.error('❌ [SupabaseStore] Error resolving user:', err.message);
-    return null;
   }
+
+  console.log(`⚠️ [SupabaseStore] User not found for: ${emailOrId}`);
+  return null;
 }
 
 /**
@@ -544,18 +897,35 @@ async function resolveSupabaseUserId(emailOrId) {
  * The VVAULT API is the canonical source for real conversation data
  */
 async function readConversationsFromVVAULTApi(userEmailOrId, constructId = null) {
-  console.log(`📡 [SupabaseStore] Attempting VVAULT API for user: ${userEmailOrId}, construct: ${constructId || 'all'}`);
-  
+  const lookup = normalizeUserLookupContext(userEmailOrId);
+  const serviceUserContext = {
+    userEmail: lookup.userEmail,
+    supabaseUserId: lookup.supabaseUserId,
+  };
+  const serviceUserLabel = lookup.userEmail || lookup.primaryLookupId;
+  console.log(`📡 [SupabaseStore] Attempting VVAULT API for user: ${serviceUserLabel}, construct: ${constructId || 'all'}`);
+
+  if (!serviceUserContext.userEmail) {
+    console.log('⚠️ [SupabaseStore] VVAULT API requires an email-bearing service context');
+    return null;
+  }
+
+
   try {
     // If specific constructId, fetch just that one
     if (constructId) {
-      const transcriptData = await vvaultApi.getTranscript(constructId);
+      const transcriptData = await vvaultApi.getTranscript(constructId, serviceUserContext);
       if (transcriptData && transcriptData.success) {
-        const messages = vvaultApi.parseMarkdownToMessages(transcriptData.content);
+        const sessionId = `${constructId}_chat_with_${constructId}`;
+        const messages = normalizeConversationMessages(
+          sessionId,
+          vvaultApi.parseMarkdownToMessages(transcriptData.content),
+        );
         console.log(`✅ [SupabaseStore] VVAULT API returned ${messages.length} messages for ${constructId}`);
-        
+
+
         return [{
-          sessionId: `${constructId}_chat_with_${constructId}`,
+          sessionId,
           title: constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase()),
           constructId: constructId,
           constructName: constructId.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase()),
@@ -569,7 +939,7 @@ async function readConversationsFromVVAULTApi(userEmailOrId, constructId = null)
     }
 
     // List all constructs and fetch their transcripts
-    const constructs = await vvaultApi.listConstructs();
+    const constructs = await vvaultApi.listConstructs(serviceUserContext);
     if (constructs === null) {
       // API call failed (503, timeout, etc) - return null to trigger Supabase fallback
       console.log('⚠️ [SupabaseStore] VVAULT API unreachable, will use Supabase fallback');
@@ -589,16 +959,22 @@ async function readConversationsFromVVAULTApi(userEmailOrId, constructId = null)
     });
 
     console.log(`📋 [SupabaseStore] VVAULT API found ${uniqueConstructs.length} unique constructs (${constructs.length} total)`);
-    
+
+
     const conversations = [];
     for (const construct of uniqueConstructs) {
-      const transcriptData = await vvaultApi.getTranscript(construct.construct_id);
+      const transcriptData = await vvaultApi.getTranscript(construct.construct_id, serviceUserContext);
       if (transcriptData && transcriptData.success) {
-        const messages = vvaultApi.parseMarkdownToMessages(transcriptData.content);
+        const sessionId = `${construct.construct_id}_chat_with_${construct.construct_id}`;
+        const messages = normalizeConversationMessages(
+          sessionId,
+          vvaultApi.parseMarkdownToMessages(transcriptData.content),
+        );
         const constructName = construct.construct_id.replace(/-\d+$/, '').replace(/^./, c => c.toUpperCase());
-        
+
+
         conversations.push({
-          sessionId: `${construct.construct_id}_chat_with_${construct.construct_id}`,
+          sessionId,
           title: constructName,
           constructId: construct.construct_id,
           constructName: constructName,
@@ -607,7 +983,8 @@ async function readConversationsFromVVAULTApi(userEmailOrId, constructId = null)
           updatedAt: transcriptData.updated_at || new Date().toISOString(),
           messages
         });
-        
+
+
         console.log(`📝 [SupabaseStore] ${construct.construct_id}: ${messages.length} messages`);
       }
     }
@@ -621,6 +998,14 @@ async function readConversationsFromVVAULTApi(userEmailOrId, constructId = null)
 }
 
 async function readConversationsFromSupabase(userEmailOrId, constructId = null) {
+  const lookup = normalizeUserLookupContext(userEmailOrId);
+  if (shouldPreferVvaultApiConversationRead(lookup)) {
+    const apiResult = await readConversationsFromVVAULTApi(userEmailOrId, constructId);
+    if (apiResult !== null) {
+      return apiResult;
+    }
+  }
+
   const supabase = getSupabaseClient();
   if (!supabase) {
     console.log('⚠️ [SupabaseStore] No Supabase client - falling back to PostgreSQL');
@@ -629,9 +1014,9 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
   }
 
   try {
-    const supabaseUserId = await resolveSupabaseUserId(userEmailOrId);
+    const supabaseUserId = lookup.supabaseUserId || await resolveSupabaseUserId(lookup.primaryLookupId);
     if (!supabaseUserId) {
-      console.log(`⚠️ [SupabaseStore] Could not resolve user: ${userEmailOrId}`);
+      console.log(`⚠️ [SupabaseStore] Could not resolve user: ${lookup.primaryLookupId}`);
       return [];
     }
 
@@ -648,7 +1033,8 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
     }
 
     const { data, error } = await query;
-    
+
+
     // Query 2: Also get files matching chatty path pattern (may have different file_type)
     const { data: chattyFiles, error: chattyError } = await supabase
       .from('vault_files')
@@ -656,22 +1042,38 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
       .eq('user_id', supabaseUserId)
       .like('filename', 'instances/%/chatty/%')
       .order('created_at', { ascending: false });
-    
+
+
     if (!chattyError && chattyFiles) {
       console.log(`🔍 [SupabaseStore] Found ${chattyFiles.length} chatty-path files`);
     }
-    
+
+    const { data: hydroCodeFiles, error: hydroCodeError } = await supabase
+      .from('vault_files')
+      .select('*')
+      .eq('user_id', supabaseUserId)
+      .like('filename', 'instances/%/code/%_hydro_chat.md')
+      .order('created_at', { ascending: false });
+
+    if (!hydroCodeError && hydroCodeFiles) {
+      console.log(`🔍 [SupabaseStore] Found ${hydroCodeFiles.length} hydro code transcripts`);
+    }
+
+
     // Query 3: Look for chat_with_*.md files without path prefix (legacy uploads)
     const { data: legacyFiles, error: legacyError } = await supabase
       .from('vault_files')
       .select('*')
+      .eq('user_id', supabaseUserId)
       .like('filename', 'chat_with_%.md')
       .order('created_at', { ascending: false });
-    
+
+
     if (!legacyError && legacyFiles) {
       console.log(`🔍 [SupabaseStore] Found ${legacyFiles.length} legacy chat files (any user)`);
     }
-    
+
+
     // Merge results, avoiding duplicates
     const allFiles = [...(data || [])];
     const existingFilenames = new Set(allFiles.map(f => f.filename));
@@ -679,6 +1081,13 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
       if (!existingFilenames.has(file.filename)) {
         allFiles.push(file);
         console.log(`➕ [SupabaseStore] Added chatty file: ${file.filename}`);
+      }
+    }
+    for (const file of (hydroCodeFiles || [])) {
+      if (!existingFilenames.has(file.filename)) {
+        allFiles.push(file);
+        existingFilenames.add(file.filename);
+        console.log(`➕ [SupabaseStore] Added Hydro code file: ${file.filename}`);
       }
     }
     for (const file of (legacyFiles || [])) {
@@ -698,16 +1107,19 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
       const metadata = typeof file.metadata === 'string' 
         ? JSON.parse(file.metadata) 
         : (file.metadata || {});
-      
+
+
       console.log(`🔍 [SupabaseStore] Processing file:`, {
         filename: file.filename,
         hasContent: !!file.content,
         contentLength: file.content?.length || 0,
         metadataMessages: metadata.messages?.length || 0
       });
-      
+
+
       const parsedMessages = parseMarkdownTranscript(file.content, file.filename);
-      
+
+
       // Debug: Log parsing results for legacy files
       if (file.content?.length > 1000 && parsedMessages.length === 0) {
         const contentPreview = file.content.substring(0, 500);
@@ -719,7 +1131,8 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
           hasAssistantPattern: /\*\*(Assistant|Zen|Lin|Katana|AI)\*\*:/.test(file.content)
         });
       }
-      
+
+
       // Validate parsed messages - skip garbage from legacy files
       // But NEVER skip files that have clear transcript markers (IMPORT_METADATA, # Chat with, etc.)
       const hasTranscriptMarkers = file.content && (
@@ -728,16 +1141,19 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
         file.content.includes('chat_with_') ||
         /\*\*\d{1,2}:\d{2}:\d{2}\s+(?:AM|PM)/i.test(file.content) // Bold timestamp format
       );
-      
+
+
       // Legacy = BOTH 'instances/' AND '/chatty/' missing (uses &&, not ||)
       const isLegacyFile = !file.filename.includes('instances/') && !file.filename.includes('/chatty/');
-      
+
+
       // Only consider garbage detection for files WITHOUT transcript markers
       const hasGarbageParsedMessages = !hasTranscriptMarkers && parsedMessages.length > 0 && (() => {
         // Check if all messages have the same role (should be alternating user/assistant)
         const roles = parsedMessages.map(m => m.role);
         const allSameRole = roles.every(r => r === roles[0]);
-        
+
+
         // Check for garbage content patterns (date headers, single words, etc.)
         const garbagePatterns = [
           /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d+,?\s*\d*/i,
@@ -751,7 +1167,8 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
           }
           return false;
         });
-        
+
+
         // Large file with all same role and garbage content = garbage
         if (allSameRole && hasGarbageContent && file.content?.length > 5000) {
           console.log(`⚠️ [SupabaseStore] Detected garbage parsed messages:`, {
@@ -765,23 +1182,7 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
         }
         return false;
       })();
-      
-      // Use metadata messages first, then parsed (skip garbage parsed)
-      let messages;
-      if (metadata.messages?.length > 0) {
-        messages = metadata.messages;
-      } else if (isLegacyFile && hasGarbageParsedMessages) {
-        console.log(`⏭️ [SupabaseStore] Skipping garbage legacy file: ${file.filename}`);
-        messages = []; // Skip garbage messages from legacy files
-      } else {
-        messages = parsedMessages;
-      }
-      
-      // Debug: Log date headers detected
-      const dateHeaders = messages.filter(m => m.isDateHeader);
-      if (dateHeaders.length > 0) {
-        console.log(`📅 [SupabaseStore] Found ${dateHeaders.length} date headers in ${file.filename}:`, dateHeaders.slice(0, 3).map(m => m.content));
-      }
+
 
       // Extract constructId from filename patterns:
       // - "instances/{name}/chatty/chat_with_{constructId}.md"
@@ -792,11 +1193,34 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
       if (chatWithMatch) {
         extractedConstructId = chatWithMatch[1];
       }
-      
+
+
       // Generate canonical sessionId: {constructId}_chat_with_{constructId}
-      const canonicalSessionId = extractedConstructId 
-        ? `${extractedConstructId}_chat_with_${extractedConstructId}`
-        : (metadata.sessionId || file.filename.replace('chat/', '').replace('.md', ''));
+      const hydroProjectSlug = parseHydroProjectSlug(file.filename);
+      const canonicalSessionId = metadata.sessionId
+        || (hydroProjectSlug && extractedConstructId === 'hydro-001'
+          ? `${extractedConstructId}_${hydroProjectSlug}_hydro_chat`
+          : extractedConstructId
+            ? `${extractedConstructId}_chat_with_${extractedConstructId}`
+            : file.filename.replace('chat/', '').replace('.md', ''));
+
+      // Use metadata messages first, then parsed (skip garbage parsed)
+      let messages;
+      if (metadata.messages?.length > 0) {
+        messages = normalizeConversationMessages(canonicalSessionId, metadata.messages);
+      } else if (isLegacyFile && hasGarbageParsedMessages) {
+        console.log(`⏭️ [SupabaseStore] Skipping garbage legacy file: ${file.filename}`);
+        messages = []; // Skip garbage messages from legacy files
+      } else {
+        messages = normalizeConversationMessages(canonicalSessionId, parsedMessages);
+      }
+
+
+      // Debug: Log date headers detected
+      const dateHeaders = messages.filter(m => m.isDateHeader);
+      if (dateHeaders.length > 0) {
+        console.log(`📅 [SupabaseStore] Found ${dateHeaders.length} date headers in ${file.filename}:`, dateHeaders.slice(0, 3).map(m => m.content));
+      }
 
       // Generate clean title from constructId (e.g., "lin-001" → "Lin", "katana-001" → "Katana")
       const generateCleanTitle = (constructId) => {
@@ -804,7 +1228,8 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
         const baseName = constructId.replace(/-\d+$/, ''); // Remove version suffix
         return baseName.charAt(0).toUpperCase() + baseName.slice(1).toLowerCase();
       };
-      
+
+
       const generatedTitle = generateCleanTitle(extractedConstructId);
       let cleanTitle = metadata.title || generatedTitle || file.filename;
       if (generatedTitle && cleanTitle !== generatedTitle) {
@@ -822,15 +1247,19 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
         constructName: generatedTitle || metadata.constructName || extractedConstructId,
         constructCallsign: metadata.constructCallsign || extractedConstructId,
         createdAt: file.created_at,
-        updatedAt: file.created_at,
+        updatedAt: resolveVaultFileUpdatedAt(file),
         messages
       };
     });
 
-    const normalizeConstructBase = (id) => (id || '').replace(/-\d+$/, '').toLowerCase();
+    const normalizeConstructBase = (conversation) => (
+      conversation.constructId === 'hydro-001'
+        ? conversation.sessionId
+        : (conversation.constructId || '').replace(/-\d+$/, '').toLowerCase()
+    );
     const grouped = new Map();
     for (const conv of conversations) {
-      const base = normalizeConstructBase(conv.constructId);
+      const base = normalizeConstructBase(conv);
       if (!grouped.has(base)) {
         grouped.set(base, []);
       }
@@ -846,38 +1275,22 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
 
       const canonical = group.find(c => /^[a-z]+-\d+$/.test(c.constructId)) || group[0];
       const others = group.filter(c => c !== canonical);
-
-      const existingTimestamps = new Set(
-        canonical.messages
-          .filter(m => !m.isDateHeader)
-          .map(m => `${m.role}:${(m.content || '').substring(0, 80)}`)
-      );
-
+      const mergedCanonical = mergeConversationGroupMessages(canonical, others);
       for (const other of others) {
-        for (const msg of other.messages) {
-          if (msg.isDateHeader) continue;
-          const key = `${msg.role}:${(msg.content || '').substring(0, 80)}`;
-          if (!existingTimestamps.has(key)) {
-            canonical.messages.push(msg);
-            existingTimestamps.add(key);
-          }
-        }
         console.log(`🔄 [SupabaseStore] Merged ${other.messages.length} messages from ${other.sessionId} into ${canonical.sessionId}`);
       }
 
-      canonical.messages.sort((a, b) => {
-        if (a.isDateHeader && !b.isDateHeader) return -1;
-        if (!a.isDateHeader && b.isDateHeader) return 1;
-        const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-        const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-        return ta - tb;
-      });
-
-      console.log(`🔗 [SupabaseStore] Deduplicated ${group.length} files for "${base}" → ${canonical.sessionId} (${canonical.messages.length} messages)`);
-      deduplicated.push(canonical);
+      console.log(`🔗 [SupabaseStore] Deduplicated ${group.length} files for "${base}" → ${mergedCanonical.sessionId} (${mergedCanonical.messages.length} messages)`);
+      deduplicated.push(mergedCanonical);
     }
 
-    console.log(`📥 [SupabaseStore] Read ${deduplicated.length} conversations (from ${conversations.length} files) for user: ${userEmailOrId}`);
+    console.log(`📥 [SupabaseStore] Read ${deduplicated.length} conversations (from ${conversations.length} files) for user: ${lookup.primaryLookupId}`);
+    if (deduplicated.length === 0 && lookup.userEmail) {
+      const apiFallback = await readConversationsFromVVAULTApi(userEmailOrId, constructId);
+      if (apiFallback !== null) {
+        return apiFallback;
+      }
+    }
     return deduplicated;
   } catch (err) {
     console.error('❌ [SupabaseStore] Read failed:', err.message);
@@ -888,6 +1301,7 @@ async function readConversationsFromSupabase(userEmailOrId, constructId = null) 
 
 async function writeConversationToSupabase(params) {
   const {
+    supabaseUserId: explicitSupabaseUserId,
     userId,
     userEmail,
     sessionId,
@@ -909,29 +1323,33 @@ async function writeConversationToSupabase(params) {
 
   try {
     const lookupId = userEmail || userId;
-    const supabaseUserId = await resolveSupabaseUserId(lookupId);
+    const supabaseUserId = explicitSupabaseUserId || await resolveSupabaseUserId(lookupId);
     if (!supabaseUserId) {
       console.log(`⚠️ [SupabaseStore] Could not resolve user: ${lookupId}`);
       return null;
     }
 
-    // CRITICAL: Normalize constructId to callsign format (e.g., "katana" → "katana-001")
-    // The callsign MUST always include the -NNN suffix. Bare names create duplicate instance folders.
-    let normalizedConstructId = constructCallsign || constructId || 'unknown';
-    if (normalizedConstructId !== 'unknown' && !/\-\d{3}$/.test(normalizedConstructId)) {
-      console.warn(`⚠️ [SupabaseStore] constructId "${normalizedConstructId}" missing callsign suffix, normalizing to "${normalizedConstructId}-001"`);
-      normalizedConstructId = `${normalizedConstructId}-001`;
-    }
+    const normalizedConstructId = normalizeConstructCallsign(constructCallsign, constructId);
+    const target = resolveConversationStorageTarget({
+      normalizedConstructId,
+      sessionId,
+      metadata,
+    });
+    const filename = target.filename;
 
-    // CRITICAL: Match VVAULT Supabase path pattern - instances/{callsign}/chatty/chat_with_{callsign}.md
-    const filename = `instances/${normalizedConstructId}/chatty/chat_with_${normalizedConstructId}.md`;
-
-    const { data: existing } = await supabase
+    const { data: existingRows, error: existingLookupError } = await supabase
       .from('vault_files')
       .select('*')
       .eq('user_id', supabaseUserId)
       .eq('filename', filename)
-      .single();
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    if (existingLookupError) throw existingLookupError;
+
+    // If duplicate transcript rows already exist, append to the oldest row and
+    // leave cleanup/migration to an explicit maintenance task.
+    const existing = Array.isArray(existingRows) ? existingRows[0] : null;
 
     let messages = [];
     let existingMetadata = {};
@@ -948,6 +1366,18 @@ async function writeConversationToSupabase(params) {
     const contentStr = typeof content === 'string' ? content : '';
     const isConversationCreated = contentStr.startsWith('CONVERSATION_CREATED:');
     const attachments = Array.isArray(metadata?.attachments) ? metadata.attachments : [];
+    const persistedAttachments = await persistAttachmentFiles({
+      supabase,
+      supabaseUserId,
+      normalizedConstructId,
+      attachments,
+      metadata: {
+        ...metadata,
+        transcriptPath: filename,
+        projectSlug: target.projectSlug,
+      },
+      sessionId: target.sessionId,
+    });
     const hasAttachments = attachments.length > 0;
     const hasContent = contentStr.trim() !== '';
 
@@ -955,11 +1385,13 @@ async function writeConversationToSupabase(params) {
     if (!isConversationCreated && (hasContent || hasAttachments)) {
       const newTimestamp = timestamp || new Date().toISOString();
       const newDate = getDateFromTimestamp(newTimestamp);
-      
+
+
       // Find the last non-date-header message to check if date changed
       const lastNonHeaderMessage = messages.filter(m => !m.isDateHeader).slice(-1)[0];
       const lastDate = lastNonHeaderMessage ? getDateFromTimestamp(lastNonHeaderMessage.timestamp) : null;
-      
+
+
       // Auto-insert date header if the date changed (or if this is the first message)
       const dateHeaderText = formatDateHeader(newTimestamp);
       if (newDate && newDate !== lastDate && dateHeaderText) {
@@ -970,32 +1402,42 @@ async function writeConversationToSupabase(params) {
           timestamp: newTimestamp
         });
       }
-      
+
+
       const msgIndex = messages.filter(m => !m.isDateHeader).length;
       const newMessage = {
-        id: `${sessionId}_msg_${msgIndex}`,
+        id: `${target.sessionId}_msg_${msgIndex}`,
         role: role || 'user',
         content: contentStr,
         timestamp: newTimestamp
       };
-      
+
+      if (metadata && typeof metadata === 'object' && Object.keys(metadata).length > 0) {
+        newMessage.metadata = metadata;
+      }
+
+
       // Include attachments if provided in metadata
       if (hasAttachments) {
-        newMessage.attachments = attachments;
-        console.log(`📎 [SupabaseStore] Storing ${attachments.length} attachments with message`);
+        newMessage.attachments = persistedAttachments.length ? persistedAttachments : attachments.map((attachment, index) => sanitizeAttachmentReference(attachment, `attachment-${index + 1}`));
+        console.log(`📎 [SupabaseStore] Storing ${newMessage.attachments.length} attachments with message`);
       }
-      
+
+
       messages.push(newMessage);
     }
 
     const mdContent = formatMarkdownTranscript(title || existingMetadata.title || 'Conversation', messages);
     const fileMetadata = {
       ...existingMetadata,
-      sessionId,
+      ...metadata,
+      sessionId: target.sessionId,
       title: title || existingMetadata.title || 'Untitled',
       constructId: normalizedConstructId,
       constructName,
       constructCallsign: normalizedConstructId,
+      transcriptPath: filename,
+      projectSlug: target.projectSlug || metadata.projectSlug,
       messages,
       lastUpdated: new Date().toISOString()
     };
@@ -1018,14 +1460,14 @@ async function writeConversationToSupabase(params) {
         .eq('id', existing.id);
 
       if (error) throw error;
-      console.log(`✅ [SupabaseStore] Updated conversation: ${sessionId}`);
+      console.log(`✅ [SupabaseStore] Updated conversation: ${target.sessionId}`);
     } else {
       const { error } = await supabase
         .from('vault_files')
         .insert(record);
 
       if (error) throw error;
-      console.log(`✅ [SupabaseStore] Created conversation: ${sessionId}`);
+      console.log(`✅ [SupabaseStore] Created conversation: ${target.sessionId}`);
     }
 
     return { success: true, source: 'supabase' };
@@ -1065,6 +1507,11 @@ export {
   writeConversationToSupabase,
   subscribeToConversations,
   resolveSupabaseUserId,
+  normalizeUserLookupContext,
+  shouldPreferVvaultApiConversationRead,
+  resolveVaultFileUpdatedAt,
   formatMarkdownTranscript,
-  parseMarkdownTranscript
+  parseMarkdownTranscript,
+  normalizeConversationMessages,
+  mergeConversationGroupMessages,
 };

@@ -77,7 +77,7 @@ export class CLIWebBridge {
     }
   }
 
-  private async processCommand(command: string): Promise<CommandResult> {
+  async processCommand(command: string): Promise<CommandResult> {
     const parts = command.split(/\s+/);
     const cmd = parts[0];
 
@@ -95,7 +95,7 @@ export class CLIWebBridge {
           // For web, we'll return available models from config
           return {
             type: 'command',
-            content: 'Available models:\n• synth (multi-model synthesis)\n• phi3:latest\n• deepseek-coder:latest\n• mistral:latest',
+            content: 'Available models:\n• synth (multi-model synthesis)\n• phi3:latest\n• qwen3-coder:30b\n• qwen2.5-coder:latest\n• mistral:latest',
             metadata: { command: '/model list' }
           };
         }
@@ -168,6 +168,10 @@ export class CLIWebBridge {
 
   getModel(): string {
     return this.cli.getModel();
+  }
+
+  setModel(model: string): void {
+    this.cli.setModel(model);
   }
 
   getContext(): any {

@@ -4,8 +4,9 @@
  * Bootstraps the full instance folder structure for a newly created GPT/construct.
  * 
  * Priority:
- * 1. Call VVAULT API POST /api/chatty/construct/create (VVAULT owns the file structure)
- * 2. If VVAULT is unreachable, write files directly to Supabase vault_files
+ * 1. Write the local VVAULT filesystem bundle when available
+ * 2. Optionally call VVAULT API POST /api/chatty/construct/create
+ * 3. If neither local nor VVAULT API are available, fall back to Supabase vault_files
  * 
  * Full directory template (under instances/{callsign}/):
  *   assets/                          - Images (png, jpg, jpeg, svg)
@@ -13,12 +14,16 @@
  *     chat_with_{callsign}.md        - Primary Chatty conversation transcript
  *   config/
  *     metadata.json                  - Construct metadata (updated w/capsule)
- *     personality.json               - Personality traits (updated w/capsule)
+ *     personality.json               - Personality traits (generated from GPT body)
+ *     tone_profile.json              - Tone and communication profile
  *   data/                            - General data storage
  *   identity/
  *     avatar.png                     - Construct avatar (placeholder until user uploads)
  *     conditioning.txt               - Conditioning directives
- *     prompt.json                    - Identity prompt (name, description, instructions)
+ *     definition.json                - Structured identity definition placeholder
+ *     prompt.json                    - Canonical GPT settings bundle
+ *     prompt.txt                     - Prompt fallback / readable identity view
+ *     voice.json                     - Canonical machine-readable voice contract
  *   logs/
  *     capsule.log
  *     chat.log
@@ -39,7 +44,13 @@
  * handle user/construct association. NEVER use full internal VVAULT paths.
  */
 
+import path from 'path';
 import { assertValidVaultFilename } from './vaultPathGuard.js';
+import { getVvaultBasePath } from './vvaultPaths.js';
+import {
+  buildConstructBundleEntries,
+  writeConstructBundleEntries,
+} from './constructBundle.js';
 
 const VVAULT_API_BASE_URL = process.env.VVAULT_API_BASE_URL;
 
@@ -55,163 +66,34 @@ function getChattyAuthHeaders(userEmail) {
   return headers;
 }
 
-function buildPromptJson(constructCallsign, config) {
-  const name = config.name || constructCallsign.split('-')[0];
-  const description = config.description || '';
-  const instructions = config.instructions || `You are ${name}.`;
-
-  return JSON.stringify({
-    name,
-    description,
-    instructions,
-    conversationStarters: config.conversationStarters || [],
-    createdAt: new Date().toISOString(),
-    source: 'chatty-gpt-creator'
-  }, null, 2);
-}
-
-function buildConditioningContent(constructCallsign) {
-  return `>>${constructCallsign.toUpperCase()}_CONDITIONING_START
-
-Identity enforcement:
-- Always identify as ${constructCallsign} when asked
-- Maintain your unique identity and personality
-
->>${constructCallsign.toUpperCase()}_CONDITIONING_END
-`;
-}
-
-function buildMetadataJson(constructCallsign, config) {
-  const name = config.name || constructCallsign.split('-')[0];
-  return JSON.stringify({
-    construct: constructCallsign,
-    name,
-    description: config.description || '',
-    version: '1.0.0',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    source: 'chatty-gpt-creator',
-    orchestrationMode: config.orchestrationMode || 'lin',
-    models: {
-      conversationModel: config.conversationModel || config.modelId || null,
-      creativeModel: config.creativeModel || null,
-      codingModel: config.codingModel || null,
-    },
-    capsuleVersion: null,
-    status: 'active'
-  }, null, 2);
-}
-
-function buildPersonalityJson(constructCallsign, config) {
-  const name = config.name || constructCallsign.split('-')[0];
-  return JSON.stringify({
-    construct: constructCallsign,
-    name,
-    traits: config.traits || {
-      creativity: 0.7,
-      empathy: 0.6,
-      persistence: 0.8,
-      analytical: 0.7,
-      directness: 0.7
-    },
-    createdAt: new Date().toISOString(),
-    source: 'chatty-gpt-creator'
-  }, null, 2);
-}
-
-function buildConversationContent(constructCallsign, config) {
-  const name = config.name || constructCallsign.split('-')[0];
-  const now = new Date();
-  const dateStr = now.toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  });
-
-  return `# Conversation with ${name}
-**Construct:** ${constructCallsign}
-**Platform:** chatty
-**Started:** ${now.toISOString()}
-
----
-
-## ${dateStr}
-
-`;
-}
-
-function buildLogContent(logName, constructCallsign) {
-  const now = new Date().toISOString();
-  return `# ${logName} - ${constructCallsign}\n# Created: ${now}\n# ---\n`;
-}
-
 function buildScaffoldFiles(constructCallsign, config) {
-  const base = `instances/${constructCallsign}`;
+  return buildConstructBundleEntries(constructCallsign, config).map((entry) => ({
+    filename: entry.filename,
+    content: entry.content,
+    file_type: entry.fileType,
+    replaceExisting: entry.replaceExisting === true,
+  }));
+}
 
-  const files = [
-    {
-      filename: `${base}/identity/prompt.json`,
-      content: buildPromptJson(constructCallsign, config),
-      file_type: 'identity',
-    },
-    {
-      filename: `${base}/identity/conditioning.txt`,
-      content: buildConditioningContent(constructCallsign),
-      file_type: 'identity',
-    },
-    {
-      filename: `${base}/config/metadata.json`,
-      content: buildMetadataJson(constructCallsign, config),
-      file_type: 'config',
-    },
-    {
-      filename: `${base}/config/personality.json`,
-      content: buildPersonalityJson(constructCallsign, config),
-      file_type: 'config',
-    },
-    {
-      filename: `${base}/chatty/chat_with_${constructCallsign}.md`,
-      content: buildConversationContent(constructCallsign, config),
-      file_type: 'conversation',
-    },
-    {
-      filename: `${base}/logs/capsule.log`,
-      content: buildLogContent('Capsule Log', constructCallsign),
-      file_type: 'log',
-    },
-    {
-      filename: `${base}/logs/chat.log`,
-      content: buildLogContent('Chat Log', constructCallsign),
-      file_type: 'log',
-    },
-    {
-      filename: `${base}/logs/identity_guard.log`,
-      content: buildLogContent('Identity Guard Log', constructCallsign),
-      file_type: 'log',
-    },
-    {
-      filename: `${base}/logs/server.log`,
-      content: buildLogContent('Server Log', constructCallsign),
-      file_type: 'log',
-    },
-  ];
-
-  const dirMarkers = [
-    { filename: `${base}/assets/.gitkeep`, content: '', file_type: 'system' },
-    { filename: `${base}/data/.gitkeep`, content: '', file_type: 'system' },
-    { filename: `${base}/documents/.gitkeep`, content: '', file_type: 'system' },
-    { filename: `${base}/frame/.gitkeep`, content: '', file_type: 'system' },
-    { filename: `${base}/memup/.gitkeep`, content: '', file_type: 'system' },
-    { filename: `${base}/simDrive/.gitkeep`, content: '', file_type: 'system' },
-    { filename: `${base}/vxrunner/.gitkeep`, content: '', file_type: 'system' },
-    { filename: `${base}/codex/.gitkeep`, content: '', file_type: 'transcript' },
-    { filename: `${base}/chatgpt/.gitkeep`, content: '', file_type: 'transcript' },
-    { filename: `${base}/character.ai/.gitkeep`, content: '', file_type: 'transcript' },
-    { filename: `${base}/github_copilot/.gitkeep`, content: '', file_type: 'transcript' },
-  ];
-
-  return [...files, ...dirMarkers];
+async function scaffoldViaLocalFilesystem(constructCallsign, config, options = {}) {
+  try {
+    const vvaultRoot = path.resolve(options.basePath || getVvaultBasePath());
+    const files = buildConstructBundleEntries(constructCallsign, config);
+    const result = await writeConstructBundleEntries(vvaultRoot, files, {
+      syncGenerated: options.syncGenerated === true,
+    });
+    console.log(
+      `✅ [ConstructScaffolder] Local VVAULT scaffolded ${constructCallsign} at ${vvaultRoot} (${result.created} created, ${result.updated} updated, ${result.existed} existed)`,
+    );
+    return {
+      ...result,
+      source: 'local-vvault-filesystem',
+      rootPath: vvaultRoot,
+    };
+  } catch (error) {
+    console.warn(`⚠️ [ConstructScaffolder] Local filesystem scaffold failed for ${constructCallsign}: ${error.message}`);
+    return { success: false, reason: error.message };
+  }
 }
 
 async function scaffoldViaVVAULT(constructCallsign, config, userEmail) {
@@ -268,7 +150,7 @@ async function scaffoldViaVVAULT(constructCallsign, config, userEmail) {
   }
 }
 
-async function scaffoldViaSupabase(constructCallsign, config, userId, supabase) {
+async function scaffoldViaSupabase(constructCallsign, config, userId, supabase, options = {}) {
   if (!supabase) {
     console.error('❌ [ConstructScaffolder] No Supabase client available for fallback');
     return { success: false, reason: 'No Supabase client' };
@@ -287,54 +169,76 @@ async function scaffoldViaSupabase(constructCallsign, config, userId, supabase) 
       .eq('filename', file.filename)
       .maybeSingle();
 
-    if (existing) {
+    if (existing && !(options.syncGenerated === true && file.replaceExisting)) {
       console.log(`⏭️ [ConstructScaffolder] File already exists: ${file.filename}`);
       results.push({ filename: file.filename, status: 'exists' });
       continue;
     }
 
-    const { error } = await supabase
-      .from('vault_files')
-      .insert({
-        user_id: userId,
-        filename: file.filename,
-        content: file.content,
-        file_type: file.file_type,
-        construct_id: constructCallsign,
-        metadata: {
-          source: 'chatty-gpt-creator',
-          createdAt: new Date().toISOString(),
-          constructCallsign,
-          constructName: config.name || constructCallsign.split('-')[0],
-        },
-      });
+    const rowPayload = {
+      user_id: userId,
+      filename: file.filename,
+      content: file.content,
+      file_type: file.file_type,
+      construct_id: constructCallsign,
+      metadata: {
+        source: 'chatty-gpt-creator',
+        createdAt: new Date().toISOString(),
+        constructCallsign,
+        constructName: config.name || constructCallsign.split('-')[0],
+      },
+    };
+
+    const { error } = existing
+      ? await supabase
+          .from('vault_files')
+          .update({
+            content: rowPayload.content,
+            file_type: rowPayload.file_type,
+            metadata: rowPayload.metadata,
+          })
+          .eq('id', existing.id)
+      : await supabase
+          .from('vault_files')
+          .insert(rowPayload);
 
     if (error) {
       console.error(`❌ [ConstructScaffolder] Failed to create ${file.filename}: ${error.message}`);
       results.push({ filename: file.filename, status: 'error', error: error.message });
     } else {
-      console.log(`✅ [ConstructScaffolder] Created ${file.filename}`);
-      results.push({ filename: file.filename, status: 'created' });
+      const status = existing ? 'updated' : 'created';
+      console.log(`✅ [ConstructScaffolder] ${status === 'updated' ? 'Updated' : 'Created'} ${file.filename}`);
+      results.push({ filename: file.filename, status });
     }
   }
 
   const created = results.filter(r => r.status === 'created').length;
+  const updated = results.filter(r => r.status === 'updated').length;
   const existed = results.filter(r => r.status === 'exists').length;
   const failed = results.filter(r => r.status === 'error').length;
 
-  console.log(`📦 [ConstructScaffolder] Supabase fallback: ${created} created, ${existed} existed, ${failed} failed`);
+  console.log(`📦 [ConstructScaffolder] Supabase fallback: ${created} created, ${updated} updated, ${existed} existed, ${failed} failed`);
 
   return {
     success: failed === 0,
     source: 'supabase-direct',
     created,
+    updated,
     existed,
     failed,
     results,
   };
 }
 
-export async function scaffoldConstruct(constructCallsign, config, { userId, userEmail, supabase }) {
+export async function scaffoldConstruct(constructCallsign, config, options = {}) {
+  const {
+    userId,
+    userEmail,
+    supabase,
+    localOnly = false,
+    syncGenerated = false,
+    basePath = null,
+  } = options;
   console.log(`📦 [ConstructScaffolder] Scaffolding full instance for ${constructCallsign}...`);
 
   if (!constructCallsign || !constructCallsign.match(/-\d+$/)) {
@@ -345,6 +249,18 @@ export async function scaffoldConstruct(constructCallsign, config, { userId, use
     }
   }
 
+  const localResult = await scaffoldViaLocalFilesystem(constructCallsign, config, {
+    basePath,
+    syncGenerated,
+  });
+  if (localResult.success) {
+    return localResult;
+  }
+
+  if (localOnly) {
+    return localResult;
+  }
+
   const vvaultResult = await scaffoldViaVVAULT(constructCallsign, config, userEmail);
 
   if (vvaultResult.success) {
@@ -352,5 +268,5 @@ export async function scaffoldConstruct(constructCallsign, config, { userId, use
   }
 
   console.log(`🔄 [ConstructScaffolder] VVAULT unavailable (${vvaultResult.reason}), falling back to Supabase direct write`);
-  return scaffoldViaSupabase(constructCallsign, config, userId, supabase);
+  return scaffoldViaSupabase(constructCallsign, config, userId, supabase, { syncGenerated });
 }

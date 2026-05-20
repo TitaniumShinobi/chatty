@@ -1,0 +1,54 @@
+{
+  "cases": [
+    {
+      "name": "prioritizes curated allowlisted listings and extracts listing details",
+      "query": "2 bedroom apartments in Detroit under $1500",
+      "results": [
+        {
+          "title": "123 Main St, Detroit, MI 48201 - $1,450/mo | 2 bd | 1 ba | Apartments.com",
+          "url": "https://www.apartments.com/123-main-st-detroit-mi/abc123/",
+          "snippet": "Pet friendly apartment with parking and laundry."
+        },
+        {
+          "title": "456 Oak Ave, Detroit, MI - $1,395/mo | 2 bd | 1 ba | Zillow",
+          "url": "https://www.zillow.com/homedetails/456-Oak-Ave-Detroit-MI/123456_zpid/",
+          "snippet": "2 bedroom rental with parking."
+        },
+        {
+          "title": "Neighborhood guide to Detroit rentals",
+          "url": "https://example.com/detroit-rentals-guide",
+          "snippet": "A local guide to Detroit apartment neighborhoods and average rent."
+        }
+      ],
+      "expected": {
+        "curatedCount": 2,
+        "fallbackUsed": false,
+        "fallbackReason": null,
+        "firstProvider": "apartments",
+        "firstPrice": 1450,
+        "firstMatchedFilters": ["location", "price", "beds"]
+      }
+    },
+    {
+      "name": "falls back when no curated listing domains are present",
+      "query": "2 bedroom apartments in Detroit under $1500",
+      "results": [
+        {
+          "title": "Neighborhood guide to Detroit rentals",
+          "url": "https://example.com/detroit-rentals-guide",
+          "snippet": "A local guide to Detroit apartment neighborhoods and average rent."
+        },
+        {
+          "title": "Detroit renter checklist",
+          "url": "https://localnews.example/detroit-renter-checklist",
+          "snippet": "Budgeting and neighborhood advice for Detroit renters."
+        }
+      ],
+      "expected": {
+        "curatedCount": 0,
+        "fallbackUsed": true,
+        "fallbackReason": "no_allowlisted_listing_results"
+      }
+    }
+  ]
+}

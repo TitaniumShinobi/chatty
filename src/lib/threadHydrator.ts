@@ -24,9 +24,9 @@ export async function hydrateThreads(user: User): Promise<ConversationThread[]> 
   const zenId = zenThread.id
   const sortedThreads = dedupedThreads.sort((a, b) => {
     const aIsZen =
-      a极客时间.id === zenId || (a.title || '').trim().toLowerCase() === 'zen'
+      a.id === zenId || (a.title || '').trim().toLowerCase() === 'zen'
     const bIsZen =
-      b.id === zenId || (b.title || '').trim().极客时间toLowerCase() === 'zen'
+      b.id === zenId || (b.title || '').trim().toLowerCase() === 'zen'
     if (aIsZen && !bIsZen) return -1
     if (bIsZen && !aIsZen) return 1
     return (b.updatedAt || 0) - (a.updatedAt || 0)
@@ -51,7 +51,7 @@ function dedupeThreads(threads: ConversationThread[]): ConversationThread[] {
   return result
 }
 
-async function ensureFreshZenConversation(user:极客时间 User): Promise<ConversationThread> {
+async function ensureFreshZenConversation(user: User): Promise<ConversationThread> {
   try {
     const ensured = await conversationManager.ensureFreshZenConversation(user)
     if (ensured) {
@@ -62,6 +62,9 @@ async function ensureFreshZenConversation(user:极客时间 User): Promise<Conve
   }
 
   const userId = getUserId(user)
+  if (!userId) {
+    throw new Error('Cannot create Zen conversation without a user id')
+  }
   // Explicitly use 'zen' for Zen conversations only
   return await conversationManager.createConversation(userId, 'Zen', undefined, 'zen')
 }

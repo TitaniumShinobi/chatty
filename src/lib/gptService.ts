@@ -29,6 +29,9 @@ export interface GPTAction {
 export interface GPTConfig {
   id: string;
   name: string;
+  displayName?: string;
+  fullName?: string;
+  aliases?: string[];
   description: string;
   instructions: string;
   conversationStarters: string[];
@@ -38,18 +41,31 @@ export interface GPTConfig {
     canvas: boolean;
     imageGeneration: boolean;
     codeInterpreter: boolean;
+    agent: boolean;
+    proactiveInitiation: boolean;
   };
   constructCallsign?: string;
   modelId: string;
   conversationModel?: string;
   creativeModel?: string;
   codingModel?: string;
-  orchestrationMode?: 'lin' | 'custom';
+  orchestrationMode?: 'lin' | 'custom' | 'sim';
   memoryEnabled?: boolean;
   memoryProfile?: 'continuitygpt' | 'off';
   conditioning?: string;
   physicalFeatures?: string;
   definition?: string;
+  voice?: string;
+  gender?: string;
+  provider?: string | null;
+  tags?: string[];
+  categories?: string[];
+  canonRefs?: string[];
+  knowledgeRefs?: string[];
+  systemPromptOverride?: string;
+  configJson?: any;
+  avatarUrl?: string | null;
+  model?: string;
   roleplayEnabled?: boolean;
   files: GPTFile[];
   actions: GPTAction[];
@@ -88,22 +104,22 @@ export class GPTService {
   async getAllGPTs(): Promise<GPTConfig[]> {
     const response = await fetch(this.baseUrl);
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to fetch GPTs');
     }
-    
+
     return data.gpts;
   }
 
   async getGPT(id: string): Promise<GPTConfig> {
     const response = await fetch(`${this.baseUrl}/${id}`);
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to fetch GPT');
     }
-    
+
     return data.gpt;
   }
 
@@ -115,13 +131,13 @@ export class GPTService {
       },
       body: JSON.stringify(config),
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to create GPT');
     }
-    
+
     return data.gpt;
   }
 
@@ -133,13 +149,13 @@ export class GPTService {
       },
       body: JSON.stringify(updates),
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to update GPT');
     }
-    
+
     return data.gpt;
   }
 
@@ -147,9 +163,9 @@ export class GPTService {
     const response = await fetch(`${this.baseUrl}/${id}`, {
       method: 'DELETE',
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to delete GPT');
     }
@@ -167,13 +183,13 @@ export class GPTService {
       method: 'POST',
       body: formData,
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to upload file');
     }
-    
+
     return data.file;
   }
 
@@ -206,11 +222,11 @@ export class GPTService {
   async getFiles(gptId: string): Promise<GPTFile[]> {
     const response = await fetch(`${this.baseUrl}/${gptId}/files`);
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to fetch files');
     }
-    
+
     return data.files;
   }
 
@@ -218,9 +234,9 @@ export class GPTService {
     const response = await fetch(`${this.baseUrl}/files/${fileId}`, {
       method: 'DELETE',
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to delete file');
     }
@@ -234,9 +250,9 @@ export class GPTService {
       },
       body: JSON.stringify({ gptId: newGptId }),
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to update file GPT ID');
     }
@@ -251,24 +267,24 @@ export class GPTService {
       },
       body: JSON.stringify(action),
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to create action');
     }
-    
+
     return data.action;
   }
 
   async getActions(gptId: string): Promise<GPTAction[]> {
     const response = await fetch(`${this.baseUrl}/${gptId}/actions`);
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to fetch actions');
     }
-    
+
     return data.actions;
   }
 
@@ -276,9 +292,9 @@ export class GPTService {
     const response = await fetch(`${this.baseUrl}/actions/${actionId}`, {
       method: 'DELETE',
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to delete action');
     }
@@ -292,13 +308,13 @@ export class GPTService {
       },
       body: JSON.stringify(parameters),
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to execute action');
     }
-    
+
     return data.result;
   }
 
@@ -324,24 +340,24 @@ export class GPTService {
     const response = await fetch(`${this.baseUrl}/${gptId}/load`, {
       method: 'POST',
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to load GPT');
     }
-    
+
     return data.runtime;
   }
 
   async getContext(gptId: string): Promise<string> {
     const response = await fetch(`${this.baseUrl}/${gptId}/context`);
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to fetch context');
     }
-    
+
     return data.context;
   }
 
@@ -353,9 +369,9 @@ export class GPTService {
       },
       body: JSON.stringify({ context }),
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to update context');
     }
@@ -364,11 +380,11 @@ export class GPTService {
   // Utility Methods
   formatFileSize(bytes: number): string {
     if (bytes === 0) return '0 Bytes';
-    
+
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    
+
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
@@ -386,23 +402,23 @@ export class GPTService {
 
   validateGPTConfig(config: Partial<GPTConfig>): string[] {
     const errors: string[] = [];
-    
+
     if (!config.name || config.name.trim().length === 0) {
       errors.push('Name is required');
     }
-    
+
     if (!config.description || config.description.trim().length === 0) {
       errors.push('Description is required');
     }
-    
+
     if (!config.instructions || config.instructions.trim().length === 0) {
       errors.push('Instructions are required');
     }
-    
+
     if (!config.modelId) {
       errors.push('Model selection is required');
     }
-    
+
     return errors;
   }
 }

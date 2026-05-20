@@ -7,6 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
 const REGISTRY_FILE = path.join(PROJECT_ROOT, 'users.json');
+const CANONICAL_EMAIL_LIFE_IDS = {};
 
 /**
  * Generate LIFE format user ID (same as VVAULT)
@@ -34,6 +35,37 @@ function generateLIFEUserId(name, email = null, timestamp = null) {
   }
   
   return `${userName}_${ts}`;
+}
+
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function isNonLifeUserId(userId) {
+  const id = String(userId || '');
+  return !id.includes('_') || /^[0-9a-fA-F]{24}$/.test(id) || /^\d+$/.test(id);
+}
+
+export function resolveLifeUserIdForLogin(registry, userId, email, name) {
+  if (!isNonLifeUserId(userId)) {
+    return userId;
+  }
+
+  const normalizedEmail = normalizeEmail(email);
+  const canonicalLifeId = CANONICAL_EMAIL_LIFE_IDS[normalizedEmail];
+  const canonicalUser = canonicalLifeId ? registry.users?.[canonicalLifeId] : null;
+  if (canonicalUser && normalizeEmail(canonicalUser.email) === normalizedEmail) {
+    return canonicalLifeId;
+  }
+
+  const existingUser = Object.values(registry.users || {}).find(
+    (u) => normalizeEmail(u.email) === normalizedEmail
+  );
+  if (existingUser) {
+    return existingUser.user_id;
+  }
+
+  return generateLIFEUserId(name, email);
 }
 
 /**
@@ -80,18 +112,7 @@ export async function getOrCreateUser(userId, email, name) {
   
   // CRITICAL: Generate LIFE format user ID (same as VVAULT)
   // Check if userId is already LIFE format (contains underscore and ends with timestamp)
-  let lifeUserId = userId;
-  if (!userId.includes('_') || /^[0-9a-fA-F]{24}$/.test(userId) || /^\d+$/.test(userId)) {
-    // Not LIFE format - generate it from name/email
-    // Try to find existing user by email first (for migration)
-    const existingUser = Object.values(registry.users).find(u => u.email === email);
-    if (existingUser) {
-      lifeUserId = existingUser.user_id; // Use existing LIFE format ID
-    } else {
-      // Generate new LIFE format ID
-      lifeUserId = generateLIFEUserId(name, email);
-    }
-  }
+  let lifeUserId = resolveLifeUserIdForLogin(registry, userId, email, name);
   
   // Check if user already exists by LIFE format ID
   if (registry.users[lifeUserId]) {
@@ -266,4 +287,3 @@ export async function migratePersonaFilesForUser(userId, shard) {
     }
   }
 }
-

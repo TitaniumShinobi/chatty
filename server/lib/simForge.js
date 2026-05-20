@@ -18,20 +18,20 @@
  * - Cryptographic tether signatures for identity binding
  * 
  * CRITICAL PATH PATTERN:
- * /vvault_files/users/{shard}/{userId}/instances/{constructName}/...
- * where constructName = constructCallsign WITHOUT version suffix (katana-001 -> katana)
+ * /vvault_files/users/{shard}/{userId}/instances/{constructCallsign}/...
+ * Canonical folders always use the full callsign with suffix (katana-001, zen-001).
  * 
  * Pipeline:
  * 1. Load transcripts for a construct
  * 2. Analyze patterns (vocabulary, sentence structure, tone, topics)
- * 3. Generate identity files (prompt.txt, conditioning.txt, tone_profile.json)
+ * 3. Generate identity files (prompt.json canonical, prompt.txt fallback, conditioning.txt, tone_profile.json)
  * 4. Create FULL capsule with Python CapsuleForge parity
  * 5. Store both identity files AND capsule in VVAULT
  */
 
 /**
- * CRITICAL PATH HELPER: Extract constructName from constructCallsign
- * constructCallsign: "katana-001" -> constructName: "katana"
+ * DISPLAY HELPER: Extract human-readable construct name from constructCallsign
+ * Do not use this for canonical storage paths.
  */
 function extractConstructName(constructCallsign) {
   if (!constructCallsign) return 'unknown';
@@ -48,7 +48,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY;
 
-const ANALYSIS_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct';
+const ANALYSIS_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free';
 const CAPSULE_VERSION = '2.0.0'; // Python parity version
 const TETHER_SIGNATURE_PREFIX = 'SIMFORGE-VVAULT-TETHER';
 
@@ -665,6 +665,22 @@ Return ONLY the JSON object, no markdown code blocks or additional text.`;
     return prompt;
   }
 
+  generatePromptJson(analysis) {
+    if (!analysis?.core_identity) return null;
+
+    const promptTxt = this.generatePromptTxt(analysis);
+    if (!promptTxt) return null;
+
+    return JSON.stringify({
+      name: analysis.core_identity.name || 'Construct',
+      description: analysis.core_identity.essence || '',
+      instructions: promptTxt,
+      system_prompt: promptTxt,
+      source: 'simForge',
+      forged_at: new Date().toISOString(),
+    }, null, 2);
+  }
+
   generateConditioningTxt(analysis) {
     if (!analysis?.behavioral_rules) return null;
 
@@ -734,6 +750,7 @@ Return ONLY the JSON object, no markdown code blocks or additional text.`;
     }
 
     const promptTxt = this.generatePromptTxt(analysis);
+    const promptJson = this.generatePromptJson(analysis);
     const conditioningTxt = this.generateConditioningTxt(analysis);
     const toneProfile = this.generateToneProfile(analysis);
     
@@ -762,6 +779,7 @@ Return ONLY the JSON object, no markdown code blocks or additional text.`;
       analysis,
       capsule, // The proper capsule for ecosystem compatibility
       identityFiles: {
+        'prompt.json': promptJson,
         'prompt.txt': promptTxt,
         'conditioning.txt': conditioningTxt,
         'tone_profile.json': JSON.stringify(toneProfile, null, 2)
@@ -826,10 +844,8 @@ Return ONLY the JSON object, no markdown code blocks or additional text.`;
         try {
           await this.capsuleIntegration.saveToInstanceDirectory(constructCallsign, capsule);
           
-          // Also save to Supabase for cloud persistence
-          // CRITICAL: Use constructName for folder, constructCallsign for filename
-          const constructNameForCapsule = extractConstructName(constructCallsign);
-          const capsuleFilepath = `instances/${constructNameForCapsule}/identity/${constructCallsign}.capsule`;
+          // Also save to Supabase for cloud persistence using the canonical full callsign path.
+          const capsuleFilepath = `instances/${constructCallsign}/identity/${constructCallsign}.capsule`;
           const { error: capsuleError } = await this.supabase
             .from('vault_files')
             .upsert({

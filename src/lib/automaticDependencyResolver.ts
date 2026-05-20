@@ -409,7 +409,7 @@ export class AutomaticDependencyResolver {
     return cacheAge < 5 * 60 * 1000;
   }
 
-  private async validateRuntimeAssignment(assignment: RuntimeAssignment, context: DependencyResolutionContext): boolean {
+  private async validateRuntimeAssignment(assignment: RuntimeAssignment, context: DependencyResolutionContext): Promise<boolean> {
     // Check if assignment is still optimal for current context
     const optimalAssignment = await this.runtimeOrchestrator.determineOptimalRuntime({
       userMessage: context.userMessage,

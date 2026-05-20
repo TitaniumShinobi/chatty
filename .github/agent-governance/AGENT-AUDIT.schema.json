@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-governance.local/AGENT-AUDIT.schema.json",
+  "title": "Agent Audit Artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "traceId",
+    "actor",
+    "repo",
+    "mode",
+    "approvalState",
+    "changedPaths",
+    "diffHash",
+    "checksRun",
+    "checkResults",
+    "timestamp",
+    "summary",
+    "signature"
+  ],
+  "properties": {
+    "traceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "human",
+            "agent",
+            "bot",
+            "service"
+          ]
+        }
+      }
+    },
+    "repo": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "READ_ONLY",
+        "PLAN_ONLY",
+        "SUGGEST_EDITS",
+        "APPLY_EDITS"
+      ]
+    },
+    "approvalState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "approved",
+        "approvedBy",
+        "approvedAt"
+      ],
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "approved": {
+          "type": "boolean"
+        },
+        "approvedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "approvedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    },
+    "changedPaths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "diffHash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "checksRun": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "checkResults": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "enum": [
+          "passed",
+          "failed",
+          "skipped"
+        ]
+      }
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "value"
+      ],
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "const": "HMAC-SHA256"
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

@@ -1,5 +1,7 @@
 // enhancedSeatRunner.ts - Enhanced seat runner with timeout, retry, and performance optimizations
 
+import { LIN_DEFAULT_MODELS } from '../config/linModelDefaults';
+
 // Guard for browser bundles
 const isBrowser = typeof window !== 'undefined';
 const envVars = (!isBrowser && typeof process !== 'undefined' && process.env) ? process.env : undefined;
@@ -16,6 +18,12 @@ type SeatInfo = { tag: string; role?: string } | string;
 interface SeatConfig {
   [seat: string]: SeatInfo;
 }
+
+const DEFAULT_SEAT_CONFIG: SeatConfig = {
+  smalltalk: LIN_DEFAULT_MODELS.smalltalk,
+  coding: LIN_DEFAULT_MODELS.coding,
+  creative: LIN_DEFAULT_MODELS.creative,
+};
 
 interface GenerateOptions {
   seat: Seat;
@@ -40,14 +48,19 @@ interface SeatMetrics {
 
 let cachedConfig: SeatConfig | undefined;
 
+function defaultModelForSeat(seat: Seat): string {
+  const info = DEFAULT_SEAT_CONFIG[seat] || DEFAULT_SEAT_CONFIG.smalltalk;
+  return typeof info === 'string' ? info : info.tag;
+}
+
+function toOllamaModelTag(modelRef: string): string {
+  return modelRef.startsWith('ollama:') ? modelRef.slice('ollama:'.length) : modelRef;
+}
+
 function loadSeatConfig(): SeatConfig {
   if (cachedConfig) return cachedConfig;
   if (isBrowser) {
-    cachedConfig = {
-      smalltalk: 'phi3:latest',
-      coding: 'deepseek-coder-v2',
-      creative: 'mistral:instruct',
-    };
+    cachedConfig = DEFAULT_SEAT_CONFIG;
     return cachedConfig;
   }
 
@@ -58,11 +71,7 @@ function loadSeatConfig(): SeatConfig {
     const raw = fs.readFileSync(cfgPath, 'utf-8');
     cachedConfig = JSON.parse(raw);
   } catch (_) {
-    cachedConfig = {
-      smalltalk: 'phi3:latest',
-      coding: 'deepseek-coder-v2',
-      creative: 'mistral:instruct',
-    };
+    cachedConfig = DEFAULT_SEAT_CONFIG;
   }
   return cachedConfig;
 }
@@ -80,7 +89,7 @@ function resolveModel(seat: Seat, modelOverride?: string): string {
   
   const cfg = loadSeatConfig();
   const info = cfg[seat];
-  return typeof info === 'string' ? info : info?.tag ?? 'phi3:latest';
+  return typeof info === 'string' ? info : info?.tag ?? defaultModelForSeat('smalltalk');
 }
 
 export function getSeatRole(seat: Seat): string | undefined {
@@ -104,7 +113,7 @@ export async function runSeatEnhanced(opts: GenerateOptions): Promise<{ response
 
   const host = (opts.host ?? envVars?.OLLAMA_HOST ?? 'http://localhost').replace(/\/$/, '');
   const port = (opts.port ?? Number(envVars?.OLLAMA_PORT)) || 11434;
-  const model = resolveModel(opts.seat, opts.modelOverride);
+  const model = toOllamaModelTag(resolveModel(opts.seat, opts.modelOverride));
   const timeout = opts.timeout ?? 30000; // 30 second default timeout
   const maxRetries = opts.retries ?? 2;
 

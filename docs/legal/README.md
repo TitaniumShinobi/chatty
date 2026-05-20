@@ -1,29 +1,17 @@
-# Legal Documentation
+# Legal
 
-**Last Updated**: 2026-02-08
+This section holds the retained legal and compliance documents for Chatty.
 
-This directory contains legal documents, terms of service, privacy notices, and compliance documentation for Chatty.
+## Live Legal Docs
 
----
+- [CHATTY_TERMS_OF_SERVICE.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/legal/CHATTY_TERMS_OF_SERVICE.md)
+- [CHATTY_PRIVACY_NOTICE.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/legal/CHATTY_PRIVACY_NOTICE.md)
+- [CHATTY_EUROPEAN_ELECTRONIC_COMMUNICATIONS_CODE_DISCLOSURE.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/legal/CHATTY_EUROPEAN_ELECTRONIC_COMMUNICATIONS_CODE_DISCLOSURE.md)
+- [LEGAL_FRAMEWORK_INJECTION.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/legal/LEGAL_FRAMEWORK_INJECTION.md)
+- [MONDAY_LEGAL_CONSULTATION_RECOUNT.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/legal/MONDAY_LEGAL_CONSULTATION_RECOUNT.md)
 
-## 📁 Contents
+## Rules
 
-- `CHATTY_TERMS_OF_SERVICE.md` - Terms of Service
-- `CHATTY_PRIVACY_NOTICE.md` - Privacy Notice
-- `CHATTY_EUROPEAN_ELECTRONIC_COMMUNICATIONS_CODE_DISCLOSURE.md` - European Electronic Communications Code disclosure
-- `LEGAL_FRAMEWORK_INJECTION.md` - How VBEA/WRECK/NRCL/EECCD are hardcoded into prompts
-- `MONDAY_LEGAL_CONSULTATION_RECOUNT.md` - Evidence-driven recap of Monday (MONDAY-001) legal consultations
-
----
-
-## 📋 Legal Documents
-
-These documents define:
-- User rights and responsibilities
-- Privacy policies and data handling
-- Compliance with regional regulations
-- Terms of use for the Chatty platform
-
----
-
-*This directory is part of the Chatty documentation organization effort.*
+- Treat the legal texts themselves as primary.
+- Product summaries and explanatory notes should not override the legal documents.
+- Historical legal drafting notes belong in reports or archive, not in the live legal surface.

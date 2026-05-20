@@ -11,6 +11,8 @@ import { getGPTRuntimeBridge } from './server/lib/gptRuntimeBridge.js';
 
 console.log('🧪 Testing Lin Orchestration with Generic GPTs...\n');
 
+const TEST_USER_ID = process.env.CHATTY_TEST_USER_ID || process.env.VVAULT_USER_ID || 'devon_woodson_1774390416168';
+
 async function testLinOrchestration(constructId, testName) {
   try {
     console.log(`🔍 Testing ${testName} (${constructId})`);
@@ -33,7 +35,7 @@ async function testLinOrchestration(constructId, testName) {
       const response = await bridge.processMessage(
         constructId,
         question,
-        'devon_woodson_1762969514958',
+        TEST_USER_ID,
         `test_${Date.now()}`
       );
       console.timeEnd('⏱️  Response time');

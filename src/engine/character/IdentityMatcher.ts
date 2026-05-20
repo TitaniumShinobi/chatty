@@ -11,7 +11,6 @@ import type {
   MemoryAnchor,
   ConsistencyRule,
 } from '../transcript/types';
-import type { Construct } from '../../types';
 
 interface ConstructInfo {
   constructId: string;
@@ -22,6 +21,8 @@ interface ConstructInfo {
 function isBrowserEnv(): boolean {
   return typeof window !== 'undefined' && typeof document !== 'undefined';
 }
+
+let hasLoggedBrowserBlueprintSkip = false;
 
 async function dynamicNodeImport(specifier: string): Promise<any> {
   // Avoid Vite/webpack static analysis by using an indirect dynamic import.
@@ -339,7 +340,10 @@ export class IdentityMatcher {
     callsign: string
   ): Promise<PersonalityBlueprint | null> {
     if (isBrowserEnv()) {
-      console.warn('[IdentityMatcher] loadPersonalityBlueprint skipped in browser');
+      if (!hasLoggedBrowserBlueprintSkip) {
+        console.warn('[IdentityMatcher] loadPersonalityBlueprint skipped in browser');
+        hasLoggedBrowserBlueprintSkip = true;
+      }
       return null;
     }
 
@@ -588,7 +592,7 @@ export class IdentityMatcher {
 
     if (capsule?.signatures?.linguistic_sigil) {
       addSpeechPattern(capsule.signatures.linguistic_sigil.signature_phrase);
-      (capsule.signatures.linguistic_sigil.common_phrases || []).forEach(phrase => addSpeechPattern(phrase));
+      (capsule.signatures.linguistic_sigil.common_phrases || []).forEach((phrase: string) => addSpeechPattern(phrase));
     }
     (capsule?.additional_data?.lexical_signatures || []).forEach((phrase: string) => addSpeechPattern(phrase));
 
