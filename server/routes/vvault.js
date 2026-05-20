@@ -1606,6 +1606,10 @@ async function buildEnrichedContextPromptWithRecovery({
   runtimeTurnState = null,
   continuityClass = null,
   continuityResume = null,
+  cognitionPolicy = null,
+  cognitionAudit = null,
+  cognitionReadiness = null,
+  cognitionTraceId = null,
 }) {
   const contextArgs = {
     userId,
@@ -6267,7 +6271,7 @@ router.post("/conversations/:sessionId/messages", requireSharedAuth, async (req,
       userId,
     });
     const preWriteRows = await readConversations(lookupContext, actualConstructId, {
-      allowLocalFallback: false,
+      allowLocalFallback: true,
     });
     const existingMatches = findAppendMessageMatches(preWriteRows, {
       sessionId,
@@ -6316,7 +6320,7 @@ router.post("/conversations/:sessionId/messages", requireSharedAuth, async (req,
 
     clearConversationReadCaches();
     const readbackRows = await readConversations(lookupContext, actualConstructId, {
-      allowLocalFallback: false,
+      allowLocalFallback: true,
     });
     const readbackMatches = findAppendMessageMatches(readbackRows, {
       sessionId,
@@ -9451,6 +9455,7 @@ export async function handleConstructInference(req, res) {
     userId,
     supabaseSessionUserId,
     authSource,
+    authRecovered,
     hasSupabaseAuthHeader,
     hasReqUser,
     normalized,
@@ -12732,7 +12737,7 @@ Output ONLY the rewritten response, nothing else.`
         activeSimLock,
         simRefreshContract,
         searchInspectability,
-        nextRuntimeTurnState,
+        nextRuntimeTurnState: null,
         cognitionPolicy: cognitionEvaluation.policy,
         cognitionAudit: cognitionEvaluation.auditEvidence,
         cognitionReadiness: cognitionEvaluation.readiness,
