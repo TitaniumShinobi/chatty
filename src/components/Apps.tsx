@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
-import { Search, X, Calendar, Code, Sparkles, Heart, Newspaper, FileText, FolderKanban, Mic, GraduationCap, Play, Cloud, Package, ArrowLeft } from "lucide-react";
+import { Search, X, Code, FolderKanban, Play, ArrowLeft } from "lucide-react";
 import { cn } from "../lib/utils";
+import { getPublicSurfaceConfig } from "../lib/publicSurfaceConfig";
 
 interface AppItem {
   id: string;
@@ -17,116 +18,41 @@ interface GridStoreProps {
   onSelectApp?: (appId: string) => void;
 }
 
+const allApps: AppItem[] = [
+  {
+    id: "code",
+    name: "Code",
+    description: "Write and run code snippets",
+    icon: <Code size={24} />,
+    category: "productivity",
+    hasWidget: false,
+  },
+  {
+    id: "fxshinobi",
+    name: "FXShinobi",
+    description: "Trading insights and analysis",
+    icon: <Play size={24} />,
+    category: "lifestyle",
+    hasWidget: true,
+  },
+  {
+    id: "projects",
+    name: "Projects",
+    description: "Organize and manage projects",
+    icon: <FolderKanban size={24} />,
+    category: "productivity",
+    hasWidget: true,
+  },
+];
+
 const GridStore: React.FC<GridStoreProps> = ({ onClose, onSelectApp }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("featured");
+  const { apps: enabledApps } = getPublicSurfaceConfig();
 
-  const apps: AppItem[] = [
-    {
-      id: "calendar",
-      name: "Calendar",
-      description: "Schedule and manage your events",
-      icon: <Calendar size={24} />,
-      category: "productivity",
-      hasWidget: true,
-    },
-    {
-      id: "code",
-      name: "Code",
-      description: "Write and run code snippets",
-      icon: <Code size={24} />,
-      category: "productivity",
-      hasWidget: false,
-    },
-    {
-      id: "create",
-      name: "Create",
-      description: "Generate creative content",
-      icon: <Sparkles size={24} />,
-      category: "creative",
-      hasWidget: false,
-    },
-    {
-      id: "fxshinobi",
-      name: "FXShinobi",
-      description: "Trading insights and analysis",
-      icon: <Play size={24} />,
-      category: "lifestyle",
-      hasWidget: true,
-    },
-    {
-      id: "health",
-      name: "Health",
-      description: "Track wellness and fitness",
-      icon: <Heart size={24} />,
-      category: "lifestyle",
-      hasWidget: true,
-    },
-    {
-      id: "news",
-      name: "News",
-      description: "Stay updated with the latest",
-      icon: <Newspaper size={24} />,
-      category: "lifestyle",
-      hasWidget: true,
-    },
-    {
-      id: "pad",
-      name: "Pad",
-      description: "Quick notes and drafts",
-      icon: <FileText size={24} />,
-      category: "productivity",
-      hasWidget: true,
-    },
-    {
-      id: "projects",
-      name: "Projects",
-      description: "Organize and manage projects",
-      icon: <FolderKanban size={24} />,
-      category: "productivity",
-      hasWidget: true,
-    },
-    {
-      id: "record",
-      name: "Record",
-      description: "Voice memos and recordings",
-      icon: <Mic size={24} />,
-      category: "creative",
-      hasWidget: false,
-    },
-    {
-      id: "study",
-      name: "Study",
-      description: "Learning and flashcards",
-      icon: <GraduationCap size={24} />,
-      category: "productivity",
-      hasWidget: false,
-    },
-    {
-      id: "vxrunner",
-      name: "VXRunner",
-      description: "Execute and automate tasks",
-      icon: <Play size={24} />,
-      category: "productivity",
-      hasWidget: true,
-    },
-    {
-      id: "weather",
-      name: "Weather",
-      description: "Current conditions and forecasts",
-      icon: <Cloud size={24} />,
-      category: "lifestyle",
-      hasWidget: true,
-    },
-    {
-      id: "zip",
-      name: "Zip",
-      description: "Compress and extract files",
-      icon: <Package size={24} />,
-      category: "productivity",
-      hasWidget: false,
-    },
-  ];
+  const apps = useMemo(() => {
+    return allApps.filter((app) => enabledApps[app.id as keyof typeof enabledApps]);
+  }, [enabledApps]);
 
   const categories = [
     { id: "featured", label: "Featured" },
@@ -150,11 +76,13 @@ const GridStore: React.FC<GridStoreProps> = ({ onClose, onSelectApp }) => {
     }
     
     return result;
-  }, [searchQuery, activeCategory]);
+  }, [searchQuery, activeCategory, apps]);
 
   const featuredApps = useMemo(() => {
     return apps.filter(app => app.hasWidget).slice(0, 3);
-  }, []);
+  }, [apps]);
+
+  const featuredApp = featuredApps[0];
 
   return (
     <div 
@@ -208,7 +136,7 @@ const GridStore: React.FC<GridStoreProps> = ({ onClose, onSelectApp }) => {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         {/* Featured Section */}
-        {!searchQuery && activeCategory === "featured" && (
+        {!searchQuery && activeCategory === "featured" && featuredApp && (
           <div className="mb-8">
             <div 
               className="rounded-xl p-6 mb-6"
@@ -219,17 +147,19 @@ const GridStore: React.FC<GridStoreProps> = ({ onClose, onSelectApp }) => {
               <div className="flex items-start gap-6">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
-                    <Calendar size={32} className="text-white" />
+                    <div className="text-white">
+                      {featuredApp.icon}
+                    </div>
                   </div>
-                  <h2 className="text-xl font-semibold text-white mb-1">Calendar</h2>
-                  <p className="text-white/80 text-sm mb-4">Schedule and manage your events with AI assistance</p>
+                  <h2 className="text-xl font-semibold text-white mb-1">{featuredApp.name}</h2>
+                  <p className="text-white/80 text-sm mb-4">{featuredApp.description}</p>
                   <button 
                     className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
                     style={{ 
                       backgroundColor: "white",
                       color: "var(--chatty-accent, #4F46E5)"
                     }}
-                    onClick={() => onSelectApp?.("calendar")}
+                    onClick={() => onSelectApp?.(featuredApp.id)}
                   >
                     Open
                   </button>

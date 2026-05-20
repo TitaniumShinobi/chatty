@@ -358,6 +358,112 @@ test('watch can sync Codex source evidence to VVAULT before continuity relay', a
   }
 });
 
+test('watch validates relay against the selected session readback, not global latest source sync', async () => {
+  const env = await setupWatchEnv('selected-source-proof');
+  const rolloutPath = path.join(env.rolloutDir, 'rollout-selected-source-proof.jsonl');
+  const store = createCanonicalRelayStore();
+
+  try {
+    await fs.writeFile(
+      rolloutPath,
+      buildRolloutLines({
+        sessionId: 'selected-codex',
+        pairs: [['selected user', 'selected assistant']],
+      }).join('\n'),
+      'utf8',
+    );
+
+    const selectedProof = buildSourceSyncLatest({
+      rolloutPath,
+      sourceSessionId: 'selected-codex',
+      latestMessageRole: 'assistant',
+      latestMessageTimestamp: '2026-05-08T23:40:02.000Z',
+      latestMessageDigest: 'selected-message-digest',
+      latestMessageSourceTurnIndex: 2,
+      storagePath: 'instances/zen-001/codex/selected-codex.md',
+    });
+    const events = [];
+    const result = await runCodexContinuityWatch({
+      codexSessionsRoot: env.sessionsRoot,
+      usersPath: env.usersPath,
+      maxPolls: 1,
+      syncSourceEvidenceToVvault: true,
+      syncSourceEvidenceImpl: async () => ({
+        ok: true,
+        scannedFiles: 2,
+        archivedThreads: 2,
+        vvaultPublishedThreads: 2,
+        vvaultReadbackVerifiedThreads: 2,
+        latest: buildSourceSyncLatest({
+          rolloutPath: path.join(env.rolloutDir, 'rollout-other-source-proof.jsonl'),
+          sourceSessionId: 'other-codex',
+          latestMessageTimestamp: '2026-05-08T23:50:02.000Z',
+          latestMessageSourceTurnIndex: 12,
+          storagePath: 'instances/zen-001/codex/other-codex.md',
+        }),
+        vvaultThreadProofs: [selectedProof],
+      }),
+      emitEvent: (payload) => events.push(payload),
+      readConversationsImpl: store.readConversationsImpl,
+      writeTranscriptImpl: store.writeTranscriptImpl,
+      readLatestRuntimeTurnStateImpl: store.readLatestRuntimeTurnStateImpl,
+    });
+
+    assert.deepEqual(events.map((event) => event.event), ['started', 'source_synced', 'synced']);
+    assert.equal(events[1].vvaultThreadProofs, 1);
+    assert.equal(events[2].vvaultReadback.storagePath, 'instances/zen-001/codex/selected-codex.md');
+    assert.equal(events[2].latestSyncedMessage.sourceTurnIndex, 2);
+    assert.equal(result.syncedEvents, 1);
+    assert.deepEqual(store.messages.map((message) => message.content), ['selected user', 'selected assistant']);
+  } finally {
+    await env.restore();
+  }
+});
+
+test('watch defaults source bank sync to all eligible files', async () => {
+  const env = await setupWatchEnv('full-source-bank');
+  const rolloutPath = path.join(env.rolloutDir, 'rollout-full-source-bank.jsonl');
+  const store = createCanonicalRelayStore();
+  const sourceSyncCalls = [];
+
+  try {
+    await fs.writeFile(
+      rolloutPath,
+      buildRolloutLines({
+        pairs: [['u1', 'a1']],
+      }).join('\n'),
+      'utf8',
+    );
+
+    await runCodexContinuityWatch({
+      codexSessionsRoot: env.sessionsRoot,
+      usersPath: env.usersPath,
+      maxPolls: 1,
+      syncSourceEvidenceToVvault: true,
+      syncSourceEvidenceImpl: async (params) => {
+        sourceSyncCalls.push(params);
+        return {
+          ok: true,
+          scannedFiles: 17,
+          archivedThreads: 17,
+          vvaultPublishedThreads: 17,
+          vvaultReadbackVerifiedThreads: 17,
+          latest: buildSourceSyncLatest({ rolloutPath }),
+        };
+      },
+      emitEvent: () => {},
+      readConversationsImpl: store.readConversationsImpl,
+      writeTranscriptImpl: store.writeTranscriptImpl,
+      readLatestRuntimeTurnStateImpl: store.readLatestRuntimeTurnStateImpl,
+    });
+
+    assert.equal(sourceSyncCalls.length, 1);
+    assert.equal(sourceSyncCalls[0].maxFiles, Number.POSITIVE_INFINITY);
+  } finally {
+    await env.restore();
+  }
+});
+
 test('watch blocks continuity relay while VVAULT source evidence latest message is still user', async () => {
   const env = await setupWatchEnv('pending-user');
   const rolloutPath = path.join(env.rolloutDir, 'rollout-pending-user.jsonl');
@@ -440,34 +546,34 @@ test('watch fails closed when source sync lacks verified VVAULT readback proof',
       'utf8',
     );
 
-    await assert.rejects(
-      () =>
-        runCodexContinuityWatch({
-          codexSessionsRoot: env.sessionsRoot,
-          usersPath: env.usersPath,
-          maxPolls: 1,
-          syncSourceEvidenceToVvault: true,
-          syncSourceEvidenceImpl: async () => ({
-            ok: true,
-            scannedFiles: 1,
-            archivedThreads: 1,
-            vvaultPublishedThreads: 1,
-            vvaultReadbackVerifiedThreads: 0,
-            latest: {
-              sourceSessionId: 'latest-codex',
-              sourceSessionPath: rolloutPath,
-              latestMessageRole: 'assistant',
-              latestMessageTimestamp: '2026-05-08T23:40:02.000Z',
-            },
-          }),
-          emitEvent: () => {},
-          readConversationsImpl: store.readConversationsImpl,
-          writeTranscriptImpl: store.writeTranscriptImpl,
-          readLatestRuntimeTurnStateImpl: store.readLatestRuntimeTurnStateImpl,
-        }),
-      /verified VVAULT readback/i,
-    );
+    const events = [];
+    const result = await runCodexContinuityWatch({
+      codexSessionsRoot: env.sessionsRoot,
+      usersPath: env.usersPath,
+      maxPolls: 1,
+      syncSourceEvidenceToVvault: true,
+      syncSourceEvidenceImpl: async () => ({
+        ok: true,
+        scannedFiles: 1,
+        archivedThreads: 1,
+        vvaultPublishedThreads: 1,
+        vvaultReadbackVerifiedThreads: 0,
+        latest: {
+          sourceSessionId: 'latest-codex',
+          sourceSessionPath: rolloutPath,
+          latestMessageRole: 'assistant',
+          latestMessageTimestamp: '2026-05-08T23:40:02.000Z',
+        },
+      }),
+      emitEvent: (payload) => events.push(payload),
+      readConversationsImpl: store.readConversationsImpl,
+      writeTranscriptImpl: store.writeTranscriptImpl,
+      readLatestRuntimeTurnStateImpl: store.readLatestRuntimeTurnStateImpl,
+    });
+    assert.deepEqual(events.map((event) => event.event), ['started', 'source_synced', 'relay_deferred']);
+    assert.match(events[2].reason, /verified VVAULT readback/i);
     assert.equal(store.messages.length, 0);
+    assert.equal(result.syncedEvents, 0);
     await assert.rejects(() => fs.access(path.join(env.cliHome, 'codex-handoff-watch.state.json')));
   } finally {
     await env.restore();
@@ -488,32 +594,32 @@ test('watch fails closed when VVAULT readback is not vvault_body', async () => {
       'utf8',
     );
 
-    await assert.rejects(
-      () =>
-        runCodexContinuityWatch({
-          codexSessionsRoot: env.sessionsRoot,
-          usersPath: env.usersPath,
-          maxPolls: 1,
-          syncSourceEvidenceToVvault: true,
-          syncSourceEvidenceImpl: async () => ({
-            ok: true,
-            scannedFiles: 1,
-            archivedThreads: 1,
-            vvaultPublishedThreads: 1,
-            vvaultReadbackVerifiedThreads: 0,
-            latest: buildSourceSyncLatest({
-              rolloutPath,
-              storageMode: 'local-fallback',
-            }),
-          }),
-          emitEvent: () => {},
-          readConversationsImpl: store.readConversationsImpl,
-          writeTranscriptImpl: store.writeTranscriptImpl,
-          readLatestRuntimeTurnStateImpl: store.readLatestRuntimeTurnStateImpl,
+    const events = [];
+    const result = await runCodexContinuityWatch({
+      codexSessionsRoot: env.sessionsRoot,
+      usersPath: env.usersPath,
+      maxPolls: 1,
+      syncSourceEvidenceToVvault: true,
+      syncSourceEvidenceImpl: async () => ({
+        ok: true,
+        scannedFiles: 1,
+        archivedThreads: 1,
+        vvaultPublishedThreads: 1,
+        vvaultReadbackVerifiedThreads: 0,
+        latest: buildSourceSyncLatest({
+          rolloutPath,
+          storageMode: 'local-fallback',
         }),
-      /storage_mode is not vvault_body/i,
-    );
+      }),
+      emitEvent: (payload) => events.push(payload),
+      readConversationsImpl: store.readConversationsImpl,
+      writeTranscriptImpl: store.writeTranscriptImpl,
+      readLatestRuntimeTurnStateImpl: store.readLatestRuntimeTurnStateImpl,
+    });
+    assert.deepEqual(events.map((event) => event.event), ['started', 'source_synced', 'relay_deferred']);
+    assert.match(events[2].reason, /storage_mode is not vvault_body/i);
     assert.equal(store.messages.length, 0);
+    assert.equal(result.syncedEvents, 0);
     await assert.rejects(() => fs.access(path.join(env.cliHome, 'codex-handoff-watch.state.json')));
   } finally {
     await env.restore();
@@ -534,32 +640,32 @@ test('watch fails closed when parsed rollout tail mismatches verified VVAULT rea
       'utf8',
     );
 
-    await assert.rejects(
-      () =>
-        runCodexContinuityWatch({
-          codexSessionsRoot: env.sessionsRoot,
-          usersPath: env.usersPath,
-          maxPolls: 1,
-          syncSourceEvidenceToVvault: true,
-          syncSourceEvidenceImpl: async () => ({
-            ok: true,
-            scannedFiles: 1,
-            archivedThreads: 1,
-            vvaultPublishedThreads: 1,
-            vvaultReadbackVerifiedThreads: 1,
-            latest: buildSourceSyncLatest({
-              rolloutPath,
-              latestMessageSourceTurnIndex: 99,
-            }),
-          }),
-          emitEvent: () => {},
-          readConversationsImpl: store.readConversationsImpl,
-          writeTranscriptImpl: store.writeTranscriptImpl,
-          readLatestRuntimeTurnStateImpl: store.readLatestRuntimeTurnStateImpl,
+    const events = [];
+    const result = await runCodexContinuityWatch({
+      codexSessionsRoot: env.sessionsRoot,
+      usersPath: env.usersPath,
+      maxPolls: 1,
+      syncSourceEvidenceToVvault: true,
+      syncSourceEvidenceImpl: async () => ({
+        ok: true,
+        scannedFiles: 1,
+        archivedThreads: 1,
+        vvaultPublishedThreads: 1,
+        vvaultReadbackVerifiedThreads: 1,
+        latest: buildSourceSyncLatest({
+          rolloutPath,
+          latestMessageSourceTurnIndex: 99,
         }),
-      /source turn mismatch/i,
-    );
+      }),
+      emitEvent: (payload) => events.push(payload),
+      readConversationsImpl: store.readConversationsImpl,
+      writeTranscriptImpl: store.writeTranscriptImpl,
+      readLatestRuntimeTurnStateImpl: store.readLatestRuntimeTurnStateImpl,
+    });
+    assert.deepEqual(events.map((event) => event.event), ['started', 'source_synced', 'relay_deferred']);
+    assert.match(events[2].reason, /source turn mismatch/i);
     assert.equal(store.messages.length, 0);
+    assert.equal(result.syncedEvents, 0);
     await assert.rejects(() => fs.access(path.join(env.cliHome, 'codex-handoff-watch.state.json')));
   } finally {
     await env.restore();
@@ -999,6 +1105,46 @@ test('watch fails closed when another live watcher owns the lock', async () => {
         }),
       /already running/i,
     );
+  } finally {
+    await env.restore();
+  }
+});
+
+test('watch recovers a stale lock before syncing', async () => {
+  const env = await setupWatchEnv('stale-lock');
+  const rolloutPath = path.join(env.rolloutDir, 'rollout-stale-lock.jsonl');
+  const lockPath = path.join(env.cliHome, 'codex-handoff-watch.lock');
+  const store = createCanonicalRelayStore();
+
+  try {
+    await fs.writeFile(
+      rolloutPath,
+      buildRolloutLines({
+        pairs: [['u1', 'a1']],
+      }).join('\n'),
+      'utf8',
+    );
+    await fs.writeFile(
+      lockPath,
+      `${JSON.stringify({ pid: 999999999, preferredCwd: '/stale', updatedAt: '2026-05-01T00:00:00.000Z' })}\n`,
+      'utf8',
+    );
+
+    const events = [];
+    const result = await runCodexContinuityWatch({
+      codexSessionsRoot: env.sessionsRoot,
+      usersPath: env.usersPath,
+      maxPolls: 1,
+      emitEvent: (payload) => events.push(payload),
+      readConversationsImpl: store.readConversationsImpl,
+      writeTranscriptImpl: store.writeTranscriptImpl,
+      readLatestRuntimeTurnStateImpl: store.readLatestRuntimeTurnStateImpl,
+    });
+
+    assert.deepEqual(events.map((event) => event.event), ['started', 'synced']);
+    assert.equal(result.syncedEvents, 1);
+    assert.deepEqual(store.messages.map((message) => message.content), ['u1', 'a1']);
+    await assert.rejects(() => fs.access(lockPath));
   } finally {
     await env.restore();
   }

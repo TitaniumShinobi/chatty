@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import {
   Plus,
-  Bot,
   Search,
   Star,
   Users,
@@ -61,7 +60,7 @@ export default function SimForge() {
   );
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
-  const [failedAvatars, setFailedAvatars] = useState<Set<string>>(new Set());
+  const [avatarMissing, setAvatarMissing] = useState<Set<string>>(new Set());
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
 
   const categories = [
@@ -104,6 +103,7 @@ export default function SimForge() {
       // Fetch store AIs from API
       try {
         const storeAIs = await aiService.getStoreAIs();
+        setAvatarMissing(new Set());
         // Map store AIs to CommunityGPT format
         const communityGPTs: CommunityGPT[] = storeAIs.map((ai) => ({
           ...ai,
@@ -434,9 +434,9 @@ export default function SimForge() {
         ) : filteredGpts.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="w-24 h-24 rounded-full flex items-center justify-center mb-6">
-              <Bot
-                size={32}
-                style={{ color: "var(--chatty-icon)", opacity: 0.6 }}
+              <div
+                className="w-24 h-24 rounded-full"
+                style={{ backgroundColor: "var(--chatty-line)" }}
               />
             </div>
             <h3
@@ -473,7 +473,7 @@ export default function SimForge() {
           >
             {filteredGpts.map((gpt) => {
               const avatarSrc = sanitizeAvatarSource(gpt.avatar || gpt.avatarUrl);
-              const showAvatar = Boolean(avatarSrc) && !failedAvatars.has(gpt.id);
+              const showAvatar = Boolean(avatarSrc) && !avatarMissing.has(gpt.id);
 
               return (
               <div
@@ -499,11 +499,22 @@ export default function SimForge() {
                         loading="lazy"
                         decoding="async"
                         onError={() => {
-                          setFailedAvatars((prev) => new Set(prev).add(gpt.id));
+                          setAvatarMissing((prev) => {
+                            if (prev.has(gpt.id)) return prev;
+                            const next = new Set(prev);
+                            next.add(gpt.id);
+                          return next;
+                          });
                         }}
                       />
                     ) : (
-                      <Bot size={20} style={{ color: "var(--chatty-icon)" }} />
+                      <div
+                        className="w-12 h-12 rounded-lg"
+                        style={{
+                          backgroundColor: "var(--chatty-line)",
+                          border: "1px solid var(--chatty-border)",
+                        }}
+                      />
                     )}
                   </div>
 

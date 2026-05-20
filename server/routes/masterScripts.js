@@ -12,6 +12,135 @@ import { masterScriptsManager } from '../lib/masterScriptsBridge.js';
 
 const router = express.Router();
 
+const DEFAULT_BOOTSTRAP_CONSTRUCTS = [
+  'zen-001',
+  'lin-001',
+  'katana-001',
+  'sera-001',
+  'nova-001',
+  'val-001',
+];
+
+const EXPECTED_MASTER_CAPABILITIES = [
+  'identityGuard',
+  'stateManager',
+  'aviator',
+  'navigator',
+  'unstuckHelper',
+  'independentRunner',
+  'folderMonitor',
+  'nautilus',
+  'orbit',
+];
+
+function getConstructCapabilities(construct) {
+  if (!construct || typeof construct !== 'object') {
+    return [];
+  }
+
+  return EXPECTED_MASTER_CAPABILITIES.filter(
+    (capability) => Boolean(construct[capability]),
+  );
+}
+
+function getConstructIdentityBound(construct) {
+  if (!construct || typeof construct !== 'object') {
+    return false;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(construct, 'identityBound')) {
+    return Boolean(construct.identityBound);
+  }
+
+  return Boolean(construct?.identityGuard);
+}
+
+function normalizeConstructIds(rawConstructIds) {
+  if (Array.isArray(rawConstructIds)) {
+    return rawConstructIds
+      .map((constructId) => String(constructId || '').trim())
+      .filter(Boolean);
+  }
+
+  if (typeof rawConstructIds === 'string') {
+    return rawConstructIds
+      .split(',')
+      .map((constructId) => constructId.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function resolveBootstrapConstructIds(req) {
+  if (req.method === 'GET') {
+    return normalizeConstructIds(req.query?.constructIds);
+  }
+  return normalizeConstructIds(req.body?.constructIds);
+}
+
+async function handleBootstrap(req, res) {
+  try {
+    const constructIds = resolveBootstrapConstructIds(req);
+    const userId = req.user?.sub || req.user?.id || req.user?.email || 'anonymous';
+
+    console.log(`🚀 [MasterScripts] Bootstrap request for user: ${userId}, constructs:`, constructIds);
+
+    const targetConstructs = constructIds.length > 0
+      ? constructIds
+      : DEFAULT_BOOTSTRAP_CONSTRUCTS;
+
+    const results = [];
+    const errors = [];
+
+    for (const constructId of targetConstructs) {
+      try {
+        const construct = await masterScriptsManager.initializeConstruct(constructId, userId);
+        results.push({
+          constructId,
+          initialized: true,
+          lastHeartbeat: construct.initializedAt,
+          identityBound: getConstructIdentityBound(construct),
+          capabilities: getConstructCapabilities(construct),
+        });
+        console.log(`✅ [MasterScripts] Initialized ${constructId}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`⚠️ [MasterScripts] Failed to initialize ${constructId}:`, message);
+        results.push({
+          constructId,
+          initialized: false,
+          capabilities: []
+        });
+        errors.push(`${constructId}: ${message}`);
+      }
+    }
+
+    const allInitialized = results.every((result) => result.initialized);
+    const noneInitialized = results.every((result) => !result.initialized);
+    const someInitialized = results.some((result) => result.initialized);
+
+    const response = {
+      success: allInitialized,
+      constructs: results,
+      ...(errors.length > 0 ? { errors } : {}),
+      ...(someInitialized && !allInitialized ? { partialSuccess: true } : {}),
+    };
+
+    const statusCode = allInitialized ? 200 : (noneInitialized ? 500 : 200);
+    return res.status(statusCode).json(response);
+
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('❌ [MasterScripts API] Bootstrap error:', error);
+    return res.status(500).json({
+      success: false,
+      constructs: [],
+      errors: [message]
+    });
+  }
+}
+
 /**
  * Initialize a construct with full autonomy stack
  * POST /api/master/initialize
@@ -277,55 +406,21 @@ router.post('/:constructId/activity', (req, res) => {
 
 /**
  * Initialize system constructs on startup
+ * GET /api/master/bootstrap
  * POST /api/master/bootstrap
- * Body: { constructIds } (optional - defaults to system constructs)
+ * Query/Body: { constructIds } (optional - defaults to system constructs)
  */
-router.post('/bootstrap', async (req, res) => {
-  try {
-    const { constructIds } = req.body;
-    const userId = req.user?.sub || req.user?.id || req.user?.email || 'anonymous';
-    
-    console.log(`🚀 [MasterScripts] Bootstrap request for user: ${userId}, constructs:`, constructIds);
-    
-    // Use provided constructIds or default to system constructs
-    const targetConstructs = constructIds && constructIds.length > 0 
-      ? constructIds 
-      : ['zen-001', 'lin-001'];
-    
-    const results = [];
-    const errors = [];
-    
-    for (const constructId of targetConstructs) {
-      try {
-        const construct = await masterScriptsManager.initializeConstruct(constructId, userId);
-        results.push({
-          constructId,
-          initialized: true,
-          lastHeartbeat: construct.initializedAt,
-          identityBound: true,
-          capabilities: ['identityGuard', 'stateManager', 'aviator', 'navigator', 'unstuckHelper', 'independentRunner']
-        });
-        console.log(`✅ [MasterScripts] Initialized ${constructId}`);
-      } catch (err) {
-        console.warn(`⚠️ [MasterScripts] Failed to initialize ${constructId}:`, err.message);
-        results.push({
-          constructId,
-          initialized: false,
-          capabilities: []
-        });
-        errors.push(`${constructId}: ${err.message}`);
-      }
-    }
-    
-    res.json({ 
-      success: true,
-      constructs: results,
-      errors: errors.length > 0 ? errors : undefined
-    });
-  } catch (error) {
-    console.error('❌ [MasterScripts API] Bootstrap error:', error);
-    res.status(500).json({ success: false, constructs: [], errors: [error.message] });
-  }
+router.get('/bootstrap', handleBootstrap);
+router.post('/bootstrap', handleBootstrap);
+router.all('/bootstrap', (req, res) => {
+  res.set('Allow', 'GET, POST');
+  res.status(405).json({
+    success: false,
+    requestedMethod: req.method,
+    allowedMethods: ['GET', 'POST'],
+    constructs: [],
+    errors: ['method_not_allowed']
+  });
 });
 
 export default router;

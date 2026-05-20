@@ -324,13 +324,15 @@ export class VVAULTConversationManager {
     // Create the request promise
     const requestPromise = (async (): Promise<T> => {
       try {
+        const mergedHeaders = new Headers(options?.headers || {});
+        if (!mergedHeaders.has('Content-Type') && !mergedHeaders.has('content-type')) {
+          mergedHeaders.set('Content-Type', 'application/json');
+        }
+
         const response = await fetch(`${this.browserEndpointBase}${path}`, {
+          ...options,
           credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(options?.headers || {})
-          },
-          ...options
+          headers: mergedHeaders,
         });
 
         // Handle 503 Service Unavailable (backend not ready)

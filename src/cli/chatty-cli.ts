@@ -161,6 +161,16 @@ function trimOptionalValue(value: string | undefined | null): string {
   return value?.trim() || '';
 }
 
+function parseOptionalPositiveIntegerEnv(name: string): number | undefined {
+  const raw = process.env[name]?.trim();
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive number when set.`);
+  }
+  return Math.floor(parsed);
+}
+
 function normalizeBackendOrchestrationMode(
   value: unknown,
   fallback: CliBackendOrchestrationMode = 'lin',
@@ -1106,6 +1116,7 @@ async function runCliCodexHandoffCommand(): Promise<number> {
         await runCodexContinuityWatch({
           pollSeconds: args.handoffPollSeconds,
           syncSourceEvidenceToVvault: true,
+          sourceSyncMaxFiles: parseOptionalPositiveIntegerEnv('CHATTY_CODEX_SOURCE_SYNC_MAX_FILES'),
           maxPolls:
             process.env.CHATTY_CLI_HANDOFF_WATCH_MAX_POLLS
               ? Number(process.env.CHATTY_CLI_HANDOFF_WATCH_MAX_POLLS)

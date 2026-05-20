@@ -2,6 +2,12 @@
 
 Contracts, invariants, and governance live here.
 
+## Containerism Start Here
+
+- [LIFE Containerism](/Users/devonwoodson/Documents/GitHub/LIFE_CONTAINERISM/README.md) - LIFE-wide master doctrine, checklist packet, audit rubric, migration doctrine, and deployment doctrine
+- [CONTAINERISM_ADAPTER.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/CONTAINERISM_ADAPTER.md) - Chatty's canonical front-door adapter for how Containerism applies to `chatty-cli`, `/api/vvault/message`, twin-door topology, and fail-closed continuity
+- [chatty-vvault-avatar-identity-runtime-rubric.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/chatty-vvault-avatar-identity-runtime-rubric.md) - PASS/FAIL gate table for runtime isolation, identity authority, and avatar binding in Chatty/VVAULT surfaces
+
 ## VVAULT Authority Rule
 
 VVAULT is the canonical cloud/VVAULT-owned database authority for transcripts, continuity, construct body data, and sync/readback proof.
@@ -20,7 +26,10 @@ If VVAULT cannot be written to and read back from, the task is blocked. Do not c
 
 ## Orchestration Start Here
 
+- [repository-rubrication.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/repository-rubrication.md) - top-order public-facing product and canon-precedence rubrication for Chatty
+- [CONTAINERISM_ADAPTER.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/CONTAINERISM_ADAPTER.md) - Chatty-local Containerism adapter above route-specific and surface-specific canon
 - [vvault-authority-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/vvault-authority-contract.md) - source authority rule for VVAULT sync, transcript, continuity, and readback proof
+- [chatty-vvault-twin-door-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/chatty-vvault-twin-door-contract.md) - explicit private/public runtime topology for how Chatty finds VVAULT and shared auth without localhost/production crossover
 - [orchestration-canon-rubric.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-canon-rubric.md) - defines the canonical `chatty-cli` operator/core surface and the canonical `/api/vvault/message` runtime route it delegates into
 - [orchestration-surface-inventory.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-surface-inventory.md) - explicit repo map for canonical, transitional, helper-only, legacy, archive, and dangerous residue surfaces
 - [orchestration-runtime-checklist.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-runtime-checklist.md) - receipt-backed runtime contract for construct-quality turns
@@ -32,7 +41,10 @@ If VVAULT cannot be written to and read back from, the task is blocked. Do not c
 
 ## Live Standards
 
+- [repository-rubrication.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/repository-rubrication.md)
+- [CONTAINERISM_ADAPTER.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/CONTAINERISM_ADAPTER.md)
 - [vvault-authority-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/vvault-authority-contract.md)
+- [chatty-vvault-twin-door-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/chatty-vvault-twin-door-contract.md)
 - [docs-governance.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/docs-governance.md)
 - [orchestration-canon-rubric.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-canon-rubric.md)
 - [orchestration-surface-inventory.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-surface-inventory.md)

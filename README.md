@@ -2,6 +2,32 @@
 
 Chatty is a local-first AI workspace with a Vite frontend, an Express backend, Electron launch paths, GPT creation flows, file intelligence, and VVAULT-backed construct storage.
 
+## Containerism Start Here
+
+- [LIFE Containerism](/Users/devonwoodson/Documents/GitHub/LIFE_CONTAINERISM/README.md)
+- [Chatty Containerism Front-Door](/Users/devonwoodson/Documents/GitHub/chatty/docs/CONTAINERISM_ADAPTER.md)
+- [Orchestration Canon Rubric](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-canon-rubric.md)
+
+Use this entry sequence for container promotion and proof before public claims:
+ownership, authority boundaries, local-vs-production truth, fail-closed expectations, and promotion-gate requirements.
+
+Chatty ownership:
+
+- Chatty owns the operator surface and orchestration-facing runtime truth.
+- VVAULT remains continuity/persistence authority.
+- Local transcript files are not authority.
+
+Fail-closed rule for new work:
+
+- Do not promote a feature until ownership boundaries, local-vs-production truth, and fallback behavior are explicitly documented and proven.
+
+### New feature/container pre-promotion checklist
+
+1. Publish what the feature owns and what it cannot own.
+2. State local proof versus production proof and where each can be falsified.
+3. Show canonical failure behavior when proof is missing.
+4. Link the feature entry to the relevant canonical doc(s) in `docs/standards/` or `docs/reference/`.
+
 ## VVAULT Authority Rule
 
 VVAULT is the canonical cloud/VVAULT-owned database authority for transcripts, continuity, construct body data, and sync/readback proof.

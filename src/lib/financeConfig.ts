@@ -1,3 +1,5 @@
+import { getPublicSurfaceConfig } from './publicSurfaceConfig'
+
 export interface FinanceConfig {
   fxshinobi: {
     apiBaseUrl: string;
@@ -19,15 +21,16 @@ export function getFinanceConfig(): FinanceConfig {
   const vvaultUrl = import.meta.env.VITE_VVAULT_API_URL || '/api/vault';
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+  const publicSurfaces = getPublicSurfaceConfig();
 
   return {
     fxshinobi: {
       apiBaseUrl: fxshinobiUrl,
-      enabled: true,
+      enabled: publicSurfaces.finance.enabled,
     },
     vvault: {
       apiBaseUrl: vvaultUrl,
-      enabled: true,
+      enabled: publicSurfaces.finance.enabled,
     },
     supabase: {
       url: supabaseUrl,
@@ -113,6 +116,25 @@ export interface FXShinobiStatusResponse {
 
 export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
   const config = getFinanceConfig();
+  if (!config.fxshinobi.enabled) {
+    return {
+      name: 'FXShinobi',
+      status: 'not_configured',
+      liveMode: false,
+      brokerConfigured: false,
+      oandaConfigured: false,
+      activeBrokerId: null,
+      activeBrokerName: null,
+      accountType: 'unknown',
+      environment: 'unknown',
+      accountBalance: null,
+      equity: null,
+      pnlToday: null,
+      openPnl: null,
+      message: 'Finance surface disabled',
+      lastChecked: new Date().toISOString(),
+    };
+  }
   try {
     const res = await fetch(`${config.fxshinobi.apiBaseUrl}/status`, {
       method: 'GET',
@@ -215,6 +237,14 @@ export async function checkFXShinobiStatus(): Promise<ServiceStatus> {
 
 export async function checkVVAULTStatus(): Promise<ServiceStatus> {
   const config = getFinanceConfig();
+  if (!config.vvault.enabled) {
+    return {
+      name: 'VVAULT',
+      status: 'not_configured',
+      message: 'Finance surface disabled',
+      lastChecked: new Date().toISOString(),
+    };
+  }
   try {
     const res = await fetch(`${config.vvault.apiBaseUrl}/health`, {
       method: 'GET',
@@ -313,6 +343,40 @@ export async function checkSupabaseStatus(): Promise<ServiceStatus> {
 }
 
 export async function checkAllServices(): Promise<ServiceStatus[]> {
+  const config = getFinanceConfig();
+  if (!config.fxshinobi.enabled && !config.vvault.enabled) {
+    return [
+      {
+        name: 'FXShinobi',
+        status: 'not_configured',
+        liveMode: false,
+        brokerConfigured: false,
+        oandaConfigured: false,
+        activeBrokerId: null,
+        activeBrokerName: null,
+        accountType: 'unknown',
+        environment: 'unknown',
+        accountBalance: null,
+        equity: null,
+        pnlToday: null,
+        openPnl: null,
+        message: 'Finance surface disabled',
+        lastChecked: new Date().toISOString(),
+      },
+      {
+        name: 'VVAULT',
+        status: 'not_configured',
+        message: 'Finance surface disabled',
+        lastChecked: new Date().toISOString(),
+      },
+      {
+        name: 'Supabase',
+        status: 'not_configured',
+        message: 'Finance surface disabled',
+        lastChecked: new Date().toISOString(),
+      },
+    ];
+  }
   const [fxshinobi, vvault, supabase] = await Promise.all([
     checkFXShinobiStatus(),
     checkVVAULTStatus(),

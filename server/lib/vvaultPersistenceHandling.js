@@ -136,16 +136,14 @@ export async function handleCanonicalTranscriptPersistence({
     }
 
     const now = new Date();
-    const conversationTitle = resolveConversationTitle({
+    const conversationTitle = resolveConversationTitle(
       canonicalTurnMetadata,
       constructName,
-    });
+    );
     const normalizedRequestedTranscriptPath = normalizeTranscriptPath(
       canonicalTurnMetadata.transcriptPath || transcriptPath || '',
     );
-    const canonicalTranscriptWriteTargetPath = buildCanonicalTranscriptWriteTargetPath({
-      constructId,
-    });
+    const canonicalTranscriptWriteTargetPath = buildCanonicalTranscriptWriteTargetPath(constructId);
     const canonicalConstructWrite = isCanonicalConstructTranscriptWrite({
       effectiveSession,
       constructId,
@@ -162,8 +160,10 @@ export async function handleCanonicalTranscriptPersistence({
       linCanonicalTranscriptPath,
     });
     const vvaultBodyPersistenceRequired = requiresVvaultBodyPersistence({
-      isCanonicalConstructTranscriptWrite: canonicalConstructWrite,
-      isCanonicalLinTranscriptWrite: canonicalLinWrite,
+      effectiveSession,
+      constructId,
+      canonicalTurnMetadata,
+      normalizedRequestedTranscriptPath,
     });
 
     let transcriptWriteSupabaseUserId = dataOwnerUserId;
@@ -187,14 +187,7 @@ export async function handleCanonicalTranscriptPersistence({
       const outcome = await performTranscriptWriteWithRecovery(params, {
         label: `transcript_persistence_${role}`,
       });
-      persistenceRoleResults.push(
-        buildPersistenceRoleResult({
-          role,
-          status: outcome.status,
-          source: outcome.value?.source || null,
-          bounded: false,
-        }),
-      );
+      persistenceRoleResults.push(buildPersistenceRoleResult(role, outcome));
       return outcome;
     };
 

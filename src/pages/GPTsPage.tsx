@@ -1,8 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import {
   Plus,
-  Bot,
   Trash2,
   Lock,
   Copy,
@@ -12,6 +11,11 @@ import {
 } from "lucide-react";
 import AICreator from "../components/GPTCreator";
 import { AIService, AIConfig } from "../lib/aiService";
+import {
+  buildCanonicalGptsPath,
+  getGptRouteState,
+  shouldBlockShellForGptRoute,
+} from "../lib/pageSwitchStability";
 
 interface AIsPageProps {
   initialOpen?: boolean;
@@ -20,9 +24,39 @@ interface AIsPageProps {
 interface LayoutContext {
   handleGPTCreated?: (gptConfig: { constructId?: string; constructCallsign?: string; name?: string; avatar?: string; avatarUrl?: string | null }) => void;
   forceRefreshConversations?: () => void;
+  setRouteOverlayActive?: (active: boolean) => void;
+  addressBookContacts?: AddressBookContact[];
 }
 
 const INVALID_AVATAR_VALUES = new Set(["", "null", "undefined"]);
+const DEFAULT_AI_CAPABILITIES = {
+  webSearch: false,
+  canvas: false,
+  imageGeneration: false,
+  codeInterpreter: false,
+  agent: false,
+  proactiveInitiation: false,
+};
+
+type AddressBookContact = {
+  id?: string;
+  title?: string;
+  constructId?: string | null;
+  runtimeId?: string | null;
+  avatar?: string | null;
+  avatarUrl?: string | null;
+  createdAt?: number | string;
+  updatedAt?: number | string;
+};
+
+function getAgentLogUrl(): string {
+  try {
+    const env = (0, eval)('typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {}');
+    return typeof env?.VITE_AGENT_LOG_URL === "string" ? env.VITE_AGENT_LOG_URL : "";
+  } catch {
+    return "";
+  }
+}
 
 function sanitizeAvatarSrc(value?: string | null): string | null {
   if (typeof value !== "string") return null;
@@ -32,17 +66,100 @@ function sanitizeAvatarSrc(value?: string | null): string | null {
   return trimmed;
 }
 
-function addRetryToken(url: string, retryNonce: number): string {
-  if (
-    !url ||
-    retryNonce <= 0 ||
-    url.startsWith("data:image/") ||
-    url.startsWith("blob:")
-  ) {
-    return url;
+function normalizeTimestamp(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return new Date(value).toISOString();
   }
-  const joiner = url.includes("?") ? "&" : "?";
-  return `${url}${joiner}retry=${retryNonce}`;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return new Date(parsed).toISOString();
+  }
+  return new Date(0).toISOString();
+}
+
+function getAIConstructId(ai: Partial<AIConfig> | null | undefined): string | null {
+  return sanitizeAvatarSrc(ai?.constructCallsign || ai?.id || null);
+}
+
+function getContactConstructId(contact: AddressBookContact): string | null {
+  return sanitizeAvatarSrc(contact.constructId || contact.runtimeId || contact.id || null);
+}
+
+function resolveCanonicalAvatarForConstruct(
+  _constructId: string | null,
+  explicitAvatar?: string | null,
+  explicitAvatarUrl?: string | null,
+): string | null {
+  return (
+    sanitizeAvatarSrc(explicitAvatar) ||
+    sanitizeAvatarSrc(explicitAvatarUrl)
+  );
+}
+
+function buildContactAI(contact: AddressBookContact): AIConfig | null {
+  const constructId = getContactConstructId(contact);
+  if (!constructId) return null;
+  const name = sanitizeAvatarSrc(contact.title || null) || constructId;
+  const avatar = resolveCanonicalAvatarForConstruct(
+    constructId,
+    contact.avatar,
+    contact.avatarUrl,
+  );
+
+  return {
+    id: constructId,
+    constructCallsign: constructId,
+    name,
+    description: "VVAULT canonical contact",
+    instructions: "",
+    conversationStarters: [],
+    avatar: avatar || undefined,
+    avatarUrl: avatar,
+    capabilities: DEFAULT_AI_CAPABILITIES,
+    modelId: "",
+    files: [],
+    actions: [],
+    hasPersistentMemory: true,
+    isActive: true,
+    privacy: "private",
+    createdAt: normalizeTimestamp(contact.createdAt),
+    updatedAt: normalizeTimestamp(contact.updatedAt),
+    userId: "",
+  };
+}
+
+function mergeAIsWithAddressBookContacts(
+  registryAIs: AIConfig[],
+  contacts: AddressBookContact[] = [],
+): AIConfig[] {
+  const merged = new Map<string, AIConfig>();
+
+  for (const contact of contacts) {
+    const contactAI = buildContactAI(contact);
+    if (!contactAI) continue;
+    merged.set(contactAI.constructCallsign || contactAI.id, contactAI);
+  }
+
+  for (const ai of registryAIs || []) {
+    const constructId = getAIConstructId(ai);
+    const key = constructId || ai.id;
+    const canonicalAvatar = resolveCanonicalAvatarForConstruct(
+      constructId,
+      ai.avatar,
+      ai.avatarUrl,
+    );
+    const existing = merged.get(key);
+    merged.set(key, {
+      ...(existing || {}),
+      ...ai,
+      constructCallsign: ai.constructCallsign || existing?.constructCallsign || constructId || undefined,
+      avatar: canonicalAvatar || ai.avatar || existing?.avatar,
+      avatarUrl: canonicalAvatar || ai.avatarUrl || existing?.avatarUrl || null,
+      description: ai.description || existing?.description || "",
+    });
+  }
+
+  return Array.from(merged.values());
 }
 
 export default function AIsPage({ initialOpen = false }: AIsPageProps) {
@@ -60,151 +177,51 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editingConfig, setEditingConfig] = useState<AIConfig | null>(null);
   const [isEditLoading, setIsEditLoading] = useState(false);
-  const [avatarBlobs, setAvatarBlobs] = useState<Record<string, string>>({});
-  const [failedAvatars, setFailedAvatars] = useState<Set<string>>(new Set());
-  const [missingAvatars] = useState<Set<string>>(new Set());
-  const [avatarRetryNonce, setAvatarRetryNonce] = useState(0);
-  const avatarRetryTimersRef = useRef<Record<string, number>>({});
+  const [avatarMissing, setAvatarMissing] = useState<Set<string>>(new Set());
+  const addressBookContacts = layoutContext?.addressBookContacts || [];
+  const displayAIs = mergeAIsWithAddressBookContacts(ais, addressBookContacts);
+  const canRenderContactsDuringLoadError = Boolean(loadError && displayAIs.length > 0);
 
-  const retryFailedAvatars = useCallback(() => {
-    setFailedAvatars((prev) => {
-      if (prev.size === 0) return prev;
-      return new Set();
-    });
-    setAvatarRetryNonce((prev) => prev + 1);
-  }, []);
-
-  const markAvatarFailed = useCallback((avatarId: string) => {
-    if (missingAvatars.has(avatarId)) return;
-
-    setFailedAvatars((prev) => {
+  const markAvatarMissing = (avatarId: string) => {
+    setAvatarMissing((prev) => {
+      if (prev.has(avatarId)) return prev;
       const next = new Set(prev);
       next.add(avatarId);
       return next;
     });
-
-    if (avatarRetryTimersRef.current[avatarId]) {
-      window.clearTimeout(avatarRetryTimersRef.current[avatarId]);
-    }
-    avatarRetryTimersRef.current[avatarId] = window.setTimeout(() => {
-      setFailedAvatars((prev) => {
-        const next = new Set(prev);
-        next.delete(avatarId);
-        return next;
-      });
-      setAvatarRetryNonce((prev) => prev + 1);
-      delete avatarRetryTimersRef.current[avatarId];
-    }, 2500);
-  }, [missingAvatars]);
-
-  // Load avatars as blobs (fallback if proxy fails)
-  useEffect(() => {
-    const loadAvatars = async () => {
-      const blobMap: Record<string, string> = {};
-      const blobPromises: Promise<void>[] = [];
-
-      for (const ai of ais) {
-        const avatarUrl = ai.avatar;
-        if (
-          avatarUrl &&
-          avatarUrl.startsWith("/api/")
-        ) {
-          const fetchUrl = addRetryToken(avatarUrl, avatarRetryNonce);
-          const promise = (async () => {
-            try {
-              const response = await fetch(fetchUrl, {
-                credentials: "include",
-                mode: "cors",
-                cache: "no-store",
-              });
-
-              if (response.ok) {
-                const blob = await response.blob();
-                blobMap[ai.id] = URL.createObjectURL(blob);
-              } else if (response.status === 404) {
-                console.warn(
-                    `⚠️ [AIsPage] Avatar missing for ${ai.id}: ${avatarUrl}`,
-                );
-                markAvatarFailed(ai.id);
-              } else {
-                console.error(
-                  `❌ [AIsPage] Avatar fetch failed for ${ai.id}: ${response.status} ${response.statusText}`,
-                );
-              }
-            } catch (error: any) {
-              console.error(
-                `❌ [AIsPage] Failed to load avatar blob for ${ai.id}:`,
-                error,
-              );
-            }
-          })();
-          blobPromises.push(promise);
-        }
-      }
-
-      await Promise.all(blobPromises);
-      setAvatarBlobs(blobMap);
-    };
-
-    if (ais.length > 0) {
-      loadAvatars();
-    }
-
-    // Cleanup blob URLs on unmount or when ais change
-    return () => {
-      Object.values(avatarBlobs).forEach(URL.revokeObjectURL);
-    };
-  }, [ais, avatarRetryNonce, markAvatarFailed]);
-
-  useEffect(() => {
-    if (failedAvatars.size === 0) return;
-    const retryInterval = window.setInterval(() => {
-      retryFailedAvatars();
-    }, 7000);
-    return () => window.clearInterval(retryInterval);
-  }, [failedAvatars, retryFailedAvatars]);
-
-  useEffect(() => {
-    const handleReconnect = () => {
-      retryFailedAvatars();
-    };
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") {
-        retryFailedAvatars();
-      }
-    };
-
-    window.addEventListener("online", handleReconnect);
-    window.addEventListener("focus", handleReconnect);
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => {
-      window.removeEventListener("online", handleReconnect);
-      window.removeEventListener("focus", handleReconnect);
-      document.removeEventListener("visibilitychange", handleVisibility);
-      for (const timerId of Object.values(avatarRetryTimersRef.current)) {
-        window.clearTimeout(timerId);
-      }
-      avatarRetryTimersRef.current = {};
-    };
-  }, [retryFailedAvatars]);
+  };
 
   // Route controls modal state
   useEffect(() => {
-    const editMatch = location.pathname.match(/\/app\/ais\/edit\/([^/]+)/);
-    if (location.pathname.endsWith("/new")) {
+    const routeState = getGptRouteState(location.pathname);
+    if (routeState.kind === "new") {
       setIsEditLoading(false);
       setCreatorOpen(true);
       setEditingConfig(null);
-    } else if (editMatch) {
+    } else if (routeState.kind === "edit" && routeState.editId) {
       setCreatorOpen(false);
       setEditingConfig(null);
-      loadAIForEdit(editMatch[1]);
+      loadAIForEdit(routeState.editId);
     } else {
       setIsEditLoading(false);
       setCreatorOpen(false);
       setEditingConfig(null);
     }
   }, [location.pathname]);
+
+  useEffect(() => {
+    layoutContext?.setRouteOverlayActive?.(
+      shouldBlockShellForGptRoute({
+        pathname: location.pathname,
+        isCreatorOpen,
+        isEditLoading,
+      }),
+    );
+
+    return () => {
+      layoutContext?.setRouteOverlayActive?.(false);
+    };
+  }, [layoutContext, location.pathname, isCreatorOpen, isEditLoading]);
 
   // Load AIs when component mounts
   useEffect(() => {
@@ -217,8 +234,7 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
       setLoadError(null);
       // #region agent log
       {
-        const endpoint =
-          import.meta.env.VITE_AGENT_LOG_URL || "";
+        const endpoint = getAgentLogUrl();
         if (endpoint) {
           fetch(endpoint, {
             method: "POST",
@@ -239,8 +255,7 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
       const allAIs = await aiService.getAllAIs();
       // #region agent log
       {
-        const endpoint =
-          import.meta.env.VITE_AGENT_LOG_URL || "";
+        const endpoint = getAgentLogUrl();
         if (endpoint) {
           fetch(endpoint, {
             method: "POST",
@@ -267,11 +282,11 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
       }
       // #endregion
       setAIs(allAIs);
+      setAvatarMissing(new Set());
     } catch (error: any) {
       // #region agent log
       {
-        const endpoint =
-          import.meta.env.VITE_AGENT_LOG_URL || "";
+        const endpoint = getAgentLogUrl();
         if (endpoint) {
           fetch(endpoint, {
             method: "POST",
@@ -296,6 +311,7 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
       console.error("Failed to load AIs:", error);
       setAIs([]);
       setLoadError(error?.message || "Unable to load AIs right now.");
+      setAvatarMissing(new Set());
     } finally {
       setIsLoading(false);
     }
@@ -339,7 +355,7 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
       // Open cloned AI in editor
       setEditingConfig(clonedAI);
       setCreatorOpen(true);
-      navigate(`/app/ais/edit/${clonedAI.id}`);
+      navigate(getCanonicalGptsPath(`/edit/${clonedAI.id}`));
       // Refresh the list to show the new clone
       await loadAIs();
     } catch (error) {
@@ -348,13 +364,13 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
   };
 
   const handleEdit = (id: string) => {
-    navigate(`/app/ais/edit/${id}`);
+    navigate(getCanonicalGptsPath(`/edit/${id}`));
   };
 
   const handleClose = () => {
     setIsEditLoading(false);
     setCreatorOpen(false);
-    navigate("/app/ais");
+    navigate(getCanonicalGptsPath());
     setEditingConfig(null);
     loadAIs(); // Refresh the list
   };
@@ -393,7 +409,7 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
             My AIs
           </h1>
           <button
-            onClick={() => navigate("/app/ais/new")}
+            onClick={() => navigate(getCanonicalGptsPath("/new"))}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
             style={{
               background: "transparent",
@@ -426,7 +442,7 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
               Loading AIs...
             </p>
           </div>
-        ) : loadError ? (
+        ) : loadError && !canRenderContactsDuringLoadError ? (
           <div className="text-center py-12">
             <p style={{ color: "var(--chatty-text)", opacity: 0.8, marginBottom: "12px" }}>
               Failed to load AIs.
@@ -448,17 +464,47 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
               Retry
             </button>
           </div>
+        ) : displayAIs.length === 0 ? (
+          <div
+            className="py-16 text-center"
+            style={{ color: "var(--chatty-text)" }}
+          >
+            <div
+              className="mx-auto mb-4 h-12 w-12 rounded-full flex items-center justify-center"
+              style={{
+                backgroundColor: "var(--chatty-highlight)",
+                opacity: 0.7,
+              }}
+              aria-hidden="true"
+            >
+              <Plus size={20} />
+            </div>
+            <p className="text-sm font-medium mb-2">No canonical AIs found</p>
+            <p className="text-sm mx-auto max-w-sm" style={{ opacity: 0.68 }}>
+              Chatty could not read any real AI or VVAULT construct records for this session.
+            </p>
+          </div>
         ) : (
           <div className="space-y-3">
+            {canRenderContactsDuringLoadError && (
+              <div
+                className="rounded-md px-3 py-2 text-sm"
+                style={{
+                  color: "var(--chatty-text)",
+                  backgroundColor: "var(--chatty-highlight)",
+                  opacity: 0.82,
+                }}
+              >
+                AI registry load is degraded: {loadError}
+              </div>
+            )}
             {/* AI Cards */}
-            {ais.map((ai) => {
+            {displayAIs.map((ai) => {
               const directAvatar = sanitizeAvatarSrc(ai.avatar);
-              const blobAvatar = sanitizeAvatarSrc(avatarBlobs[ai.id]);
-              const directAvatarCanRender =
-                directAvatar && !directAvatar.startsWith("/api/");
               const avatarSrc =
-                blobAvatar || (directAvatarCanRender ? directAvatar : null);
-              const imageSrc = avatarSrc ? addRetryToken(avatarSrc, avatarRetryNonce) : null;
+                directAvatar && !avatarMissing.has(ai.id)
+                  ? directAvatar
+                  : null;
 
               return (
                 <div
@@ -476,13 +522,11 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
                     e.currentTarget.style.color = "var(--chatty-text)";
                   }}
                 >
-                  {/* Avatar on LEFT */}
+                {/* Avatar on LEFT */}
                   <div className="w-12 h-12 rounded-full flex items-center justify-center overflow-hidden">
-                    {failedAvatars.has(ai.id) || missingAvatars.has(ai.id) ? (
-                      <Bot size={20} style={{ color: "var(--chatty-text)" }} />
-                    ) : imageSrc ? (
+                    {avatarSrc ? (
                       <img
-                        src={imageSrc}
+                        src={avatarSrc}
                         alt={ai.name}
                         className="w-full h-full object-cover"
                         crossOrigin={
@@ -490,25 +534,26 @@ export default function AIsPage({ initialOpen = false }: AIsPageProps) {
                             ? "use-credentials"
                             : undefined
                         }
-                        onLoad={() => {
-                          setFailedAvatars((prev) => {
-                            if (!prev.has(ai.id)) return prev;
-                            const next = new Set(prev);
-                            next.delete(ai.id);
-                            return next;
-                          });
-                        }}
                         onError={() => {
-                          if (!missingAvatars.has(ai.id)) {
+                          if (!avatarMissing.has(ai.id)) {
                             console.warn(
                               `⚠️ [AIsPage] Avatar failed to load for ${ai.name}`,
                             );
                           }
-                          markAvatarFailed(ai.id);
+                          markAvatarMissing(ai.id);
                         }}
                       />
                     ) : (
-                      <Bot size={20} style={{ color: "var(--chatty-text)" }} />
+                      <div
+                        className="w-12 h-12 rounded-full flex items-center justify-center text-sm font-semibold"
+                        style={{
+                          backgroundColor: "var(--chatty-line)",
+                          border: "1px solid var(--chatty-highlight)",
+                        }}
+                        aria-hidden="true"
+                      >
+                        {(ai.name || "?").trim().charAt(0).toUpperCase() || "?"}
+                      </div>
                     )}
                   </div>
                   {/* Content on RIGHT */}

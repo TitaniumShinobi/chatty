@@ -68,6 +68,12 @@ function buildUserContext(user) {
 
 function selectCanonicalUserByEmail(users = {}, email) {
   const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) {
+    const canonicalUsers = Object.values(users).filter(
+      (user) => user?.user_id && user.user_id === user?.vvault_user_id,
+    );
+    return canonicalUsers.length === 1 ? canonicalUsers[0] : null;
+  }
   const matches = Object.values(users).filter(
     (user) => normalizeEmail(user?.email) === normalizedEmail,
   );

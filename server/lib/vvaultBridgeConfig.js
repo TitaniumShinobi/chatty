@@ -1,38 +1,7 @@
-function normalizeOrigin(value) {
-  return (value || "").trim().replace(/\/$/, "");
-}
+import { resolveRuntimeHandshakeConfig } from "./runtimeHandshakeConfig.js";
 
-/**
- * Parse VVAULT targets from env.
- *
- * Format:
- *   VVAULT_TARGETS=NAME|ORIGIN|TOKEN,NAME|ORIGIN|TOKEN,...
- *
- * Backward-compat:
- * - If VVAULT_TARGETS is unset, we fall back to VVAULT_URL (+ VVAULT_SERVICE_TOKEN).
- * - Token may be empty to support VVAULT dev-open mode.
- */
 export function getVvaultTargets() {
-  const rawTargets = String(process.env.VVAULT_TARGETS || "").trim();
-  if (rawTargets) {
-    const targets = [];
-    for (const rawPart of rawTargets.split(",")) {
-      const part = rawPart.trim();
-      if (!part) continue;
-      const [nameRaw, originRaw, tokenRaw] = part.split("|");
-      const name = (nameRaw || "").trim();
-      const origin = normalizeOrigin(originRaw);
-      const token = (tokenRaw || "").trim() || null;
-      if (!name || !origin) continue;
-      targets.push({ name, origin, token });
-    }
-    return targets;
-  }
-
-  const legacyOrigin = normalizeOrigin(process.env.VVAULT_URL || process.env.VVAULT_BASE_URL);
-  if (!legacyOrigin) return [];
-  const legacyToken = String(process.env.VVAULT_SERVICE_TOKEN || "").trim() || null;
-  return [{ name: "legacy", origin: legacyOrigin, token: legacyToken }];
+  return resolveRuntimeHandshakeConfig(process.env).vvaultTargets;
 }
 
 export function getVvaultServiceTokens() {
@@ -56,10 +25,11 @@ export function describeVvaultTargets(targets) {
  * Multi-target callers should use getVvaultTargets().
  */
 export function getVvaultBridgeConfig() {
-  const targets = getVvaultTargets();
+  const handshake = resolveRuntimeHandshakeConfig(process.env);
+  const targets = handshake.vvaultTargets;
   const primary = targets[0] || { name: null, origin: "", token: null };
-  const vvaultOrigin = normalizeOrigin(primary.origin);
-  const vvaultApiBaseUrl = normalizeOrigin(process.env.VVAULT_API_BASE_URL || vvaultOrigin);
+  const vvaultOrigin = handshake.vvaultOrigin || "";
+  const vvaultApiBaseUrl = handshake.vvaultApiBaseUrl || "";
   const serviceToken = primary.token || null;
 
   return {
@@ -70,12 +40,14 @@ export function getVvaultBridgeConfig() {
     missingVvaultUrl: targets.length === 0,
     // Informational only: tokens can be omitted in VVAULT dev-open mode.
     missingServiceToken: getVvaultServiceTokens().length === 0,
+    problems: handshake.problems,
+    environment: handshake.environment,
   };
 }
 
 export function describeVvaultBridgeConfig(config) {
   if (config.configured) {
-    return `[VVAULT BRIDGE] configured=true origin=${config.vvaultOrigin}`;
+    return `[VVAULT BRIDGE] configured=true environment=${config.environment} origin=${config.vvaultOrigin}`;
   }
-  return `[VVAULT BRIDGE] configured=false missing=VVAULT_URL`;
+  return `[VVAULT BRIDGE] configured=false environment=${config.environment} missing=VVAULT_URL problems=${(config.problems || []).join(",") || "none"}`;
 }

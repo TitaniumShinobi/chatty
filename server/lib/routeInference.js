@@ -245,6 +245,11 @@ export function buildInferenceRuntimeReceipt({
   contextBudgetProfile,
   nextRuntimeTurnState,
   transcriptLawMemoryReceipt,
+  cognitionPolicy,
+  cognitionAudit,
+  cognitionReadiness,
+  cognitionLinReceipt,
+  cognitionTraceId,
 }) {
   const receiptConstructNameValue = receiptConstructName || deriveConstructReceiptName(constructId, gptConfig);
   const persistence_owner = assignmentQaBlocked
@@ -284,6 +289,13 @@ export function buildInferenceRuntimeReceipt({
       selected_construct_id: canonicalConstructId || constructId,
       raw_construct_id: rawConstructId,
       preflight: identityBundle?.preflight || null,
+    },
+    cognition: {
+      policy: cognitionPolicy || enrichedContext?.cognitionPolicy || null,
+      audit_evidence: cognitionAudit || enrichedContext?.cognitionAudit || null,
+      readiness: cognitionReadiness || enrichedContext?.cognitionReadiness || null,
+      lin_receipt: cognitionLinReceipt || null,
+      trace_id: cognitionTraceId || enrichedContext?.cognitionTraceId || cognitionLinReceipt?.traceId || null,
     },
     policy: enrichedContext?.runtimePolicy || null,
     research: researchWorkflowReceipt,

@@ -287,17 +287,27 @@ function getAIDLookupCandidates(value) {
 
 function buildSummaryAvatarUrl({ id, constructCallsign, rawAvatar }) {
   const avatar = normalizeAvatarValue(rawAvatar);
-  if (avatar && (avatar.startsWith('http://') || avatar.startsWith('https://') || avatar.startsWith('/api/'))) {
-    if (constructCallsign && /^\/api\/ais\/[^/]+\/avatar(?:[?#].*)?$/i.test(avatar)) {
-      return `/api/ais/${encodeURIComponent(constructCallsign)}/avatar`;
-    }
+  if (avatar && (avatar.startsWith('http://') || avatar.startsWith('https://'))) {
     return avatar;
   }
-  if (constructCallsign && avatar && (avatar.startsWith('data:image/') || avatar.startsWith('instances/'))) {
-    return `/api/ais/${encodeURIComponent(constructCallsign)}/avatar`;
+  if (avatar && avatar.startsWith('/api/')) {
+    if (constructCallsign && isApiAvatarUrl(avatar)) {
+      const queryIndex = avatar.indexOf('?');
+      const baseAvatarPath = queryIndex >= 0 ? avatar.slice(0, queryIndex) : avatar;
+      const query = queryIndex >= 0 ? avatar.slice(queryIndex) : '';
+      const match = baseAvatarPath.match(/^\/api\/ais\/([^/]+)\/avatar(?:[?#].*)?$/i);
+      const canonicalRouteConstructId = match?.[1]
+        ? canonicalizeConstructId(match[1]) || match[1]
+        : null;
+      const canonicalConstruct = canonicalizeConstructId(constructCallsign) || constructCallsign;
+      if (canonicalRouteConstructId && canonicalRouteConstructId === canonicalConstruct) {
+        return `/api/ais/${encodeURIComponent(canonicalConstruct)}/avatar${query}`;
+      }
+    }
+    return null;
   }
-  if (avatar && avatar.startsWith('instances/') && id) {
-    return `/api/ais/${encodeURIComponent(id)}/avatar`;
+  if (avatar && (avatar.startsWith('data:image/') || avatar.startsWith('instances/'))) {
+    return null;
   }
   return avatar;
 }
@@ -446,18 +456,6 @@ function escapeSvgText(value) {
     .replace(/"/g, '&quot;');
 }
 
-function sendAvatarPlaceholder(res, requestedId = '') {
-  const normalized = canonicalizeConstructId(requestedId) || normalizeAIDLookupId(requestedId) || 'ai';
-  const digest = crypto.createHash('sha256').update(normalized).digest('hex');
-  const hue = parseInt(digest.slice(0, 2), 16);
-  const initial = escapeSvgText((normalized.match(/[a-z0-9]/i)?.[0] || 'A').toUpperCase());
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" role="img" aria-label="AI avatar"><rect width="96" height="96" rx="48" fill="hsl(${hue},55%,32%)"/><circle cx="67" cy="25" r="13" fill="rgba(255,255,255,.16)"/><text x="48" y="58" text-anchor="middle" font-family="system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="38" font-weight="700" fill="white">${initial}</text></svg>`;
-  res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
-  res.setHeader('Cache-Control', 'private, no-store, max-age=0');
-  res.setHeader('Vary', 'Cookie, Authorization');
-  return res.status(200).send(svg);
-}
-
 function parseAvatarMetadata(metadata) {
   if (!metadata) return {};
   if (typeof metadata === 'object' && !Array.isArray(metadata)) return metadata;
@@ -545,11 +543,9 @@ function extractConstructIdFromAvatarPath(value) {
 
 function getAvatarConstructCandidates(requestedId, avatarLookup = null) {
   const candidates = [
-    avatarLookup?.constructCallsign,
-    extractAvatarApiConstructId(avatarLookup?.rawAvatarPath),
-    extractConstructIdFromAvatarPath(avatarLookup?.rawAvatarPath),
     normalizeAIDLookupId(requestedId),
     canonicalizeConstructId(requestedId) || requestedId,
+    avatarLookup?.constructCallsign,
   ];
   return Array.from(new Set(candidates.map((id) => (id ? canonicalizeConstructId(id) || id : null)).filter(Boolean)));
 }
@@ -991,6 +987,9 @@ async function resolveUserIdForSummary(req, label = 'AI summary user resolution'
     return {
       userId: resolution.value.userId,
       chattyUserId: resolution.value.chattyUserId || fallbackChattyUserId,
+      supabaseUserId: resolution.value.supabaseUserId || null,
+      vvaultUserId: resolution.value.vvaultUserId || null,
+      identityResolutionStatus: resolution.value.identityResolutionStatus || 'ok',
       resolutionStatus: 'ok',
       usedFallback: false,
     };
@@ -1001,6 +1000,9 @@ async function resolveUserIdForSummary(req, label = 'AI summary user resolution'
     return {
       userId: fallbackChattyUserId,
       chattyUserId: fallbackChattyUserId,
+      supabaseUserId: null,
+      vvaultUserId: null,
+      identityResolutionStatus: resolution.status,
       resolutionStatus: resolution.status,
       usedFallback: true,
     };
@@ -1009,9 +1011,45 @@ async function resolveUserIdForSummary(req, label = 'AI summary user resolution'
   return {
     userId: null,
     chattyUserId: null,
+    supabaseUserId: null,
+    vvaultUserId: null,
+    identityResolutionStatus: resolution.status,
     resolutionStatus: resolution.status,
     usedFallback: false,
   };
+}
+
+function buildAisIdentityPayload(req, localSummary = {}, supabasePayload = null, supabaseStatus = null) {
+  return {
+    chattyUserId: localSummary.chattyUserId || getChattyUserIdFromRequest(req) || null,
+    vvaultUserId: localSummary.vvaultUserId || null,
+    supabaseUserId:
+      localSummary.supabaseUserId ||
+      supabasePayload?.supabaseUserId ||
+      getPreferredSupabaseUserIdFromRequest(req) ||
+      null,
+    authSource: req.authSource || req.user?.authSource || null,
+    resolutionStatus: localSummary.resolutionStatus || null,
+    identityResolutionStatus: localSummary.identityResolutionStatus || null,
+    usedFallback: Boolean(localSummary.usedFallback),
+    supabaseStatus: supabaseStatus || null,
+  };
+}
+
+function shouldBlockEmptyAisForIdentityMismatch(localSummary = {}, supabaseAIs = [], supabaseStatus = null) {
+  const noRegistryRows = !Array.isArray(supabaseAIs) || supabaseAIs.length === 0;
+  if (!localSummary.chattyUserId || !noRegistryRows) return false;
+  if (localSummary.usedFallback) return true;
+  const status = localSummary.identityResolutionStatus || localSummary.resolutionStatus;
+  return status && !['ok', 'supabase-direct', 'vvault-resolved'].includes(status);
+}
+
+function shouldFailClosedEmptyAisForAuthorityUnavailable(localSummary = {}, supabaseAIs = [], supabaseStatus = null) {
+  const noRegistryRows = !Array.isArray(supabaseAIs) || supabaseAIs.length === 0;
+  if (!localSummary.chattyUserId || !noRegistryRows) return false;
+  return ['unavailable', 'timeout', 'error', 'grace-expired', 'unknown'].includes(
+    supabaseStatus || 'unknown',
+  );
 }
 
 async function verifyAIOwnershipSummaryBounded(req, aiId) {
@@ -1408,20 +1446,46 @@ function resolveConstructVaultPlacement({ constructCallsign, relativePath, mimeT
 async function resolveUserId(req) {
   const { supabaseUserId, chattyUserId } = getAisRequestUserIds(req);
   if (supabaseUserId) {
-    return { userId: supabaseUserId, chattyUserId };
+    return {
+      userId: supabaseUserId,
+      chattyUserId,
+      supabaseUserId,
+      vvaultUserId: null,
+      identityResolutionStatus: 'supabase-direct',
+    };
   }
-  if (!chattyUserId) return { userId: null, chattyUserId: null };
+  if (!chattyUserId) {
+    return {
+      userId: null,
+      chattyUserId: null,
+      supabaseUserId: null,
+      vvaultUserId: null,
+      identityResolutionStatus: 'missing-chatty-user',
+    };
+  }
   let userId = chattyUserId;
+  let vvaultUserId = null;
+  let identityResolutionStatus = 'vvault-unresolved';
   try {
     const { resolveVVAULTUserId } = await import('../../vvaultConnector/writeTranscript.js');
     console.log(`🔍 [resolveUserId] Calling resolveVVAULTUserId with chattyUserId=${chattyUserId}, email=${req.user?.email}`);
-    const vvaultUserId = await resolveVVAULTUserId(chattyUserId, req.user?.email);
+    vvaultUserId = await resolveVVAULTUserId(chattyUserId, req.user?.email);
     console.log(`🔍 [resolveUserId] resolveVVAULTUserId returned: ${vvaultUserId} (chatty was: ${chattyUserId})`);
-    if (vvaultUserId) userId = vvaultUserId;
+    if (vvaultUserId) {
+      userId = vvaultUserId;
+      identityResolutionStatus = 'vvault-resolved';
+    }
   } catch (err) {
     console.error(`❌ [resolveUserId] resolveVVAULTUserId FAILED:`, err.message);
+    identityResolutionStatus = 'vvault-resolution-error';
   }
-  return { userId, chattyUserId };
+  return {
+    userId,
+    chattyUserId,
+    supabaseUserId: null,
+    vvaultUserId,
+    identityResolutionStatus,
+  };
 }
 
 async function verifyAIOwnership(req, aiId) {
@@ -1679,6 +1743,31 @@ router.get('/', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Authentication required' });
     }
 
+    const shouldFailClosedEmptyAis =
+      localAIs.length === 0 &&
+      (shouldFailClosedEmptyAisForAuthorityUnavailable(localSummary, supabaseAIs, supabaseStatus) ||
+        shouldBlockEmptyAisForIdentityMismatch(localSummary, supabaseAIs, supabaseStatus));
+
+    if (shouldFailClosedEmptyAis) {
+      const identity = buildAisIdentityPayload(req, localSummary, supabasePayload, supabaseStatus);
+      const authorityUnavailable = shouldFailClosedEmptyAisForAuthorityUnavailable(
+        localSummary,
+        supabaseAIs,
+        supabaseStatus,
+      );
+      setAISourceHeaders(res, authorityUnavailable ? 'authority-unavailable' : 'identity-mismatch', supabaseStatus);
+      return res.status(authorityUnavailable ? 503 : 409).json({
+        success: false,
+        error: authorityUnavailable
+          ? 'AI registry authority unavailable'
+          : 'AI registry identity mismatch',
+        code: authorityUnavailable
+          ? 'AI_REGISTRY_AUTHORITY_UNAVAILABLE'
+          : 'AI_REGISTRY_IDENTITY_MISMATCH',
+        identity,
+      });
+    }
+
     const mergedAis = mergeAISummaries(localAIs, supabaseAIs);
     const vvaultAvatarAis = await hydrateAISummaryAvatarsFromVVAULT(mergedAis, {
       userId: localSummary.userId || supabasePayload?.supabaseUserId || null,
@@ -1696,7 +1785,11 @@ router.get('/', async (req, res) => {
       console.warn(`⚠️ [AIs API] Supabase summary ${supabaseSummary.status}; returned ${localAIs.length} local summaries`);
     }
 
-    return res.json({ success: true, ais });
+    return res.json({
+      success: true,
+      ais,
+      identity: buildAisIdentityPayload(req, localSummary, supabasePayload, supabaseStatus),
+    });
   } catch (error) {
     console.error('❌ [AIs API] Error fetching AIs:', error);
     if (!res.headersSent) {
@@ -3410,90 +3503,66 @@ router.get('/:id/avatar', async (req, res) => {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
-    const canRecoverLegacyAvatar = canRecoverLegacyAvatarForRequest({
-      req,
-      requestedId,
-      avatarLookup,
-      userId,
-      chattyUserId,
-    });
-
-    const lookupForAvatar = avatarLookup?.forbidden && !canRecoverLegacyAvatar
-      ? {
-          ...avatarLookup,
-          rawAvatarPath: null,
-        }
-      : avatarLookup;
-
-    const constructIds = getAvatarConstructCandidates(requestedId, lookupForAvatar);
+    const constructIds = Array.from(new Set([
+      ...getAvatarConstructCandidates(requestedId, avatarLookup),
+      extractConstructIdFromAvatarPath(avatarLookup?.rawAvatarPath),
+    ].filter(Boolean)));
     const primaryConstructId = constructIds[0] || normalizeAIDLookupId(requestedId) || requestedId;
     if (!primaryConstructId) {
-      return sendAvatarPlaceholder(res, requestedId);
+      return sendAvatarNotFound(res);
     }
 
-    const ownerCandidates = buildOwnerCandidateIds({
-      userId,
-      chattyUserId,
-      email: req.user?.email || null,
-    });
-    if (await sendLocalVvaultIdentityAvatarForOwners(res, ownerCandidates, constructIds)) {
-      return;
-    }
-
-    const rawAvatarPath = normalizeAvatarValue(lookupForAvatar?.rawAvatarPath);
-    const prefersCanonicalLocalAvatar =
-      !!rawAvatarPath && rawAvatarPath.startsWith('instances/');
+    const ownerCandidateIds = buildRequestOwnerCandidateIds(req, userId, chattyUserId);
+    const rawAvatarPath = normalizeAvatarValue(avatarLookup?.rawAvatarPath);
 
     const { supabase, supabaseUserId } = await resolveSupabaseContext(req);
-
+    const pathCandidates = getAvatarPathCandidates(constructIds, rawAvatarPath);
     for (const constructId of constructIds) {
       const canonicalIdentity = await loadCanonicalConstructIdentity({
         constructId,
         supabaseUserId: supabaseUserId || userId,
       }).catch((error) => {
-        console.warn(`⚠️ [AIs API] VVAULT body avatar lookup failed for ${constructId}:`, error?.message || error);
+        console.warn(`⚠️ [AIs API] Canonical avatar lookup failed for ${constructId}:`, error?.message || error);
         return null;
       });
-      const avatarRow = canonicalIdentity?.avatarRow || null;
-      if (avatarRow?.metadata?.source === 'vvault_body' && await sendSupabaseAvatarRow(res, supabase, avatarRow, constructId)) {
-        return;
-      }
-    }
-
-    if (prefersCanonicalLocalAvatar && (await sendLegacyAvatarLookup(res, lookupForAvatar))) {
-      return;
-    }
-
-    for (const constructId of constructIds) {
-      if (await sendLocalVvaultIdentityAvatar(res, userId, constructId)) {
-        return;
-      }
-    }
-
-    if (supabase && supabaseUserId) {
-      for (const constructId of constructIds) {
-        const canonicalIdentity = await loadCanonicalConstructIdentity({
-          constructId,
-          supabaseUserId,
-        }).catch((error) => {
-          console.warn(`⚠️ [AIs API] Canonical avatar lookup failed for ${constructId}:`, error?.message || error);
-          return null;
-        });
-
-        const avatarRow = canonicalIdentity?.avatarRow || null;
-        if (!avatarRow) continue;
-
-        if (await sendSupabaseAvatarRow(res, supabase, avatarRow, constructId)) {
+      if (canonicalIdentity?.avatarRow && supabase) {
+        if (await sendSupabaseAvatarRow(res, supabase, canonicalIdentity.avatarRow, constructId)) {
           return;
         }
       }
     }
 
-    if (await sendLegacyAvatarLookup(res, lookupForAvatar)) {
+    const supabaseAvatarRow = await fetchSupabaseAvatarRow({
+      supabase,
+      supabaseUserId: supabaseUserId || userId,
+      constructIds,
+      pathCandidates,
+    });
+    if (supabaseAvatarRow && await sendSupabaseAvatarRow(res, supabase, supabaseAvatarRow, primaryConstructId)) {
       return;
     }
 
-    return sendAvatarPlaceholder(res, primaryConstructId);
+    if (await sendLocalVvaultIdentityAvatarForOwners(res, ownerCandidateIds, constructIds)) {
+      return;
+    }
+
+    if (
+      rawAvatarPath &&
+      !avatarLookup?.forbidden &&
+      ownerCandidateIds.has(String(avatarLookup?.userId || '')) &&
+      await sendLegacyAvatarLookup(res, avatarLookup)
+    ) {
+      return;
+    }
+    if (
+      rawAvatarPath &&
+      canRecoverLegacyAvatarForRequest({ req, requestedId, avatarLookup, userId, chattyUserId }) &&
+      await sendLegacyAvatarLookup(res, avatarLookup)
+    ) {
+      return;
+    }
+
+    return sendAvatarNotFound(res);
   } catch (error) {
     console.error('Error serving avatar:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -3836,8 +3905,11 @@ router.post('/:id/reindex-knowledge', async (req, res) => {
 
 export const __test__ = {
   buildSummaryAvatarUrl,
+  buildAisIdentityPayload,
   getAIDLookupCandidates,
   hydrateAISummaryAvatarsFromVVAULT,
+  shouldFailClosedEmptyAisForAuthorityUnavailable,
+  shouldBlockEmptyAisForIdentityMismatch,
 };
 
 export default router;

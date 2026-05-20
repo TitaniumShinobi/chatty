@@ -163,7 +163,7 @@ Auto context
           payload: {
             id: '019e-rollout',
             cwd: '/home/user/projects/chatty',
-          }),
+          },
         }),
         JSON.stringify({
           timestamp: '2026-05-08T23:01:01.000Z',
@@ -217,7 +217,7 @@ Auto context
           payload: {
             type: 'message',
             role: 'assistant',
-            content: [{ type: 'output_text', text: 'assistant without a final phase must not import.' }],
+            content: [{ type: 'output_text', text: 'Assistant visible text without a final phase still imports.' }],
           },
         }),
         JSON.stringify({
@@ -235,15 +235,24 @@ Auto context
     );
 
     assert.equal(parsed.turns.length, 2);
-    assert.equal(parsed.conversationTurns.length, 2);
+    assert.equal(parsed.conversationTurns.length, 4);
     assert.equal(parsed.turns[0].role, 'user');
     assert.equal(parsed.turns[0].content, 'carry this exact Codex thread into Chatty');
     assert.equal(parsed.turns[1].role, 'assistant');
     assert.equal(parsed.turns[1].content, 'Relay acknowledged and ready for Chatty continuation.');
+    assert.deepEqual(
+      parsed.conversationTurns.map((turn) => turn.content),
+      [
+        'carry this exact Codex thread into Chatty',
+        'I am collecting the exact continuity tail now.',
+        'Assistant visible text without a final phase still imports.',
+        'Relay acknowledged and ready for Chatty continuation.',
+      ],
+    );
     assert.equal(parsed.parseReport.strategy, 'rollout-jsonl-terminal-pair');
     assert.equal(parsed.parseReport.cwd, '/home/user/projects/chatty');
     assert.equal(parsed.parseReport.skippedHiddenContextMessages, 1);
-    assert.equal(parsed.parseReport.skippedNonFinalAssistantMessages, 2);
+    assert.equal(parsed.parseReport.skippedNonFinalAssistantMessages, 0);
   });
 
   it('filters hidden Codex context blobs without importing them as user turns', () => {
@@ -447,6 +456,67 @@ Verification: npm test passes.
     assert.equal(parsed.conversationTurns[0].content, 'prompt should sync before assistant final');
     assert.equal(parsed.parseReport.strategy, 'rollout-jsonl-pending-tail');
     assert.equal(parsed.parseReport.latestMessageRole, 'user');
+  });
+
+  it('selects the rollout with the newest normalized visible message, including pending user prompts', async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'chatty-codex-rollouts-pending-latest-'));
+    const dayDir = path.join(tempRoot, '2026', '05', '10');
+    await fs.mkdir(dayDir, { recursive: true });
+
+    const olderCompletePath = path.join(dayDir, 'rollout-older-complete.jsonl');
+    const pendingPath = path.join(dayDir, 'rollout-newer-pending.jsonl');
+
+    await fs.writeFile(
+      olderCompletePath,
+      [
+        JSON.stringify({
+          timestamp: '2026-05-10T01:00:00.000Z',
+          type: 'session_meta',
+          payload: { id: 'older-complete', cwd: process.cwd() },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-10T01:00:01.000Z',
+          type: 'response_item',
+          payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'older complete user' }] },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-10T01:00:02.000Z',
+          type: 'response_item',
+          payload: { type: 'message', role: 'assistant', phase: 'final_answer', content: [{ type: 'output_text', text: 'older complete assistant' }] },
+        }),
+      ].join('\n'),
+      'utf8',
+    );
+    await fs.writeFile(
+      pendingPath,
+      [
+        JSON.stringify({
+          timestamp: '2026-05-10T01:05:00.000Z',
+          type: 'session_meta',
+          payload: { id: 'newer-pending', cwd: process.cwd() },
+        }),
+        JSON.stringify({
+          timestamp: '2026-05-10T01:05:01.000Z',
+          type: 'response_item',
+          payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'newer visible user prompt' }] },
+        }),
+      ].join('\n'),
+      'utf8',
+    );
+
+    try {
+      const parsed = await readLatestCodexTail({
+        codexSessionsRoot: tempRoot,
+        preferredCwd: process.cwd(),
+      });
+
+      assert.equal(parsed.parseReport.sessionPath, pendingPath);
+      assert.equal(parsed.parseReport.latestMessageRole, 'user');
+      assert.equal(parsed.parseReport.latestMessageTimestamp, '2026-05-10T01:05:01.000Z');
+      assert.equal(parsed.conversationTurns[0].content, 'newer visible user prompt');
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it('prefers the newest usable rollout matching the current repo cwd', async () => {

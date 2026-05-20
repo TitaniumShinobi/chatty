@@ -1,5 +1,7 @@
 # Docs Governance
 
+This document is a live docs-placement and duplication contract. The highest-order prose governance layer for Chatty is [repository-rubrication.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/repository-rubrication.md).
+
 Source of truth:
 - `/Users/devonwoodson/Documents/GitHub/chatty/docs/README/README.md`
 - `/Users/devonwoodson/Documents/GitHub/chatty/docs/reports/closure-ledger-2026-04-07.md`
@@ -15,7 +17,7 @@ If VVAULT cannot be written to and read back from, the task is blocked. Do not c
 
 ## Rules
 
-1. Code, manifests, and runtime scripts beat prose when they disagree.
+1. Code, manifests, runtime scripts, and receipts beat prose when they disagree.
 2. Keep one canonical live doc per topic.
 3. New live docs must fit an existing section unless a documented exception is approved.
 4. Historical notes go to `docs/reports/` if still useful, otherwise `docs/archive/`.
@@ -25,6 +27,8 @@ If VVAULT cannot be written to and read back from, the task is blocked. Do not c
 8. Diagnostic docs and rubrics must state whether they are app-level, page-level, or feature-level. Do not let a Chat runtime receipt stand in for app-wide page health.
 9. VVAULT docs must repeat the VVAULT Authority Rule when they discuss sync, continuity, transcripts, storage, import, archive, or readback.
 10. Local files must be labeled ingest input, dev runtime artifacts, cache, or archive evidence; never VVAULT truth.
+
+This document does not outrank [repository-rubrication.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/repository-rubrication.md); it implements that higher-order canon inside Chatty docs.
 
 ## VVAULT Authority Failures
 

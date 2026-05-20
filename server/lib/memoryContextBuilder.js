@@ -1301,6 +1301,7 @@ function buildCapabilityDirectives(gptConfig) {
 
 function buildBehavioralDirectives(constructId, gptConfig, options = {}) {
   const runtimePolicySection = options.runtimePolicySection || '';
+  const cognitionPolicySection = options.cognitionPolicySection || '';
   const minimal = options.minimal === true;
   const ordinaryConversationActive = options.ordinaryConversationActive === true;
   const isRoleplayConstruct = gptConfig?.roleplayEnabled === true;
@@ -1363,6 +1364,7 @@ ${minimal ? '' : memoryRules}
 ${instructionBoundaryRules}
 ${toolTransparencyRule}
 ${minimal ? '' : runtimePolicySection}
+${minimal ? '' : cognitionPolicySection}
 ${responseContract}
 ## [/PROTECTED_IDENTITY_DIRECTIVES]`;
 
@@ -1461,6 +1463,26 @@ function buildMemoryPromptSection(memories) {
   });
 
   return section;
+}
+
+function buildCognitionPolicySection(cognitionPolicy = null) {
+  if (!cognitionPolicy || typeof cognitionPolicy !== 'object') return '';
+  const salienceBoost = Array.isArray(cognitionPolicy.salienceBoost)
+    ? cognitionPolicy.salienceBoost.join(', ')
+    : '';
+  const topics = Array.isArray(cognitionPolicy.continuityBias?.topics)
+    ? cognitionPolicy.continuityBias.topics.join(', ')
+    : '';
+
+  return `\n\n## Cognition Policy Advisory
+This policy is advisory only. It may bias reasoning style, but it does not define identity, transcript truth, memory truth, runtime authority, or routing authority.
+- policyVersion: ${cognitionPolicy.policyVersion || 'unknown'}
+- reasoningDepth: ${cognitionPolicy.reasoningDepth || 'medium'}
+- responseStyle: ${cognitionPolicy.responseStyle || 'balanced'}
+- riskMode: ${cognitionPolicy.riskMode || 'normal'}
+- salienceBoost: ${salienceBoost || 'none'}
+- continuityBias.weight: ${cognitionPolicy.continuityBias?.weight ?? 0}
+- continuityBias.topics: ${topics || 'none'}`;
 }
 
 function buildRecentStmSection(messages = [], options = {}) {
@@ -2203,6 +2225,10 @@ async function buildEnrichedContext(options) {
     runtimeTurnState = null,
     continuityClass = null,
     continuityResume = null,
+    cognitionPolicy = null,
+    cognitionAudit = null,
+    cognitionReadiness = null,
+    cognitionTraceId = null,
   } = options;
   const t0 = Date.now();
   const phaseTiming = {};
@@ -2295,6 +2321,25 @@ async function buildEnrichedContext(options) {
     boundedZenSmalltalk: boundedZenSmalltalkContext,
     contextBudgetProfile: contextProfile,
   };
+  result.cognitionPolicy = cognitionPolicy || null;
+  result.cognitionAudit = cognitionAudit || null;
+  result.cognitionReadiness = cognitionReadiness || null;
+  result.cognitionTraceId = cognitionTraceId || null;
+  phaseTiming.cognition = cognitionPolicy
+    ? {
+        source: cognitionPolicy.policySource || 'unknown',
+        policyVersion: cognitionPolicy.policyVersion || null,
+        traceId: cognitionTraceId || null,
+        fallbackUsed: Boolean(cognitionAudit?.fallbackUsed || cognitionReadiness?.fallbackPolicyUsed),
+        readinessStatus: cognitionReadiness?.status || null,
+      }
+    : {
+        source: 'not_provided',
+        policyVersion: null,
+        traceId: cognitionTraceId || null,
+        fallbackUsed: false,
+        readinessStatus: null,
+      };
   result.remote_history_skipped = boundedZenSmalltalkContext;
 
   const identityCacheKey = `${userId}:${constructId}`;
@@ -3208,10 +3253,16 @@ RULES FOR MEMORY USE:
   });
   result.runtimePolicy = runtimePolicyContext.receipt;
   const runtimePolicyPromptSection = includeRuntimePolicyInPrompt ? runtimePolicyContext.section : '';
+  const cognitionPolicyPromptSection = buildCognitionPolicySection(cognitionPolicy);
   if (runtimePolicyPromptSection) {
     includeSection('runtime_policy');
   } else {
     delaySection('runtime_policy');
+  }
+  if (cognitionPolicyPromptSection) {
+    includeSection('cognition_policy');
+  } else {
+    delaySection('cognition_policy', 'not_provided');
   }
   phaseTiming.runtimePolicy = runtimePolicyContext.receipt
     ? {
@@ -3535,6 +3586,7 @@ When answering:
   const trailingRuntimeContinuitySection = ordinaryConversationActive ? '' : runtimeContinuitySection;
 	  result.systemPrompt = basePrompt + physicalAppearanceSection + definitionSection + voiceExemplarSection + capsuleSection + prioritizedRuntimeContinuitySection + ordinaryConversationContractSection + userSection + identityBoundarySection + noRewriteIdentityAnchorSection + previewDraftOverlay.section + knowledgeSection + citationDirective + trailingRuntimeContinuitySection + ledgerSection + stmSection + memupMemorySection + vectorMemorySection + needleSection + verifiedMemorySection + memorySection + memoryGapSection + continuitySection + timeContextSection + memoryGuardrailSection + capabilityContextSection + buildBehavioralDirectives(constructId, gptConfig, {
 	    runtimePolicySection: runtimePolicyPromptSection,
+	    cognitionPolicySection: cognitionPolicyPromptSection,
 	    minimal: contextProfile === CONTEXT_BUDGET_PROFILES.TINY,
       ordinaryConversationActive,
 	  });

@@ -117,6 +117,7 @@ function renderChatWithContext(overrides: Record<string, unknown> = {}) {
 
   const outletContext = {
     threads: [baseThread],
+    isLoading: false,
     sendMessage: jest.fn(),
     reloadThreadMessages: jest.fn(() => Promise.resolve()),
     updateMessageMetadata: jest.fn(),
@@ -253,5 +254,76 @@ describe("Chat orchestration proof surface", () => {
         "zen-001_chat_with_zen-001",
       );
     });
+  });
+
+  it("shows the generic loading screen only while layout loading is still in progress", () => {
+    renderChatWithContext({
+      threads: [],
+      isLoading: true,
+      activeThreadHydration: {
+        threadId: "zen-001_chat_with_zen-001",
+        status: "loading",
+      },
+    });
+
+    expect(screen.getByText("Loading conversation…")).toBeInTheDocument();
+    expect(
+      screen.getByText("Please wait while we fetch your data."),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show the generic loading screen once layout loading has resolved", () => {
+    renderChatWithContext({
+      threads: [],
+      isLoading: false,
+      activeThreadHydration: {
+        threadId: "zen-001_chat_with_zen-001",
+        status: "partial",
+      },
+    });
+
+    expect(screen.queryByText("Loading conversation…")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Please wait while we fetch your data."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows bounded canonical status instead of a Go Home dead end when the thread is absent", () => {
+    renderChatWithContext({
+      threads: [],
+      isLoading: false,
+      activeThreadHydration: {
+        threadId: "zen-001_chat_with_zen-001",
+        status: "partial",
+      },
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /Zen transcript unavailable/i,
+    );
+    expect(screen.queryByText("Go Home")).not.toBeInTheDocument();
+    expect(screen.queryByText("Thread not found")).not.toBeInTheDocument();
+  });
+
+  it("renders a bounded VVAULT index status without hiding the preview messages", () => {
+    renderChatWithContext({
+      threads: [
+        {
+          id: "zen-001_chat_with_zen-001",
+          title: "Zen",
+          isIndexHydrated: true,
+          messages: [{ id: "preview-1", role: "user", text: "preview", ts: Date.now() }],
+        },
+      ],
+      activeThreadHydration: {
+        threadId: "zen-001_chat_with_zen-001",
+        status: "partial",
+        hydrationSource: "index-fallback",
+        hydrationComplete: false,
+      },
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent(/VVAULT index preview/i);
+    expect(screen.getByText("preview")).toBeInTheDocument();
   });
 });

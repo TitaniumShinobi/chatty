@@ -24,6 +24,7 @@ If VVAULT cannot be written to and read back from, the task is blocked. Do not c
 - Codex session files, exported transcripts, downloaded markdown, and desktop app logs are ingest sources only.
 - A successful sync means the material was written to VVAULT and read back from VVAULT.
 - A successful conversation index means Chatty read the live VVAULT conversation/body authority, not just a legacy Supabase timeout path or local deferred fallback rows.
+- Runtime topology is defined separately by [chatty-vvault-twin-door-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/chatty-vvault-twin-door-contract.md). Chatty and VVAULT own that twin-door contract; `auth/` does not.
 - A local path may be cited as evidence of where input came from, but it is not the storage destination or continuity authority.
 - Legacy docs that mention `instances/.../chatty`, local VVAULT folders, Supabase, ChromaDB, or transcript markdown must be treated as historical/provenance material unless a current live standard says otherwise.
 - New docs, scripts, tests, and runbooks must preserve this boundary explicitly.

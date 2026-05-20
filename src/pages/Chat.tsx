@@ -242,8 +242,15 @@ export function shouldBlockActiveThreadRender({
     return false;
   }
 
-  if (activeThreadHydration?.status === "loading") {
-    return true;
+  return activeThreadHydration?.status === "loading";
+}
+
+export function shouldRequestActiveThreadReload({
+  activeThreadHydration,
+  thread,
+}: Parameters<typeof shouldBlockActiveThreadRender>[0]): boolean {
+  if (!thread) {
+    return false;
   }
 
   if (thread.isIndexHydrated === true) {
@@ -582,6 +589,7 @@ const userMessageMarkdownComponents: Components = {
 
 interface LayoutContext {
   threads: Thread[];
+  isLoading: boolean;
   sendMessage: (
     threadId: string,
     text: string,
@@ -617,6 +625,7 @@ interface LayoutContext {
 export default function Chat() {
   const {
     threads,
+    isLoading,
     sendMessage: onSendMessage,
     reloadThreadMessages,
     exportThreadTranscript,
@@ -671,6 +680,11 @@ export default function Chat() {
       localStorage.setItem("chatty-dev-toggle", showDevInfo.toString());
     }
   }, [showDevInfo, isDev]);
+
+  useEffect(() => {
+    setIsReloading(false);
+    setReloadAttempted(false);
+  }, [threadId]);
 
   // Find thread with preference for threads that have messages (to handle duplicate ID cases)
   const matchingThreads = threads.filter((t) => t.id === threadId);
@@ -896,7 +910,7 @@ export default function Chat() {
     if (!thread || !threadId || !reloadThreadMessages) return;
 
     const exactThreadReloadNeeded =
-      shouldBlockActiveThreadRender({
+      shouldRequestActiveThreadReload({
         activeThreadHydration,
         thread,
       }) && !isReloading && !reloadAttempted;
@@ -941,11 +955,97 @@ export default function Chat() {
 
   // Get the construct name for display (system constructs or GPTs)
   const canonicalConstructName = isZenSessionThread ? "Zen" : isLinSessionThread ? "Lin" : gptConstructName;
+  const activeThreadStatus = (() => {
+    if (!thread) return null;
+
+    if (activeThreadHydration?.status === "error") {
+      return {
+        title: "VVAULT transcript unavailable",
+        message:
+          "Canonical readback failed. The GUI remains available, but Chatty will not treat local state as canonical.",
+      };
+    }
+
+    if (thread.isIndexHydrated === true) {
+      return {
+        title: "VVAULT index preview",
+        message:
+          "Showing the conversation index while canonical transcript hydration catches up.",
+      };
+    }
+
+    if (
+      isCanonicalSelfThreadId(thread.id) &&
+      activeThreadHydration?.status &&
+      (activeThreadHydration.status !== "ready" ||
+        activeThreadHydration.hydrationSource !== "full" ||
+        activeThreadHydration.hydrationComplete !== true)
+    ) {
+      return {
+        title: "VVAULT readback pending",
+        message:
+          "Canonical transcript readback is not complete. Writes still go through VVAULT only.",
+      };
+    }
+
+    return null;
+  })();
+
+  const renderBoundedConversationStatus = ({
+    title,
+    message,
+    placeholder,
+  }: {
+    title: string;
+    message: string;
+    placeholder: string;
+  }) => (
+    <div
+      className="flex flex-col h-full"
+      style={{ backgroundColor: "var(--chatty-bg-main)" }}
+    >
+      <div className="flex-1 min-h-0 p-4">
+        <div
+          role="status"
+          aria-live="polite"
+          className="border px-4 py-3 text-sm"
+          style={{
+            borderColor: "var(--chatty-border)",
+            backgroundColor: "var(--chatty-bg-secondary)",
+            color: "var(--chatty-text)",
+          }}
+        >
+          <div className="font-medium">{title}</div>
+          <div
+            className="text-xs mt-1"
+            style={{ color: "var(--chatty-text-secondary)" }}
+          >
+            {message}
+          </div>
+        </div>
+      </div>
+      <div
+        className="p-4 border-t flex-shrink-0"
+        style={{
+          borderColor: "var(--chatty-bg-main)",
+          backgroundColor: "var(--chatty-bg-main)",
+        }}
+      >
+        <MessageBar
+          onSubmit={() => {}}
+          placeholder={placeholder}
+          showVoiceButton={false}
+          showFileAttachment={false}
+          disabled={true}
+        />
+      </div>
+    </div>
+  );
 
   if (!thread) {
     // If threads haven't loaded yet, show a loading state
     // This prevents race condition where we try to show zenMarkdown before thread data arrives
-    if (threads.length === 0) {
+    if (isLoading === true) {
       return (
         <div
           className="flex flex-col h-full"
@@ -989,45 +1089,11 @@ export default function Chat() {
       }
 
       if (zenMarkdownError) {
-        return (
-          <div
-            className="flex flex-col h-full"
-            style={{ backgroundColor: "var(--chatty-bg-main)" }}
-          >
-            <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
-              <h2
-                className="text-xl font-semibold mb-2"
-                style={{ color: "var(--chatty-text)" }}
-              >
-                Unable to load {canonicalConstructName} transcript
-              </h2>
-              <p
-                className="mb-4"
-                style={{ color: "var(--chatty-text)", opacity: 0.7 }}
-              >
-                {zenMarkdownError}
-              </p>
-              <button
-                className="px-4 py-2 rounded-lg transition-colors"
-                style={{
-                  backgroundColor: "var(--chatty-button)",
-                  color: "var(--chatty-text-inverse, #fffff0)",
-                  border: "1px solid var(--chatty-line)",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "var(--chatty-hover)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor =
-                    "var(--chatty-button)";
-                }}
-                onClick={() => navigate("/app")}
-              >
-                Go Home
-              </button>
-            </div>
-          </div>
-        );
+        return renderBoundedConversationStatus({
+          title: `${canonicalConstructName} transcript unavailable`,
+          message: zenMarkdownError,
+          placeholder: `Canonical VVAULT readback required for ${canonicalConstructName || "this conversation"}`,
+        });
       }
 
       if (zenMarkdown) {
@@ -1377,81 +1443,20 @@ export default function Chat() {
         );
       }
 
-      return (
-        <div
-          className="flex flex-col h-full"
-          style={{ backgroundColor: "var(--chatty-bg-main)" }}
-        >
-          <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
-            <h2
-              className="text-xl font-semibold mb-2"
-              style={{ color: "var(--chatty-text)" }}
-            >
-              {canonicalConstructName} transcript unavailable
-            </h2>
-            <p style={{ color: "var(--chatty-text)", opacity: 0.7 }}>
-              We couldn't render the saved transcript right now.
-            </p>
-            <button
-              className="px-4 py-2 rounded-lg transition-colors"
-              style={{
-                backgroundColor: "var(--chatty-button)",
-                color: "var(--chatty-text-inverse, #fffff0)",
-                border: "1px solid var(--chatty-line)",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "var(--chatty-hover)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "var(--chatty-button)";
-              }}
-              onClick={() => navigate("/app")}
-            >
-              Go Home
-            </button>
-          </div>
-        </div>
-      );
+      return renderBoundedConversationStatus({
+        title: `${canonicalConstructName} transcript unavailable`,
+        message:
+          "Canonical VVAULT readback is not available yet. No local transcript is being treated as canonical.",
+        placeholder: `Canonical VVAULT readback required for ${canonicalConstructName || "this conversation"}`,
+      });
     }
 
-    return (
-      <div
-        className="flex flex-col h-full"
-        style={{ backgroundColor: "var(--chatty-bg-main)" }}
-      >
-        <div className="flex flex-col items-center justify-center flex-1 text-center p-8">
-          <h2
-            className="text-xl font-semibold mb-2"
-            style={{ color: "var(--chatty-text)" }}
-          >
-            Thread not found
-          </h2>
-          <p
-            className="mb-4"
-            style={{ color: "var(--chatty-text)", opacity: 0.7 }}
-          >
-            This conversation could not be found.
-          </p>
-          <button
-            className="px-4 py-2 rounded-lg transition-colors"
-            style={{
-              backgroundColor: "var(--chatty-button)",
-              color: "var(--chatty-text-inverse, #fffff0)",
-              border: "1px solid var(--chatty-line)",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "var(--chatty-hover)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "var(--chatty-button)";
-            }}
-            onClick={() => navigate("/app")}
-          >
-            Go Home
-          </button>
-        </div>
-      </div>
-    );
+    return renderBoundedConversationStatus({
+      title: "Conversation unavailable",
+      message:
+        "This route does not have a canonical VVAULT conversation loaded. The shell remains available.",
+      placeholder: "Canonical VVAULT conversation required",
+    });
   }
 
   const isUser = (role: string) => role === "user";
@@ -1879,6 +1884,26 @@ export default function Chat() {
               (Raw response, filtering status, detected patterns)
             </span>
           )}
+        </div>
+      )}
+      {activeThreadStatus && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mx-4 mt-4 border px-4 py-3 text-sm"
+          style={{
+            borderColor: "var(--chatty-border)",
+            backgroundColor: "var(--chatty-bg-secondary)",
+            color: "var(--chatty-text)",
+          }}
+        >
+          <div className="font-medium">{activeThreadStatus.title}</div>
+          <div
+            className="text-xs mt-1"
+            style={{ color: "var(--chatty-text-secondary)" }}
+          >
+            {activeThreadStatus.message}
+          </div>
         </div>
       )}
       <div

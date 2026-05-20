@@ -1,3 +1,5 @@
+import { resolveClientDoorContract, resolveClientDoorName } from "./chattyVvaultDoor";
+
 export type User = {
   sub: string;
   id?: string;
@@ -110,6 +112,12 @@ export function buildGoogleLoginUrl(currentHref?: string) {
     typeof currentHref === "string" && currentHref.trim()
       ? new URL(currentHref)
       : new URL(window.location.href);
+  if (resolveClientDoorName() === "public") {
+    const door = resolveClientDoorContract();
+    const loginUrl = new URL("/api/auth/google", door.authPublicOrigin);
+    loginUrl.searchParams.set("origin", currentUrl.origin);
+    return loginUrl.toString();
+  }
   const loginUrl = new URL("/api/auth/google", currentUrl.origin);
   const cliCallback = currentUrl.searchParams.get("cli_callback");
   if (cliCallback) {
@@ -119,15 +127,58 @@ export function buildGoogleLoginUrl(currentHref?: string) {
 }
 
 export function loginWithMicrosoft() {
+  if (resolveClientDoorName() === "public") {
+    const currentUrl = new URL(window.location.href);
+    const door = resolveClientDoorContract();
+    const loginUrl = new URL("/api/auth/microsoft", door.authPublicOrigin);
+    loginUrl.searchParams.set("origin", currentUrl.origin);
+    window.location.href = loginUrl.toString();
+    return;
+  }
   window.location.href = "/api/auth/microsoft";
 }
 
 export function loginWithApple() {
+  if (resolveClientDoorName() === "public") {
+    const currentUrl = new URL(window.location.href);
+    const door = resolveClientDoorContract();
+    const loginUrl = new URL("/api/auth/apple", door.authPublicOrigin);
+    loginUrl.searchParams.set("origin", currentUrl.origin);
+    window.location.href = loginUrl.toString();
+    return;
+  }
   window.location.href = "/api/auth/apple";
 }
 
 export function loginWithGithub() {
+  if (resolveClientDoorName() === "public") {
+    const currentUrl = new URL(window.location.href);
+    const door = resolveClientDoorContract();
+    const loginUrl = new URL("/api/auth/github", door.authPublicOrigin);
+    loginUrl.searchParams.set("origin", currentUrl.origin);
+    window.location.href = loginUrl.toString();
+    return;
+  }
   window.location.href = "/api/auth/github";
+}
+
+export function buildHostedAuthUrl(
+  mode: "login" | "signup",
+  currentHref?: string,
+  reason?: string,
+) {
+  const currentUrl =
+    typeof currentHref === "string" && currentHref.trim()
+      ? new URL(currentHref)
+      : new URL(window.location.href);
+  const door = resolveClientDoorContract();
+  const hostedUrl = new URL("/", door.authPublicOrigin);
+  hostedUrl.searchParams.set("origin", currentUrl.origin);
+  hostedUrl.searchParams.set("mode", mode);
+  if (reason) {
+    hostedUrl.searchParams.set("reason", reason);
+  }
+  return hostedUrl.toString();
 }
 
 export type EmailLoginResult =

@@ -216,6 +216,38 @@ function buildVvaultThreadMetadata(thread) {
   };
 }
 
+function compactVvaultReadbackProof(readback = null) {
+  if (!readback || typeof readback !== 'object') return null;
+  return {
+    storagePath: readback.storagePath || null,
+    storageMode: readback.storageMode || null,
+    sha256: readback.sha256 || null,
+    contentLength:
+      typeof readback.content === 'string'
+        ? readback.content.length
+        : readback.contentLength ?? null,
+    metadata: readback.metadata || null,
+  };
+}
+
+function buildVvaultThreadProof({ thread, vvaultPublish = null }) {
+  return {
+    sourceSessionId: thread.sourceSessionId,
+    sourceSessionPath: thread.sourceSessionPath,
+    sourceThreadName: thread.sourceThreadName,
+    vvaultStoragePath: vvaultPublish?.storagePath || null,
+    vvaultReadback: compactVvaultReadbackProof(vvaultPublish?.readback || null),
+    latestAssistantTimestamp: thread.latestAssistantTimestamp,
+    latestMessageRole: thread.latestMessageRole,
+    latestMessageTimestamp: thread.latestMessageTimestamp,
+    latestMessageDigest: thread.latestMessageDigest,
+    latestMessageSourceTurnIndex: thread.latestMessageSourceTurnIndex,
+    digest: thread.digest,
+    vvaultPublished: Boolean(vvaultPublish?.ok),
+    vvaultReadbackVerified: Boolean(vvaultPublish?.ok && vvaultPublish?.readbackVerified),
+  };
+}
+
 async function publishThreadToVvault({
   thread,
   constructId,
@@ -496,6 +528,7 @@ export async function syncCodexThreadsArchive({
   const threads = [];
   const skipped = [];
   const vvaultPublishes = [];
+  const vvaultThreadProofs = [];
   const fileStemCounts = new Map();
 
   if (writeLocalArchive && pruneExisting) {
@@ -574,6 +607,7 @@ export async function syncCodexThreadsArchive({
         error.syncFailure = vvaultPublish;
         throw error;
       }
+      vvaultThreadProofs.push(buildVvaultThreadProof({ thread, vvaultPublish }));
     }
     threads.push({
       ...thread,
@@ -645,6 +679,7 @@ export async function syncCodexThreadsArchive({
     threads,
     skipped,
     vvaultPublishes,
+    vvaultThreadProofs,
   };
 
   let indexPath = null;
@@ -676,5 +711,6 @@ export async function syncCodexThreadsArchive({
     vvaultPublishSkippedThreads: index.vvaultPublishSkippedThreads,
     vvaultPublishFailedThreads: index.vvaultPublishFailedThreads,
     latest: index.latest,
+    vvaultThreadProofs: index.vvaultThreadProofs,
   };
 }

@@ -68,6 +68,14 @@ describe("Sidebar address book avatars", () => {
         constructId: "katana-001",
       },
       {
+        id: "val-001_contact",
+        title: "Val",
+        messages: [],
+        createdAt: "",
+        updatedAt: "",
+        constructId: "val-001",
+      },
+      {
         id: "hydro-001_contact",
         title: "Hydro",
         messages: [],
@@ -81,10 +89,15 @@ describe("Sidebar address book avatars", () => {
     expect(html).toContain('src="/api/ais/sera-001/avatar?v=vvault-identity-v2"');
     expect(html).not.toContain("/api/ais/nova-001/avatar");
     expect(html).not.toContain("/api/ais/katana-001/avatar");
+    expect(html).not.toContain("/api/ais/val-001/avatar");
     expect(html).not.toContain("/api/ais/hydro-001/avatar");
     expect(html).toContain("Katana");
+    expect(html).toContain("Val");
     expect(html).toContain("Hydro");
-    expect(html).toContain("lucide-image-off");
+    expect(html).not.toContain("lucide-image-off");
+    expect(html).toContain(">K</div>");
+    expect(html).toContain(">V</div>");
+    expect(html).toContain(">H</div>");
   });
 
   it("renders the normalized avatar field when only avatarUrl survives hydration", () => {
@@ -129,6 +142,9 @@ describe("Sidebar address book avatars", () => {
 
     expect(html).not.toContain("Finance");
     expect(html).not.toContain("Get More");
+    expect(html).not.toContain("Zen");
+    expect(html).not.toContain("Lin");
+    expect(html).not.toContain("Val");
     expect(html).toContain("Continuity");
     expect(html).toContain("simForge");
     expect(html).toContain("Library");

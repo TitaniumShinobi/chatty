@@ -12,6 +12,8 @@ Source-of-truth inputs:
 
 Use this file as the explicit repo map that sits underneath the rubric. It answers "what is live now, what is transitional, and what is residue?" without pretending every live-looking surface is canonical.
 
+Experimental, helper, and future-facing surfaces may continue to live in `chatty-sandbox/`. Their presence in this inventory does not make them promotable into `chatty/`. `chatty/` accepts only canonicalized, MVP-serving slices, and every Sandbox to Chatty promotion must satisfy [sandbox-to-chatty-canonicalization.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/sandbox-to-chatty-canonicalization.md) plus the filled [sandbox-to-chatty-promotion-checklist.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/qa/sandbox-to-chatty-promotion-checklist.md).
+
 ## Canonical Live
 
 ### `/api/vvault/message` construct-quality turn path

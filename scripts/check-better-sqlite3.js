@@ -17,8 +17,8 @@ try {
       message,
       '',
       'Recommended fix:',
-      '  npm rebuild better-sqlite3',
-      'If that does not work, remove and reinstall dependencies under the active Node version.',
+      '  nvm use v20.20.1',
+      '  node scripts/check-better-sqlite3.js',
       ''
     ].join('\n')
   );

@@ -53,6 +53,24 @@ describe('/api/vvault/message continuity contract', () => {
     assert.match(source, /stage:\s*'assistant_prewrite'/);
   });
 
+  it('blocks canonical post-write readback mismatch before reporting success', () => {
+    const source = readPersistenceHandling();
+    const readbackStart = source.indexOf('if (vvaultBodyPersistenceRequired)');
+    const successStart = source.indexOf("runtimeReceipt.persistence_owner = 'vvault_body'");
+    const readbackBlock = source.slice(readbackStart, successStart);
+
+    assert.notEqual(readbackStart, -1, 'canonical readback gate was not found');
+    assert.notEqual(successStart, -1, 'canonical persistence success marker was not found');
+    assert.ok(readbackStart < successStart, 'readback gate must run before success is marked');
+    assert.match(source, /requiresVvaultBodyPersistence\(\{\s*effectiveSession,\s*constructId,\s*canonicalTurnMetadata,\s*normalizedRequestedTranscriptPath,\s*\}\)/);
+    assert.match(source, /buildPersistenceRoleResult\(role,\s*outcome\)/);
+    assert.match(readbackBlock, /const canonicalReadbackRows = await readConversations\(/);
+    assert.match(readbackBlock, /allowLocalFallback:\s*false/);
+    assert.match(readbackBlock, /stripChattyMetadataComment\(readbackAssistantTail\.content\) !== String\(aiResponse \|\| ''\)\.trimEnd\(\)/);
+    assert.match(readbackBlock, /code:\s*'TRANSCRIPT_READBACK_MISMATCH'/);
+    assert.match(readbackBlock, /return \{ handled:\s*true \}/);
+  });
+
   it('does not accept local fallback metadata as the required transcript truth source', () => {
     const source = readMemoryLoad();
 

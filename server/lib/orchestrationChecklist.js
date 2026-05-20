@@ -14,6 +14,7 @@ const OWNERS = {
   continuity: 'server/routes/vvault.js:/api/vvault/message',
   transcriptTruth: 'server/lib/vvaultConversationRouteContract.js:buildTranscriptTruthPreflight',
   capsuleRuntime: 'server/lib/memoryContextBuilder.js:buildEnrichedContext',
+  cognition: 'server/lib/cognitionContainer.js:inferCognitionForLin',
   verifiedLoader: 'server/lib/verifiedMemoryLoader.js:67',
   knowledge: 'server/lib/memoryContextBuilder.js:1037',
   runtimePolicy: 'server/lib/constructRuntimePolicy.js:buildConstructRuntimePolicyContext',
@@ -33,6 +34,7 @@ const OPTIONAL_SKIPPED_STAGE_IDS = new Set([
   'capabilities_selfprompt',
   'knowledge_files',
   'runtime_policy',
+  'cognition_policy',
   'persistence',
 ]);
 
@@ -202,6 +204,58 @@ function summarizeRuntimePolicy(enrichedContext = {}, runtimeReceipt = {}) {
       ownerFile: policy.ownerFile || 'server/lib/constructRuntimePolicy.js',
       sourceAnchor: policy.sourceAnchor || 'server/lib/constructRuntimePolicy.js:buildConstructRuntimePolicyContext',
       humanSource: policy.humanSource || 'docs/standards/construct-tier-and-need-to-know-policy.md',
+    },
+  };
+}
+
+function summarizeCognitionPolicy(enrichedContext = {}, runtimeReceipt = {}) {
+  const cognition = runtimeReceipt.cognition || {};
+  const policy = cognition.policy || enrichedContext.cognitionPolicy || null;
+  const auditEvidence = cognition.audit_evidence || enrichedContext.cognitionAudit || null;
+  const readiness = cognition.readiness || enrichedContext.cognitionReadiness || null;
+  const linReceipt = cognition.lin_receipt || null;
+  const fallbackUsed = Boolean(
+    auditEvidence?.fallbackUsed ||
+      readiness?.fallbackPolicyUsed ||
+      linReceipt?.fallback ||
+      policy?.policySource === 'default_fallback',
+  );
+
+  if (!policy) {
+    return {
+      status: 'skipped',
+      why: 'No cognition policy advisory entered this turn.',
+      details: {
+        policyApplied: false,
+        ownerFile: 'server/lib/cognitionContainer.js',
+        sourceAnchor: 'server/lib/cognitionContainer.js:inferCognitionForLin',
+      },
+    };
+  }
+
+  return {
+    status: fallbackUsed || readiness?.status === 'DEGRADED' ? 'warn' : 'pass',
+    why: fallbackUsed
+      ? 'Cognition used conservative default fallback policy and remained advisory.'
+      : 'Cognition inferred an advisory policy before memory/context construction.',
+    details: {
+      policyVersion: policy.policyVersion || null,
+      policySource: policy.policySource || null,
+      confidenceBucket: policy.confidenceBucket || null,
+      reasoningDepth: policy.reasoningDepth || null,
+      responseStyle: policy.responseStyle || null,
+      riskMode: policy.riskMode || null,
+      salienceBoost: policy.salienceBoost || [],
+      continuityBias: policy.continuityBias || null,
+      proceediveFlags: policy.proceediveFlags || null,
+      inputFingerprint: auditEvidence?.inputFingerprint || null,
+      decisionReason: auditEvidence?.decisionReason || null,
+      fallbackUsed,
+      readinessStatus: readiness?.status || null,
+      fallbackPolicyUsed: Boolean(readiness?.fallbackPolicyUsed),
+      linReceipt,
+      traceId: cognition.trace_id || linReceipt?.traceId || enrichedContext.cognitionTraceId || null,
+      sourceAnchor: 'server/lib/cognitionContainer.js:inferCognitionForLin',
     },
   };
 }
@@ -902,6 +956,7 @@ export function buildOrchestrationChecklist({
   assertMemoryOwnerReceipt(enrichedContext, runtimeReceipt);
   const knowledge = summarizeKnowledge(enrichedContext);
   const runtimePolicy = summarizeRuntimePolicy(enrichedContext, runtimeReceipt);
+  const cognitionPolicy = summarizeCognitionPolicy(enrichedContext, runtimeReceipt);
   const modelSynthesis = summarizeModelSynthesis(runtimeReceipt);
   const researchWorkflowStages = summarizeResearchWorkflow(runtimeReceipt);
   const assignmentQa = summarizeAssignmentQa(runtimeReceipt, validatorDebug);
@@ -1046,6 +1101,15 @@ export function buildOrchestrationChecklist({
       effectiveConstructId: runtimeReceipt.effective_construct_id || constructId,
       identityPreserved: (runtimeReceipt.effective_construct_id || constructId) === constructId,
     },
+  ));
+
+  stages.push(stage(
+    'cognition_policy',
+    'Cognition Policy',
+    cognitionPolicy.status,
+    cognitionPolicy.why,
+    cognitionPolicy.details.sourceAnchor || OWNERS.cognition,
+    cognitionPolicy.details,
   ));
 
   stages.push(stage(

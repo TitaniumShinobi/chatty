@@ -87,6 +87,8 @@ The canonical split is:
 
 This canon split does **not** flatten everything into one file or one process. The receipt-backed construct turn route remains `/api/vvault/message`, and local CLI fallback behavior remains transitional until it delegates into the same receipt/checklist contract or is retired.
 
+Experimental/orchestration/dev value does not equal promotability into `chatty/`. `chatty-sandbox/` may hold useful future systems, experiments, and helper surfaces, but `chatty/` accepts only canonicalized, MVP-serving slices that preserve `/api/vvault/message` authority and receipt/checklist truth. See [sandbox-to-chatty-canonicalization.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/sandbox-to-chatty-canonicalization.md) and the required [sandbox-to-chatty-promotion-checklist.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/qa/sandbox-to-chatty-promotion-checklist.md).
+
 ## Repo-Truth Examples This Rubric Must Score
 
 These examples must stay explicit in canon work:

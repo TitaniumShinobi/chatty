@@ -94,11 +94,6 @@ function normalizeTurnRole(role) {
   return null;
 }
 
-function shouldIncludeAssistantPhase(phase) {
-  const normalized = normalizeString(phase).toLowerCase();
-  return normalized === 'final' || normalized === 'final_answer';
-}
-
 function isDirectoryEntry(entry) {
   return entry?.isDirectory?.() === true;
 }
@@ -461,10 +456,6 @@ function consumeCodexRolloutJsonlLine(state, line, index) {
 
   const role = normalizeTurnRole(record.payload.role);
   if (!role) return;
-  if (role === 'assistant' && !shouldIncludeAssistantPhase(record.payload.phase)) {
-    state.skippedNonFinalAssistantMessages += 1;
-    return;
-  }
 
   const rawText = extractMessageTextFromParts(record.payload.content, role);
   if (!rawText) return;
@@ -567,10 +558,10 @@ export async function readLatestCodexTail({
   let fallbackError = null;
 
   function scoreCandidate(parsed, file) {
-    const assistantTimestampMs = Number.isFinite(Date.parse(parsed?.turns?.[1]?.ts || ''))
-      ? Date.parse(parsed.turns[1].ts)
+    const latestMessageTimestampMs = Number.isFinite(Date.parse(parsed?.parseReport?.latestMessageTimestamp || ''))
+      ? Date.parse(parsed.parseReport.latestMessageTimestamp)
       : 0;
-    return assistantTimestampMs || file.mtimeMs || 0;
+    return latestMessageTimestampMs || file.mtimeMs || 0;
   }
 
   for (const file of rolloutFiles) {
@@ -578,7 +569,13 @@ export async function readLatestCodexTail({
     if (!rawText) continue;
 
     try {
-      const parsed = parseCodexRolloutJsonl(rawText, { sessionPath: file.path });
+      const parsed = parseCodexRolloutJsonl(rawText, {
+        sessionPath: file.path,
+        requireTerminalPair: false,
+      });
+      if (!Array.isArray(parsed.conversationTurns) || parsed.conversationTurns.length === 0) {
+        continue;
+      }
       if (parsed.parseReport.isSubagentSession) {
         continue;
       }

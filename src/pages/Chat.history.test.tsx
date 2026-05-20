@@ -1,14 +1,89 @@
-import {
+jest.mock("../components/MessageOptionsMenu", () => ({
+  MessageOptionsMenu: () => null,
+}));
+
+jest.mock("../runtime/render", () => ({
+  R: () => null,
+}));
+
+jest.mock("../components/Mirror", () => ({
+  __esModule: true,
+  default: () => null,
+}));
+
+jest.mock("../components/MirrorSetup", () => ({
+  __esModule: true,
+  default: () => null,
+}));
+
+jest.mock("../lib/vvaultConversationManager", () => ({
+  VVAULTConversationManager: {
+    getInstance: jest.fn(() => ({})),
+  },
+}));
+
+jest.mock("../lib/auth", () => ({
+  getUserId: jest.fn(() => "user-1"),
+}));
+
+jest.mock("../lib/aiService", () => ({
+  AIService: {},
+}));
+
+jest.mock("../context/SettingsContext", () => ({
+  useSettings: jest.fn(() => ({
+    settings: {
+      general: {
+        zenVoice: null,
+        linVoice: null,
+      },
+    },
+  })),
+}));
+
+jest.mock("../context/TtsPlaybackContext", () => ({
+  useTtsPlayback: jest.fn(() => ({
+    setTtsPlaying: jest.fn(),
+    setCurrentAudioElement: jest.fn(),
+  })),
+}));
+
+jest.mock("../lib/creatorOpen", () => ({
+  buildCreatorOpenState: jest.fn(() => ({})),
+}));
+
+const {
   getRenderableThreadMessages,
   shouldBlockActiveThreadRender,
+  shouldRequestActiveThreadReload,
   shouldWindowThreadHistory,
-} from "./Chat";
+} = require("./Chat");
 
 describe("Chat history hydration and rendering", () => {
-  it("blocks active-thread rendering while only an index preview is available", () => {
+  it("keeps active-thread rendering available while only an index preview is available", () => {
     expect(
       shouldBlockActiveThreadRender({
         activeThreadHydration: { status: "loading" },
+        thread: {
+          isIndexHydrated: true,
+          messages: [{ id: "preview-1", text: "recent" }],
+        },
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldBlockActiveThreadRender({
+        activeThreadHydration: { status: "partial" },
+        thread: {
+          isIndexHydrated: true,
+          messages: [{ id: "preview-1", text: "recent" }],
+        },
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldRequestActiveThreadReload({
+        activeThreadHydration: { status: "partial" },
         thread: {
           isIndexHydrated: true,
           messages: [{ id: "preview-1", text: "recent" }],
@@ -32,7 +107,7 @@ describe("Chat history hydration and rendering", () => {
     ).toBe(false);
   });
 
-  it("blocks canonical Zen rendering until exact full VVAULT hydration is ready", () => {
+  it("keeps canonical Zen rendering available while exact full VVAULT hydration is pending", () => {
     expect(
       shouldBlockActiveThreadRender({
         activeThreadHydration: {
@@ -47,10 +122,26 @@ describe("Chat history hydration and rendering", () => {
           messages: [{ id: "cached-later-turn", text: "cached tail" }],
         },
       }),
-    ).toBe(true);
+    ).toBe(false);
 
     expect(
       shouldBlockActiveThreadRender({
+        activeThreadHydration: {
+          status: "ready",
+          threadId: "zen-001_chat_with_zen-001",
+          hydrationSource: "local-fallback",
+          hydrationComplete: false,
+        },
+        thread: {
+          id: "zen-001_chat_with_zen-001",
+          isIndexHydrated: false,
+          messages: [{ id: "local-deferred-turn", text: "local fallback tail" }],
+        },
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldRequestActiveThreadReload({
         activeThreadHydration: {
           status: "ready",
           threadId: "zen-001_chat_with_zen-001",

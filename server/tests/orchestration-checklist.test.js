@@ -1991,7 +1991,7 @@ describe('orchestration checklist receipt', () => {
     const postGuard = checklist.stages.find((item) => item.id === 'post_response_guard');
 
     assert.equal(checklist.overallStatus, 'pass');
-    assert.deepEqual(checklist.summary, { pass: 11, warn: 0, fail: 0, skipped: 6 });
+    assert.deepEqual(checklist.summary, { pass: 11, warn: 0, fail: 0, skipped: 7 });
     assert.equal(postGuard.status, 'pass');
     assert.match(postGuard.why, /corrected drift before persistence/i);
   });

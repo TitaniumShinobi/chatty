@@ -51,10 +51,9 @@ function assertAddressBookAvatarSourceOwnership({
   layoutSource,
   sidebarSource,
 }: AddressBookAvatarSourceSet): void {
-  expect(policySource).not.toContain("buildCanonicalConstructAvatarUrl");
   expect(policySource).not.toContain("sera-canonical");
   expect(policySource).not.toMatch(/constructId\s*={0,2}={1,2}\s*["']sera-001["']/);
-  expect(policySource).not.toMatch(/["'`]\/api\/ais\/[^"'`]+\/avatar/);
+  expect(policySource).toContain("buildCanonicalConstructAvatarUrl");
   expect(layoutSource).not.toContain("buildCanonicalConstructAvatarUrl");
   expect(sidebarSource).not.toContain("buildCanonicalConstructAvatarUrl");
   expect(layoutSource).not.toMatch(/\/api\/ais\/[^"'`]+\/avatar/);
@@ -68,6 +67,7 @@ function assertAddressBookAvatarSourceOwnership({
   expect(layoutAvatarResolverCalls.length).toBeGreaterThan(0);
   for (const call of layoutAvatarResolverCalls) {
     expect(call).toContain("allowBackendAvatarRoute: true");
+    expect(call).not.toContain("allowCanonicalAvatarRouteFallback: true");
   }
 
   expect(layoutSource).not.toMatch(
@@ -80,7 +80,7 @@ describe("address book avatar source guard", () => {
   const layoutSource = readSource("src/components/Layout.tsx");
   const sidebarSource = readSource("src/components/Sidebar.tsx");
 
-  it("keeps canonical avatar construction out of Layout and Sidebar", () => {
+  it("keeps canonical avatar construction centralized in address-book policy", () => {
     assertAddressBookAvatarSourceOwnership({ policySource, layoutSource, sidebarSource });
   });
 
@@ -88,13 +88,14 @@ describe("address book avatar source guard", () => {
     assertAddressBookAvatarSourceOwnership({ policySource, layoutSource, sidebarSource });
   });
 
-  it("keeps both Layout address-book resolver calls trusted for backend avatar routes", () => {
+  it("keeps both Layout address-book resolver calls trusted only for proven backend avatar routes", () => {
     const layoutAvatarResolverCalls =
       extractResolveAddressBookAvatarObjectCalls(layoutSource);
 
     expect(layoutAvatarResolverCalls).toHaveLength(2);
     for (const call of layoutAvatarResolverCalls) {
       expect(call).toContain("allowBackendAvatarRoute: true");
+      expect(call).not.toContain("allowCanonicalAvatarRouteFallback: true");
     }
   });
 
@@ -125,7 +126,7 @@ describe("address book avatar source guard", () => {
     ).toThrow();
   });
 
-  it("fails if Layout imports or calls canonical avatar construction", () => {
+  it("fails if Layout imports or calls canonical avatar construction directly", () => {
     expect(() =>
       assertAddressBookAvatarSourceOwnership({
         policySource: "const avatar = normalizeAvatarUrl(contact.avatar);",
@@ -167,6 +168,8 @@ describe("address book avatar source guard", () => {
         layoutSource:
           "const avatar = resolveAddressBookAvatar({ ...contact, allowBackendAvatarRoute: true });",
         sidebarSource: "const avatar = resolveAvatarFields(conversation).avatar;",
+        policySource:
+          "const avatar = buildCanonicalConstructAvatarUrl(contact.constructId) || normalizeAvatarUrl(contact.avatar);",
       }),
     ).not.toThrow();
   });

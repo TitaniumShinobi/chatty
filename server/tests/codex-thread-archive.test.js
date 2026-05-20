@@ -117,11 +117,12 @@ test('syncCodexThreadsArchive writes normalized Codex source-evidence files', as
   assert.equal(threadJson.sourceThreadName, 'Build transcript syncing system');
   assert.deepEqual(
     threadJson.turns.map((turn) => turn.role),
-    ['user', 'assistant'],
+    ['user', 'assistant', 'assistant'],
   );
   assert.equal(threadJson.turns[0].content, 'Scrape the active Codex thread.');
+  assert.equal(threadJson.turns[1].content, 'I am checking the local rollout files.');
   assert.equal(
-    threadJson.turns[1].content,
+    threadJson.turns[2].content,
     'The active Codex thread is archived. The literal `<heartbeat>` tag can be mentioned in prose.',
   );
 
@@ -134,7 +135,7 @@ test('syncCodexThreadsArchive writes normalized Codex source-evidence files', as
   assert.doesNotMatch(threadMarkdown, /codex-vvault-sync-watch/);
   assert.doesNotMatch(threadMarkdown, /^<heartbeat>/m);
   assert.match(threadMarkdown, /literal `<heartbeat>` tag can be mentioned in prose/);
-  assert.doesNotMatch(threadMarkdown, /checking the local rollout files/);
+  assert.match(threadMarkdown, /checking the local rollout files/);
 });
 
 test('syncCodexThreadsArchive can publish title-named transcript files into VVAULT file records', async () => {
@@ -249,6 +250,90 @@ test('syncCodexThreadsArchive can publish title-named transcript files into VVAU
   assert.equal(posted[0].body.metadata.latestMessageTimestamp, '2026-05-09T01:02:05.000Z');
   assert.ok(posted[0].body.metadata.latestMessageDigest);
   assert.match(posted[0].body.content, /^# Build transcript syncing system/m);
+});
+
+test('syncCodexThreadsArchive publishes every eligible Codex thread by default with compact readback proofs', async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'chatty-codex-vvault-bank-'));
+  const sessionsRoot = path.join(tempRoot, 'sessions');
+  const sessionIndexPath = path.join(tempRoot, 'session_index.jsonl');
+  const rolloutDir = path.join(sessionsRoot, '2026', '05', '12');
+  const posted = [];
+  await fs.mkdir(rolloutDir, { recursive: true });
+
+  const indexLines = [];
+  for (let index = 1; index <= 17; index += 1) {
+    const sessionId = `019e-bank-${String(index).padStart(2, '0')}`;
+    indexLines.push(JSON.stringify({
+      id: sessionId,
+      thread_name: `Bank Thread ${index}`,
+      updated_at: `2026-05-12T00:${String(index).padStart(2, '0')}:00.000Z`,
+    }));
+    await fs.writeFile(
+      path.join(rolloutDir, `rollout-bank-${String(index).padStart(2, '0')}.jsonl`),
+      [
+        JSON.stringify({
+          timestamp: `2026-05-12T00:${String(index).padStart(2, '0')}:00.000Z`,
+          type: 'session_meta',
+          payload: { id: sessionId, cwd: '/home/user/projects/chatty' },
+        }),
+        codexMessage({
+          timestamp: `2026-05-12T00:${String(index).padStart(2, '0')}:01.000Z`,
+          role: 'user',
+          text: `User ${index}`,
+        }),
+        codexMessage({
+          timestamp: `2026-05-12T00:${String(index).padStart(2, '0')}:02.000Z`,
+          role: 'assistant',
+          phase: 'final_answer',
+          text: `Assistant ${index}`,
+        }),
+      ].join('\n'),
+      'utf8',
+    );
+  }
+  await fs.writeFile(sessionIndexPath, `${indexLines.join('\n')}\n`, 'utf8');
+
+  const result = await syncCodexThreadsArchive({
+    codexSessionsRoot: sessionsRoot,
+    sessionIndexPath,
+    publishToVvault: true,
+    requireVvaultReadback: true,
+    failOnVvaultPublishFailure: true,
+    writeLocalArchive: false,
+    vvaultApiBaseUrl: 'http://127.0.0.1:8000',
+    vvaultServiceToken: 'test-service-token',
+    fetchImpl: async (_url, options) => {
+      const body = options?.body ? JSON.parse(options.body) : null;
+      posted.push({ method: options?.method || 'GET', body });
+      if (options?.method === 'GET') {
+        const publish = [...posted].reverse().find((item) => item.method === 'POST');
+        return Response.json({
+          success: true,
+          storage_mode: 'vvault_body',
+          file: {
+            storage_path: publish.body.storage_path,
+            filename: publish.body.filename,
+            content: publish.body.content,
+            sha256: crypto.createHash('sha256').update(publish.body.content, 'utf8').digest('hex'),
+            metadata: JSON.stringify(publish.body.metadata),
+          },
+        });
+      }
+      return Response.json({ success: true, action: 'upserted', sha256: 'posted-sha' });
+    },
+    now: '2026-05-12T01:00:00.000Z',
+  });
+
+  assert.equal(result.scannedFiles, 17);
+  assert.equal(result.archivedThreads, 17);
+  assert.equal(result.vvaultPublishedThreads, 17);
+  assert.equal(result.vvaultReadbackVerifiedThreads, 17);
+  assert.equal(result.vvaultThreadProofs.length, 17);
+  assert.equal(posted.filter((item) => item.method === 'POST').length, 17);
+  assert.equal(posted.filter((item) => item.method === 'GET').length, 17);
+  assert.equal(result.vvaultThreadProofs.some((proof) => proof.sourceSessionId === '019e-bank-17'), true);
+  assert.equal(result.vvaultThreadProofs.every((proof) => proof.vvaultReadback.storageMode === 'vvault_body'), true);
+  assert.equal(result.vvaultThreadProofs.every((proof) => !Object.hasOwn(proof.vvaultReadback, 'content')), true);
 });
 
 test('syncCodexThreadsArchive chooses latest by newest normalized message, not only assistant tail', async () => {

@@ -244,6 +244,10 @@ import {
 } from "../lib/vvaultPersistenceHandling.js";
 import { classifyVvaultRouteFallback } from "../lib/vvaultFallbackClassification.js";
 import { attachRuntimePathMarkers } from "../lib/vvaultReceiptAssembly.js";
+import {
+  createInputFingerprint,
+  inferCognitionForLin,
+} from "../lib/cognitionContainer.js";
 
 const { hasLinIdentityDumpSignals } = leakSignals;
 
@@ -700,6 +704,10 @@ async function buildEnrichedContextPrompt({
   runtimeTurnState = null,
   continuityClass = null,
   continuityResume = null,
+  cognitionPolicy = null,
+  cognitionAudit = null,
+  cognitionReadiness = null,
+  cognitionTraceId = null,
 }) {
   const effectiveThreadId = threadId || `${constructId}_chat_with_${constructId}`;
   const memoryContext = await buildMemoryContext({
@@ -731,6 +739,10 @@ async function buildEnrichedContextPrompt({
     runtimeTurnState,
     continuityClass,
     continuityResume,
+    cognitionPolicy,
+    cognitionAudit,
+    cognitionReadiness,
+    cognitionTraceId,
   });
 
   return {
@@ -1617,6 +1629,10 @@ async function buildEnrichedContextPromptWithRecovery({
     runtimeTurnState,
     continuityClass,
     continuityResume,
+    cognitionPolicy,
+    cognitionAudit,
+    cognitionReadiness,
+    cognitionTraceId,
   };
 
   const boundedZenSmalltalkContext = shouldUseBoundedZenSmalltalkContext({
@@ -9928,6 +9944,58 @@ export async function handleConstructInference(req, res) {
     preloadedTranscriptTruthRows = transcriptTruthResult.preloadedTranscriptTruthRows;
     transcriptTruthLookupId = transcriptTruthResult.transcriptTruthLookupId;
     continuityResumeValidation = transcriptTruthResult.continuityResumeValidation;
+    const cognitionInput = {
+      traceId: inferenceRequestId,
+      requestContext: {
+        constructId,
+        message,
+        threadId,
+        sessionId,
+        effectiveTurnSessionId,
+        previewMode,
+        hasImages,
+        requestedSeat,
+        codingIntent,
+        contextBudgetProfile: contextBudget.profile,
+      },
+      sessionSignals: {
+        userId,
+        dataOwnerUserId,
+        authSource,
+        dataOwnerSource,
+        continuityExpected: continuityResumeValidation.continuityExpected === true,
+        continuityRestored: continuityResumeValidation.continuityRestored === true,
+      },
+      memoryHints: {
+        memoryQueryDetected: Boolean(contextBudget.memory_query_detected),
+        transcriptLawEvidenceIntent: Boolean(contextBudget.transcript_law_evidence_intent),
+        topics: [
+          contextBudget.policy_or_receipt_intent ? 'runtime-policy' : null,
+          contextBudget.transcript_law_evidence_intent ? 'transcript-law' : null,
+          codingIntent ? 'implementation' : null,
+        ].filter(Boolean),
+      },
+      runtimeState: {
+        routeMode: 'vvault_message',
+        continuityClass: routeTurnEnvelope.continuityClass,
+        transcriptLawRequired: routeTurnEnvelope.transcriptLawRequired === true,
+        runtimeTurnStatePresent: Boolean(routeTurnEnvelope.runtimeTurnState),
+      },
+    };
+    const cognitionEvaluation = inferCognitionForLin({
+      ...cognitionInput,
+      inputFingerprint: createInputFingerprint(cognitionInput),
+    });
+    console.log('[COGNITION_POLICY]', {
+      traceId: cognitionEvaluation.traceId,
+      policyVersion: cognitionEvaluation.policy.policyVersion,
+      policySource: cognitionEvaluation.policy.policySource,
+      fallbackUsed: cognitionEvaluation.auditEvidence.fallbackUsed,
+      readiness: cognitionEvaluation.readiness.status,
+      reasoningDepth: cognitionEvaluation.policy.reasoningDepth,
+      responseStyle: cognitionEvaluation.policy.responseStyle,
+      riskMode: cognitionEvaluation.policy.riskMode,
+    });
     const routingMode = forceLinMode || isLinOrchestratedConstruct(constructId) || shouldForceProtectedZenLinMode({
       constructId,
       userMessage: message,
@@ -10202,6 +10270,10 @@ export async function handleConstructInference(req, res) {
         runtimeTurnState: routeTurnEnvelope.runtimeTurnState,
         continuityClass: routeTurnEnvelope.continuityClass,
         continuityResume: routeTurnEnvelope.continuityResume,
+        cognitionPolicy: cognitionEvaluation.policy,
+        cognitionAudit: cognitionEvaluation.auditEvidence,
+        cognitionReadiness: cognitionEvaluation.readiness,
+        cognitionTraceId: cognitionEvaluation.traceId,
       });
       if (!enrichedResult) return;
       enrichedContext = enrichedResult.enrichedContext;
@@ -12661,6 +12733,11 @@ Output ONLY the rewritten response, nothing else.`
         simRefreshContract,
         searchInspectability,
         nextRuntimeTurnState,
+        cognitionPolicy: cognitionEvaluation.policy,
+        cognitionAudit: cognitionEvaluation.auditEvidence,
+        cognitionReadiness: cognitionEvaluation.readiness,
+        cognitionLinReceipt: cognitionEvaluation.linReceipt,
+        cognitionTraceId: cognitionEvaluation.traceId,
       });
       console.log(`✅ [VVAULT Proxy] ${effectiveProvider} successful for ${constructId}, response length: ${aiResponse.length}`);
       console.log('[RUNTIME_RECEIPT]', runtimeReceipt);

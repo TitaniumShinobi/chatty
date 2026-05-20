@@ -2,6 +2,7 @@
 # Keep Chatty frontend (Vite) and backend running. Safe, minimal supervisor.
 
 set -u
+trap '' HUP
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="/tmp"
@@ -59,23 +60,8 @@ VVAULT_URL_VALUE="${VVAULT_URL:-$(read_dotenv_value VVAULT_URL)}"
 VVAULT_URL_VALUE="${VVAULT_URL_VALUE:-http://127.0.0.1:8000}"
 VVAULT_API_BASE_URL_VALUE="${VVAULT_API_BASE_URL:-$VVAULT_URL_VALUE}"
 
-bootstrap_node_runtime() {
-  local nvm_dir
-  nvm_dir="${NVM_DIR:-$HOME/.nvm}"
-
-  if [[ ! -f "$ROOT_DIR/.nvmrc" ]]; then
-    return 0
-  fi
-
-  if [[ -s "$nvm_dir/nvm.sh" ]]; then
-    export NVM_DIR="$nvm_dir"
-    # shellcheck source=/dev/null
-    source "$NVM_DIR/nvm.sh"
-    nvm use --silent >/dev/null 2>&1 || true
-  fi
-}
-
-bootstrap_node_runtime
+# shellcheck source=/dev/null
+source "$ROOT_DIR/scripts/with-pinned-node.sh"
 
 if ! node "$ROOT_DIR/scripts/check-node-version.js"; then
   exit $?

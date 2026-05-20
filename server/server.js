@@ -90,6 +90,10 @@ import {
   resolveConfiguredCookieDomain,
   resolveConfiguredPublicOrigin,
 } from "./lib/publicOriginConfig.js";
+import {
+  assertRuntimeHandshakeSafety,
+  resolveRuntimeHandshakeConfig,
+} from "./lib/runtimeHandshakeConfig.js";
 
 console.log('[ENV CHECK]', {
   JWT_SECRET: process.env.JWT_SECRET ? 'SET' : 'MISSING',
@@ -137,26 +141,44 @@ process.on('unhandledRejection', (reason, promise) => {
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const isProduction = process.env.NODE_ENV === "production";
+const RUNTIME_HANDSHAKE = resolveRuntimeHandshakeConfig(process.env);
+const RUNTIME_HANDSHAKE_SAFETY = assertRuntimeHandshakeSafety(process.env);
+console.log("[RUNTIME HANDSHAKE]", RUNTIME_HANDSHAKE_SAFETY);
+if (!RUNTIME_HANDSHAKE_SAFETY.ok) {
+  console.error("❌ [Config] Invalid Chatty/VVAULT runtime handshake:", RUNTIME_HANDSHAKE_SAFETY.problems);
+  console.error("❌ [Config] Refusing to start because the configured door/origin contract is unsafe.");
+  process.exit(1);
+}
+const BACKEND_PUBLIC_SURFACES = resolveBackendPublicSurfaceConfig();
 function cookieSecure(req) {
   // Treat localhost & 127.0.0.1 (any port) as non-secure
   const host = req.get('host') || '';
   return !/^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host);
 }
-const CONFIGURED_PUBLIC_ORIGIN = resolveConfiguredPublicOrigin(process.env);
-const CONFIGURED_CALLBACK_BASE = resolveConfiguredCallbackBase(process.env);
-const CANONICAL_DOMAIN = resolveConfiguredCanonicalDomain(process.env);
-const COOKIE_DOMAIN = resolveConfiguredCookieDomain(process.env);
+function originHostname(value) {
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return null;
+  }
+}
+
+const CONFIGURED_PUBLIC_ORIGIN = resolveConfiguredPublicOrigin(process.env) || RUNTIME_HANDSHAKE.publicOrigin;
+const CONFIGURED_CALLBACK_BASE = resolveConfiguredCallbackBase(process.env) || RUNTIME_HANDSHAKE.callbackBase;
+const CANONICAL_DOMAIN =
+  resolveConfiguredCanonicalDomain(process.env) || originHostname(CONFIGURED_PUBLIC_ORIGIN);
+const COOKIE_DOMAIN = resolveConfiguredCookieDomain(process.env) || RUNTIME_HANDSHAKE.authCookieDomain;
 const CALLBACK_PATH = process.env.CALLBACK_PATH || '/api/auth/google/callback';
-const REDIRECT_URI = CONFIGURED_CALLBACK_BASE
-  ? `${CONFIGURED_CALLBACK_BASE}${CALLBACK_PATH}`
-  : `http://localhost:5050${CALLBACK_PATH}`;
+const REDIRECT_URI = `${CONFIGURED_CALLBACK_BASE}${CALLBACK_PATH}`;
 const GOOGLE_CALLBACK = REDIRECT_URI;
 
 const REPLIT_DOMAIN = process.env.REPLIT_DEV_DOMAIN || process.env.REPLIT_DOMAINS;
 const REPLIT_REDIRECT_URI = REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}${CALLBACK_PATH}` : null;
 const POST_LOGIN_REDIRECT = REPLIT_DOMAIN
   ? `https://${REPLIT_DOMAIN}`
-  : (CONFIGURED_PUBLIC_ORIGIN || "http://localhost:5173");
+  : CONFIGURED_PUBLIC_ORIGIN;
+const ALLOWED_BROWSER_ORIGINS = new Set(RUNTIME_HANDSHAKE.allowedBrowserOrigins);
+if (REPLIT_DOMAIN) ALLOWED_BROWSER_ORIGINS.add(`https://${REPLIT_DOMAIN}`);
 
 const WATCHDOG_DEFAULT_LOG_DIR = process.env.WATCHDOG_LOG_DIR || '/var/log/chatty';
 const WATCHDOG_FALLBACK_LOG = path.join(PROJECT_ROOT, 'watchdog', 'logs', 'watchdog.log');
@@ -198,6 +220,76 @@ function isDev(req) {
   return !IS_PRODUCTION || isReplitPreview(req);
 }
 
+function parsePublicFlag(rawValue, fallback = false) {
+  if (typeof rawValue !== "string") return fallback;
+  return ["1", "true", "yes", "on", "enabled"].includes(rawValue.trim().toLowerCase());
+}
+
+function normalizePublicAppId(raw) {
+  if (typeof raw !== "string") return null;
+  const normalized = raw.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "simdrive" || normalized === "sim-drive") {
+    return "simDrive";
+  }
+  return normalized;
+}
+
+function parsePublicApps(rawValue) {
+  if (typeof rawValue !== "string") return new Set();
+  return new Set(
+    rawValue
+      .split(",")
+      .map((entry) => normalizePublicAppId(entry))
+      .filter(Boolean),
+  );
+}
+
+function resolveBackendPublicSurfaceConfig() {
+  const publicApps = parsePublicApps(process.env.VITE_PUBLIC_APPS);
+  const hasExplicitApps = publicApps.size > 0;
+  const financeEnabled =
+    parsePublicFlag(process.env.VITE_PUBLIC_FINANCE_ENABLED) ||
+    parsePublicFlag(process.env.VITE_ENABLE_FINANCE) ||
+    parsePublicFlag(process.env.ENABLE_FINANCE);
+
+  const isConfiguredApp = (appId) => {
+    if (!hasExplicitApps) {
+      if (appId === "code" || appId === "projects") {
+        return true;
+      }
+      return false;
+    }
+
+    if (appId === "simDrive") {
+      return publicApps.has("simDrive");
+    }
+    return publicApps.has(appId);
+  };
+
+  return {
+    apps: {
+      calendar: false,
+      code: isConfiguredApp("code"),
+      create: false,
+      fxshinobi: Boolean(financeEnabled && isConfiguredApp("fxshinobi")),
+      health: false,
+      news: false,
+      pad: false,
+      projects: isConfiguredApp("projects"),
+      record: false,
+      simDrive: isConfiguredApp("simDrive"),
+      study: false,
+      weather: false,
+      vxrunner: false,
+      zip: false,
+    },
+    finance: {
+      enabled: financeEnabled,
+    },
+  };
+}
+
 function getRequestOrigin(req) {
   const origin = req.get('origin') || '';
   const referer = req.get('referer') || '';
@@ -213,9 +305,9 @@ function getRequestOrigin(req) {
   }
   const host = req.get('x-forwarded-host') || req.get('host');
   const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
-  if (host && host !== 'localhost:5050') return `${proto}://${host}`;
+  if (host && host !== 'localhost:5050' && host !== '127.0.0.1:5050') return `${proto}://${host}`;
   if (IS_PRODUCTION && CONFIGURED_PUBLIC_ORIGIN) return CONFIGURED_PUBLIC_ORIGIN;
-  return 'http://localhost:5173';
+  return CONFIGURED_PUBLIC_ORIGIN || 'http://localhost:5173';
 }
 
 function getRedirectUri(req) {
@@ -256,7 +348,11 @@ function getPostLoginRedirect(req) {
 
 // In production, never fall back to localhost for redirect/callback config.
 if (process.env.NODE_ENV === 'production' && !REPLIT_DOMAIN) {
-  const safety = assertProductionPublicOriginSafety(process.env);
+  const safety = assertProductionPublicOriginSafety({
+    ...process.env,
+    PUBLIC_CALLBACK_BASE: process.env.PUBLIC_CALLBACK_BASE || CONFIGURED_CALLBACK_BASE,
+    PUBLIC_APP_URL: process.env.PUBLIC_APP_URL || CONFIGURED_PUBLIC_ORIGIN,
+  });
   if (!safety.ok) {
     console.error('❌ [Config] Invalid production public origin configuration:', safety.problems);
     console.error('❌ [Config] Refusing to start because OAuth/callback URLs must not fall back to localhost in production.');
@@ -427,10 +523,8 @@ app.use(express.urlencoded({ limit: BODY_LIMIT, extended: true }));
 app.use(cookieParser());
 app.set("trust proxy", 1);
 
-// CORS configuration (explicit allowlist in prod)
-const corsOrigin = process.env.NODE_ENV === 'production'
-  ? (process.env.CORS_ORIGIN || CONFIGURED_PUBLIC_ORIGIN || (() => { throw new Error('Missing required env var: PUBLIC_APP_URL or FRONTEND_URL or CORS_ORIGIN in production'); })())
-  : (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || process.env.PUBLIC_APP_URL || 'http://localhost:5173');
+// CORS configuration follows the selected Chatty/VVAULT door contract.
+const corsOrigin = [...ALLOWED_BROWSER_ORIGINS];
 
 app.use(cors({
   origin: corsOrigin,
@@ -930,9 +1024,10 @@ app.get("/api/auth/google/health", (req, res) => {
     environment: process.env.NODE_ENV || 'development',
     client_id_present: !!OAUTH.client_id,
     client_secret_present: !!OAUTH.client_secret,
-    validation_passed: oauthValid,
+    validation_passed: oauthValid && RUNTIME_HANDSHAKE_SAFETY.ok,
     effective_local_redirect_uri: effectiveLocalRedirectUri,
     allowed_origins: [...ALLOWED_ORIGINS],
+    runtime_handshake: RUNTIME_HANDSHAKE_SAFETY,
     correlation: {
       strategy: "cid_in_oauth_logs",
       spans: ["/api/auth/google", "/api/auth/google/callback", "/api/auth/set-session"]
@@ -1261,18 +1356,18 @@ const OAUTH_STATE_TTL = 10 * 60 * 1000;
 const EXCHANGE_CODE_TTL = 2 * 60 * 1000;
 
 function buildAllowedOrigins() {
-  const origins = new Set();
-  if (CONFIGURED_PUBLIC_ORIGIN) origins.add(CONFIGURED_PUBLIC_ORIGIN);
-  if (REPLIT_DOMAIN) origins.add(`https://${REPLIT_DOMAIN}`);
-  if (POST_LOGIN_REDIRECT && POST_LOGIN_REDIRECT !== 'http://localhost:5173') origins.add(POST_LOGIN_REDIRECT);
-  origins.add('http://localhost:5173');
-  origins.add('http://localhost:5000');
-  // Allow VS Code Simple Browser which uses 127.0.0.1
-  origins.add('http://127.0.0.1:5173');
-  origins.add('http://127.0.0.1:5000');
-  return origins;
+  return new Set(ALLOWED_BROWSER_ORIGINS);
 }
 const ALLOWED_ORIGINS = buildAllowedOrigins();
+
+function buildValidRedirectUris() {
+  const uris = new Set([REDIRECT_URI]);
+  for (const origin of ALLOWED_ORIGINS) {
+    uris.add(`${origin}${CALLBACK_PATH}`);
+  }
+  if (REPLIT_REDIRECT_URI) uris.add(REPLIT_REDIRECT_URI);
+  return uris;
+}
 
 function signState(data) {
   const payload = Buffer.from(JSON.stringify(data)).toString('base64url');
@@ -1428,6 +1523,10 @@ app.get("/api/auth/google", authLimiter, (req, res) => {
 
     if (!ALLOWED_ORIGINS.has(originUrl)) {
       console.warn(`⚠️ [OAuth][cid:${correlationId}] Origin not in allowlist: ${originUrl}. Allowed:`, [...ALLOWED_ORIGINS]);
+      return res.status(403).json({
+        error: 'Origin not allowed',
+        cid: correlationId,
+      });
     }
 
     const dynamicRedirectUri = getRedirectUri(req);
@@ -1512,7 +1611,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       correlationId = requestCid;
     }
 
-    let originUrl = IS_PRODUCTION ? (CONFIGURED_PUBLIC_ORIGIN || `https://${CANONICAL_DOMAIN}`) : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : 'http://localhost:5173');
+    let originUrl = IS_PRODUCTION ? CONFIGURED_PUBLIC_ORIGIN : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : CONFIGURED_PUBLIC_ORIGIN);
     let callbackRedirectUri = REDIRECT_URI;
     let stateValid = false;
     let cliCallback = null;
@@ -1526,14 +1625,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
           correlationId = pending.cid || stateData.cid || correlationId;
           res.set('X-Auth-Correlation', correlationId);
           stateValid = true;
-          const VALID_REDIRECT_URIS = new Set([
-            REDIRECT_URI,
-            `http://localhost:5173${CALLBACK_PATH}`,
-            `http://localhost:5050${CALLBACK_PATH}`,
-            `http://127.0.0.1:5173${CALLBACK_PATH}`,
-            `http://127.0.0.1:5050${CALLBACK_PATH}`,
-          ]);
-          if (REPLIT_REDIRECT_URI) VALID_REDIRECT_URIS.add(REPLIT_REDIRECT_URI);
+          const VALID_REDIRECT_URIS = buildValidRedirectUris();
           if (pending.redirect_uri && VALID_REDIRECT_URIS.has(pending.redirect_uri)) {
             callbackRedirectUri = pending.redirect_uri;
           }
@@ -1670,7 +1762,12 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
       );
     }
 
-    const originIsCanonical = isConfiguredCanonicalOrigin(originUrl, process.env);
+    const originIsCanonical =
+      originUrl === CONFIGURED_PUBLIC_ORIGIN ||
+      isConfiguredCanonicalOrigin(originUrl, {
+        ...process.env,
+        PUBLIC_APP_URL: process.env.PUBLIC_APP_URL || CONFIGURED_PUBLIC_ORIGIN,
+      });
 
     if (originIsCanonical) {
       console.log(`[COOKIE SET][cid:${correlationId}] Setting cookie on canonical domain`);
@@ -1690,7 +1787,7 @@ app.get("/api/auth/google/callback", authLimiter, async (req, res) => {
     res.redirect(`${originUrl}/api/auth/set-session?code=${encodeURIComponent(exchangeCode)}&cid=${encodeURIComponent(correlationId)}`);
   } catch (e) {
     console.error(`❌ [OAuth Callback][cid:${correlationId}] OAuth callback error:`, e);
-    const errorRedirect = IS_PRODUCTION ? (CONFIGURED_PUBLIC_ORIGIN || `https://${CANONICAL_DOMAIN}`) : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : 'http://localhost:5173');
+    const errorRedirect = IS_PRODUCTION ? CONFIGURED_PUBLIC_ORIGIN : (REPLIT_DOMAIN ? `https://${REPLIT_DOMAIN}` : CONFIGURED_PUBLIC_ORIGIN);
     res.redirect(`${errorRedirect}/?error=auth_failed`);
   }
 });
@@ -2090,10 +2187,8 @@ app.use("/api/codex", requireAuth, codexRoutes);
 console.log('✅ [Server] Codex routes mounted at /api/codex');
 
 // Master Scripts routes (autonomy stack for constructs)
-if (process.env.ENABLE_MASTER_SCRIPTS === 'true') {
-  app.use("/api/master", requireAuth, masterScriptsRoutes);
-  console.log('✅ [Server] Master Scripts routes mounted at /api/master (admin)');
-}
+app.use("/api/master", requireAuth, masterScriptsRoutes);
+console.log('✅ [Server] Master Scripts routes mounted at /api/master (admin)');
 
 // Scripts routes (GPTCreator compatibility)
 if (process.env.ENABLE_SCRIPTS === 'true') {
@@ -2103,7 +2198,7 @@ if (process.env.ENABLE_SCRIPTS === 'true') {
 
 // simForge routes (personality extraction and identity forging)
 app.use("/api/simforge", requireAuth, simForgeRoutes);
-if (process.env.ENABLE_FINANCE === 'true') {
+if (BACKEND_PUBLIC_SURFACES.finance.enabled && BACKEND_PUBLIC_SURFACES.apps.fxshinobi) {
   app.use("/api/fxshinobi", fxshinobiRoutes);
   console.log('✅ [Server] FXShinobi proxy routes mounted at /api/fxshinobi');
 }

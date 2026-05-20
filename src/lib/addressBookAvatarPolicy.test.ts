@@ -50,6 +50,19 @@ describe("address book avatar policy", () => {
     });
   });
 
+  it("derives canonical avatar routes only when the address-book owner opts into real backend thumbnails", () => {
+    expect(
+      resolveAddressBookAvatar({
+        constructId: "nova-001",
+        allowCanonicalAvatarRouteFallback: true,
+      }),
+    ).toEqual({
+      constructId: "nova-001",
+      avatarSrc: "/api/ais/nova-001/avatar?v=vvault-identity-v2",
+      avatarSource: "explicit",
+    });
+  });
+
   it("allows trusted same-construct backend avatar routes for normal GPT contacts", () => {
     const constructIds = ["sera-001", "nova-001", "katana-001", "hydro-001"];
 
@@ -170,11 +183,29 @@ describe("address book avatar policy", () => {
     ).toBe("none");
   });
 
-  it("derives Sera construct ids from contact and thread ids without creating a fallback", () => {
-    expect(deriveAddressBookConstructId({ id: "sera-001_contact" })).toBe("sera-001");
-    expect(deriveAddressBookConstructId({ id: "sera-001_chat_with_sera-001" })).toBe("sera-001");
-    expect(resolveAddressBookAvatar({ id: "sera-001_contact" }).avatarSrc).toBeNull();
-    expect(resolveAddressBookAvatar({ id: "katana-001_contact" }).avatarSrc).toBeNull();
+  it("fails closed when only id or thread-style values are provided", () => {
+    expect(deriveAddressBookConstructId({ id: "sera-001_contact" })).toBeNull();
+    expect(deriveAddressBookConstructId({ id: "sera-001_chat_with_sera-001" })).toBeNull();
+    expect(deriveAddressBookConstructId({ threadId: "katana-001_chat_with_sera-001" })).toBeNull();
+    expect(resolveAddressBookAvatar({ id: "sera-001_contact" })).toEqual({
+      constructId: null,
+      avatarSrc: null,
+      avatarSource: "none",
+    });
+    expect(resolveAddressBookAvatar({ threadId: "katana-001_chat_with_sera-001" })).toEqual({
+      constructId: null,
+      avatarSrc: null,
+      avatarSource: "none",
+    });
+  });
+
+  it("honors constructId when it is passed directly", () => {
+    expect(deriveAddressBookConstructId({ constructId: "sera-001" })).toBe("sera-001");
+    expect(resolveAddressBookAvatar({ constructId: "sera-001" })).toEqual({
+      constructId: "sera-001",
+      avatarSrc: null,
+      avatarSource: "none",
+    });
   });
 
   it("uses GPT metadata avatars as explicit address-book avatars", () => {

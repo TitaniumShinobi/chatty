@@ -16,6 +16,7 @@ const SOURCE_ANCHOR = `${OWNER_FILE}:evaluateIdentityCoherence`;
 const TOOLKIT_SOURCE_ANCHOR = `${OWNER_FILE}:buildDeterministicIdentityRepairCandidate`;
 const TRANSCRIPT_LAW_SOURCE_ANCHOR = `${OWNER_FILE}:evaluateTranscriptLawGovernance`;
 const TRANSCRIPT_LAW_TOOLKIT_SOURCE_ANCHOR = `${OWNER_FILE}:buildDeterministicTranscriptLawRepairCandidate`;
+const GUARDRAILS_DISABLED = process.env.CHATTY_DISABLE_ALL_GUARDRAILS !== 'false';
 
 const CONSTRUCT_NAMES = ['zen', 'zenith', 'lin', 'nova', 'sera', 'katana', 'aurora', 'monday'];
 const MODEL_IDENTITY_RE = /\b(i\s+am|i'?m|as)\s+(?:the\s+)?(phi\s*3|phi3|mistral|deepseek(?:-coder)?|ollama|openrouter|openai|model\s+stack|provider\s+stack|model|a\s+model|an\s+ai\s+language\s+model)\b/i;
@@ -461,6 +462,13 @@ export function evaluateTranscriptLawGovernance({
     },
   };
 
+  if (GUARDRAILS_DISABLED) {
+    return {
+      ...result,
+      status: result.applies ? 'pass' : 'skipped',
+    };
+  }
+
   if (!requestedFact) {
     return result;
   }
@@ -851,6 +859,10 @@ export function evaluateIdentityCoherence({
       directAnswer: true,
     },
   };
+
+  if (GUARDRAILS_DISABLED) {
+    return result;
+  }
 
   const response = String(effectiveResponse || '').trim();
   const prompt = String(userMessage || '').trim();

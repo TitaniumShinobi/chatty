@@ -12,16 +12,21 @@ const testSuffix = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 const TEST_OWNER = `avatar-test-owner-${testSuffix}`;
 const TEST_ID = `ai-avatar-${testSuffix}`;
 const TEST_CALLSIGN = `avatar-hardening-${testSuffix}-001`;
+const TEST_CALLSIGN_LOCAL_FILE_RELATIVE_PATH = `instances/${TEST_CALLSIGN}/identity/avatar.png`;
 const TEST_AVATAR = `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#10B981"/></svg>').toString('base64')}`;
 const LEGACY_OWNER = `avatar-legacy-owner-${testSuffix}`;
 const CURRENT_OWNER = `avatar-current-owner-${testSuffix}`;
 const LEGACY_EMAIL = `avatar-alias-${testSuffix}@example.com`;
 const LEGACY_ID = `ai-avatar-legacy-${testSuffix}`;
 const LEGACY_CALLSIGN = `avatar-legacy-${testSuffix}-001`;
+const LEGACY_CALLSIGN_LOCAL_FILE_RELATIVE_PATH = `instances/${LEGACY_CALLSIGN}/identity/avatar.png`;
 const LEGACY_REGISTRY_PATH = path.join(os.tmpdir(), `chatty-avatar-registry-${testSuffix}.json`);
 const LOCAL_FILE_ID = `ai-avatar-local-file-${testSuffix}`;
 const LOCAL_FILE_CALLSIGN = `avatar-local-file-${testSuffix}-001`;
 const LOCAL_FILE_RELATIVE_PATH = `instances/${LOCAL_FILE_CALLSIGN}/identity/avatar.png`;
+const HINT_ONLY_ID = `ai-avatar-hint-only-${testSuffix}`;
+const HINT_ONLY_CALLSIGN = `avatar-hint-only-${testSuffix}-001`;
+const HINT_ONLY_RELATIVE_PATH = `instances/${HINT_ONLY_CALLSIGN}/identity/avatar.png`;
 const SERA_ALIAS_CALLSIGN = 'sera-001';
 const SERA_ALIAS_RELATIVE_PATH = `instances/${SERA_ALIAS_CALLSIGN}/identity/avatar.png`;
 const WEBP_ALIAS_CALLSIGN = `avatar-webp-alias-${Math.random().toString(16).slice(2, 8)}-001`;
@@ -147,6 +152,27 @@ before(() => {
 
   localVvaultRoot = fs.mkdtempSync(path.join(os.homedir(), `.chatty-avatar-vvault-${testSuffix}-`));
   process.env.VVAULT_ROOT_PATH = `~/${path.relative(os.homedir(), localVvaultRoot)}`;
+
+  const testCallsignAvatarPath = path.join(
+    localVvaultRoot,
+    'users',
+    'shard_0000',
+    TEST_OWNER,
+    TEST_CALLSIGN_LOCAL_FILE_RELATIVE_PATH,
+  );
+  fs.mkdirSync(path.dirname(testCallsignAvatarPath), { recursive: true });
+  fs.writeFileSync(testCallsignAvatarPath, LOCAL_FILE_PNG);
+
+  const legacyCallsignAvatarPath = path.join(
+    localVvaultRoot,
+    'users',
+    'shard_0000',
+    LEGACY_OWNER,
+    LEGACY_CALLSIGN_LOCAL_FILE_RELATIVE_PATH,
+  );
+  fs.mkdirSync(path.dirname(legacyCallsignAvatarPath), { recursive: true });
+  fs.writeFileSync(legacyCallsignAvatarPath, LOCAL_FILE_PNG);
+
   const localAvatarPath = path.join(
     localVvaultRoot,
     'users',
@@ -235,6 +261,23 @@ before(() => {
     'system',
   );
 
+  insertStmt.run(
+    HINT_ONLY_ID,
+    'Hint-only Avatar Test AI',
+    'Test AI where only legacy avatar hint is present',
+    '',
+    '[]',
+    HINT_ONLY_RELATIVE_PATH,
+    '{}',
+    HINT_ONLY_CALLSIGN,
+    'openai:gpt-4o-mini',
+    1,
+    'private',
+    new Date().toISOString(),
+    new Date().toISOString(),
+    LEGACY_OWNER,
+  );
+
   originalGetAI = aiManager.getAI.bind(aiManager);
   aiManager.getAI = async (...args) => {
     getAICallCount += 1;
@@ -249,10 +292,12 @@ after(() => {
     aiManager.db.prepare('DELETE FROM ais WHERE id = ?').run(LEGACY_ID);
     aiManager.db.prepare('DELETE FROM ais WHERE id = ?').run(LOCAL_FILE_ID);
     aiManager.db.prepare('DELETE FROM ais WHERE id = ?').run(STALE_SYSTEM_CALLSIGN);
+    aiManager.db.prepare('DELETE FROM ais WHERE id = ?').run(HINT_ONLY_ID);
     aiManager.db.prepare('DELETE FROM gpts WHERE id = ?').run(TEST_ID);
     aiManager.db.prepare('DELETE FROM gpts WHERE id = ?').run(LEGACY_ID);
     aiManager.db.prepare('DELETE FROM gpts WHERE id = ?').run(LOCAL_FILE_ID);
     aiManager.db.prepare('DELETE FROM gpts WHERE id = ?').run(STALE_SYSTEM_CALLSIGN);
+    aiManager.db.prepare('DELETE FROM gpts WHERE id = ?').run(HINT_ONLY_ID);
   } catch (error) {
     console.warn('[ais-avatar-route.test] Cleanup warning:', error.message);
   }
@@ -287,8 +332,9 @@ describe('AIs avatar route hardening', () => {
     await withServer(async (baseUrl) => {
       const { response, body } = await fetchAvatar(baseUrl, TEST_ID);
       assert.equal(response.status, 200);
-      assert.match(response.headers.get('content-type') || '', /image\/svg\+xml/i);
+      assert.equal(response.headers.get('content-type'), 'image/png');
       assert.ok(body.length > 0);
+      assert.deepEqual(body, LOCAL_FILE_PNG);
     });
   });
 
@@ -296,8 +342,9 @@ describe('AIs avatar route hardening', () => {
     await withServer(async (baseUrl) => {
       const { response, body } = await fetchAvatar(baseUrl, TEST_CALLSIGN);
       assert.equal(response.status, 200);
-      assert.match(response.headers.get('content-type') || '', /image\/svg\+xml/i);
+      assert.equal(response.headers.get('content-type'), 'image/png');
       assert.ok(body.length > 0);
+      assert.deepEqual(body, LOCAL_FILE_PNG);
     });
   });
 
@@ -305,19 +352,18 @@ describe('AIs avatar route hardening', () => {
     await withServer(async (baseUrl) => {
       const { response, body } = await fetchAvatar(baseUrl, `supabase-${TEST_CALLSIGN}`);
       assert.equal(response.status, 200);
-      assert.match(response.headers.get('content-type') || '', /image\/svg\+xml/i);
+      assert.equal(response.headers.get('content-type'), 'image/png');
       assert.ok(body.length > 0);
+      assert.deepEqual(body, LOCAL_FILE_PNG);
     });
   });
 
-  it('returns deterministic placeholder when avatar lookup misses', async () => {
+  it('returns avatar_not_found when avatar lookup misses', async () => {
     await withServer(async (baseUrl) => {
       const { response, body } = await fetchAvatar(baseUrl, `missing-${testSuffix}`);
-      assert.equal(response.status, 200);
-      assert.match(response.headers.get('content-type') || '', /image\/svg\+xml/i);
-      assert.match(response.headers.get('cache-control') || '', /no-store/i);
-      assert.match(response.headers.get('vary') || '', /Cookie/i);
-      assert.match(body.toString('utf8'), /<svg/i);
+      assert.equal(response.status, 404);
+      const payload = JSON.parse(body.toString('utf8'));
+      assert.equal(payload.error, 'avatar_not_found');
     });
   });
 
@@ -335,18 +381,27 @@ describe('AIs avatar route hardening', () => {
   it('does not let a forbidden callsign row block shared avatar lookup', async () => {
     await withServer(async (baseUrl) => {
       const { response, body } = await fetchAvatar(baseUrl, TEST_CALLSIGN, `unauthorized-${testSuffix}`);
-      assert.equal(response.status, 200);
-      assert.match(response.headers.get('content-type') || '', /image\/svg\+xml/i);
-      assert.match(body.toString('utf8'), /<svg/i);
+      assert.equal(response.status, 404);
+      const payload = JSON.parse(body.toString('utf8'));
+      assert.equal(payload.error, 'avatar_not_found');
     });
   });
 
   it('does not let a stale local system row block canonical construct avatar lookup', async () => {
     await withServer(async (baseUrl) => {
       const { response, body } = await fetchAvatar(baseUrl, STALE_SYSTEM_CALLSIGN, CURRENT_OWNER, LEGACY_EMAIL);
-      assert.equal(response.status, 200);
-      assert.match(response.headers.get('content-type') || '', /image\/svg\+xml/i);
-      assert.match(body.toString('utf8'), /<svg/i);
+      assert.equal(response.status, 404);
+      const payload = JSON.parse(body.toString('utf8'));
+      assert.equal(payload.error, 'avatar_not_found');
+    });
+  });
+
+  it('does not inject a synthetic avatar for legacy path-only records', async () => {
+    await withServer(async (baseUrl) => {
+      const { response, body } = await fetchAvatar(baseUrl, HINT_ONLY_ID, CURRENT_OWNER, LEGACY_EMAIL);
+      assert.equal(response.status, 404);
+      const payload = JSON.parse(body.toString('utf8'));
+      assert.equal(payload.error, 'avatar_not_found');
     });
   });
 
@@ -359,13 +414,13 @@ describe('AIs avatar route hardening', () => {
         LEGACY_EMAIL,
       );
       assert.equal(exactResponse.status, 200);
-      assert.match(exactResponse.headers.get('content-type') || '', /image\/svg\+xml/i);
-      assert.match(exactBody.toString('utf8'), /#10B981/);
+      assert.equal(exactResponse.headers.get('content-type'), 'image/png');
+      assert.deepEqual(exactBody, LOCAL_FILE_PNG);
 
       const { response, body } = await fetchAvatar(baseUrl, LEGACY_CALLSIGN, CURRENT_OWNER, LEGACY_EMAIL);
       assert.equal(response.status, 200);
-      assert.match(response.headers.get('content-type') || '', /image\/svg\+xml/i);
-      assert.match(body.toString('utf8'), /#10B981/);
+      assert.equal(response.headers.get('content-type'), 'image/png');
+      assert.deepEqual(body, LOCAL_FILE_PNG);
     });
   });
 
@@ -448,7 +503,7 @@ describe('AIs avatar route hardening', () => {
     assert.equal(rows[0].avatarUrl, '/api/ais/nova-001/avatar');
   });
 
-  it('keeps GET /api/ais local summary bounded when the local loader stalls', async () => {
+  it('keeps GET /api/ais bounded and fails closed when local and canonical summaries are unavailable', async () => {
     aiManager.getAllAIsSummary = async () => {
       await new Promise((resolve) => setTimeout(resolve, 2200));
       return [];
@@ -462,8 +517,9 @@ describe('AIs avatar route hardening', () => {
       const elapsedMs = Date.now() - startedAt;
       const payload = await response.json();
 
-      assert.equal(response.status, 200);
-      assert.equal(payload.success, true);
+      assert.equal(response.status, 503);
+      assert.equal(payload.success, false);
+      assert.equal(payload.code, 'AI_REGISTRY_AUTHORITY_UNAVAILABLE');
       assert.ok(elapsedMs < 2000, `expected bounded summary response, got ${elapsedMs}ms`);
     });
   });
@@ -479,7 +535,9 @@ describe('AIs avatar route hardening', () => {
       const response = await fetch(`${baseUrl}/api/ais`, {
         headers: { 'x-test-user': TEST_OWNER },
       });
-      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(response.status, 503);
+      assert.equal(payload.code, 'AI_REGISTRY_AUTHORITY_UNAVAILABLE');
     });
 
     assert.deepEqual(seenOptions, [{ includeSupabase: false }]);

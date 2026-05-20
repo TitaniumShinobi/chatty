@@ -1,4 +1,4 @@
-import { normalizeAvatarUrl } from "./avatarUrl";
+import { buildCanonicalConstructAvatarUrl, normalizeAvatarUrl } from "./avatarUrl";
 
 export type AddressBookAvatarSource = "explicit" | "none";
 
@@ -12,6 +12,7 @@ export interface AddressBookAvatarInput {
   avatarUrl?: unknown;
   gptAvatarByConstructId?: Map<string, string> | Record<string, unknown> | null;
   allowBackendAvatarRoute?: boolean;
+  allowCanonicalAvatarRouteFallback?: boolean;
 }
 
 export interface AddressBookAvatarResolution {
@@ -27,30 +28,6 @@ function toNonEmptyString(value: unknown): string | null {
 export function deriveAddressBookConstructId(contact: AddressBookAvatarInput): string | null {
   const explicit = toNonEmptyString(contact.constructId);
   if (explicit) return explicit;
-
-  const candidates = [
-    contact.runtimeId,
-    contact.threadId,
-    contact.conversationId,
-    contact.id,
-  ];
-
-  for (const candidate of candidates) {
-    const normalized = toNonEmptyString(candidate);
-    if (!normalized) continue;
-
-    const selfChat = normalized.match(/^([a-z0-9-]+)_chat_with_\1$/i);
-    if (selfChat) return selfChat[1];
-
-    const chatWith = normalized.match(/^([a-z0-9-]+)_chat_with_[a-z0-9-]+$/i);
-    if (chatWith) return chatWith[1];
-
-    const contactId = normalized.match(/^([a-z0-9-]+)_contact$/i);
-    if (contactId) return contactId[1];
-
-    if (/^[a-z0-9-]+-\d{3,}$/i.test(normalized)) return normalized;
-  }
-
   return null;
 }
 
@@ -119,6 +96,14 @@ export function resolveAddressBookAvatar(
         avatarSource: "explicit",
       };
     }
+  }
+
+  if (contact.allowCanonicalAvatarRouteFallback && constructId) {
+    return {
+      constructId,
+      avatarSrc: buildCanonicalConstructAvatarUrl(constructId),
+      avatarSource: "explicit",
+    };
   }
 
   return {

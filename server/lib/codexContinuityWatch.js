@@ -54,22 +54,46 @@ async function ensureCliHome(paths) {
   await fs.mkdir(paths.chattyCliHome, { recursive: true });
 }
 
+async function writeWatchLockExclusive(lockPath, payload) {
+  const handle = await fs.open(lockPath, 'wx');
+  try {
+    await handle.writeFile(`${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  } finally {
+    await handle.close();
+  }
+}
+
 async function acquireWatchLock(paths, preferredCwd) {
   await ensureCliHome(paths);
-  const existingLock = await readJsonFile(paths.lockPath);
-  if (existingLock?.pid && isPidAlive(existingLock.pid)) {
-    throw new Error(
-      `chatty-cli handoff watch is already running (pid ${existingLock.pid}) for ${existingLock.preferredCwd || 'unknown cwd'}.`,
-    );
-  }
-
   const nextLock = {
     pid: process.pid,
     preferredCwd,
     updatedAt: new Date().toISOString(),
   };
-  await fs.writeFile(paths.lockPath, `${JSON.stringify(nextLock, null, 2)}\n`, 'utf8');
-  return nextLock;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await writeWatchLockExclusive(paths.lockPath, nextLock);
+      return nextLock;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') {
+        throw error;
+      }
+      const existingLock = await readJsonFile(paths.lockPath);
+      if (existingLock?.pid && isPidAlive(existingLock.pid)) {
+        throw new Error(
+          `chatty-cli handoff watch is already running (pid ${existingLock.pid}) for ${existingLock.preferredCwd || 'unknown cwd'}.`,
+        );
+      }
+      await fs.unlink(paths.lockPath).catch((unlinkError) => {
+        if (unlinkError?.code !== 'ENOENT') {
+          throw unlinkError;
+        }
+      });
+    }
+  }
+
+  throw new Error('chatty-cli handoff watch could not acquire lock after stale lock recovery.');
 }
 
 async function releaseWatchLock(paths) {
@@ -179,6 +203,9 @@ function buildSourceSyncedEvent({ result }) {
     archivedThreads: result?.archivedThreads ?? 0,
     vvaultPublishedThreads: result?.vvaultPublishedThreads ?? 0,
     vvaultReadbackVerifiedThreads: result?.vvaultReadbackVerifiedThreads ?? 0,
+    vvaultThreadProofs: Array.isArray(result?.vvaultThreadProofs)
+      ? result.vvaultThreadProofs.length
+      : 0,
     latest: result?.latest
       ? {
           sourceSessionId: result.latest.sourceSessionId || null,
@@ -195,6 +222,20 @@ function buildSourceSyncedEvent({ result }) {
           digest: result.latest.digest || null,
         }
       : null,
+  };
+}
+
+function buildRelayDeferredEvent({ reason, parsed, sourceProof = null }) {
+  const parseReport = parsed?.parseReport || {};
+  return {
+    event: 'relay_deferred',
+    command: 'chatty-cli handoff',
+    reason,
+    sourceSessionId: parseReport.sessionId || sourceProof?.sourceSessionId || null,
+    sourceSessionPath: parseReport.sessionPath || sourceProof?.sourceSessionPath || null,
+    relayAuthority: sourceProof?.relayAuthority || null,
+    vvaultReadback: sourceProof?.vvaultReadback || null,
+    latestSyncedMessage: sourceProof?.latestSyncedMessage || null,
   };
 }
 
@@ -283,10 +324,51 @@ function assertMetadataValueMatches({ metadata, latest, key, label = key }) {
   }
 }
 
-function buildVerifiedSourceProof(sourceSync) {
-  const latest = sourceSync?.latest || null;
+function collectVvaultThreadProofCandidates(sourceSync) {
+  const candidates = [];
+  const seen = new Set();
+  const add = (candidate) => {
+    if (!candidate || typeof candidate !== 'object') return;
+    const key = [
+      candidate.sourceSessionId || '',
+      candidate.sourceSessionPath || '',
+      candidate.digest || '',
+    ].join('\0');
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidates.push(candidate);
+  };
+
+  if (Array.isArray(sourceSync?.vvaultThreadProofs)) {
+    sourceSync.vvaultThreadProofs.forEach(add);
+  }
+  if (Array.isArray(sourceSync?.threads)) {
+    sourceSync.threads.forEach(add);
+  }
+  add(sourceSync?.latest || null);
+  return candidates;
+}
+
+function findVvaultThreadProofForParsed({ sourceSync, parsed }) {
+  const parseReport = parsed?.parseReport || {};
+  const sessionId = normalizeString(parseReport.sessionId);
+  const sessionPath = normalizeString(parseReport.sessionPath);
+  return collectVvaultThreadProofCandidates(sourceSync).find((candidate) => {
+    const candidateSessionId = normalizeString(candidate.sourceSessionId);
+    const candidateSessionPath = normalizeString(candidate.sourceSessionPath);
+    return (
+      (sessionId && candidateSessionId === sessionId) ||
+      (sessionPath && candidateSessionPath === sessionPath)
+    );
+  }) || null;
+}
+
+function buildVerifiedSourceProof(sourceSync, { parsed = null } = {}) {
+  const latest = parsed
+    ? findVvaultThreadProofForParsed({ sourceSync, parsed })
+    : sourceSync?.latest || null;
   if (!latest) {
-    throw new Error('Codex watch VVAULT source sync did not return a latest transcript.');
+    throw new Error('Codex watch VVAULT source sync did not return readback proof for the selected transcript.');
   }
   const readback = latest.vvaultReadback;
   const sanitizedReadback = sanitizeVvaultReadback(readback);
@@ -299,8 +381,11 @@ function buildVerifiedSourceProof(sourceSync) {
   if (!readback?.metadata || typeof readback.metadata !== 'object') {
     throw new Error('Codex watch VVAULT readback metadata is missing.');
   }
-  if (typeof readback.content !== 'string' || readback.content.length === 0) {
-    throw new Error('Codex watch requires verified VVAULT readback content.');
+  if (
+    typeof sanitizedReadback.contentLength === 'number' &&
+    sanitizedReadback.contentLength <= 0
+  ) {
+    throw new Error('Codex watch requires non-empty verified VVAULT readback content.');
   }
   if (!normalizeString(latest.sourceSessionPath)) {
     throw new Error('Codex watch VVAULT source sync did not include a source rollout path.');
@@ -381,7 +466,7 @@ export async function runCodexContinuityWatch({
   readConversationsImpl,
   writeTranscriptImpl,
   syncSourceEvidenceToVvault = false,
-  sourceSyncMaxFiles = 16,
+  sourceSyncMaxFiles = Number.POSITIVE_INFINITY,
   syncSourceEvidenceImpl = syncCodexThreadsArchive,
 } = {}) {
   const effectivePollSeconds =
@@ -411,6 +496,10 @@ export async function runCodexContinuityWatch({
     );
 
     for (let pollIndex = 0; pollIndex < maxPolls; pollIndex += 1) {
+      const parsed = await readLatestCodexTail({
+        codexSessionsRoot,
+        preferredCwd: preferredCodexCwd,
+      });
       let sourceProof = null;
       if (syncSourceEvidenceToVvault) {
         const sourceSync = await syncSourceEvidenceImpl({
@@ -425,7 +514,22 @@ export async function runCodexContinuityWatch({
         });
         sourceSyncEvents += 1;
         emitEvent(buildSourceSyncedEvent({ result: sourceSync }));
-        sourceProof = buildVerifiedSourceProof(sourceSync);
+        try {
+          sourceProof = buildVerifiedSourceProof(sourceSync, { parsed });
+          assertParsedTailMatchesSyncedSource({ parsed, sourceProof });
+        } catch (error) {
+          emitEvent(
+            buildRelayDeferredEvent({
+              reason: error?.message || 'selected_source_readback_unverified',
+              parsed,
+              sourceProof,
+            }),
+          );
+          if (pollIndex + 1 < maxPolls) {
+            await sleepImpl(effectivePollSeconds * 1000);
+          }
+          continue;
+        }
         if (!sourceProof.assistantTailReady) {
           emitEvent(buildAwaitingAssistantTailEvent({ sourceProof }));
           if (pollIndex + 1 < maxPolls) {
@@ -433,14 +537,6 @@ export async function runCodexContinuityWatch({
           }
           continue;
         }
-      }
-
-      const parsed = await readLatestCodexTail({
-        codexSessionsRoot,
-        preferredCwd: preferredCodexCwd,
-      });
-      if (sourceProof) {
-        assertParsedTailMatchesSyncedSource({ parsed, sourceProof });
       }
       const source = buildRelaySourceDescriptor({
         latestCodex: true,

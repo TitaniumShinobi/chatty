@@ -253,6 +253,24 @@ check_health() {
     fi
 }
 
+check_public_parity_contract() {
+    if ! command -v node >/dev/null 2>&1; then
+        warn "node not found locally; skipping public parity contract probe"
+        return 0
+    fi
+    if [ ! -f "scripts/probeTwinParity.js" ]; then
+        warn "scripts/probeTwinParity.js missing; skipping public parity contract probe"
+        return 0
+    fi
+
+    log "Running public Chatty contract probe..."
+    if CHATTY_PARITY_PUBLIC_ORIGIN="https://chatty.thewreck.org" node scripts/probeTwinParity.js --public-only; then
+        log "Public contract probe completed."
+    else
+        warn "Public contract probe reported a contract failure above."
+    fi
+}
+
 case "${MODE:-full}" in
     --sync-only)
         sync_code
@@ -260,17 +278,20 @@ case "${MODE:-full}" in
     --restart)
         restart_service
         check_health
+        check_public_parity_contract
         ;;
     --build)
         remote_build
         restart_service
         check_health
+        check_public_parity_contract
         ;;
     full|*)
         sync_code
         remote_build
         restart_service
         check_health
+        check_public_parity_contract
         ;;
 esac
 

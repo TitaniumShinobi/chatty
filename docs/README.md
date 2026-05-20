@@ -2,6 +2,13 @@
 
 This is the live documentation entrypoint after the cleanup pass. Use the sections below instead of browsing historical folders directly.
 
+## Containerism Entry
+
+- Start doctrine orientation at [CONTAINERISM_ADAPTER.md](CONTAINERISM_ADAPTER.md).
+- Ownership + boundaries: [standards/identity-boundaries.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/identity-boundaries.md).
+- Fail-closed + local-vs-production truth: [standards/vvault-authority-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/vvault-authority-contract.md).
+- Promotion gate + pre-promotion contract: [CONTAINERISM_ADAPTER.md](CONTAINERISM_ADAPTER.md), [standards/repository-rubrication.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/repository-rubrication.md).
+
 ## VVAULT Authority Rule
 
 VVAULT is the canonical cloud/VVAULT-owned database authority for transcripts, continuity, construct body data, and sync/readback proof.
@@ -30,6 +37,7 @@ Canonical authority contract: [standards/vvault-authority-contract.md](/Users/de
 - Runtime checklist: [standards/orchestration-runtime-checklist.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/orchestration-runtime-checklist.md)
 - VVAULT body contract: [standards/vvault-body-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/vvault-body-contract.md)
 - App-level Diagnosis law: [standards/perfection-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/perfection-contract.md)
+- Navigation workflow contract: [standards/chatty-navigation-workflow-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/chatty-navigation-workflow-contract.md)
 - Three I seat canon: [standards/lin-three-i-seat-canon.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/lin-three-i-seat-canon.md)
 - Wrapper split and Lin substrate truth: [reference/constructs-and-lin.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/reference/constructs-and-lin.md)
 
@@ -63,6 +71,7 @@ The older house or room framing is useful design language, but it is not a docum
 - Reference: [reference/README.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/reference/README.md)
 - How-to: [how-to/README.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/how-to/README.md)
 - Features: [features/README.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/features/README.md)
+- QA: [qa/chatty-navigation-workflow-checklist.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/qa/chatty-navigation-workflow-checklist.md)
 - Standards: [standards/README.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/README.md)
 - Reports: [reports/README.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/reports/README.md)
 - Security: [security/README.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/security/README.md)
@@ -83,6 +92,7 @@ The older house or room framing is useful design language, but it is not a docum
 - Lin cross-repo reconciliation: [standards/lin-seat-cross-repo-reconciliation.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/lin-seat-cross-repo-reconciliation.md)
 - Product overview: [reference/platform-overview.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/reference/platform-overview.md)
 - Perfection contract: [standards/perfection-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/perfection-contract.md)
+- Navigation workflow contract: [standards/chatty-navigation-workflow-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/chatty-navigation-workflow-contract.md)
 - Chat interface layout: [standards/chat-interface-layout.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/chat-interface-layout.md)
 - Zen singleton live transcript: [standards/zen-singleton-live-transcript.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/zen-singleton-live-transcript.md)
 - Zen mode surfaces: [standards/zen-mode-surfaces.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/zen-mode-surfaces.md)

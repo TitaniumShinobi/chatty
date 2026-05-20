@@ -61,7 +61,8 @@ async function attemptSharedAuthBridge({
   isHostAsleepResponse,
   replitProxyErrorHeader,
 }) {
-  const url = `${target.origin}/api/vault/session-bridge`;
+  const bridgePath = target.sessionBridgePath || "/api/vault/session-bridge";
+  const url = `${target.origin}${bridgePath}`;
   try {
     const response = await fetchImpl(url, {
       method: "POST",

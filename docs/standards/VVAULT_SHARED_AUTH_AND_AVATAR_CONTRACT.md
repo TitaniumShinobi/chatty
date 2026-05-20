@@ -2,6 +2,16 @@
 
 This is the canonical Chatty contract for VVAULT-connected browser surfaces.
 
+## Twin Doors
+
+- Runtime topology is defined by [chatty-vvault-twin-door-contract.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/chatty-vvault-twin-door-contract.md).
+- Chatty selects the active door first, then derives auth and VVAULT targets from that door.
+- VVAULT validates the same door from its side.
+- `auth/` is the shared `auth_sid` authority for either door, but it does not own Chatty↔VVAULT topology.
+- Local Chatty must find local VVAULT only.
+- Production Chatty must find production VVAULT only.
+- No localhost/production crossover is allowed.
+
 ## Auth
 
 - Chatty keeps its native `sid` session for non-VVAULT routes.
@@ -13,6 +23,7 @@ This is the canonical Chatty contract for VVAULT-connected browser surfaces.
   - browser holds `auth_sid`
   - Chatty resolves identity through `AUTH_API_BASE_URL/api/me`
   - Chatty bridges to VVAULT through `/api/vault/session-bridge`
+- Fail-closed runtime blocking is intentional. If the selected door cannot reach its canonical auth or VVAULT target, Chatty must block honestly instead of falling back to local conversation state.
 - `/api/chatty/session/exchange` is not part of the normal browser flow and stays disabled by default.
 
 ## Conversation Index

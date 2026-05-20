@@ -1,3 +1,5 @@
+import { getPublicSurfaceConfig } from "../lib/publicSurfaceConfig";
+
 export interface FinanceAppDataSource {
   type: 'supabase' | 'api' | 'websocket';
   endpoint?: string;
@@ -198,5 +200,6 @@ export function getFinanceApp(id: string): FinanceApp | undefined {
 }
 
 export function getEnabledFinanceApps(): FinanceApp[] {
-  return financeAppRegistry.filter((app) => app.enabled);
+  const publicSurfaces = getPublicSurfaceConfig();
+  return financeAppRegistry.filter((app) => app.enabled && publicSurfaces.apps[app.id as keyof typeof publicSurfaces.apps]);
 }

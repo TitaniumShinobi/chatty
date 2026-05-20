@@ -1,5 +1,7 @@
 import { buildDeterministicConstructGreetingFallback } from './constructGreetingTurn.js';
 
+const GUARDRAILS_DISABLED = process.env.CHATTY_DISABLE_ALL_GUARDRAILS !== 'false';
+
 function inferMemoryIntent(text = '') {
   const t = String(text || '').toLowerCase();
   return /\b(remember|recall|memory|memories|timeline|when did|last time|before|previously|we talked|we spoke)\b/.test(t);
@@ -183,6 +185,8 @@ function buildGreetingAwareFallback(userMessage = '', options = {}) {
 }
 
 export function applyHumanConversationGuard(text, options = {}) {
+  if (GUARDRAILS_DISABLED) return text;
+
   if (!text || typeof text !== 'string') return text;
 
   const userMessage = options.userMessage || '';

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { Database, FileText, Users, Clock, CheckCircle, AlertCircle, RefreshCw, Link2, ExternalLink, Unlink } from 'lucide-react'
+import { resolveClientDoorContract } from '../lib/chattyVvaultDoor'
 
 const TranscriptManager = lazy(() => import('../components/TranscriptManager').then(m => ({ default: m.TranscriptManager })))
 const VaultFileManager = lazy(() => import('../components/VaultFileManager').then(m => ({ default: m.VaultFileManager })))
@@ -43,17 +44,8 @@ export default function VVAULTPage() {
   const [isCodexSyncing, setIsCodexSyncing] = useState(false)
   const [codexSyncStatus, setCodexSyncStatus] = useState<string | null>(null)
 
-  const getDevVvaultOrigin = () => {
-    // Avoid hardcoding "localhost" so production bundles don't contain loopback URLs.
-    const loc = (globalThis as any).location as Location | undefined
-    if (!loc?.origin) return ''
-    const u = new URL(loc.origin)
-    u.protocol = 'http:'
-    u.port = '8000'
-    u.pathname = ''
-    u.search = ''
-    u.hash = ''
-    return u.origin
+  const resolveVvaultBrowserOrigin = () => {
+    return resolveClientDoorContract().vvaultOrigin
   }
 
   // Fetch VVAULT account linking status
@@ -139,9 +131,11 @@ export default function VVAULTPage() {
 
   const handleLinkAccount = () => {
     // Open VVAULT login in new tab
-    const vvaultUrl =
-      (import.meta.env.VITE_VVAULT_URL as string | undefined) ||
-      (import.meta.env.DEV ? getDevVvaultOrigin() : (import.meta.env.VITE_VVAULT_API_BASE_URL as string) || '')
+    const vvaultUrl = resolveVvaultBrowserOrigin()
+    if (!vvaultUrl) {
+      console.error('Failed to resolve explicit VVAULT browser origin for this runtime')
+      return
+    }
     window.open(`${vvaultUrl}/login`, '_blank')
     
     // Show instructions

@@ -17,7 +17,6 @@ import {
   Pin,
   X,
   Grid3X3,
-  ImageOff,
 } from "lucide-react";
 import { SidebarProps } from "../types";
 import { cn } from "../lib/utils";
@@ -771,143 +770,6 @@ const Sidebar: React.FC<SidebarProps> = ({
       {/* Navigation Options - Streamlined Default Items */}
       <div className={cn(collapsed ? "px-3 pb-3" : "px-4 pb-4")}>
         <div className="space-y-1">
-          {/* Zen - Primary Construct (Default) */}
-          <button
-            onClick={() => {
-              // Find existing Zen conversation in threads (from VVAULT), or create new one
-              const zenThread = threads.find(
-                (t: any) => t.constructId === "zen-001",
-              );
-              if (zenThread && onConversationSelect) {
-                onConversationSelect(zenThread.id);
-              } else if (onNewConversationWithGPT) {
-                onNewConversationWithGPT("zen-001");
-              }
-            }}
-            className={navButtonBase}
-            style={{
-              backgroundColor: threads.some(
-                (t: any) =>
-                  t.constructId === "zen-001" && t.id === currentConversationId,
-              )
-                ? activeNavColor
-                : "transparent",
-              color: "var(--chatty-text)",
-            }}
-            onMouseEnter={(e) => {
-              const isZenActive = threads.some(
-                (t: any) =>
-                  t.constructId === "zen-001" && t.id === currentConversationId,
-              );
-              if (!isZenActive) {
-                e.currentTarget.style.backgroundColor = hoverColor;
-              }
-            }}
-            onMouseLeave={(e) => {
-              const isZenActive = threads.some(
-                (t: any) =>
-                  t.constructId === "zen-001" && t.id === currentConversationId,
-              );
-              if (!isZenActive) {
-                e.currentTarget.style.backgroundColor = "transparent";
-              }
-            }}
-          >
-            <MessageSquare size={16} />
-            {!collapsed && <span>Zen</span>}
-          </button>
-
-          {/* Lin - System Construct (Character brainstorming / simForge guide) */}
-          <button
-            onClick={() => {
-              // Find existing Lin conversation in threads, or create new one
-              const linThread = threads.find(
-                (t: any) => t.constructId === "lin-001" || t.constructId === "lin",
-              );
-              if (linThread && onConversationSelect) {
-                onConversationSelect(linThread.id);
-              } else if (onNewConversationWithGPT) {
-                onNewConversationWithGPT("lin-001");
-              }
-            }}
-            className={navButtonBase}
-            style={{
-              backgroundColor: threads.some(
-                (t: any) =>
-                  (t.constructId === "lin-001" || t.constructId === "lin") && t.id === currentConversationId,
-              )
-                ? activeNavColor
-                : "transparent",
-              color: "var(--chatty-text)",
-            }}
-            onMouseEnter={(e) => {
-              const isLinActive = threads.some(
-                (t: any) =>
-                  (t.constructId === "lin-001" || t.constructId === "lin") && t.id === currentConversationId,
-              );
-              if (!isLinActive) {
-                e.currentTarget.style.backgroundColor = hoverColor;
-              }
-            }}
-            onMouseLeave={(e) => {
-              const isLinActive = threads.some(
-                (t: any) =>
-                  (t.constructId === "lin-001" || t.constructId === "lin") && t.id === currentConversationId,
-              );
-              if (!isLinActive) {
-                e.currentTarget.style.backgroundColor = "transparent";
-              }
-            }}
-          >
-            <MessageSquare size={16} />
-            {!collapsed && <span>Lin</span>}
-          </button>
-
-          {/* Val - System Construct (Internal validator / continuity custodian) */}
-          <button
-            onClick={() => {
-              const valThread = threads.find(
-                (t: any) => t.constructId === "val-001" || t.constructId === "val",
-              );
-              if (valThread && onConversationSelect) {
-                onConversationSelect(valThread.id);
-              } else if (onNewConversationWithGPT) {
-                onNewConversationWithGPT("val-001");
-              }
-            }}
-            className={navButtonBase}
-            style={{
-              backgroundColor: threads.some(
-                (t: any) =>
-                  (t.constructId === "val-001" || t.constructId === "val") && t.id === currentConversationId,
-              )
-                ? activeNavColor
-                : "transparent",
-              color: "var(--chatty-text)",
-            }}
-            onMouseEnter={(e) => {
-              const isValActive = threads.some(
-                (t: any) =>
-                  (t.constructId === "val-001" || t.constructId === "val") && t.id === currentConversationId,
-              );
-              if (!isValActive) {
-                e.currentTarget.style.backgroundColor = hoverColor;
-              }
-            }}
-            onMouseLeave={(e) => {
-              const isValActive = threads.some(
-                (t: any) =>
-                  (t.constructId === "val-001" || t.constructId === "val") && t.id === currentConversationId,
-              );
-              if (!isValActive) {
-                e.currentTarget.style.backgroundColor = "transparent";
-              }
-            }}
-          >
-            <MessageSquare size={16} />
-            {!collapsed && <span>Val</span>}
-          </button>
-
           {/* Continuity (Default) */}
           <button
             onClick={() => navigate("/app/vvault")}
@@ -1192,12 +1054,29 @@ const Sidebar: React.FC<SidebarProps> = ({
                 />
               ) : null}
               {!avatar ? (
-                <div className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0">
-                  <ImageOff size={12} style={{ color: "#ef4444" }} />
+                <div
+                  className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-medium"
+                  style={{
+                    backgroundColor: "var(--chatty-highlight)",
+                    color: "var(--chatty-text)",
+                    opacity: 0.72,
+                  }}
+                  aria-hidden="true"
+                >
+                  {(conversation.title || "?").trim().charAt(0).toUpperCase() || "?"}
                 </div>
               ) : (
-                <div className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0" style={{ display: "none" }}>
-                  <ImageOff size={12} style={{ color: "#ef4444" }} />
+                <div
+                  className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-medium"
+                  style={{
+                    display: "none",
+                    backgroundColor: "var(--chatty-highlight)",
+                    color: "var(--chatty-text)",
+                    opacity: 0.72,
+                  }}
+                  aria-hidden="true"
+                >
+                  {(conversation.title || "?").trim().charAt(0).toUpperCase() || "?"}
                 </div>
               )}
               {!collapsed && (
@@ -1361,15 +1240,6 @@ const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      {/* Ensure Zen is only visible in the sidebar */}
-      {currentConversationId === "zen" && (
-        <div
-          className="zen-sidebar-item"
-          style={{ zIndex: 1, position: "relative" }}
-        >
-          Zen
-        </div>
-      )}
     </div>
   );
 };

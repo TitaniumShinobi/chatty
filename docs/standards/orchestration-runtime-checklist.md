@@ -32,6 +32,8 @@ The active chat path is:
 
 If a system is not represented in that path or in a checklist stage, it is not allowed to be assumed active.
 
+Experimental, helper, and dev surfaces may live in `chatty-sandbox/`, but `chatty/` accepts only canonicalized, MVP-serving slices. Useful in sandbox does not equal promotable into `chatty/`. Sandbox-origin promotions must satisfy [sandbox-to-chatty-canonicalization.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/standards/sandbox-to-chatty-canonicalization.md) and ship with the filled [sandbox-to-chatty-promotion-checklist.md](/Users/devonwoodson/Documents/GitHub/chatty/docs/qa/sandbox-to-chatty-promotion-checklist.md).
+
 AgentSquad/Python orchestration bridges are diagnostic/reference surfaces unless they explicitly delegate into `/api/vvault/message` and preserve the same runtime receipt. They must not be used as the default construct-quality route.
 
 ## Canonical Conversation Engine
