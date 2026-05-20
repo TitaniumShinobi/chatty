@@ -19,12 +19,15 @@ import { ThemeProvider } from "../lib/ThemeContext";
 import { SettingsProvider, useSettings } from "../context/SettingsContext";
 import { useIdleTimeout } from "../hooks/useIdleTimeout";
 import { Z_LAYERS } from "../lib/zLayers";
+import { FlaskConical } from "lucide-react";
 // icons not needed here after Sidebar is used
 import SearchPopup from "./SearchPopup";
 import Sidebar from "./Sidebar";
 import SettingsModal from "./SettingsModal";
 import ProjectsModal from "./ProjectsModal";
 import ShareConversationModal from "./ShareConversationModal";
+import OrchestrationLogSurface from "./OrchestrationLogSurface";
+import type { OrchestrationChecklist } from "./OrchestrationInspector";
 // RuntimeDashboard removed - using automatic runtime orchestration
 import ZenGuidance from "./ZenGuidance";
 import { useZenGuidance } from "../hooks/useZenGuidance";
@@ -35,6 +38,7 @@ import {
   getCanonicalIdForGPT,
 } from "../lib/threadUtils";
 import {
+  createErrorActiveConversationHydrationState,
   createIdleActiveConversationHydrationState,
   createLoadingActiveConversationHydrationState,
   createSnapshotReplayActiveConversationHydrationState,
@@ -43,12 +47,21 @@ import {
   deriveActiveConversationHydrationStateFromTranscript,
   reconcileIncomingThreadsForActiveRoute,
 } from "../lib/vvaultConversationHydration";
+import {
+  classifyVvaultFailure,
+  shouldHonorAsyncChatNavigation,
+  type VvaultFailureClassification,
+} from "../lib/pageSwitchStability";
 import { bootstrapConstructs } from "../lib/masterScripts";
 import { GPTService, type GPTConfig } from "../lib/gptService";
 import type { AIConfig } from "../lib/aiService";
 import type { UIContextSnapshot, Message as ChatMessage, Attachment } from "../types";
 import { WorkspaceContextBuilder } from "../engine/context/WorkspaceContextBuilder";
 import { resolveAddressBookAvatar } from "../lib/addressBookAvatarPolicy";
+import {
+  compareAddressBookContacts,
+  isAddressBookConstructVisible,
+} from "../lib/addressBookContacts";
 import { resolveAvatarFields } from "../lib/avatarUrl";
 import { safeMode, safeImport } from "../lib/safeMode";
 import { uploadAttachments, imageAttachmentsToAttachments } from "../lib/attachmentService";
@@ -56,6 +69,8 @@ import {
   BrowserRuntimeOrchestrator,
   BrowserRuntimeContextManager,
 } from "../lib/browserStubs";
+import { getClientEnvValue, isClientDevEnv } from "../lib/clientEnv";
+import { getPageDiagnosisChecklist } from "../lib/pageDiagnosisChecklist";
 
 // Add timestamps to console output for easier traceability
 const patchConsoleWithTimestamp = () => {
@@ -165,13 +180,46 @@ type Thread = {
   avatarUrl?: string | null;
 };
 
-const VVAULT_FILESYSTEM_ROOT = import.meta.env.VITE_VVAULT_ROOT_PATH || "";
+const VVAULT_FILESYSTEM_ROOT = getClientEnvValue("VITE_VVAULT_ROOT_PATH");
 const DEFAULT_ZEN_CANONICAL_SESSION_ID = "zen-001_chat_with_zen-001";
 const DEFAULT_ZEN_CANONICAL_CONSTRUCT_ID = "zen-001";
 const DEFAULT_ZEN_RUNTIME_ID = "zen-001";
 
 function isCanonicalZenThreadId(threadId: string | null | undefined): boolean {
   return threadId === DEFAULT_ZEN_CANONICAL_SESSION_ID;
+}
+
+function getPacketPayloadChecklist(packet: unknown): OrchestrationChecklist | null {
+  const payload = (packet as any)?.payload;
+  const checklist = payload?.orchestration_checklist || payload?.orchestrationChecklist;
+  return checklist && typeof checklist === "object" ? checklist : null;
+}
+
+function findLatestRuntimeChecklist(
+  threadList: Thread[],
+  activeThreadId: string | null,
+): OrchestrationChecklist | null {
+  const activeThread = activeThreadId
+    ? threadList.find((thread) => thread.id === activeThreadId) || null
+    : null;
+  const orderedThreads = activeThread
+    ? [activeThread, ...threadList.filter((thread) => thread !== activeThread)]
+    : threadList;
+
+  for (const thread of orderedThreads) {
+    const messages = [...(thread.messages || [])].reverse();
+    for (const message of messages) {
+      const packets = Array.isArray(message.packets) ? [...message.packets].reverse() : [];
+      for (const packet of packets) {
+        const checklist = getPacketPayloadChecklist(packet);
+        if (checklist) {
+          return checklist;
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 function mapChatMessageToThreadMessage(message: ChatMessage): Message | null {
@@ -288,13 +336,25 @@ export default function Layout() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isProjectsOpen, setIsProjectsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [routeOverlayActive, setRouteOverlayActive] = useState(false);
+  const [showOrchestrationLog, setShowOrchestrationLog] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem("chatty-show-orchestration-log") === "true";
+    } catch {
+      return false;
+    }
+  });
   // Manual runtime dashboard removed - using automatic orchestration
   const [shareConversationId, setShareConversationId] = useState<string | null>(
     null,
   );
   const [isBackendUnavailable, setIsBackendUnavailable] = useState(false);
-  const [vvaultRetryCount, setVvaultRetryCount] = useState(0);
-  const [isRetryingVVAULT, setIsRetryingVVAULT] = useState(false);
+  const [, setVvaultFailureClassification] =
+    useState<VvaultFailureClassification>(null);
+  const [activeThreadHydration, setActiveThreadHydration] = useState(
+    createIdleActiveConversationHydrationState(),
+  );
   const pendingStarterRef = useRef<{
     threadId: string;
     starter: string;
@@ -397,20 +457,37 @@ export default function Layout() {
   }, [location.pathname]);
   const activeRuntimeId = (location.state as any)?.activeRuntimeId || null;
 
+  useEffect(() => {
+    setIsSearchOpen(false);
+    setIsProjectsOpen(false);
+    setIsSettingsOpen(false);
+    setShareConversationId(null);
+    setRouteOverlayActive(false);
+    setShowOrchestrationLog(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        "chatty-show-orchestration-log",
+        showOrchestrationLog ? "true" : "false",
+      );
+    } catch {}
+  }, [showOrchestrationLog]);
+
   const shareConversation = useMemo(
     () => threads.find((thread) => thread.id === shareConversationId) || null,
     [threads, shareConversationId],
   );
   const synthAddressBookThreads = useMemo(() => {
-    const EXCLUDED_CONSTRUCTS = ['lin-001', 'zen-001', 'zen', 'lin', 'synth-001', 'synth'];
-    
-    // Get threads that have a constructId (excluding system constructs)
+    // Get threads that have a visible constructId.
     // Also filter out legacy files (those with .md in the title - raw filenames)
     // Enhance with avatar from matching GPT
     const conversationThreads = threads
       .filter((t) => 
         t.constructId && 
-        !EXCLUDED_CONSTRUCTS.includes(t.constructId) &&
+        isAddressBookConstructVisible(t.constructId) &&
         !t.title?.endsWith('.md')
       )
       .map(t => {
@@ -422,6 +499,7 @@ export default function Layout() {
           avatar: threadAvatar.avatar,
           avatarUrl: threadAvatar.avatarUrl,
           allowBackendAvatarRoute: true,
+          allowCanonicalAvatarRouteFallback: true,
           gptAvatarByConstructId:
             matchingGPT?.constructCallsign && gptAvatar.avatar
               ? { [matchingGPT.constructCallsign]: gptAvatar.avatar }
@@ -434,15 +512,14 @@ export default function Layout() {
         };
       });
     
-    // Create contact cards for GPTs that don't have a conversation thread yet
-    // Also exclude system constructs (Zen, Lin, Synth) - they're nav items, not address book contacts
+    // Create contact cards for GPTs that don't have a conversation thread yet.
     const existingConstructIds = new Set(conversationThreads.map(t => t.constructId));
     const gptContactCards: Thread[] = [];
     for (const gpt of userGPTs) {
       if (!gpt.constructCallsign) {
         continue;
       }
-      if (EXCLUDED_CONSTRUCTS.includes(gpt.constructCallsign)) {
+      if (!isAddressBookConstructVisible(gpt.constructCallsign)) {
         continue;
       }
       if (existingConstructIds.has(gpt.constructCallsign)) {
@@ -454,6 +531,7 @@ export default function Layout() {
         avatar: gptAvatar.avatar,
         avatarUrl: gptAvatar.avatarUrl,
         allowBackendAvatarRoute: true,
+        allowCanonicalAvatarRouteFallback: true,
         gptAvatarByConstructId:
           gpt.constructCallsign && gptAvatar.avatar
             ? { [gpt.constructCallsign]: gptAvatar.avatar }
@@ -475,16 +553,22 @@ export default function Layout() {
     }
     
     const allContacts = [...conversationThreads, ...gptContactCards];
-    
-    // Deduplicate by constructId - keep only the most recent thread per construct
+
+    // Deduplicate by constructId - prefer VVAULT conversation records over GPT registry cards.
     const seenConstructIds = new Set<string>();
     const deduplicatedContacts = allContacts
-      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)) // Most recent first
       .filter(t => {
-        if (!t.constructId || seenConstructIds.has(t.constructId)) return false;
+        if (
+          !t.constructId ||
+          !isAddressBookConstructVisible(t.constructId) ||
+          seenConstructIds.has(t.constructId)
+        ) {
+          return false;
+        }
         seenConstructIds.add(t.constructId);
         return true;
-      });
+      })
+      .sort(compareAddressBookContacts);
     
     
     return deduplicatedContacts;
@@ -497,10 +581,7 @@ export default function Layout() {
     isSettingsOpen ||
     Boolean(shareConversation) ||
     Boolean(storageFailureInfo) ||
-    location.pathname.includes("/gpts/new") ||
-    location.pathname.includes("/gpts/edit/") ||
-    location.pathname.includes("/ais/new") ||
-    location.pathname.includes("/ais/edit/");
+    routeOverlayActive;
 
   // #region agent log
   useEffect(() => {
@@ -516,8 +597,8 @@ export default function Layout() {
       return u.toString();
     };
     const endpoint =
-      import.meta.env.VITE_AGENT_LOG_URL ||
-      (import.meta.env.DEV ? devEndpoint() : "");
+      getClientEnvValue("VITE_AGENT_LOG_URL") ||
+      (isClientDevEnv() ? devEndpoint() : "");
 
     if (!endpoint) return;
 
@@ -646,6 +727,53 @@ export default function Layout() {
     shareConversation,
     storageFailureInfo,
   ]);
+
+  useEffect(() => {
+    if (!activeId) {
+      setActiveThreadHydration(createIdleActiveConversationHydrationState());
+      return;
+    }
+
+    if (isLoading) {
+      setActiveThreadHydration(createLoadingActiveConversationHydrationState(activeId));
+      return;
+    }
+
+    const activeThread = threads.find((thread) => thread.id === activeId) || null;
+    if (!activeThread) {
+      setActiveThreadHydration(
+        deriveActiveConversationHydrationStateFromTranscript({
+          threadId: activeId,
+          transcriptMessages: [],
+          transcriptContent: "",
+        }),
+      );
+      return;
+    }
+
+    if (activeThread.isIndexHydrated) {
+      setActiveThreadHydration({
+        status: "partial",
+        threadId: activeId,
+        hydrationSource: "index",
+        hydrationComplete: false,
+        message:
+          "Conversation index loaded, but full VVAULT hydration did not complete for this thread.",
+      });
+      return;
+    }
+
+    setActiveThreadHydration(
+      deriveActiveConversationHydrationStateFromTranscript({
+        threadId: activeId,
+        transcriptSource:
+          activeThread.importMetadata?.persistenceSource === "local-deferred"
+            ? "local-deferred"
+            : "full",
+        transcriptMessages: activeThread.messages || [],
+      }),
+    );
+  }, [activeId, isLoading, threads]);
 
   function createThread(title = "New conversation"): Thread {
     const timestamp = Date.now();
@@ -795,6 +923,23 @@ export default function Layout() {
     });return filtered;
   }
 
+  function preserveActiveRouteThread(
+    filteredThreads: Thread[],
+    runtimeScopedThreads: Thread[],
+    activeThreadId: string | null | undefined,
+  ) {
+    if (!activeThreadId) return runtimeScopedThreads;
+    if (runtimeScopedThreads.some((thread) => thread.id === activeThreadId)) {
+      return runtimeScopedThreads;
+    }
+    const activeRouteThread =
+      filteredThreads.find((thread) => thread.id === activeThreadId) || null;
+    if (!activeRouteThread) {
+      return runtimeScopedThreads;
+    }
+    return [activeRouteThread, ...runtimeScopedThreads];
+  }
+
   function routeIdForThread(threadId: string, threadList: Thread[]) {
     const thread = threadList.find((t) => t.id === threadId);
     // Route GPT threads (non-Zen, non-Lin) to canonical format
@@ -923,8 +1068,10 @@ export default function Layout() {
         // Load VVAULT conversations with timeout protection (but don't race - wait for actual result)
         let vvaultConversations: any[] = [];
         let backendUnavailable = false;
+        let nextFailureClassification: VvaultFailureClassification = null;
+        let startupCreationBlocked = false;
         try {const vvaultPromise =
-            conversationManager.loadAllConversations(vvaultUserId);
+            conversationManager.loadAllConversationsResponse(vvaultUserId);
 
           // Use Promise.race but track which one won
           let timeoutFired = false;
@@ -936,7 +1083,13 @@ export default function Layout() {
           }, 15000); // Increased to 15s, but don't resolve with empty array
 
           try {
-            vvaultConversations = await vvaultPromise;clearTimeout(timeoutId); // Cancel timeout if promise resolves first
+            const vvaultResponse = await vvaultPromise;clearTimeout(timeoutId); // Cancel timeout if promise resolves first
+            vvaultConversations = vvaultResponse.conversations;
+            if (!cancelled) {
+              setActiveThreadHydration(
+                deriveActiveConversationHydrationState(vvaultResponse, activeId),
+              );
+            }
             if (timeoutFired) {
             }
           } catch (promiseError) {
@@ -947,13 +1100,20 @@ export default function Layout() {
           console.error("❌ [Layout.tsx] VVAULT loading error:", vvaultError);
           vvaultConversations = []; // Use empty array on error
           const message = (vvaultError as any)?.message || "";
-          backendUnavailable =
-            message.includes("Failed to fetch") ||
-            message.includes("Backend route not found") ||
-            message.includes("404") ||
-            message.includes("ENOENT");
+          const classifiedFailure = classifyVvaultFailure(message);
+          backendUnavailable = classifiedFailure.backendUnavailable || Boolean(message);
+          nextFailureClassification = classifiedFailure.classification;
+          if (!cancelled && activeId) {
+            setActiveThreadHydration(
+              createErrorActiveConversationHydrationState(
+                activeId,
+                message || "VVAULT conversation load failed.",
+              ),
+            );
+          }
         }
         setIsBackendUnavailable(backendUnavailable);
+        setVvaultFailureClassification(nextFailureClassification);
 
         vvaultConversations = vvaultConversations.filter(
           (conv) => conv.constructId !== "synth-001" && conv.constructId !== "synth"
@@ -1021,7 +1181,9 @@ export default function Layout() {
                 role: msg.role,
                 text: messageContent,
                 packets:
-                  msg.role === "assistant"
+                  Array.isArray(msg.packets) && msg.packets.length > 0
+                    ? msg.packets
+                    : msg.role === "assistant"
                     ? [{ op: "answer.v1", payload: { content: messageContent } }]
                     : undefined,
                 ts,
@@ -1121,16 +1283,21 @@ export default function Layout() {
         );let runtimeScopedThreads = filterByActiveRuntime(
           filteredThreads,
           activeRuntimeId,
-        );const backendDown = backendUnavailable || isBackendUnavailable;
+        );
+        runtimeScopedThreads = preserveActiveRouteThread(
+          filteredThreads,
+          runtimeScopedThreads,
+          activeId,
+        );
+        const backendDown = backendUnavailable || isBackendUnavailable;
 
         // VVAULT-FIRST PATTERN: Never create local fallbacks when backend is down
         // This ensures single source of truth in Supabase/VVAULT
         if (backendDown) {
-          // Don't create any local threads - UI will show VVAULT connection error
-          setThreads([]); // Empty threads = show connection status UI
+          // Do not create local fallback threads or clear the visible shell.
           setIsLoading(false);
           clearTimeout(safetyTimeout);
-          return; // Exit early - don't populate with local data
+          return;
         }
 
         // Guard clause: Skip thread creation if canonical Zen thread exists with messages
@@ -1190,9 +1357,16 @@ export default function Layout() {
                 "❌ [Layout.tsx] Failed to create Zen in VVAULT:",
                 error,
               );
-              // Mark VVAULT as unavailable since write failed
-              setIsBackendUnavailable(true);
-              // Don't add to local state if VVAULT creation failed
+              const classifiedFailure = classifyVvaultFailure(
+                (error as any)?.message || "",
+              );
+              logScopedVvaultActionFailure("startup:create-zen", error, {
+                classification: classifiedFailure.classification,
+                constructId: finalConstructId,
+                threadId: defaultThreadId,
+              });
+              startupCreationBlocked = true;
+              // Don't add local state if VVAULT creation failed.
             }
           }
         } else if (hasUrlThread) {
@@ -1212,6 +1386,9 @@ export default function Layout() {
           ),
         ];
 
+        if (startupCreationBlocked && sortedThreads.length === 0) {
+          return;
+        }
 
         if (sortedThreads.length > 0) {
         }
@@ -1229,7 +1406,7 @@ export default function Layout() {
         if (shouldRedirectToCanonical && urlThreadId && preferredUrlThreadId) {
           const requestedPath = `/app/chat/${urlThreadId}`;
           const canonicalPath = `/app/chat/${preferredUrlThreadId}`;
-          if (location.pathname === requestedPath) {
+          if (window.location.pathname === requestedPath) {
             navigate(canonicalPath);
             didNavigateToCanonical = true;
           }
@@ -1294,14 +1471,11 @@ export default function Layout() {
           if (error instanceof Error && error.stack) {
             console.error("❌ [Layout.tsx] Error stack:", error.stack);
           }
-          setThreads([]);
           setIsBackendUnavailable(true);
         }
       } finally {
         clearTimeout(safetyTimeout);
-        if (!cancelled) {
-          setIsLoading(false);
-        }
+        setIsLoading(false);
       }
     })();
 
@@ -1321,7 +1495,6 @@ export default function Layout() {
       conversationManager.clearUserData(userId);
     }
     await logout();
-    navigate("/");
   }
 
   // Migrate legacy messages to packet format
@@ -1375,8 +1548,16 @@ export default function Layout() {
 
     // Reload conversations
     try {
-      const vvaultConversations =
-        await conversationManager.loadAllConversations(vvaultUserId, true);
+      const vvaultResponse =
+        await conversationManager.loadAllConversationsResponse(vvaultUserId, true);
+      const vvaultConversations = vvaultResponse.conversations;
+      setIsBackendUnavailable(false);
+      setVvaultFailureClassification(null);
+      if (activeId) {
+        setActiveThreadHydration(
+          deriveActiveConversationHydrationState(vvaultResponse, activeId),
+        );
+      }
 
       // Convert and set threads (same logic as auth effect)
       const loadedThreads: Thread[] = vvaultConversations.map((conv) => {
@@ -1413,7 +1594,9 @@ export default function Layout() {
             role: msg.role,
             text: msg.content,
             packets:
-              msg.role === "assistant"
+              Array.isArray(msg.packets) && msg.packets.length > 0
+                ? msg.packets
+                : msg.role === "assistant"
                 ? [{ op: "answer.v1", payload: { content: msg.content } }]
                 : undefined,
             ts: new Date(msg.timestamp).getTime(),
@@ -1447,9 +1630,13 @@ export default function Layout() {
 
       const filteredThreads =
         filterThreadsWithCanonicalPreference(loadedThreads);
-      const runtimeScopedThreads = filterByActiveRuntime(
+      const runtimeScopedThreads = preserveActiveRouteThread(
         filteredThreads,
-        activeRuntimeId,
+        filterByActiveRuntime(
+          filteredThreads,
+          activeRuntimeId,
+        ),
+        activeId,
       );
       const canonicalThreads = runtimeScopedThreads.filter(
         (thread) => thread.isPrimary && thread.constructId,
@@ -1465,8 +1652,11 @@ export default function Layout() {
       setThreads(sortedThreads);
     } catch (error) {
       console.error("❌ [Layout.tsx] Force refresh failed:", error);
+      const classifiedFailure = classifyVvaultFailure((error as any)?.message || "");
+      setIsBackendUnavailable(true);
+      setVvaultFailureClassification(classifiedFailure.classification);
     }
-  }, [user, activeRuntimeId]);
+  }, [user, activeId, activeRuntimeId]);
 
   // Keyboard shortcut: Cmd/Ctrl + Shift + R to force refresh conversations
   useEffect(() => {
@@ -1480,35 +1670,6 @@ export default function Layout() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [forceRefreshConversations]);
-
-  // VVAULT Connection Retry Handler
-  const retryVVAULTConnection = useCallback(async () => {
-    if (!user || isRetryingVVAULT) return;
-    
-    setIsRetryingVVAULT(true);
-    setVvaultRetryCount((prev) => prev + 1);
-    
-    try {
-      // Reset auth ref to allow re-running the auth effect
-      hasAuthenticatedRef.current = false;
-      setIsBackendUnavailable(false);
-      setIsLoading(true);
-      
-      // Force refresh conversations from VVAULT
-      await forceRefreshConversations();
-      
-      // Check if we got any threads
-      if (threads.length > 0) {
-        setIsBackendUnavailable(false);
-      }
-    } catch (error) {
-      console.error("❌ [Layout.tsx] VVAULT retry failed:", error);
-      setIsBackendUnavailable(true);
-    } finally {
-      setIsRetryingVVAULT(false);
-      setIsLoading(false);
-    }
-  }, [user, isRetryingVVAULT, forceRefreshConversations, threads.length]);
 
   // Handler for when a new GPT is created - adds thread to sidebar immediately
   const handleGPTCreated = useCallback((gptConfig: { 
@@ -1574,7 +1735,28 @@ export default function Layout() {
     files?: File[];
   };
 
+  function logScopedVvaultActionFailure(
+    action: string,
+    error: unknown,
+    extra: Record<string, unknown> = {},
+  ) {
+    const message = error instanceof Error ? error.message : String(error || "");
+    const vvaultFailure = (error as any)?.vvaultFailure || {};
+    const classifiedFailure = classifyVvaultFailure(message);
+    console.warn(`[VVAULT_SCOPE_FAIL] ${action}`, {
+      action,
+      path: vvaultFailure.path,
+      status: vvaultFailure.status,
+      classification:
+        vvaultFailure.classification || classifiedFailure.classification,
+      errorCode: (error as any)?.errorCode || (error as any)?.code,
+      message,
+      ...extra,
+    });
+  }
+
   async function newThread(options?: ThreadInitOptions) {
+    const navigationStartPath = window.location.pathname;
     const trimmedTitle = options?.title?.trim();
     const starterTrimmed = options?.starter?.trim();
     const requestedBlankThread =
@@ -1661,7 +1843,14 @@ export default function Layout() {
       );
 
       setThreads((prev) => [thread, ...prev]);
-      navigate(`/app/chat/${thread.id}`);
+      if (
+        shouldHonorAsyncChatNavigation({
+          startPath: navigationStartPath,
+          currentPath: window.location.pathname,
+        })
+      ) {
+        navigate(`/app/chat/${thread.id}`);
+      }
 
       if (starterTrimmed && starterTrimmed.length > 0) {
         pendingStarterRef.current = {
@@ -1676,8 +1865,10 @@ export default function Layout() {
       return thread.id;
     } catch (error) {
       console.error("❌ Failed to create new conversation:", error);
-      setIsBackendUnavailable(true);
-      setThreads([]);
+      const classifiedFailure = classifyVvaultFailure((error as any)?.message || "");
+      logScopedVvaultActionFailure("new-thread:create-conversation", error, {
+        classification: classifiedFailure.classification,
+      });
       return null;
     }
   }
@@ -1985,7 +2176,7 @@ export default function Layout() {
     const canonicalZenThread = isCanonicalZenThreadId(threadId);
 
     // Dynamic persona detection + context lock
-    const envValue = import.meta.env.VITE_PERSONA_DETECTION_ENABLED;
+    const envValue = getClientEnvValue("VITE_PERSONA_DETECTION_ENABLED");
     const detectionEnabled =
       !canonicalZenThread && (envValue ?? "true") !== "false";let detectedPersona:
       | import("../engine/character/PersonaDetectionEngine").PersonaSignal
@@ -2773,6 +2964,7 @@ export default function Layout() {
     }
 
     try {
+      setActiveThreadHydration(createLoadingActiveConversationHydrationState(threadId));
       const conversationManager = VVAULTConversationManager.getInstance();
       const transcriptPayload =
         await conversationManager.loadConversationTranscript(threadId);
@@ -2869,13 +3061,21 @@ export default function Layout() {
           hydrationComplete: activeThreadHydration.hydrationComplete,
         });
       });
+      setActiveThreadHydration(activeThreadHydration);
     } catch (error) {
       console.error("❌ [Layout] Failed to reload thread messages:", error);
+      setActiveThreadHydration(
+        createErrorActiveConversationHydrationState(
+          threadId,
+          (error as any)?.message || "Thread reload failed.",
+        ),
+      );
       throw error;
     }
   }
 
   async function startConversationWithConstruct(constructId: string, constructName?: string) {
+    const navigationStartPath = window.location.pathname;
     
     if (!user) {
       console.error("❌ Cannot create conversation: No user");
@@ -2942,13 +3142,24 @@ export default function Layout() {
       };
 
       setThreads((prev) => [thread, ...prev]);
-      navigate(`/app/chat/${thread.id}`);
+      if (
+        shouldHonorAsyncChatNavigation({
+          startPath: navigationStartPath,
+          currentPath: window.location.pathname,
+        })
+      ) {
+        navigate(`/app/chat/${thread.id}`);
+      }
 
       return thread.id;
     } catch (error) {
       console.error(`❌ Failed to create conversation with ${constructId}:`, error);
-      setIsBackendUnavailable(true);
-      setThreads([]);
+      const classifiedFailure = classifyVvaultFailure((error as any)?.message || "");
+      logScopedVvaultActionFailure("construct:create-conversation", error, {
+        classification: classifiedFailure.classification,
+        constructId,
+        threadId: canonicalSessionId,
+      });
       return null;
     }
   }
@@ -3056,6 +3267,30 @@ export default function Layout() {
     // TODO: Scroll to specific message
   }
 
+  const activeThreadForDiagnosis = useMemo(() => {
+    if (!activeId) return null;
+    return (
+      threads.find((thread) => thread.id === activeId) ||
+      threads.find((thread) => routeIdForThread(thread.id, threads) === activeId) ||
+      null
+    );
+  }, [activeId, threads]);
+
+  const latestRuntimeChecklist = useMemo(
+    () => findLatestRuntimeChecklist(threads, activeId),
+    [threads, activeId],
+  );
+
+  const pageDiagnosisChecklist = useMemo(
+    () =>
+      getPageDiagnosisChecklist({
+        pathname: location.pathname,
+        activeThread: activeThreadForDiagnosis,
+        runtimeChecklist: latestRuntimeChecklist,
+      }),
+    [location.pathname, activeThreadForDiagnosis, latestRuntimeChecklist],
+  );
+
   // Check if we're on a non-chat route that should render even during auth loading
   const isNonChatRouteRender = ["/app/explore", "/app/vvault", "/app/library", "/app/search", "/app/simforge"].some(
     (r) => window.location.pathname.startsWith(r)
@@ -3144,6 +3379,7 @@ export default function Layout() {
             <Outlet
               context={{
                 threads,
+                isLoading,
                 sendMessage,
                 renameThread,
                 newThread,
@@ -3155,64 +3391,53 @@ export default function Layout() {
                 user,
                 handleGPTCreated,
                 forceRefreshConversations,
+                showOrchestrationLog,
+                toggleOrchestrationLog: () =>
+                  setShowOrchestrationLog((visible) => !visible),
+                activeThreadHydration,
+                setRouteOverlayActive,
+                addressBookContacts: synthAddressBookThreads,
               }}
             />
           </main>
+          <div
+            className="fixed bottom-5 right-5 flex flex-col items-end"
+            style={{ zIndex: Z_LAYERS.toast }}
+            data-testid="app-diagnosis-control"
+          >
+            <OrchestrationLogSurface
+              checklist={latestRuntimeChecklist}
+              pageChecklist={pageDiagnosisChecklist}
+              visible={showOrchestrationLog}
+              onToggleVisibility={() =>
+                setShowOrchestrationLog((visible) => !visible)
+              }
+            />
+            <button
+              type="button"
+              onClick={() =>
+                setShowOrchestrationLog((visible) => !visible)
+              }
+              aria-label={showOrchestrationLog ? "Hide Diagnosis" : "Show Diagnosis"}
+              title={showOrchestrationLog ? "Hide Diagnosis" : "Show Diagnosis"}
+              className="flex h-11 w-11 items-center justify-center rounded-full border shadow-lg transition-colors"
+              style={{
+                color: showOrchestrationLog
+                  ? "var(--chatty-accent)"
+                  : "var(--chatty-text)",
+                backgroundColor: "var(--chatty-bg-secondary)",
+                borderColor: showOrchestrationLog
+                  ? "var(--chatty-accent)"
+                  : "var(--chatty-border)",
+              }}
+            >
+              <FlaskConical size={19} />
+            </button>
+          </div>
           <StorageFailureFallback
             info={storageFailureInfo}
             onClose={closeStorageFailure}
           />
-
-          {/* VVAULT Connection Status - Single Source of Truth Pattern */}
-          {isBackendUnavailable && threads.length === 0 && !isLoading && (
-            <div 
-              className="fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-              style={{ zIndex: Z_LAYERS.modal }}
-            >
-              <div className="bg-[var(--chatty-bg-main)] border border-[var(--chatty-border)] rounded-2xl p-8 max-w-md mx-4 shadow-2xl">
-                <div className="text-center">
-                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-100 flex items-center justify-center">
-                    <svg className="w-8 h-8 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                  </div>
-                  <h2 className="text-xl font-semibold text-[var(--chatty-text)] mb-2">
-                    Connecting to VVAULT
-                  </h2>
-                  <p className="text-[var(--chatty-text-secondary)] mb-6">
-                    Unable to reach the canonical VVAULT transcript service. Chatty is waiting for the canonical runtime instead of falling back to local conversation state.
-                  </p>
-                  <button
-                    onClick={retryVVAULTConnection}
-                    disabled={isRetryingVVAULT}
-                    className="w-full py-3 px-6 bg-[var(--chatty-accent)] hover:bg-[var(--chatty-accent-hover)] text-white rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    {isRetryingVVAULT ? (
-                      <>
-                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                        Connecting...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        Retry Connection
-                      </>
-                    )}
-                  </button>
-                  {vvaultRetryCount > 0 && (
-                    <p className="text-sm text-[var(--chatty-text-secondary)] mt-3">
-                      Retry attempts: {vvaultRetryCount}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Search Popup */}
           <SearchPopup
