@@ -27,7 +27,8 @@
     "deploy": "./deploy/deploy.sh",
     "deploy:sync": "./deploy/deploy.sh --sync-only",
     "deploy:restart": "./deploy/deploy.sh --restart",
-    "deploy:build": "./deploy/deploy.sh --build"
+    "deploy:build": "./deploy/deploy.sh --build",
+    "sync:codex:source-native": "node server/scripts/syncCodexSourceNative.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.90.1",
