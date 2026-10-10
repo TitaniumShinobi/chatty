@@ -39,16 +39,19 @@ export function adaptCodexJsonl(rawBytes, sourceName = 'rollout.jsonl') {
   if (!['cli', 'vscode'].includes(meta.source)) throw new Error('Only cli or vscode Codex surfaces are eligible');
   if (typeof meta.source === 'object' || meta.source?.subagent) throw new Error('Subagent sessions are ineligible');
 
-  const developerTexts = rows.flatMap((row) => {
+  const bindingTexts = rows.flatMap((row) => {
     const payload = row?.type === 'response_item' ? row.payload : null;
-    if (payload?.type !== 'message' || payload.role !== 'developer') return [];
+    const kinds = payload?.internal_chat_message_metadata_passthrough?.content_item_kinds;
+    if (payload?.type !== 'message' || payload.role !== 'user' || row?.metadata?.client_authored !== false || !Array.isArray(kinds) || !kinds.includes('agents_md.instructions')) return [];
     return [textParts(payload)];
   }).filter(Boolean);
-  const zenithBinding = developerTexts.some((text) => ZENITH_BINDING_MARKERS.every((marker) => text.includes(marker)));
+  const zenithBinding = bindingTexts.some((text) => ZENITH_BINDING_MARKERS.every((marker) => text.includes(marker)));
 
   const messages = rows.flatMap((row) => {
     const payload = row?.type === 'response_item' ? row.payload : null;
     if (payload?.type !== 'message' || !['user', 'assistant'].includes(payload.role)) return [];
+    const kinds = payload?.internal_chat_message_metadata_passthrough?.content_item_kinds;
+    if (payload.role === 'user' && row?.metadata?.client_authored === false && Array.isArray(kinds) && kinds.includes('agents_md.instructions')) return [];
     const text = textParts(payload);
     return text ? [{ role: payload.role, timestamp: row.timestamp || null, text }] : [];
   });
@@ -86,7 +89,7 @@ export function adaptCodexJsonl(rawBytes, sourceName = 'rollout.jsonl') {
           authoritativeConstructBinding: {
             constructId: zenithBinding ? 'zen-001' : null,
             authority: zenithBinding ? 'repository-agent-contract' : null,
-            sourceRole: zenithBinding ? 'developer' : null,
+            sourceRole: zenithBinding ? 'agents_md.instructions' : null,
             verified: zenithBinding,
           },
         },
