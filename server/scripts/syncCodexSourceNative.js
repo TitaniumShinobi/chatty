@@ -9,12 +9,16 @@ const DEFAULT_ORIGIN = 'https://vvault.thewreck.org';
 const MAX_FILES = 32;
 const MAX_SOURCE_BYTES = 10 * 1024 * 1024;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ZENITH_BINDING_MARKERS = [
+  'You are Zenith Vale Woodson the Systems Steward.',
+  'Use `vvault/server/life_capsule_resolver.py` as the identity authority for Zenith of Codex.',
+];
 
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 
 function textParts(payload) {
   if (!Array.isArray(payload?.content)) return '';
-  const allowed = payload.role === 'user' ? 'input_text' : 'output_text';
+  const allowed = payload.role === 'assistant' ? 'output_text' : 'input_text';
   return payload.content
     .filter((part) => part?.type === allowed && typeof part.text === 'string')
     .map((part) => part.text.replace(/\r\n?/g, '\n').normalize('NFC'))
@@ -34,6 +38,13 @@ export function adaptCodexJsonl(rawBytes, sourceName = 'rollout.jsonl') {
   if (meta.thread_source !== 'user') throw new Error('Only thread_source=user is eligible');
   if (!['cli', 'vscode'].includes(meta.source)) throw new Error('Only cli or vscode Codex surfaces are eligible');
   if (typeof meta.source === 'object' || meta.source?.subagent) throw new Error('Subagent sessions are ineligible');
+
+  const developerTexts = rows.flatMap((row) => {
+    const payload = row?.type === 'response_item' ? row.payload : null;
+    if (payload?.type !== 'message' || payload.role !== 'developer') return [];
+    return [textParts(payload)];
+  }).filter(Boolean);
+  const zenithBinding = developerTexts.some((text) => ZENITH_BINDING_MARKERS.every((marker) => text.includes(marker)));
 
   const messages = rows.flatMap((row) => {
     const payload = row?.type === 'response_item' ? row.payload : null;
@@ -72,6 +83,12 @@ export function adaptCodexJsonl(rawBytes, sourceName = 'rollout.jsonl') {
           threadSource: 'user',
           supportedCodexSurface: true,
           subagentMarkerAbsent: true,
+          authoritativeConstructBinding: {
+            constructId: zenithBinding ? 'zen-001' : null,
+            authority: zenithBinding ? 'repository-agent-contract' : null,
+            sourceRole: zenithBinding ? 'developer' : null,
+            verified: zenithBinding,
+          },
         },
       },
     },
@@ -79,14 +96,16 @@ export function adaptCodexJsonl(rawBytes, sourceName = 'rollout.jsonl') {
   };
 }
 
-export function validateReceipt(payload, expected, stableSourceId) {
+export function validateReceipt(payload, expected, stableSourceId, expectsZenith) {
   const receipt = payload?.receipt || {};
   const valid = payload?.success === true && payload?.canonical === true &&
     payload?.storageOwner === 'ovvaults.vault_files' && receipt.readbackVerified === true &&
     receipt.rawEnvelopeSha256 === expected.rawHash && Number(receipt.rawEnvelopeBytes) === expected.rawBytes &&
     receipt.destinationSha256 === expected.projectionHash && Number(receipt.destinationBytes) === expected.projectionBytes &&
-    receipt.stableSourceId === stableSourceId && receipt.classification === 'ACCOUNT_PRIVATE' &&
-    receipt.classificationConstruct === 'zen-001' && typeof receipt.destinationPath === 'string' && receipt.destinationPath;
+    receipt.stableSourceId === stableSourceId &&
+    receipt.classification === (expectsZenith ? 'ACCOUNT_PRIVATE' : 'LEGACY_UNCLASSIFIED') &&
+    receipt.classificationConstruct === (expectsZenith ? 'zen-001' : 'legacy-unassigned') &&
+    typeof receipt.destinationPath === 'string' && receipt.destinationPath;
   if (!valid) throw new Error('VVAULT source-native ingestion receipt mismatch');
   return receipt;
 }
@@ -109,7 +128,8 @@ export async function syncFiles({ files, origin = DEFAULT_ORIGIN, serviceToken, 
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload) throw new Error(`VVAULT source-native ingestion failed (${response.status})`);
-    receipts.push(validateReceipt(payload, record.expected, record.body.stableSourceId));
+    receipts.push(validateReceipt(payload, record.expected, record.body.stableSourceId,
+      record.body.sourceMetadata.classificationEvidence.authoritativeConstructBinding.verified));
   }
   return { ok: true, files: files.length, receipts };
 }
