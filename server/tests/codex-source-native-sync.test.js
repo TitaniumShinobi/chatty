@@ -15,7 +15,7 @@ function source({ threadSource = 'user', source = 'vscode', zenithBinding = fals
     : (developerText ?? 'hidden');
   return Buffer.from([
     row({ type: 'session_meta', payload: { id: THREAD, thread_source: threadSource, source } }),
-    row({ timestamp: '2026-01-01T00:00:01Z', type: 'response_item', payload: { type: 'message', role: 'developer', content: [{ type: 'input_text', text: contract }] } }),
+    row({ timestamp: '2026-01-01T00:00:01Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: contract }], internal_chat_message_metadata_passthrough: { content_item_kinds: ['agents_md.instructions'] } }, metadata: { client_authored: false } }),
     row({ timestamp: '2026-01-01T00:00:02Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hello' }] } }),
     row({ timestamp: '2026-01-01T00:00:03Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'reply' }] } }),
   ].join('\n') + '\n');
