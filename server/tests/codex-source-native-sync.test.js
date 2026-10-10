@@ -9,10 +9,13 @@ import { adaptCodexJsonl, syncFiles } from '../scripts/syncCodexSourceNative.js'
 
 const THREAD = '43e73643-dfd6-4958-90b1-8fd7e97c93c6';
 const row = (value) => JSON.stringify(value);
-function source({ threadSource = 'user', source = 'vscode' } = {}) {
+function source({ threadSource = 'user', source = 'vscode', zenithBinding = false, developerText } = {}) {
+  const contract = zenithBinding
+    ? 'You are Zenith Vale Woodson the Systems Steward.\nUse `vvault/server/life_capsule_resolver.py` as the identity authority for Zenith of Codex.'
+    : (developerText ?? 'hidden');
   return Buffer.from([
     row({ type: 'session_meta', payload: { id: THREAD, thread_source: threadSource, source } }),
-    row({ timestamp: '2026-01-01T00:00:01Z', type: 'response_item', payload: { type: 'message', role: 'developer', content: [{ type: 'input_text', text: 'hidden' }] } }),
+    row({ timestamp: '2026-01-01T00:00:01Z', type: 'response_item', payload: { type: 'message', role: 'developer', content: [{ type: 'input_text', text: contract }] } }),
     row({ timestamp: '2026-01-01T00:00:02Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hello' }] } }),
     row({ timestamp: '2026-01-01T00:00:03Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'reply' }] } }),
   ].join('\n') + '\n');
@@ -24,10 +27,23 @@ test('adapter preserves exact source bytes and emits owner-private evidence', ()
   assert.deepEqual(Buffer.from(record.body.rawEnvelopeBase64, 'base64'), raw);
   assert.equal(record.body.sourceLocator, 'rollout.jsonl');
   assert.equal(record.body.sourceMetadata.sourceEnvelopeSha256, crypto.createHash('sha256').update(raw).digest('hex'));
-  assert.deepEqual(record.body.sourceMetadata.classificationEvidence, { threadSource: 'user', supportedCodexSurface: true, subagentMarkerAbsent: true });
+  assert.deepEqual(record.body.sourceMetadata.classificationEvidence.authoritativeConstructBinding,
+    { constructId: null, authority: null, sourceRole: null, verified: false });
   assert.match(record.body.projectionContent, /## User/);
   assert.match(record.body.projectionContent, /## Assistant/);
   assert.doesNotMatch(record.body.projectionContent, /hidden/);
+});
+
+test('only the system-injected authoritative contract binds zen-001', () => {
+  const bound = adaptCodexJsonl(source({ zenithBinding: true }));
+  assert.equal(bound.body.sourceMetadata.classificationEvidence.authoritativeConstructBinding.verified, true);
+  for (const raw of [
+    source(),
+    source({ developerText: 'This prompt merely mentions Zenith and zen-001.' }),
+    source({ developerText: 'You are a different construct.' }),
+  ]) {
+    assert.equal(adaptCodexJsonl(raw).body.sourceMetadata.classificationEvidence.authoritativeConstructBinding.verified, false);
+  }
 });
 
 for (const [label, options] of [['subagent', { source: { subagent: 'worker' } }], ['automation', { threadSource: 'automation' }], ['ambiguous', { threadSource: null }]]) {
@@ -37,7 +53,7 @@ for (const [label, options] of [['subagent', { source: { subagent: 'worker' } }]
 test('sync uses owner-bound source-native route and validates receipt', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-source-sync-'));
   const file = path.join(directory, 'rollout.jsonl');
-  await fs.writeFile(file, source());
+  await fs.writeFile(file, source({ zenithBinding: true }));
   let call;
   const result = await syncFiles({ files: [file], origin: 'https://vvault.example', serviceToken: 'service', ownerEmail: 'Owner@Example.test', fetchImpl: async (url, options) => {
     call = { url, options, body: JSON.parse(options.body) };
